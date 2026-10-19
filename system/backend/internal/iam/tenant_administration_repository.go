@@ -393,7 +393,7 @@ func (r *Repository) DisableTenantCustomRole(ctx context.Context, roleID, actorI
 }
 
 func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int64, filter TenantRoleAssignmentFilter, page, pageSize int) ([]ManagedTenantRoleAssignment, int64, error) {
-	base := r.db.WithContext(ctx).Table("system.role_assignments assignment").Where("assignment.tenant_id = ?", tenantID)
+	base := r.db.WithContext(ctx).Table("system.role_assignments assignment").Where("assignment.tenant_id = ? AND assignment.scope_type = 'tenant'", tenantID)
 	if filter.MembershipID != nil {
 		base = base.Where("EXISTS (SELECT 1 FROM system.tenant_memberships filtered_membership WHERE filtered_membership.id = ? AND filtered_membership.tenant_id = assignment.tenant_id AND filtered_membership.principal_id = assignment.principal_id)", *filter.MembershipID)
 	}
@@ -413,15 +413,6 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 		base = base.Where("assignment.status = 'active' AND assignment.valid_until IS NOT NULL AND assignment.valid_until <= now()")
 	case "revoked":
 		base = base.Where("assignment.status = 'revoked'")
-	}
-	if filter.ScopeType != nil {
-		base = base.Where("assignment.scope_type = ?", *filter.ScopeType)
-	}
-	if filter.DepartmentID != nil {
-		base = base.Where("assignment.department_id = ?", *filter.DepartmentID)
-	}
-	if filter.ProjectGroupID != nil {
-		base = base.Where("assignment.project_group_id = ?", *filter.ProjectGroupID)
 	}
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -472,8 +463,6 @@ func withManagedTenantRoleAssignmentProjection(query *gorm.DB) *gorm.DB {
 				  AND active_assignment.role_id = assignment.role_id
 				  AND active_assignment.scope_type = assignment.scope_type
 				  AND active_assignment.tenant_id IS NOT DISTINCT FROM assignment.tenant_id
-				  AND active_assignment.department_id IS NOT DISTINCT FROM assignment.department_id
-				  AND active_assignment.project_group_id IS NOT DISTINCT FROM assignment.project_group_id
 				  AND active_assignment.status = 'active'
 				  AND active_assignment.valid_from <= now()
 				  AND (active_assignment.valid_until IS NULL OR active_assignment.valid_until > now())

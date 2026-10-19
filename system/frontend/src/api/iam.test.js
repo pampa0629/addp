@@ -91,15 +91,15 @@ describe('IAM management API contract', () => {
   })
 
   it('uses the single tenant role and assignment API family', () => {
-    const role = { role_key: 'custom.reader', scope_types: ['tenant'], permission_keys: ['asset.category.read'] }
+    const role = { role_key: 'custom.reader', permission_keys: ['asset.category.read'] }
     iamAPI.tenantRoles.list()
     iamAPI.tenantRoles.listAssignablePermissions()
     iamAPI.tenantRoles.create(role)
     iamAPI.tenantRoles.update('7', role)
     iamAPI.tenantRoles.remove('7', 'retired')
-    iamAPI.tenantRoleAssignments.list({ membership_id: '9', effective_state: 'effective', scope_type: 'tenant' })
+    iamAPI.tenantRoleAssignments.list({ membership_id: '9', effective_state: 'effective' })
     iamAPI.tenantRoleAssignments.get('11')
-    iamAPI.tenantRoleAssignments.create({ membership_id: '9', role_ids: ['7', '8'], scope_type: 'tenant' })
+    iamAPI.tenantRoleAssignments.create({ membership_id: '9', role_ids: ['7', '8'] })
     iamAPI.tenantRoleAssignments.revoke('11', 'rotation')
 
     expect(client.get).toHaveBeenNthCalledWith(1, '/system/tenant/roles', { params: undefined })
@@ -108,10 +108,10 @@ describe('IAM management API contract', () => {
     expect(client.put).toHaveBeenCalledWith('/system/tenant/roles/7', role)
     expect(client.delete).toHaveBeenCalledWith('/system/tenant/roles/7', { data: { reason: 'retired' } })
     expect(client.get).toHaveBeenNthCalledWith(3, '/system/tenant/role_assignments', {
-		params: { membership_id: '9', effective_state: 'effective', scope_type: 'tenant' }
+		params: { membership_id: '9', effective_state: 'effective' }
     })
     expect(client.post).toHaveBeenCalledWith('/system/tenant/role_assignments', {
-      membership_id: '9', role_ids: ['7', '8'], scope_type: 'tenant'
+      membership_id: '9', role_ids: ['7', '8']
     })
     expect(client.get).toHaveBeenCalledWith('/system/tenant/role_assignments/11')
     expect(client.post).toHaveBeenCalledWith('/system/tenant/role_assignments/11/revoke', { reason: 'rotation' })

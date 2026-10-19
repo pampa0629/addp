@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 37
+manifest_version: 38
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -163,7 +163,7 @@ permissions:
     name_i18n_key: permissions.iam.department.create.name
     description_i18n_key: permissions.iam.department.create.description
   - key: iam.department.read
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false
@@ -187,7 +187,7 @@ permissions:
     name_i18n_key: permissions.iam.department.update.name
     description_i18n_key: permissions.iam.department.update.description
   - key: iam.department_membership.close
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: critical
     tenant_customizable: false
     delegable: false
@@ -195,7 +195,7 @@ permissions:
     name_i18n_key: permissions.iam.department_membership.close.name
     description_i18n_key: permissions.iam.department_membership.close.description
   - key: iam.department_membership.create
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
@@ -203,7 +203,7 @@ permissions:
     name_i18n_key: permissions.iam.department_membership.create.name
     description_i18n_key: permissions.iam.department_membership.create.description
   - key: iam.department_membership.read
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false
@@ -211,7 +211,7 @@ permissions:
     name_i18n_key: permissions.iam.department_membership.read.name
     description_i18n_key: permissions.iam.department_membership.read.description
   - key: iam.department_membership.update
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
@@ -459,7 +459,7 @@ permissions:
     name_i18n_key: permissions.iam.project_group.create.name
     description_i18n_key: permissions.iam.project_group.create.description
   - key: iam.project_group.read
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false
@@ -475,7 +475,7 @@ permissions:
     name_i18n_key: permissions.iam.project_group.update.name
     description_i18n_key: permissions.iam.project_group.update.description
   - key: iam.project_group_membership.close
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: critical
     tenant_customizable: false
     delegable: false
@@ -483,7 +483,7 @@ permissions:
     name_i18n_key: permissions.iam.project_group_membership.close.name
     description_i18n_key: permissions.iam.project_group_membership.close.description
   - key: iam.project_group_membership.create
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
@@ -491,7 +491,7 @@ permissions:
     name_i18n_key: permissions.iam.project_group_membership.create.name
     description_i18n_key: permissions.iam.project_group_membership.create.description
   - key: iam.project_group_membership.read
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false
@@ -499,7 +499,7 @@ permissions:
     name_i18n_key: permissions.iam.project_group_membership.read.name
     description_i18n_key: permissions.iam.project_group_membership.read.description
   - key: iam.project_group_membership.update
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
@@ -723,7 +723,7 @@ permissions:
     name_i18n_key: permissions.iam.tenant_role.update.name
     description_i18n_key: permissions.iam.tenant_role.update.description
   - key: iam.tenant_role_assignment.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: false
     delegable: false
@@ -731,7 +731,7 @@ permissions:
     name_i18n_key: permissions.iam.tenant_role_assignment.create.name
     description_i18n_key: permissions.iam.tenant_role_assignment.create.description
   - key: iam.tenant_role_assignment.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false
@@ -739,7 +739,7 @@ permissions:
     name_i18n_key: permissions.iam.tenant_role_assignment.read.name
     description_i18n_key: permissions.iam.tenant_role_assignment.read.description
   - key: iam.tenant_role_assignment.revoke
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: false
     delegable: false
@@ -1171,7 +1171,7 @@ permissions:
     name_i18n_key: permissions.system.engine_access_grant.revoke.name
     description_i18n_key: permissions.system.engine_access_grant.revoke.description
   - key: system.engine_catalog.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -1211,7 +1211,7 @@ permissions:
     name_i18n_key: permissions.system.engine_raster_policy_runtime.read.name
     description_i18n_key: permissions.system.engine_raster_policy_runtime.read.description
   - key: system.execution_authorization.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false

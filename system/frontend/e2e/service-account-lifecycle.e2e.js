@@ -338,9 +338,6 @@ test('tenant administrator manages a service account lifecycle without leaking s
       input: {
         membership_id: '201',
         role_ids: ['701'],
-        scope_type: 'tenant',
-        department_id: null,
-        project_group_id: null,
         valid_until: null,
         reason: 'E2E machine role assignment'
       }

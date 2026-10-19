@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 132
+manifest_version: 133
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -499,7 +499,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.ai_user.name
     description_i18n_key: roles.tenant.ai_user.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - agent.run.cancel
@@ -517,7 +517,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.asset_consumer.name
     description_i18n_key: roles.tenant.asset_consumer.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - asset.application.create
@@ -532,7 +532,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.asset_manager.name
     description_i18n_key: roles.tenant.asset_manager.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - asset.application.approve
@@ -653,7 +653,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_engineer.name
     description_i18n_key: roles.tenant.data_engineer.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - develop.data_read.execute
@@ -689,7 +689,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_steward.name
     description_i18n_key: roles.tenant.data_steward.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - develop.data_read.execute
@@ -716,7 +716,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_viewer.name
     description_i18n_key: roles.tenant.data_viewer.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - develop.data_read.execute
@@ -799,7 +799,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.governance_manager.name
     description_i18n_key: roles.tenant.governance_manager.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - develop.data_read.execute
@@ -857,7 +857,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.graph_engineer.name
     description_i18n_key: roles.tenant.graph_engineer.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - graph.analysis.execute
@@ -1121,7 +1121,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.service_publisher.name
     description_i18n_key: roles.tenant.service_publisher.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - manager.content.read

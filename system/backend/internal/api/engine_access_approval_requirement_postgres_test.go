@@ -36,13 +36,13 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		}
 		roles := iam.NewTenantRoleService(identity, time.Now)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_governance", Name: "Source governance fixture",
-			ScopeTypes: []string{"tenant"}, PermissionKeys: permissions, ActorPrincipalID: actor.PrincipalID})
+			PermissionKeys: permissions, ActorPrincipalID: actor.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		stepUp := time.Now().Add(time.Minute)
 		assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: actor.MembershipID,
-			RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Explicit fixture governance", ActorPrincipalID: actor.PrincipalID,
+			RoleIDs: []int64{role.ID}, Reason: "Explicit fixture governance", ActorPrincipalID: actor.PrincipalID,
 			AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp})
 		if err != nil {
 			t.Fatal(err)
@@ -282,13 +282,13 @@ func exerciseApprovalRequirementUpdates(t *testing.T, db *gorm.DB, identity *iam
 	}
 	roles := iam.NewTenantRoleService(identity, time.Now)
 	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_grant_successor", Name: "Direct successor fixture",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: actor.PrincipalID})
+		PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: actor.PrincipalID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stepUp := time.Now().Add(time.Minute)
 	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: actor.MembershipID,
-		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Explicit direct successor", ActorPrincipalID: actor.PrincipalID,
+		RoleIDs: []int64{role.ID}, Reason: "Explicit direct successor", ActorPrincipalID: actor.PrincipalID,
 		AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp}); err != nil {
 		t.Fatal(err)
 	}

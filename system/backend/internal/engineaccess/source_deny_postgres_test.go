@@ -24,7 +24,7 @@ func exerciseSourceDenies(t *testing.T, db *gorm.DB, tenantID int64, path engine
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.deny_creator", Name: "Explicit Deny fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_deny.create"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.deny_creator", Name: "Explicit Deny fixture", PermissionKeys: []string{"system.engine_access_deny.create"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,7 +36,7 @@ func exerciseSourceDenies(t *testing.T, db *gorm.DB, tenantID int64, path engine
 				delegated = seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
 			}
 			if permission {
-				if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit Deny test"}); err != nil {
+				if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit Deny test"}); err != nil {
 					t.Fatal(err)
 				}
 			}

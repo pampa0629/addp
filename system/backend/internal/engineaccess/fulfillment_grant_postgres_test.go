@@ -81,7 +81,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			operator, expires := newOperator(t, time.Hour)
 			delegation := seedDelegation(t, operator.MembershipID, expires.Add(-time.Second))
 			input := iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: operator.MembershipID,
-				RoleIDs: []int64{roleID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit grant fixture"}
+				RoleIDs: []int64{roleID}, ActorPrincipalID: adminID, Reason: "Explicit grant fixture"}
 			if permissionLifetime > 0 {
 				expires := time.Now().Add(permissionLifetime)
 				input.ValidUntil = &expires

@@ -341,8 +341,6 @@ type RoleAssignment struct {
 	RoleID               int64      `gorm:"column:role_id;not null"`
 	ScopeType            string     `gorm:"column:scope_type;not null"`
 	TenantID             *int64     `gorm:"column:tenant_id"`
-	DepartmentID         *int64     `gorm:"column:department_id"`
-	ProjectGroupID       *int64     `gorm:"column:project_group_id"`
 	Status               string     `gorm:"column:status;not null"`
 	ValidFrom            time.Time  `gorm:"column:valid_from;not null"`
 	ValidUntil           *time.Time `gorm:"column:valid_until"`

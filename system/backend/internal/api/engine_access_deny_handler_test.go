@@ -65,10 +65,6 @@ func TestEngineSourceDenyHTTPContract(t *testing.T) {
 	projection := testIAMActorContext("tenant")
 	permission := func(key, scope string) {
 		assignmentScope := shared.AssignmentScope{Type: scope, TenantID: projection.Context.TenantID}
-		if scope == "project_group" {
-			groupID := "7"
-			assignmentScope.ProjectGroupID = &groupID
-		}
 		projection.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.deny", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: assignmentScope, Permissions: []string{key}}}
 	}
 	for _, key := range []string{"system.engine_access_grant.revoke", "system.engine_access_delegation.create", "catalog.entry.update", "system.engine_access_deny.release"} {
@@ -76,7 +72,9 @@ func TestEngineSourceDenyHTTPContract(t *testing.T) {
 		engineDelegationTestRequest(t, denyTestRouter(t, &projection, unused), "POST", path, body, 403)
 	}
 	permission("system.engine_access_deny.create", "project_group")
-	engineDelegationTestRequest(t, denyTestRouter(t, &projection, unused), "POST", path, body, 403)
+	if err := shared.ValidateAuthContext(projection); err == nil {
+		t.Fatal("retired role scope accepted")
+	}
 	permission("system.engine_access_deny.create", "tenant")
 	router := denyTestRouter(t, &projection, unused)
 	for key, value := range map[string]any{"deny_id": "not-a-uuid", "recipient_id": 4, "tenant_id": "1", "operator": "2"} {

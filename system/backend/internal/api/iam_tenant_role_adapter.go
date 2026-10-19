@@ -39,10 +39,10 @@ type IAMTenantAssignablePermissionResponse struct {
 }
 
 type IAMTenantRoleRequest struct {
-	RoleKey        string   `json:"role_key"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	ScopeTypes     []string `json:"scope_types"`
+	RoleKey     string `json:"role_key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+
 	PermissionKeys []string `json:"permission_keys"`
 }
 
@@ -59,20 +59,19 @@ type IAMRoleAssignmentActorResponse struct {
 }
 
 type IAMTenantRoleAssignmentResponse struct {
-	ID                          string                          `json:"id"`
-	MembershipID                string                          `json:"membership_id"`
-	PrincipalID                 string                          `json:"principal_id"`
-	PrincipalType               string                          `json:"principal_type"`
-	DisplayName                 string                          `json:"display_name"`
-	Username                    *string                         `json:"username"`
-	ServicePrincipalName        *string                         `json:"service_principal_name,omitempty"`
-	RoleID                      string                          `json:"role_id"`
-	RoleKey                     string                          `json:"role_key"`
-	RoleName                    *string                         `json:"role_name"`
-	RoleNameI18nKey             *string                         `json:"role_name_i18n_key"`
-	ScopeType                   string                          `json:"scope_type"`
-	DepartmentID                *string                         `json:"department_id"`
-	ProjectGroupID              *string                         `json:"project_group_id"`
+	ScopeType            string  `json:"scope_type"`
+	ID                   string  `json:"id"`
+	MembershipID         string  `json:"membership_id"`
+	PrincipalID          string  `json:"principal_id"`
+	PrincipalType        string  `json:"principal_type"`
+	DisplayName          string  `json:"display_name"`
+	Username             *string `json:"username"`
+	ServicePrincipalName *string `json:"service_principal_name,omitempty"`
+	RoleID               string  `json:"role_id"`
+	RoleKey              string  `json:"role_key"`
+	RoleName             *string `json:"role_name"`
+	RoleNameI18nKey      *string `json:"role_name_i18n_key"`
+
 	Status                      string                          `json:"status"`
 	EffectiveState              string                          `json:"effective_state"`
 	ValidFrom                   time.Time                       `json:"valid_from"`
@@ -88,13 +87,11 @@ type IAMTenantRoleAssignmentResponse struct {
 }
 
 type IAMCreateTenantRoleAssignmentsRequest struct {
-	MembershipID   string     `json:"membership_id"`
-	RoleIDs        []string   `json:"role_ids" binding:"required,min=1,max=50,unique,dive,required" minItems:"1" maxItems:"50"`
-	ScopeType      string     `json:"scope_type"`
-	DepartmentID   *string    `json:"department_id"`
-	ProjectGroupID *string    `json:"project_group_id"`
-	ValidUntil     *time.Time `json:"valid_until"`
-	Reason         string     `json:"reason"`
+	MembershipID string   `json:"membership_id"`
+	RoleIDs      []string `json:"role_ids" binding:"required,min=1,max=50,unique,dive,required" minItems:"1" maxItems:"50"`
+
+	ValidUntil *time.Time `json:"valid_until"`
+	Reason     string     `json:"reason"`
 }
 
 type IAMRevokeTenantRoleAssignmentRequest struct {
@@ -212,7 +209,7 @@ func (h *IAMTenantRoleHandler) CreateRole(c *gin.Context) {
 		respondIAMError(c, fmt.Errorf("%w: invalid tenant role request", commonapi.ErrBadRequest))
 		return
 	}
-	role, err := h.service.CreateRole(c.Request.Context(), iam.CreateTenantRoleInput{TenantID: int64(tenantID), RoleKey: request.RoleKey, Name: request.Name, Description: request.Description, ScopeTypes: request.ScopeTypes, PermissionKeys: request.PermissionKeys, ActorPrincipalID: int64(actorID), Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
+	role, err := h.service.CreateRole(c.Request.Context(), iam.CreateTenantRoleInput{TenantID: int64(tenantID), RoleKey: request.RoleKey, Name: request.Name, Description: request.Description, PermissionKeys: request.PermissionKeys, ActorPrincipalID: int64(actorID), Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -248,7 +245,7 @@ func (h *IAMTenantRoleHandler) UpdateRole(c *gin.Context) {
 		respondIAMError(c, fmt.Errorf("%w: invalid tenant role request", commonapi.ErrBadRequest))
 		return
 	}
-	role, err := h.service.UpdateRole(c.Request.Context(), iam.UpdateTenantRoleInput{TenantID: int64(tenantID), RoleID: roleID, Name: request.Name, Description: request.Description, ScopeTypes: request.ScopeTypes, PermissionKeys: request.PermissionKeys, ActorPrincipalID: int64(actorID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK)})
+	role, err := h.service.UpdateRole(c.Request.Context(), iam.UpdateTenantRoleInput{TenantID: int64(tenantID), RoleID: roleID, Name: request.Name, Description: request.Description, PermissionKeys: request.PermissionKeys, ActorPrincipalID: int64(actorID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK)})
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -301,9 +298,6 @@ func (h *IAMTenantRoleHandler) DeleteRole(c *gin.Context) {
 // @Param        membership_id query string false "成员关系 ID | Membership ID"
 // @Param        principal_type query string false "成员类型：user 或 service_principal | Member type: user or service_principal"
 // @Param        effective_state query string false "当前状态：scheduled、effective、expired 或 revoked；默认 effective | Current state: scheduled, effective, expired, or revoked; defaults to effective"
-// @Param        scope_type query string false "授权范围类型 | Assignment scope type"
-// @Param        department_id query string false "部门 ID，仅 department 范围 | Department ID for department scope"
-// @Param        project_group_id query string false "项目组 ID，仅 project_group 范围 | Project group ID for project_group scope"
 // @Success      200 {object} object{data=[]IAMTenantRoleAssignmentResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.read"]
@@ -334,6 +328,16 @@ func (h *IAMTenantRoleHandler) ListAssignments(c *gin.Context) {
 
 func parseIAMTenantRoleAssignmentFilter(c *gin.Context) (iam.TenantRoleAssignmentFilter, error) {
 	var filter iam.TenantRoleAssignmentFilter
+	for key, values := range c.Request.URL.Query() {
+		switch key {
+		case "page", "page_size", "membership_id", "principal_type", "effective_state":
+		default:
+			return filter, fmt.Errorf("%w: unknown role assignment query parameter", commonapi.ErrBadRequest)
+		}
+		if len(values) != 1 {
+			return filter, fmt.Errorf("%w: repeated role assignment query parameter", commonapi.ErrBadRequest)
+		}
+	}
 	var err error
 	if value := strings.TrimSpace(c.Query("membership_id")); value != "" {
 		parsed, parseErr := parseIAMDecimalID(value)
@@ -348,17 +352,6 @@ func parseIAMTenantRoleAssignmentFilter(c *gin.Context) (iam.TenantRoleAssignmen
 	}
 	if value := strings.TrimSpace(c.Query("effective_state")); value != "" {
 		filter.EffectiveState = &value
-	}
-	if value := strings.TrimSpace(c.Query("scope_type")); value != "" {
-		filter.ScopeType = &value
-	}
-	filter.DepartmentID, err = parseOptionalIAMQueryID(c, "department_id")
-	if err != nil {
-		return filter, err
-	}
-	filter.ProjectGroupID, err = parseOptionalIAMQueryID(c, "project_group_id")
-	if err != nil {
-		return filter, err
 	}
 	return filter, nil
 }
@@ -413,8 +406,8 @@ func parseOptionalIAMQueryID(c *gin.Context, name string) (*int64, error) {
 // @Security     BearerAuth
 // @Param        request body IAMCreateTenantRoleAssignmentsRequest true "角色分配 | Role assignments"
 // @Success      201 {array} IAMTenantRoleAssignmentResponse
-// @Failure      404 {object} IAMErrorResponse "授权范围不存在或不属于当前租户 | Assignment scope not found in the current tenant"
-// @Failure      409 {object} IAMErrorResponse "角色分配冲突：重复分配、主体类型不兼容、授权范围不可用或缺少组织成员关系 | Role assignment conflict: duplicate assignment, incompatible principal type, unavailable scope, or missing organization membership"
+// @Failure      404 {object} IAMErrorResponse "账号或角色不存在或不属于当前租户 | Account or role not found in the current tenant"
+// @Failure      409 {object} IAMErrorResponse "角色分配冲突：重复分配或账号类型不兼容 | Role assignment conflict: duplicate assignment or incompatible account type"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.create"]
 // @Router       /tenant/role_assignments [post]
@@ -443,22 +436,12 @@ func (h *IAMTenantRoleHandler) CreateAssignments(c *gin.Context) {
 		}
 		roleIDs = append(roleIDs, roleID)
 	}
-	departmentID, err := parseOptionalIAMDecimalID(request.DepartmentID)
-	if err != nil {
-		respondIAMError(c, err)
-		return
-	}
-	projectGroupID, err := parseOptionalIAMDecimalID(request.ProjectGroupID)
-	if err != nil {
-		respondIAMError(c, err)
-		return
-	}
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists {
 		respondIAMError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	assignments, err := h.service.CreateAssignments(c.Request.Context(), iam.CreateTenantRoleAssignmentsInput{TenantID: int64(tenantID), MembershipID: membershipID, RoleIDs: roleIDs, ScopeType: request.ScopeType, DepartmentID: departmentID, ProjectGroupID: projectGroupID, ValidUntil: request.ValidUntil, Reason: request.Reason, ActorPrincipalID: int64(actorID), AssuranceLevel: iam.AssuranceLevel(authContext.Authentication.AssuranceLevel), StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
+	assignments, err := h.service.CreateAssignments(c.Request.Context(), iam.CreateTenantRoleAssignmentsInput{TenantID: int64(tenantID), MembershipID: membershipID, RoleIDs: roleIDs, ValidUntil: request.ValidUntil, Reason: request.Reason, ActorPrincipalID: int64(actorID), AssuranceLevel: iam.AssuranceLevel(authContext.Authentication.AssuranceLevel), StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -541,9 +524,7 @@ func mapIAMManagedTenantRoleAssignment(assignment iam.ManagedTenantRoleAssignmen
 }
 
 func mapIAMRoleAssignment(assignment iam.RoleAssignment) IAMTenantRoleAssignmentResponse {
-	response := IAMTenantRoleAssignmentResponse{ID: strconv.FormatInt(assignment.ID, 10), PrincipalID: strconv.FormatInt(assignment.PrincipalID, 10), RoleID: strconv.FormatInt(assignment.RoleID, 10), ScopeType: assignment.ScopeType, Status: assignment.Status, ValidFrom: assignment.ValidFrom.UTC(), ValidUntil: utcTimePointer(assignment.ValidUntil), SourceType: assignment.SourceType, GrantReason: assignment.GrantReason, CreatedAt: assignment.CreatedAt.UTC(), RevokedReason: assignment.RevokedReason, RevokedAt: utcTimePointer(assignment.RevokedAt)}
-	response.DepartmentID = formatOptionalIAMID(assignment.DepartmentID)
-	response.ProjectGroupID = formatOptionalIAMID(assignment.ProjectGroupID)
+	response := IAMTenantRoleAssignmentResponse{ScopeType: "tenant", ID: strconv.FormatInt(assignment.ID, 10), PrincipalID: strconv.FormatInt(assignment.PrincipalID, 10), RoleID: strconv.FormatInt(assignment.RoleID, 10), Status: assignment.Status, ValidFrom: assignment.ValidFrom.UTC(), ValidUntil: utcTimePointer(assignment.ValidUntil), SourceType: assignment.SourceType, GrantReason: assignment.GrantReason, CreatedAt: assignment.CreatedAt.UTC(), RevokedReason: assignment.RevokedReason, RevokedAt: utcTimePointer(assignment.RevokedAt)}
 	return response
 }
 

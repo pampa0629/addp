@@ -326,3 +326,39 @@ func validTenantAuthContext() AuthContext {
 		},
 	}
 }
+
+func TestDecodeAuthContextRejectsRetiredRoleScopesAndCoordinates(t *testing.T) {
+	for _, scope := range []map[string]any{
+		{"type": "department", "tenant_id": "3", "department_id": "9"},
+		{"type": "project_group", "tenant_id": "3", "project_group_id": "8"},
+		{"type": "tenant", "tenant_id": "3", "department_id": nil},
+		{"type": "tenant", "tenant_id": "3", "project_group_id": nil},
+	} {
+		context := validTenantAuthContext()
+		data, err := json.Marshal(context)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatal(err)
+		}
+		payload["authorization"].(map[string]any)["role_assignments"].([]any)[0].(map[string]any)["scope"] = scope
+		data, err = json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DecodeAuthContext(bytes.NewReader(data)); err == nil {
+			t.Fatalf("retired scope accepted: %s", data)
+		}
+	}
+	context := validTenantAuthContext()
+	data, _ := json.Marshal(context)
+	restored, err := DecodeAuthContext(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.Organization.Departments) != 1 || restored.Organization.Departments[0].DepartmentID != "9" {
+		t.Fatal("functional role changes erased department membership")
+	}
+}

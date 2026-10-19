@@ -128,8 +128,9 @@ def _parse_role_assignments(value: object) -> tuple[RoleAssignment, ...]:
             raise ValueError(f"authorization context {field}.role_key is invalid")
         scope = _require_object(assignment["scope"], f"{field}.scope")
         scope_type = scope.get("type")
-        if scope_type not in {"platform", "tenant", "department", "project_group"}:
+        if scope_type not in {"platform", "tenant"}:
             raise ValueError(f"authorization context {field}.scope.type is invalid")
+        _require_fields(scope, f"{field}.scope", {"type"} if scope_type == "platform" else {"type", "tenant_id"})
         scope_tenant_id = None if scope_type == "platform" else _parse_id(
             scope.get("tenant_id"), f"{field}.scope.tenant_id"
         )

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: quality
-manifest_version: 7
+manifest_version: 8
 permissions:
   - key: quality.catalog.read
     allowed_scope_types: [tenant]
@@ -11,7 +11,7 @@ permissions:
     name_i18n_key: permissions.quality.catalog.read.name
     description_i18n_key: permissions.quality.catalog.read.description
   - key: quality.issue.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -19,7 +19,7 @@ permissions:
     name_i18n_key: permissions.quality.issue.read.name
     description_i18n_key: permissions.quality.issue.read.description
   - key: quality.issue.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -27,7 +27,7 @@ permissions:
     name_i18n_key: permissions.quality.issue.update.name
     description_i18n_key: permissions.quality.issue.update.description
   - key: quality.plan.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -35,7 +35,7 @@ permissions:
     name_i18n_key: permissions.quality.plan.create.name
     description_i18n_key: permissions.quality.plan.create.description
   - key: quality.plan.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.quality.plan.delete.name
     description_i18n_key: permissions.quality.plan.delete.description
   - key: quality.plan.execute
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -51,7 +51,7 @@ permissions:
     name_i18n_key: permissions.quality.plan.execute.name
     description_i18n_key: permissions.quality.plan.execute.description
   - key: quality.plan.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -59,7 +59,7 @@ permissions:
     name_i18n_key: permissions.quality.plan.read.name
     description_i18n_key: permissions.quality.plan.read.description
   - key: quality.plan.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -67,7 +67,7 @@ permissions:
     name_i18n_key: permissions.quality.plan.update.name
     description_i18n_key: permissions.quality.plan.update.description
   - key: quality.rule.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -75,7 +75,7 @@ permissions:
     name_i18n_key: permissions.quality.rule.create.name
     description_i18n_key: permissions.quality.rule.create.description
   - key: quality.rule.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -83,7 +83,7 @@ permissions:
     name_i18n_key: permissions.quality.rule.delete.name
     description_i18n_key: permissions.quality.rule.delete.description
   - key: quality.rule.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -91,7 +91,7 @@ permissions:
     name_i18n_key: permissions.quality.rule.read.name
     description_i18n_key: permissions.quality.rule.read.description
   - key: quality.rule.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false

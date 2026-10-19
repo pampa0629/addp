@@ -56,7 +56,7 @@ const roles = [
     name: '数据查看者',
     description: '',
     role_type: 'tenant_builtin',
-    allowed_scope_types: ['tenant', 'department'],
+    allowed_scope_types: ['tenant'],
     allowed_principal_types: ['user'],
     immutable: true,
     permission_keys: ['manager.data_item.read']
@@ -67,7 +67,7 @@ const roles = [
     name: '数据管理员',
     description: '',
     role_type: 'tenant_builtin',
-    allowed_scope_types: ['tenant', 'department'],
+    allowed_scope_types: ['tenant'],
     allowed_principal_types: ['user'],
     immutable: true,
     permission_keys: ['manager.data_item.update']
@@ -97,9 +97,6 @@ function assignment(overrides = {}) {
     role_key: 'tenant.administrator',
     role_name: '租户管理员',
     role_name_i18n_key: null,
-    scope_type: 'tenant',
-    department_id: null,
-    project_group_id: null,
     status: 'active',
     effective_state: 'effective',
     valid_from: '2026-09-09T06:00:00Z',
@@ -163,8 +160,8 @@ test('tenant administrator filters members and assigns multiple roles in one req
       role_id: '102',
       role_key: 'tenant.data_viewer',
       role_name: '数据查看者',
-      scope_type: 'department',
-      department_id: '301',
+      scope_type: 'tenant',
+      department_id: null,
       status: 'revoked',
       effective_state: 'revoked',
       revoked_reason: 'historical assignment',
@@ -296,9 +293,6 @@ test('tenant administrator filters members and assigns multiple roles in one req
           role_id: selectedRole.id,
           role_key: selectedRole.role_key,
           role_name: selectedRole.name,
-          scope_type: input.scope_type,
-          department_id: input.department_id,
-          project_group_id: input.project_group_id,
           grant_reason: input.reason
         })
       })
@@ -377,16 +371,8 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await expect(dialog).toContainText('Alice Researcher')
   await page.keyboard.press('Escape')
 
-  const scopeCombobox = dialog.getByRole('combobox', { name: '授权范围' })
-  const scopeListboxID = await scopeCombobox.getAttribute('aria-controls')
-  await scopeCombobox.press('ArrowDown')
-  await page.locator(`[id="${scopeListboxID}"]`).getByRole('option', { name: '部门', exact: true }).click()
-  const departmentCombobox = dialog.getByRole('combobox', { name: /部门/ })
-  const departmentListboxID = await departmentCombobox.getAttribute('aria-controls')
-  await departmentCombobox.press('ArrowDown')
-  const departmentListbox = page.locator(`[id="${departmentListboxID}"]`)
-  await departmentListbox.getByRole('option', { name: '研究中心 (research)', exact: true }).click()
-  await expect(page.getByRole('option', { name: '已停用部门 (retired)', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('combobox', { name: '授权范围' })).toHaveCount(0)
+  await expect(dialog.getByRole('combobox', { name: /部门|项目组/ })).toHaveCount(0)
 
   const roleCombobox = dialog.getByRole('combobox', { name: /角色/ })
   const roleListboxID = await roleCombobox.getAttribute('aria-controls')
@@ -407,7 +393,6 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const stewardRow = page.getByRole('row').filter({ hasText: '数据管理员' }).filter({ hasText: 'Alice Researcher' })
   await expect(viewerRow).toBeVisible()
   await expect(stewardRow).toBeVisible()
-  await expect(viewerRow).toContainText('部门 · 研究中心 (research)')
   await viewerRow.getByRole('button', { name: '查看', exact: true }).click()
   const detailDrawer = page.getByRole('dialog', { name: '授权详情' })
   await expect(detailDrawer).toContainText('E2E batch assignment')
@@ -422,7 +407,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await expect(prompt).toBeHidden()
   await expect(viewerRow).toHaveCount(0)
 
-  const statusCombobox = page.locator('.iam-toolbar .el-select').nth(2).getByRole('combobox')
+  const statusCombobox = page.locator('.iam-toolbar .el-select').nth(1).getByRole('combobox')
   const statusListboxID = await statusCombobox.getAttribute('aria-controls')
   await statusCombobox.press('ArrowDown')
   await page.locator(`[id="${statusListboxID}"]`).getByRole('option', { name: '已撤销', exact: true }).click()
@@ -442,9 +427,6 @@ test('tenant administrator filters members and assigns multiple roles in one req
       input: {
         membership_id: '12',
         role_ids: ['102', '103'],
-        scope_type: 'department',
-        department_id: '301',
-        project_group_id: null,
         valid_until: null,
         reason: 'E2E batch assignment'
       }
@@ -523,7 +505,7 @@ for (const canReadRoles of [true, false]) {
         })
         if (query.page === '1') return fulfillJSON(route, 200, { ...paginated(roleAssignments.slice(0, 2)), total_pages: 2 })
         if (failAlice) return fulfillJSON(route, 500, { error: 'later_page_failed' })
-        return fulfillJSON(route, 200, { ...paginated([roleAssignments[2], { ...roleAssignments[0], id: 'summary-duplicate', scope_type: 'department', department_id: '301' }]), total_pages: 2 })
+        return fulfillJSON(route, 200, { ...paginated([roleAssignments[2], { ...roleAssignments[0], id: 'summary-duplicate', scope_type: 'tenant', department_id: null }]), total_pages: 2 })
       }
       throw new Error(`unexpected account summary request: ${path}`)
     })
@@ -704,9 +686,6 @@ test('high-risk self assignment completes MFA step-up and retries the original r
   expect(assignmentAttempts[0]).toEqual({
     membership_id: '11',
     role_ids: ['103'],
-    scope_type: 'tenant',
-    department_id: null,
-    project_group_id: null,
     valid_until: null,
     reason: 'E2E high-risk self assignment'
   })

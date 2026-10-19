@@ -435,7 +435,7 @@ func run(args []string, environment []string) error {
 		role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
 			TenantID: tenant.ID, RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_"),
 			Name: "Online suite consumer", Description: "Ephemeral external T4 minimum permissions",
-			ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
+			PermissionKeys:   permissions,
 			ActorPrincipalID: administrator.PrincipalID,
 			Audit:            audit("external-online-consumer-role"),
 		})
@@ -444,7 +444,7 @@ func run(args []string, environment []string) error {
 		}
 		if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 			TenantID: tenant.ID, MembershipID: membership.Membership.ID,
-			RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "External T4 acceptance",
+			RoleIDs: []int64{role.ID}, Reason: "External T4 acceptance",
 			ActorPrincipalID: administrator.PrincipalID,
 			Audit:            audit("external-online-consumer-assignment"),
 		}); err != nil {
@@ -712,7 +712,7 @@ func run(args []string, environment []string) error {
 		}
 		if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 			TenantID: tenant.ID, MembershipID: provisionerMembership.Membership.ID,
-			RoleIDs: []int64{provisionerRole.ID}, ScopeType: "tenant", Reason: "External T4 Engine registration",
+			RoleIDs: []int64{provisionerRole.ID}, Reason: "External T4 Engine registration",
 			ActorPrincipalID: administrator.PrincipalID,
 			Audit:            audit("external-online-engine-provisioner-assignment"),
 		}); err != nil {
@@ -879,7 +879,7 @@ func createPermissionFixture(
 	}
 	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenantID, RoleKey: "online." + strings.ReplaceAll(username, "-", "_"),
-		Name: username, ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
+		Name: username, PermissionKeys: permissions,
 		ActorPrincipalID: actorPrincipalID,
 		Audit:            audit(username + "-role"),
 	})
@@ -896,7 +896,7 @@ func createPermissionFixture(
 	}
 	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenantID, MembershipID: membership.Membership.ID,
-		RoleIDs: roleIDs, ScopeType: "tenant", Reason: "Disposable Online permission acceptance",
+		RoleIDs: roleIDs, Reason: "Disposable Online permission acceptance",
 		ActorPrincipalID: actorPrincipalID,
 		Audit:            audit(username + "-assignment"),
 	})
@@ -940,8 +940,7 @@ func grantTransferConfigCheckEngineReader(ctx context.Context, roles transferCon
 		return nil, errors.New("precheck role assignment does not match its dedicated user")
 	}
 	grants, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{builtinRoleID}, ScopeType: "tenant",
-		Reason: "Disposable Online read-only configuration check", ActorPrincipalID: actorID,
+		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{builtinRoleID}, Reason: "Disposable Online read-only configuration check", ActorPrincipalID: actorID,
 		Audit: audit("external-online-precheck-engine-reader-assignment"),
 	})
 	if err != nil {
@@ -969,7 +968,7 @@ func grantExecutionMonitorReader(ctx context.Context, roles executionReaderRoles
 	}
 	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenantID, RoleKey: "online.execution_monitor_reader", Name: "Execution Monitor reader",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"monitor.execution.read"},
+		PermissionKeys:   []string{"monitor.execution.read"},
 		ActorPrincipalID: actorID, Audit: audit("external-online-parent-monitor-role"),
 	})
 	if err != nil {
@@ -979,8 +978,7 @@ func grantExecutionMonitorReader(ctx context.Context, roles executionReaderRoles
 		return nil, errors.New("execution reader Monitor role was not persisted")
 	}
 	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
-		Reason: "Disposable Online independent Monitor access", ActorPrincipalID: actorID,
+		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{role.ID}, Reason: "Disposable Online independent Monitor access", ActorPrincipalID: actorID,
 		Audit: audit("external-online-parent-monitor-assignment"),
 	})
 	if err != nil {

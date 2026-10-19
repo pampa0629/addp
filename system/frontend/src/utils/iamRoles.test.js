@@ -2,15 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAuthStore } from '@common-ui'
 import {
   buildTenantRoleOptions,
-  formatOrganizationOptionLabel,
-  formatTenantAssignmentScope,
   hasTenantRole,
   isValidTenantRoleKey,
   needsTenantRoleSetup,
   partitionTenantRoleOptions,
   resolveRoleDescription,
   resolveRoleName,
-  resolveTenantScopeLabel,
   summarizeEffectiveTenantRoles,
   tenantRoleKeys
 } from './iamRoles'
@@ -23,13 +20,13 @@ const t = (key) => messages[key]
 const te = (key) => Object.hasOwn(messages, key)
 
 describe('IAM tenant role presentation', () => {
-  it('summarizes unique effective roles across scopes and excludes inactive validity states', () => {
+  it('summarizes unique effective tenant roles and excludes inactive validity states', () => {
     const steward = { role_id: '3', role_key: 'tenant.data_steward', role_name: '数据管理员', effective_state: 'effective' }
     const administrator = { role_id: '1', role_key: 'tenant.administrator', role_name_i18n_key: 'roles.tenant.administrator.name', effective_state: 'effective' }
     const summary = summarizeEffectiveTenantRoles([
       { ...steward, scope_type: 'tenant' },
       administrator,
-      { ...steward, scope_type: 'department', department_id: '8' },
+      { ...steward },
       ...['scheduled', 'expired', 'revoked'].map((effective_state, index) => ({ role_id: String(index + 10), role_key: 'tenant.data_viewer', status: 'active', effective_state }))
     ])
     expect(summary.map((role) => role.role_id)).toEqual(['1', '3'])
@@ -58,36 +55,17 @@ describe('IAM tenant role presentation', () => {
     expect(resolveRoleName({ role_key: 'custom.reader', name: '研究数据只读' }, t, te)).toBe('研究数据只读')
   })
 
-  it('filters by scope and sorts exact assignments behind selectable roles', () => {
+  it('assigns roles in the current tenant and filters account types', () => {
     const roles = [
-      { id: '1', role_key: 'tenant.viewer', allowed_principal_types: ['user'], allowed_scope_types: ['tenant', 'department'] },
+      { id: '1', role_key: 'tenant.viewer', allowed_principal_types: ['user'], allowed_scope_types: ['tenant'] },
       { id: '2', role_key: 'tenant.engineer', allowed_principal_types: ['user'], allowed_scope_types: ['tenant'] },
-      { id: '3', role_key: 'tenant.department_lead', allowed_principal_types: ['user'], allowed_scope_types: ['department'] },
-      { id: '4', role_key: 'tenant.asset_runtime', allowed_principal_types: ['service_principal'], allowed_scope_types: ['tenant'] }
+      { id: '3', role_key: 'tenant.runtime', allowed_principal_types: ['service_principal'], allowed_scope_types: ['tenant'] }
     ]
-    const assignments = [
-      { role_id: '1', status: 'active', scope_type: 'tenant', department_id: null, project_group_id: null },
-      { role_id: '2', status: 'revoked', scope_type: 'tenant', department_id: null, project_group_id: null },
-      { role_id: '3', status: 'active', scope_type: 'department', department_id: '8', project_group_id: null }
-    ]
-
-    expect(buildTenantRoleOptions(roles, assignments, {
-      principalType: 'user', scopeType: 'tenant', departmentId: '', projectGroupId: ''
-    }).map(({ role_key, assigned, assignedElsewhere }) => ({ role_key, assigned, assignedElsewhere }))).toEqual([
-      { role_key: 'tenant.engineer', assigned: false, assignedElsewhere: false },
-      { role_key: 'tenant.viewer', assigned: true, assignedElsewhere: false }
+    const assignments = [{ role_id: '1', status: 'active' }, { role_id: '2', status: 'revoked' }]
+    expect(buildTenantRoleOptions(roles, assignments, { principalType: 'user' }).map(({ role_key, assigned }) => ({ role_key, assigned }))).toEqual([
+      { role_key: 'tenant.engineer', assigned: false }, { role_key: 'tenant.viewer', assigned: true }
     ])
-
-    expect(buildTenantRoleOptions(roles, assignments, {
-      principalType: 'user', scopeType: 'department', departmentId: '9', projectGroupId: ''
-    }).map(({ role_key, assigned, assignedElsewhere }) => ({ role_key, assigned, assignedElsewhere }))).toEqual([
-      { role_key: 'tenant.department_lead', assigned: false, assignedElsewhere: true },
-      { role_key: 'tenant.viewer', assigned: false, assignedElsewhere: true }
-    ])
-
-    expect(buildTenantRoleOptions(roles, assignments, {
-      principalType: 'service_principal', scopeType: 'tenant', departmentId: '', projectGroupId: ''
-    }).map((role) => role.role_key)).toEqual(['tenant.asset_runtime'])
+    expect(buildTenantRoleOptions(roles, assignments, { principalType: 'service_principal' }).map(role => role.id)).toEqual(['3'])
   })
 
   it('separates assignable roles from roles already active in the selected scope', () => {
@@ -99,23 +77,6 @@ describe('IAM tenant role presentation', () => {
 
     expect(groups.available.map((role) => role.role_key)).toEqual(['tenant.viewer', 'tenant.auditor'])
     expect(groups.assigned.map((role) => role.role_key)).toEqual(['tenant.operator'])
-  })
-
-  it('formats assignment scopes without constructing invalid i18n keys', () => {
-    const translate = vi.fn((key) => ({
-      'system.iam.roles.scope.tenant': '租户',
-      'system.iam.roles.scope.department': '部门'
-    })[key])
-
-    expect(formatTenantAssignmentScope({ scope_type: 'tenant' }, translate)).toBe('租户')
-    expect(formatTenantAssignmentScope({ scope_type: 'department', department_id: '8' }, translate, {
-      department: new Map([['8', '研究中心 (research)']])
-    })).toBe('部门 · 研究中心 (research)')
-    expect(formatTenantAssignmentScope({ scope_type: 'department', department_id: '9' }, translate)).toBe('部门 · #9')
-    expect(formatTenantAssignmentScope({}, translate)).toBe('-')
-    expect(formatOrganizationOptionLabel({ name: '研究中心', code: 'research' })).toBe('研究中心 (research)')
-    expect(resolveTenantScopeLabel('custom_scope', translate)).toBe('custom_scope')
-    expect(translate).toHaveBeenCalledTimes(3)
   })
 
   it('refreshes the access token before reloading authorization context', async () => {

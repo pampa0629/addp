@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: monitor
-manifest_version: 9
+manifest_version: 10
 permissions:
   - key: monitor.alert_incident.read
     allowed_scope_types: [tenant]
@@ -67,7 +67,7 @@ permissions:
     name_i18n_key: permissions.monitor.configuration.update.name
     description_i18n_key: permissions.monitor.configuration.update.description
   - key: monitor.execution.cancel
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -75,7 +75,7 @@ permissions:
     name_i18n_key: permissions.monitor.execution.cancel.name
     description_i18n_key: permissions.monitor.execution.cancel.description
   - key: monitor.execution.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -83,7 +83,7 @@ permissions:
     name_i18n_key: permissions.monitor.execution.read.name
     description_i18n_key: permissions.monitor.execution.read.description
   - key: monitor.execution.retry
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -307,7 +307,7 @@ permissions:
     name_i18n_key: permissions.monitor.resource_observation.read.name
     description_i18n_key: permissions.monitor.resource_observation.read.description
   - key: monitor.statistics.export
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -315,7 +315,7 @@ permissions:
     name_i18n_key: permissions.monitor.statistics.export.name
     description_i18n_key: permissions.monitor.statistics.export.description
   - key: monitor.statistics.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false

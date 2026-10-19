@@ -2,7 +2,6 @@ package iam
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -32,21 +31,6 @@ var ErrTenantRoleAssignmentPrincipalTypeNotAllowed = fmt.Errorf(
 	commonapi.ErrConflict,
 )
 
-var ErrTenantRoleAssignmentScopeNotFound = fmt.Errorf(
-	"%w: tenant role assignment scope target does not exist in the tenant",
-	commonapi.ErrNotFound,
-)
-
-var ErrTenantRoleAssignmentScopeUnavailable = fmt.Errorf(
-	"%w: tenant role assignment scope target is unavailable",
-	commonapi.ErrConflict,
-)
-
-var ErrTenantRoleAssignmentScopeMembershipRequired = fmt.Errorf(
-	"%w: tenant role assignment scope requires an active organization membership",
-	commonapi.ErrConflict,
-)
-
 var ErrTenantRoleAssignmentExpired = fmt.Errorf(
 	"%w: expired tenant role assignment is read-only",
 	commonapi.ErrConflict,
@@ -56,28 +40,25 @@ type TenantRoleAssignmentFilter struct {
 	MembershipID   *int64
 	PrincipalType  *PrincipalType
 	EffectiveState *string
-	ScopeType      *string
-	DepartmentID   *int64
-	ProjectGroupID *int64
 }
 
 type CreateTenantRoleInput struct {
-	TenantID         int64
-	RoleKey          string
-	Name             string
-	Description      string
-	ScopeTypes       []string
+	TenantID    int64
+	RoleKey     string
+	Name        string
+	Description string
+
 	PermissionKeys   []string
 	ActorPrincipalID int64
 	Audit            AuditMetadata
 }
 
 type UpdateTenantRoleInput struct {
-	TenantID         int64
-	RoleID           int64
-	Name             string
-	Description      string
-	ScopeTypes       []string
+	TenantID    int64
+	RoleID      int64
+	Name        string
+	Description string
+
 	PermissionKeys   []string
 	ActorPrincipalID int64
 	Audit            AuditMetadata
@@ -92,12 +73,10 @@ type DeleteTenantRoleInput struct {
 }
 
 type CreateTenantRoleAssignmentsInput struct {
-	TenantID         int64
-	MembershipID     int64
-	RoleIDs          []int64
-	ScopeType        string
-	DepartmentID     *int64
-	ProjectGroupID   *int64
+	TenantID     int64
+	MembershipID int64
+	RoleIDs      []int64
+
 	ValidUntil       *time.Time
 	Reason           string
 	ActorPrincipalID int64
@@ -141,8 +120,8 @@ func (s *TenantRoleService) ListAssignablePermissions(ctx context.Context, tenan
 }
 
 func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRoleInput) (*TenantRole, error) {
-	roleKey, name, scopes, permissions, err := validateTenantRoleDefinition(
-		input.RoleKey, input.Name, input.ScopeTypes, input.PermissionKeys,
+	roleKey, name, permissions, err := validateTenantRoleDefinition(
+		input.RoleKey, input.Name, input.PermissionKeys,
 	)
 	if err != nil || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
 		if err != nil {
@@ -153,7 +132,7 @@ func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRo
 	description := strings.TrimSpace(input.Description)
 	role := &Role{
 		TenantID: &input.TenantID, RoleKey: roleKey, Name: &name, Description: &description,
-		RoleType: "tenant_custom", AllowedScopeTypes: pq.StringArray(scopes),
+		RoleType: "tenant_custom", AllowedScopeTypes: pq.StringArray{"tenant"},
 		AllowedPrincipalTypes: pq.StringArray{"user"}, Immutable: false, Status: "active",
 		CreatedByPrincipalID: &input.ActorPrincipalID,
 	}
@@ -171,7 +150,7 @@ func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRo
 		if conflicts {
 			return fmt.Errorf("%w: tenant custom role key conflicts with a built-in role", commonapi.ErrConflict)
 		}
-		if err := validateCustomizablePermissions(ctx, tx, scopes, permissions); err != nil {
+		if err := validateCustomizablePermissions(ctx, tx, permissions); err != nil {
 			return err
 		}
 		if err := tx.CreateTenantCustomRole(ctx, role, permissions); err != nil {
@@ -180,7 +159,7 @@ func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRo
 		return NewAuditWriter(tx).Write(ctx, AuditEvent{
 			Metadata: input.Audit, EventName: "iam.tenant_role.created", Result: AuditResultSucceeded,
 			RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role", EntityID: strconv.FormatInt(role.ID, 10),
-			Details: map[string]any{"tenant_id": input.TenantID, "role_key": role.RoleKey, "scope_types": scopes, "permission_keys": permissions},
+			Details: map[string]any{"tenant_id": input.TenantID, "role_key": role.RoleKey, "permission_keys": permissions},
 		})
 	})
 	if err != nil {
@@ -190,7 +169,7 @@ func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRo
 }
 
 func (s *TenantRoleService) UpdateRole(ctx context.Context, input UpdateTenantRoleInput) (*TenantRole, error) {
-	_, name, scopes, permissions, err := validateTenantRoleDefinition("custom.placeholder", input.Name, input.ScopeTypes, input.PermissionKeys)
+	_, name, permissions, err := validateTenantRoleDefinition("custom.placeholder", input.Name, input.PermissionKeys)
 	if err != nil || input.TenantID <= 0 || input.RoleID <= 0 || input.ActorPrincipalID <= 0 {
 		if err != nil {
 			return nil, err
@@ -206,16 +185,16 @@ func (s *TenantRoleService) UpdateRole(ctx context.Context, input UpdateTenantRo
 		if role.Immutable || role.RoleType != "tenant_custom" || role.Status != "active" {
 			return commonapi.ErrForbidden
 		}
-		if err := validateCustomizablePermissions(ctx, tx, scopes, permissions); err != nil {
+		if err := validateCustomizablePermissions(ctx, tx, permissions); err != nil {
 			return err
 		}
-		if err := tx.UpdateTenantCustomRole(ctx, role.ID, name, description, scopes, permissions, input.ActorPrincipalID); err != nil {
+		if err := tx.UpdateTenantCustomRole(ctx, role.ID, name, description, []string{"tenant"}, permissions, input.ActorPrincipalID); err != nil {
 			return err
 		}
 		return NewAuditWriter(tx).Write(ctx, AuditEvent{
 			Metadata: input.Audit, EventName: "iam.tenant_role.updated", Result: AuditResultSucceeded,
 			RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role", EntityID: strconv.FormatInt(role.ID, 10),
-			Details: map[string]any{"tenant_id": input.TenantID, "role_key": role.RoleKey, "scope_types": scopes, "permission_keys": permissions, "affected_principals": len(holders), "authorization_version_changed": len(holders) > 0},
+			Details: map[string]any{"tenant_id": input.TenantID, "role_key": role.RoleKey, "permission_keys": permissions, "affected_principals": len(holders), "authorization_version_changed": len(holders) > 0},
 		})
 	})
 	if err != nil {
@@ -280,12 +259,6 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 	if input.TenantID <= 0 || input.MembershipID <= 0 || input.ActorPrincipalID <= 0 || grantReason == "" {
 		return nil, fmt.Errorf("%w: tenant, membership, roles, actor and reason are required", commonapi.ErrBadRequest)
 	}
-	if input.ScopeType == "" {
-		input.ScopeType = "tenant"
-	}
-	if err := validateAssignmentScope(input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
-		return nil, err
-	}
 	now := s.now().UTC()
 	if input.ValidUntil != nil && !input.ValidUntil.After(now) {
 		return nil, fmt.Errorf("%w: assignment expiry must be in the future", commonapi.ErrBadRequest)
@@ -299,14 +272,8 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
 			return err
 		}
-		if err := validateAssignmentScopeTarget(ctx, tx, input.TenantID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
-			return err
-		}
 		if membership.TenantID != input.TenantID || membership.Status != TenantMembershipStatusActive || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
 			return commonapi.ErrForbidden
-		}
-		if err := validateAssignmentScopeMembership(ctx, tx, input.TenantID, membership.ID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
-			return err
 		}
 		targetPrincipal, err := tx.GetPrincipal(ctx, membership.PrincipalID)
 		if err != nil {
@@ -330,7 +297,7 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 			if !containsString(role.AllowedPrincipalTypes, string(targetPrincipal.PrincipalType)) {
 				return ErrTenantRoleAssignmentPrincipalTypeNotAllowed
 			}
-			if !containsString(role.AllowedScopeTypes, input.ScopeType) {
+			if !containsString(role.AllowedScopeTypes, "tenant") {
 				return commonapi.ErrForbidden
 			}
 			if role.RoleKey == tenantAdministratorRoleKey && input.ValidUntil != nil {
@@ -352,8 +319,8 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		tenantID := input.TenantID
 		for _, role := range selectedRoles {
 			assignment := &RoleAssignment{
-				PrincipalID: membership.PrincipalID, RoleID: role.ID, ScopeType: input.ScopeType, TenantID: &tenantID,
-				DepartmentID: input.DepartmentID, ProjectGroupID: input.ProjectGroupID, Status: "active", ValidFrom: now,
+				PrincipalID: membership.PrincipalID, RoleID: role.ID, ScopeType: "tenant", TenantID: &tenantID,
+				Status: "active", ValidFrom: now,
 				ValidUntil: input.ValidUntil, SourceType: "manual", CreatedByPrincipalID: &input.ActorPrincipalID, GrantReason: &grantReason,
 			}
 			if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
@@ -362,7 +329,7 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 			if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
 				Metadata: input.Audit, EventName: "iam.tenant_role_assignment.created", Result: AuditResultSucceeded,
 				RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role_assignment", EntityID: strconv.FormatInt(assignment.ID, 10),
-				Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": input.ScopeType, "reason": grantReason, "authorization_version_changed": true},
+				Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": "tenant", "reason": grantReason, "authorization_version_changed": true},
 			}); err != nil {
 				return err
 			}
@@ -457,13 +424,7 @@ func validateTenantRoleAssignmentFilter(filter TenantRoleAssignmentFilter) error
 	if filter.EffectiveState != nil && !containsString([]string{"scheduled", "effective", "expired", "revoked"}, *filter.EffectiveState) {
 		return fmt.Errorf("%w: invalid role assignment effective state filter", commonapi.ErrBadRequest)
 	}
-	if filter.ScopeType == nil {
-		if filter.DepartmentID != nil || filter.ProjectGroupID != nil {
-			return fmt.Errorf("%w: scoped identifiers require scope_type", commonapi.ErrBadRequest)
-		}
-		return nil
-	}
-	return validateAssignmentScope(*filter.ScopeType, filter.DepartmentID, filter.ProjectGroupID)
+	return nil
 }
 
 func (s *TenantRoleService) findRole(ctx context.Context, tenantID, roleID int64) (*TenantRole, error) {
@@ -486,28 +447,22 @@ func (s *TenantRoleService) validateTenant(tenantID int64) error {
 	return nil
 }
 
-func validateTenantRoleDefinition(roleKey, name string, scopeTypes, permissionKeys []string) (string, string, []string, []string, error) {
+func validateTenantRoleDefinition(roleKey, name string, permissionKeys []string) (string, string, []string, error) {
 	roleKey, name = strings.TrimSpace(roleKey), strings.TrimSpace(name)
 	if !tenantCustomRoleKeyPattern.MatchString(roleKey) {
-		return "", "", nil, nil, ErrTenantRoleKeyInvalid
+		return "", "", nil, ErrTenantRoleKeyInvalid
 	}
 	if name == "" {
-		return "", "", nil, nil, fmt.Errorf("%w: role name is required", commonapi.ErrBadRequest)
+		return "", "", nil, fmt.Errorf("%w: role name is required", commonapi.ErrBadRequest)
 	}
-	scopes := uniqueSorted(scopeTypes)
 	permissions := uniqueSorted(permissionKeys)
-	if len(scopes) == 0 || len(permissions) == 0 {
-		return "", "", nil, nil, fmt.Errorf("%w: role scopes and permissions are required", commonapi.ErrBadRequest)
+	if len(permissions) == 0 {
+		return "", "", nil, fmt.Errorf("%w: role permissions are required", commonapi.ErrBadRequest)
 	}
-	for _, scope := range scopes {
-		if scope != "tenant" && scope != "department" && scope != "project_group" {
-			return "", "", nil, nil, fmt.Errorf("%w: invalid role scope", commonapi.ErrBadRequest)
-		}
-	}
-	return roleKey, name, scopes, permissions, nil
+	return roleKey, name, permissions, nil
 }
 
-func validateCustomizablePermissions(ctx context.Context, repository *Repository, scopes, permissionKeys []string) error {
+func validateCustomizablePermissions(ctx context.Context, repository *Repository, permissionKeys []string) error {
 	available, err := repository.ListTenantAssignablePermissions(ctx)
 	if err != nil {
 		return err
@@ -518,68 +473,11 @@ func validateCustomizablePermissions(ctx context.Context, repository *Repository
 	}
 	for _, key := range permissionKeys {
 		permission, exists := byKey[key]
-		if !exists {
+		if !exists || !containsString(permission.AllowedScopeTypes, "tenant") {
 			return fmt.Errorf("%w: permission is not tenant customizable", commonapi.ErrBadRequest)
 		}
-		for _, scope := range scopes {
-			if !containsString(permission.AllowedScopeTypes, scope) {
-				return fmt.Errorf("%w: role scope exceeds permission scope", commonapi.ErrBadRequest)
-			}
-		}
 	}
 	return nil
-}
-
-func validateAssignmentScope(scope string, departmentID, projectGroupID *int64) error {
-	valid := (scope == "tenant" && departmentID == nil && projectGroupID == nil) ||
-		(scope == "department" && departmentID != nil && *departmentID > 0 && projectGroupID == nil) ||
-		(scope == "project_group" && departmentID == nil && projectGroupID != nil && *projectGroupID > 0)
-	if !valid {
-		return fmt.Errorf("%w: invalid assignment scope", commonapi.ErrBadRequest)
-	}
-	return nil
-}
-
-func validateAssignmentScopeTarget(ctx context.Context, repository *Repository, tenantID int64, scope string, departmentID, projectGroupID *int64) error {
-	switch scope {
-	case "department":
-		department, err := repository.LockDepartment(ctx, tenantID, *departmentID)
-		if err != nil {
-			if errors.Is(err, commonapi.ErrNotFound) {
-				return ErrTenantRoleAssignmentScopeNotFound
-			}
-			return err
-		}
-		if department.Status != DepartmentStatusActive {
-			return ErrTenantRoleAssignmentScopeUnavailable
-		}
-	case "project_group":
-		projectGroup, err := repository.LockProjectGroup(ctx, tenantID, *projectGroupID)
-		if err != nil {
-			if errors.Is(err, commonapi.ErrNotFound) {
-				return ErrTenantRoleAssignmentScopeNotFound
-			}
-			return err
-		}
-		if projectGroup.Status != ProjectGroupStatusActive {
-			return ErrTenantRoleAssignmentScopeUnavailable
-		}
-	}
-	return nil
-}
-
-func validateAssignmentScopeMembership(ctx context.Context, repository *Repository, tenantID, tenantMembershipID int64, scope string, departmentID, projectGroupID *int64) error {
-	var err error
-	switch scope {
-	case "department":
-		err = repository.LockActiveDepartmentMembershipByTenantMembership(ctx, tenantID, *departmentID, tenantMembershipID)
-	case "project_group":
-		err = repository.LockActiveProjectGroupMembershipByTenantMembership(ctx, tenantID, *projectGroupID, tenantMembershipID)
-	}
-	if errors.Is(err, commonapi.ErrNotFound) {
-		return ErrTenantRoleAssignmentScopeMembershipRequired
-	}
-	return err
 }
 
 func uniqueSorted(values []string) []string {

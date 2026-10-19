@@ -200,21 +200,19 @@ func TestIAMPermissionGuardRejectsOrganizationalScopeForTenantAPI(t *testing.T) 
 	}
 	authContext := testIAMAuthContext()
 	tenantID := *authContext.Context.TenantID
-	departmentID := "9"
 	authContext.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
 		AssignmentID: "403",
 		RoleKey:      "tenant.infrastructure_administrator",
 		Scope: commonauth.AssignmentScope{
-			Type: "department", TenantID: &tenantID, DepartmentID: &departmentID,
-		},
+			Type: "department", TenantID: &tenantID},
 		Permissions: []string{"system.engine.execute"},
 		SourceType:  "manual",
 		ValidFrom:   authContext.Authorization.RoleAssignments[0].ValidFrom,
 	}}
-	response := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403; body = %s", response.Code, response.Body.String())
+	if err := commonauth.ValidateAuthContext(authContext); err == nil {
+		t.Fatal("retired role scope accepted")
 	}
+	_ = guard
 }
 
 func TestEngineCatalogPermissionDoesNotInheritEngineManagementRead(t *testing.T) {
@@ -235,12 +233,10 @@ func TestEngineCatalogPermissionDoesNotInheritEngineManagementRead(t *testing.T)
 	if response := performIAMGuardRequest(withIAMAuthContext(context), managementGuard); response.Code != http.StatusForbidden {
 		t.Fatalf("management permission status = %d, want 403", response.Code)
 	}
-	departmentID := "9"
 	context.Authorization.RoleAssignments[0].Scope = commonauth.AssignmentScope{
-		Type: "department", TenantID: context.Context.TenantID, DepartmentID: &departmentID,
-	}
-	if response := performIAMGuardRequest(withIAMAuthContext(context), catalogGuard); response.Code != http.StatusForbidden {
-		t.Fatalf("department catalog permission status = %d, want 403", response.Code)
+		Type: "department", TenantID: context.Context.TenantID}
+	if err := commonauth.ValidateAuthContext(context); err == nil {
+		t.Fatal("retired role scope accepted")
 	}
 }
 

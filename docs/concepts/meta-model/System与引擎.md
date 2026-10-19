@@ -14,7 +14,7 @@ System 非 IAM 对象、模块角色与引擎能力；IAM 细节由[账号与权
 | 外部身份 | ExternalIdentity | 外部 IdP 的 `issuer + subject` 到 ADDP User 的稳定映射 |
 | 部门 | Department | Tenant 内表达稳定组织归属的层级组织单元 |
 | 项目组 | ProjectGroup | Tenant 内表达跨部门协作的成员集合 |
-| 角色分配 | RoleAssignment | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope |
+| 角色分配 | RoleAssignment | 将 Role 赋予 Principal，并声明 Platform 或 Tenant Scope；组织归属与资源访问授权分别维护 |
 | 引擎     | Engine      | 数据源和计算资源的统一抽象，通过 capabilities 声明具体能力       |
 | 模块     | Module      | ADDP 微服务单元；可选择性地声明任务能力，成为任务提供者          |
 | API 消费方 | APIConsumer | Tenant 为外部系统登记的已发布数据面 API 调用方，不属于 Principal；可授权的服务范围由 Service owner 校验 |

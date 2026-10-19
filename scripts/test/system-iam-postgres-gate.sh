@@ -124,6 +124,13 @@ case "$TEST_FILTER" in
             *) echo "administrator-governance requires --package iam, api or migration" >&2; exit 2 ;;
         esac
         ;;
+    tenant-functional-roles)
+        case "$PACKAGE_FILTER" in
+            migration) test_pattern='^Test(TenantFunctionalRolesForwardMigration|Runner)AgainstPostgres$' ;;
+            iam) test_pattern='^Test(TenantAdministrationClosure|AuthContextService)AgainstPostgres$' ;;
+            *) echo "tenant-functional-roles requires --package iam or migration" >&2; exit 2 ;;
+        esac
+        ;;
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^initial_production_observes_actual_sources_and_persistent_target_history_without_issuing$'

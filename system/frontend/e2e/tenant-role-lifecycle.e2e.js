@@ -14,7 +14,7 @@ const assignablePermissions = [
     owner_module: 'agent',
     action: 'read',
     risk_level: 'low',
-    allowed_scope_types: ['tenant', 'department'],
+    allowed_scope_types: ['tenant'],
     name_i18n_key: '',
     description_i18n_key: ''
   },
@@ -32,7 +32,7 @@ const assignablePermissions = [
     owner_module: 'manager',
     action: 'read',
     risk_level: 'low',
-    allowed_scope_types: ['tenant', 'department'],
+    allowed_scope_types: ['tenant'],
     name_i18n_key: '',
     description_i18n_key: ''
   },
@@ -88,7 +88,7 @@ function customRole(input, overrides = {}) {
     name_i18n_key: null,
     description_i18n_key: null,
     role_type: 'tenant_custom',
-    allowed_scope_types: input.scope_types,
+    allowed_scope_types: ['tenant'],
     allowed_principal_types: ['user'],
     immutable: false,
     permission_keys: input.permission_keys,
@@ -224,9 +224,11 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await dialog.getByRole('button', { name: '选择当前结果', exact: true }).click()
   await expect(dialog.getByText('已选择 2 项权限', { exact: true })).toBeVisible()
 
-  await dialog.locator('.el-checkbox').filter({ hasText: '部门' }).click()
-  await expect(dialog.getByText('有 1 项已选权限不支持当前允许范围', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: '移除不兼容权限', exact: true }).click()
+  await expect(dialog.locator('.el-checkbox').filter({ hasText: '部门' })).toHaveCount(0)
+  await expect(dialog.locator('.el-checkbox').filter({ hasText: '项目组' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '清空已选', exact: true }).click()
+  await permissionSearch.fill('运行任务')
+  await dialog.locator('.el-checkbox').filter({ hasText: 'agent.run.read' }).click()
   await expect(dialog.getByText('已选择 1 项权限', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.locator('.el-form-item__error').filter({ hasText: '角色标识' })).toContainText('命名空间.名称')
@@ -239,8 +241,6 @@ test('tenant administrator manages a custom role with localized bulk permission 
   let row = page.getByRole('row').filter({ hasText: 'E2E 研究员' })
   await expect(row).toContainText('tenant.e2e_researcher')
   await expect(row).toContainText('租户自定义角色')
-  await expect(row).toContainText('租户')
-  await expect(row).toContainText('部门')
   await expect(row).toContainText('用户账号')
   await expect(row).not.toContainText('端到端测试角色')
 
@@ -249,7 +249,6 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await expect(drawer).toContainText('端到端测试角色')
   await expect(drawer).toContainText('租户自定义角色')
   await expect(drawer).toContainText('用户账号')
-  await expect(drawer).toContainText('部门')
   await expect(drawer).toContainText('权限明细')
   await expect(drawer).toContainText('智能体 (1)')
   await expect(drawer).toContainText('运行任务')
@@ -262,7 +261,7 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await dialog.getByRole('textbox').nth(1).fill('可查看智能体任务和数据项')
   await dialog.getByPlaceholder('搜索权限名称、标识、模块或动作').fill('数据项')
   await expect(dialog.getByText('数据项', { exact: true }).first()).toBeVisible()
-  await dialog.getByRole('button', { name: '选择当前结果', exact: true }).click()
+  await dialog.locator('.el-checkbox').filter({ hasText: 'manager.data_item.read' }).click()
   await expect(dialog.getByText('已选择 2 项权限', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
 
@@ -289,7 +288,6 @@ test('tenant administrator manages a custom role with localized bulk permission 
         role_key: 'tenant.e2e_researcher',
         name: 'E2E 研究员',
         description: '端到端测试角色',
-        scope_types: ['tenant', 'department'],
         permission_keys: ['agent.run.read']
       }
     },
@@ -299,7 +297,6 @@ test('tenant administrator manages a custom role with localized bulk permission 
         role_key: 'tenant.e2e_researcher',
         name: 'E2E 高级研究员',
         description: '可查看智能体任务和数据项',
-        scope_types: ['tenant', 'department'],
         permission_keys: ['agent.run.read', 'manager.data_item.read']
       }
     },

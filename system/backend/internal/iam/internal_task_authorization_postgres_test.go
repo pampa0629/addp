@@ -74,8 +74,7 @@ func TestInternalTaskAuthorizationAgainstPostgres(t *testing.T) {
 	tenant := createContextSelectionTenant(t, ctx, members, "ontology-auth", audit)
 	membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, user.PrincipalID, audit)
 	role, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{
-		TenantID: tenant.ID, RoleKey: "tenant.ontology_publisher", Name: "Ontology Publisher", ScopeTypes: []string{"tenant"},
-		PermissionKeys: []string{"ontology.revision.publish", "system.execution_authorization.create"}, ActorPrincipalID: user.PrincipalID, Audit: audit,
+		TenantID: tenant.ID, RoleKey: "tenant.ontology_publisher", Name: "Ontology Publisher", PermissionKeys: []string{"ontology.revision.publish", "system.execution_authorization.create"}, ActorPrincipalID: user.PrincipalID, Audit: audit,
 	})
 	if err != nil {
 		t.Fatal(err)

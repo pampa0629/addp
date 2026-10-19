@@ -79,14 +79,13 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			return requestID
 		}
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		commandUser, expiry := newUser(t, time.Hour)
 		seedDelegation(t, commandUser.MembershipID, expiry.Add(-time.Second))
-		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: commandUser.MembershipID, RoleIDs: []int64{role.ID, fulfillmentRoleID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit rule tests"}); err != nil {
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: commandUser.MembershipID, RoleIDs: []int64{role.ID, fulfillmentRoleID}, ActorPrincipalID: adminID, Reason: "Explicit rule tests"}); err != nil {
 			t.Fatal(err)
 		}
 		commandUser = refresh(t, commandUser)
@@ -146,7 +145,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if result, err := service.InspectSourceGrants(ctx, unqualified, int64(base.Path.EngineID), commandUser.PrincipalID, base.Path); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("unqualified read=%+v %v", result, err)
 			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Read permission without management"}); err != nil {
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Read permission without management"}); err != nil {
 				t.Fatal(err)
 			}
 			unqualified.AuthorizationVersion = refresh(t, user).AuthorizationVersion

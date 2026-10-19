@@ -36,7 +36,7 @@ var (
 		"audit": {}, "iam": {}, "platform": {}, "statistics": {}, "system": {},
 	}
 	scopeOrder = map[string]int{
-		"platform": 0, "tenant": 1, "department": 2, "project_group": 3,
+		"platform": 0, "tenant": 1,
 	}
 )
 

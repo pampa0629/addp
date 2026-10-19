@@ -169,14 +169,14 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	confirmation, _ := newOperator(t, time.Hour)
 	confirmationRole, err := iam.NewTenantRoleService(identity, testDatabaseClock(t, db)).CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: "custom.fulfillment_confirmation", Name: "Explicit business confirmation fixture",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read", "catalog.sharing_decision.create"},
+		PermissionKeys: []string{"catalog.entry.read", "catalog.sharing_decision.create"},
 		ActorPrincipalID: user.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := iam.NewTenantRoleService(identity, testDatabaseClock(t, db)).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: confirmation.MembershipID, RoleIDs: []int64{confirmationRole.ID},
-		ScopeType: "tenant", ActorPrincipalID: user.ID, Reason: "Explicit fixture confirmation permission"}); err != nil {
+		ActorPrincipalID: user.ID, Reason: "Explicit fixture confirmation permission"}); err != nil {
 		t.Fatal(err)
 	}
 	confirmedPrincipal, err := identity.GetPrincipal(ctx, confirmation.PrincipalID)
@@ -210,15 +210,13 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		operator, _ := newOperator(t, time.Hour)
 		roles := iam.NewTenantRoleService(identity, testDatabaseClock(t, db))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID,
-			RoleKey: "custom.qualification_reader", Name: "Qualification fixture", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: user.ID})
+			RoleKey: "custom.qualification_reader", Name: "Qualification fixture", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: user.ID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		assertIAMQualificationRace(t, db, tenant.ID, operator, func(raceCtx context.Context) error {
 			_, err := roles.CreateAssignments(raceCtx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID,
-				MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
-				ActorPrincipalID: user.ID, Reason: "Concurrency fixture"})
+				MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: user.ID, Reason: "Concurrency fixture"})
 			return err
 		})
 	})

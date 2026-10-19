@@ -27,7 +27,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 		makeRole := func(key, permission string) *iam.TenantRole {
 			row, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: key, Name: key,
-				ScopeTypes: []string{"tenant"}, PermissionKeys: []string{permission}, ActorPrincipalID: adminID})
+				PermissionKeys: []string{permission}, ActorPrincipalID: adminID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,7 +43,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 				delegation = seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
 			}
 			if role != nil {
-				input := iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Deny release fixture"}
+				input := iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Deny release fixture"}
 				if lifetime > 0 {
 					var now time.Time
 					if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {

@@ -27,7 +27,7 @@
 7. 保护只在 Owner 服务端出口执行，浏览器不接收明文后再遮盖。
 8. 用户数据请求不同步调用 Security、Catalog 或 Meta，只读取 Owner 本地有效投影。
 9. 原值访问只允许由当前用户从真实数据出口申请、由另一名有审批权限的用户在 Security 审批，并以按用户、按字段、按出口、限时的投影授权执行；不保留基于角色名称、记录创建人、管理员身份或租户范围的本地绕过路径。
-10. 当前 Security 管理权限只允许 `tenant` Scope。Security 聚合和管理 API 只消费 Tenant Context，且不拥有 Department、Project Group 与专业资源之间的权威归属或授权策略；因此 Role Assignment 的组织 Scope 不能被当成 Security 资源过滤。租户级安全治理使用 `tenant.security_manager`，普通用户发起原值访问申请使用 `tenant.protected_data_requester` 或等价的 Tenant-only 自定义 Role；允许组织 Scope 的数据工程、数据治理和数据查看角色不再隐式携带 Security Permission。未来若支持组织级 Security 授权，必须先补齐 owner 资源身份、Scope Binding、显式 Deny 与最终策略校验契约，再同步开放 Permission Scope，不能只修改权限目录。
+10. 当前 Security 管理权限只允许 `tenant` Scope。全部功能 Role Assignment 已统一为 Platform / Tenant，组织及成员关系继续用于组织归属和数据资源策略，不进入功能角色分配。租户级安全治理使用 `tenant.security_manager`，普通用户发起原值访问申请使用 `tenant.protected_data_requester` 或等价的 Tenant 自定义 Role；功能范围统一不改变现有角色的显式 Permission 集合，不从部门／项目组成员关系推导 Security 管理或原值访问资格。
 
 ## 二、模块、运行角色与基础设施
 
@@ -678,7 +678,7 @@ security.protection_projection.update
 security.audit.read
 ```
 
-实施时必须在 `security/authorization/permissions.yaml` 声明精确 Permission，不能在 Handler、Swagger 或前端中发明未登记字符串。所有 active Security Permission 都只允许 `tenant` Scope；管理能力由 `tenant.security_manager` 承载，原值申请人的 `create|read` 由 `tenant.protected_data_requester` 承载，两者都不得并入允许 Department 或 Project Group Scope 的内置 Role。Runtime `read|update` Permission 只授予固定参与 Owner 的 Service Principal，不进入 Tenant 自定义 Role 选项。`update` 只允许写入当前固定消费 Owner 的单调 acknowledgement checkpoint，不表示可编辑 Projection。
+实施时必须在 `security/authorization/permissions.yaml` 声明精确 Permission，不能在 Handler、Swagger 或前端中发明未登记字符串。所有 active Security Permission 都只允许 `tenant` Scope；管理能力由 `tenant.security_manager` 承载，原值申请人的 `create|read` 由 `tenant.protected_data_requester` 承载，功能范围统一不把这两类 Permission 隐式并入其他内置 Role。Runtime `read|update` Permission 只授予固定参与 Owner 的 Service Principal，不进入 Tenant 自定义 Role 选项。`update` 只允许写入当前固定消费 Owner 的单调 acknowledgement checkpoint，不表示可编辑 Projection。
 
 Security 管理 API 只使用 canonical Bearer Tenant AuthContext；不接受 Internal API Key、`X-Tenant-ID`、调用方提交 Principal 或 Cookie 认证。Runtime API 使用 `addp-manager`、`addp-transfer`、`addp-develop`、`addp-service` 等各自 Tenant Service Access Token，Security 从 AuthContext 中识别固定 Client 和 Tenant。
 

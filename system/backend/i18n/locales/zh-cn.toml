@@ -101,15 +101,6 @@ other = "该编码已被当前租户的同类组织使用，请换一个编码�
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "该角色不能分配给此类型的成员。"
 
-[system.iam.role_assignment_scope_not_found]
-other = "选择的授权范围不存在或不属于当前租户。"
-
-[system.iam.role_assignment_scope_unavailable]
-other = "选择的授权范围已停用或关闭。"
-
-[system.iam.role_assignment_scope_membership_required]
-other = "只能在该成员已加入的有效部门或项目组范围内分配角色。"
-
 [system.iam.role_assignment_expired]
 other = "该角色授权已到期，历史记录不能撤销；如需继续授权，请新建角色分配。"
 

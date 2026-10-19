@@ -26,8 +26,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 		runtime.TokenExpiresAt = testDatabaseClock(t, db)().Add(time.Minute)
 		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}}) // No live-catalog capability or remote reader.
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID,
-			RoleKey: "custom.grant_revoker", Name: "Explicit withdrawal fixture", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
+			RoleKey: "custom.grant_revoker", Name: "Explicit withdrawal fixture", PermissionKeys: []string{"system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,7 +35,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			user, expires := newOperator(t, time.Hour)
 			delegation := seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
 			input := iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID,
-				RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit fixture withdrawal"}
+				RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit fixture withdrawal"}
 			if lifetime > 0 {
 				until := testDatabaseClock(t, db)().Add(lifetime)
 				input.ValidUntil = &until
@@ -512,8 +511,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			handler, expires := newOperator(t, time.Hour)
 			seedDelegation(t, handler.MembershipID, expires.Add(-time.Second))
 			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID,
-				MembershipID: handler.MembershipID, RoleIDs: []int64{handlingRoleID}, ScopeType: "tenant",
-				ActorPrincipalID: adminID, Reason: "Isolated historical handler"}); err != nil {
+				MembershipID: handler.MembershipID, RoleIDs: []int64{handlingRoleID}, ActorPrincipalID: adminID, Reason: "Isolated historical handler"}); err != nil {
 				t.Fatal(err)
 			}
 			current, err := iam.NewRepository(db).GetPrincipal(ctx, handler.PrincipalID)

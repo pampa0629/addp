@@ -133,12 +133,12 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	}
 	roleService := iam.NewTenantRoleService(identity, time.Now)
 	permissions := []string{"system.engine_access_delegation.create", "system.engine_access_delegation.read", "system.engine_access_delegation.revoke"}
-	role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "custom.engine_delegator", Name: "Engine Delegator", ScopeTypes: []string{"tenant"}, PermissionKeys: permissions, ActorPrincipalID: actorID})
+	role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "custom.engine_delegator", Name: "Engine Delegator", PermissionKeys: permissions, ActorPrincipalID: actorID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stepUp := time.Now().Add(5 * time.Minute)
-	assignments, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID, MembershipID: actorMember.ID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Explicit test qualification", ActorPrincipalID: actorID, AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp})
+	assignments, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID, MembershipID: actorMember.ID, RoleIDs: []int64{role.ID}, Reason: "Explicit test qualification", ActorPrincipalID: actorID, AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp})
 	if err != nil {
 		t.Fatal(err)
 	}

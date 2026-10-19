@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 11
+manifest_version: 12
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -11,7 +11,7 @@ permissions:
     name_i18n_key: permissions.standard.catalog.read.name
     description_i18n_key: permissions.standard.catalog.read.description
   - key: standard.code_set.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -19,7 +19,7 @@ permissions:
     name_i18n_key: permissions.standard.code_set.create.name
     description_i18n_key: permissions.standard.code_set.create.description
   - key: standard.code_set.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -27,7 +27,7 @@ permissions:
     name_i18n_key: permissions.standard.code_set.delete.name
     description_i18n_key: permissions.standard.code_set.delete.description
   - key: standard.code_set.publish
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -35,7 +35,7 @@ permissions:
     name_i18n_key: permissions.standard.code_set.publish.name
     description_i18n_key: permissions.standard.code_set.publish.description
   - key: standard.code_set.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.standard.code_set.read.name
     description_i18n_key: permissions.standard.code_set.read.description
   - key: standard.code_set.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -51,7 +51,7 @@ permissions:
     name_i18n_key: permissions.standard.code_set.update.name
     description_i18n_key: permissions.standard.code_set.update.description
   - key: standard.document.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -59,7 +59,7 @@ permissions:
     name_i18n_key: permissions.standard.document.create.name
     description_i18n_key: permissions.standard.document.create.description
   - key: standard.document.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -67,7 +67,7 @@ permissions:
     name_i18n_key: permissions.standard.document.delete.name
     description_i18n_key: permissions.standard.document.delete.description
   - key: standard.document.publish
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -75,7 +75,7 @@ permissions:
     name_i18n_key: permissions.standard.document.publish.name
     description_i18n_key: permissions.standard.document.publish.description
   - key: standard.document.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -83,7 +83,7 @@ permissions:
     name_i18n_key: permissions.standard.document.read.name
     description_i18n_key: permissions.standard.document.read.description
   - key: standard.document.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -91,7 +91,7 @@ permissions:
     name_i18n_key: permissions.standard.document.update.name
     description_i18n_key: permissions.standard.document.update.description
   - key: standard.document_extraction.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -99,7 +99,7 @@ permissions:
     name_i18n_key: permissions.standard.document_extraction.create.name
     description_i18n_key: permissions.standard.document_extraction.create.description
   - key: standard.domain.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -107,7 +107,7 @@ permissions:
     name_i18n_key: permissions.standard.domain.create.name
     description_i18n_key: permissions.standard.domain.create.description
   - key: standard.domain.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -115,7 +115,7 @@ permissions:
     name_i18n_key: permissions.standard.domain.delete.name
     description_i18n_key: permissions.standard.domain.delete.description
   - key: standard.domain.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -123,7 +123,7 @@ permissions:
     name_i18n_key: permissions.standard.domain.read.name
     description_i18n_key: permissions.standard.domain.read.description
   - key: standard.domain.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -131,7 +131,7 @@ permissions:
     name_i18n_key: permissions.standard.domain.update.name
     description_i18n_key: permissions.standard.domain.update.description
   - key: standard.element.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -139,7 +139,7 @@ permissions:
     name_i18n_key: permissions.standard.element.create.name
     description_i18n_key: permissions.standard.element.create.description
   - key: standard.element.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -147,7 +147,7 @@ permissions:
     name_i18n_key: permissions.standard.element.delete.name
     description_i18n_key: permissions.standard.element.delete.description
   - key: standard.element.publish
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -155,7 +155,7 @@ permissions:
     name_i18n_key: permissions.standard.element.publish.name
     description_i18n_key: permissions.standard.element.publish.description
   - key: standard.element.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -163,7 +163,7 @@ permissions:
     name_i18n_key: permissions.standard.element.read.name
     description_i18n_key: permissions.standard.element.read.description
   - key: standard.element.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -171,7 +171,7 @@ permissions:
     name_i18n_key: permissions.standard.element.update.name
     description_i18n_key: permissions.standard.element.update.description
   - key: standard.glossary.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -179,7 +179,7 @@ permissions:
     name_i18n_key: permissions.standard.glossary.create.name
     description_i18n_key: permissions.standard.glossary.create.description
   - key: standard.glossary.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -187,7 +187,7 @@ permissions:
     name_i18n_key: permissions.standard.glossary.delete.name
     description_i18n_key: permissions.standard.glossary.delete.description
   - key: standard.glossary.publish
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -195,7 +195,7 @@ permissions:
     name_i18n_key: permissions.standard.glossary.publish.name
     description_i18n_key: permissions.standard.glossary.publish.description
   - key: standard.glossary.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -203,7 +203,7 @@ permissions:
     name_i18n_key: permissions.standard.glossary.read.name
     description_i18n_key: permissions.standard.glossary.read.description
   - key: standard.glossary.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -211,7 +211,7 @@ permissions:
     name_i18n_key: permissions.standard.glossary.update.name
     description_i18n_key: permissions.standard.glossary.update.description
   - key: standard.metric.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -219,7 +219,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.create.name
     description_i18n_key: permissions.standard.metric.create.description
   - key: standard.metric.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -227,7 +227,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.delete.name
     description_i18n_key: permissions.standard.metric.delete.description
   - key: standard.metric.publish
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -235,7 +235,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.publish.name
     description_i18n_key: permissions.standard.metric.publish.description
   - key: standard.metric.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -243,7 +243,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.read.name
     description_i18n_key: permissions.standard.metric.read.description
   - key: standard.metric.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -251,7 +251,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.update.name
     description_i18n_key: permissions.standard.metric.update.description
   - key: standard.unit.create
-    allowed_scope_types: [platform, tenant, department, project_group]
+    allowed_scope_types: [platform, tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -259,7 +259,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.create.name
     description_i18n_key: permissions.standard.unit.create.description
   - key: standard.unit.delete
-    allowed_scope_types: [platform, tenant, department, project_group]
+    allowed_scope_types: [platform, tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -267,7 +267,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.delete.name
     description_i18n_key: permissions.standard.unit.delete.description
   - key: standard.unit.read
-    allowed_scope_types: [platform, tenant, department, project_group]
+    allowed_scope_types: [platform, tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -275,7 +275,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.read.name
     description_i18n_key: permissions.standard.unit.read.description
   - key: standard.unit.update
-    allowed_scope_types: [platform, tenant, department, project_group]
+    allowed_scope_types: [platform, tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false

@@ -64,9 +64,7 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 				want = 403
 			case "project_scope":
 				subject.Authorization.RoleAssignments[0].Scope.Type = "project_group"
-				group := "8"
-				subject.Authorization.RoleAssignments[0].Scope.ProjectGroupID = &group
-				want = 403
+				want = 503
 			case "service":
 				subject.Principal.Type = "service_principal"
 				subject.Token.Type = "service_access_token"

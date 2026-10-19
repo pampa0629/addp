@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: inference
-manifest_version: 2
+manifest_version: 3
 permissions:
   - key: inference.deployment.create
     allowed_scope_types: [platform, tenant]
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.inference.deployment.update.name
     description_i18n_key: permissions.inference.deployment.update.description
   - key: inference.model_label.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false

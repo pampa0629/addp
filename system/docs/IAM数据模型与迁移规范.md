@@ -4,6 +4,8 @@
 
 状态：System 模块正式实现规范。本文定义已投入运行的 IAM PostgreSQL 模型、事务边界、迁移路径和安全约束。
 
+租户功能权限收敛：Role Assignment 只支持 Platform / Tenant，租户角色与分配请求不接收组织范围字段。旧部门／项目组分配先保留完整审计再退役，不升格为租户授权；范围目录、AuthContext 与数据库约束同步收敛。部门、项目组、部门层级、账号与全部组织成员关系保持原事实，源数据 Grant 与 Catalog 业务授权不在此次 IAM 收敛中改写。
+
 ## 一、事实边界
 
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。
@@ -115,9 +117,9 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 当管理员在同一 Membership、Scope、有效期和授权原因下分配多个 Role 时，`POST /api/v1/system/tenant/role_assignments` 只接受 `role_ids` 显式列表，并在单一事务内创建全部 Assignment 与审计事实。任一 Role 不存在、不兼容、不允许指定 Scope、重复分配或需要增强认证时，整批不得产生部分授权事实。
 
-Department 和 Project Group Scope 必须引用当前 Tenant 的可用组织对象，且目标 Tenant Membership 必须已具有对应的有效组织成员关系。后端在创建 Assignment 的同一事务内复核 Department 为 `active`、Project Group 不为 `closed`，并锁定对应的 Department Membership 或 Project Group Membership；跨 Tenant 或不存在返回 `404`，不可用或缺少有效组织成员关系返回 `409`。前端只允许通过可搜索选择器选择组织名称和 Code，提交时保持 `department_id` / `project_group_id` 稳定协议；列表主要展示名称和 Code，只在历史对象无法解析时回退展示 ID。
+角色分配只允许 Platform / Tenant。租户分配始终绑定当前 Tenant，不接收组织范围或组织编号；组织归属单独由部门／项目组成员关系维护。000223 前向退役旧组织范围分配，先写完整不可变审计，再移除旧分配与组织范围字段，停用原仅支持组织范围的角色并失效旧会话；不转换为租户授权，不改写组织、成员或数据访问规则。
 
-租户 Role 管理列表必须保持单行可浏览：主列表只展示 Role 名称、标识、类型、适用对象与 Scope、Permission 数量及模块摘要；Role 描述和完整 Permission 必须统一放在详情视图，Permission 按命名空间、资源与动作分组，不得用长描述或逗号拼接文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表还必须支持名称或标识搜索、Role 类型和允许 Scope 过滤。
+租户 Role 管理列表必须保持单行可浏览：主列表只展示 Role 名称、标识、类型、适用对象、Permission 数量及模块摘要；Role 描述和完整 Permission 必须统一放在详情视图，Permission 按命名空间、资源与动作分组，不得用长描述或逗号拼接文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表支持名称或标识搜索和 Role 类型过滤；租户角色的范围固定为当前 Tenant，不提供 Scope 选择或过滤。
 
 Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。持久 `status` 只表达 `active` / `revoked` 生命周期，读取接口使用数据库时间派生 `effective_state=scheduled|effective|expired|revoked`，默认只返回 `effective`。只有 `scheduled` 和 `effective` Assignment 可撤销；`expired` 只读，后端与数据库必须拒绝将其改写为 `revoked`。Role 选择器把兼容 Role 分为“可分配角色”和“已分配角色”，只以同一 Membership、同一 Scope 下的 `effective` Assignment 禁止重复选择，历史撤销或到期记录不得阻止重新分配。数据库对同一 Principal、Role 和 Scope 使用不重叠的半开授权区间 `[valid_from, valid_until)` 约束重复，不再以所有持久 `active` 记录共用一个唯一位置。
 

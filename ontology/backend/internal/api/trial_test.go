@@ -33,10 +33,8 @@ func TestTrialUserBoundaryAndStrictRequest(t *testing.T) {
 			a.Authorization.RoleAssignments[0].Permissions = []string{"ontology.revision.read"}
 		}, 403},
 		{"project_scope", func(a *authorization.AuthContext) {
-			group := "7"
 			a.Authorization.RoleAssignments[0].Scope.Type = "project_group"
-			a.Authorization.RoleAssignments[0].Scope.ProjectGroupID = &group
-		}, 403},
+		}, 503},
 		{"service", func(a *authorization.AuthContext) {
 			a.Principal.Type = "service_principal"
 			a.Token.Type = "service_access_token"

@@ -167,10 +167,8 @@ func TestFormalRouterIdentityAndPermissionBoundary(t *testing.T) {
 			a.Authentication.AssuranceLevel = "not_applicable"
 		}, "addp_at_test", true, 403},
 		{"project_group_candidate", func(a *authorization.AuthContext) {
-			group := "7"
 			a.Authorization.RoleAssignments[0].Scope.Type = "project_group"
-			a.Authorization.RoleAssignments[0].Scope.ProjectGroupID = &group
-		}, "addp_at_test", true, 403},
+		}, "addp_at_test", true, 503},
 		{"delegated", func(a *authorization.AuthContext) {
 			a.Token.Type = "delegated_access_token"
 			a.Client.ScopeMode = "restricted"

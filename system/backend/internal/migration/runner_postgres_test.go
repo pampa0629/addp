@@ -2333,7 +2333,7 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if authorizationVersionAfter <= authorizationVersionBefore {
 		t.Fatalf("authorization version after catalog migrations = %d, want greater than %d", authorizationVersionAfter, authorizationVersionBefore)
 	}
-	assertManagerDataProfileAuthorizationCatalog(t, db)
+	assertManagerDataProfileAuthorizationCatalog(t, db, "ARRAY['tenant', 'department', 'project_group']::text[]")
 }
 
 func TestAssetPortalBoundaryForwardMigrationAgainstPostgres(t *testing.T) {
@@ -3696,7 +3696,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertPublicationRemoval(t, db)
 	assertStandardAuthorizationCatalog(t, db)
 	assertManagerAuthorizationCatalog(t, db)
-	assertManagerDataProfileAuthorizationCatalog(t, db)
+	assertManagerDataProfileAuthorizationCatalog(t, db, "ARRAY['tenant']::text[]")
 	assertAuthorizationCatalogRetirement(t, db)
 	assertIdentityTenantConstraints(t, db)
 	assertFederationOrganizationConstraints(t, db)
@@ -4892,7 +4892,7 @@ func assertManagerAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	}
 }
 
-func assertManagerDataProfileAuthorizationCatalog(t *testing.T, db *sql.DB) {
+func assertManagerDataProfileAuthorizationCatalog(t *testing.T, db *sql.DB, expectedScopes string) {
 	t.Helper()
 	var rolePermissionCount int
 	if err := db.QueryRow(`
@@ -4907,7 +4907,7 @@ func assertManagerDataProfileAuthorizationCatalog(t *testing.T, db *sql.DB) {
 		  AND permission.action = 'execute'
 		  AND permission.risk_level = 'medium'
 		  AND permission.delegable = false
-		  AND permission.allowed_scope_types = ARRAY['tenant', 'department', 'project_group']::text[]
+		  AND permission.allowed_scope_types = ` + expectedScopes + `
 		  AND permission.tenant_customizable = true
 		  AND permission.status = 'active'
 		  AND role_permission.source_type = 'product'
@@ -6487,7 +6487,7 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("find authorization test membership: %v", err)
 	}
 
-	var tenantPermissionID, platformPermissionID, departmentPermissionID int64
+	var tenantPermissionID, platformPermissionID int64
 	if err := db.QueryRow(`
 		INSERT INTO system.permissions
 		    (permission_key, owner_module, action, risk_level, allowed_scope_types, tenant_customizable, name_i18n_key, description_i18n_key)
@@ -6506,15 +6506,10 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&platformPermissionID); err != nil {
 		t.Fatalf("create platform permission: %v", err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO system.permissions
-		    (permission_key, owner_module, action, risk_level, allowed_scope_types, tenant_customizable, name_i18n_key, description_i18n_key)
-		VALUES
-		    ('test.department.read', 'test', 'read', 'low', ARRAY['department'], true, 'permissions.test.department.read.name', 'permissions.test.department.read.description')
-		RETURNING id
-	`).Scan(&departmentPermissionID); err != nil {
-		t.Fatalf("create department permission: %v", err)
+	if _, err := db.Exec(`INSERT INTO system.permissions(permission_key,owner_module,action,risk_level,allowed_scope_types,name_i18n_key,description_i18n_key) VALUES('test.department.read','test','read','low',ARRAY['department'],'permissions.test.department.read.name','permissions.test.department.read.description')`); err == nil {
+		t.Fatal("retired organization Permission scope accepted")
 	}
+
 	if _, err := db.Exec(`UPDATE system.permissions SET permission_key = 'test.resource.changed' WHERE id = $1`, tenantPermissionID); err == nil {
 		t.Fatal("published permission key update succeeded")
 	}
@@ -6527,7 +6522,7 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		t.Fatal("permission accepted duplicate scope types")
 	}
 
-	var tenantRoleID, departmentRoleID int64
+	var tenantRoleID int64
 	if err := db.QueryRow(`
 		INSERT INTO system.roles
 		    (tenant_id, role_key, name, description, role_type, allowed_scope_types, allowed_principal_types, immutable, created_by_principal_id)
@@ -6557,20 +6552,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		t.Fatal("built-in role without i18n keys succeeded")
 	}
 
-	if err := db.QueryRow(`
-		INSERT INTO system.roles
-		    (role_key, name_i18n_key, description_i18n_key, role_type, allowed_scope_types, allowed_principal_types, immutable)
-		VALUES
-		    ('tenant.department_reader', 'roles.tenant.department_reader.name', 'roles.tenant.department_reader.description', 'tenant_builtin', ARRAY['department'], ARRAY['user'], true)
-		RETURNING id
-	`).Scan(&departmentRoleID); err != nil {
-		t.Fatalf("create department built-in role: %v", err)
-	}
-	if _, err := db.Exec(`INSERT INTO system.role_permissions (role_id, permission_id, source_type) VALUES ($1, $2, 'product')`, departmentRoleID, departmentPermissionID); err != nil {
-		t.Fatalf("attach department permission: %v", err)
-	}
-	if _, err := db.Exec(`INSERT INTO system.role_permissions (role_id, permission_id, source_type) VALUES ($1, $2, 'product')`, departmentRoleID, platformPermissionID); err == nil {
-		t.Fatal("role permission accepted a scope narrower than the role")
+	if _, err := db.Exec(`INSERT INTO system.roles(role_key,name_i18n_key,description_i18n_key,role_type,allowed_scope_types,allowed_principal_types,immutable) VALUES('tenant.department_reader','roles.tenant.department_reader.name','roles.tenant.department_reader.description','tenant_builtin',ARRAY['department'],ARRAY['user'],true)`); err == nil {
+		t.Fatal("retired organization Role scope accepted")
 	}
 
 	var tenantAssignmentID int64
@@ -6654,10 +6637,10 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, tenant_id, department_id, source_type, created_by_principal_id, grant_reason)
-		VALUES ($1, $2, 'department', $3, $4, 'manual', $1, 'department authorization governance constraint test')
-	`, tenantUserID, departmentRoleID, tenantID, departmentID); err != nil {
-		t.Fatalf("create department role assignment: %v", err)
+		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'department', $3, 'manual', $1, 'department authorization governance constraint test')
+	`, tenantUserID, tenantRoleID, tenantID); err == nil {
+		t.Fatal("retired department role assignment accepted")
 	}
 
 	targetUserID := createMigrationUser(t, db, "Governed Target")

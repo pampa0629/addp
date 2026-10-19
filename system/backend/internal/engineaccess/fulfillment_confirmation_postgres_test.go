@@ -38,12 +38,12 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 		source, _ := newUser(t, time.Hour)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID,
 			RoleKey: "custom.confirmation_" + uuid.NewString()[:8], Name: "Confirmation fixture",
-			ScopeTypes: []string{"tenant"}, PermissionKeys: permissions, ActorPrincipalID: base.Operator.PrincipalID})
+			PermissionKeys: permissions, ActorPrincipalID: base.Operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		assigned, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID,
-			MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ValidUntil: expires,
+			MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ValidUntil: expires,
 			Reason: "Explicit fixture qualification", ActorPrincipalID: base.Operator.PrincipalID})
 		if err != nil || len(assigned) != 1 {
 			t.Fatalf("confirmation assignment=%+v err=%v", assigned, err)
@@ -89,8 +89,7 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 		operator, expires := newUser(t, time.Hour)
 		seedDelegation(t, operator.MembershipID, expires.Add(-time.Second))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID,
-			RoleKey: "custom.confirmer_lock_order", Name: "Confirmer lock order", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"catalog.entry.update"}, ActorPrincipalID: operator.PrincipalID})
+			RoleKey: "custom.confirmer_lock_order", Name: "Confirmer lock order", PermissionKeys: []string{"catalog.entry.update"}, ActorPrincipalID: operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,8 +97,7 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 		request.Operator = operator
 		assertIAMQualificationRace(t, db, base.TenantID, source, func(writeCtx context.Context) error {
 			_, err := roles.CreateAssignments(writeCtx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID,
-				MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
-				ActorPrincipalID: operator.PrincipalID, Reason: "Confirmer concurrency fixture"})
+				MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: operator.PrincipalID, Reason: "Confirmer concurrency fixture"})
 			return err
 		}, func(readCtx context.Context, tx *gorm.DB) error {
 			_, err := NewRepository(tx).settleFulfillment(readCtx, request, true, source, verified)
@@ -121,14 +119,12 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 	t.Run("unrelated role grant and revoke preserve the original business decision", func(t *testing.T) {
 		source, _, _ := newConfirmation(t, permissions, nil)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID,
-			RoleKey: "custom.confirmation_unrelated", Name: "Unrelated role", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"catalog.entry.update"}, ActorPrincipalID: base.Operator.PrincipalID})
+			RoleKey: "custom.confirmation_unrelated", Name: "Unrelated role", PermissionKeys: []string{"catalog.entry.update"}, ActorPrincipalID: base.Operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		assigned, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID,
-			MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
-			ActorPrincipalID: base.Operator.PrincipalID, Reason: "Unrelated fixture role"})
+			MembershipID: source.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: base.Operator.PrincipalID, Reason: "Unrelated fixture role"})
 		if err != nil || len(assigned) != 1 {
 			t.Fatalf("unrelated assignment=%+v err=%v", assigned, err)
 		}
@@ -176,7 +172,7 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 					AssignmentID: assignmentID, ActorPrincipalID: base.Operator.PrincipalID, Reason: "Remove qualification"})
 			case "remove confirmation from role":
 				_, err = roles.UpdateRole(ctx, iam.UpdateTenantRoleInput{TenantID: base.TenantID, RoleID: roleID,
-					Name: "Read only now", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read"},
+					Name: "Read only now", PermissionKeys: []string{"catalog.entry.read"},
 					ActorPrincipalID: base.Operator.PrincipalID})
 			case "suspend membership":
 				principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant

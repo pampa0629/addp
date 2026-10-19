@@ -101,15 +101,6 @@ other = "This code is already used by an organization of the same type in this t
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "The role cannot be assigned to this member type."
 
-[system.iam.role_assignment_scope_not_found]
-other = "The selected assignment scope does not exist or does not belong to the current tenant."
-
-[system.iam.role_assignment_scope_unavailable]
-other = "The selected assignment scope is disabled or closed."
-
-[system.iam.role_assignment_scope_membership_required]
-other = "Roles can only be assigned within an active department or project group that the member has joined."
-
 [system.iam.role_assignment_expired]
 other = "This role assignment has expired and its history cannot be revoked. Create a new role assignment to continue access."
 

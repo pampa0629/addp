@@ -522,7 +522,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
 | Source Data Authorizer | 源数据授权办理员 | 配置精确源目标（普通表或集合）的批准方式、办理直接只读授权、查询签发历史并撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理须另有目标引擎的有效委托或显式授权管理员资格。角色不自动赋予数据访问、创建委托或绕过 Catalog 业务批准。可以由现有管理员兼任，不要求新建账号。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
-| Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
+| Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform 或 Tenant Scope 的功能授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。源数据日常管理按授权关系聚合，撤销收回该关系全部有效 Grant，保留每份历史；个人撤销不删除部门／项目组 Grant。自然到期不是主动撤销，到期后不追加首次撤销；原撤销同参数重试只恢复历史，不收回后来新授予。无条件禁止精确资源动作使用 Explicit Deny。 |
@@ -541,7 +541,6 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
 | engine access management delegation | 引擎授权管理委托 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委托给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委托。授权管理员在其有效租户管理权限范围内可直接办理，无须委托自己；受托人仍需独立办理功能权限。namespace 仅批量展开本次明确选中的现有目标，不产生递归、未来资源、写入或 DDL 授权。 |
 | onboarding authorization authority | 接入授权主体 | 接入阶段被显式授予限定引擎资源管理范围、可办理有限初始访问授权的主体。 | 临时接入只向指定账号或项目组授予明确选中资源的限时只读，不包含全租户公开、写入或 DDL；批准方式以 System 的精确目标要求为准，明确启用 Catalog 确认后，新增共享与扩大权限须由业务责任人确认。仅保存责任不切换批准方式。不是新的 IAM 身份或永久业务负责人；管理委派与内容访问授权独立，不能从引擎登记动作推导。长期独立批准不套用临时接入期限。 |
-| Resource Scope Binding | 资源作用域绑定 | owner 模块将资源实例显式关联到 Department 或 Project Group Scope 的事实。 | 只用于判断 scoped Role Assignment 是否覆盖资源；不直接授予 Permission 或 Resource Grant。 |
 | Resource Policy | 资源策略 | owner 模块基于资源生命周期、归属、可见级别、密级和业务条件执行的版本化授权规则。 | 第一阶段使用 owner 代码和结构化字段，不引入任意表达式 DSL 或中央策略引擎。 |
 | Resource Access Rule | 资源访问规则 | owner 本地保存的结构化 Allow 或 Explicit Deny 记录，绑定资源、主体选择器、Permission、有效期和来源。 | `effect=allow` 时构成 Resource Grant，`effect=deny` 时构成 Explicit Deny；不进入 System IAM 中央表。 |
 | Explicit Deny | 显式拒绝 | 对特定主体、动作、资源或条件明确拒绝的授权规则。 | 优先于 Allow，用于密级数据和例外隔离。源数据规则由 System 引擎访问控制领域维护；建立和解除分别要求独立功能 Permission 与当前有效引擎管理委派，不由 Catalog 责任或管理员角色名推导。显式选择未来到期时间或直至解除，遗漏期限模式不等于长期有效。个人 Deny 可阻止同目标、同动作的项目组 Allow；解除只移除该份禁止依据，不授予或恢复 Grant。自然到期后首次解除不追加解除事实；到期前已成功解除的原参重试在当前资格有效时返回原历史。建立及解除事实不等于执行侧已实施访问裁决。 |

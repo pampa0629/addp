@@ -41,13 +41,13 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 			user.AuthorizationVersion = p.AuthorizationVersion
 			return user
 		}
-		commandRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_rule_commands", Name: "Production rule commands", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
+		commandRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_rule_commands", Name: "Production rule commands", PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		commandUser, expiry := newUser(t, time.Hour)
 		seedDelegation(t, commandUser.MembershipID, expiry.Add(-time.Second))
-		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: commandUser.MembershipID, RoleIDs: []int64{commandRole.ID, fulfillmentRoleID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Independent production fixture"}); err != nil {
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: commandUser.MembershipID, RoleIDs: []int64{commandRole.ID, fulfillmentRoleID}, ActorPrincipalID: adminID, Reason: "Independent production fixture"}); err != nil {
 			t.Fatal(err)
 		}
 		commandUser = refresh(t, commandUser)
@@ -141,13 +141,12 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 		if got.sourceRules.ExpiresAt == nil || !got.sourceRules.ExpiresAt.Equal(deadline) {
 			t.Fatal("producer-supplied expiry replaced current source deadline", got)
 		}
-		executionRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_execution", Name: "Production execution fixture", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"system.execution_authorization.create", "transfer.task.execute"}, ActorPrincipalID: adminID})
+		executionRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.production_execution", Name: "Production execution fixture", PermissionKeys: []string{"system.execution_authorization.create", "transfer.task.execute"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		old := prepare()
-		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID, RoleIDs: []int64{executionRole.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Execution only, not authorization management"}); err != nil {
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID, RoleIDs: []int64{executionRole.ID}, ActorPrincipalID: adminID, Reason: "Execution only, not authorization management"}); err != nil {
 			t.Fatal(err)
 		}
 		observe(old, false, true, false) // Historical version does not survive current IAM changes.

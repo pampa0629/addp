@@ -116,8 +116,6 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 
 		validFrom := currentTime.Add(-time.Hour)
 		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "tenant", &tenantA.ID, nil, nil, validFrom, nil, "manual")
-		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "department", &tenantA.ID, &childDepartmentID, nil, validFrom, nil, "manual")
-		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "project_group", &tenantA.ID, nil, &projectGroupID, validFrom, nil, "manual")
 		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "tenant", &tenantB.ID, nil, nil, validFrom, nil, "manual")
 		expiredAt := currentTime.Add(-time.Minute)
 		insertRoleAssignment(t, db, user.PrincipalID, "tenant.ai_user", "tenant", &tenantA.ID, nil, nil, validFrom, &expiredAt, "manual")
@@ -792,10 +790,10 @@ func assertTenantAuthContext(
 		authContext.Organization.ProjectGroups[0].ProjectGroupID != formatIAMID(projectGroupID) {
 		t.Fatalf("projected project groups = %#v", authContext.Organization.ProjectGroups)
 	}
-	if len(authContext.Authorization.RoleAssignments) != 3 {
+	if len(authContext.Authorization.RoleAssignments) != 1 {
 		t.Fatalf("projected role assignments = %#v", authContext.Authorization.RoleAssignments)
 	}
-	wantScopes := []string{"tenant", "department", "project_group"}
+	wantScopes := []string{"tenant"}
 	for index, assignment := range authContext.Authorization.RoleAssignments {
 		if assignment.Scope.Type != wantScopes[index] || assignment.RoleKey != "tenant.data_viewer" ||
 			!reflect.DeepEqual(assignment.Permissions, []string{
@@ -1021,18 +1019,16 @@ func insertRoleAssignment(
 	var assignmentID int64
 	if err := db.Raw(`
 		INSERT INTO system.role_assignments (
-			principal_id, role_id, scope_type, tenant_id, department_id, project_group_id,
+			principal_id, role_id, scope_type, tenant_id,
 			valid_from, valid_until, source_type, created_by_principal_id, grant_reason
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AuthContext integration test')
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AuthContext integration test')
 		RETURNING id
 	`,
 		principalID,
 		roleID,
 		scopeType,
 		tenantID,
-		departmentID,
-		projectGroupID,
 		validFrom,
 		validUntil,
 		sourceType,

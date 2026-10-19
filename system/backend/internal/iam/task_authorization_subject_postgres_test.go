@@ -43,7 +43,7 @@ func TestTaskAuthorizationSubjectAgainstPostgres(t *testing.T) {
 	tenant := createContextSelectionTenant(t, ctx, members, "schedule-subject", audit)
 	user := createContextSelectionUser(t, ctx, identities, "schedule-user", audit)
 	membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, user.PrincipalID, audit)
-	role, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "tenant.schedule_transfer_test", Name: "Transfer schedule", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"transfer.task.execute", "system.execution_authorization.create"}, ActorPrincipalID: user.PrincipalID, Audit: audit})
+	role, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "tenant.schedule_transfer_test", Name: "Transfer schedule", PermissionKeys: []string{"transfer.task.execute", "system.execution_authorization.create"}, ActorPrincipalID: user.PrincipalID, Audit: audit})
 	if err != nil {
 		t.Fatal(err)
 	}

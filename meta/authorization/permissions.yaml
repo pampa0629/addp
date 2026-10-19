@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: meta
-manifest_version: 6
+manifest_version: 7
 permissions:
   - key: meta.authorization_facts.read
     allowed_scope_types: [tenant]
@@ -11,7 +11,7 @@ permissions:
     name_i18n_key: permissions.meta.authorization_facts.read.name
     description_i18n_key: permissions.meta.authorization_facts.read.description
   - key: meta.catalog.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: true
@@ -35,7 +35,7 @@ permissions:
     name_i18n_key: permissions.meta.lineage.create.name
     description_i18n_key: permissions.meta.lineage.create.description
   - key: meta.lineage.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: true
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.meta.lineage.read.name
     description_i18n_key: permissions.meta.lineage.read.description
   - key: meta.scan_task.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -51,7 +51,7 @@ permissions:
     name_i18n_key: permissions.meta.scan_task.create.name
     description_i18n_key: permissions.meta.scan_task.create.description
   - key: meta.scan_task.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -59,7 +59,7 @@ permissions:
     name_i18n_key: permissions.meta.scan_task.delete.name
     description_i18n_key: permissions.meta.scan_task.delete.description
   - key: meta.scan_task.execute
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -67,7 +67,7 @@ permissions:
     name_i18n_key: permissions.meta.scan_task.execute.name
     description_i18n_key: permissions.meta.scan_task.execute.description
   - key: meta.scan_task.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -75,7 +75,7 @@ permissions:
     name_i18n_key: permissions.meta.scan_task.read.name
     description_i18n_key: permissions.meta.scan_task.read.description
   - key: meta.scan_task.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false

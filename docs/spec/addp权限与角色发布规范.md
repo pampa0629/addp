@@ -12,7 +12,7 @@ Permission 回答“Principal 是否允许使用一类产品能力”，Role 是
 
 - Permission 和内置 Role 的事实归属；
 - Permission Key、动作词和生命周期规则；
-- Platform、Tenant、Department、Project Group Scope；
+- Platform、Tenant Scope；
 - HTTP、Tool 和其他入口的授权声明；
 - Manifest 聚合、代码生成、SQL migration 和发布门禁；
 - 平台三员、Tenant 管理角色、业务角色与 Runtime Role 的稳定边界。
@@ -159,12 +159,10 @@ Role Assignment 绑定 Principal、Role、Scope、来源、有效期和生命周
 
 - `platform`：只在 Platform Context 生效；
 - `tenant`：只在指定 Tenant Context 生效；
-- `department`：只在当前 Tenant 的指定 Department 范围内生效；
-- `project_group`：只在当前 Tenant 的指定 Project Group 范围内生效。
 
 Platform Context 只投影 Platform Assignment，不携带 Tenant、Department 或 Project Group。Tenant Context 只投影当前 Tenant 内的有效 Assignment。
 
-Department 与 Project Group Scope 使 Permission 成为候选能力，不自动授予所有资源。owner 必须继续结合资源归属、Scope Binding、Grant、Policy、Explicit Deny 和资源状态完成最终判断。
+租户功能授权统一为当前 Tenant 的账号—角色—Permission。部门、项目组、层级和账号成员关系完整保留；向组织授予数据读取权仍通过源数据 Grant，实际成员资格由访问时的权威组织事实核验。角色不授予数据内容访问，也不限定具体业务对象；owner 继续结合 Grant、Policy、责任或管理委派、Explicit Deny 和资源状态完成最终判断。
 
 多个有效 Assignment 的 Allow Permission 可以合并；显式 Deny 属于 owner 资源策略，不编码为反向 Permission。OAuth Scope 只能进一步缩小候选 Permission，不能扩大 Role Assignment。
 
@@ -172,7 +170,7 @@ Role Assignment 的写入服务必须在持久化前校验目标 Principal 的�
 
 租户管理端通过唯一的 `POST /api/v1/system/tenant/role_assignments` 创建 Role Assignment。请求使用显式 `role_ids` 列表，只表示把同一个 Membership 在同一 Scope、有效期和授权原因下分配给多个 Role。`role_ids` 必须包含 `1-50` 个无重复的十进制 Role ID；单角色分配也使用只含一个元素的列表，不接受旧 `role_id` 字段。服务必须在同一事务内按 Role ID 稳定顺序完成 Membership、Principal 类型、Scope、有效期、增强认证和重复分配校验，再写入全部 Assignment 及各自审计事实；任一角色失败时整批回滚，成功时返回全部新建 Assignment。
 
-Department 和 Project Group Scope 必须引用当前 Tenant 内可用的组织事实：Department 必须为 `active`，Project Group 不得为 `closed`，且目标 Tenant Membership 必须具有对应的有效 Department Membership 或 Project Group Membership。写入服务必须在同一事务内按 `tenant_id + id` 锁定并复核组织对象与成员关系；跨 Tenant 或不存在对象返回 `404 Not Found`，对象不可用或缺少有效组织成员关系返回 `409 Conflict`。管理界面必须通过可搜索选择器展示组织名称与稳定 Code，仅在提交协议中使用 ID，不得要求管理员手工输入或识别裸 ID。
+租户角色创建／更新不接收 `scope_types`；角色分配创建不接收 `scope_type`、`department_id` 或 `project_group_id`，当前 Tenant 和目标 Membership 由既有可信上下文与明确成员编号核验。角色分配查询不接受组织范围过滤。旧字段或 query 均返回 400，不静默忽略；角色与分配仍保留主体类型、有效期、增强认证、重复区间及审计约束。
 
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
@@ -188,7 +186,7 @@ Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > �
 
 ## 七、租户阶段的部分授权账号
 
-在个人、Department 和 Project Group 工作区及跨工作区授权形成完整 owner 契约前，业务资源的第一阶段交互以当前 Tenant 为隔离边界。Tenant 内是否共享由各资源 owner 的现有规范明确规定；不得将 Department 或 Project Group Scope 当作 Tenant Scope，也不得因暂缓工作区设计而绕过已有的引擎、数据和敏感信息授权。组织目录及其成员关系可以继续管理，但本节不赋予它们业务资源访问效果。
+业务资源以当前 Tenant 为隔离边界，租户内共享与对象操作范围遵循各资源 owner 的现有规范。功能 Permission 与资源授权分别核验；不再预留 Department、Project Group 角色范围或资源作用域绑定。组织目录、部门层级及全部成员关系继续维护，不由角色改造删除、重建或改写。
 
 Console 和业务前端只从当前 AuthContext 的有效 Assignment 判断候选功能权限，不根据角色名或组织名称推断权限。导航、首页卡片、搜索、最近访问、直接地址和浏览器历史应使用一致的页面入口条件；无权进入时显示无权限状态，不加载业务 iframe 或发起该页面的业务请求。没有可访问页面的模块不显示空入口。页面内创建、更新、执行、删除等操作分别按对应 Permission 展示，功能 Permission 之间不隐式包含。前端判断仅改善体验，最终由 API owner 对每个请求授权。
 
@@ -216,9 +214,9 @@ Service 管理端的查询服务、图查询服务、注册服务、瓦片服务
 
 Asset 消费面的评价写入按首次创建和修改已有评价分别授权：创建只要求 `asset.rating.create`，修改只要求 `asset.rating.update`，二者都必须由 Asset 在写入时确认当前 User 对该已上架资产仍有有效授权。重复创建不能变成更新，修改不存在的本人评价不能变成创建；Portal 仅转发当前 User 身份和对应操作。评价读取权限独立，不能作为写入的隐含前提；有读取权限时，评价列表应单独投影本人评价，不得用当前分页是否包含本人评价来判断创建或修改动作。只有修改权限的账号可以读取本人评价的窄投影以填写编辑表单，但不得因此读取公开评价列表。Portal 不得把 `asset.application.read` 或 `asset.authorization.read` 作为评价操作的隐含前提；拥有申请状态读取权限时可据此隐藏无有效授权的操作，无法读取状态时仅按评价功能权限展示候选操作，由 Asset 在写入时最终拒绝无有效授权的请求。
 
-通用功能 Permission 判断在 Tenant Context 只接受绑定当前 Tenant 的 Tenant Scope，在 Platform Context 只接受 Platform Scope。Department 或 Project Group Scope 不能通过通用 Guard 取得整租户业务 API 的 Allow。业务模块在接受仅有 Department 或 Project Group Scope 的 Assignment 前，必须已有明确的资源 Scope Binding、owner 授权判断和同范围列表裁剪；缺少这些能力时拒绝该 Scope，不能把功能 Guard 通过视为资源授权完成。业务模块对部分授权账号的验收至少覆盖无权限、只读、仅创建、可执行和跨 Tenant 五类上下文，并分别验证导航、直达地址、列表、详情及写操作。
+通用功能 Permission 判断在 Tenant Context 只接受绑定当前 Tenant 的 Tenant Scope，在 Platform Context 只接受 Platform Scope。AuthContext、Permission Manifest、Role Manifest 及数据库角色范围均只允许这两类；组织事实仍独立投影在 organization。旧组织范围 Assignment 前向退役时，逐份保留完整授权事实到不可变审计，移出角色分配存储并使受影响会话失效，绝不转换成 Tenant Assignment。仅声明组织范围、不能在 Tenant 使用的自定义角色停用；已有 Tenant Scope 角色只收敛范围，不能扩张 Permission。部门、项目组、成员关系及数据 Grant 不得改变。
 
-引擎管理读取与业务页面的目录浏览分开授权。`system.engine.read` 只用于 System 引擎管理接口及其脱敏管理详情；可定制的业务 Permission `system.engine_catalog.read` 允许读取当前 Tenant 可见、声明 `storage.catalog.supported=true`、`storage.catalog.real_time=true` 且具备 `storage.catalog_model` 的引擎目录选择投影（仅 ID、名称、类型、来源、生命周期、连接状态及标准能力声明），以及该引擎的实时目录子节点与结构事实。目录能力以声明为准，不按 `engine_type` 或 `engine_family` 推断；`spark_workflow` 等只提供计算能力的运行时不进入目录选择投影，实际 Spark 通用资源可依其目录能力进入。目录选择投影不得返回连接地址、凭据、管理状态或内部身份字段。对不具备实时目录能力的引擎直接请求目录子节点或结构事实，System 返回 422 与稳定的 `engine_catalog_operation_unsupported` 错误码。Quality、Graph、Service 等业务选择器必须使用该投影，不得为选择引擎而请求管理列表。页面入口只要求页面初次加载必需的 Permission；创建等操作依赖目录时，操作入口再要求 `system.engine_catalog.read`。System 继续按当前 Tenant 校验每个目录请求中的引擎 ID，权限本身不扩大引擎可见范围；Department 和 Project Group Assignment 在本阶段不取得该 API 的 Allow。
+引擎管理读取与业务页面的目录浏览分开授权。`system.engine.read` 只用于 System 引擎管理接口及其脱敏管理详情；可定制的业务 Permission `system.engine_catalog.read` 允许读取当前 Tenant 可见、声明 `storage.catalog.supported=true`、`storage.catalog.real_time=true` 且具备 `storage.catalog_model` 的引擎目录选择投影（仅 ID、名称、类型、来源、生命周期、连接状态及标准能力声明），以及该引擎的实时目录子节点与结构事实。目录能力以声明为准，不按 `engine_type` 或 `engine_family` 推断；`spark_workflow` 等只提供计算能力的运行时不进入目录选择投影，实际 Spark 通用资源可依其目录能力进入。目录选择投影不得返回连接地址、凭据、管理状态或内部身份字段。对不具备实时目录能力的引擎直接请求目录子节点或结构事实，System 返回 422 与稳定的 `engine_catalog_operation_unsupported` 错误码。Quality、Graph、Service 等业务选择器必须使用该投影，不得为选择引擎而请求管理列表。页面入口只要求页面初次加载必需的 Permission；创建等操作依赖目录时，操作入口再要求 `system.engine_catalog.read`。System 继续按当前 Tenant 校验每个目录请求中的引擎 ID，权限本身不扩大引擎可见范围；角色本身不扩大引擎或数据可见范围。
 
 ## 八、HTTP 与 Tool 授权声明
 

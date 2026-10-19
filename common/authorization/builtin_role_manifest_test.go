@@ -13,7 +13,7 @@ roles:
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_viewer.name
     description_i18n_key: roles.tenant.data_viewer.description
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
       - manager.data_item.read
@@ -105,7 +105,7 @@ func TestValidateBuiltinRoleManifestRequiresSortedRolesAndPermissions(t *testing
 func TestValidatePlatformGovernanceRolesAllowOnlyUsers(t *testing.T) {
 	input := strings.ReplaceAll(validBuiltinRoleManifest, "tenant.data_viewer", "platform.system_administrator")
 	input = strings.Replace(input, "tenant_builtin", "platform_builtin", 1)
-	input = strings.Replace(input, "[tenant, department, project_group]", "[platform]", 1)
+	input = strings.Replace(input, "[tenant]", "[platform]", 1)
 	input = strings.Replace(input, "[user]", "[user, service_principal]", 1)
 
 	if _, err := DecodeBuiltinRoleManifest(strings.NewReader(input)); err == nil {
@@ -118,7 +118,7 @@ func TestResolveBuiltinRoles(t *testing.T) {
 	permissions := []PermissionDescriptor{{
 		Key:               "manager.data_item.read",
 		OwnerModule:       "manager",
-		AllowedScopeTypes: []string{"tenant", "department", "project_group"},
+		AllowedScopeTypes: []string{"tenant"},
 		Status:            "active",
 	}}
 
@@ -140,7 +140,7 @@ func TestResolveBuiltinRolesRejectsInvalidPermissionReferences(t *testing.T) {
 	basePermission := PermissionDescriptor{
 		Key:               "manager.data_item.read",
 		OwnerModule:       "manager",
-		AllowedScopeTypes: []string{"tenant", "department", "project_group"},
+		AllowedScopeTypes: []string{"tenant"},
 		Status:            "active",
 	}
 	tests := []struct {
@@ -156,7 +156,7 @@ func TestResolveBuiltinRolesRejectsInvalidPermissionReferences(t *testing.T) {
 		}()}},
 		{name: "scope", manifest: valid, permissions: []PermissionDescriptor{func() PermissionDescriptor {
 			p := basePermission
-			p.AllowedScopeTypes = []string{"tenant"}
+			p.AllowedScopeTypes = []string{"platform"}
 			return p
 		}()}},
 	}
@@ -176,7 +176,7 @@ func TestResolveBuiltinRolesRejectsResourceGrantPermissionForUserRole(t *testing
 	permissions := []PermissionDescriptor{{
 		Key:               "manager.resource_grant.read",
 		OwnerModule:       "manager",
-		AllowedScopeTypes: []string{"tenant", "department", "project_group"},
+		AllowedScopeTypes: []string{"tenant"},
 		Status:            "active",
 	}}
 

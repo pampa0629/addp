@@ -4,12 +4,6 @@ export function isValidTenantRoleKey(value) {
   return typeof value === 'string' && /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(value.trim())
 }
 
-const TENANT_SCOPE_I18N_KEYS = Object.freeze({
-  tenant: 'system.iam.roles.scope.tenant',
-  department: 'system.iam.roles.scope.department',
-  project_group: 'system.iam.roles.scope.project_group'
-})
-
 export const TENANT_ROLE_RECOMMENDATIONS = [
   {
     roleKey: 'tenant.infrastructure_administrator',
@@ -57,62 +51,19 @@ export function needsTenantRoleSetup(authContext) {
   return roleKeys.length === 1 && roleKeys[0] === TENANT_ADMINISTRATOR_ROLE_KEY
 }
 
-function normalizedScopeValue(value) {
-  return value == null ? '' : String(value).trim()
-}
-
-export function resolveTenantScopeLabel(scope, t) {
-  const normalizedScope = normalizedScopeValue(scope)
-  const i18nKey = TENANT_SCOPE_I18N_KEYS[normalizedScope]
-  return i18nKey ? t(i18nKey) : normalizedScope || '-'
-}
-
-export function formatOrganizationOptionLabel(organization) {
-  const name = String(organization?.name || '').trim()
-  const code = String(organization?.code || '').trim()
-  if (name && code) return `${name} (${code})`
-  return name || code || '-'
-}
-
-export function formatTenantAssignmentScope(assignment, t, organizationLabels = {}) {
-  const scopeType = normalizedScopeValue(assignment?.scope_type)
-  const label = resolveTenantScopeLabel(scopeType, t)
-  if (scopeType === 'department') {
-    const id = normalizedScopeValue(assignment?.department_id)
-    return `${label} · ${organizationLabels.department?.get(id) || `#${id}`}`
-  }
-  if (scopeType === 'project_group') {
-    const id = normalizedScopeValue(assignment?.project_group_id)
-    return `${label} · ${organizationLabels.project_group?.get(id) || `#${id}`}`
-  }
-  return label
-}
-
-function assignmentMatchesScope(assignment, selection) {
-  if (assignment.scope_type !== selection.scopeType) return false
-  if (selection.scopeType === 'department') {
-    return normalizedScopeValue(assignment.department_id) === normalizedScopeValue(selection.departmentId)
-  }
-  if (selection.scopeType === 'project_group') {
-    return normalizedScopeValue(assignment.project_group_id) === normalizedScopeValue(selection.projectGroupId)
-  }
-  return true
-}
-
 export function buildTenantRoleOptions(roles, assignments, selection) {
   const activeAssignments = (assignments || []).filter((assignment) => assignment.status === 'active')
   return (roles || [])
     .filter((role) =>
       (role.allowed_principal_types || []).includes(selection.principalType) &&
-      (role.allowed_scope_types || []).includes(selection.scopeType)
+      (role.allowed_scope_types || []).includes('tenant')
     )
     .map((role) => {
       const roleAssignments = activeAssignments.filter((assignment) => assignment.role_id === role.id)
-      const assigned = roleAssignments.some((assignment) => assignmentMatchesScope(assignment, selection))
+      const assigned = roleAssignments.length > 0
       return {
         ...role,
-        assigned,
-        assignedElsewhere: !assigned && roleAssignments.length > 0
+        assigned
       }
     })
     .sort((left, right) => Number(left.assigned) - Number(right.assigned) || left.role_key.localeCompare(right.role_key))

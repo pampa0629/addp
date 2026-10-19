@@ -27,9 +27,6 @@
         <el-select v-model="filters.roleType" :placeholder="t('system.iam.roles.type')" clearable>
           <el-option v-for="roleType in roleTypes" :key="roleType" :label="t(`system.iam.roles.types.${roleType}`)" :value="roleType" />
         </el-select>
-        <el-select v-model="filters.scopeType" :placeholder="t('system.iam.roles.scopes')" clearable>
-          <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" />
-        </el-select>
         <el-button :icon="Refresh" @click="load">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
       <el-button v-if="can('iam.tenant_role.create')" type="primary" :icon="Plus" @click="openCreate">
@@ -54,10 +51,6 @@
       <el-table-column :label="t('system.iam.roles.applicableContext')" min-width="240">
         <template #default="{ row }">
           <div class="iam-context-tags">
-            <div>
-              <span class="iam-context-label">{{ t('system.iam.roles.scopes') }}</span>
-              <el-tag v-for="scope in row.allowed_scope_types" :key="scope" class="iam-inline-tag" effect="plain">{{ scopeLabel(scope) }}</el-tag>
-            </div>
             <div>
               <span class="iam-context-label">{{ t('system.iam.roles.applicableMembers') }}</span>
               <el-tag v-for="principalType in row.allowed_principal_types" :key="principalType" class="iam-inline-tag" type="info" effect="plain">{{ memberTypeLabel(principalType) }}</el-tag>
@@ -92,11 +85,7 @@
         </el-form-item>
         <el-form-item :label="t('system.iam.common.name')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('system.iam.common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item :label="t('system.iam.roles.scopes')" prop="scopeTypes">
-          <el-checkbox-group v-model="form.scopeTypes">
-            <el-checkbox v-for="scope in scopeOptions" :key="scope" :value="scope">{{ scopeLabel(scope) }}</el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
+
         <el-form-item :label="t('system.iam.roles.permissions')" prop="permissionKeys">
           <div class="iam-permission-picker">
             <div class="iam-permission-picker__toolbar">
@@ -261,7 +250,6 @@ import {
 const { t, te } = useI18n()
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
-const scopeOptions = ['tenant', 'department', 'project_group']
 const roleTypes = ['tenant_builtin', 'tenant_custom']
 const rows = ref([])
 const permissions = ref([])
@@ -274,8 +262,8 @@ const editing = ref(null)
 const formRef = ref()
 const permissionSearch = ref('')
 const activePermissionNamespace = ref('')
-const filters = reactive({ search: '', roleType: '', principalType: 'user', scopeType: '' })
-const form = reactive({ roleKey: '', name: '', description: '', scopeTypes: ['tenant'], permissionKeys: [] })
+const filters = reactive({ search: '', roleType: '', principalType: 'user' })
+const form = reactive({ roleKey: '', name: '', description: '', permissionKeys: [] })
 const audienceCounts = computed(() => rolePrincipalTypeCounts(rows.value))
 const audienceHint = computed(() => t(`system.iam.roles.audience.hints.${filters.principalType || 'all'}`))
 const filteredRows = computed(() => {
@@ -283,14 +271,13 @@ const filteredRows = computed(() => {
   return rows.value.filter((role) =>
     (!search || [roleName(role), role.role_key, roleDescription(role)].some((value) => String(value || '').toLocaleLowerCase().includes(search))) &&
     (!filters.roleType || role.role_type === filters.roleType) &&
-    roleSupportsPrincipalType(role, filters.principalType) &&
-    (!filters.scopeType || (role.allowed_scope_types || []).includes(filters.scopeType))
+    roleSupportsPrincipalType(role, filters.principalType)
   )
 })
 const permissionCatalogByKey = computed(() => new Map(permissions.value.map((permission) => [permission.permission_key, permission])))
 const permissionGroups = computed(() => buildPermissionGroups(permissions.value, {
   search: permissionSearch.value,
-  scopeTypes: form.scopeTypes,
+  scopeTypes: ['tenant'],
   selectedKeys: form.permissionKeys,
   getSearchValues: (permission) => [
     permissionDisplayName(permission),
@@ -305,7 +292,7 @@ const activePermissionResourceGroups = computed(() => groupPermissionsByResource
 ))
 const incompatiblePermissionKeys = computed(() => form.permissionKeys.filter((permissionKey) => {
   const permission = permissionCatalogByKey.value.get(permissionKey)
-  return permission && !permissionMatchesScopes(permission, form.scopeTypes)
+  return permission && !permissionMatchesScopes(permission, ['tenant'])
 }))
 const permissionDetailGroups = computed(() => groupPermissionsByNamespace(
   (roleDetailRole.value?.permission_keys || []).map(permissionMetadata),
@@ -325,7 +312,6 @@ const rules = computed(() => ({
     }
   ],
   name: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
-  scopeTypes: [{ type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
   permissionKeys: [
     { type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' },
     {
@@ -415,19 +401,19 @@ async function load() {
 function openCreate() {
   editing.value = null
   permissionSearch.value = ''
-  Object.assign(form, { roleKey: '', name: '', description: '', scopeTypes: ['tenant'], permissionKeys: [] })
+  Object.assign(form, { roleKey: '', name: '', description: '', permissionKeys: [] })
   dialogVisible.value = true
 }
 function openEdit(row) {
   editing.value = row
   permissionSearch.value = ''
-  Object.assign(form, { roleKey: row.role_key, name: row.name || '', description: row.description || '', scopeTypes: [...row.allowed_scope_types], permissionKeys: [...row.permission_keys] })
+  Object.assign(form, { roleKey: row.role_key, name: row.name || '', description: row.description || '', permissionKeys: [...row.permission_keys] })
   dialogVisible.value = true
 }
 async function submit() {
   if (!await formRef.value?.validate().catch(() => false)) return
   submitting.value = true
-  const payload = { role_key: form.roleKey.trim(), name: form.name, description: form.description, scope_types: form.scopeTypes, permission_keys: form.permissionKeys }
+  const payload = { role_key: form.roleKey.trim(), name: form.name, description: form.description, permission_keys: form.permissionKeys }
   try {
     if (editing.value) await iamAPI.tenantRoles.update(editing.value.id, payload)
     else await iamAPI.tenantRoles.create(payload)

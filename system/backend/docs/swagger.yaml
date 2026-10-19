@@ -2,10 +2,6 @@ basePath: /api/v1/system
 definitions:
   authorization.AssignmentScope:
     properties:
-      department_id:
-        type: string
-      project_group_id:
-        type: string
       tenant_id:
         type: string
       type:
@@ -3073,11 +3069,7 @@ definitions:
     type: object
   internal_api.IAMCreateTenantRoleAssignmentsRequest:
     properties:
-      department_id:
-        type: string
       membership_id:
-        type: string
-      project_group_id:
         type: string
       reason:
         type: string
@@ -3088,8 +3080,6 @@ definitions:
         minItems: 1
         type: array
         uniqueItems: true
-      scope_type:
-        type: string
       valid_until:
         type: string
     required:
@@ -4048,8 +4038,6 @@ definitions:
     properties:
       created_at:
         type: string
-      department_id:
-        type: string
       display_name:
         type: string
       effective_state:
@@ -4065,8 +4053,6 @@ definitions:
       principal_id:
         type: string
       principal_type:
-        type: string
-      project_group_id:
         type: string
       revoked_at:
         type: string
@@ -4111,10 +4097,6 @@ definitions:
         type: array
       role_key:
         type: string
-      scope_types:
-        items:
-          type: string
-        type: array
     type: object
   internal_api.IAMTenantRoleResponse:
     properties:
@@ -13929,19 +13911,6 @@ paths:
         in: query
         name: effective_state
         type: string
-      - description: 授权范围类型 | Assignment scope type
-        in: query
-        name: scope_type
-        type: string
-      - description: 部门 ID，仅 department 范围 | Department ID for department scope
-        in: query
-        name: department_id
-        type: string
-      - description: 项目组 ID，仅 project_group 范围 | Project group ID for project_group
-          scope
-        in: query
-        name: project_group_id
-        type: string
       produces:
       - application/json
       responses:
@@ -13990,14 +13959,13 @@ paths:
               $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
             type: array
         "404":
-          description: 授权范围不存在或不属于当前租户 | Assignment scope not found in the current
+          description: 账号或角色不存在或不属于当前租户 | Account or role not found in the current
             tenant
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "409":
-          description: '角色分配冲突：重复分配、主体类型不兼容、授权范围不可用或缺少组织成员关系 | Role assignment conflict:
-            duplicate assignment, incompatible principal type, unavailable scope,
-            or missing organization membership'
+          description: '角色分配冲突：重复分配或账号类型不兼容 | Role assignment conflict: duplicate
+            assignment or incompatible account type'
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:

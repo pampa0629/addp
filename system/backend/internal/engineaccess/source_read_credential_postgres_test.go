@@ -72,14 +72,14 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("profile Grant without function accepted: %+v %v", result, err)
 			}
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.preview_check", Name: "Explicit preview access",
-				ScopeTypes: []string{"tenant"}, PermissionKeys: []string{ManagerPreviewReadPermission}, ActorPrincipalID: adminID})
+				PermissionKeys: []string{ManagerPreviewReadPermission}, ActorPrincipalID: adminID})
 			if err != nil {
 				t.Fatal(err)
 			}
 			assign := func(user userProvenance) *iam.ManagedTenantRoleAssignment {
 				t.Helper()
 				assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID,
-					RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit preview consumer fixture"})
+					RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit preview consumer fixture"})
 				if err != nil || len(assignments) != 1 {
 					t.Fatalf("assign=%+v %v", assignments, err)
 				}

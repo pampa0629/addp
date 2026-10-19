@@ -30,20 +30,18 @@ func TestTenantQueryExecutionPermissionFailsClosedForUnboundScopes(t *testing.T)
 			authContext := protocolAuthContext(7)
 			tenantID := strconv.FormatUint(7, 10)
 			scope := commonauth.AssignmentScope{Type: tt.scopeType, TenantID: &tenantID}
-			departmentID, projectGroupID := "10", "20"
-			if tt.scopeType == "department" {
-				scope.DepartmentID = &departmentID
-			}
-			if tt.scopeType == "project_group" {
-				scope.ProjectGroupID = &projectGroupID
-			}
 			authContext.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
 				AssignmentID: "1", RoleKey: "tenant.service_consumer", Scope: scope,
 				Permissions: []string{"service.data_read.execute"}, SourceType: "manual",
 				ValidFrom: time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC),
 			}}
 			if err := authmiddleware.SetAuthContextForGin(context, authContext); err != nil {
+				if tt.scopeType != "tenant" {
+					return
+				}
 				t.Fatal(err)
+			} else if tt.scopeType != "tenant" {
+				t.Fatal("retired role scope accepted")
 			}
 			if got := hasTenantQueryExecutionPermission(context, tt.resourceTenant); got != tt.want {
 				t.Fatalf("permission = %v, want %v", got, tt.want)

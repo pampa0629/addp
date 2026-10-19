@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: transfer
-manifest_version: 8
+manifest_version: 9
 permissions:
   - key: transfer.configuration.read
     allowed_scope_types: [platform]
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.transfer.production_receipt.read.name
     description_i18n_key: permissions.transfer.production_receipt.read.description
   - key: transfer.task.cancel
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -51,7 +51,7 @@ permissions:
     name_i18n_key: permissions.transfer.task.cancel.name
     description_i18n_key: permissions.transfer.task.cancel.description
   - key: transfer.task.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: true
@@ -59,7 +59,7 @@ permissions:
     name_i18n_key: permissions.transfer.task.create.name
     description_i18n_key: permissions.transfer.task.create.description
   - key: transfer.task.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -67,7 +67,7 @@ permissions:
     name_i18n_key: permissions.transfer.task.delete.name
     description_i18n_key: permissions.transfer.task.delete.description
   - key: transfer.task.execute
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -75,7 +75,7 @@ permissions:
     name_i18n_key: permissions.transfer.task.execute.name
     description_i18n_key: permissions.transfer.task.execute.description
   - key: transfer.task.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -83,7 +83,7 @@ permissions:
     name_i18n_key: permissions.transfer.task.read.name
     description_i18n_key: permissions.transfer.task.read.description
   - key: transfer.task.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false

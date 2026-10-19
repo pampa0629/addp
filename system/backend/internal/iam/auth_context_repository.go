@@ -63,16 +63,14 @@ type ProjectGroupMembershipProjection struct {
 }
 
 type RoleAssignmentPermissionProjection struct {
-	AssignmentID   int64
-	RoleKey        string
-	ScopeType      string
-	TenantID       *int64
-	DepartmentID   *int64
-	ProjectGroupID *int64
-	SourceType     string
-	ValidFrom      time.Time
-	ValidUntil     *time.Time
-	PermissionKey  string
+	AssignmentID  int64
+	RoleKey       string
+	ScopeType     string
+	TenantID      *int64
+	SourceType    string
+	ValidFrom     time.Time
+	ValidUntil    *time.Time
+	PermissionKey string
 }
 
 func (r *Repository) GetAccessTokenAuthSnapshot(
@@ -359,8 +357,6 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 			role.role_key,
 			assignment.scope_type,
 			assignment.tenant_id,
-			assignment.department_id,
-			assignment.project_group_id,
 			assignment.source_type,
 			assignment.valid_from,
 			assignment.valid_until,
@@ -383,41 +379,9 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 	} else if contextType == ContextTypeTenant && tenantID != nil && tenantMembershipID != nil {
 		query += `
 			AND assignment.tenant_id = ?
-			AND (
-				assignment.scope_type = 'tenant'
-				OR (
-					assignment.scope_type = 'department'
-					AND EXISTS (
-						SELECT 1
-						FROM system.department_memberships membership
-						JOIN system.departments department
-						  ON department.id = membership.department_id
-						 AND department.tenant_id = membership.tenant_id
-						WHERE membership.tenant_membership_id = ?
-						  AND membership.tenant_id = assignment.tenant_id
-						  AND membership.department_id = assignment.department_id
-						  AND membership.status = 'active'
-						  AND department.status = 'active'
-					)
-				)
-				OR (
-					assignment.scope_type = 'project_group'
-					AND EXISTS (
-						SELECT 1
-						FROM system.project_group_memberships membership
-						JOIN system.project_groups project_group
-						  ON project_group.id = membership.project_group_id
-						 AND project_group.tenant_id = membership.tenant_id
-						WHERE membership.tenant_membership_id = ?
-						  AND membership.tenant_id = assignment.tenant_id
-						  AND membership.project_group_id = assignment.project_group_id
-						  AND membership.status = 'active'
-						  AND project_group.status = 'active'
-					)
-				)
-			)
+			AND assignment.scope_type = 'tenant'
 		`
-		arguments = append(arguments, *tenantID, *tenantMembershipID, *tenantMembershipID)
+		arguments = append(arguments, *tenantID)
 	} else {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -426,13 +390,9 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 			CASE assignment.scope_type
 				WHEN 'platform' THEN 0
 				WHEN 'tenant' THEN 1
-				WHEN 'department' THEN 2
-				WHEN 'project_group' THEN 3
 			END,
 			CASE assignment.scope_type
 				WHEN 'tenant' THEN assignment.tenant_id
-				WHEN 'department' THEN assignment.department_id
-				WHEN 'project_group' THEN assignment.project_group_id
 				ELSE 0
 			END,
 			role.role_key,

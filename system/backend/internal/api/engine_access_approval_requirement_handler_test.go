@@ -159,14 +159,9 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 		engineDelegationTestRequest(t, router, op.method, path+op.suffix, nil, 404)
 	}
 	auth.Authorization.RoleAssignments[0].Scope.Type = "department"
-	departmentID := "5"
-	auth.Authorization.RoleAssignments[0].Scope.DepartmentID = &departmentID
-	if err := commonauth.ValidateAuthContext(auth); err != nil {
-		t.Fatal(err)
+	if err := commonauth.ValidateAuthContext(auth); err == nil {
+		t.Fatal("retired organization role scope accepted")
 	}
-	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
-	engineDelegationTestRequest(t, router, "POST", path, nil, 403)
-	engineDelegationTestRequest(t, router, "GET", path, nil, 403)
 }
 
 type updateRequirementFixture struct {
@@ -203,11 +198,10 @@ func TestApprovalRequirementUpdateRejectsBodyAuthorityAndPreservesVersion(t *tes
 	engineDelegationTestRequest(t, router, "PUT", "/api/v1/system/engines/1/access_approval_requirements/"+uuid.Nil.String(), body, 400)
 	router = approvalRequirementTestRouter(t, updateRequirementFixture{t: t, id: id}, &auth)
 	engineDelegationTestRequest(t, router, "PUT", path, body, 200)
-	department := "5"
 	auth.Authorization.RoleAssignments[0].Scope.Type = "department"
-	auth.Authorization.RoleAssignments[0].Scope.DepartmentID = &department
-	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
-	engineDelegationTestRequest(t, router, "PUT", path, body, 403)
+	if err := commonauth.ValidateAuthContext(auth); err == nil {
+		t.Fatal("retired organization role scope accepted")
+	}
 }
 
 type initializationRequirementFixture struct {

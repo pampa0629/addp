@@ -47,11 +47,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/api/delegated_task_test.go",
       "anchor": "func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(",
-      "commit": "da04a5acc3678f78cd91866716c3649df1331eff",
-      "sha256": "92504370863336a22ff2ab31fd960ba4573c869cc3d43aa306de83e24d043dbb",
+      "commit": "5fe18874318b4935846c0454a88a89860c673ce5",
+      "sha256": "3c1d9c11a0c0522a85a613b0b1005a07912228fa09adfdaebc80d39ba50ba857",
       "use": {
-        "zh-cn": "验证创建成功、禁止参数及零 execution",
-        "en": "Verify creation, rejected parameters and zero executions"
+        "zh-cn": "验证创建成功、禁止参数及零 execution；组织范围角色已退出合法 AuthContext，在认证边界拒绝，租户功能与资源条件仍独立核验。",
+        "en": "Verify creation, rejected parameters and zero executions. Organization-scoped roles are invalid AuthContext inputs and fail at authentication; tenant functions and resource conditions remain independent."
       }
     },
     {

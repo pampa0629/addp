@@ -62,12 +62,12 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		}
 		assertHandlingPermissions(0)
 		roles := iam.NewTenantRoleService(identity, time.Now)
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_handler", Name: "Source handling", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_fulfillment.create"}, ActorPrincipalID: actor.PrincipalID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_handler", Name: "Source handling", PermissionKeys: []string{"system.engine_access_fulfillment.create"}, ActorPrincipalID: actor.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		stepUp := time.Now().Add(time.Minute)
-		assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: actor.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Explicit source handler", ActorPrincipalID: actor.PrincipalID, AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp})
+		assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: actor.MembershipID, RoleIDs: []int64{role.ID}, Reason: "Explicit source handler", ActorPrincipalID: actor.PrincipalID, AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp})
 		if err != nil {
 			t.Fatal(err)
 		}

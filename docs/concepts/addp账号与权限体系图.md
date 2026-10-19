@@ -202,7 +202,7 @@ Role 是 Permission 的命名集合。当前体系允许：
 - Tenant 基于稳定 Permission 创建自定义角色；
 - owner 模块提供领域 Permission，但不各自建立用户和角色体系。
 
-Role Assignment 必须包含明确 Scope：Platform、Tenant、Department 或 Project Group。具体业务资源范围由 owner 的 Resource Grant / Policy 表达，不进入 System Role Assignment。`tenant_admin` 不应继续作为同时表达身份类别和全部权限的永久字段。
+Role Assignment 只包含 Platform 或 Tenant Scope：平台角色服务平台治理，租户角色控制当前租户的功能入口与 API。Department、Project Group 及其账号成员关系继续由组织管理维护，用于组织归属与资源授权接收方，不参与角色分配。具体业务资源范围由 owner 的 Resource Grant / Policy、责任或管理委派表达，不进入 System Role Assignment。`tenant_admin` 不应继续作为同时表达身份类别和全部权限的永久字段。
 
 ### 6.3 管理角色与业务角色
 
@@ -212,8 +212,8 @@ Role Assignment 必须包含明确 Scope：Platform、Tenant、Department 或 Pr
 | --- | --- | --- |
 | Platform Role | 平台配置、Tenant 生命周期、安全审计 | 不自动读取 Tenant 业务数据 |
 | Tenant Administration Role（用户界面：租户组织与权限管理员） | 用户、角色、IdP、组织管理 | 当前 Tenant；不自动包含基础设施或业务权限 |
-| Business Role | 数据开发、资产管理、服务发布、质量管理 | 当前 Tenant 和明确 Scope |
-| Project Role | 项目负责人、项目成员 | 当前 Project Group |
+| Business Role | 数据开发、资产管理、服务发布、质量管理 | 当前 Tenant；具体对象由 owner 复核 |
+| Project Group 成员关系 | 项目负责人、协调人、成员 | 当前 Project Group 的组织关系；不自动授予功能权限 |
 
 Tenant 没有独立登录账号或租户密码。User 先通过全局账号完成认证，再选择一个由有效 Tenant Membership 提供的 Tenant Context。平台安全管理员负责创建普通 User 和凭据，平台系统管理员负责创建或初始化 Tenant 并指定首位 Tenant Administrator；两项职责不能合并到平台系统管理员。
 

@@ -122,7 +122,7 @@ Catalog 建档后通过 SourceBinding 联邦展示 Security 事实；Security �
 | System / IAM | Principal、Tenant、Role、Permission、AuthContext 和审计基础设施 | 敏感数据识别和字段保护策略 |
 | 资源 Owner | Resource Grant / Policy、最终资源动作判断和本模块服务端出口保护执行 | 第二套安全分类分级和私有脱敏规则体系 |
 
-当前 Security 的分类分级、敏感类型、检测、纳管、评估、保护规则和原值访问审批都是 Tenant 级治理事实，其管理 Permission 只允许 `tenant` Scope。租户安全治理与普通用户原值申请分别由 Tenant-only 的 `tenant.security_manager`、`tenant.protected_data_requester` 承载，不混入可按 Department 或 Project Group 分配的数据角色。组织 Scope 只会产生候选能力，不能替代 owner 资源归属和策略判断；在 Security 尚未建立可信 Scope Binding 与 owner 最终授权校验前，不开放组织级 Security Permission，也不把组织 Scope 伪装成列表过滤条件。
+当前 Security 的分类分级、敏感类型、检测、纳管、评估、保护规则和原值访问审批都是 Tenant 级治理事实，其管理 Permission 只允许 `tenant` Scope。租户安全治理与普通用户原值申请分别由 Tenant-only 的 `tenant.security_manager`、`tenant.protected_data_requester` 承载，功能范围统一不将这些 Permission 隐式加入其他业务角色。部门、项目组及成员关系继续参与组织归属和数据资源策略，不能替代 Security owner 的资源判断，也不能单凭组织成员关系取得功能或敏感原值访问资格。
 
 ## 五、控制面与数据面
 

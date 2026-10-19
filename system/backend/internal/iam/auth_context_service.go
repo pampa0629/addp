@@ -771,12 +771,10 @@ func buildRoleAssignments(rows []RoleAssignmentPermissionProjection) ([]commonau
 }
 
 func projectedRoleAssignmentSortKey(assignment commonauth.RoleAssignment) string {
-	scopeOrder := map[string]int{"platform": 0, "tenant": 1, "department": 2, "project_group": 3}
+	scopeOrder := map[string]int{"platform": 0, "tenant": 1}
 	scopeID := int64(0)
 	for _, candidate := range []*string{
 		assignment.Scope.TenantID,
-		assignment.Scope.DepartmentID,
-		assignment.Scope.ProjectGroupID,
 	} {
 		if candidate != nil {
 			scopeID, _ = strconv.ParseInt(*candidate, 10, 64)
@@ -790,31 +788,15 @@ func buildAssignmentScope(row RoleAssignmentPermissionProjection) (commonauth.As
 	scope := commonauth.AssignmentScope{Type: row.ScopeType}
 	switch row.ScopeType {
 	case "platform":
-		if row.TenantID != nil || row.DepartmentID != nil || row.ProjectGroupID != nil {
+		if row.TenantID != nil {
 			return commonauth.AssignmentScope{}, fmt.Errorf("platform assignment %d contains tenant fields", row.AssignmentID)
 		}
 	case "tenant":
-		if row.TenantID == nil || row.DepartmentID != nil || row.ProjectGroupID != nil {
+		if row.TenantID == nil {
 			return commonauth.AssignmentScope{}, fmt.Errorf("tenant assignment %d fields are invalid", row.AssignmentID)
 		}
 		tenantID := formatIAMID(*row.TenantID)
 		scope.TenantID = &tenantID
-	case "department":
-		if row.TenantID == nil || row.DepartmentID == nil || row.ProjectGroupID != nil {
-			return commonauth.AssignmentScope{}, fmt.Errorf("department assignment %d fields are invalid", row.AssignmentID)
-		}
-		tenantID := formatIAMID(*row.TenantID)
-		departmentID := formatIAMID(*row.DepartmentID)
-		scope.TenantID = &tenantID
-		scope.DepartmentID = &departmentID
-	case "project_group":
-		if row.TenantID == nil || row.DepartmentID != nil || row.ProjectGroupID == nil {
-			return commonauth.AssignmentScope{}, fmt.Errorf("project group assignment %d fields are invalid", row.AssignmentID)
-		}
-		tenantID := formatIAMID(*row.TenantID)
-		projectGroupID := formatIAMID(*row.ProjectGroupID)
-		scope.TenantID = &tenantID
-		scope.ProjectGroupID = &projectGroupID
 	default:
 		return commonauth.AssignmentScope{}, fmt.Errorf("role assignment %d has unsupported scope", row.AssignmentID)
 	}

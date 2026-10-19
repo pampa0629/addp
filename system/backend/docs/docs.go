@@ -12978,24 +12978,6 @@ const docTemplate = `{
                         "description": "当前状态：scheduled、effective、expired 或 revoked；默认 effective | Current state: scheduled, effective, expired, or revoked; defaults to effective",
                         "name": "effective_state",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "授权范围类型 | Assignment scope type",
-                        "name": "scope_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "部门 ID，仅 department 范围 | Department ID for department scope",
-                        "name": "department_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "项目组 ID，仅 project_group 范围 | Project group ID for project_group scope",
-                        "name": "project_group_id",
-                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -13069,13 +13051,13 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "授权范围不存在或不属于当前租户 | Assignment scope not found in the current tenant",
+                        "description": "账号或角色不存在或不属于当前租户 | Account or role not found in the current tenant",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     },
                     "409": {
-                        "description": "角色分配冲突：重复分配、主体类型不兼容、授权范围不可用或缺少组织成员关系 | Role assignment conflict: duplicate assignment, incompatible principal type, unavailable scope, or missing organization membership",
+                        "description": "角色分配冲突：重复分配或账号类型不兼容 | Role assignment conflict: duplicate assignment or incompatible account type",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -13886,12 +13868,6 @@ const docTemplate = `{
         "authorization.AssignmentScope": {
             "type": "object",
             "properties": {
-                "department_id": {
-                    "type": "string"
-                },
-                "project_group_id": {
-                    "type": "string"
-                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -18432,13 +18408,7 @@ const docTemplate = `{
                 "role_ids"
             ],
             "properties": {
-                "department_id": {
-                    "type": "string"
-                },
                 "membership_id": {
-                    "type": "string"
-                },
-                "project_group_id": {
                     "type": "string"
                 },
                 "reason": {
@@ -18452,9 +18422,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "scope_type": {
-                    "type": "string"
                 },
                 "valid_until": {
                     "type": "string"
@@ -19924,9 +19891,6 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
-                "department_id": {
-                    "type": "string"
-                },
                 "display_name": {
                     "type": "string"
                 },
@@ -19949,9 +19913,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "principal_type": {
-                    "type": "string"
-                },
-                "project_group_id": {
                     "type": "string"
                 },
                 "revoked_at": {
@@ -20018,12 +19979,6 @@ const docTemplate = `{
                 },
                 "role_key": {
                     "type": "string"
-                },
-                "scope_types": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

@@ -41,10 +41,6 @@ func TestEngineSourceDenyReleaseHTTPContract(t *testing.T) {
 	projection := testIAMActorContext("tenant")
 	setPermission := func(key, scope string) {
 		assignmentScope := shared.AssignmentScope{Type: scope, TenantID: projection.Context.TenantID}
-		if scope == "project_group" {
-			groupID := "7"
-			assignmentScope.ProjectGroupID = &groupID
-		}
 		projection.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.deny_release", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: assignmentScope, Permissions: []string{key}}}
 	}
 	for _, key := range []string{"system.engine_access_deny.create", "system.engine_access_grant.revoke", "system.engine_access_delegation.create", "catalog.entry.update"} {
@@ -52,7 +48,9 @@ func TestEngineSourceDenyReleaseHTTPContract(t *testing.T) {
 		engineDelegationTestRequest(t, denyTestRouter(t, &projection, unused), "POST", path, body, 403)
 	}
 	setPermission("system.engine_access_deny.release", "project_group")
-	engineDelegationTestRequest(t, denyTestRouter(t, &projection, unused), "POST", path, body, 403)
+	if err := shared.ValidateAuthContext(projection); err == nil {
+		t.Fatal("retired role scope accepted")
+	}
 	setPermission("system.engine_access_deny.release", "tenant")
 	router := denyTestRouter(t, &projection, unused)
 	for _, bad := range []any{nil, map[string]any{}, map[string]any{"reason": " "}, map[string]any{"reason": strings.Repeat("文", 2001)}, map[string]any{"reason": 1}, map[string]any{"reason": "ok", "tenant_id": "1"}, map[string]any{"reason": "ok", "expires_at": nil}, map[string]any{"reason": "ok", "operator": "2"}} {

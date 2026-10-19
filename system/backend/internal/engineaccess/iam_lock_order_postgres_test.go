@@ -267,7 +267,7 @@ func exerciseIAMMutationSetChanges(t *testing.T, db *gorm.DB, identity *iam.Repo
 		entrant, _ := newOperator(t, time.Hour)
 		roles := iam.NewTenantRoleService(identity, time.Now)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.set_guard",
-			Name: "Set guard", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
+			Name: "Set guard", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -281,7 +281,7 @@ func exerciseIAMMutationSetChanges(t *testing.T, db *gorm.DB, identity *iam.Repo
 		}
 		assertMutationSetChange(t, db, "tenants", func(writeCtx context.Context) error { return join(writeCtx, entrant) }, func(writeCtx context.Context) error {
 			_, err := roles.UpdateRole(writeCtx, iam.UpdateTenantRoleInput{TenantID: tenantID, RoleID: role.ID, ActorPrincipalID: actorID,
-				Name: "Must not commit", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read"}})
+				Name: "Must not commit", PermissionKeys: []string{"catalog.entry.read"}})
 			return err
 		})
 		current, err := identity.GetTenantRole(ctx, tenantID, role.ID)
@@ -323,7 +323,7 @@ func exerciseIAMQualificationWriters(t *testing.T, db *gorm.DB, identity *iam.Re
 		a, _ := newOperator(t, time.Hour)
 		b, _ := newOperator(t, time.Hour)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.mutual",
-			Name: "Mutual fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
+			Name: "Mutual fixture", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -341,13 +341,12 @@ func exerciseIAMQualificationWriters(t *testing.T, db *gorm.DB, identity *iam.Re
 		t.Run(operation, func(t *testing.T) {
 			operator, _ := newOperator(t, time.Hour)
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID,
-				RoleKey: "custom.race_" + string(rune('a'+i)), Name: "Race fixture", ScopeTypes: []string{"tenant"},
-				PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
+				RoleKey: "custom.race_" + string(rune('a'+i)), Name: "Race fixture", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
 			if err != nil {
 				t.Fatal(err)
 			}
 			assigned, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID,
-				MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: actorID, Reason: "Race fixture"})
+				MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: actorID, Reason: "Race fixture"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -359,7 +358,7 @@ func exerciseIAMQualificationWriters(t *testing.T, db *gorm.DB, identity *iam.Re
 					return err
 				case "update role":
 					_, err := roles.UpdateRole(raceCtx, iam.UpdateTenantRoleInput{TenantID: tenantID, RoleID: role.ID,
-						Name: "Updated fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
+						Name: "Updated fixture", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: actorID})
 					return err
 				default:
 					return roles.DeleteRole(raceCtx, iam.DeleteTenantRoleInput{TenantID: tenantID, RoleID: role.ID,

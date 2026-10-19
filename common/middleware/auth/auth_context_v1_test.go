@@ -329,16 +329,14 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	authContext := testCanonicalAuthContext()
 	tenantID := *authContext.Context.TenantID
-	departmentID := "9"
 	authContext.Authorization.RoleAssignments = append(
 		authContext.Authorization.RoleAssignments,
 		commonauth.RoleAssignment{
 			AssignmentID: "403",
-			RoleKey:      "tenant.data_steward",
+			RoleKey:      "tenant.extra_steward",
 			Scope: commonauth.AssignmentScope{
-				Type:         "department",
-				TenantID:     &tenantID,
-				DepartmentID: &departmentID,
+				Type:     "tenant",
+				TenantID: &tenantID,
 			},
 			Permissions: []string{"manager.content.read", "manager.data_item.update"},
 			SourceType:  "manual",
@@ -346,11 +344,10 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 		},
 		commonauth.RoleAssignment{
 			AssignmentID: "404",
-			RoleKey:      "tenant.data_viewer",
+			RoleKey:      "tenant.extra_viewer",
 			Scope: commonauth.AssignmentScope{
-				Type:         "department",
-				TenantID:     &tenantID,
-				DepartmentID: &departmentID,
+				Type:     "tenant",
+				TenantID: &tenantID,
 			},
 			Permissions: []string{"manager.content.read"},
 			SourceType:  "manual",
@@ -364,15 +361,14 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 	setCanonicalAuthContext(context, authContext)
 
 	if !HasRolePermission(context, "manager.content.read") ||
-		HasAllRolePermissions(context, "manager.content.read", "manager.data_item.update") ||
+		!HasAllRolePermissions(context, "manager.content.read", "manager.data_item.update") ||
 		HasAllRolePermissions(context) ||
 		HasRolePermission(context, "manager.content.delete") ||
 		HasRolePermission(context, "manager.read") {
 		t.Fatal("Role Permission helper result is incorrect")
 	}
 	scopes := RolePermissionScopes(context, "manager.content.read")
-	if len(scopes) != 2 || scopes[0].Type != "tenant" || scopes[1].Type != "department" ||
-		scopes[1].DepartmentID == nil || *scopes[1].DepartmentID != "9" {
+	if len(scopes) != 1 || scopes[0].Type != "tenant" {
 		t.Fatalf("Role Permission scopes = %#v", scopes)
 	}
 	*scopes[0].TenantID = "99"
@@ -392,14 +388,12 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 func TestPermissionGuardRejectsOrganizationalAssignment(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	base := testCanonicalAuthContext()
-	departmentID := "9"
 	departmentOnly := base
 	departmentOnly.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
 		AssignmentID: "403",
 		RoleKey:      "tenant.data_engineer",
 		Scope: commonauth.AssignmentScope{
-			Type: "department", TenantID: base.Context.TenantID, DepartmentID: &departmentID,
-		},
+			Type: "department", TenantID: base.Context.TenantID},
 		Permissions: []string{"transfer.task.read"},
 		SourceType:  "manual",
 		ValidFrom:   base.Authorization.RoleAssignments[0].ValidFrom,

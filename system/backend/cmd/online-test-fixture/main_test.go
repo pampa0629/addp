@@ -718,7 +718,7 @@ func (r *fakeTransferConfigCheckRoles) GetAssignment(_ context.Context, _ int64,
 }
 
 func (r *fakeTransferConfigCheckRoles) CreateAssignments(_ context.Context, input iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error) {
-	if input.TenantID != 42 || input.MembershipID != 8 || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 || input.ScopeType != "tenant" {
+	if input.TenantID != 42 || input.MembershipID != 8 || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 {
 		return nil, errors.New("precheck assignment is not scoped to the dedicated fixture user")
 	}
 	if r.fault == "assignment_failure" {
@@ -885,7 +885,7 @@ func (r *fakeOrchestratorReaderRoles) CreateRole(ctx context.Context, input iam.
 
 func (r *fakeOrchestratorReaderRoles) CreateAssignments(ctx context.Context, input iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error) {
 	r.calls = append(r.calls, "assign")
-	if input.TenantID != 42 || input.MembershipID != 8 || input.ScopeType != "tenant" || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 {
+	if input.TenantID != 42 || input.MembershipID != 8 || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 {
 		return nil, errors.New("Monitor assignment is not bound to the reader")
 	}
 	if r.fault == "assignment_failure" {

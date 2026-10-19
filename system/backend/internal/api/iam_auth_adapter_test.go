@@ -69,7 +69,7 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 				router.POST("/invalid-role", func(c *gin.Context) {
 					_, err := iam.NewTenantRoleService(nil, time.Now).CreateRole(c.Request.Context(), iam.CreateTenantRoleInput{
 						TenantID: 1, ActorPrincipalID: 4, RoleKey: "ontology_manager", Name: "Role",
-						ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"ontology.revision.read"},
+						PermissionKeys: []string{"ontology.revision.read"},
 					})
 					respondIAMError(c, err)
 				})
@@ -131,34 +131,6 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 				if recorder.Code != http.StatusConflict || response.ErrorCode == nil ||
 					*response.ErrorCode != "role_assignment_principal_type_not_allowed" || response.Error != test.message {
 					t.Fatalf("role assignment principal type conflict status=%d response=%#v", recorder.Code, response)
-				}
-			})
-		}
-	})
-
-	t.Run("role assignment scope errors are localized with stable domain errors", func(t *testing.T) {
-		for _, test := range []struct {
-			name, language, message, code string
-			status                        int
-			err                           error
-		}{
-			{name: "not found zh-cn", language: "zh-cn", message: "选择的授权范围不存在或不属于当前租户。", code: "role_assignment_scope_not_found", status: http.StatusNotFound, err: iam.ErrTenantRoleAssignmentScopeNotFound},
-			{name: "unavailable en", language: "en", message: "The selected assignment scope is disabled or closed.", code: "role_assignment_scope_unavailable", status: http.StatusConflict, err: iam.ErrTenantRoleAssignmentScopeUnavailable},
-			{name: "membership required zh-cn", language: "zh-cn", message: "只能在该成员已加入的有效部门或项目组范围内分配角色。", code: "role_assignment_scope_membership_required", status: http.StatusConflict, err: iam.ErrTenantRoleAssignmentScopeMembershipRequired},
-		} {
-			t.Run(test.name, func(t *testing.T) {
-				router := gin.New()
-				router.Use(i18nmiddleware.I18nMiddleware())
-				router.GET("/scope-error", func(c *gin.Context) { respondIAMError(c, test.err) })
-				request := httptest.NewRequest(http.MethodGet, "/scope-error", nil)
-				request.Header.Set("Accept-Language", test.language)
-				recorder := httptest.NewRecorder()
-				router.ServeHTTP(recorder, request)
-
-				var response IAMErrorResponse
-				decodeIAMResponse(t, recorder, &response)
-				if recorder.Code != test.status || response.ErrorCode == nil || *response.ErrorCode != test.code || response.Error != test.message {
-					t.Fatalf("role assignment scope error status=%d response=%#v", recorder.Code, response)
 				}
 			})
 		}

@@ -255,26 +255,6 @@
             "type": { "const": "tenant" },
             "tenant_id": { "$ref": "#/$defs/id" }
           }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "tenant_id", "department_id"],
-          "properties": {
-            "type": { "const": "department" },
-            "tenant_id": { "$ref": "#/$defs/id" },
-            "department_id": { "$ref": "#/$defs/id" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "tenant_id", "project_group_id"],
-          "properties": {
-            "type": { "const": "project_group" },
-            "tenant_id": { "$ref": "#/$defs/id" },
-            "project_group_id": { "$ref": "#/$defs/id" }
-          }
         }
       ]
     },

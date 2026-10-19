@@ -268,7 +268,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 			establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, checkUser.PrincipalID, audit)
 			role, err := NewTenantRoleService(repository, time.Now).CreateRole(ctx, CreateTenantRoleInput{
 				TenantID: tenant.ID, RoleKey: "tenant.precheck_" + suffix, Name: "Precheck fixture",
-				ScopeTypes: []string{"tenant"}, PermissionKeys: keys, ActorPrincipalID: checkUser.PrincipalID, Audit: audit,
+				PermissionKeys: keys, ActorPrincipalID: checkUser.PrincipalID, Audit: audit,
 			})
 			if err != nil {
 				t.Fatal(err)

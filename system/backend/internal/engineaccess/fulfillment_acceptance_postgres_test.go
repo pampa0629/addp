@@ -49,11 +49,11 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		operator, memberExpiry := newOperator(t, time.Hour)
 		seedDelegation(t, operator.MembershipID, memberExpiry.Add(-time.Second))
 		roles := iam.NewTenantRoleService(iam.NewRepository(db), testDatabaseClock(t, db))
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID, RoleKey: "custom.first_acceptance", Name: "Explicit acceptance fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_fulfillment.create", "system.engine_access_grant.revoke"}, ActorPrincipalID: base.Operator.PrincipalID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID, RoleKey: "custom.first_acceptance", Name: "Explicit acceptance fixture", PermissionKeys: []string{"system.engine_access_fulfillment.create", "system.engine_access_grant.revoke"}, ActorPrincipalID: base.Operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID, MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: base.Operator.PrincipalID, Reason: "Explicit fixture handler"}); err != nil {
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID, MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: base.Operator.PrincipalID, Reason: "Explicit fixture handler"}); err != nil {
 			t.Fatal(err)
 		}
 		current, err := iam.NewRepository(db).GetPrincipal(ctx, operator.PrincipalID)

@@ -5,9 +5,8 @@ import "testing"
 func TestHasContextPermissionsIgnoresOrganizationalAssignment(t *testing.T) {
 	context := validTenantAuthContext()
 	tenantID := *context.Context.TenantID
-	departmentID := "9"
 	context.Authorization.RoleAssignments = []RoleAssignment{
-		{Scope: AssignmentScope{Type: "department", TenantID: &tenantID, DepartmentID: &departmentID}, Permissions: []string{"transfer.task.read"}},
+		{Scope: AssignmentScope{Type: "department", TenantID: &tenantID}, Permissions: []string{"transfer.task.read"}},
 		{Scope: AssignmentScope{Type: "tenant", TenantID: &tenantID}, Permissions: []string{"transfer.task.create"}},
 	}
 	if HasContextPermissions(context, "transfer.task.read") ||

@@ -462,8 +462,6 @@ func assignmentScopeKey(scope commonauth.AssignmentScope) string {
 	return strings.Join([]string{
 		scope.Type,
 		canonicalStringValue(scope.TenantID),
-		canonicalStringValue(scope.DepartmentID),
-		canonicalStringValue(scope.ProjectGroupID),
 	}, "|")
 }
 

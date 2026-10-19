@@ -44,7 +44,6 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	tenantService := NewPlatformTenantService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
 	roleService := NewTenantRoleService(repository, now)
-	organizationService := NewOrganizationService(repository, now)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"system"},
 	}, nil, testDatabaseTime(now))
@@ -163,7 +162,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	if _, err := roleService.CreateRole(ctx, CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: tenantAdministratorRoleKey, Name: "Conflicting Administrator",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"agent.run.create"},
+		PermissionKeys:   []string{"agent.run.create"},
 		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("create custom role with built-in role key error = %v, want conflict", err)
@@ -172,7 +171,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	infrastructureRole := findTenantRoleByKey(t, roles, "tenant.infrastructure_administrator")
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, assetRuntimeRole.ID},
-		ScopeType: "tenant", Reason: "invalid runtime role assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		Reason: "invalid runtime role assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, ErrTenantRoleAssignmentPrincipalTypeNotAllowed) || !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("assign runtime role to user error = %v, want principal type conflict", err)
 	}
@@ -183,95 +182,16 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		t.Fatalf("atomic invalid role assignment batch count = %d, err=%v", invalidRuntimeAssignmentCount, err)
 	}
 	dataViewerRole := findTenantRoleByKey(t, roles, "tenant.data_viewer")
-	missingDepartmentID := int64(987654321)
-	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
-		ScopeType: "department", DepartmentID: &missingDepartmentID, Reason: "invalid department scope",
-		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
-	}); !errors.Is(err, ErrTenantRoleAssignmentScopeNotFound) || !errors.Is(err, commonapi.ErrNotFound) {
-		t.Fatalf("missing department role assignment error = %v, want scope not found", err)
-	}
-	disabledDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
-		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Code: "disabled_scope", Name: "Disabled Scope", Audit: tenantAudit,
-	})
-	if err != nil {
-		t.Fatalf("create disabled assignment scope fixture: %v", err)
-	}
-	disabledDepartment, err = organizationService.DisableDepartment(ctx, ChangeDepartmentStatusInput{
-		TenantID: tenant.ID, DepartmentID: disabledDepartment.ID, Version: disabledDepartment.Version,
-		ActorPrincipalID: initialAdministrator.ID, Reason: "scope retired", Audit: tenantAudit,
-	})
-	if err != nil {
-		t.Fatalf("disable assignment scope fixture: %v", err)
-	}
-	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
-		ScopeType: "department", DepartmentID: &disabledDepartment.ID, Reason: "disabled department scope",
-		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
-	}); !errors.Is(err, ErrTenantRoleAssignmentScopeUnavailable) || !errors.Is(err, commonapi.ErrConflict) {
-		t.Fatalf("disabled department role assignment error = %v, want scope unavailable", err)
-	}
-	closedProjectGroup, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
-		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Code: "closed_scope", Name: "Closed Scope", Audit: tenantAudit,
-	})
-	if err != nil {
-		t.Fatalf("create closed assignment scope fixture: %v", err)
-	}
-	closedProjectGroup, err = organizationService.CloseProjectGroup(ctx, CloseProjectGroupInput{
-		TenantID: tenant.ID, ProjectGroupID: closedProjectGroup.ID, Version: closedProjectGroup.Version,
-		ActorPrincipalID: initialAdministrator.ID, Reason: "scope completed", Audit: tenantAudit,
-	})
-	if err != nil {
-		t.Fatalf("close assignment scope fixture: %v", err)
-	}
-	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
-		ScopeType: "project_group", ProjectGroupID: &closedProjectGroup.ID, Reason: "closed project scope",
-		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
-	}); !errors.Is(err, ErrTenantRoleAssignmentScopeUnavailable) || !errors.Is(err, commonapi.ErrConflict) {
-		t.Fatalf("closed project group role assignment error = %v, want scope unavailable", err)
-	}
-	activeDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
-		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Code: "research_scope", Name: "Research Scope", Audit: tenantAudit,
-	})
-	if err != nil {
-		t.Fatalf("create active assignment scope fixture: %v", err)
-	}
-	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
-		ScopeType: "department", DepartmentID: &activeDepartment.ID, Reason: "missing department membership",
-		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
-	}); !errors.Is(err, ErrTenantRoleAssignmentScopeMembershipRequired) || !errors.Is(err, commonapi.ErrConflict) {
-		t.Fatalf("department role assignment without membership error = %v, want scope membership required", err)
-	}
-	if _, err := organizationService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{
-		TenantID: tenant.ID, DepartmentID: activeDepartment.ID, TenantMembershipID: membership.Membership.ID,
-		ActorPrincipalID: initialAdministrator.ID, MembershipType: DepartmentMembershipTypePrimary,
-		RelationRole: DepartmentRelationRoleMember, Audit: tenantAudit,
-	}); err != nil {
-		t.Fatalf("create active assignment scope membership: %v", err)
-	}
-	departmentAssignments, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
-		ScopeType: "department", DepartmentID: &activeDepartment.ID, Reason: "research access",
-		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
-	})
-	if err != nil || len(departmentAssignments) != 1 || departmentAssignments[0].DepartmentID == nil || *departmentAssignments[0].DepartmentID != activeDepartment.ID {
-		t.Fatalf("active department role assignment = %#v error=%v", departmentAssignments, err)
-	}
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
-		ScopeType: "tenant", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("role assignment without grant reason error = %v, want bad request", err)
 	}
 	assignmentExpiry := currentTime.Add(time.Hour)
 	assignedBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, dataViewerRole.ID},
-		ScopeType: "tenant", ValidUntil: &assignmentExpiry, Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		ValidUntil: &assignmentExpiry, Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("assign infrastructure administrator: %v", err)
@@ -289,18 +209,16 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
-		ScopeType: "tenant", Reason: "duplicate assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		Reason: "duplicate assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, ErrTenantRoleAssignmentAlreadyExists) || !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate assignment error = %v, want role assignment already exists", err)
 	}
 	membershipID := membership.Membership.ID
 	effectiveState := "effective"
-	tenantScope := "tenant"
 	filteredAssignments, filteredTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
 		MembershipID:   &membershipID,
 		PrincipalType:  &principalType,
 		EffectiveState: &effectiveState,
-		ScopeType:      &tenantScope,
 	}, 1, 100)
 	if err != nil || filteredTotal != 2 || len(filteredAssignments) != 2 || findBatchAssignmentByRoleKey(t, filteredAssignments, "tenant.infrastructure_administrator").ID != assigned.ID {
 		t.Fatalf("filtered active assignments = %#v total=%d err=%v", filteredAssignments, filteredTotal, err)
@@ -366,7 +284,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	replacementBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
-		ScopeType: "tenant", Reason: "renewed engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		Reason: "renewed engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil || len(replacementBatch) != 1 || replacementBatch[0].ID == assigned.ID {
 		t.Fatalf("replacement assignment = %#v err=%v", replacementBatch, err)
@@ -385,8 +303,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	currentTime = assignmentExpiry.Add(-time.Hour)
 	revokedState := "revoked"
 	revokedAssignments, revokedTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
-		MembershipID: &membershipID, EffectiveState: &revokedState, ScopeType: &tenantScope,
-	}, 1, 100)
+		MembershipID: &membershipID, EffectiveState: &revokedState}, 1, 100)
 	if err != nil || revokedTotal != 1 || len(revokedAssignments) != 1 || revokedAssignments[0].ID != assigned.ID {
 		t.Fatalf("filtered revoked assignments = %#v total=%d err=%v", revokedAssignments, revokedTotal, err)
 	}
@@ -427,7 +344,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	administratorRole := findTenantRoleByKey(t, roles, tenantAdministratorRoleKey)
 	secondAdministratorBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{administratorRole.ID},
-		ScopeType: "tenant", Reason: "administrator rotation", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		Reason: "administrator rotation", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("assign replacement tenant administrator: %v", err)
@@ -466,7 +383,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: legacyMembership.ID, RoleIDs: []int64{infrastructureRole.ID},
-		ScopeType: "tenant", Reason: "cross-tenant assignment must fail", ActorPrincipalID: infrastructureAdministrator.ID, Audit: tenantAudit,
+		Reason: "cross-tenant assignment must fail", ActorPrincipalID: infrastructureAdministrator.ID, Audit: tenantAudit,
 	}); err == nil {
 		t.Fatal("cross-tenant membership received role assignment")
 	}

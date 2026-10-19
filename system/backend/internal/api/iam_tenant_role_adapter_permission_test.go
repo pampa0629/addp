@@ -14,7 +14,7 @@ func TestMapIAMTenantAssignablePermissionPreservesPresentationMetadata(t *testin
 		OwnerModule:        "manager",
 		Action:             "read",
 		RiskLevel:          "low",
-		AllowedScopeTypes:  pq.StringArray{"tenant", "department", "project_group"},
+		AllowedScopeTypes:  pq.StringArray{"tenant"},
 		NameI18nKey:        "permissions.manager.data_item.read.name",
 		DescriptionI18nKey: "permissions.manager.data_item.read.description",
 	}
@@ -26,7 +26,7 @@ func TestMapIAMTenantAssignablePermissionPreservesPresentationMetadata(t *testin
 	if response.NameI18nKey != permission.NameI18nKey || response.DescriptionI18nKey != permission.DescriptionI18nKey {
 		t.Fatalf("permission i18n metadata = %#v", response)
 	}
-	if !reflect.DeepEqual(response.AllowedScopeTypes, []string{"tenant", "department", "project_group"}) {
+	if !reflect.DeepEqual(response.AllowedScopeTypes, []string{"tenant"}) {
 		t.Fatalf("allowed_scope_types = %#v", response.AllowedScopeTypes)
 	}
 }

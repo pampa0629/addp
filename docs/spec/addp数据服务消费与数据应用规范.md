@@ -635,7 +635,7 @@ GET /api/v1/service/consumer/services/:service_type/:service_id
 
 “当前可执行”必须在计算 `total` 和分页之前由 Service 一次性应用 Tenant、服务状态、公开策略、`service.data_read.execute`、Resource Grant / Policy 和 Deny，不能先查管理列表再 N+1 过滤。列表和详情使用同一授权判断，已失去执行权的服务不得通过详情路由泄露 Descriptor。
 
-当前消费采用明确的 fail-closed owner policy：只返回当前 Tenant、`active`、启用 REST Query operation 的服务，并只接受当前 Tenant Scope 的 `service.data_read.execute` Role Assignment。现有 Service 尚无“服务—Department / Project Group” Resource Scope Binding，因此 Department 或 Project Group Scope Assignment 不能临时扩大为全租户服务访问；细粒度 Grant、Binding 和 Explicit Deny 建立事实模型后，必须接入同一 Repository 过滤与详情判断入口，不能新增第二套 ACL 或先分页后过滤。
+当前消费采用明确的 fail-closed owner policy：只返回当前 Tenant、`active`、启用 REST Query operation 的服务，并只接受当前 Tenant Scope 的 `service.data_read.execute` Role Assignment。功能角色不再绑定 Department / Project Group。具体服务的访问范围仍由 Service owner 的资源规则判断；需要细粒度 Grant、Policy 或 Explicit Deny 时，必须接入同一 Repository 过滤与详情判断入口，不能把组织成员或功能 Permission 当作数据访问授权，也不能新增第二套 ACL 或先分页后过滤。
 
 Query Service 的 `active + rest_api.enabled=true` 是可消费状态约束，不是仅供管理端展示的标签：该状态下必须能够生成完整 Consumer Descriptor，包括非空输出字段、有效稳定键和至少一种 REST 返回格式。创建、更新和恢复 `active` 状态必须使用同一消费契约校验；不满足当前契约的历史记录一次性迁移为 `error`，不得继续进入消费目录、通过列表时跳过坏记录或保留旧契约兼容分支。迁移后的服务只能在发布者补齐当前输出契约并重新发布后恢复为 `active`。
 

@@ -100,10 +100,8 @@ type RoleAssignment struct {
 }
 
 type AssignmentScope struct {
-	Type           string  `json:"type"`
-	TenantID       *string `json:"tenant_id,omitempty"`
-	DepartmentID   *string `json:"department_id,omitempty"`
-	ProjectGroupID *string `json:"project_group_id,omitempty"`
+	Type     string  `json:"type"`
+	TenantID *string `json:"tenant_id,omitempty"`
 }
 
 type TokenFacts struct {
@@ -317,8 +315,6 @@ func CloneAuthContext(source AuthContext) AuthContext {
 		sourceAssignment := source.Authorization.RoleAssignments[index]
 		assignment := &clone.Authorization.RoleAssignments[index]
 		assignment.Scope.TenantID = cloneString(sourceAssignment.Scope.TenantID)
-		assignment.Scope.DepartmentID = cloneString(sourceAssignment.Scope.DepartmentID)
-		assignment.Scope.ProjectGroupID = cloneString(sourceAssignment.Scope.ProjectGroupID)
 		assignment.Permissions = cloneSlice(sourceAssignment.Permissions)
 		assignment.ValidUntil = cloneTime(sourceAssignment.ValidUntil)
 	}
@@ -546,26 +542,12 @@ func validateAssignmentScope(scope AssignmentScope, sessionContext AuthSessionCo
 	}
 	switch scope.Type {
 	case "platform":
-		if scope.TenantID != nil || scope.DepartmentID != nil || scope.ProjectGroupID != nil {
+		if scope.TenantID != nil {
 			return fmt.Errorf("platform scope cannot contain tenant fields")
 		}
 	case "tenant":
-		if scope.TenantID == nil || scope.DepartmentID != nil || scope.ProjectGroupID != nil {
+		if scope.TenantID == nil {
 			return fmt.Errorf("tenant scope fields are invalid")
-		}
-	case "department":
-		if scope.TenantID == nil || scope.DepartmentID == nil || scope.ProjectGroupID != nil {
-			return fmt.Errorf("department scope fields are invalid")
-		}
-		if err := validateAuthContextID("scope.department_id", *scope.DepartmentID); err != nil {
-			return err
-		}
-	case "project_group":
-		if scope.TenantID == nil || scope.DepartmentID != nil || scope.ProjectGroupID == nil {
-			return fmt.Errorf("project_group scope fields are invalid")
-		}
-		if err := validateAuthContextID("scope.project_group_id", *scope.ProjectGroupID); err != nil {
-			return err
 		}
 	default:
 		return fmt.Errorf("scope.type is invalid")
@@ -691,12 +673,10 @@ func validateSortedStrings(field string, values []string, requireNonEmpty bool, 
 }
 
 func roleAssignmentSortKey(assignment RoleAssignment) string {
-	scopeOrder := map[string]int{"platform": 0, "tenant": 1, "department": 2, "project_group": 3}
+	scopeOrder := map[string]int{"platform": 0, "tenant": 1}
 	scopeID := int64(0)
 	for _, candidate := range []*string{
 		assignment.Scope.TenantID,
-		assignment.Scope.DepartmentID,
-		assignment.Scope.ProjectGroupID,
 	} {
 		if candidate != nil {
 			scopeID, _ = strconv.ParseInt(*candidate, 10, 64)

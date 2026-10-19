@@ -29,7 +29,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 	t.Run("independent grant formal commands", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.independent_grants", Name: "Independent grant fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.independent_grants", Name: "Independent grant fixture", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if delegate {
 				seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
 			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit fixture permission"}); err != nil {
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit fixture permission"}); err != nil {
 				t.Fatal(err)
 			}
 			p, err := iam.NewRepository(db).GetPrincipal(ctx, user.PrincipalID)
@@ -130,11 +130,11 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		})
 		t.Run("administrator handles without granting itself access", func(t *testing.T) {
 			administrator := qualify(t, false)
-			adminRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.engine_grant_administrator", Name: "Authorization administrator fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_delegation.create"}, ActorPrincipalID: adminID})
+			adminRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.engine_grant_administrator", Name: "Authorization administrator fixture", PermissionKeys: []string{"system.engine_access_delegation.create"}, ActorPrincipalID: adminID})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: administrator.MembershipID, RoleIDs: []int64{adminRole.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit administrator qualification"}); err != nil {
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: administrator.MembershipID, RoleIDs: []int64{adminRole.ID}, ActorPrincipalID: adminID, Reason: "Explicit administrator qualification"}); err != nil {
 				t.Fatal(err)
 			}
 			p, err := iam.NewRepository(db).GetPrincipal(ctx, administrator.PrincipalID)
@@ -184,11 +184,11 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		t.Run("first configuration requires its separate permission before source IO", func(t *testing.T) {
 			user, expires := newUser(t, time.Hour)
 			seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
-			onlyGrant, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.grant_without_initialization", Name: "Grant only", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: adminID})
+			onlyGrant, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.grant_without_initialization", Name: "Grant only", PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: adminID})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{onlyGrant.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "No initialization authority"}); err != nil {
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{onlyGrant.ID}, ActorPrincipalID: adminID, Reason: "No initialization authority"}); err != nil {
 				t.Fatal(err)
 			}
 			principal, err := iam.NewRepository(db).GetPrincipal(ctx, user.PrincipalID)
@@ -604,11 +604,11 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		})
 		t.Run("mode changes preserve issued read access", func(t *testing.T) {
 			modeActor := qualify(t, true)
-			updateRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.approval_mode_update", Name: "Explicit mode update fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_approval_requirement.update"}, ActorPrincipalID: adminID})
+			updateRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.approval_mode_update", Name: "Explicit mode update fixture", PermissionKeys: []string{"system.engine_access_approval_requirement.update"}, ActorPrincipalID: adminID})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: modeActor.MembershipID, RoleIDs: []int64{updateRole.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit mode update permission"}); err != nil {
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: modeActor.MembershipID, RoleIDs: []int64{updateRole.ID}, ActorPrincipalID: adminID, Reason: "Explicit mode update permission"}); err != nil {
 				t.Fatal(err)
 			}
 			principal, err := iam.NewRepository(db).GetPrincipal(ctx, modeActor.PrincipalID)

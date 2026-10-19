@@ -11,7 +11,7 @@ owner_module: manager
 manifest_version: 1
 permissions:
   - key: manager.data_item.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: true

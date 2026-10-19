@@ -114,6 +114,15 @@ class AuthorizationContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(allows_permissions(context, ("develop.task.read",)))
         self.assertTrue(allows_permissions(context, ("develop.task.execute",)))
 
+    async def test_resolver_rejects_organizational_role_scope(self):
+        for scope in ("department", "project_group"):
+            response = _context_response()
+            response["authorization"]["role_assignments"][0]["scope"] = {"type": scope, "tenant_id": "3"}
+            _SystemClient.response = response
+            with patch("addp_common.auth.SystemClient", _SystemClient):
+                with self.assertRaisesRegex(ValueError, "scope.type is invalid"):
+                    await resolve_authorization_context("http://system", "user-token")
+
     async def test_other_tenant_assignment_does_not_grant_permission(self):
         context = AuthorizationContext(
             principal_id=12,

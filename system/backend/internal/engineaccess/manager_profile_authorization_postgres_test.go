@@ -30,12 +30,12 @@ func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.
 		service := iam.NewManagerProfileAuthorizationService(repo, NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{path, plugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_profile_dependency")}}).PrepareExecutionSourceRead)
 		user, _ := newUser(t, time.Hour)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.profile_source", Name: "Explicit profile functions",
-			ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"manager.data_profile.execute", "manager.data_item.read"}, ActorPrincipalID: adminID})
+			PermissionKeys: []string{"manager.data_profile.execute", "manager.data_item.read"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID,
-			RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit execution fixture"}); err != nil {
+			RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit execution fixture"}); err != nil {
 			t.Fatal(err)
 		}
 		p, err := repo.GetPrincipal(ctx, user.PrincipalID)

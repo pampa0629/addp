@@ -162,9 +162,7 @@ func TestObservationBoundsHistoryAndPreservesOnlyCanonicalResourceContext(t *tes
 
 func TestOwnerReadScopeDoesNotPromoteDepartmentPermission(t *testing.T) {
 	facts := authtest.NewTenantUserAuthContext("7", "9", []string{"transfer.task.read"})
-	department := "11"
 	facts.Authorization.RoleAssignments[0].Scope.Type = "department"
-	facts.Authorization.RoleAssignments[0].Scope.DepartmentID = &department
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(facts) }))
 	defer system.Close()
 	router := gin.New()
@@ -174,8 +172,7 @@ func TestOwnerReadScopeDoesNotPromoteDepartmentPermission(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer user")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	var scope execution.ReadScope
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &scope) != nil || len(scope.Grants) != 0 {
+	if response.Code != 503 {
 		t.Fatalf("department grant promoted: status=%d body=%s", response.Code, response.Body.String())
 	}
 }

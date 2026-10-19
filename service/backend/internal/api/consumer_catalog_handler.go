@@ -160,10 +160,9 @@ func (h *ConsumerCatalogHandler) GetService(c *gin.Context) {
 	c.JSON(http.StatusOK, descriptor)
 }
 
-// RequireTenantQueryExecutionPermission is the first Service owner resource
-// policy. Until services have explicit Resource Scope Bindings, a scoped
-// department/project-group Assignment must fail closed instead of expanding to
-// every Service in the tenant.
+// RequireTenantQueryExecutionPermission checks functional permission in the
+// resource tenant. Service visibility and instance access remain owner decisions;
+// organization membership and functional permission do not grant source-data access.
 func RequireTenantQueryExecutionPermission(c *gin.Context) {
 	if !hasTenantQueryExecutionPermission(c, authmiddleware.GetTenantID(c)) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{

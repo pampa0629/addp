@@ -148,8 +148,7 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		seedDelegation(t, operator.MembershipID, membershipExpiry.Add(-time.Second))
 		roles := iam.NewTenantRoleService(identity, testDatabaseClock(t, db))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID,
-			RoleKey: "custom.recipient_lock_order", Name: "Recipient lock order", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: operator.PrincipalID})
+			RoleKey: "custom.recipient_lock_order", Name: "Recipient lock order", PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,8 +156,7 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		request.Operator, request.RecipientID = operator, receiver.PrincipalID
 		assertIAMQualificationRace(t, db, base.TenantID, receiver, func(writeCtx context.Context) error {
 			_, err := roles.CreateAssignments(writeCtx, iam.CreateTenantRoleAssignmentsInput{TenantID: base.TenantID,
-				MembershipID: receiver.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
-				ActorPrincipalID: operator.PrincipalID, Reason: "Concurrency fixture"})
+				MembershipID: receiver.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: operator.PrincipalID, Reason: "Concurrency fixture"})
 			return err
 		}, func(readCtx context.Context, tx *gorm.DB) error {
 			_, err := NewRepository(tx).settleFulfillment(readCtx, request, true, confirmation, verified)

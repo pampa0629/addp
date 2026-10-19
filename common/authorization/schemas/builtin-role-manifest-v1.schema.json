@@ -59,7 +59,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "enum": ["platform", "tenant", "department", "project_group"]
+            "enum": ["platform", "tenant"]
           }
         },
         "allowed_principal_types": {
