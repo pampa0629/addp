@@ -25,6 +25,8 @@ class HostedMetricsGateTest(unittest.TestCase):
                 [ "${ADDP_TEST_PREPARE_FAIL:-0}" != 1 ] || exit 1
                 printf 'export ADDP_OBSERVABILITY_METRICS_ENABLED=true\\nexport ADDP_OBSERVABILITY_LOGS_ENABLED=false\\n' > "$ADDP_ONLINE_SECRET_DIR/metrics.env"
               fi
+              [ "$2" != engine-up ] || [ "${ADDP_TEST_ENGINE_UP_FAIL:-0}" != 1 ] || exit 1
+              [ "$2" != engine-down ] || [ "${ADDP_TEST_ENGINE_DOWN_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != query ] || [ "${ADDP_TEST_QUERY_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != down ] || [ "${ADDP_TEST_CLEANUP_FAIL:-0}" != 1 ]
               exit
@@ -132,6 +134,18 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertIn("metrics-case:host-admission", self.host.trace.read_text())
         self.assertIn("start:-monitor -system", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
+
+    def test_engine_admission_owns_business_and_cleans_all_failure_paths(self):
+        for failure in (None,"ADDP_TEST_ENGINE_UP_FAIL","ADDP_TEST_ENGINE_DOWN_FAIL","ADDP_TEST_SUITE_FAIL"):
+            if self.host.trace.exists():self.host.trace.unlink()
+            result=self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",**({failure:"1"} if failure else {}))
+            self.assertEqual(result.returncode==0,failure is None,result.stdout+result.stderr)
+            trace=self.host.trace.read_text()
+            self.assertIn("metrics-fixture:engine-up",trace);self.assertIn("metrics-fixture:engine-down",trace);self.assertIn("infra-down",trace)
+            if failure!="ADDP_TEST_ENGINE_UP_FAIL":self.assertIn("start:-monitor -system",trace)
+            self.assertFalse(self.host.secrets.exists())
+        result=self.run_gate(check=True,ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",ADDP_TEST_OCCUPIED_PROJECT="business")
+        self.assertNotEqual(result.returncode,0)
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):

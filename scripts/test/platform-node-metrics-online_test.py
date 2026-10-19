@@ -1190,7 +1190,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -1860,6 +1860,32 @@ class MetricsEvidenceCheckpointTest(unittest.TestCase):
                     ONLINE.write_evidence(report)
             self.assertEqual(json.loads(output.read_text())["stage"], "complete")
             self.assertEqual(list(Path(directory).iterdir()), [output])
+
+
+
+class EngineAdmissionEvidenceTest(unittest.TestCase):
+    def test_browser_receipts_require_exact_batch_identity_scope_reload_and_screenshots(self):
+        with tempfile.TemporaryDirectory() as folder:
+            artifacts=Path(folder);host="10000000-0000-4000-8000-000000000001"
+            items=[{"scope":scope,"service":"postgres","fingerprint":letter*64,"display_name":scope+" PG","enabled":True,"declared_node_id":host} for scope,letter in (("infra","a"),("business","b"))]
+            expected={"run_id":"run","admin_id":"admin-id","engine_admission":{"items":items}}
+            actor=identity();actor["principal"]["id"]="admin-id"
+            created=[{"deployment_id":"20000000-0000-4000-8000-00000000000"+str(index+1),"version":1,"display_name":item["display_name"],"engine_type":"postgresql","enabled":True,"declared_node_id":host,"node_id":host,"host_binding_state":"bound","inventory":{"schema":"addp.engine-deployment-inventory/v1","source":{"project":"addp-infra" if item["scope"]=="infra" else "business"}}} for index,item in enumerate(items)]
+            value={"schema_version":"addp.node-resources-browser/v1","run_id":"run","result":"passed","stage":"complete","identity":actor,"engine_admission":{"writes":[{"items":items}],"created":created,"reloaded":True,"registered_disabled":True}}
+            for name in ("engine-admission-saved.png","engine-admission-restored.png"):(artifacts/name).write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*32)
+            self.assertEqual(ONLINE.validate_engine_admission_browser(value,expected,artifacts),created)
+            for mutate in (lambda v:v.update(run_id="foreign"),lambda v:v["identity"]["principal"].update(id="foreign"),lambda v:v["engine_admission"].update(reloaded=False),lambda v:v["engine_admission"].update(registered_disabled=False),lambda v:v["engine_admission"]["writes"].append({"items":items}),lambda v:v["engine_admission"]["writes"][0]["items"][0].update(declared_node_id="foreign"),lambda v:v["engine_admission"]["created"][0].update(version=True),lambda v:v["engine_admission"]["created"][0]["inventory"]["source"].update(project="foreign")):
+                invalid=copy.deepcopy(value);mutate(invalid)
+                with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_engine_admission_browser(invalid,expected,artifacts)
+            (artifacts/"engine-admission-restored.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_engine_admission_browser(value,expected,artifacts)
+
+    def test_personal_boundary_rejects_before_any_engine_request(self):
+        from unittest.mock import Mock
+        admin=Mock()
+        with patch.object(ONLINE.FIXTURE,"boundary",return_value=Path("/other")):
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.run_engine_admission_case("base",Path("/owned"),admin,{},[],{})
+        admin.request.assert_not_called()
 
 
 if __name__ == "__main__":

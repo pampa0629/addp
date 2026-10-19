@@ -7,15 +7,20 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
 ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
 case "$ADDP_ONLINE_NODE_METRICS_CASE" in
-  regression|complete-comparison|cpu-pressure|host-admission) export ADDP_ONLINE_NODE_METRICS_CASE ;;
-  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure or host-admission' >&2; exit 2 ;;
+  regression|complete-comparison|cpu-pressure|host-admission|engine-admission) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission or engine-admission' >&2; exit 2 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-node-metrics addp-metrics-online)
 node_owned=0
+engine_owned=0
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business); fi
 stop_online_fixture() {
   local status=0
+  if [ "$engine_owned" -eq 1 ]; then
+    run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-down || status=1
+  fi
   run_logged python3 scripts/test/platform-node-metrics-fixture.py down || status=1
   if [ "$node_owned" -eq 1 ]; then
     run_logged python3 scripts/infra/node-metrics.py down || status=1
@@ -47,9 +52,13 @@ run_logged python3 scripts/test/platform-node-metrics-fixture.py up
 run_logged bash scripts/infra/up.sh
 run_logged python3 scripts/test/platform-node-metrics-fixture.py query
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then
+  engine_owned=1
+  run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-up
+fi
 application_owned=1
 modules=(-monitor)
-if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ]; then modules+=(-system); fi
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then modules+=(-system); fi
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-node-metrics --output "$1"' _ "$IDENTITY_ENV"

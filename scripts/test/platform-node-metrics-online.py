@@ -20,6 +20,7 @@ import sys
 import time
 import threading
 import urllib.parse
+import uuid
 import urllib.request
 from contextlib import contextmanager
 from importlib import import_module
@@ -1169,6 +1170,103 @@ def run_host_binding_case(base, directory, admin, actor, host, target, report):
     return host
 
 
+
+ENGINE_DEPLOYMENTS = "/api/v1/system/platform/engine_deployments"
+
+
+def engine_candidates(admin):
+    deadline=time.monotonic()+90
+    while True:
+        value=admin.request("GET",ENGINE_DEPLOYMENTS+"/discovery",(200,)).payload
+        require(isinstance(value,dict) and isinstance(value.get("scopes"),list) and isinstance(value.get("candidates"),list) and all(isinstance(row,dict) for row in value["candidates"]),"engine discovery envelope differs")
+        candidates=[row for row in value["candidates"] if row.get("service")=="postgres" and row.get("eligible") is True]
+        if len(candidates)==2 and {row.get("scope") for row in candidates}=={"infra","business"}:
+            require(all(re.fullmatch(r"[a-f0-9]{64}",row.get("fingerprint","")) and not row.get("deployment_id") for row in candidates),"engine candidate is already registered or malformed")
+            return value, sorted(candidates,key=lambda row:row["scope"])
+        require(time.monotonic()<deadline,"both owned PostgreSQL sources did not become available")
+        time.sleep(2)
+
+
+def validate_engine_admission_browser(value,expected,artifacts):
+    require(isinstance(value,dict) and value.get("schema_version")=="addp.node-resources-browser/v1" and value.get("result")=="passed" and value.get("stage")=="complete" and value.get("run_id")==expected["run_id"],"engine browser result mismatch")
+    actor=value.get("identity",{}); platform_identity(actor,"platform.system_administrator")
+    require(actor["principal"]["id"]==expected["admin_id"],"engine browser changed administrator")
+    detail=value.get("engine_admission",{})
+    require(isinstance(detail,dict) and detail.get("reloaded") is True and detail.get("registered_disabled") is True,"engine browser reload or registered guard missing")
+    writes=detail.get("writes",[])
+    require(isinstance(writes,list) and len(writes)==1 and isinstance(writes[0],dict) and set(writes[0])=={"items"} and isinstance(writes[0]["items"],list) and len(writes[0]["items"])==2 and all(isinstance(row,dict) for row in writes[0]["items"]),"engine browser did not submit one bounded batch")
+    items=sorted(writes[0]["items"],key=lambda row:row.get("scope",""))
+    wanted=sorted(expected["engine_admission"]["items"],key=lambda row:row["scope"])
+    require(items==wanted,"engine browser changed the explicit source or host confirmations")
+    created=detail.get("created",[])
+    require(isinstance(created,list) and len(created)==2 and all(isinstance(row,dict) and isinstance(row.get("inventory"),dict) and isinstance(row["inventory"].get("source"),dict) for row in created) and len({row.get("deployment_id") for row in created})==2,"engine browser deployment identities differ")
+    for row,item in zip(sorted(created,key=lambda row:row.get("inventory",{}).get("source",{}).get("project","")),sorted(wanted,key=lambda item: "addp-infra" if item["scope"]=="infra" else "business")):
+        require(canonical_uuid(row.get("deployment_id")) and type(row.get("version")) is int and row["version"]==1
+                and row.get("enabled") is True and row.get("engine_type")=="postgresql" and row.get("display_name")==item["display_name"] and row.get("declared_node_id")==item["declared_node_id"]
+                and row.get("node_id")==item["declared_node_id"] and row.get("host_binding_state")=="bound"
+                and row.get("inventory",{}).get("schema")=="addp.engine-deployment-inventory/v1"
+                and row["inventory"]["source"].get("project")==("addp-infra" if item["scope"]=="infra" else "business"),"engine admission receipt changed")
+    for name in ("engine-admission-saved.png","engine-admission-restored.png"):
+        path=artifacts/name
+        require(path.is_file() and path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"),"engine browser screenshot missing")
+    return created
+
+
+def run_engine_admission_case(base,directory,admin,actor,denied,report):
+    require(FIXTURE.boundary()==directory,"engine admission requires owned Hosted deployment")
+    artifacts=Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    report["stage"]="engine-source-discovery"; write_evidence(report)
+    require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"engine inventory is not empty")
+    discovery,candidates=engine_candidates(admin)
+    node_input={"display_name":"Online engine host "+os.environ["ADDP_ONLINE_TEST_RUN_ID"],"node_kind":"virtual","addresses":[],"enabled":True,"allowed_module_bindings":[]}
+    host=admin.request("POST",NODES,(201,),node_input).payload
+    require(canonical_uuid(host.get("node_id")) and host.get("version")==1,"engine host creation differs")
+    items=[{k:row[k] for k in ("scope","service","fingerprint")} | {"display_name":"Online "+row["scope"]+" PostgreSQL "+os.environ["ADDP_ONLINE_TEST_RUN_ID"],"enabled":True,"declared_node_id":host["node_id"]} for row in candidates]
+    report["stage"]="engine-batch-rejection-and-rollback"; write_evidence(report)
+    invalid=[dict(row) for row in items]; next(row for row in invalid if row["scope"]=="business")["declared_node_id"]=str(uuid.uuid4())
+    failure=admin.request("POST",ENGINE_DEPLOYMENTS,(409,),{"items":invalid}).payload
+    require(failure.get("error_code")=="engine_deployment_host_unavailable","engine second-member rejection differs")
+    require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"failed batch created an engine identity")
+    admin.request("POST",ENGINE_DEPLOYMENTS,(400,),{"items":[items[0],items[0]]})
+    for client in [*denied,API.GatewayClient(base,"",10)]:
+        expected_status=(401,) if not client.token else (403,)
+        for path in (ENGINE_DEPLOYMENTS,ENGINE_DEPLOYMENTS+"/discovery"):
+            client.request("GET",path,expected_status)
+        client.request("POST",ENGINE_DEPLOYMENTS,expected_status,{"items":items})
+    report["stage"]="engine-real-source-change"; write_evidence(report)
+    FIXTURE.engine_source_action(directory,"engine-restart")
+    changed,new_candidates=engine_candidates(admin)
+    old={row["scope"]:row["fingerprint"] for row in items}; new={row["scope"]:row["fingerprint"] for row in new_candidates}
+    require(old["business"]!=new["business"] and old["infra"]==new["infra"],"actual Business restart did not change only its source facts")
+    failure=admin.request("POST",ENGINE_DEPLOYMENTS,(409,),{"items":items}).payload
+    require(failure.get("error_code")=="engine_deployment_source_changed","stale source was not rejected")
+    require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==0,"stale confirmation created an identity")
+    for row in items: row["fingerprint"]=new[row["scope"]]
+    expected={"run_id":os.environ["ADDP_ONLINE_TEST_RUN_ID"],"admin_id":actor["principal"]["id"],"engine_admission":{"items":items,"host":host}}
+    (artifacts/"node-resources-browser-input.json").write_text(json.dumps(expected))
+    report["stage"]="engine-console-batch-admission"; write_evidence(report)
+    browser=execute_resource_browser(artifacts)
+    created=validate_engine_admission_browser(browser,expected,artifacts)
+    admin=renew_admin(base,actor["principal"]["id"])
+    require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==2,"engine batch did not create exactly two roots")
+    report["stage"]="engine-owner-read-cas-and-retirement"; write_evidence(report)
+    for receipt in created:
+        path=ENGINE_DEPLOYMENTS+"/"+receipt["deployment_id"]
+        stored=admin.request("GET",path,(200,)).payload
+        require(all(stored.get(k)==receipt.get(k) for k in ("deployment_id","display_name","inventory","declared_node_id","version")),"engine browser receipt differs from Owner")
+        body={"display_name":stored["display_name"]+" verified","enabled":True,"declared_node_id":host["node_id"],"version":1}
+        updated=admin.request("PUT",path,(200,),body).payload
+        require(updated.get("version")==2 and updated.get("display_name")==body["display_name"] and updated.get("inventory")==stored["inventory"],"engine management changed its source or did not advance version")
+        admin.request("PUT",path,(409,),body)
+        for client in denied:
+            client.request("GET",path,(403,)); client.request("PUT",path,(403,),dict(body,version=2))
+        retired=admin.request("PUT",path,(200,),dict(body,enabled=False,version=2)).payload
+        require(retired.get("version")==3 and retired.get("host_binding_reason")=="deployment_disabled","engine retirement differs")
+    final_host=admin.request("PUT",NODES+"/"+host["node_id"],(200,),dict(node_input,enabled=False,version=1)).payload
+    require(final_host.get("version")==2 and final_host.get("enabled") is False,"engine host was not retired")
+    report.update(engine_admission={"result":"passed","batch_size":2,"failed_batch_no_roots":True,"source_changed":True,"duplicate_rejected":True,"browser_reload":True,"owner_reads":True,"cas":True,"retired":True},stage="complete",result="passed")
+    write_evidence(report)
+
 def run_host_admission_case(base, directory, admin_identity, report):
     require(FIXTURE.boundary() == directory, "host admission requires the owned Hosted deployment")
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1665,7 +1763,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -1751,6 +1849,9 @@ def run(base, directory, report):
     for client in [admin, security, *tenant_clients]:
         client.request("GET", DISCOVERY, (403,))
     report["identity_isolation"] = True
+    if selected_case == "engine-admission":
+        run_engine_admission_case(base,directory,admin,admin_identity,[security,machine,*tenant_clients],report)
+        return
     if selected_case == "host-admission":
         run_host_admission_case(base, directory, admin_identity, report)
         return

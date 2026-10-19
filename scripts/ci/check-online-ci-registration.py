@@ -1712,7 +1712,7 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
                      "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor)',
-                     'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ]; then modules+=(-system); fi',
+                     'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then modules+=(-system); fi',
                      'scripts/dev/start.sh "${modules[@]}"',
                      'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if fragment not in gate:
@@ -1728,9 +1728,9 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     options = re.search(r"(?m)^        options:\n(?P<body>(?:          - [a-z-]+\n)+)", choice)
     if ("        type: choice\n" not in choice or "        required: true\n" not in choice
             or "        default: regression\n" not in choice or options is None
-            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission"]
+            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission"]
             or "      ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}\n" not in job.group("body")
-            or "regression|complete-comparison|cpu-pressure|host-admission)" not in gate):
+            or "regression|complete-comparison|cpu-pressure|host-admission|engine-admission)" not in gate):
         raise RegistrationError("platform-node-metrics must select a closed, bounded acceptance case")
 
 

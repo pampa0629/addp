@@ -70,6 +70,7 @@ on:
           - complete-comparison
           - cpu-pressure
           - host-admission
+          - engine-admission
 
 permissions:
   contents: read

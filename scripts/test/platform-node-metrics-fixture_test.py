@@ -245,5 +245,52 @@ class CPUPressureFixtureTest(unittest.TestCase):
             command.assert_not_called()
 
 
+
+class EngineSourceFixtureTest(unittest.TestCase):
+    def test_business_source_is_private_owned_and_refuses_foreign_components(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(importlib.import_module("scripts.utils.deployment-inventory"),"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+            directory=Path(folder)
+            FIXTURE.engine_source_action(directory,"engine-up")
+            self.assertEqual((directory/"engine-source.env").stat().st_mode&0o777,0o600)
+            content=(directory/"engine-source.env").read_text();self.assertIn("POSTGRES_DB=business",content);self.assertNotIn("addp_online",content)
+            compose.assert_called_once_with(directory,"up","-d","--wait","--wait-timeout","120","postgres")
+            def foreign(args):
+                return "foreign-id" if args[:3]==["docker","ps","-aq"] else json.dumps({"com.docker.compose.project.working_dir":"/foreign","com.docker.compose.service":"postgres"})
+            with patch.object(FIXTURE,"command",side_effect=foreign):
+                with self.assertRaises(ValueError):FIXTURE.engine_source_action(directory,"engine-down")
+            self.assertEqual(compose.call_count,1)
+            FIXTURE.engine_source_action(directory,"engine-down")
+            self.assertFalse((directory/"engine-source.env").exists());self.assertFalse((directory/"engine-source-owner.json").exists())
+
+    def test_restart_is_limited_to_owned_postgres_and_refreshes_the_same_source(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(importlib.import_module("scripts.utils.deployment-inventory"),"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+            directory=Path(folder);FIXTURE.engine_source_action(directory,"engine-up")
+            def owned(args):
+                return "owned-id" if args[:3]==["docker","ps","-aq"] else json.dumps({"com.docker.compose.project.working_dir":str(FIXTURE.ROOT/"business"),"com.docker.compose.service":"postgres"})
+            with patch.object(FIXTURE,"command",side_effect=owned),patch.object(FIXTURE.subprocess,"run") as run:
+                FIXTURE.engine_source_action(directory,"engine-restart")
+                compose.assert_any_call(directory,"restart","--timeout","10","postgres")
+                self.assertIn("deployment-inventory.py",run.call_args.args[0][1]);self.assertIn("business",run.call_args.args[0])
+                self.assertNotIn("private-sentinel",json.dumps(run.call_args.kwargs["env"]))
+
+    def test_engine_case_is_required_before_docker_or_private_files(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_NODE_METRICS_CASE":"regression"}),patch.object(FIXTURE,"command") as command:
+            with self.assertRaises(ValueError):FIXTURE.engine_source_action(Path(folder),"engine-up")
+            command.assert_not_called();self.assertEqual(list(Path(folder).iterdir()),[])
+
+    def test_remote_docker_override_rejects_before_creating_or_stopping_resources(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","DOCKER_HOST":"tcp://foreign:2375"}),patch.object(FIXTURE,"command") as command:
+            for action in ("engine-up","engine-down","engine-restart"):
+                with self.assertRaises(ValueError):FIXTURE.engine_source_action(Path(folder),action)
+            command.assert_not_called();self.assertEqual(list(Path(folder).iterdir()),[])
+
+    def test_engine_docker_does_not_inherit_platform_sql_credentials(self):
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"POSTGRES_PASSWORD":"private-sentinel","SYSTEM_SERVICE_CLIENT_SECRET":"private-sentinel"}),patch.object(FIXTURE.subprocess,"run") as run:
+            run.return_value.stdout=""
+            FIXTURE.engine_compose(Path(folder),"up","postgres")
+            self.assertNotIn("private-sentinel",json.dumps(run.call_args.kwargs["env"]))
+            self.assertIn("--project-directory",run.call_args.args[0]);self.assertIn("business",run.call_args.args[0])
+
+
 if __name__ == "__main__":
     unittest.main()

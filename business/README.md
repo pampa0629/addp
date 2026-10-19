@@ -14,7 +14,9 @@ Infra 生命周期管理独立发现进程，Business 和开发启动幂等确�
 
 在 `business/.env` 分别填写至少12字符且不同的 `STARROCKS_PASSWORD`（原生 root）和 `STARROCKS_APP_PASSWORD`，普通账号 `STARROCKS_USER` 默认 `business_reader`。通过 `bash business/scripts/start.sh -starrocks` 启动，`stop.sh -starrocks` 停止，`restart.sh -starrocks` 重建应用配置但保留卷。初始化先启动官方 FE，设置首次管理员密码，再启用使用该密码的官方 director 注册 BE，避免空密码与原生初始化检查竞态；不替换 FE／BE 运行实现。
 
-首次空卷创建 `business.source` 的有序复合主键、bigint、Decimal(38,18)、中文、NULL／空串和尾随空格样例，并授予普通账号该库表的 SELECT。启动只补缺失样例，不覆盖已有行、不自动轮换密码；原生数据存在但没有 ADDP 管理员标记时拒绝初始化，密码错误时拒绝就绪，不删除卷。平台登记使用普通账号。当前正式插件代码与 T1 已具备，Provider T2、持久化启动和平台 T4 须分别核验，不以原生协议准入替代。
+首次空卷创建 `business.source` 的有序复合主键、bigint、Decimal(38,18)、中文、NULL／空串和尾随空格样例，并授予普通账号该库表的 SELECT。启动只补缺失样例，不覆盖已有行、不自动轮换密码；原生数据存在但没有 ADDP 管理员标记时拒绝初始化，密码错误时拒绝就绪，不删除卷。平台登记使用普通账号。
+
+正式插件与范围内确定性测试已具备。2026-10-19 Linux ARM64 正式门禁 [39270948341 / Job 118122783775](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783775)，源码 `22fce34b3b774ef32b148268df09c8a37cbda66c`，已通过五项原生协议测试、七组 Decimal 子例、两项 Provider 集成测试和 Business 持久化验证，无跳过、清理零残留；实库版本为 `3.5.21-85fccf8`。其中真实验证只读账号拒写、bigint／Decimal 精度、容器重建后 Backend ID 与用户修改保留，不能外推到 amd64 或平台 T4。amd64 同轮仍待运行，页面 suite `starrocks-consumer-flow` 已接入现有 Hosted T4，待实际通过；本机个人 Business 服务尚未启动验收。
 
 ## GaussDB Business 部署
 

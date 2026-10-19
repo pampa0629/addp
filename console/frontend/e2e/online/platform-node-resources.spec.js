@@ -39,7 +39,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const overviews = []
   page.on('response', response => {
     // Admission records its own write receipts; resource polling belongs to the resource cases.
-    if (expected.admission) return
+    if (expected.admission || expected.engine_admission) return
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
       pending.push(response.json().then(value => instancePages.push({ query: Object.fromEntries(url.searchParams), value })))
@@ -97,6 +97,50 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('administrator-password-mfa')
     report.identity = await login(page, 'ADDP_ONLINE_METRICS_ADMIN', expected.admin_id, 'platform.system_administrator')
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (expected.engine_admission) {
+      save('engine-discovery-and-batch-confirmation')
+      const writes = [], input = expected.engine_admission
+      page.on('request', request => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/system/platform/engine_deployments') writes.push(request.postDataJSON())
+      })
+      await page.goto('/system/engine-deployments')
+      const system = page.frameLocator('iframe[data-testid="module-iframe"]')
+      const discovered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/platform/engine_deployments/discovery' && response.request().method() === 'GET')
+      await system.getByTestId('deployment-create').click()
+      expect((await discovered).status()).toBe(200)
+      await expect(system.getByTestId('deployment-file')).toHaveCount(0)
+      for (const item of input.items) await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
+      await system.getByTestId('deployment-candidates').locator('.el-table__header .el-checkbox').click()
+      await system.getByRole('dialog').getByRole('combobox', { name: '承载主机', exact: true }).press('Enter')
+      await system.getByRole('option', { name: input.host.display_name, exact: true }).click()
+      const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/platform/engine_deployments' && response.request().method() === 'POST')
+      await system.getByTestId('deployment-save').click()
+      const response = await submitted
+      expect(response.status()).toBe(201)
+      const payload = await json(response, 'engine batch admission')
+      expect(payload.data).toHaveLength(2)
+      await expect(system.getByRole('dialog')).toHaveCount(0)
+      await page.screenshot({ path: resolve(artifact, 'engine-admission-saved.png'), fullPage: true })
+      const first = payload.data[0]
+      await system.getByRole('row').filter({ hasText: first.display_name }).getByRole('button', { name: '详情', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp('/system/engine-deployments/' + first.deployment_id + '$'))
+      await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
+      await page.reload()
+      await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
+      await expect(system.getByRole('dialog')).toContainText('当前版本：1')
+      await system.locator('.el-overlay').evaluate(async element => { await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)) })
+      await page.screenshot({ path: resolve(artifact, 'engine-admission-restored.png'), fullPage: true })
+      await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+      await system.getByTestId('deployment-create').click()
+      for (const scope of ['Infra', 'Business']) {
+        const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / postgres` })
+        await expect(row).toContainText('已接入')
+        await expect(row.locator('.el-checkbox')).toBeDisabled()
+      }
+      expect(writes).toHaveLength(1)
+      report.engine_admission = { writes, created: payload.data, reloaded: true, registered_disabled: true }
+      report.result = 'passed'; save('complete'); return
+    }
     if (expected.admission) {
       save('host-admission-confirm-and-retry')
       const writes = []

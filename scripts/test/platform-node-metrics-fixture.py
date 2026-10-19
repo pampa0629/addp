@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib import import_module
 import ipaddress
 import json
 import os
@@ -347,12 +348,72 @@ def assert_process_listeners_closed():
                 raise ValueError("process metrics has a residual listener")
 
 
+
+def engine_compose(directory, *args):
+    source = import_module("scripts.utils.deployment-inventory")
+    return subprocess.run(["docker", "compose", "--project-directory", str(ROOT/"business"), "-p", "business",
+                           "--env-file", str(ROOT/"business/.env.example"), "--env-file", str(directory/"engine-source.env"),
+                           "-f", str(ROOT/"business/docker-compose.yml"), *args],
+                          env=source.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
+
+
+def engine_source_action(directory, action):
+    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") != "engine-admission":
+        raise ValueError("Business fixture requires the engine-admission case")
+    source=import_module("scripts.utils.deployment-inventory")
+    source.local_docker(env=source.observer_environment())
+    owner = directory/"engine-source-owner.json"
+    expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "repository": str(ROOT), "project": "business"}
+    if action == "engine-up":
+        if owner.exists() or (directory/"engine-source.env").exists():
+            raise ValueError("Business source is already owned")
+        for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
+            if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():
+                raise ValueError("refusing an existing Business source")
+        owner.write_text(json.dumps(expected)); owner.chmod(0o600)
+        # Normal Business engine initialization only; no application queries or sample generators.
+        envfile=directory/"engine-source.env"
+        envfile.write_text("POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\n")
+        envfile.chmod(0o600)
+        engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
+        return
+    if not owner.exists():
+        for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
+            if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():
+                raise ValueError("Business ownership is missing")
+        if action=="engine-down": return
+        raise ValueError("Business source was not started")
+    if json.loads(owner.read_text()) != expected or owner.stat().st_mode & 0o777 != 0o600:
+        raise ValueError("Business source owner differs")
+    ids=command(["docker","ps","-aq","--no-trunc","--filter","label=com.docker.compose.project=business"]).split()
+    for container in ids:
+        labels=json.loads(command(["docker","inspect","--format",'{{json .Config.Labels}}',container]))
+        if (labels.get("com.docker.compose.project.working_dir")!=str(ROOT/"business")
+                or labels.get("com.docker.compose.service")!="postgres"):
+            raise ValueError("refusing a foreign Business component")
+    if action=="engine-restart":
+        if len(ids)!=1: raise ValueError("Business PostgreSQL identity is not unique")
+        engine_compose(directory,"restart","--timeout","10","postgres")
+        engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
+        source=import_module("scripts.utils.deployment-inventory")
+        subprocess.run([sys.executable,str(ROOT/"scripts/utils/deployment-inventory.py"),"refresh","--scope","business","--directory",os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT/".dev-state/deployment-discovery")],
+                       env=source.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
+        return
+    engine_compose(directory,"down","--volumes","--remove-orphans")
+    for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
+        if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():
+            raise ValueError("Business source has residual resources")
+    owner.unlink(); (directory/"engine-source.env").unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "query", "up", "down"))
+    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down"))
     args = parser.parse_args()
     directory = boundary()
-    if args.action == "prepare":
+    if args.action.startswith("engine-"):
+        engine_source_action(directory,args.action)
+    elif args.action == "prepare":
         prepare(directory)
     elif args.action == "query":
         configure_query(directory)
