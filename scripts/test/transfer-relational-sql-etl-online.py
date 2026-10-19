@@ -1440,21 +1440,11 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
 
 
 def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float) -> None:
-    # A new Tenant becomes readable only after the owner's first Security sync.
-    # This is a read-only readiness check; never initialize owner storage here.
-    while time.monotonic() < deadline:
-        response = client.request("GET", "/api/v1/manager/engines", (200, 403))
-        payload = _object(response.payload, "Manager Engines")
-        if response.status == 403:
-            if payload.get("error_code") != "security_protection_required":
-                raise SuiteError("Manager engine readiness was denied by authorization")
-        else:
-            engines = _array(payload.get("data"), "Manager Engines data")
-            if sum(isinstance(engine, dict) and engine.get("id") == engine_id for engine in engines) != 1:
-                raise SuiteError("Manager engine readiness did not return the exact target Engine")
-            return
-        time.sleep(1)
-    raise SuiteError("Manager initial Security protection synchronization did not become ready")
+    # Only adapt this suite's error type; the shared helper owns readiness.
+    try:
+        API.wait_manager_read_boundary(client, engine_id, deadline)
+    except API.SuiteError as error:
+        raise SuiteError(str(error)) from error
 
 
 def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, engine_type: str, deadline: float) -> dict[str, object]:

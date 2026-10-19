@@ -156,6 +156,8 @@ class Server:
                                          'observed_at': '2026-10-16T03:00:00Z', 'rule_covered': reason == 'grant',
                                          'reason': reason, 'sources': sources, 'denies': denies}}]
                     result = {'data': rows, 'total': len(rows)}
+                elif path == '/api/v1/manager/engines':
+                    result = {'data': [{'id': 2}]}
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
                     matching = [row for key, row in server.grants.items()
@@ -276,6 +278,52 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(self.scans.call_count, 6)
         self.assertEqual(server.people, ('A', 'B'))
         self.assertTrue(report['content_changes']['source_baseline_restored'])
+
+    def test_initial_security_boundary_must_be_ready_before_scan_or_grant(self):
+        server, lifecycle = self.lifecycle()
+        report = {}
+        with patch.object(ONLINE.API, 'wait_manager_read_boundary', create=True,
+                          side_effect=ONLINE.SuiteError('initial Security synchronization')) as ready:
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'initial Security synchronization'):
+                lifecycle.run(report)
+        self.assertEqual(report['phase'], 'initial_protection_sync')
+        self.assertEqual(ready.call_args.args[:2], (lifecycle.reader, 2))
+        self.scans.assert_not_called()
+        self.assertFalse(server.grants)
+        self.assertFalse(server.denies)
+
+    def test_shared_manager_boundary_waits_only_for_initial_projection(self):
+        client = SimpleNamespace(request=Mock(side_effect=[
+            SimpleNamespace(status=403, payload={'error_code': 'security_protection_required'}),
+            SimpleNamespace(status=200, payload={'data': [{'id': 2}]}),
+        ]))
+        with patch.object(ONLINE.time, 'monotonic', return_value=0), patch.object(ONLINE.time, 'sleep') as sleep:
+            ONLINE.API.wait_manager_read_boundary(client, 2, 10)
+        sleep.assert_called_once_with(1)
+        for call in client.request.call_args_list:
+            self.assertEqual(call.args, ('GET', '/api/v1/manager/engines', (200, 403)))
+
+    def test_shared_manager_boundary_rejects_wrong_permissions_or_engine(self):
+        for response in [SimpleNamespace(status=403, payload={'error_code': 'permission_denied'}),
+                         SimpleNamespace(status=200, payload={'data': []}),
+                         SimpleNamespace(status=200, payload={'data': [{'id': 3}]}),
+                         SimpleNamespace(status=200, payload={'data': [{'id': 2}, {'id': 2}]}),
+                         SimpleNamespace(status=200, payload={'data': {}}),
+                         SimpleNamespace(status=200, payload=[])]:
+            client = SimpleNamespace(request=Mock(return_value=response))
+            with self.subTest(response=response), patch.object(ONLINE.time, 'monotonic', return_value=0), \
+                    patch.object(ONLINE.time, 'sleep') as sleep, self.assertRaises(ONLINE.SuiteError):
+                ONLINE.API.wait_manager_read_boundary(client, 2, 10)
+            sleep.assert_not_called()
+            client.request.assert_called_once()
+
+    def test_shared_manager_boundary_fails_when_initial_sync_does_not_finish(self):
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(
+            status=403, payload={'error_code': 'security_protection_required'})))
+        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 11]), \
+                self.assertRaisesRegex(ONLINE.SuiteError, 'initial Security protection synchronization'):
+            ONLINE.API.wait_manager_read_boundary(client, 2, 10)
+        client.request.assert_called_once()
 
     def test_workspace_requires_actual_withdrawal_and_preserves_tracked_history(self):
         server, lifecycle = self.lifecycle()
@@ -517,7 +565,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_natural_expiry_deadline_is_bounded_and_failure_still_withdraws(self):
         server, lifecycle = self.lifecycle('never_expire')
-        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 1, 100]):
+        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 1, 0, 1, 100]):
             with self.assertRaisesRegex(ONLINE.SuiteError, 'naturally expire'):
                 lifecycle.run({})
         lifecycle.cleanup()

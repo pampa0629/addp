@@ -164,6 +164,27 @@ def cleanup_resource(client: GatewayClient, path: str) -> bool:
     return remaining.status == 404
 
 
+def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float) -> None:
+    """Observe initial Security synchronization without mutating owner storage."""
+    while time.monotonic() < deadline:
+        response = client.request("GET", "/api/v1/manager/engines", (200, 403))
+        payload = response.payload
+        if not isinstance(payload, dict):
+            raise SuiteError("Manager engine readiness returned an invalid response")
+        if response.status == 403:
+            if payload.get("error_code") != "security_protection_required":
+                raise SuiteError("Manager engine readiness was denied by authorization")
+        else:
+            engines = payload.get("data")
+            if not isinstance(engines, list) or sum(
+                isinstance(engine, dict) and engine.get("id") == engine_id for engine in engines
+            ) != 1:
+                raise SuiteError("Manager engine readiness did not return the exact target Engine")
+            return
+        time.sleep(1)
+    raise SuiteError("Manager initial Security protection synchronization did not become ready")
+
+
 def read_meta_scan_boundary(client, engine_id, source):
     """Freeze sibling facts and ancestor scan state through the canonical read APIs."""
     def _object(value, resource):

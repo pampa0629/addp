@@ -1041,6 +1041,8 @@ class Lifecycle:
 
     def run(self, report):
         reader_before = self.reader.token
+        report['phase'] = 'initial_protection_sync'
+        API.wait_manager_read_boundary(self.reader, self.engine, time.monotonic() + 120)
         report['phase'] = 'initial_basic_scan'
         report['initial_scan'] = basic_scan(self.reader, self.engine, ['metric_people', 'metric_events'])
         original = item(self.reader, self.engine, 'metric_people')
