@@ -29,4 +29,20 @@ python3 "$ROOT_DIR/business/starrocks/admission.py" start
 export ADDP_STARROCKS_INTEGRATION=1
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/certification/starrocks -run '^TestAdmission' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/admission.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/admission.log"
-grep -q -- '--- PASS: TestAdmission' "$ARTIFACT_DIR/admission.log"
+for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNativeTransactionBoundary NativeVisibleCatalogAndFieldFacts; do
+    grep -q -- "--- PASS: TestAdmission${required} " "$ARTIFACT_DIR/admission.log" || {
+        echo "StarRocks admission requires the actual ${required} test" >&2
+        exit 1
+    }
+done
+python3 - "$ARTIFACT_DIR/admission-policy.json" <<'POLICY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'result': 'passed',
+    'read_only_boundary': 'validated_statement',
+    'database_read_only_transaction': False,
+    'provider_implemented': False,
+    'scope': 'native protocol, shared SQL guard, ordinary read transaction and visible catalog',
+}, indent=2))
+POLICY

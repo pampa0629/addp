@@ -416,12 +416,12 @@ test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指�
 	@bash scripts/test/common-tidb-gate.sh
 
 .PHONY: test-common-starrocks test-common-starrocks-unit
-test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及协议测试编译
+test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及共享只读拒绝边界
 	@python3 -m unittest scripts/test/starrocks-admission_test.py
 	@bash -n scripts/test/common-starrocks-gate.sh
-	@cd common && GOWORK=off go test ./engine/certification/starrocks -run '^$$'
+	@cd common && GOWORK=off go test ./engine/certification/starrocks -run '^TestAdmissionGuard'
 
-test-common-starrocks: ## 独占官方 StarRocks 验证原生参数查询、精度与事务只读约束
+test-common-starrocks: ## 独占官方 StarRocks 验证原生目录、精度及受控只读边界
 	@bash scripts/test/common-starrocks-gate.sh
 
 .PHONY: test-common-gaussdb test-common-gaussdb-unit

@@ -20,7 +20,7 @@ LABEL = 'com.addp.starrocks-admission'
 def run(*args, evidence=None, **kwargs):
     result = subprocess.run(args, capture_output=True, text=True, **kwargs)
     if evidence is not None:
-        # Only the fixed FROM/LABEL build uses this; SQL/inspection never does.
+        # Only fixed FROM/LABEL and credential-free schema DDL use this.
         private(evidence, {'stdout': result.stdout, 'stderr': result.stderr})
     if result.returncode:
         raise RuntimeError('StarRocks admission command failed: ' + ' '.join(args[:2]))
@@ -107,10 +107,12 @@ CREATE TABLE addp_acceptance.source(name VARCHAR(128),id BIGINT,amount DECIMAL(3
 PRIMARY KEY(name,id) DISTRIBUTED BY HASH(name) BUCKETS 1 PROPERTIES('replication_num'='1');
 INSERT INTO addp_acceptance.source VALUES ('正式接入中文',9007199254740993,12345678901234567890.123456789012345678,NULL),('保留尾空格  ',2,-0.000000000000000001,'');
 CREATE TABLE addp_acceptance.write_probe(id BIGINT) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1');
+CREATE VIEW addp_acceptance.visible_view AS SELECT name,id FROM addp_acceptance.source;
 """, evidence=path / 'schema-initialization.json')
     password = 'Sr9@' + secrets.token_hex(12)
     sql(name, f"""CREATE USER fixture_reader IDENTIFIED BY '{password}';
 GRANT SELECT ON TABLE addp_acceptance.source TO USER fixture_reader;
+GRANT SELECT ON VIEW addp_acceptance.visible_view TO USER fixture_reader;
 """)
     value = owned('container', name, state)
     mapping = value['NetworkSettings']['Ports']['9030/tcp']

@@ -10,6 +10,8 @@
 
 首版拟接入独立 `engine_type=starrocks`，仅 `default_catalog` 内部普通表的目录、基础字段／键事实、扫描、预览及参数化只读查询。不得直接继承 MySQL／Doris 的写入、事务和元数据假设：StarRocks 的部分 Information Schema 视图仅为占位，事务只读变量是否真正约束写入须用具有写权限的账号做反例实测。无法证明的能力不声明。通过后复用已有纯 Go MySQL 驱动，不引入第二套驱动；本阶段不包含外部 catalog、Spark、Stream Load、写入或 CDC。
 
+2026-10-19 继续按已有 `validated_statement` 边界验证：固定 3.5.21 实库拒绝 `START TRANSACTION READ ONLY`，不得将其当作原生只读事务，也不启用 noop 选项。首版使用专用 SELECT 账号；共享 SQL 副作用校验拒绝写入、DDL、导出、锁定读和多语句，普通查询须实测共享事务入口及参数绑定，不声明跨批一致性快照。准入同时核对账号确因权限拒绝写入、获准表／视图的原生目录分类与无权表隐藏、SHOW CREATE TABLE／DESC 的字段和键事实；只有在原生 Linux ARM64／amd64 均有有效证明后才开发正式插件。此处验证共享边界和数据库协议，不以测试入口代替 Provider 实现或平台 T4。[原生 DESC 的 Key 是排序键标志](https://docs.starrocks.io/docs/sql-reference/sql-statements/table_bucket_part_index/DESCRIBE/)，不能作为主键；有序主键必须依据 SHOW CREATE TABLE 的 PRIMARY KEY 声明，并以 DUPLICATE KEY 反例验证。
+
 Business 后续使用独立 `-starrocks` profile，先不加入 `-all`，官方默认单机 FE／BE 路线、独立持久卷及管理员／业务账号；SQL／FE HTTP／BE HTTP 首选回环端口分别为 9031／8031／8041。测试使用带归属标签的临时镜像、容器、卷和随机回环端口，退出验证零残留，不操作个人 Business 服务。
 
 ## 一、扩展步骤
