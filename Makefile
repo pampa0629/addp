@@ -245,6 +245,8 @@ test-deployment-discovery: ## 校验 Infra/Business 只读部署发现与原子�
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
 	@$(MAKE) test-deployment-discovery
 	@$(MAKE) test-common-starrocks-unit
+	@bash -n business/starrocks/entrypoint.sh business/scripts/starrocks.sh
+	@python3 -m unittest scripts/test/business-starrocks_test.py
 	@bash -n business/gaussdb/entrypoint.sh business/scripts/gaussdb.sh
 	@python3 scripts/test/business-gaussdb_test.py
 	@bash business/scripts/start.sh --help | grep -Fq -- '-gaussdb'

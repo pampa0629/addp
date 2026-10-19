@@ -32,6 +32,8 @@
 
 GaussDB 混合云开发者版 V2.0-10.0.0 使用独立 `gaussdb` profile，`scripts/start.sh -gaussdb` 必须单独调用，不进入 `-all`。`gaussdb/image.py`、Dockerfile 与 entrypoint 是 Business 和原生 Linux 双架构 Release 认证唯一共用的构建／初始化路径。首选回环 SQL 5437，独立持久卷；仅空数据目录初始化，缺少完成标记的旧库直接失败，停止不删除卷，重启只补缺失样例。管理员和普通账号密码分别配置，不自动轮换，不调用 System API。开发者版只用于非商业学习、适配及测试。独立 `engine_type=gaussdb` 只读插件已接入；Linux ARM64／amd64 Provider T2 与六权限普通 User 的 System—Meta—Manager—Console Hosted T4 已分别通过，精确源码、运行及清理证据见 README 的 GaussDB 节。写入、空间、CDC 和 Spark 接入不在已验证范围。
 
+StarRocks 固定3.5.21官方多架构镜像由 Compose 唯一持有，`starrocks/config.py` 供准入和持久化门禁读取。独立 `-starrocks` profile 不进入 `-all`，使用回环9031/8031/8041和两个持久卷。`starrocks/entrypoint.sh` 在原生 FE 就绪后设置首次 root 密码，再启动官方 director 注册 BE；不替换 FE/BE，不自动重置已有密码，不接管无初始化标记的元数据。初始化仅补缺失样例和普通只读账号，Business 不登记平台 Engine。持久化、Backend ID、用户修改及只读反例由现有双架构 `make test-common-starrocks` 的 Business 阶段验证，平台消费另走 T4。
+
 ## 重要目录
 
 ```text

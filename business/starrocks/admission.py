@@ -11,9 +11,13 @@ import subprocess
 import tempfile
 import time
 import uuid
+import sys
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
-IMAGE = 'starrocks/allin1-ubuntu:3.5.21@sha256:faf5f6b17a301b276b829482af11d350004833dc9162232e1083a2aad0fa8b2a'
+sys.path.insert(0, str(ROOT))
+from business.starrocks.config import image
+IMAGE = image()
 LABEL = 'com.addp.starrocks-admission'
 
 
@@ -129,7 +133,10 @@ def stop():
     if not file.exists():
         return
     state = json.loads(file.read_text())
-    resources = [('container', state['name'], ('rm', '-fv')), *[('volume', v, ('volume', 'rm')) for v in state['volumes']], ('image', state['image'], ('image', 'rm'))]
+    resources = []
+    if 'business_name' in state:
+        resources += [('container', state['business_name'], ('rm', '-fv')), *[('volume', v, ('volume', 'rm')) for v in state['business_volumes']]]
+    resources += [('container', state['name'], ('rm', '-fv')), *[('volume', v, ('volume', 'rm')) for v in state['volumes']], ('image', state['image'], ('image', 'rm'))]
     for kind, name, command in resources:
         if owned(kind, name, state) is not None:
             run('docker', *command, name, timeout=90)
@@ -140,10 +147,109 @@ def stop():
     print('STARROCKS_ADMISSION_CLEANUP_PASS remaining_resources=0', flush=True)
 
 
+def persistence():
+    """Verify the actual Business entrypoint on separate, owned persistent volumes."""
+    path = directory()
+    state = json.loads((path / 'state.json').read_text())
+    if 'business_name' in state or not owned('container', state['name'], state) or not owned('image', state['image'], state):
+        raise RuntimeError('fresh owned StarRocks fixture required')
+    state.update(business_name=state['name'] + '-business', business_volumes=[state['name'] + '-business-fe', state['name'] + '-business-be'])
+    for kind, name in [('container', state['business_name']), *[('volume', v) for v in state['business_volumes']]]:
+        if inspect(kind, name) is not None:
+            raise RuntimeError('refusing preexisting Business lifecycle resource')
+    # Keep the cleanup ownership record durable before creating any resource.
+    private(path / 'state.next.json', state)
+    (path / 'state.next.json').replace(path / 'state.json')
+    run('docker', 'stop', state['name'], timeout=90)
+    for volume in state['business_volumes']:
+        run('docker', 'volume', 'create', '--label', LABEL + '=' + state['run_id'], volume)
+    administrator, reader = "Sr9@'\\ " + secrets.token_hex(12), "Read8@'\\ " + secrets.token_hex(12)
+    environment = dict(os.environ, STARROCKS_PASSWORD=administrator, STARROCKS_APP_PASSWORD=reader, STARROCKS_USER='business_reader')
+
+    def launch():
+        run('docker', 'run', '-d', '--name', state['business_name'], '--hostname', state['business_name'],
+            '--label', LABEL + '=' + state['run_id'], '--memory=4g', '--shm-size=256m',
+            '--env', 'STARROCKS_PASSWORD', '--env', 'STARROCKS_APP_PASSWORD', '--env', 'STARROCKS_USER',
+            '--mount', 'type=volume,source=' + state['business_volumes'][0] + ',target=/data/deploy/starrocks/fe/meta',
+            '--mount', 'type=volume,source=' + state['business_volumes'][1] + ',target=/data/deploy/starrocks/be/storage',
+            '--mount', 'type=bind,source=' + str(ROOT / 'business/starrocks') + ',target=/addp/starrocks,readonly',
+            '--health-cmd', 'bash /addp/starrocks/entrypoint.sh --health', '--health-interval=3s', '--health-timeout=10s',
+            '--health-retries=90', '--entrypoint', 'bash', state['image'], '/addp/starrocks/entrypoint.sh', env=environment)
+        deadline = time.monotonic() + 360
+        while time.monotonic() < deadline:
+            value = owned('container', state['business_name'], state)
+            if not value or not value['State']['Running']:
+                raise RuntimeError('Business StarRocks initialization exited')
+            if value['State'].get('Health', {}).get('Status') == 'healthy':
+                return
+            time.sleep(2)
+        raise RuntimeError('Business StarRocks lifecycle readiness timed out')
+
+    def business_sql(statement, ordinary=False, denied=False):
+        user, password = ('business_reader', reader) if ordinary else ('root', administrator)
+        result = subprocess.run(['docker', 'exec', '-i', '-e', 'MYSQL_PWD', state['business_name'], 'mysql',
+                                 '--default-character-set=utf8mb4', '--batch', '--raw', '-h127.0.0.1', '-P9030', '-u' + user],
+                                input=statement, env=dict(os.environ, MYSQL_PWD=password), capture_output=True, text=True, timeout=30)
+        if denied:
+            if result.returncode == 0 or '5203 (42000)' not in result.stderr:
+                raise RuntimeError('Business reader was not denied by native privileges')
+        elif result.returncode:
+            raise RuntimeError('Business lifecycle SQL failed')
+        return result.stdout.strip()
+
+    def backend_id():
+        lines = business_sql('SHOW BACKENDS;').splitlines()
+        rows = [dict(zip(lines[0].split('\t'), row.split('\t'))) for row in lines[1:]] if lines else []
+        if len(rows) != 1 or rows[0].get('Alive') != 'true' or not rows[0].get('BackendId'):
+            raise RuntimeError('Business native Backend identity unavailable')
+        return rows[0]['BackendId']
+
+    try:
+        launch()
+        original_id = backend_id()
+        precise = business_sql('SELECT id,amount FROM business.source WHERE id=9007199254740993;', ordinary=True).splitlines()
+        if precise[-1:] != ['9007199254740993\t12345678901234567890.123456789012345678']:
+            raise RuntimeError('Business initialization lost bigint or Decimal precision')
+        business_sql("INSERT INTO business.source VALUES ('ungranted',3,1,NULL);", ordinary=True, denied=True)
+        business_sql("UPDATE business.source SET optional_text='persistent-owned-marker' WHERE id=2;")
+        run('docker', 'rm', '-f', state['business_name'], timeout=90)
+        launch()
+        if backend_id() != original_id:
+            raise RuntimeError('Business Backend identity changed across container recreation')
+        marker = business_sql('SELECT optional_text FROM business.source WHERE id=2;', ordinary=True).splitlines()
+        count = business_sql('SELECT COUNT(*) FROM business.source;', ordinary=True).splitlines()
+        if marker[-1:] != ['persistent-owned-marker'] or count[-1:] != ['2']:
+            raise RuntimeError('Business restart overwrote source data or duplicated examples')
+        private(path / 'business-lifecycle.json', {'result': 'passed', 'backend_id_preserved': True,
+                'user_change_preserved': True, 'example_rows': 2, 'reader_write_denied': True,
+                'precise_bigint_decimal': True,
+                'initialization': 'Business official-entrypoint wrapper', 'platform_t4_verified': False})
+        print('STARROCKS_BUSINESS_PERSISTENCE_PASS', flush=True)
+    except (RuntimeError, OSError, ValueError, KeyError, IndexError):
+        value = owned('container', state['business_name'], state)
+        output = ''
+        if value:
+            result = subprocess.run(['docker', 'logs', state['business_name']], capture_output=True, text=True)
+            output = result.stdout + result.stderr
+        private(path / 'business-launch.json', business_failure_evidence(output, value.get('State', {}) if value else {}))
+        raise
+
+
+def business_failure_evidence(log, state):
+    # Never archive arbitrary server/SQL diagnostics: they can quote only part
+    # of a password, which whole-secret string replacement would not sanitize.
+    phases = {'fe-ready', 'admin-ready', 'backend-ready', 'schema-ready', 'reader-ready'}
+    return {'result': 'failed', 'running': bool(state.get('Running')),
+            'exit_code': state.get('ExitCode'), 'oom_killed': bool(state.get('OOMKilled')),
+            'native_error_codes': sorted(set(re.findall(r'ERROR (\d{4}) \([A-Z0-9]{5}\)', log))),
+            'phases': [line.split()[-1] for line in log.splitlines()
+                       if line.startswith('ADDP_STARROCKS_PHASE ') and line.split()[-1] in phases]}
+
+
 if __name__ == '__main__':
     import sys
     try:
-        {'start': start, 'stop': stop}[sys.argv[1]]()
+        {'start': start, 'stop': stop, 'persistence': persistence}[sys.argv[1]]()
     except (RuntimeError, OSError, ValueError, KeyError, IndexError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

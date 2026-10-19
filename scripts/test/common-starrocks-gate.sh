@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=starrocks
-# ADDP_T2_INPUT_FILES=business/starrocks/ common/engine/certification/starrocks/ common/engine/plugins/starrocks/ common/engine/plugin/ common/engine/plugins/shared/
+# ADDP_T2_INPUT_FILES=business/starrocks/ business/docker-compose.yml common/engine/certification/starrocks/ common/engine/plugins/starrocks/ common/engine/plugin/ common/engine/plugins/shared/
 # The Business owner manages disposable docker run / docker rm resources.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -13,7 +13,7 @@ cleanup() {
     local status=$?
     trap - EXIT INT TERM
     python3 "$ROOT_DIR/business/starrocks/admission.py" stop || status=1
-    for evidence in facts.json cleanup.json image-build.json schema-initialization.json; do
+    for evidence in facts.json cleanup.json image-build.json schema-initialization.json business-lifecycle.json business-launch.json; do
         [ ! -f "$ADDP_STARROCKS_ADMISSION_DIR/$evidence" ] || cp "$ADDP_STARROCKS_ADMISSION_DIR/$evidence" "$ARTIFACT_DIR/$evidence"
     done
     printf 'exit_code=%s\n' "$status" > "$ARTIFACT_DIR/result.txt"
@@ -40,6 +40,7 @@ done
 for required in CatalogAndBatch PreparedQueryAndNativeResultTypes; do
     grep -q -- "--- PASS: TestIntegrationProvider${required} " "$ARTIFACT_DIR/provider.log" || exit 1
 done
+python3 "$ROOT_DIR/business/starrocks/admission.py" persistence
 python3 - "$ARTIFACT_DIR/admission-policy.json" <<'POLICY'
 import json, sys
 from pathlib import Path

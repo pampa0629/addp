@@ -58,6 +58,18 @@ class StarRocksAdmissionTest(unittest.TestCase):
                 FIXTURE.run('docker', 'exec', 'owned', input='private SQL')
             self.assertNotIn('private', str(error.exception))
 
+    def test_cleanup_includes_persistent_business_phase(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp).resolve()
+            path.chmod(0o700)
+            (path / 'state.json').write_text(json.dumps({'run_id': 'test', 'name': 'native', 'image': 'owned:local', 'volumes': ['native-fe', 'native-be'], 'business_name': 'persistent', 'business_volumes': ['business-fe', 'business-be']}))
+            with patch.dict(os.environ, ADDP_STARROCKS_ADMISSION_DIR=str(path)), patch.object(FIXTURE, 'owned', return_value={}), patch.object(FIXTURE, 'inspect', return_value=None) as inspect, patch.object(FIXTURE, 'run') as run:
+                FIXTURE.stop()
+                self.assertEqual(inspect.call_count, 7)
+                self.assertEqual(run.call_count, 7)
+                self.assertFalse((path / 'state.json').exists())
+                self.assertEqual(json.loads((path / 'cleanup.json').read_text())['remaining_resources'], 0)
+
     def test_schema_diagnostics_exclude_account_statements(self):
         source = Path(FIXTURE.__file__).read_text()
         schema = source.split('sql(name, """CREATE DATABASE', 1)[1].split("evidence=path / 'schema-initialization.json'", 1)[0]
@@ -69,6 +81,12 @@ class StarRocksAdmissionTest(unittest.TestCase):
         with patch.object(FIXTURE.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'authorization denied')), patch.object(FIXTURE, 'run'):
             with self.assertRaises(RuntimeError):
                 FIXTURE.inspect('container', 'owned')
+
+    def test_business_failure_archives_only_closed_diagnostics(self):
+        value = FIXTURE.business_failure_evidence('arbitrary secret fragment\nERROR 1064 (42000) near password\nADDP_STARROCKS_PHASE fe-ready\nADDP_STARROCKS_PHASE unexpected-secret\n', {'Running': False, 'ExitCode': 1, 'OOMKilled': False, 'irrelevant': 'secret'})
+        self.assertEqual(value['native_error_codes'], ['1064'])
+        self.assertEqual(value['phases'], ['fe-ready'])
+        self.assertNotIn('secret', json.dumps(value))
 
 
 if __name__ == '__main__':

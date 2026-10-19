@@ -14,6 +14,14 @@ python3 scripts/utils/deployment-inventory.py export --service postgres > /tmp/a
 
 此文件是供管理员核对的来源快照，可以被编辑，不是签名或授权凭据。Docker/Compose 来源与容器运行身份不替代 System 部署身份、`node_id` 或 `engine_id`；System 已支持 PostgreSQL 部署登记及明确主机关联，不导入 v2 主机接入页面，引擎专业指标尚未开放。Docker Desktop 的来源归 Linux VM，不归原生 macOS 主机。确定性校验使用 `make test-deployment-discovery`，完整 Business 校验使用 `make test-business-config`，均由现有 Platform CI 覆盖。
 
+## StarRocks Business 部署
+
+独立 `-starrocks` profile，不进入 `-all`。使用 Compose 唯一固定的官方 3.5.21 ARM64／amd64 镜像，保留原生单机 FE／BE 和 director；SQL、FE HTTP、BE HTTP 仅绑定回环9031、8031、8041，端口可显式配置，冲突直接失败。`starrocks_fe_data` 与 `starrocks_be_data` 持久卷、固定 hostname 保证重建时不丢失引擎身份。Business 不登记 System 引擎。
+
+在 `business/.env` 分别填写至少12字符且不同的 `STARROCKS_PASSWORD`（原生 root）和 `STARROCKS_APP_PASSWORD`，普通账号 `STARROCKS_USER` 默认 `business_reader`。通过 `bash business/scripts/start.sh -starrocks` 启动，`stop.sh -starrocks` 停止，`restart.sh -starrocks` 重建应用配置但保留卷。初始化先启动官方 FE，设置首次管理员密码，再启用使用该密码的官方 director 注册 BE，避免空密码与原生初始化检查竞态；不替换 FE／BE 运行实现。
+
+首次空卷创建 `business.source` 的有序复合主键、bigint、Decimal(38,18)、中文、NULL／空串和尾随空格样例，并授予普通账号该库表的 SELECT。启动只补缺失样例，不覆盖已有行、不自动轮换密码；原生数据存在但没有 ADDP 管理员标记时拒绝初始化，密码错误时拒绝就绪，不删除卷。平台登记使用普通账号。当前正式插件代码与 T1 已具备，Provider T2、持久化启动和平台 T4 须分别核验，不以原生协议准入替代。
+
 ## GaussDB Business 部署
 
 采用固定官方混合云开发者版 V2.0-10.0.0 Ubuntu 22.04 ARM64／amd64 介质，构建 ADDP 本地镜像；不是厂商预制镜像，也不对外发布。仅限开发者版声明允许的学习、适配及测试。介质 URL、内外层哈希与基础镜像固定事实复用 `scripts/lib/gaussdb-official-media.sh`，不替换为 openGauss。
