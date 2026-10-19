@@ -8,14 +8,14 @@ describe('collectAuthContextPermissions', () => {
       context: { type: 'platform' },
       authorization: {
         role_assignments: [
-          { role_key: 'platform.system_administrator', scope: { type: 'platform' }, permissions: ['platform.tenant.read', 'iam.platform_identity_change.read'] },
+          { role_key: 'platform.system_administrator', scope: { type: 'platform' }, permissions: ['platform.tenant.read', 'iam.platform_administrator_change.read'] },
           { role_key: 'platform.statistics_viewer', scope: { type: 'platform' }, permissions: ['statistics.summary.read', 'platform.tenant.read'] }
         ]
       }
     }
 
     expect(collectAuthContextPermissions(authContext)).toEqual([
-      'iam.platform_identity_change.read',
+      'iam.platform_administrator_change.read',
       'platform.tenant.read',
       'statistics.summary.read'
     ])

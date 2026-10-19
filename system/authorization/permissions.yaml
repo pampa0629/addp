@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 36
+manifest_version: 37
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -346,12 +346,44 @@ permissions:
     status: disabled
     name_i18n_key: permissions.iam.permission.read.name
     description_i18n_key: permissions.iam.permission.read.description
-  - key: iam.platform_identity_change.approve
+  - key: iam.platform_administrator_change.approve
     allowed_scope_types: [platform]
     risk_level: high
     tenant_customizable: false
     delegable: false
     status: active
+    name_i18n_key: permissions.iam.platform_administrator_change.approve.name
+    description_i18n_key: permissions.iam.platform_administrator_change.approve.description
+  - key: iam.platform_administrator_change.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_administrator_change.create.name
+    description_i18n_key: permissions.iam.platform_administrator_change.create.description
+  - key: iam.platform_administrator_change.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_administrator_change.read.name
+    description_i18n_key: permissions.iam.platform_administrator_change.read.description
+  - key: iam.platform_administrator_change.reject
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.platform_administrator_change.reject.name
+    description_i18n_key: permissions.iam.platform_administrator_change.reject.description
+  - key: iam.platform_identity_change.approve
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: disabled
     name_i18n_key: permissions.iam.platform_identity_change.approve.name
     description_i18n_key: permissions.iam.platform_identity_change.approve.description
   - key: iam.platform_identity_change.create
@@ -359,7 +391,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.iam.platform_identity_change.create.name
     description_i18n_key: permissions.iam.platform_identity_change.create.description
   - key: iam.platform_identity_change.read
@@ -367,7 +399,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.iam.platform_identity_change.read.name
     description_i18n_key: permissions.iam.platform_identity_change.read.description
   - key: iam.platform_identity_change.reject
@@ -375,7 +407,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.iam.platform_identity_change.reject.name
     description_i18n_key: permissions.iam.platform_identity_change.reject.description
   - key: iam.platform_role_change.approve

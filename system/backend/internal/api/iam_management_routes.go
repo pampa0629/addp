@@ -14,7 +14,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.OAuthClientManagementHandler == nil || runtime.TenantServiceAccountHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
-		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
+		runtime.AdministratorChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
 		return errors.New("IAM 管理路由依赖不完整")
 	}
 	platformContext, err := middleware.NewIAMContextGuard("platform")
@@ -51,9 +51,9 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 	if err != nil {
 		return err
 	}
-	identityChangePermissions, err := permissionGuards(permission, []string{
-		"iam.platform_identity_change.approve", "iam.platform_identity_change.create",
-		"iam.platform_identity_change.read", "iam.platform_identity_change.reject",
+	administratorChangePermissions, err := permissionGuards(permission, []string{
+		"iam.platform_administrator_change.approve", "iam.platform_administrator_change.create",
+		"iam.platform_administrator_change.read", "iam.platform_administrator_change.reject",
 	})
 	if err != nil {
 		return err
@@ -116,13 +116,15 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 			users.POST("/:id/suspend", platformUserPermissions["iam.user.suspend"], runtime.PlatformUserHandler.Suspend)
 			users.POST("/:id/reactivate", platformUserPermissions["iam.user.reactivate"], runtime.PlatformUserHandler.Reactivate)
 		}
-		identityChanges := platform.Group("/identity_changes")
+		administratorChanges := platform.Group("/administrator_changes")
 		{
-			identityChanges.GET("", identityChangePermissions["iam.platform_identity_change.read"], runtime.PrivilegedIdentityChangeHandler.List)
-			identityChanges.POST("", identityChangePermissions["iam.platform_identity_change.create"], runtime.PrivilegedIdentityChangeHandler.Create)
-			identityChanges.GET("/:id", identityChangePermissions["iam.platform_identity_change.read"], runtime.PrivilegedIdentityChangeHandler.Get)
-			identityChanges.POST("/:id/approve", identityChangePermissions["iam.platform_identity_change.approve"], runtime.PrivilegedIdentityChangeHandler.Approve)
-			identityChanges.POST("/:id/reject", identityChangePermissions["iam.platform_identity_change.reject"], runtime.PrivilegedIdentityChangeHandler.Reject)
+			administratorChanges.GET("", administratorChangePermissions["iam.platform_administrator_change.read"], runtime.AdministratorChangeHandler.List)
+			administratorChanges.POST("", administratorChangePermissions["iam.platform_administrator_change.create"], runtime.AdministratorChangeHandler.Create)
+			administratorChanges.GET("/candidates", administratorChangePermissions["iam.platform_administrator_change.create"], runtime.AdministratorChangeHandler.Candidates)
+			administratorChanges.GET("/:id", administratorChangePermissions["iam.platform_administrator_change.read"], runtime.AdministratorChangeHandler.Get)
+			administratorChanges.POST("/:id/approve", administratorChangePermissions["iam.platform_administrator_change.approve"], runtime.AdministratorChangeHandler.Approve)
+			administratorChanges.POST("/:id/cancel", administratorChangePermissions["iam.platform_administrator_change.create"], runtime.AdministratorChangeHandler.Cancel)
+			administratorChanges.POST("/:id/reject", administratorChangePermissions["iam.platform_administrator_change.reject"], runtime.AdministratorChangeHandler.Reject)
 		}
 		auditEvents := platform.Group("/audit/events")
 		{

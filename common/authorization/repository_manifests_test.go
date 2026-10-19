@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 505 {
-		t.Fatalf("descriptor count = %d, want 505", len(descriptors))
+	if len(descriptors) != 509 {
+		t.Fatalf("descriptor count = %d, want 509", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {

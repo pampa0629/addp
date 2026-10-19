@@ -61,7 +61,7 @@ import { availableIAMTabs, findIAMPage } from '../config/iamNavigation'
 import AuditPanel from '../components/iam/AuditPanel.vue'
 import APIConsumersPanel from '@/components/iam/APIConsumersPanel.vue'
 import DepartmentsPanel from '../components/iam/DepartmentsPanel.vue'
-import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
+import AdministratorChangesPanel from '../components/iam/AdministratorChangesPanel.vue'
 import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
 import OrganizationMembershipsDialog from '../components/iam/OrganizationMembershipsDialog.vue'
 import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
@@ -101,7 +101,7 @@ const canShowProjectGroupMembers = computed(() =>
 
 const panelComponents = {
   users: markRaw(PlatformUsersPanel),
-  'identity-changes': markRaw(IdentityChangesPanel),
+  'administrator-changes': markRaw(AdministratorChangesPanel),
   'user-accounts': markRaw(TenantUserAccountsPanel),
   invitations: markRaw(TenantInvitationsPanel),
   tenants: markRaw(PlatformTenantsPanel),
@@ -118,7 +118,7 @@ const panelComponents = {
 
 const panelIcons = {
   users: User,
-  'identity-changes': DocumentChecked,
+  'administrator-changes': DocumentChecked,
   'user-accounts': User,
   invitations: Tickets,
   tenants: OfficeBuilding,

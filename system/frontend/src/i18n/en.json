@@ -323,7 +323,7 @@
         "audit": "Audit Log",
         "tenants": "Tenant Lifecycle",
         "userAccounts": "User Accounts",
-        "identityChanges": "Identity Change Review",
+        "administratorChanges": "Administrator governance",
         "departments": "Departments",
         "projectGroups": "Project Groups",
         "apiConsumers": "API Consumers",
@@ -454,18 +454,39 @@
         "mfaResetSuccess": "Authenticator reset and existing sessions revoked",
         "resetMFA": "Reset Authenticator",
         "resetPassword": "Reset Password",
-        "username": "Username"
+        "username": "Username",
+        "administratorGovernance": "Managed through administrator governance"
       },
-      "identityChanges": {
+      "administratorChanges": {
         "changeType": "Change Type",
-        "create": "Create Identity Change Request",
+        "create": "Create administrator change",
         "requestedAt": "Requested At",
-        "requester": "Requester Principal ID",
-        "targetId": "Target Principal ID",
+        "requester": "Requester",
+        "targetId": "Target user ID",
         "types": {
           "platform_identity_suspend": "Suspend platform identity",
-          "platform_identity_reactivate": "Reactivate platform identity"
-        }
+          "platform_identity_reactivate": "Restore platform identity",
+          "platform_role_grant": "Appoint administrator",
+          "platform_role_replace": "Transfer administrator role",
+          "platform_role_revoke": "Revoke administrator role",
+          "platform_credential_recovery": "Recover password and MFA"
+        },
+        "target": "Target user",
+        "role": "Target role",
+        "successor": "Successor",
+        "reviewer": "Reviewer role",
+        "expiresAt": "Request expires at",
+        "approvalEffect": "Approval applies the change immediately. Credential recovery issues a one-time enrollment proof.",
+        "recoveryIssued": "One-time recovery proof",
+        "recoveryDelivery": "Deliver this proof to the target user through a trusted channel. It expires in 15 minutes and cannot be viewed again after closing.",
+        "recoveryEntry": "Open credential recovery",
+        "roles": {
+          "system_administrator": "System administrator",
+          "security_administrator": "Security administrator",
+          "audit_administrator": "Audit administrator",
+          "unknown": "Unknown role"
+        },
+        "reviewedBy": "Actual reviewer"
       },
       "memberships": {
         "editExpiry": "Set Membership Expiry",
@@ -832,7 +853,8 @@
           "resource_observation": "Resource observations",
           "metrics_discovery": "Metrics discovery",
           "platform_resource_rule": "Host resource alert rules",
-          "engine_deployment": "Platform engine deployment"
+          "engine_deployment": "Platform engine deployment",
+          "platform_administrator_change": "Platform administrator change"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -983,6 +1005,16 @@
       "validation": {
         "required": "This field is required",
         "organizationCode": "Start with a lowercase letter; use only lowercase letters, numbers, or underscores; do not end with an underscore (64 characters maximum)"
+      },
+      "credentialRecovery": {
+        "title": "Administrator credential recovery",
+        "proof": "One-time recovery proof",
+        "password": "New password (at least 14 characters)",
+        "submit": "Confirm new credentials",
+        "expires": "Enrollment expires at {time}",
+        "complete": "Credentials updated. Sign in again. Any existing suspension remains in effect.",
+        "failed": "Recovery failed. Check the proof, expiration and verification code.",
+        "login": "Return to login"
       }
     },
     "securityPolicy": {

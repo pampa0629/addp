@@ -99,7 +99,7 @@ export const SEARCH_INDEX = [
   {
     labelKey: 'console.menus.system.iamAccounts', module: 'system', route: '/system/iam/accounts',
     access: [
-      { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+      { context: 'platform', permissions: ['iam.user.read', 'iam.platform_administrator_change.read'] },
       { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
     ],
     keywords: ['账号', '用户', '邀请', 'account', 'user', 'invitation']

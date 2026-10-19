@@ -5,6 +5,7 @@ import { availableIAMTabs } from '../config/iamNavigation'
 const iamCategoryPage = () => import('../views/IAMCategoryPage.vue')
 
 const routes = [
+ { path: '/administrator-recovery', name: 'AdministratorRecovery', component: () => import('../views/AdministratorRecovery.vue'), meta: { requiresAuth: false, handlesForbidden: true } },
   {
     path: '/login',
     name: 'Login',

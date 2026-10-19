@@ -37,7 +37,7 @@ export const IAM_TABS = [
   { page: 'organization', key: 'project-groups', context: 'tenant', permission: 'iam.project_group.read', label: 'system.iam.tabs.projectGroups', panel: 'project-groups' },
 
   { page: 'accounts', key: 'users', context: 'platform', permission: 'iam.user.read', label: 'system.iam.tabs.userAccounts', panel: 'users' },
-  { page: 'accounts', key: 'identity-changes', context: 'platform', permission: 'iam.platform_identity_change.read', label: 'system.iam.tabs.identityChanges', panel: 'identity-changes' },
+  { page: 'accounts', key: 'administrator-changes', context: 'platform', permission: 'iam.platform_administrator_change.read', label: 'system.iam.tabs.administratorChanges', panel: 'administrator-changes' },
   { page: 'accounts', key: 'user-accounts', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.userAccounts', panel: 'user-accounts' },
   { page: 'accounts', key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.userInvitations', panel: 'invitations' },
 

@@ -12,7 +12,7 @@ const menus = {
         {
           index: '/system/iam/accounts',
           access: [
-            { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+            { context: 'platform', permissions: ['iam.user.read', 'iam.platform_administrator_change.read'] },
             { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] }
           ]
         },

@@ -5,6 +5,7 @@ import { SIDEBAR_MENUS } from '../config/portalConfig'
 import { filterSidebarMenus, firstAccessibleModuleRoute } from '../utils/navigationAccess'
 
 const routes = [
+ { path: '/administrator-recovery', name: 'AdministratorRecovery', component: () => import('../views/AdministratorRecovery.vue'), meta: { requiresAuth: false, handlesForbidden: true } },
   {
     path: '/login',
     name: 'Login',

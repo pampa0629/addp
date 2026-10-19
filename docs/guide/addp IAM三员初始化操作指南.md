@@ -195,9 +195,9 @@ where assignment.status = 'active'
 
 | 登录身份 | 应显示 | 不应显示 |
 | --- | --- | --- |
-| 平台系统管理员 | 租户生命周期、身份变更审批；可复核安全管理员发起的身份变更 | 用户生命周期、平台审计 |
-| 平台安全管理员 | 用户生命周期、身份变更审批；可创建身份暂停或恢复申请 | 租户生命周期、平台审计、批准自己发起的申请 |
-| 平台审计管理员 | 平台审计、身份变更审批只读监督；可导出审计事件 | 租户和用户写操作、批准或拒绝身份变更 |
+| 平台系统管理员 | 租户生命周期、管理员变更治理；申请安全管理员变更，复核审计管理员变更 | 普通用户生命周期、平台审计 |
+| 平台安全管理员 | 普通用户生命周期、管理员变更治理；申请系统或审计管理员变更 | 租户生命周期、平台审计、审批管理员变更 |
+| 平台审计管理员 | 平台审计及导出；有限复核系统或安全管理员变更 | 普通账号、角色、安全策略和运维的直接写操作 |
 
 若某账号看到不属于其职责的写操作，不得把它当作前端显示问题跳过，应检查该会话 AuthContext 的 `authorization.role_assignments[].permissions` 和数据库 Role Assignment。若页面标签正确但 API 返回 `403`，应检查前端 AuthContext 是否陈旧、Token Family 是否已因授权变更撤销，以及当前是否确实为 Platform Context。
 
@@ -218,7 +218,7 @@ where assignment.status = 'active'
 
 ### 8.2 已完成 Bootstrap
 
-已完成后忘记密码、丢失 TOTP 或发现 TOTP Secret 泄露，不得重新运行 Bootstrap，也不要修改 `system.iam_bootstrap_state` 或数据库中的 Password Hash。三名管理员仍至少有一人可以登录时，应优先走平台身份治理和独立复核；三员凭据均不可用时，使用离线整体恢复：
+已完成后忘记密码、丢失 TOTP 或发现 TOTP Secret 泄露，不得重新运行 Bootstrap，也不要修改 `system.iam_bootstrap_state` 或数据库中的 Password Hash。能由符合目标岗位矩阵的另外两类管理员申请、复核时，先在“账号管理 → 管理员变更治理”发起凭据恢复。复核者通过可信渠道将仅显示一次、15 分钟有效的恢复凭据交给目标用户；目标从 Console `/administrator-recovery` 自行登记新密码和 TOTP。该页面不读取 URL 中的 Secret，不签发登录会话，也不解除暂停。无法形成合格治理组合时，使用离线凭据恢复：
 
 ```bash
 make build-iam-recovery
@@ -235,9 +235,9 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
 3. 输入认证器当前显示的 6 位验证码；
 4. 等验证码变化后输入紧邻的下一个 6 位验证码。
 
-三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
+全部当前管理员身份验证成功后，才会在一个事务中替换凭据、撤销旧会话并完成恢复。CLI 按明确的 Principal ID、岗位和账号逐一收集材料，允许同岗位有多名持有人，不按岗位名覆盖身份。任一步失败都不会留下部分恢复结果。恢复完成后，使用认证器新生成的验证码分别验证可用管理员的 Browser `platform + AAL2` 登录；凭据恢复本身不要求重启模块，处于暂停状态的身份须另行批准恢复。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
 
-若 `prepare` 报告三员角色持有人缺失、重复、已暂停或账号已禁用，不得使用 SQL 临时修补后继续。该状态已经超出凭据恢复边界，需要先按身份与授权治理流程处理。
+离线恢复允许当前持有人处于暂停状态，但恢复后仍保持暂停；角色分配不变。若 `prepare` 报告岗位缺失、同一主体兼任互斥岗位、身份已停用或本地账号已禁用，不得使用 SQL 临时修补后继续；该状态超出凭据恢复边界，需先按身份与授权治理流程处理。
 
 ## 九、常见问题
 

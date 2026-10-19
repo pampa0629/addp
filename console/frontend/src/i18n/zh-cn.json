@@ -626,6 +626,7 @@
         "engineDeployments": "平台引擎部署"
       }
     },
-    "personalCenter": "个人中心"
+    "personalCenter": "个人中心",
+    "administratorRecovery": "管理员凭据恢复"
   }
 }

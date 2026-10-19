@@ -72,6 +72,9 @@ func requestAuditEvent(c *gin.Context, requestID string, duration time.Duration)
 	} else if status >= 400 {
 		result = iam.AuditResultDenied
 	}
+	if strings.HasPrefix(path, "/api/v1/system/auth/administrator-recovery/") || strings.HasPrefix(path, "/api/v1/system/platform/administrator_changes") {
+		risk = iam.AuditRiskHigh
+	}
 	event := iam.AuditEvent{
 		Metadata: metadata, EventName: "http.request.completed", Result: result, RiskLevel: risk,
 		ModuleName: "system", EntityType: "http_request", EntityID: requestID,

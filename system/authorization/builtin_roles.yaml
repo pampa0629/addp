@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 131
+manifest_version: 132
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -26,7 +26,9 @@ roles:
     permissions:
       - audit.event.export
       - audit.event.read
-      - iam.platform_identity_change.read
+      - iam.platform_administrator_change.approve
+      - iam.platform_administrator_change.read
+      - iam.platform_administrator_change.reject
   - key: platform.catalog_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.catalog_runtime.name
@@ -217,8 +219,8 @@ roles:
     permissions:
       - iam.local_account.reset
       - iam.mfa_credential.reset
-      - iam.platform_identity_change.create
-      - iam.platform_identity_change.read
+      - iam.platform_administrator_change.create
+      - iam.platform_administrator_change.read
       - iam.security_policy.read
       - iam.security_policy.update
       - iam.user.create
@@ -271,9 +273,10 @@ roles:
       - agent.configuration.update
       - copilot.configuration.read
       - copilot.configuration.update
-      - iam.platform_identity_change.approve
-      - iam.platform_identity_change.read
-      - iam.platform_identity_change.reject
+      - iam.platform_administrator_change.approve
+      - iam.platform_administrator_change.create
+      - iam.platform_administrator_change.read
+      - iam.platform_administrator_change.reject
       - inference.deployment.create
       - inference.deployment.delete
       - inference.deployment.execute

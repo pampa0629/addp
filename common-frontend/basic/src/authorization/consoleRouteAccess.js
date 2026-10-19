@@ -79,7 +79,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/graph/knowledge-service': [tenant('graph.graph.read')],
   '/inference/settings/models': [platform('inference.provider.read', 'inference.deployment.read', 'inference.profile.read'), tenant('inference.provider.read', 'inference.deployment.read', 'inference.profile.read')],
   '/system/iam/organization': [platform('platform.tenant.read'), anyOf('tenant', 'iam.department.read', 'iam.project_group.read')],
-  '/system/iam/accounts': [anyOf('platform', 'iam.user.read', 'iam.platform_identity_change.read'), anyOf('tenant', 'iam.tenant_membership.read', 'iam.tenant_invitation.read')],
+  '/system/iam/accounts': [anyOf('platform', 'iam.user.read', 'iam.platform_administrator_change.read'), anyOf('tenant', 'iam.tenant_membership.read', 'iam.tenant_invitation.read')],
   '/system/iam/roles': [anyOf('tenant', 'iam.tenant_role.read', 'iam.tenant_role_assignment.read')],
   '/system/iam/application-access': [anyOf('tenant', 'iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read')],
   '/system/iam/security': [anyOf('platform', 'iam.security_policy.read', 'audit.event.read'), anyOf('tenant', 'audit.tenant_event.read')],

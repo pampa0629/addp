@@ -88,7 +88,7 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 - User 是全局自然人身份，Local Account 和 External Identity 是登录凭据或身份绑定；
 - 一个 User 可拥有多个 Tenant Membership，但一个 Tenant Context 只绑定一个 Membership；
 - Platform Context 与 Tenant Context 互斥，平台角色不自动获得租户业务数据权限；
-- 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员；三员 Role Assignment 两两互斥，职责与写权限分离，允许共享必要的只读监督 Permission；
+- 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员；三员 Role Assignment 两两互斥，职责与日常写权限分离；管理员治理按目标岗位矩阵申请／复核，审计员只有限复核系统／安全管理员请求，不获得普通账号写权限；
 - 所有管理和业务操作使用 AuthContext 中的 Role Assignment 与 Permission，不根据账号名或身份类别放行。
 - 平台安全管理员创建普通 User 和凭据；平台系统管理员创建/初始化 Tenant 时必须指定该 User 为首位 `tenant.administrator`。Tenant、首个 Membership、首个 Assignment 和审计同事务，平台三员不得成为首位 Tenant Administrator。
 
@@ -266,7 +266,8 @@ frontend/src/
 | api_consumer_service_grants | system | 消费方可访问的精确服务引用 |
 | api_consumer_credentials | system | API 消费凭据（仅保存 SHA256 hash） |
 | oauth_authorization_requests | system | 浏览器授权前的短期已校验请求、取消凭据 Hash 和一次性状态 |
-| iam_recovery_attempts | system | 三员整体凭据恢复尝试，仅保存一次性 Secret Hash 与终态事实 |
+| iam_recovery_attempts | system | 离线管理员凭据恢复尝试，仅保存一次性 Secret Hash 与终态事实 |
+| administrator_credential_recoveries | system | 特权请求的线上一次性凭据登记，保存 Proof Hash、短期加密 TOTP、失败次数和消费事实 |
 | refresh_token_families | system | 浏览器和 OAuth Refresh Token Family |
 | refresh_tokens | system | 轮换 Refresh Token Hash |
 | access_tokens | system | 短期 User Access Token Hash |
@@ -443,7 +444,7 @@ frontend/src/
 ### Platform 管理（Platform Context + 精确 Permission）
 - `/api/v1/system/platform/tenants` - Tenant 查询、创建、更新、暂停、恢复和关闭；
 - `/api/v1/system/platform/users` - 全局 User 查询、创建、更新、暂停和重新激活；
-- `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
+- `/api/v1/system/platform/administrator_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
 - `/api/v1/system/platform/modules` - 模块定义、有界当前运行实例投影和带版本的启用状态管理；不得携带全部实例历史。
 - `/api/v1/system/platform/module-instances` - 跨模块运行实例记录的唯一只读分页查询，支持模块名、登记主机、节点、role、当前有效 status、`stop_reason=graceful|lease_expired` 与时间范围组合过滤。`time_basis=registered|offline` 选择登记时间或离线判定时间（默认登记），统一使用 `time_from` / `time_to`，范围下界含、上界不含，按选定时间倒序及 ID 倒序稳定分页；旧的登记时间专属 query 删除。原因筛选与其他条件取交集，不自动修改状态或时间依据；离线时间及原因查询仅展示仍保留离线观测的实例，包括尚未被扫描落库的租约过期实例；恢复后退出结果，不代表完整的历史离线事件或历史可用率。

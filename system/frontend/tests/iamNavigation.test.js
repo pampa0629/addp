@@ -10,7 +10,7 @@ describe('System IAM information architecture', () => {
   it('groups platform management objects into business categories', () => {
     const can = permissionChecker([
       'iam.user.read',
-      'iam.platform_identity_change.read',
+      'iam.platform_administrator_change.read',
       'platform.tenant.read',
       'iam.security_policy.read',
       'audit.event.read'
@@ -23,7 +23,7 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('accounts', 'platform', can).map(tab => tab.key)).toEqual([
       'users',
-      'identity-changes'
+      'administrator-changes'
     ])
     expect(availableIAMTabs('security', 'platform', can).map(tab => tab.key)).toEqual([
       'security-policy',

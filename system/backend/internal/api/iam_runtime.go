@@ -16,36 +16,37 @@ import (
 
 // IAMRuntime is the single production composition root for System IAM.
 type IAMRuntime struct {
-	Repository                          *iam.Repository
-	TokenFamilyService                  *iam.TokenFamilyService
-	IdentityService                     *iam.IdentityService
-	MFAService                          *iam.MFAService
-	MFASessionService                   *iam.MFASessionService
-	TenantMembershipService             *iam.TenantMembershipService
-	OrganizationService                 *iam.OrganizationService
-	OAuthClientManagementService        *iam.OAuthClientManagementService
-	TenantServiceAccountService         *iam.TenantServiceAccountService
-	TenantInvitationService             *iam.TenantInvitationService
-	TenantRoleService                   *iam.TenantRoleService
-	PlatformTenantService               *iam.PlatformTenantService
-	PlatformUserService                 *iam.PlatformUserService
-	AuditQueryService                   *iam.AuditQueryService
-	PrivilegedIdentityChangeService     *iam.PrivilegedIdentityChangeService
-	SecurityPolicyService               *iam.SecurityPolicyService
-	ContextSelectionService             *iam.ContextSelectionService
-	BrowserLoginService                 *iam.BrowserLoginService
-	AuthContextService                  *iam.AuthContextService
-	ContextOptionsService               *iam.ContextOptionsService
-	ContextSwitchService                *iam.ContextSwitchService
-	LogoutService                       *iam.LogoutService
-	UserSelfService                     *iam.UserSelfService
-	DelegationService                   *iam.DelegationService
-	ExecutionAuthorizationService       *iam.ExecutionAuthorizationService
-	NotebookSessionAuthorizationService *iam.NotebookSessionAuthorizationService
-	TaskAuthorizationSubjectService     *iam.TaskAuthorizationSubjectService
-	CatalogReferenceService             *iam.CatalogReferenceService
-	OAuthProvider                       *iamoauth.Provider
-	ConsentBridge                       *iamoauth.ConsentBridge
+	Repository                             *iam.Repository
+	TokenFamilyService                     *iam.TokenFamilyService
+	IdentityService                        *iam.IdentityService
+	MFAService                             *iam.MFAService
+	MFASessionService                      *iam.MFASessionService
+	TenantMembershipService                *iam.TenantMembershipService
+	OrganizationService                    *iam.OrganizationService
+	OAuthClientManagementService           *iam.OAuthClientManagementService
+	TenantServiceAccountService            *iam.TenantServiceAccountService
+	TenantInvitationService                *iam.TenantInvitationService
+	TenantRoleService                      *iam.TenantRoleService
+	PlatformTenantService                  *iam.PlatformTenantService
+	PlatformUserService                    *iam.PlatformUserService
+	AuditQueryService                      *iam.AuditQueryService
+	AdministratorChangeService             *iam.AdministratorChangeService
+	AdministratorCredentialRecoveryService *iam.AdministratorCredentialRecoveryService
+	SecurityPolicyService                  *iam.SecurityPolicyService
+	ContextSelectionService                *iam.ContextSelectionService
+	BrowserLoginService                    *iam.BrowserLoginService
+	AuthContextService                     *iam.AuthContextService
+	ContextOptionsService                  *iam.ContextOptionsService
+	ContextSwitchService                   *iam.ContextSwitchService
+	LogoutService                          *iam.LogoutService
+	UserSelfService                        *iam.UserSelfService
+	DelegationService                      *iam.DelegationService
+	ExecutionAuthorizationService          *iam.ExecutionAuthorizationService
+	NotebookSessionAuthorizationService    *iam.NotebookSessionAuthorizationService
+	TaskAuthorizationSubjectService        *iam.TaskAuthorizationSubjectService
+	CatalogReferenceService                *iam.CatalogReferenceService
+	OAuthProvider                          *iamoauth.Provider
+	ConsentBridge                          *iamoauth.ConsentBridge
 
 	AuthHandler                         *IAMAuthHandler
 	MFASessionHandler                   *IAMMFASessionHandler
@@ -66,7 +67,7 @@ type IAMRuntime struct {
 	TenantRoleHandler                   *IAMTenantRoleHandler
 	InternalAuditHandler                *IAMInternalAuditHandler
 	AuditHandler                        *IAMAuditHandler
-	PrivilegedIdentityChangeHandler     *IAMPrivilegedIdentityChangeHandler
+	AdministratorChangeHandler          *IAMAdministratorChangeHandler
 	SecurityPolicyHandler               *IAMSecurityPolicyHandler
 	SecurityPolicy                      iam.SecurityPolicy
 
@@ -136,7 +137,9 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	platformTenantService := iam.NewPlatformTenantService(repository, nil)
 	platformUserService := iam.NewPlatformUserService(repository, identityService, nil)
 	auditQueryService := iam.NewAuditQueryService(repository)
-	privilegedIdentityChangeService := iam.NewPrivilegedIdentityChangeService(repository, nil)
+	administratorChangeService := iam.NewAdministratorChangeService(repository)
+	administratorCredentialRecoveryService := iam.NewAdministratorCredentialRecoveryService(repository, mfaCipher)
+	administratorChangeService.WithCredentialRecovery(administratorCredentialRecoveryService)
 	contextSelectionService, err := iam.NewContextSelectionService(repository, tokenFamilyService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Context Selection Service: %w", err)
@@ -300,7 +303,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Audit Handler: %w", err)
 	}
-	privilegedIdentityChangeHandler, err := NewIAMPrivilegedIdentityChangeHandler(privilegedIdentityChangeService)
+	administratorChangeHandler, err := NewIAMAdministratorChangeHandler(administratorChangeService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Privileged Identity Change Handler: %w", err)
 	}
@@ -343,60 +346,61 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	}
 
 	return &IAMRuntime{
-		Repository:                          repository,
-		TokenFamilyService:                  tokenFamilyService,
-		IdentityService:                     identityService,
-		MFAService:                          mfaService,
-		MFASessionService:                   mfaSessionService,
-		TenantMembershipService:             tenantMembershipService,
-		OrganizationService:                 organizationService,
-		OAuthClientManagementService:        oauthClientManagementService,
-		TenantServiceAccountService:         tenantServiceAccountService,
-		TenantInvitationService:             tenantInvitationService,
-		TenantRoleService:                   tenantRoleService,
-		PlatformTenantService:               platformTenantService,
-		PlatformUserService:                 platformUserService,
-		AuditQueryService:                   auditQueryService,
-		PrivilegedIdentityChangeService:     privilegedIdentityChangeService,
-		SecurityPolicyService:               securityPolicyService,
-		SecurityPolicy:                      securityPolicy,
-		ContextSelectionService:             contextSelectionService,
-		BrowserLoginService:                 browserLoginService,
-		AuthContextService:                  authContextService,
-		ContextOptionsService:               contextOptionsService,
-		ContextSwitchService:                contextSwitchService,
-		LogoutService:                       logoutService,
-		UserSelfService:                     userSelfService,
-		DelegationService:                   delegationService,
-		ExecutionAuthorizationService:       executionAuthorizationService,
-		NotebookSessionAuthorizationService: notebookSessionAuthorizationService,
-		TaskAuthorizationSubjectService:     taskAuthorizationSubjectService,
-		CatalogReferenceService:             catalogReferenceService,
-		OAuthProvider:                       oauthProvider,
-		ConsentBridge:                       consentBridge,
-		AuthHandler:                         authHandler,
-		MFASessionHandler:                   mfaSessionHandler,
-		OAuthHandler:                        oauthHandler,
-		DelegationHandler:                   delegationHandler,
-		CatalogReferenceHandler:             catalogReferenceHandler,
-		UserSelfHandler:                     userSelfHandler,
-		PlatformTenantHandler:               platformTenantHandler,
-		PlatformUserHandler:                 platformUserHandler,
-		TenantMembershipHandler:             tenantMembershipHandler,
-		OrganizationHandler:                 organizationHandler,
-		OAuthClientManagementHandler:        oauthClientManagementHandler,
-		TenantServiceAccountHandler:         tenantServiceAccountHandler,
-		TenantInvitationHandler:             tenantInvitationHandler,
-		TenantRoleHandler:                   tenantRoleHandler,
-		InternalAuditHandler:                internalAuditHandler,
-		AuditHandler:                        auditHandler,
-		PrivilegedIdentityChangeHandler:     privilegedIdentityChangeHandler,
-		SecurityPolicyHandler:               securityPolicyHandler,
-		Authentication:                      authentication,
-		FirstPartyCredential:                firstPartyCredential,
-		UserAccessCredential:                userAccessCredential,
-		BusinessCredential:                  businessCredential,
-		ServiceCredential:                   serviceCredential,
-		OAuthFailureAudit:                   oauthFailureAudit,
+		Repository:                             repository,
+		TokenFamilyService:                     tokenFamilyService,
+		IdentityService:                        identityService,
+		MFAService:                             mfaService,
+		MFASessionService:                      mfaSessionService,
+		TenantMembershipService:                tenantMembershipService,
+		OrganizationService:                    organizationService,
+		OAuthClientManagementService:           oauthClientManagementService,
+		TenantServiceAccountService:            tenantServiceAccountService,
+		TenantInvitationService:                tenantInvitationService,
+		TenantRoleService:                      tenantRoleService,
+		PlatformTenantService:                  platformTenantService,
+		PlatformUserService:                    platformUserService,
+		AuditQueryService:                      auditQueryService,
+		AdministratorChangeService:             administratorChangeService,
+		AdministratorCredentialRecoveryService: administratorCredentialRecoveryService,
+		SecurityPolicyService:                  securityPolicyService,
+		SecurityPolicy:                         securityPolicy,
+		ContextSelectionService:                contextSelectionService,
+		BrowserLoginService:                    browserLoginService,
+		AuthContextService:                     authContextService,
+		ContextOptionsService:                  contextOptionsService,
+		ContextSwitchService:                   contextSwitchService,
+		LogoutService:                          logoutService,
+		UserSelfService:                        userSelfService,
+		DelegationService:                      delegationService,
+		ExecutionAuthorizationService:          executionAuthorizationService,
+		NotebookSessionAuthorizationService:    notebookSessionAuthorizationService,
+		TaskAuthorizationSubjectService:        taskAuthorizationSubjectService,
+		CatalogReferenceService:                catalogReferenceService,
+		OAuthProvider:                          oauthProvider,
+		ConsentBridge:                          consentBridge,
+		AuthHandler:                            authHandler,
+		MFASessionHandler:                      mfaSessionHandler,
+		OAuthHandler:                           oauthHandler,
+		DelegationHandler:                      delegationHandler,
+		CatalogReferenceHandler:                catalogReferenceHandler,
+		UserSelfHandler:                        userSelfHandler,
+		PlatformTenantHandler:                  platformTenantHandler,
+		PlatformUserHandler:                    platformUserHandler,
+		TenantMembershipHandler:                tenantMembershipHandler,
+		OrganizationHandler:                    organizationHandler,
+		OAuthClientManagementHandler:           oauthClientManagementHandler,
+		TenantServiceAccountHandler:            tenantServiceAccountHandler,
+		TenantInvitationHandler:                tenantInvitationHandler,
+		TenantRoleHandler:                      tenantRoleHandler,
+		InternalAuditHandler:                   internalAuditHandler,
+		AuditHandler:                           auditHandler,
+		AdministratorChangeHandler:             administratorChangeHandler,
+		SecurityPolicyHandler:                  securityPolicyHandler,
+		Authentication:                         authentication,
+		FirstPartyCredential:                   firstPartyCredential,
+		UserAccessCredential:                   userAccessCredential,
+		BusinessCredential:                     businessCredential,
+		ServiceCredential:                      serviceCredential,
+		OAuthFailureAudit:                      oauthFailureAudit,
 	}, nil
 }

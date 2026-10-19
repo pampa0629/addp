@@ -474,3 +474,6 @@ other = "The host is missing or disabled; select another host"
 
 [system.engine_deployment.failed]
 other = "Engine deployment operation failed"
+
+[system.iam.administrator_change_conflict]
+other = "The request is stale, the state has changed, or the action cannot be applied. Refresh and submit a new request."

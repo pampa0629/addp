@@ -546,6 +546,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Resource Access Rule | 资源访问规则 | owner 本地保存的结构化 Allow 或 Explicit Deny 记录，绑定资源、主体选择器、Permission、有效期和来源。 | `effect=allow` 时构成 Resource Grant，`effect=deny` 时构成 Explicit Deny；不进入 System IAM 中央表。 |
 | Explicit Deny | 显式拒绝 | 对特定主体、动作、资源或条件明确拒绝的授权规则。 | 优先于 Allow，用于密级数据和例外隔离。源数据规则由 System 引擎访问控制领域维护；建立和解除分别要求独立功能 Permission 与当前有效引擎管理委派，不由 Catalog 责任或管理员角色名推导。显式选择未来到期时间或直至解除，遗漏期限模式不等于长期有效。个人 Deny 可阻止同目标、同动作的项目组 Allow；解除只移除该份禁止依据，不授予或恢复 Grant。自然到期后首次解除不追加解除事实；到期前已成功解除的原参重试在当前资格有效时返回原历史。建立及解除事实不等于执行侧已实施访问裁决。 |
 | Platform Three Administrators | 平台三员 | Platform System Administrator、Platform Security Administrator、Platform Audit Administrator 三个内置、互斥的平台管理角色。 | 替代永久 `super_admin`；不存在可合并三种职责的全权角色。 |
+| Platform Administrator Change | 平台管理员变更 | 按目标三员角色，由不同岗位申请和复核的平台特权治理请求，涵盖角色任免／交接、身份暂停／恢复和凭据恢复。 | 申请人、复核人、目标及接任人须相互独立；复用既有特权请求与审批事实，不授予普通账号管理权。 |
+| Administrator Credential Recovery | 管理员凭据恢复 | 经三员治理批准后，由目标用户使用一次性短期凭据重新登记密码和 MFA 的流程。 | 不签发登录会话，不解除身份暂停，不变更角色；无法形成合格治理组合时使用离线凭据恢复。 |
 | Break-glass Grant | 紧急访问授权 | 在紧急处置中经双人批准产生的限定动作、限定时长且全程审计的临时授权。 | 不是常驻 root，不能删除审计记录或静默修改平台三员规则。 |
 | Platform Statistics Viewer | 平台统计查看者 | 读取已发布跨租户聚合指标的独立平台只读角色。 | 不自动包含在平台三员角色中，不授予 Tenant 业务明细访问权。 |
 | AuthContext | 授权上下文 | System 对访问令牌完成验证并基于当前 Principal、会话模式、Tenant Membership、Role Assignment 和客户端约束生成的权威身份与授权投影。 | 是 Go/Python 模块消费主体事实的唯一契约；不包含主体可访问的全部资源列表，`/users/me` 不是 Token 验证接口。 |

@@ -42,7 +42,7 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	tenantService := NewPlatformTenantService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
 	auditService := NewAuditQueryService(repository)
-	privilegedChangeService := NewPrivilegedIdentityChangeService(repository, now)
+	privilegedChangeService := NewAdministratorChangeService(repository)
 	platformContext := ContextTypePlatform
 	platformAudit := AuditMetadata{ContextType: &platformContext, RequestID: stringPointer("iam-management-platform")}
 
@@ -209,7 +209,7 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 
 	currentTime = currentTime.Add(time.Second)
-	suspendRequest, err := privilegedChangeService.Create(ctx, CreatePrivilegedIdentityChangeInput{
+	suspendRequest, err := privilegedChangeService.Create(ctx, CreateAdministratorChangeInput{
 		ChangeType: PrivilegedChangePlatformIdentitySuspend, TargetPrincipalID: target.PrincipalID,
 		Reason: "governed suspension", RequestedByPrincipalID: requester.PrincipalID, Audit: requesterAudit,
 	})
@@ -217,20 +217,17 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 		t.Fatalf("create governed suspension request: %v", err)
 	}
 	currentTime = currentTime.Add(time.Second)
-	suspendRequest, err = privilegedChangeService.Approve(ctx, ReviewPrivilegedIdentityChangeInput{
-		RequestID: suspendRequest.ID, ReviewerPrincipalID: reviewer.PrincipalID,
+	suspendRequest, err = privilegedChangeService.Approve(ctx, ReviewAdministratorChangeInput{
+		RequestID: suspendRequest.ID, Version: suspendRequest.Version, ReviewerPrincipalID: reviewer.PrincipalID,
 		Reason: "approved by separate administrator", Audit: reviewerAudit,
 	})
-	if err != nil || suspendRequest.Status != PrivilegedChangeStatusApproved {
+	if err != nil || suspendRequest.Status != PrivilegedChangeStatusApplied {
 		t.Fatalf("approved suspension request = %#v err=%v", suspendRequest, err)
 	}
 	currentTime = currentTime.Add(time.Second)
-	governedSuspension, err := userService.Suspend(ctx, ChangeManagedUserStatusInput{
-		UserID: target.PrincipalID, Reason: "apply approved suspension",
-		ChangeRequestID: &suspendRequest.ID, Audit: reviewerAudit,
-	})
-	if err != nil || governedSuspension.User.Status != PrincipalStatusSuspended {
-		t.Fatalf("governed suspension = %#v err=%v", governedSuspension, err)
+	governedSuspension, err := userService.Get(ctx, target.PrincipalID)
+	if err != nil || governedSuspension.Status != PrincipalStatusSuspended {
+		t.Fatalf("approval did not suspend target: %v", err)
 	}
 	appliedSuspend, err := privilegedChangeService.Get(ctx, suspendRequest.ID)
 	if err != nil || appliedSuspend.Status != PrivilegedChangeStatusApplied {
@@ -238,7 +235,7 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 
 	currentTime = currentTime.Add(time.Second)
-	reactivateRequest, err := privilegedChangeService.Create(ctx, CreatePrivilegedIdentityChangeInput{
+	reactivateRequest, err := privilegedChangeService.Create(ctx, CreateAdministratorChangeInput{
 		ChangeType: PrivilegedChangePlatformIdentityReactivate, TargetPrincipalID: target.PrincipalID,
 		Reason: "governed reactivation", RequestedByPrincipalID: requester.PrincipalID, Audit: requesterAudit,
 	})
@@ -246,20 +243,17 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 		t.Fatalf("create governed reactivation request: %v", err)
 	}
 	currentTime = currentTime.Add(time.Second)
-	reactivateRequest, err = privilegedChangeService.Approve(ctx, ReviewPrivilegedIdentityChangeInput{
-		RequestID: reactivateRequest.ID, ReviewerPrincipalID: reviewer.PrincipalID,
+	reactivateRequest, err = privilegedChangeService.Approve(ctx, ReviewAdministratorChangeInput{
+		RequestID: reactivateRequest.ID, Version: reactivateRequest.Version, ReviewerPrincipalID: reviewer.PrincipalID,
 		Reason: "approved reactivation", Audit: reviewerAudit,
 	})
-	if err != nil || reactivateRequest.Status != PrivilegedChangeStatusApproved {
+	if err != nil || reactivateRequest.Status != PrivilegedChangeStatusApplied {
 		t.Fatalf("approved reactivation request = %#v err=%v", reactivateRequest, err)
 	}
 	currentTime = currentTime.Add(time.Second)
-	governedReactivation, err := userService.Reactivate(ctx, ChangeManagedUserStatusInput{
-		UserID: target.PrincipalID, Reason: "apply approved reactivation",
-		ChangeRequestID: &reactivateRequest.ID, Audit: reviewerAudit,
-	})
-	if err != nil || governedReactivation.User.Status != PrincipalStatusActive {
-		t.Fatalf("governed reactivation = %#v err=%v", governedReactivation, err)
+	governedReactivation, err := userService.Get(ctx, target.PrincipalID)
+	if err != nil || governedReactivation.Status != PrincipalStatusActive {
+		t.Fatalf("approval did not restore target: %v", err)
 	}
 	appliedReactivate, err := privilegedChangeService.Get(ctx, reactivateRequest.ID)
 	if err != nil || appliedReactivate.Status != PrivilegedChangeStatusApplied {

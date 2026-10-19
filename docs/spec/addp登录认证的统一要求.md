@@ -312,7 +312,7 @@ step-up 成功响应复用唯一 Browser Access Token 响应结构，服务端�
 
 ### 6.7 普通 User 的受控 TOTP 重置
 
-普通 User 遗失认证器或 TOTP Secret 且无法完成登录前 Challenge 时，由 Platform Context 中持有 `iam.mfa_credential.reset` 的平台安全管理员执行唯一受控重置。请求必须提供非空原因，目标必须是有效 User、具有 active 或 locked 的 Local Account、具有唯一 active TOTP Credential，且不能持有任何当前有效 Platform Role。平台三员不得使用该接口，继续只允许本人维护凭据或通过离线三员整体恢复处理灾难场景。
+普通 User 遗失认证器或 TOTP Secret 且无法完成登录前 Challenge 时，由 Platform Context 中持有 `iam.mfa_credential.reset` 的平台安全管理员执行唯一受控重置。请求必须提供非空原因，目标必须是有效 User、具有 active 或 locked 的 Local Account、具有唯一 active TOTP Credential，且不能持有任何当前有效 Platform Role。平台三员不得使用该接口；其密码与 MFA 恢复必须通过三员治理矩阵批准的一次性重新登记流程，无法形成合格申请／复核组合时使用离线凭据恢复。线上登记凭据最长有效 15 分钟，仅保存 Hash，不通过 URL、日志或审计传递明文；完成登记后撤销旧会话及待消费认证事实，不解除 Principal 暂停或变更角色。
 
 重置必须在一个事务内按 Principal -> Local Account -> MFA Credential 的顺序加锁，废止旧 Credential、推进 Principal `authorization_version`、撤销全部有效 Token Family、消费未完成的 MFA Challenge、MFA Enrollment 和 Context Selection Ticket，并写入 `iam.mfa.credential_reset` 高风险审计。审计可以记录目标 Principal、原因、授权版本和受影响事实数量，但不得记录旧/新 TOTP Secret、验证码、密文或 nonce。API 只返回重置时间、授权版本和受影响数量，不签发会话，也不修改密码、Tenant Membership 或 Role Assignment。
 

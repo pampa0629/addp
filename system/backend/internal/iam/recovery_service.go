@@ -15,10 +15,11 @@ import (
 const defaultRecoverySecretTTL = time.Hour
 
 type RecoveryAdministratorInput struct {
-	RoleKey    string
-	Password   string
-	TOTPSecret string
-	TOTPProofs []BootstrapTOTPProof
+	PrincipalID int64
+	RoleKey     string
+	Password    string
+	TOTPSecret  string
+	TOTPProofs  []BootstrapTOTPProof
 }
 
 type RecoveryApplyInput struct {
@@ -29,7 +30,7 @@ type RecoveryApplyInput struct {
 type RecoveryResult struct {
 	AttemptID   int64
 	CompletedAt time.Time
-	Principals  map[string]int64
+	Principals  map[int64]string
 }
 
 type RecoveryService struct {
@@ -173,7 +174,7 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 		return nil, commonapi.ErrUnauthorized
 	}
 	now := s.now().UTC()
-	result := &RecoveryResult{CompletedAt: now, Principals: make(map[string]int64, len(prepared))}
+	result := &RecoveryResult{CompletedAt: now, Principals: make(map[int64]string, len(prepared))}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockIAMRecoveryTable(ctx); err != nil {
 			return err
@@ -192,12 +193,18 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 		if err := validateRecoveryTargets(targets); err != nil {
 			return err
 		}
-		targetByRole := make(map[string]RecoveryAdministratorTarget, len(targets))
+		if len(prepared) != len(targets) {
+			return commonapi.ErrConflict
+		}
+		targetByPrincipal := make(map[int64]RecoveryAdministratorTarget, len(targets))
 		for _, target := range targets {
-			targetByRole[target.RoleKey] = target
+			targetByPrincipal[target.PrincipalID] = target
 		}
 		for _, administrator := range prepared {
-			target := targetByRole[administrator.RoleKey]
+			target, exists := targetByPrincipal[administrator.PrincipalID]
+			if !exists || target.RoleKey != administrator.RoleKey {
+				return commonapi.ErrConflict
+			}
 			account, err := tx.LockLocalAccountByUserID(ctx, target.PrincipalID)
 			if err != nil {
 				return err
@@ -257,7 +264,7 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 				}); err != nil {
 				return err
 			}
-			result.Principals[target.RoleKey] = target.PrincipalID
+			result.Principals[target.PrincipalID] = target.RoleKey
 		}
 		if err := tx.CompleteIAMRecoveryAttempt(ctx, attempt.ID, now); err != nil {
 			return err
@@ -279,75 +286,52 @@ type preparedRecoveryAdministrator struct {
 	lastAcceptedCounter int64
 }
 
-func (s *RecoveryService) prepareAdministratorInputs(
-	administrators []RecoveryAdministratorInput,
-) ([]preparedRecoveryAdministrator, error) {
-	if len(administrators) != len(bootstrapRoleOrder) {
-		return nil, fmt.Errorf("%w: recovery requires exactly three administrators", commonapi.ErrBadRequest)
+func (s *RecoveryService) prepareAdministratorInputs(administrators []RecoveryAdministratorInput) ([]preparedRecoveryAdministrator, error) {
+	if len(administrators) < len(bootstrapRoleOrder) {
+		return nil, fmt.Errorf("%w: all current administrator identities are required", commonapi.ErrBadRequest)
 	}
 	now := s.now().UTC()
-	byRole := make(map[string]RecoveryAdministratorInput, len(administrators))
-	passwords := make(map[string]struct{}, len(administrators))
-	counters := make(map[string]int64, len(administrators))
-	for _, administrator := range administrators {
-		if _, exists := byRole[administrator.RoleKey]; exists || !isBootstrapRole(administrator.RoleKey) {
-			return nil, fmt.Errorf("%w: invalid or duplicate recovery role", commonapi.ErrBadRequest)
+	seen := map[int64]bool{}
+	passwords := map[string]bool{}
+	roles := map[string]bool{}
+	prepared := make([]preparedRecoveryAdministrator, 0, len(administrators))
+	for _, a := range administrators {
+		if a.PrincipalID <= 0 || seen[a.PrincipalID] || !isBootstrapRole(a.RoleKey) || len([]rune(a.Password)) < minimumBootstrapPasswordLength || passwords[a.Password] {
+			return nil, commonapi.ErrBadRequest
 		}
-		if len([]rune(administrator.Password)) < minimumBootstrapPasswordLength {
-			return nil, fmt.Errorf("%w: recovery password must contain at least 14 characters", commonapi.ErrBadRequest)
-		}
-		if _, exists := passwords[administrator.Password]; exists {
-			return nil, fmt.Errorf("%w: recovery passwords must be distinct", commonapi.ErrBadRequest)
-		}
-		counter, err := validateBootstrapTOTPProofs(administrator.TOTPSecret, administrator.TOTPProofs, now)
+		counter, err := validateBootstrapTOTPProofs(a.TOTPSecret, a.TOTPProofs, now)
 		if err != nil {
 			return nil, err
 		}
-		byRole[administrator.RoleKey] = administrator
-		passwords[administrator.Password] = struct{}{}
-		counters[administrator.RoleKey] = counter
-	}
-	prepared := make([]preparedRecoveryAdministrator, 0, len(bootstrapRoleOrder))
-	for _, roleKey := range bootstrapRoleOrder {
-		administrator, exists := byRole[roleKey]
-		if !exists {
-			return nil, fmt.Errorf("%w: missing recovery role %s", commonapi.ErrBadRequest, roleKey)
-		}
-		passwordHash, err := passwordutils.HashPassword(administrator.Password)
+		hash, err := passwordutils.HashPassword(a.Password)
 		if err != nil {
-			return nil, fmt.Errorf("hash recovery password: %w", err)
+			return nil, err
 		}
-		prepared = append(prepared, preparedRecoveryAdministrator{
-			RecoveryAdministratorInput: administrator,
-			passwordHash:               passwordHash, lastAcceptedCounter: counters[roleKey],
-		})
+		seen[a.PrincipalID] = true
+		passwords[a.Password] = true
+		roles[a.RoleKey] = true
+		prepared = append(prepared, preparedRecoveryAdministrator{RecoveryAdministratorInput: a, passwordHash: hash, lastAcceptedCounter: counter})
+	}
+	for _, role := range bootstrapRoleOrder {
+		if !roles[role] {
+			return nil, commonapi.ErrBadRequest
+		}
 	}
 	return prepared, nil
 }
-
 func validateRecoveryTargets(targets []RecoveryAdministratorTarget) error {
-	if len(targets) != len(bootstrapRoleOrder) {
-		return fmt.Errorf("%w: recovery requires exactly one active holder for each administrator role", commonapi.ErrConflict)
-	}
-	byRole := make(map[string]RecoveryAdministratorTarget, len(targets))
-	principals := make(map[int64]struct{}, len(targets))
+	roles := map[string]bool{}
+	principals := map[int64]bool{}
 	for _, target := range targets {
-		if _, exists := byRole[target.RoleKey]; exists || !isBootstrapRole(target.RoleKey) {
-			return fmt.Errorf("%w: administrator role holders are ambiguous", commonapi.ErrConflict)
-		}
-		if target.PrincipalStatus != PrincipalStatusActive ||
-			(target.AccountStatus != LocalAccountStatusActive && target.AccountStatus != LocalAccountStatusLocked) {
+		if !isBootstrapRole(target.RoleKey) || principals[target.PrincipalID] || (target.PrincipalStatus != PrincipalStatusActive && target.PrincipalStatus != PrincipalStatusSuspended) || (target.AccountStatus != LocalAccountStatusActive && target.AccountStatus != LocalAccountStatusLocked) {
 			return fmt.Errorf("%w: administrator identity is not recoverable", commonapi.ErrConflict)
 		}
-		if _, exists := principals[target.PrincipalID]; exists {
-			return fmt.Errorf("%w: administrator roles must be held by three distinct users", commonapi.ErrConflict)
-		}
-		byRole[target.RoleKey] = target
-		principals[target.PrincipalID] = struct{}{}
+		roles[target.RoleKey] = true
+		principals[target.PrincipalID] = true
 	}
-	for _, roleKey := range bootstrapRoleOrder {
-		if _, exists := byRole[roleKey]; !exists {
-			return fmt.Errorf("%w: missing administrator role %s", commonapi.ErrConflict, roleKey)
+	for _, role := range bootstrapRoleOrder {
+		if !roles[role] {
+			return fmt.Errorf("%w: administrator role holder is missing", commonapi.ErrConflict)
 		}
 	}
 	return nil

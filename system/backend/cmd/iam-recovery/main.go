@@ -19,12 +19,6 @@ import (
 	"gorm.io/gorm"
 )
 
-var requiredRoles = []string{
-	"platform.system_administrator",
-	"platform.security_administrator",
-	"platform.audit_administrator",
-}
-
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "IAM Recovery 失败: %v\n", err)
@@ -86,15 +80,11 @@ func applyRecovery(
 	if err != nil {
 		return err
 	}
-	targetByRole := make(map[string]iam.RecoveryAdministratorTarget, len(targets))
-	for _, target := range targets {
-		targetByRole[target.RoleKey] = target
-	}
 
 	reader := bufio.NewReader(stdin)
-	inputs := make([]iam.RecoveryAdministratorInput, 0, len(requiredRoles))
-	for _, roleKey := range requiredRoles {
-		target := targetByRole[roleKey]
+	inputs := make([]iam.RecoveryAdministratorInput, 0, len(targets))
+	for _, target := range targets {
+		roleKey := target.RoleKey
 		fmt.Fprintf(stdout, "\n恢复 %s（%s，账号 %s）\n", target.DisplayName, roleKey, target.Username)
 		password, err := iamcli.ReadConfirmedPassword(
 			stdin, stdout, "输入新密码（至少 14 字符）: ", "再次输入新密码: ",
@@ -118,7 +108,7 @@ func applyRecovery(
 			return fmt.Errorf("验证 %s 的 TOTP: %w", roleKey, err)
 		}
 		inputs = append(inputs, iam.RecoveryAdministratorInput{
-			RoleKey: roleKey, Password: password, TOTPSecret: key.Secret(), TOTPProofs: proofs,
+			PrincipalID: target.PrincipalID, RoleKey: roleKey, Password: password, TOTPSecret: key.Secret(), TOTPProofs: proofs,
 		})
 	}
 
@@ -128,15 +118,15 @@ func applyRecovery(
 	if err != nil {
 		return err
 	}
-	roles := make([]string, 0, len(result.Principals))
-	for roleKey := range result.Principals {
-		roles = append(roles, roleKey)
+	ids := make([]int64, 0, len(result.Principals))
+	for id := range result.Principals {
+		ids = append(ids, id)
 	}
-	sort.Strings(roles)
-	fmt.Fprintf(stdout, "\nIAM 三员凭据恢复已完成于 %s（Attempt %d）\n", result.CompletedAt.Format(time.RFC3339), result.AttemptID)
-	for _, roleKey := range roles {
-		fmt.Fprintf(stdout, "%s -> Principal %d\n", roleKey, result.Principals[roleKey])
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	fmt.Fprintf(stdout, "\nIAM 管理员凭据恢复已完成于 %s（Attempt %d）\n", result.CompletedAt.Format(time.RFC3339), result.AttemptID)
+	for _, id := range ids {
+		fmt.Fprintf(stdout, "%s -> Principal %d\n", result.Principals[id], id)
 	}
-	fmt.Fprintln(stdout, "旧密码、旧 TOTP 和旧会话均已失效。请全量重启 ADDP 后分别验证三员登录。")
+	fmt.Fprintln(stdout, "旧密码、旧 TOTP 和旧会话均已失效。请使用认证器新生成的验证码重新登录验证；原有暂停状态保持不变。")
 	return nil
 }

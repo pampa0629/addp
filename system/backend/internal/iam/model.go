@@ -140,6 +140,8 @@ const (
 	PrivilegedChangePlatformIdentityDeactivate PrivilegedChangeType = "platform_identity_deactivate"
 	PrivilegedChangePlatformRoleGrant          PrivilegedChangeType = "platform_role_grant"
 	PrivilegedChangePlatformRoleRevoke         PrivilegedChangeType = "platform_role_revoke"
+	PrivilegedChangePlatformRoleReplace        PrivilegedChangeType = "platform_role_replace"
+	PrivilegedChangePlatformCredentialRecovery PrivilegedChangeType = "platform_credential_recovery"
 )
 
 type PrivilegedChangeStatus string
@@ -453,19 +455,29 @@ type TenantInvitation struct {
 func (TenantInvitation) TableName() string { return "system.tenant_invitations" }
 
 type PrivilegedChangeRequest struct {
-	ID                     int64                  `gorm:"primaryKey;autoIncrement"`
-	ChangeType             PrivilegedChangeType   `gorm:"column:change_type;not null"`
-	TargetPrincipalID      int64                  `gorm:"column:target_principal_id;not null"`
-	TargetRoleID           *int64                 `gorm:"column:target_role_id"`
-	ScopeType              string                 `gorm:"column:scope_type;not null"`
-	Reason                 string                 `gorm:"column:reason;not null"`
-	RequestedByPrincipalID int64                  `gorm:"column:requested_by_principal_id;not null"`
-	Status                 PrivilegedChangeStatus `gorm:"column:status;not null"`
-	RequestedAt            time.Time              `gorm:"column:requested_at;not null;default:now()"`
-	DecidedAt              *time.Time             `gorm:"column:decided_at"`
-	AppliedAt              *time.Time             `gorm:"column:applied_at"`
-	CreatedAt              time.Time              `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt              time.Time              `gorm:"column:updated_at;autoUpdateTime"`
+	Approval                      *PrivilegedChangeApproval `gorm:"foreignKey:RequestID;references:ID"`
+	RecoveryToken                 string                    `gorm:"-"`
+	Version                       int64                     `gorm:"column:version;not null;default:1"`
+	GovernanceRoleKey             string                    `gorm:"column:governance_role_key"`
+	TargetAuthorizationVersion    int64                     `gorm:"column:target_authorization_version"`
+	RequesterAuthorizationVersion int64                     `gorm:"column:requester_authorization_version"`
+	TargetAssignmentID            *int64                    `gorm:"column:target_assignment_id"`
+	SuccessorPrincipalID          *int64                    `gorm:"column:successor_principal_id"`
+	SuccessorAuthorizationVersion *int64                    `gorm:"column:successor_authorization_version"`
+	ExpiresAt                     time.Time                 `gorm:"column:expires_at;default:now()"`
+	ID                            int64                     `gorm:"primaryKey;autoIncrement"`
+	ChangeType                    PrivilegedChangeType      `gorm:"column:change_type;not null"`
+	TargetPrincipalID             int64                     `gorm:"column:target_principal_id;not null"`
+	TargetRoleID                  *int64                    `gorm:"column:target_role_id"`
+	ScopeType                     string                    `gorm:"column:scope_type;not null"`
+	Reason                        string                    `gorm:"column:reason;not null"`
+	RequestedByPrincipalID        int64                     `gorm:"column:requested_by_principal_id;not null"`
+	Status                        PrivilegedChangeStatus    `gorm:"column:status;not null"`
+	RequestedAt                   time.Time                 `gorm:"column:requested_at;not null;default:now()"`
+	DecidedAt                     *time.Time                `gorm:"column:decided_at"`
+	AppliedAt                     *time.Time                `gorm:"column:applied_at"`
+	CreatedAt                     time.Time                 `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                     time.Time                 `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (PrivilegedChangeRequest) TableName() string {

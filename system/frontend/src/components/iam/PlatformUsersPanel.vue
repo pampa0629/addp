@@ -25,11 +25,12 @@
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.actions')" width="440" fixed="right">
         <template #default="{ row }">
+          <el-tag v-if="row.has_effective_platform_role" size="small">{{ t('system.iam.users.administratorGovernance') }}</el-tag>
           <el-button v-if="can('iam.user.update') && row.status !== 'deactivated'" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
           <el-button v-if="canResetPassword(row)" link type="primary" :icon="Key" @click="openPasswordReset(row)">{{ t('system.iam.users.resetPassword') }}</el-button>
           <el-button v-if="canResetMFA(row)" link type="warning" :icon="Iphone" @click="openMFAReset(row)">{{ t('system.iam.users.resetMFA') }}</el-button>
-          <el-button v-if="can('iam.user.suspend') && row.status === 'active'" link type="warning" :icon="VideoPause" @click="openLifecycle(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
-          <el-button v-if="can('iam.user.reactivate') && row.status === 'suspended'" link type="success" :icon="RefreshLeft" @click="openLifecycle(row, 'reactivate')">{{ t('system.iam.common.reactivate') }}</el-button>
+          <el-button v-if="!row.has_effective_platform_role && can('iam.user.suspend') && row.status === 'active'" link type="warning" :icon="VideoPause" @click="openLifecycle(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
+          <el-button v-if="!row.has_effective_platform_role && can('iam.user.reactivate') && row.status === 'suspended'" link type="success" :icon="RefreshLeft" @click="openLifecycle(row, 'reactivate')">{{ t('system.iam.common.reactivate') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -87,7 +88,6 @@
     <el-dialog v-model="lifecycleVisible" :title="t(`system.iam.common.${lifecycle.action}`)" width="520px">
       <el-form label-position="top">
         <el-form-item :label="t('system.iam.common.reason')" required><el-input v-model="lifecycle.reason" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item :label="t('system.iam.users.changeRequestId')"><el-input v-model="lifecycle.change_request_id" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="lifecycleVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" :disabled="!lifecycle.reason.trim()" @click="submitLifecycle">{{ t('system.iam.common.confirm') }}</el-button></template>
     </el-dialog>
@@ -124,7 +124,7 @@ const mfaResetVisible = ref(false)
 const mfaResetFormRef = ref()
 const mfaReset = reactive({ row: null, reason: '' })
 const lifecycleVisible = ref(false)
-const lifecycle = reactive({ row: null, action: 'suspend', reason: '', change_request_id: '' })
+const lifecycle = reactive({ row: null, action: 'suspend', reason: '' })
 const rules = computed(() => ({
   display_name: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
   username: [{ required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' }],
@@ -223,13 +223,12 @@ async function submit() {
   } catch (error) { if (error !== false) ElMessage.error(error.response?.data?.error || t('system.iam.common.saveFailed')) }
   finally { submitting.value = false }
 }
-function openLifecycle(row, action) { Object.assign(lifecycle, { row, action, reason: '', change_request_id: '' }); lifecycleVisible.value = true }
+function openLifecycle(row, action) { Object.assign(lifecycle, { row, action, reason: '' }); lifecycleVisible.value = true }
 async function submitLifecycle() {
   submitting.value = true
   try {
     await iamAPI.platformUsers[lifecycle.action](lifecycle.row.id, {
-      reason: lifecycle.reason.trim(),
-      change_request_id: lifecycle.change_request_id.trim() || null
+      reason: lifecycle.reason.trim()
     })
     ElMessage.success(t('system.iam.common.updated')); lifecycleVisible.value = false; await load()
   } catch (error) { ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }

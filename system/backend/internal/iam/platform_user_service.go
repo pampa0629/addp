@@ -35,10 +35,9 @@ type UpdateManagedUserInput struct {
 }
 
 type ChangeManagedUserStatusInput struct {
-	UserID          int64
-	Reason          string
-	ChangeRequestID *int64
-	Audit           AuditMetadata
+	UserID int64
+	Reason string
+	Audit  AuditMetadata
 }
 
 type ManagedUserStatusChangeResult struct {
@@ -423,14 +422,12 @@ func (s *PlatformUserService) changeStatus(
 		if err != nil {
 			return err
 		}
-		if governed && input.ChangeRequestID == nil {
+		if governed {
 			return fmt.Errorf("%w: %w", commonapi.ErrConflict, ErrPrivilegedChangeRequestRequired)
 		}
-		if !governed && input.ChangeRequestID != nil {
-			return fmt.Errorf("%w: change request is only valid for a platform role holder", commonapi.ErrBadRequest)
-		}
+
 		authorizationVersion, err := tx.UpdatePrincipalStatus(
-			ctx, principal.ID, target, nil, input.ChangeRequestID,
+			ctx, principal.ID, target, nil, nil,
 		)
 		if err != nil {
 			return err
@@ -449,9 +446,7 @@ func (s *PlatformUserService) changeStatus(
 			"authorization_version": authorizationVersion,
 			"revoked_family_count":  revoked,
 		}
-		if input.ChangeRequestID != nil {
-			details["change_request_id"] = *input.ChangeRequestID
-		}
+
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
 			Metadata:   input.Audit,
 			EventName:  eventName,

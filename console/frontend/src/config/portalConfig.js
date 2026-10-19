@@ -364,7 +364,7 @@ export const SIDEBAR_MENUS = {
           {
             index: '/system/iam/accounts', icon: Tickets, label: 'console.menus.system.iamAccounts',
             access: [
-              { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+              { context: 'platform', permissions: ['iam.user.read', 'iam.platform_administrator_change.read'] },
               { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
             ],
           },

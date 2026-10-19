@@ -125,7 +125,7 @@ Role Assignment 列表支持按 Membership 与 `principal_type=user|service_prin
 
 Tenant 审计的成员筛选以所选 Tenant Membership 的 `principal_id` 查询既有审计协议，并支持按 `principal_type=user|service_principal` 过滤操作者类型；成员列必须显式展示操作者类型。模块筛选使用 `module_name` 的稳定协议值。界面必须以本地化模块名称作为主标签、稳定 `module_name` 作为辅助标识，不得把中文名称写入审计事实或新增兼容字段。审计导出必须覆盖当前筛选条件下的全部事件，不得复用普通列表的单页上限静默截断；后端使用稳定排序的分批读取和有界内存文件生成，响应通过 `X-ADDP-Export-Count` 明确返回实际导出条数。
 
-平台系统管理员、安全管理员和审计管理员是三个互斥 User Role，不存在全权合并角色。平台高权限身份变化使用 `privileged_change_requests` 和 `privileged_change_approvals`，申请人与审批人必须满足职责分离要求。
+平台系统管理员、安全管理员和审计管理员是三个互斥 User Role，不存在全权合并角色。平台高权限身份变化使用 `privileged_change_requests` 和 `privileged_change_approvals`，申请人与审批人必须满足权限发布规范的目标角色矩阵；批准与状态／角色变更在同一事务内提交，不再通过普通账号接口二次执行。请求保存不可变的目标与申请人授权版本、目标角色、原分配、接任人、到期时间及独立 version，复核对版本和当前事实进行比较。
 
 Role、Assignment、Membership、组织关系或 Principal 状态变化时，数据库和 Service 必须在同一事务中：
 
@@ -248,11 +248,15 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 
 平台安全管理员只能为不持有有效 Platform Role、具有可用 Local Account 和唯一 active TOTP Credential 的普通 User 执行受控 MFA 重置。事务必须废止旧 Credential、推进授权版本、撤销全部 Token Family、终止未消费 Ticket/Challenge/Enrollment，并写入高风险审计；不得恢复或返回旧 TOTP Secret，也不得修改密码、Membership 或 Role Assignment。目标 User 随后通过唯一的当前用户 TOTP 自助登记路径建立新 Credential。
 
-### 7.4 三员灾难恢复
+### 7.4 三员凭据恢复
 
-三员凭据全部不可用时，只允许离线 `iam-recovery prepare/apply`。恢复不删除或重建 Bootstrap 状态，不通过 SQL 直接替换 Hash，不开放 HTTP API。
+线上凭据恢复复用三员特权治理请求：另外两类管理员分别申请、复核，目标和任何接任人均不得参与。批准只签发一次性短期登记凭据，明文仅返回一次，不进入查询响应、日志和审计。登记凭据以 Hash 保存，绑定请求、目标和授权版本；目标自行设置新密码、验证新 TOTP，在同一事务替换凭据、撤销旧会话和待消费认证事实、消费恢复凭据并写审计。拒绝过期、复用和事实变化；登记前不开放任何平台权限。
 
-恢复一次性重建三员密码和 TOTP，撤销旧会话并保留完整审计。Secret、密码、TOTP Secret 和验证码不得进入参数、环境变量、日志或审计详情。
+### 7.5 三员离线凭据恢复
+
+无法形成符合目标角色矩阵的线上申请／复核组合时，使用离线 `iam-recovery prepare/apply`。恢复不删除或重建 Bootstrap 状态，不通过 SQL 直接替换 Hash，不开放 HTTP API。
+
+恢复按明确的 Principal 身份重建当前三员持有人的密码和 TOTP，撤销旧会话并保留完整审计；不解除 Principal 暂停，不修改角色分配。Secret、密码、TOTP Secret 和验证码不得进入参数、环境变量、日志或审计详情。
 
 ## 八、OAuth 协议表
 

@@ -46,14 +46,14 @@ System 不创建默认全权管理员、默认租户或共享弱密码账号。�
 
 新 Tenant 必须由平台系统管理员指定一个已由平台安全管理员创建的有效普通 User 作为首位 `tenant.administrator`。Tenant、首个 Membership、首个 Role Assignment 和审计在一个事务中完成；Tenant 不保存独立管理员密码。切换前已存在且没有任何 Membership/Assignment 的 Tenant 只能执行一次正式 Initialization，不能通过 SQL 或第二套授权接口补角色。
 
-普通 User 遗失本地密码时，由平台安全管理员通过用户管理中的受控密码重置入口处理。该操作替换 Password Hash、递增授权版本、撤销既有会话并写入高风险审计；有效平台角色持有人不显示该操作，也不能调用对应 API。平台三员继续使用本人改密或离线三员灾难恢复，不与普通 User 重置混用。
+普通 User 遗失本地密码时，由平台安全管理员通过用户管理中的受控密码重置入口处理。该操作替换 Password Hash、递增授权版本、撤销既有会话并写入高风险审计；有效平台角色持有人不显示该操作，也不能调用对应 API。平台三员可本人维护凭据，遗失凭据时通过管理员治理申请和复核后，由目标本人登记新密码与 TOTP；无法形成合格的申请／复核组合时使用离线凭据恢复，不与普通 User 重置混用。
 
 ## 📡 主要 API 端点
 
 ```text
 认证与上下文: /api/v1/system/login、/refresh、/logout、/auth/*
 OAuth 2.0:       /api/v1/system/oauth/*
-平台 IAM:       /api/v1/system/platform/tenants、/platform/users、/platform/identity_changes
+平台 IAM:       /api/v1/system/platform/tenants、/platform/users、/platform/administrator_changes
 租户 IAM:       /api/v1/system/tenant/memberships、/tenant/invitations、/tenant/roles、/tenant/role_assignments
 审计:            /api/v1/system/platform/audit/events、/tenant/audit/events
 引擎管理:       /api/v1/system/engines
@@ -70,6 +70,19 @@ OAuth 2.0:       /api/v1/system/oauth/*
 - **认证方式**: opaque Access Token + Refresh Token Family
 
 详细安全机制请查看 [CLAUDE.md#安全机制](./CLAUDE.md#安全机制)
+
+## 三员治理验证
+
+标准 PostgreSQL 入口使用隔离测试库，不操作开发库：
+
+```bash
+make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test administrator-governance"
+make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package api --test administrator-governance"
+make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test administrator-governance"
+make test-module MODULE=system
+```
+
+前两项覆盖事务治理及真实密码、TOTP、Access Token 与 API 授权链路；浏览器门禁使用隔离页面夹具。它们不代替真实部署的跨进程运行验收。
 
 ## 🐛 常见问题
 

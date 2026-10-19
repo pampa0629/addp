@@ -474,3 +474,6 @@ other = "关联主机不存在或已停用，请重新选择"
 
 [system.engine_deployment.failed]
 other = "引擎部署操作失败"
+
+[system.iam.administrator_change_conflict]
+other = "变更请求已失效、状态已变化或当前操作无法执行，请刷新后重新申请。"

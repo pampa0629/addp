@@ -20,7 +20,7 @@ func RegisterIAMRoutes(
 		runtime.DelegationHandler == nil || runtime.ExecutionAuthorizationHandler == nil ||
 		runtime.NotebookSessionAuthorizationHandler == nil ||
 		runtime.TaskAuthorizationSubjectHandler == nil ||
-		runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
+		runtime.AdministratorChangeService == nil || runtime.AdministratorCredentialRecoveryService == nil || runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || runtime.OAuthFailureAudit == nil {
@@ -71,6 +71,9 @@ func RegisterIAMRoutes(
 
 	api.POST("/login", runtime.AuthHandler.Login)
 	api.POST("/auth/mfa-verifications", publicRateLimit, runtime.AuthHandler.VerifyMFA)
+	recoveryHandler := &IAMAdministratorRecoveryHandler{service: runtime.AdministratorCredentialRecoveryService}
+	api.POST("/auth/administrator-recovery/enrollments", publicRateLimit, recoveryHandler.Begin)
+	api.POST("/auth/administrator-recovery/completions", publicRateLimit, recoveryHandler.Complete)
 	api.POST("/refresh", runtime.AuthHandler.Refresh)
 	api.POST("/logout", runtime.AuthHandler.Logout)
 	api.POST("/auth/context-selections", runtime.AuthHandler.ConsumeContextSelection)

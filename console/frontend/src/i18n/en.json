@@ -626,6 +626,7 @@
         "engineDeployments": "Platform engine deployments"
       }
     },
-    "personalCenter": "Personal Center"
+    "personalCenter": "Personal Center",
+    "administratorRecovery": "Administrator credential recovery"
   }
 }

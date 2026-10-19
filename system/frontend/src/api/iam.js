@@ -62,11 +62,13 @@ export const iamAPI = {
     suspend: (id, data) => client.post(`/system/platform/users/${id}/suspend`, data),
     reactivate: (id, data) => client.post(`/system/platform/users/${id}/reactivate`, data)
   },
-  identityChanges: {
-    list: (params) => list('/system/platform/identity_changes', params),
-    create: (data) => client.post('/system/platform/identity_changes', data),
-    approve: (id, reason) => client.post(`/system/platform/identity_changes/${id}/approve`, { reason }),
-    reject: (id, reason) => client.post(`/system/platform/identity_changes/${id}/reject`, { reason })
+  administratorChanges: {
+    candidates: (params) => list('/system/platform/administrator_changes/candidates', params),
+    list: (params) => list('/system/platform/administrator_changes', params),
+    create: (data) => client.post('/system/platform/administrator_changes', data),
+    approve: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/approve`, { version, reason }),
+    reject: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/reject`, { version, reason }),
+    cancel: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/cancel`, { version, reason })
   },
   memberships: {
     list: (params) => list('/system/tenant/memberships', params),

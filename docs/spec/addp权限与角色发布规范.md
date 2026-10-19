@@ -113,13 +113,28 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 平台三员 Role 只允许 User Principal，必须互斥，不存在全权合并角色。Runtime Role 只允许 Service Principal，不得授予 User。具体 `allowed_principal_types`、`allowed_scope_types` 和 Permission 集合以 `system/authorization/builtin_roles.yaml` 为准。
 
+三员特权治理以目标角色确定申请／复核资格，不把有限复核等同于普通账号或权限的直接管理权：
+
+| 目标角色 | 申请角色 | 复核角色 |
+| --- | --- | --- |
+| 平台系统管理员 | 平台安全管理员 | 平台审计管理员 |
+| 平台安全管理员 | 平台系统管理员 | 平台审计管理员 |
+| 平台审计管理员 | 平台安全管理员 | 平台系统管理员 |
+
+所有动作复用 `privileged_change_requests` / `privileged_change_approvals`。公开入口统一为 `/platform/administrator_changes`，使用独立的 `iam.platform_administrator_change.read/create/approve/reject` Permission；旧身份变更和未启用角色变更 Permission 停用，不保留旧 API 路径。路由核验 Permission，System 在事务内核验当前角色资格和目标事实，两层均不可省略。
+
+请求绑定目标、动作、治理角色、目标和申请人的授权版本以及涉及的原角色分配；有效期为 24 小时。请求返回正数 BIGINT 字符串 `version`，复核必须提交该版本。批准和执行在同一事务完成；凭据恢复批准只建立最长 15 分钟的一次性登记凭据，目标本人完成登记后才生效。申请或复核角色失效、目标状态／授权版本变化、请求过期、重复复核及非法状态转移必须拒绝，不能重新解释旧审批。申请人可按请求版本撤销待复核请求，以及尚未消费的已批准凭据恢复请求；撤销使恢复凭据立即失效，重新申请必须重新复核。过期或事实变化的请求在重新申请时审计撤销，不占用待办唯一性。
+
+角色交接绑定原任人和接任人，在同一事务中完成授予和撤任；不能先撤掉最后一个岗位持有人再创建接任角色。独立撤任必须保留同岗位可用持有人。新增角色、交接和恢复均不允许目标或接任人参与申请／复核。身份暂停立即撤销旧会话；恢复不复活旧会话。普通账号生命周期接口不得再执行平台角色持有人的受控状态变更。
+
+
 引擎授权管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它提供委派管理、批准要求读取／初始化／显式切换、独立只读 Grant 创建／历史读取／撤销及页面候选读取。当前租户有效的委派创建 Permission 表达管理员管理范围，管理员无需委托自己；每项操作仍独立核验功能 Permission。切换权限 `system.engine_access_approval_requirement.update` 默认仅组合进此模板，不组合进数据授权办理员或其他角色。切到直接批准还核验操作人自己的授权办理资格，防止无人承接。角色不授予数据内容读取、业务共享确认或 Explicit Deny，不自动分配账号，不创建委派或 Grant；模板扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话。
 
 数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，统一组合直接批准与业务批准后的办理能力：精确 DataItem 批准要求的读取／首次配置、只读 Grant 的创建／历史读取／撤销、Catalog 条目读取和人类授权办理，以及页面所需的引擎管理读取、实时结构目录和账号／部门／项目组候选读取。直接批准使用 Grant 创建 Permission；业务批准使用 `system.engine_access_fulfillment.create`，仍须由 Catalog 验证有效业务确认，再由 System 受理和签发。两项 Permission 保持独立校验，由同一内置角色组合；不因持有角色而绕过目标批准方式。
 
 每项正式办理仍须具有当前租户授权管理员资格或目标引擎的有效管理委派。该角色不提供委派管理、业务共享确认、批准方式切换、机器 execute、Explicit Deny 或数据内容读取／导出／写入，不自动创建委派或 Grant。角色扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话；不新增 Role Assignment，不扩张其他角色，不重写租户自定义角色及其历史。既有自定义角色仍按显式 Permission 集合判权，但产品完整办理职责只使用这个内置模板。具备角色分配权限的账号可以给自己分配该高风险角色，但须完成现有 MFA 增强认证；自我分配不豁免审计、会话失效或管理范围核验。小团队可由同一管理员兼任委派管理和授权办理，另一个账号仅作为数据接收方，无需增加专职账号。
 
-普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员凭据整体失效时只允许离线灾难恢复，不能扩大普通用户重置 Permission 绕过三员治理。
+普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员通过独立的双人批准凭据恢复流程重新登记，不能形成合格治理组合时使用离线凭据恢复；不能扩大普通用户重置 Permission 绕过三员治理。
 
 Tenant 自定义 Role：
 

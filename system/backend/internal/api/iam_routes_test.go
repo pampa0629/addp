@@ -36,6 +36,8 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 	}
 	sort.Strings(actual)
 	want := []string{
+		"POST /api/v1/system/auth/administrator-recovery/enrollments",
+		"POST /api/v1/system/auth/administrator-recovery/completions",
 		http.MethodDelete + " /api/v1/system/oauth/authorization_requests/:request_id",
 		http.MethodGet + " /api/v1/system/auth/context",
 		http.MethodGet + " /api/v1/system/auth/context-options",

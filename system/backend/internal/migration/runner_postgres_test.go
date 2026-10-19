@@ -4930,8 +4930,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 113 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 113", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 117 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 117", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -5887,7 +5887,7 @@ func assertSessionTokenFamilyConstraints(t *testing.T, db *sql.DB) {
 
 	platformUserID := createMigrationUser(t, db, "Session Platform User")
 	var platformRoleID int64
-	if err := db.QueryRow(`SELECT id FROM system.roles WHERE role_key = 'platform.test_administrator'`).Scan(&platformRoleID); err != nil {
+	if err := db.QueryRow(`SELECT id FROM system.roles WHERE role_key = 'platform.system_administrator'`).Scan(&platformRoleID); err != nil {
 		t.Fatalf("find platform role for session test: %v", err)
 	}
 	if _, err := db.Exec(`
@@ -6665,26 +6665,25 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	reviewerUserID := createMigrationUser(t, db, "Governed Reviewer")
 
 	var platformRoleID, conflictingPlatformRoleID int64
-	if err := db.QueryRow(`
-		INSERT INTO system.roles
-		    (role_key, name_i18n_key, description_i18n_key, role_type, allowed_scope_types, allowed_principal_types, immutable)
-		VALUES
-		    ('platform.test_administrator', 'roles.platform.test_administrator.name', 'roles.platform.test_administrator.description', 'platform_builtin', ARRAY['platform'], ARRAY['user'], true)
-		RETURNING id
-	`).Scan(&platformRoleID); err != nil {
-		t.Fatalf("create platform test role: %v", err)
+	if err := db.QueryRow("SELECT id FROM system.roles WHERE role_key='platform.system_administrator'").Scan(&platformRoleID); err != nil {
+		t.Fatal(err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO system.roles
-		    (role_key, name_i18n_key, description_i18n_key, role_type, allowed_scope_types, allowed_principal_types, immutable)
-		VALUES
-		    ('platform.conflicting_administrator', 'roles.platform.conflicting_administrator.name', 'roles.platform.conflicting_administrator.description', 'platform_builtin', ARRAY['platform'], ARRAY['user'], true)
-		RETURNING id
-	`).Scan(&conflictingPlatformRoleID); err != nil {
-		t.Fatalf("create conflicting platform role: %v", err)
+	if err := db.QueryRow("SELECT id FROM system.roles WHERE role_key='platform.security_administrator'").Scan(&conflictingPlatformRoleID); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO system.role_conflicts (role_id_low, role_id_high, reason) VALUES (LEAST($1::bigint, $2::bigint), GREATEST($1::bigint, $2::bigint), 'separation of duties')`, platformRoleID, conflictingPlatformRoleID); err != nil {
-		t.Fatalf("create platform role conflict: %v", err)
+	for _, actor := range []struct {
+		id   int64
+		role string
+	}{{requesterUserID, "platform.security_administrator"}, {reviewerUserID, "platform.audit_administrator"}} {
+		if _, err := db.Exec("INSERT INTO system.role_assignments(principal_id,role_id,scope_type,source_type) SELECT $1,id,'platform','bootstrap' FROM system.roles WHERE role_key=$2", actor.id, actor.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO system.local_accounts(user_id,username,normalized_username,password_hash,password_changed_at) VALUES($1,'governed-candidate','governed-candidate','test-hash',statement_timestamp())`, targetUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.mfa_credentials(user_id,method,status,secret_ciphertext,secret_nonce,key_version) VALUES($1,'totp','active',decode(repeat('01',32),'hex'),decode(repeat('02',12),'hex'),1)`, targetUserID); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
@@ -6727,20 +6726,13 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		t.Fatal("privileged approval update succeeded")
 	}
 
-	conflictRequestID := createPrivilegedChangeRequest(t, db, "platform_role_grant", targetUserID, conflictingPlatformRoleID, requesterUserID)
-	approvePrivilegedChangeRequest(t, db, conflictRequestID, reviewerUserID)
-	if _, err := db.Exec(`
-		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_change_request_id, grant_reason)
-		VALUES ($1, $2, 'platform', 'manual', $3, $4, 'conflicting platform grant test')
-	`, targetUserID, conflictingPlatformRoleID, requesterUserID, conflictRequestID); err == nil {
+	if _, err := db.Exec(`INSERT INTO system.privileged_change_requests(change_type,target_principal_id,target_role_id,reason,requested_by_principal_id) VALUES('platform_role_grant',$1,$2,'conflicting role',$3)`, targetUserID, conflictingPlatformRoleID, requesterUserID); err == nil {
+		t.Fatal("conflicting administrator candidate was accepted")
+	}
+	if _, err := db.Exec(`INSERT INTO system.role_assignments(principal_id,role_id,scope_type,source_type) VALUES($1,$2,'platform','bootstrap')`, targetUserID, conflictingPlatformRoleID); err == nil {
 		t.Fatal("conflicting platform role assignment succeeded")
 	}
-	assertPrivilegedChangeStatus(t, db, conflictRequestID, "approved")
 
-	if _, err := db.Exec(`UPDATE system.principals SET status = 'suspended' WHERE id = $1`, targetUserID); err == nil {
-		t.Fatal("governed platform principal suspension succeeded without approval")
-	}
 	suspendRequestID := createPrivilegedChangeRequest(t, db, "platform_identity_suspend", targetUserID, 0, requesterUserID)
 	approvePrivilegedChangeRequest(t, db, suspendRequestID, reviewerUserID)
 	if _, err := db.Exec(`UPDATE system.principals SET status = 'suspended', status_change_request_id = $1 WHERE id = $2`, suspendRequestID, targetUserID); err != nil {

@@ -68,6 +68,21 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		initialAuthorizationVersions[roleKey] = createRecoverySessionFacts(t, db, principalID, currentTime)
 	}
 
+	governance := NewAdministratorChangeService(repository)
+	suspendedID := bootstrapResult.PrincipalIDs["platform.audit_administrator"]
+	suspension, err := governance.Create(ctx, CreateAdministratorChangeInput{ChangeType: PrivilegedChangePlatformIdentitySuspend, TargetPrincipalID: suspendedID, RequestedByPrincipalID: bootstrapResult.PrincipalIDs["platform.security_administrator"], Reason: "suspension must survive offline credential recovery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := governance.Approve(ctx, ReviewAdministratorChangeInput{RequestID: suspension.ID, Version: suspension.Version, ReviewerPrincipalID: bootstrapResult.PrincipalIDs["platform.system_administrator"], Reason: "independent approval"}); err != nil {
+		t.Fatal(err)
+	}
+	suspendedPrincipal, err := repository.GetPrincipal(ctx, suspendedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialAuthorizationVersions["platform.audit_administrator"] = suspendedPrincipal.AuthorizationVersion
+
 	recoveryService, err := NewRecoveryService(
 		repository, cipher, time.Hour,
 		func(prefix string) (string, error) { return prefix + "recovery-postgres-test", nil }, now,
@@ -98,6 +113,14 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		recoveryAdministratorTestInput(t, bootstrapRoleOrder[1], "Recovered-password-security-admin!", "ORSXG5A=", currentTime),
 		recoveryAdministratorTestInput(t, bootstrapRoleOrder[2], "Recovered-password-audit-admin!", "MZXW6YTBOI======", currentTime),
 	}
+	for i := range inputs {
+		inputs[i].PrincipalID = bootstrapResult.PrincipalIDs[inputs[i].RoleKey]
+	}
+	swapped := append([]RecoveryAdministratorInput(nil), inputs...)
+	swapped[0].PrincipalID, swapped[1].PrincipalID = swapped[1].PrincipalID, swapped[0].PrincipalID
+	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: swapped}); err == nil {
+		t.Fatal("recovery used a role name instead of the bound principal identity")
+	}
 	installRecoveryCompletionAuditFailure(t, db)
 	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{
 		RecoverySecret: recoverySecret, Administrators: inputs,
@@ -123,7 +146,10 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	}
 
 	for index, roleKey := range bootstrapRoleOrder {
-		principalID := result.Principals[roleKey]
+		principalID := bootstrapResult.PrincipalIDs[roleKey]
+		if result.Principals[principalID] != roleKey {
+			t.Fatal("recovered identity does not match role")
+		}
 		var account LocalAccount
 		if err := db.Where("user_id = ?", principalID).Take(&account).Error; err != nil {
 			t.Fatalf("read recovered account %s: %v", roleKey, err)
@@ -164,6 +190,10 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		assertRecoveryPendingFactsConsumed(t, db, principalID)
 	}
 
+	afterRecovery, err := repository.GetPrincipal(ctx, suspendedID)
+	if err != nil || afterRecovery.Status != PrincipalStatusSuspended {
+		t.Fatal("offline recovery changed suspension")
+	}
 	var status string
 	var storedSecret *string
 	if err := db.Table("system.iam_recovery_attempts").

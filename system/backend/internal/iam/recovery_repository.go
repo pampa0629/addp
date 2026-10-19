@@ -104,10 +104,7 @@ func (r *Repository) CompleteIAMRecoveryAttempt(
 	return nil
 }
 
-func (r *Repository) LockRecoveryAdministratorTargets(
-	ctx context.Context,
-	now time.Time,
-) ([]RecoveryAdministratorTarget, error) {
+func (r *Repository) LockRecoveryAdministratorTargets(ctx context.Context, now time.Time) ([]RecoveryAdministratorTarget, error) {
 	var targets []RecoveryAdministratorTarget
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT role.role_key,
@@ -131,9 +128,59 @@ func (r *Repository) LockRecoveryAdministratorTargets(
 		  AND assignment.valid_from <= ?
 		  AND (assignment.valid_until IS NULL OR assignment.valid_until > ?)
 		ORDER BY role.role_key, assignment.id
-		FOR UPDATE OF assignment, principal, account
+
 	`, bootstrapRoleOrder, now, now).Scan(&targets).Error
-	return targets, wrapRepositoryError(err)
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	ids := make([]int64, 0, len(targets))
+	for _, target := range targets {
+		ids = append(ids, target.PrincipalID)
+	}
+	if _, err := r.lockPrincipalsInOrder(ctx, ids...); err != nil {
+		return nil, err
+	}
+	var roles []Role
+	if err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("role_key IN ?", bootstrapRoleOrder).Order("id").Find(&roles).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	var current []RecoveryAdministratorTarget
+	err = r.db.WithContext(ctx).Raw(`
+		SELECT role.role_key,
+		       assignment.id AS role_assignment_id,
+		       principal.id AS principal_id,
+		       principal.status AS principal_status,
+		       account.id AS account_id,
+		       account.username,
+		       account.status AS account_status,
+		       app_user.display_name
+		FROM system.roles role
+		JOIN system.role_assignments assignment ON assignment.role_id = role.id
+		JOIN system.principals principal ON principal.id = assignment.principal_id
+		JOIN system.users app_user ON app_user.id = principal.id
+		JOIN system.local_accounts account ON account.user_id = principal.id
+		WHERE role.role_key IN ?
+		  AND role.role_type = 'platform_builtin'
+		  AND role.status = 'active'
+		  AND assignment.scope_type = 'platform'
+		  AND assignment.status = 'active'
+		  AND assignment.valid_from <= ?
+		  AND (assignment.valid_until IS NULL OR assignment.valid_until > ?)
+		ORDER BY role.role_key, assignment.id
+
+	`, bootstrapRoleOrder, now, now).Scan(&current).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	if len(current) != len(targets) {
+		return nil, commonapi.ErrConflict
+	}
+	for i := range current {
+		if current[i].PrincipalID != targets[i].PrincipalID || current[i].RoleAssignmentID != targets[i].RoleAssignmentID {
+			return nil, commonapi.ErrConflict
+		}
+	}
+	return current, nil
 }
 
 func (r *Repository) DisableMFACredential(ctx context.Context, credentialID int64) error {

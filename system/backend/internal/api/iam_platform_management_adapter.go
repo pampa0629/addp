@@ -67,15 +67,16 @@ type IAMLocalAccountManagementResponse struct {
 }
 
 type IAMManagedUserResponse struct {
-	ID                   string                             `json:"id"`
-	Status               iam.PrincipalStatus                `json:"status"`
-	AuthorizationVersion string                             `json:"authorization_version"`
-	DisplayName          string                             `json:"display_name"`
-	PrimaryEmail         *string                            `json:"primary_email"`
-	Locale               *string                            `json:"locale"`
-	LocalAccount         *IAMLocalAccountManagementResponse `json:"local_account"`
-	CreatedAt            time.Time                          `json:"created_at"`
-	UpdatedAt            time.Time                          `json:"updated_at"`
+	HasEffectivePlatformRole bool                               `json:"has_effective_platform_role"`
+	ID                       string                             `json:"id"`
+	Status                   iam.PrincipalStatus                `json:"status"`
+	AuthorizationVersion     string                             `json:"authorization_version"`
+	DisplayName              string                             `json:"display_name"`
+	PrimaryEmail             *string                            `json:"primary_email"`
+	Locale                   *string                            `json:"locale"`
+	LocalAccount             *IAMLocalAccountManagementResponse `json:"local_account"`
+	CreatedAt                time.Time                          `json:"created_at"`
+	UpdatedAt                time.Time                          `json:"updated_at"`
 }
 
 type IAMCreateManagedUserRequest struct {
@@ -95,8 +96,7 @@ type IAMUpdateManagedUserRequest struct {
 }
 
 type IAMChangeManagedUserStatusRequest struct {
-	Reason          string  `json:"reason"`
-	ChangeRequestID *string `json:"change_request_id"`
+	Reason string `json:"reason"`
 }
 
 type IAMResetManagedLocalAccountPasswordRequest struct {
@@ -738,17 +738,8 @@ func (h *IAMPlatformUserHandler) changeStatus(
 		respondIAMError(c, fmt.Errorf("%w: invalid user lifecycle request", commonapi.ErrBadRequest))
 		return
 	}
-	var changeRequestID *int64
-	if request.ChangeRequestID != nil {
-		parsed, err := parseIAMDecimalID(*request.ChangeRequestID)
-		if err != nil {
-			respondIAMError(c, err)
-			return
-		}
-		changeRequestID = &parsed
-	}
 	result, err := change(c.Request.Context(), iam.ChangeManagedUserStatusInput{
-		UserID: userID, Reason: request.Reason, ChangeRequestID: changeRequestID,
+		UserID: userID, Reason: request.Reason,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
@@ -770,7 +761,8 @@ func mapIAMTenant(tenant iam.ManagedTenant) IAMTenantResponse {
 
 func mapIAMManagedUser(user iam.ManagedUser) IAMManagedUserResponse {
 	response := IAMManagedUserResponse{
-		ID: strconv.FormatInt(user.ID, 10), Status: user.Status,
+		HasEffectivePlatformRole: user.HasEffectivePlatformRole,
+		ID:                       strconv.FormatInt(user.ID, 10), Status: user.Status,
 		AuthorizationVersion: strconv.FormatInt(user.AuthorizationVersion, 10),
 		DisplayName:          user.DisplayName, PrimaryEmail: user.PrimaryEmail, Locale: user.Locale,
 		CreatedAt: user.CreatedAt.UTC(), UpdatedAt: user.UpdatedAt.UTC(),

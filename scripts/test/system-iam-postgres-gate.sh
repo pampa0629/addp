@@ -116,6 +116,14 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    administrator-governance)
+        case "$PACKAGE_FILTER" in
+            iam) test_pattern='^TestAdministratorGovernanceAgainstPostgres$' ;;
+            api) test_pattern='^TestAdministratorGovernanceAPIAuthenticationAgainstPostgres$' ;;
+            migration) test_pattern='^Test(AdministratorGovernanceForwardMigration|Runner)AgainstPostgres$' ;;
+            *) echo "administrator-governance requires --package iam, api or migration" >&2; exit 2 ;;
+        esac
+        ;;
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^initial_production_observes_actual_sources_and_persistent_target_history_without_issuing$'

@@ -323,7 +323,7 @@
         "audit": "审计日志",
         "tenants": "租户生命周期",
         "userAccounts": "用户账号",
-        "identityChanges": "身份变更审批",
+        "administratorChanges": "管理员变更治理",
         "departments": "部门管理",
         "projectGroups": "项目组管理",
         "apiConsumers": "API 消费方",
@@ -454,18 +454,39 @@
         "mfaResetSuccess": "身份验证器已重置，既有登录会话已撤销",
         "resetMFA": "重置验证器",
         "resetPassword": "重置密码",
-        "username": "用户名"
+        "username": "用户名",
+        "administratorGovernance": "通过管理员变更治理处理"
       },
-      "identityChanges": {
+      "administratorChanges": {
         "changeType": "变更类型",
-        "create": "创建身份变更请求",
+        "create": "创建管理员变更请求",
         "requestedAt": "申请时间",
-        "requester": "申请人 Principal ID",
-        "targetId": "目标 Principal ID",
+        "requester": "申请人",
+        "targetId": "目标用户 ID",
         "types": {
           "platform_identity_suspend": "暂停平台身份",
-          "platform_identity_reactivate": "重新激活平台身份"
-        }
+          "platform_identity_reactivate": "恢复平台身份",
+          "platform_role_grant": "任命管理员",
+          "platform_role_replace": "交接管理员岗位",
+          "platform_role_revoke": "撤销管理员角色",
+          "platform_credential_recovery": "恢复密码与 MFA"
+        },
+        "target": "目标用户",
+        "role": "目标岗位",
+        "successor": "接任用户",
+        "reviewer": "复核岗位",
+        "expiresAt": "请求到期时间",
+        "approvalEffect": "批准后立即执行变更；凭据恢复将生成一次性登记凭据。",
+        "recoveryIssued": "一次性恢复凭据",
+        "recoveryDelivery": "请通过可信渠道交给目标用户，15 分钟内有效。关闭后无法再次查看。",
+        "recoveryEntry": "打开凭据恢复入口",
+        "roles": {
+          "system_administrator": "系统管理员",
+          "security_administrator": "安全管理员",
+          "audit_administrator": "审计管理员",
+          "unknown": "未知岗位"
+        },
+        "reviewedBy": "实际复核人"
       },
       "memberships": {
         "editExpiry": "设置成员关系有效期",
@@ -832,7 +853,8 @@
           "resource_observation": "资源观测",
           "metrics_discovery": "指标发现",
           "platform_resource_rule": "主机资源告警规则",
-          "engine_deployment": "平台引擎部署"
+          "engine_deployment": "平台引擎部署",
+          "platform_administrator_change": "平台管理员变更"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -983,6 +1005,16 @@
       "validation": {
         "required": "此项必填",
         "organizationCode": "编码须以小写字母开头，仅包含小写字母、数字或下划线，且不能以下划线结尾（最多 64 个字符）"
+      },
+      "credentialRecovery": {
+        "title": "管理员凭据恢复",
+        "proof": "一次性恢复凭据",
+        "password": "新密码（至少 14 个字符）",
+        "submit": "确认新凭据",
+        "expires": "本次登记有效期至 {time}",
+        "complete": "凭据已更新，请重新登录。账号原有暂停状态保持不变。",
+        "failed": "恢复失败，请检查凭据、有效期和验证码。",
+        "login": "返回登录"
       }
     },
     "securityPolicy": {

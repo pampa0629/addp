@@ -25,11 +25,7 @@
         </el-form-item>
       </el-form>
       <div v-else class="iam-enrollment">
-        <canvas ref="qrCanvas" class="iam-enrollment__qr" :aria-label="t('system.iam.security.qrCode')" />
-        <div class="iam-enrollment__secret">
-          <span>{{ t('system.iam.security.manualKey') }}</span>
-          <code>{{ enrollment.secret }}</code>
-        </div>
+        <TOTPEnrollmentDetails :secret="enrollment.secret" :uri="enrollment.otpauth_uri" />
         <el-form label-position="top" @submit.prevent="completeEnrollment">
           <el-form-item :label="t('system.iam.security.verificationCode')">
             <el-input v-model="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" @keyup.enter="completeEnrollment" />
@@ -50,10 +46,10 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Iphone, Lock } from '@element-plus/icons-vue'
-import QRCode from 'qrcode'
+import TOTPEnrollmentDetails from './TOTPEnrollmentDetails.vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
@@ -67,7 +63,6 @@ const currentPassword = ref('')
 const code = ref('')
 const enrollment = ref(null)
 const submitting = ref(false)
-const qrCanvas = ref()
 let disposed = false
 
 async function loadStatus() {
@@ -100,9 +95,7 @@ async function beginEnrollment() {
     enrollment.value = result
     currentPassword.value = ''
     phase.value = 'verify'
-    await nextTick()
-    if (disposed) return
-    await QRCode.toCanvas(qrCanvas.value, enrollment.value.otpauth_uri, { width: 208, margin: 1 })
+
   } catch (error) {
     if (!disposed) ElMessage.error(error.response?.data?.error || t('system.iam.security.enrollmentFailed'))
   } finally {
@@ -144,9 +137,6 @@ onBeforeUnmount(() => { disposed = true; reset() })
 .iam-security-row__identity strong { font-size: 14px; font-weight: 600; color: var(--addp-text-primary); }
 .iam-security-row__identity span { font-size: 13px; color: var(--addp-text-secondary); }
 .iam-enrollment { display: flex; flex-direction: column; align-items: center; gap: 18px; }
-.iam-enrollment__qr { width: 208px; height: 208px; border: 1px solid var(--addp-border-color); }
-.iam-enrollment__secret { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; color: var(--addp-text-secondary); font-size: 13px; }
-.iam-enrollment__secret code { max-width: 100%; overflow-wrap: anywhere; color: var(--addp-text-primary); font-size: 14px; }
 .iam-enrollment .el-form { width: 100%; }
 @media (max-width: 620px) {
   .iam-security-row { align-items: stretch; flex-direction: column; }

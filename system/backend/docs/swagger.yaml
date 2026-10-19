@@ -1144,6 +1144,8 @@ definitions:
     - platform_identity_deactivate
     - platform_role_grant
     - platform_role_revoke
+    - platform_role_replace
+    - platform_credential_recovery
     type: string
     x-enum-varnames:
     - PrivilegedChangePlatformIdentitySuspend
@@ -1151,6 +1153,8 @@ definitions:
     - PrivilegedChangePlatformIdentityDeactivate
     - PrivilegedChangePlatformRoleGrant
     - PrivilegedChangePlatformRoleRevoke
+    - PrivilegedChangePlatformRoleReplace
+    - PrivilegedChangePlatformCredentialRecovery
   github_com_addp_system_internal_iam.ProjectGroupRelationRole:
     enum:
     - member
@@ -2672,6 +2676,80 @@ definitions:
       token_type:
         type: string
     type: object
+  internal_api.IAMAdministratorChangeCandidateResponse:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+      mfa_enrolled:
+        type: boolean
+      role_key:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_api.IAMAdministratorChangeResponse:
+    properties:
+      applied_at:
+        type: string
+      change_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
+      created_at:
+        type: string
+      decided_at:
+        type: string
+      expires_at:
+        type: string
+      governance_role_key:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      recovery_token:
+        type: string
+      requested_at:
+        type: string
+      requested_by_principal_id:
+        type: string
+      review:
+        $ref: '#/definitions/internal_api.IAMAdministratorChangeReviewResponse'
+      reviewer_role_key:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus'
+      successor_principal_id:
+        type: string
+      target_principal_id:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_api.IAMAdministratorChangeReviewResponse:
+    properties:
+      decided_at:
+        type: string
+      decision:
+        type: string
+      principal_id:
+        type: string
+      reason:
+        type: string
+    type: object
+  internal_api.IAMAdministratorRecoveryEnrollmentResponse:
+    properties:
+      enrollment_token:
+        type: string
+      expires_at:
+        type: string
+      otpauth_uri:
+        type: string
+      secret:
+        type: string
+    type: object
   internal_api.IAMAuditEventResponse:
     properties:
       context_type:
@@ -2726,6 +2804,11 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  internal_api.IAMBeginAdministratorRecoveryRequest:
+    properties:
+      recovery_token:
+        type: string
     type: object
   internal_api.IAMBeginMFAEnrollmentRequest:
     properties:
@@ -2818,9 +2901,16 @@ definitions:
     type: object
   internal_api.IAMChangeManagedUserStatusRequest:
     properties:
-      change_request_id:
-        type: string
       reason:
+        type: string
+    type: object
+  internal_api.IAMCompleteAdministratorRecoveryRequest:
+    properties:
+      code:
+        type: string
+      enrollment_token:
+        type: string
+      password:
         type: string
     type: object
   internal_api.IAMCompleteMFAEnrollmentRequest:
@@ -2888,6 +2978,19 @@ definitions:
       tenant_membership_id:
         type: string
     type: object
+  internal_api.IAMCreateAdministratorChangeRequest:
+    properties:
+      change_type:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
+      reason:
+        type: string
+      successor_principal_id:
+        type: string
+      target_principal_id:
+        type: string
+      target_role_key:
+        type: string
+    type: object
   internal_api.IAMCreateDepartmentMembershipRequest:
     properties:
       membership_type:
@@ -2930,15 +3033,6 @@ definitions:
         items:
           type: string
         type: array
-    type: object
-  internal_api.IAMCreatePrivilegedIdentityChangeRequest:
-    properties:
-      change_type:
-        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
-      reason:
-        type: string
-      target_principal_id:
-        type: string
     type: object
   internal_api.IAMCreateProjectGroupMembershipRequest:
     properties:
@@ -3441,6 +3535,8 @@ definitions:
         type: string
       display_name:
         type: string
+      has_effective_platform_role:
+        type: boolean
       id:
         type: string
       local_account:
@@ -3643,31 +3739,6 @@ definitions:
       revoked_family_count:
         type: integer
     type: object
-  internal_api.IAMPrivilegedIdentityChangeResponse:
-    properties:
-      applied_at:
-        type: string
-      change_type:
-        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType'
-      created_at:
-        type: string
-      decided_at:
-        type: string
-      id:
-        type: string
-      reason:
-        type: string
-      requested_at:
-        type: string
-      requested_by_principal_id:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus'
-      target_principal_id:
-        type: string
-      updated_at:
-        type: string
-    type: object
   internal_api.IAMProjectGroupResponse:
     properties:
       code:
@@ -3699,9 +3770,11 @@ definitions:
       reason:
         type: string
     type: object
-  internal_api.IAMReviewPrivilegedIdentityChangeRequest:
+  internal_api.IAMReviewAdministratorChangeRequest:
     properties:
       reason:
+        type: string
+      version:
         type: string
     type: object
   internal_api.IAMRevokeNotebookSessionAuthorizationRequest:
@@ -5343,6 +5416,51 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.cleanup.read
+  /auth/administrator-recovery/completions:
+    post:
+      consumes:
+      - application/json
+      description: 验证新密码和TOTP后原子替换凭据，不签发会话或改变角色与暂停状态 | Atomically replace credentials
+        after validating password and TOTP without issuing sessions or changing roles
+        or suspension
+      parameters:
+      - description: 新凭据和登记证明 | New credentials and enrollment proof
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCompleteAdministratorRecoveryRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: 完成管理员凭据重新登记 | Complete administrator credential recovery enrollment
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: public
+  /auth/administrator-recovery/enrollments:
+    post:
+      consumes:
+      - application/json
+      description: 使用双人批准的一次性恢复凭据，仅返回本次登记材料 | Consume a dual-approved recovery proof
+        and return enrollment material once
+      parameters:
+      - description: 恢复凭据 | Recovery proof
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMBeginAdministratorRecoveryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorRecoveryEnrollmentResponse'
+      summary: 开始管理员凭据重新登记 | Begin administrator credential recovery enrollment
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: public
   /auth/context:
     get:
       produces:
@@ -8376,6 +8494,243 @@ paths:
       tags:
       - OAuth
       x-addp-auth-mode: public
+  /platform/administrator_changes:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 页大小 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 请求状态 | Request status
+        enum:
+        - pending
+        - approved
+        - rejected
+        - cancelled
+        - applied
+        in: query
+        name: status
+        type: string
+      - description: 目标用户 ID | Target principal ID
+        in: query
+        name: target_principal_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询平台管理员变更请求 | List platform administrator change requests
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 身份变更 | Identity change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateAdministratorChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建平台管理员变更请求 | Create platform administrator change request
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.create
+  /platform/administrator_changes/{id}:
+    get:
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台管理员变更请求详情 | Get platform administrator change request
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.read
+  /platform/administrator_changes/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本和复核意见 | Version and review reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMReviewAdministratorChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准平台管理员变更 | Approve platform administrator change
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.approve
+  /platform/administrator_changes/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 ID | Request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本和原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMReviewAdministratorChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销本人待复核或凭据待登记的请求 | Cancel own pending request or unconsumed recovery
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.create
+  /platform/administrator_changes/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 变更请求 ID | Change request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本和复核意见 | Version and review reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMReviewAdministratorChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAdministratorChangeResponse'
+      security:
+      - BearerAuth: []
+      summary: 拒绝平台管理员变更 | Reject platform administrator change
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.reject
+  /platform/administrator_changes/candidates:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 页大小 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 显示名称搜索 | Display name search
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMAdministratorChangeCandidateResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询管理员治理候选用户 | List administrator change candidate users
+      tags:
+      - 平台权限治理 | Platform Authorization Governance
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.platform_administrator_change.create
   /platform/audit/events:
     get:
       parameters:
@@ -9198,144 +9553,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.host_node.update
-  /platform/identity_changes:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
-                type: array
-              page:
-                type: integer
-              page_size:
-                type: integer
-              total:
-                type: integer
-              total_pages:
-                type: integer
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询平台身份变更请求 | List platform identity change requests
-      tags:
-      - 平台权限治理 | Platform Authorization Governance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - iam.platform_identity_change.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 身份变更 | Identity change
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.IAMCreatePrivilegedIdentityChangeRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
-      security:
-      - BearerAuth: []
-      summary: 创建平台身份变更请求 | Create platform identity change request
-      tags:
-      - 平台权限治理 | Platform Authorization Governance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - iam.platform_identity_change.create
-  /platform/identity_changes/{id}:
-    get:
-      parameters:
-      - description: 变更请求 ID | Change request ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
-      security:
-      - BearerAuth: []
-      summary: 查询平台身份变更请求详情 | Get platform identity change request
-      tags:
-      - 平台权限治理 | Platform Authorization Governance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - iam.platform_identity_change.read
-  /platform/identity_changes/{id}/approve:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 变更请求 ID | Change request ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 复核意见 | Review reason
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
-      security:
-      - BearerAuth: []
-      summary: 批准平台身份变更 | Approve platform identity change
-      tags:
-      - 平台权限治理 | Platform Authorization Governance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - iam.platform_identity_change.approve
-  /platform/identity_changes/{id}/reject:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 变更请求 ID | Change request ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 复核意见 | Review reason
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse'
-      security:
-      - BearerAuth: []
-      summary: 拒绝平台身份变更 | Reject platform identity change
-      tags:
-      - 平台权限治理 | Platform Authorization Governance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - iam.platform_identity_change.reject
   /platform/module-instances:
     get:
       description: 按模块、节点、角色、当前有效状态及登记或离线判定时间组合查询实例；恢复后退出离线时间查询，不重建历史在线状态 | Search

@@ -248,6 +248,70 @@
                 ]
             }
         },
+        "/auth/administrator-recovery/completions": {
+            "post": {
+                "description": "验证新密码和TOTP后原子替换凭据，不签发会话或改变角色与暂停状态 | Atomically replace credentials after validating password and TOTP without issuing sessions or changing roles or suspension",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "完成管理员凭据重新登记 | Complete administrator credential recovery enrollment",
+                "parameters": [
+                    {
+                        "description": "新凭据和登记证明 | New credentials and enrollment proof",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCompleteAdministratorRecoveryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
+        "/auth/administrator-recovery/enrollments": {
+            "post": {
+                "description": "使用双人批准的一次性恢复凭据，仅返回本次登记材料 | Consume a dual-approved recovery proof and return enrollment material once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "开始管理员凭据重新登记 | Begin administrator credential recovery enrollment",
+                "parameters": [
+                    {
+                        "description": "恢复凭据 | Recovery proof",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMBeginAdministratorRecoveryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorRecoveryEnrollmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "public"
+            }
+        },
         "/auth/context": {
             "get": {
                 "security": [
@@ -4670,6 +4734,379 @@
                 "x-addp-auth-mode": "public"
             }
         },
+        "/platform/administrator_changes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "查询平台管理员变更请求 | List platform administrator change requests",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "cancelled",
+                            "applied"
+                        ],
+                        "type": "string",
+                        "description": "请求状态 | Request status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标用户 ID | Target principal ID",
+                        "name": "target_principal_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "创建平台管理员变更请求 | Create platform administrator change request",
+                "parameters": [
+                    {
+                        "description": "身份变更 | Identity change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateAdministratorChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.create"
+                ]
+            }
+        },
+        "/platform/administrator_changes/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "查询管理员治理候选用户 | List administrator change candidate users",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "显示名称搜索 | Display name search",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMAdministratorChangeCandidateResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.create"
+                ]
+            }
+        },
+        "/platform/administrator_changes/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "查询平台管理员变更请求详情 | Get platform administrator change request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.read"
+                ]
+            }
+        },
+        "/platform/administrator_changes/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "批准平台管理员变更 | Approve platform administrator change",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本和复核意见 | Version and review reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMReviewAdministratorChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.approve"
+                ]
+            }
+        },
+        "/platform/administrator_changes/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "撤销本人待复核或凭据待登记的请求 | Cancel own pending request or unconsumed recovery",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 ID | Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本和原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMReviewAdministratorChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.create"
+                ]
+            }
+        },
+        "/platform/administrator_changes/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台权限治理 | Platform Authorization Governance"
+                ],
+                "summary": "拒绝平台管理员变更 | Reject platform administrator change",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "变更请求 ID | Change request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本和复核意见 | Version and review reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMReviewAdministratorChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAdministratorChangeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.platform_administrator_change.reject"
+                ]
+            }
+        },
         "/platform/audit/events": {
             "get": {
                 "security": [
@@ -5921,227 +6358,6 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "platform.host_node.update"
-                ]
-            }
-        },
-        "/platform/identity_changes": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台权限治理 | Platform Authorization Governance"
-                ],
-                "summary": "查询平台身份变更请求 | List platform identity change requests",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                },
-                                "total_pages": {
-                                    "type": "integer"
-                                }
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "iam.platform_identity_change.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台权限治理 | Platform Authorization Governance"
-                ],
-                "summary": "创建平台身份变更请求 | Create platform identity change request",
-                "parameters": [
-                    {
-                        "description": "身份变更 | Identity change",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMCreatePrivilegedIdentityChangeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "iam.platform_identity_change.create"
-                ]
-            }
-        },
-        "/platform/identity_changes/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台权限治理 | Platform Authorization Governance"
-                ],
-                "summary": "查询平台身份变更请求详情 | Get platform identity change request",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "变更请求 ID | Change request ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "iam.platform_identity_change.read"
-                ]
-            }
-        },
-        "/platform/identity_changes/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台权限治理 | Platform Authorization Governance"
-                ],
-                "summary": "批准平台身份变更 | Approve platform identity change",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "变更请求 ID | Change request ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "复核意见 | Review reason",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "iam.platform_identity_change.approve"
-                ]
-            }
-        },
-        "/platform/identity_changes/{id}/reject": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台权限治理 | Platform Authorization Governance"
-                ],
-                "summary": "拒绝平台身份变更 | Reject platform identity change",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "变更请求 ID | Change request ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "复核意见 | Review reason",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMReviewPrivilegedIdentityChangeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMPrivilegedIdentityChangeResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "iam.platform_identity_change.reject"
                 ]
             }
         },
@@ -15344,14 +15560,18 @@
                 "platform_identity_reactivate",
                 "platform_identity_deactivate",
                 "platform_role_grant",
-                "platform_role_revoke"
+                "platform_role_revoke",
+                "platform_role_replace",
+                "platform_credential_recovery"
             ],
             "x-enum-varnames": [
                 "PrivilegedChangePlatformIdentitySuspend",
                 "PrivilegedChangePlatformIdentityReactivate",
                 "PrivilegedChangePlatformIdentityDeactivate",
                 "PrivilegedChangePlatformRoleGrant",
-                "PrivilegedChangePlatformRoleRevoke"
+                "PrivilegedChangePlatformRoleRevoke",
+                "PrivilegedChangePlatformRoleReplace",
+                "PrivilegedChangePlatformCredentialRecovery"
             ]
         },
         "github_com_addp_system_internal_iam.ProjectGroupRelationRole": {
@@ -17590,6 +17810,119 @@
                 }
             }
         },
+        "internal_api.IAMAdministratorChangeCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mfa_enrolled": {
+                    "type": "boolean"
+                },
+                "role_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAdministratorChangeResponse": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "change_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "governance_role_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recovery_token": {
+                    "type": "string"
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "requested_by_principal_id": {
+                    "type": "string"
+                },
+                "review": {
+                    "$ref": "#/definitions/internal_api.IAMAdministratorChangeReviewResponse"
+                },
+                "reviewer_role_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus"
+                },
+                "successor_principal_id": {
+                    "type": "string"
+                },
+                "target_principal_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAdministratorChangeReviewResponse": {
+            "type": "object",
+            "properties": {
+                "decided_at": {
+                    "type": "string"
+                },
+                "decision": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMAdministratorRecoveryEnrollmentResponse": {
+            "type": "object",
+            "properties": {
+                "enrollment_token": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "otpauth_uri": {
+                    "type": "string"
+                },
+                "secret": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMAuditEventResponse": {
             "type": "object",
             "properties": {
@@ -17670,6 +18003,14 @@
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMBeginAdministratorRecoveryRequest": {
+            "type": "object",
+            "properties": {
+                "recovery_token": {
+                    "type": "string"
                 }
             }
         },
@@ -17813,10 +18154,21 @@
         "internal_api.IAMChangeManagedUserStatusRequest": {
             "type": "object",
             "properties": {
-                "change_request_id": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCompleteAdministratorRecoveryRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
                     "type": "string"
                 },
-                "reason": {
+                "enrollment_token": {
+                    "type": "string"
+                },
+                "password": {
                     "type": "string"
                 }
             }
@@ -17922,6 +18274,26 @@
                 }
             }
         },
+        "internal_api.IAMCreateAdministratorChangeRequest": {
+            "type": "object",
+            "properties": {
+                "change_type": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "successor_principal_id": {
+                    "type": "string"
+                },
+                "target_principal_id": {
+                    "type": "string"
+                },
+                "target_role_key": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMCreateDepartmentMembershipRequest": {
             "type": "object",
             "properties": {
@@ -17986,20 +18358,6 @@
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "internal_api.IAMCreatePrivilegedIdentityChangeRequest": {
-            "type": "object",
-            "properties": {
-                "change_type": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "target_principal_id": {
-                    "type": "string"
                 }
             }
         },
@@ -18774,6 +19132,9 @@
                 "display_name": {
                     "type": "string"
                 },
+                "has_effective_platform_role": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -19085,44 +19446,6 @@
                 }
             }
         },
-        "internal_api.IAMPrivilegedIdentityChangeResponse": {
-            "type": "object",
-            "properties": {
-                "applied_at": {
-                    "type": "string"
-                },
-                "change_type": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeType"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "decided_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "requested_at": {
-                    "type": "string"
-                },
-                "requested_by_principal_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrivilegedChangeStatus"
-                },
-                "target_principal_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.IAMProjectGroupResponse": {
             "type": "object",
             "properties": {
@@ -19171,10 +19494,13 @@
                 }
             }
         },
-        "internal_api.IAMReviewPrivilegedIdentityChangeRequest": {
+        "internal_api.IAMReviewAdministratorChangeRequest": {
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }

@@ -31,7 +31,7 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 
 目标 IAM 不创建默认 `SuperAdmin`、默认租户或弱密码账号，也不接受通过环境变量开启公开注册。平台系统管理员、安全管理员和审计管理员只能通过一次性离线 Bootstrap 建立；Bootstrap 完成后永久关闭，后续平台高权限身份变更统一走双人审批。
 
-Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成 Bootstrap 后三员整体凭据丢失时，使用离线 `iam-recovery prepare/apply` 恢复。Secret 和三员密码只通过 TTY 输入，具体步骤见 `docs/guide/addp IAM三员初始化操作指南.md`。
+Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成 Bootstrap 后，管理员凭据恢复先按目标岗位矩阵由另外两类管理员申请、复核；无法形成合格治理组合时，使用离线 `iam-recovery prepare/apply` 恢复凭据，不修改角色和暂停状态。Secret 和三员密码只通过 TTY 输入，具体步骤见 `docs/guide/addp IAM三员初始化操作指南.md`。
 
 
 ## API 端点摘要
