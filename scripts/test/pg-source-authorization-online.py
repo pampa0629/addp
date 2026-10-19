@@ -406,6 +406,11 @@ class Lifecycle:
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
 
     def workspace_flow(self, report, issuer):
+        report['phase'] = 'workspace_isolation'
+        # Member exits deliberately retain organization Grants. Isolate the next
+        # scenario through the existing owned-rule cleanup, never by deleting history.
+        self.cleanup()
+        report['workspace_isolation'] = 'zero_current_source_rules'
         report['phase'] = 'authorization_workspace_browser'
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])

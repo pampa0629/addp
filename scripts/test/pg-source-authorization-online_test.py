@@ -367,6 +367,41 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertIsNotNone(server.grants[lifecycle.grants[-1]]['revocation'])
         lifecycle.cleanup()
 
+    def test_workspace_isolates_retained_organization_grants_without_erasing_history(self):
+        server, lifecycle = self.lifecycle()
+        report = {}
+        lifecycle.run(report)
+        retained = {key for key, row in server.grants.items()
+                    if row['revocation'] is None and key not in server.expired_grants}
+        self.assertEqual({server.grants[key]['recipient_type'] for key in retained},
+                         {'department', 'project_group'})
+        previous = set(server.grants)
+        with patch.object(ONLINE, 'WorkspaceObservation') as observation:
+            observed = observation.return_value.__enter__.return_value
+            def withdraw():
+                self.assertTrue(all(server.grants[key]['revocation'] for key in retained))
+                self.assertTrue(previous.issubset(server.grants))
+                self.assertFalse(any(server.denies.values()))
+                active = {key for key, row in server.grants.items()
+                          if row['revocation'] is None and key not in server.expired_grants}
+                self.assertEqual(active, {lifecycle.grants[-1]})
+                lifecycle.revoke(lifecycle.grants[-1])
+                return {'result': 'passed'}
+            observed.finish.side_effect = withdraw
+            lifecycle.workspace_flow(report, '35')
+        self.assertEqual(report['workspace_isolation'], 'zero_current_source_rules')
+        lifecycle.cleanup()
+
+    def test_workspace_does_not_issue_or_open_browser_after_failed_isolation(self):
+        _, lifecycle = self.lifecycle()
+        with patch.object(lifecycle, 'cleanup', side_effect=ONLINE.SuiteError('residual rules')), \
+             patch.object(lifecycle, 'grant') as grant, \
+             patch.object(ONLINE, 'WorkspaceObservation') as browser:
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'residual rules'):
+                lifecycle.workspace_flow({'checks': []}, '35')
+            grant.assert_not_called()
+            browser.assert_not_called()
+
     def test_workspace_missing_withdrawal_or_browser_failure_still_owns_cleanup(self):
         for fault in ('missing_withdrawal', 'browser_failed'):
             with self.subTest(fault=fault):
