@@ -58,13 +58,13 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 		return fail()
 	}
 	parameters := map[int]bool{}
-	if !collectPostgresRewriteParameters(parsed.ProtoReflect(), len(args), parameters) || len(parameters) != len(args) {
+	if !validatePostgresRewriteInput(parsed.ProtoReflect(), len(args), parameters) || len(parameters) != len(args) {
 		return fail()
 	}
 	stmt := parsed.GetStmts()[0].GetStmt().GetSelectStmt()
 	if stmt == nil || stmt.GetOp() != pgquery.SetOperation_SETOP_NONE || len(stmt.GetDistinctClause()) != 0 ||
 		len(stmt.GetGroupClause()) != 0 || stmt.GetHavingClause() != nil || len(stmt.GetWindowClause()) != 0 ||
-		stmt.GetIntoClause() != nil || len(stmt.GetLockingClause()) != 0 || stmt.GetWithClause() != nil {
+		stmt.GetIntoClause() != nil || len(stmt.GetLockingClause()) != 0 {
 		return fail()
 	}
 	plan := &postgresOutputRewrite{args: append([]any(nil), args...)}
@@ -73,8 +73,19 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 	expressions := map[string]string{}
 	for _, node := range stmt.GetTargetList() {
 		target := node.GetResTarget()
-		if target == nil || target.GetVal().GetColumnRef() == nil {
+		if target == nil || target.GetVal() == nil {
 			return fail()
+		}
+		// Unmodified output expressions keep their exact original AST. Their
+		// explicit aliases identify the protocol columns, not new raw bindings.
+		if target.GetVal().GetColumnRef() == nil {
+			name := target.GetName()
+			if name == "" || targets[name] != nil {
+				return fail()
+			}
+			targets[name] = target
+			plan.columns = append(plan.columns, name)
+			continue
 		}
 		fields := target.GetVal().GetColumnRef().GetFields()
 		if len(fields) == 0 {
@@ -113,14 +124,16 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 			if index < 0 || index >= len(plan.columns) {
 				return fail()
 			}
-			sort.Node = postgresInputSortExpression(originals[plan.columns[index]])
+			if original := originals[plan.columns[index]]; original != nil {
+				sort.Node = postgresInputSortExpression(original)
+			}
 		}
 	}
 	seen := map[string]bool{}
 	flags := map[string]bool{}
 	for _, operation := range operations {
 		target := targets[operation.Column]
-		if target == nil || seen[operation.Column] {
+		if target == nil || originals[operation.Column] == nil || seen[operation.Column] {
 			return fail()
 		}
 		seen[operation.Column] = true
@@ -177,7 +190,18 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 	return plan, nil
 }
 
-func collectPostgresRewriteParameters(message protoreflect.Message, count int, parameters map[int]bool) bool {
+func validatePostgresRewriteInput(message protoreflect.Message, count int, parameters map[int]bool) bool {
+	if with, ok := message.Interface().(*pgquery.WithClause); ok {
+		if with.GetRecursive() {
+			return false
+		}
+		for _, node := range with.GetCtes() {
+			cte := node.GetCommonTableExpr()
+			if cte == nil || cte.GetCtequery().GetSelectStmt() == nil {
+				return false
+			}
+		}
+	}
 	if parameter, ok := message.Interface().(*pgquery.ParamRef); ok {
 		index := int(parameter.GetNumber())
 		if index < 1 || index > count {
@@ -193,13 +217,13 @@ func collectPostgresRewriteParameters(message protoreflect.Message, count int, p
 		if field.IsList() {
 			list := value.List()
 			for index := 0; index < list.Len(); index++ {
-				if !collectPostgresRewriteParameters(list.Get(index).Message(), count, parameters) {
+				if !validatePostgresRewriteInput(list.Get(index).Message(), count, parameters) {
 					valid = false
 					return false
 				}
 			}
 		} else {
-			valid = collectPostgresRewriteParameters(value.Message(), count, parameters)
+			valid = validatePostgresRewriteInput(value.Message(), count, parameters)
 		}
 		return valid
 	})

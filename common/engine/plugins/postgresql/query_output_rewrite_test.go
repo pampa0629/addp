@@ -85,7 +85,8 @@ func TestPostgresOutputRewriteRejectsUnprovedSemantics(t *testing.T) {
 		`SELECT phone FROM people UNION ALL SELECT phone FROM others`, `SELECT * FROM people`,
 		`SELECT phone, phone FROM people`, `SELECT upper(phone) AS phone FROM people`,
 		`SELECT phone INTO copy FROM people`, `SELECT phone FROM people FOR UPDATE`,
-		`WITH x AS (SELECT phone FROM people) SELECT phone FROM x`,
+		`WITH RECURSIVE x AS (SELECT phone FROM people) SELECT phone FROM x`,
+		`WITH x AS (DELETE FROM people RETURNING phone) SELECT phone FROM x`,
 		`SELECT phone FROM people; SELECT phone FROM others`,
 	} {
 		t.Run(query, func(t *testing.T) {
@@ -182,6 +183,41 @@ func TestPostgresOutputRewriteRejectsMissingOrInconsistentOutputTypes(t *testing
 		result := &plugin.QueryResult{Columns: []string{"phone", flag}, Fields: fields, Rows: []map[string]any{{"phone": "a*c", flag: false}}}
 		if !errors.Is(plan.finish(result), plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("missing, misnamed or incorrectly typed metadata must reject")
+		}
+	}
+}
+
+func TestPostgresOutputRewritePreservesUnprotectedDisplayAndCTEInputs(t *testing.T) {
+	for _, order := range []string{"contact", "2", "display", "3"} {
+		query := `WITH keys AS (SELECT id FROM people WHERE id>$1 ORDER BY id LIMIT 5 OFFSET 2) SELECT p.id,p.phone AS contact,pg_catalog.lower(p.label) AS display FROM people p JOIN keys k ON k.id=p.id ORDER BY ` + order
+		parsed, err := pgquery.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := parsed.GetStmts()[0].GetStmt().GetSelectStmt()
+		compiled, err := rewritePostgresQueryOutput(query, []any{7}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "[保护]"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		changed, err := pgquery.Parse(compiled.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		statement := changed.GetStmts()[0].GetStmt().GetSelectStmt()
+		// Deparse/reparse may move locations. Compare the preserved SQL subtrees.
+		if statement.GetTargetList()[2].GetResTarget().GetVal().GetFuncCall() == nil || statement.GetWithClause() == nil || len(statement.GetWithClause().GetCtes()) != 1 {
+			t.Fatal("unprotected display or CTE removed")
+		}
+		before, _ := pgquery.Deparse(&pgquery.ParseResult{Stmts: []*pgquery.RawStmt{{Stmt: &pgquery.Node{Node: &pgquery.Node_SelectStmt{SelectStmt: original}}}}})
+		if !strings.Contains(before, "LIMIT 5 OFFSET 2") || !strings.Contains(compiled.query, "LIMIT 5 OFFSET 2") || !reflect.DeepEqual(compiled.args, []any{7, "[保护]"}) {
+			t.Fatal("original page or bound values changed")
+		}
+		sorted := statement.GetSortClause()[0].GetSortBy().GetNode()
+		if (order == "display" || order == "3") && sorted.GetCoalesceExpr() != nil {
+			t.Fatal("untouched output expression was evaluated a second time for sorting")
+		}
+		if (order == "contact" || order == "2") && sorted.GetCoalesceExpr() == nil {
+			t.Fatal("protected output sorted on transformed values")
 		}
 	}
 }

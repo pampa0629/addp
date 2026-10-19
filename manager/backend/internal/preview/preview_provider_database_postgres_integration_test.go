@@ -61,6 +61,8 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 		`CREATE TABLE "` + schema + `"."base" (id bigint PRIMARY KEY, status text NOT NULL)`,
 		`INSERT INTO "` + schema + `"."base" VALUES (1,'active'),(2,'active'),(3,'inactive')`,
 		`CREATE VIEW "` + schema + `"."view" AS SELECT id,status FROM "` + schema + `"."base"`,
+		`CREATE TABLE "` + schema + `"."protected_spatial" (id bigint PRIMARY KEY, phone text, location geometry(Point,4326))`,
+		`INSERT INTO "` + schema + `"."protected_spatial" VALUES (1,'13801017055',ST_SetSRID(ST_Point(1,2),4326)),(2,'15810162486',ST_SetSRID(ST_Point(3,4),4326))`,
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			t.Fatal("create controlled page fixture failed")
@@ -102,6 +104,53 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			if _, err := plan.Execute(ctx); !errors.Is(err, plugin.ErrPreparedQueryConsumed) {
 				t.Fatal("page was executed twice")
 			}
+		}
+	})
+	t.Run("protected spatial display and key page", func(t *testing.T) {
+		path := plugin.TabularItemPath(12, "schema", schema, "protected_spatial")
+		rules := []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}}}
+		for index, want := range []struct{ phone, point string }{{"138****7055", "POINT(1 2)"}, {"158****2486", "POINT(3 4)"}} {
+			req := &PreviewRequest{Engine: &models.Engine{ID: 12, EngineType: "postgresql", ConnectionInfo: map[string]interface{}(conn)}, EnginePlugin: pg, ProviderPath: path, Schema: schema, Table: "protected_spatial", Page: index + 1, PageSize: 1}
+			executions := 0
+			req.executePrepared = func(ctx context.Context, _ plugin.EnginePlugin, plan plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error) {
+				lineage, err := plan.OutputLineage(ctx)
+				if err != nil || len(lineage.Sources) != 1 {
+					t.Fatalf("spatial preview lineage: %v", err)
+				}
+				operations, err := dataprotection.QueryOutputTransformsAt(lineage.Sources[0], "preview", rules, dataprotection.SubjectReference{}, time.Now().UTC())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := plan.(plugin.OutputTransformPreparedQuery).BindOutputTransforms(ctx, operations); err != nil {
+					t.Fatalf("generated protected preview could not bind: %v", err)
+				}
+				executions++
+				result, err := plan.Execute(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+				if len(result.Rows) != 1 || result.Rows[0]["phone"] != want.phone || result.Rows[0]["location"] != want.point {
+					t.Fatal("native display/page/masking result changed")
+				}
+				if _, err := plan.Execute(ctx); !errors.Is(err, plugin.ErrPreparedQueryConsumed) {
+					t.Fatal("preview query executed twice")
+				}
+				return result, &dataprotection.PreparedTableProtection{Apply: func(result *plugin.QueryResult) error {
+					return dataprotection.ProtectQueryResultSource(result, lineage.Sources[0], "preview", rules, dataprotection.SubjectReference{})
+				}}, nil
+			}
+			result, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req)
+			if err != nil || result == nil || result.PreparedProtection == nil || executions != 1 {
+				t.Fatalf("protected spatial page failed: %v", err)
+			}
+			protected := &plugin.QueryResult{Rows: result.Rows, Columns: result.Columns}
+			if err := result.PreparedProtection.Apply(protected); err != nil || protected.Rows[0]["phone"] != want.phone || protected.Rows[0]["location"] != want.point {
+				t.Fatalf("final spatial preview changed: %v", err)
+			}
+		}
+		var original string
+		if err := db.QueryRowContext(ctx, `SELECT phone FROM "`+schema+`"."protected_spatial" WHERE id=1`).Scan(&original); err != nil || original != "13801017055" {
+			t.Fatal("preview changed source data")
 		}
 	})
 	for _, name := range []string{"base", "view"} {

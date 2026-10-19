@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,9 +33,9 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			t.Errorf("rewrite fixture residual check failed: exists=%v error=%v", exists, err)
 		}
 	})
-	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text, amount numeric(30,6), email text, label text`)
+	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text, amount numeric(30,6), email text, label text, display_text text`)
 	for index, value := range []any{"张三李四王五", "a", "", nil, "abcdef", "x.y", "🧭甲乙丙丁"} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2,$3,$4,$5)`, index+1, value, "9007199254740993.123456", "fixture@example.test", "fixture label"); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2,$3,$4,$5,$6)`, index+1, value, "9007199254740993.123456", "fixture@example.test", "fixture label", "MiXeD"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -220,9 +221,28 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			if mode == "stream" {
 				session = pg.OpenQueryReadSession
 			}
-			conformance.QueryOutputProtection(t, pg.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
-				return pg.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: `SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM ` + qualified + ` ORDER BY id`, Options: plugin.QueryOptions{ReadOnly: true}})
-			}, session)
+			queries := []string{
+				`SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM ` + qualified + ` ORDER BY id`,
+				`SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p ORDER BY display,id`,
+				`WITH keys AS (SELECT id FROM ` + qualified + ` WHERE id>=$1 ORDER BY id LIMIT 5 OFFSET 1) SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p JOIN keys k ON k.id=p.id ORDER BY p.id`,
+			}
+			for index, query := range queries {
+				// Cursor evidence intentionally retains its narrower native
+				// function grammar. Certify CTE/page shape with direct fields;
+				// display functions here are an ordinary Execute contract.
+				if mode == "stream" {
+					query = strings.ReplaceAll(query, "pg_catalog.lower(p.display_text)", "p.display_text")
+				}
+				t.Run(fmt.Sprint(index), func(t *testing.T) {
+					var args []any
+					if index == 2 {
+						args = []any{1}
+					}
+					conformance.QueryOutputProtection(t, pg.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+						return pg.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: args}})
+					}, session)
+				})
+			}
 		})
 	}
 	after, err := pg.ExecuteSQL(ctx, conn, allSQL, plugin.QueryOptions{ReadOnly: true})
