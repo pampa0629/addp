@@ -28,11 +28,22 @@ func NewPlugin(opts *format.ParseOptions) *Plugin {
 	return &Plugin{formatType: format.FormatSQLite, options: opts}
 }
 
-func NewGeoPackagePlugin(opts *format.ParseOptions) *Plugin {
+// GeoPackagePlugin declares geometry encoding only for the GeoPackage format.
+type GeoPackagePlugin struct{ *Plugin }
+
+func NewGeoPackagePlugin(opts *format.ParseOptions) *GeoPackagePlugin {
 	if opts == nil {
 		opts = format.DefaultParseOptions()
+		opts.GeometryEncoding = format.GeometryEncodingEWKB
 	}
-	return &Plugin{formatType: format.FormatGeoPackage, options: opts}
+	return &GeoPackagePlugin{Plugin: &Plugin{formatType: format.FormatGeoPackage, options: opts}}
+}
+
+func (p *GeoPackagePlugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
+	return format.SpatialEncodingCapability{
+		GeometryReadEncodings: []format.GeometryEncoding{format.GeometryEncodingWKT, format.GeometryEncodingWKB, format.GeometryEncodingEWKB, format.GeometryEncodingGeoJSON},
+		DefaultReadEncoding:   format.GeometryEncodingEWKB,
+	}
 }
 
 func NewUDBXPlugin(opts *format.ParseOptions) *Plugin {
@@ -102,7 +113,11 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 }
 
 func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
-	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Native)), nil
+	opts := format.ChildTableParseOptions(child.Name, child.Native)
+	if p.Format() == format.FormatGeoPackage {
+		opts.GeometryEncoding = format.GeometryEncodingEWKB
+	}
+	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, opts), nil
 }
 
 func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.ContainerInfo, error) {
@@ -176,6 +191,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 	defer cleanup()
 
+	return p.describeTable(ctx, db, tableName)
+}
+
+func (p *Plugin) describeTable(ctx context.Context, db *sql.DB, tableName string) (*format.TableDescribeResult, error) {
 	table, err := describeSQLiteTable(ctx, db, tableName)
 	if err != nil {
 		return nil, err
@@ -192,25 +211,18 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 }
 
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	db, cleanup, err := p.openDatabase(input)
+	if limit < 0 {
+		limit = defaultSampleRowLimit
+	}
+	if limit == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	reader, err := p.openTableReader(ctx, input, options, offset, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer cleanup()
-
-	tableName := tableNameFromOptions(options)
-	if tableName == "" {
-		result, err := Analyze(ctx, db, p.analysisOptions(options))
-		if err != nil {
-			return nil, err
-		}
-		table := firstSQLiteTable(result)
-		if table == nil {
-			return []map[string]interface{}{}, nil
-		}
-		tableName = table.Name
-	}
-	return sampleSQLiteTableWindow(ctx, db, tableName, offset, limit)
+	defer reader.Close(context.Background())
+	return reader.ReadRows(ctx, int(limit))
 }
 
 func (p *Plugin) openDatabase(input io.Reader) (*sql.DB, func(), error) {
@@ -328,49 +340,6 @@ func tableNameFromOptions(options *format.ParseOptions) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
-}
-
-func sampleSQLiteTableWindow(ctx context.Context, db *sql.DB, table string, offset, limit int64) ([]map[string]interface{}, error) {
-	if limit < 0 {
-		limit = defaultSampleRowLimit
-	}
-	if limit == 0 {
-		return []map[string]interface{}{}, nil
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d OFFSET %d", escapeIdentifier(table), limit, offset)
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanRows(rows)
-}
-
-func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	result := make([]map[string]interface{}, 0)
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-		if err := rows.Scan(valuePtrs...); err != nil {
-			continue
-		}
-		row := make(map[string]interface{}, len(columns))
-		for i, column := range columns {
-			row[column] = normalizeSQLValue(values[i])
-		}
-		result = append(result, row)
-	}
-	return result, rows.Err()
 }
 
 // mapSQLiteTypeToFieldType 将 SQLite 类型映射到 FieldType

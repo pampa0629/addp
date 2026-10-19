@@ -18,7 +18,7 @@
 | Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |
 | Excel | 大文件与复杂工作簿；公式计算、宏和原样图表不属于现有工作表预览 |
-| SQLite / GeoPackage | 真实多表/layer 切换、分页、只读失败与大库成本；child 字段不得误用父容器摘要 |
+| SQLite / GeoPackage | GeoPackage 登记几何列的样本／连续读取已统一标准编码，默认 EWKB、保留 SRID／坐标／null，普通 BLOB 不作几何猜测；归档 snapped.gpkg 精确复现及 Manager 实际容器 child 编码回归、Common／Manager／Meta／Transfer Go T1 通过。原 Hosted 39269000076 的整体失败保留，第四地图／失败页／最终 v3 仍待拓扑负责会话按原 suite 复验。真实多表/layer 切换、只读失败与大库成本仍需扩展；child 字段不得误用父容器摘要 |
 | ZIP | entry 截断、逐层嵌套、动态识别不回写 Meta，大包及远程 range-aware 读取 |
 | Text / Markdown | 编码、大文件截断、安全渲染、链接/代码块和性能 |
 | 图片 | 各编码变体、异常/预算提示与真实样例；已实现 EXIF/曝光/动画摘要不代表全部相机或媒体解析 |

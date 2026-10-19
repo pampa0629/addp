@@ -6,9 +6,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -1252,8 +1255,53 @@ func TestContainerChildPreviewProviderPreviewsGeoPackageLayerSpatialInfo(t *test
 	if !reflect.DeepEqual(preview.Columns, []string{"id", "geom", "name"}) {
 		t.Fatalf("Columns = %#v, want id/geom/name", preview.Columns)
 	}
-	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geom" || preview.SRID != 4326 {
-		t.Fatalf("spatial = columns %#v srid %d, want geom EPSG:4326", preview.GeometryColumns, preview.SRID)
+	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geom" || preview.SRID != 3857 {
+		t.Fatalf("spatial = columns %#v srid %d, want geom EPSG:3857", preview.GeometryColumns, preview.SRID)
+	}
+	if preview.Total == nil || *preview.Total != 3 {
+		t.Fatalf("actual child row count = %v", preview.Total)
+	}
+	for page := 1; page <= 3; page++ {
+		req.Page, req.PageSize = page, 1
+		result, err := provider.Preview(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Rows) != 1 || result.Rows[0]["id"] != int64(page) {
+			t.Fatalf("wrong child page %d: %#v", page, result.Rows)
+		}
+		value := result.Rows[0]["geom"]
+		if page == 2 {
+			if value != nil {
+				t.Fatal("null child geometry changed")
+			}
+			continue
+		}
+		encoded, ok := value.([]byte)
+		if !ok || len(encoded) != 45 {
+			t.Fatalf("default child encoding = %T (%v), want 45-byte EWKB", value, value)
+		}
+		shape, err := ewkb.Unmarshal(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if shape.SRID() != 3857 || !reflect.DeepEqual(shape.FlatCoords(), []float64{0.5, 0, 10, 0}) {
+			t.Fatal("child SRID/coordinates changed")
+		}
+		wire, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload struct {
+			Rows []map[string]json.RawMessage `json:"rows"`
+		}
+		if err := json.Unmarshal(wire, &payload); err != nil {
+			t.Fatal(err)
+		}
+		var binaryValue []byte
+		if err := json.Unmarshal(payload.Rows[0]["geom"], &binaryValue); err != nil || !bytes.Equal(binaryValue, encoded) {
+			t.Fatal("child HTTP material is not Base64 of standard EWKB")
+		}
 	}
 }
 
@@ -2489,15 +2537,25 @@ func sqliteDatabaseBytesForPreviewTest(t *testing.T) []byte {
 
 func geoPackageBytesForPreviewTest(t *testing.T) []byte {
 	t.Helper()
-
+	payload, err := hex.DecodeString("010200000002000000000000000000e03f000000000000000000000000000024400000000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := make([]byte, 40)
+	copy(header, "GP")
+	header[3] = 3
+	binary.LittleEndian.PutUint32(header[4:8], 3857)
+	binary.LittleEndian.PutUint64(header[8:16], math.Float64bits(0.5))
+	binary.LittleEndian.PutUint64(header[16:24], math.Float64bits(10))
+	native := append(header, payload...)
 	return sqliteFileBytesForPreviewTest(t, "gpkg-preview-*.gpkg", []string{
 		`CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, srs_id INTEGER, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE)`,
 		`CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER)`,
 		`CREATE TABLE roads (id INTEGER PRIMARY KEY, geom BLOB, name TEXT)`,
 		`CREATE VIRTUAL TABLE rtree_roads_geom USING rtree(id, minx, maxx, miny, maxy)`,
-		`INSERT INTO gpkg_contents(table_name, data_type, identifier, srs_id, min_x, min_y, max_x, max_y) VALUES ('roads', 'features', 'Road Layer', 4326, 120.0, 30.0, 121.0, 31.0)`,
-		`INSERT INTO gpkg_geometry_columns(table_name, column_name, geometry_type_name, srs_id) VALUES ('roads', 'geom', 'LINESTRING', 4326)`,
-		`INSERT INTO roads(id, geom, name) VALUES (1, X'00', 'Main Road')`,
+		`INSERT INTO gpkg_contents VALUES ('roads','features','Road Layer',3857,0.5,0,10,0)`,
+		`INSERT INTO gpkg_geometry_columns VALUES ('roads','geom','LINESTRING',3857)`,
+		fmt.Sprintf("INSERT INTO roads VALUES (1,X'%x','Main Road'),(2,NULL,'No geometry'),(3,X'%x','Third Road')", native, native),
 	})
 }
 

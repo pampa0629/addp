@@ -267,7 +267,7 @@ func normalizeSQLValue(value interface{}) interface{} {
 	case nil:
 		return nil
 	case []byte:
-		return string(v)
+		return append([]byte{}, v...)
 	default:
 		return v
 	}
