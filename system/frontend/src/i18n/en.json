@@ -2235,7 +2235,7 @@
       "reload": "Reload and review",
       "empty": "No registered engine deployments",
       "readFailed": "Could not read deployments. Refresh to retry.",
-      "invalidForm": "Enter a name, import the source inventory and select its host.",
+      "invalidForm": "Select services, enter deployment names and select their host.",
       "hostMismatch": "The host is missing, disabled or has an incompatible type. Review and select again.",
       "occupied": "This PostgreSQL service in the Docker engine is already registered. Find its existing deployment in the list.",
       "unknownWrite": "The save result or version changed. Further submissions are blocked. Reload and review an existing record; for initial registration, close the dialog and refresh the list.",
@@ -2272,6 +2272,29 @@
         "unsupported_topology": "Multiple containers not supported",
         "not_running": "Not running",
         "sql_port_missing": "SQL port unavailable"
+      },
+      "currentSource": "Latest discovered deployment source",
+      "currentSourceHint": "Container state at the sampling time only. Database connectivity and successful metrics collection require separate verification.",
+      "restarts": "Container restart count",
+      "runtimeChanged": "The container runtime identity differs from admission. Deployment identity and declared host association are unchanged.",
+      "sourceStates": {
+        "loading": "Reading source…",
+        "read_failed": "Source read failed; current state unknown",
+        "available": "Source available",
+        "unavailable": "Source unavailable; current state unknown",
+        "missing": "Source not published; current state unknown",
+        "unconfigured": "Discovery not configured",
+        "stale": "Source expired; current state unknown",
+        "source_mismatch": "Discovery environment differs from admission; current source unverified",
+        "not_found": "No container for this service in this observation",
+        "unsupported_topology": "Multiple containers are not supported yet",
+        "running": "Container running",
+        "created": "Container created, not running",
+        "paused": "Container paused",
+        "restarting": "Container restarting",
+        "exited": "Container exited",
+        "dead": "Container in dead state",
+        "removing": "Container being removed"
       }
     }
   },

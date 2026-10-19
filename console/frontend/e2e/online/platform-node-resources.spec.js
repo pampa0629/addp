@@ -122,15 +122,31 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(system.getByRole('dialog')).toHaveCount(0)
       await page.screenshot({ path: resolve(artifact, 'engine-admission-saved.png'), fullPage: true })
       const first = payload.data[0]
-      await system.getByRole('row').filter({ hasText: first.display_name }).getByRole('button', { name: '详情', exact: true }).click()
+      await system.getByTestId(`deployment-detail-${first.deployment_id}`).click()
       await expect(page).toHaveURL(new RegExp('/system/engine-deployments/' + first.deployment_id + '$'))
       await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
       await page.reload()
       await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
       await expect(system.getByRole('dialog')).toContainText('当前版本：1')
+      const currentSources = []
+      async function verifyCurrentSource(row) {
+        const current = system.getByTestId('deployment-current-source')
+        await expect(current).toBeVisible()
+        await expect(current).toContainText('容器正在运行')
+        const containerID = row.inventory.services[0].containers[0].container_id
+        await expect(system.getByTestId('deployment-current-container')).toContainText(containerID)
+        currentSources.push({ deployment_id: row.deployment_id, container_id: containerID })
+      }
+      await verifyCurrentSource(first)
       await system.locator('.el-overlay').evaluate(async element => { await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)) })
       await page.screenshot({ path: resolve(artifact, 'engine-admission-restored.png'), fullPage: true })
       await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+      for (const row of payload.data.slice(1)) {
+        await system.getByTestId(`deployment-detail-${row.deployment_id}`).click()
+        await expect(system.getByTestId('deployment-name')).toHaveValue(row.display_name)
+        await verifyCurrentSource(row)
+        await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+      }
       await system.getByTestId('deployment-create').click()
       for (const scope of ['Infra', 'Business']) {
         const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / postgres` })
@@ -138,7 +154,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         await expect(row.locator('.el-checkbox')).toBeDisabled()
       }
       expect(writes).toHaveLength(1)
-      report.engine_admission = { writes, created: payload.data, reloaded: true, registered_disabled: true }
+      report.engine_admission = { writes, created: payload.data, reloaded: true, registered_disabled: true, current_sources: currentSources }
       report.result = 'passed'; save('complete'); return
     }
     if (expected.admission) {

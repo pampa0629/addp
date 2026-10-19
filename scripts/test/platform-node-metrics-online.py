@@ -1206,6 +1206,16 @@ def validate_engine_admission_browser(value,expected,artifacts):
                 and row.get("node_id")==item["declared_node_id"] and row.get("host_binding_state")=="bound"
                 and row.get("inventory",{}).get("schema")=="addp.engine-deployment-inventory/v1"
                 and row["inventory"]["source"].get("project")==("addp-infra" if item["scope"]=="infra" else "business"),"engine admission receipt changed")
+    sources=detail.get("current_sources",[])
+    require(isinstance(sources,list) and len(sources)==2 and all(isinstance(source,dict) and set(source)=={"deployment_id","container_id"} and canonical_uuid(source["deployment_id"]) and isinstance(source["container_id"],str) for source in sources),"engine browser current sources missing")
+    wanted_sources=[]
+    for row in created:
+        services=row["inventory"].get("services",[])
+        require(isinstance(services,list) and len(services)==1 and isinstance(services[0],dict) and isinstance(services[0].get("containers"),list) and len(services[0]["containers"])==1 and isinstance(services[0]["containers"][0],dict),"engine receipt current container missing")
+        container_id=services[0]["containers"][0].get("container_id")
+        require(isinstance(container_id,str) and re.fullmatch(r"[0-9a-f]{64}",container_id) is not None,"engine receipt container identity invalid")
+        wanted_sources.append({"deployment_id":row["deployment_id"],"container_id":container_id})
+    require(sorted(sources,key=lambda source:source.get("deployment_id",""))==sorted(wanted_sources,key=lambda source:source["deployment_id"]),"engine browser current source identity changed")
     for name in ("engine-admission-saved.png","engine-admission-restored.png"):
         path=artifacts/name
         require(path.is_file() and path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"),"engine browser screenshot missing")

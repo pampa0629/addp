@@ -611,8 +611,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 |---|---|---|---|
 | managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份及基础信息；用户入口称“平台主机管理”。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
 | host admission manifest | 主机接入清单 | 部署入口导出、供平台管理员预览并确认主机及采集配置的有界声明文件。 | 不是主机身份库、签名或权限凭据；System 仍创建 node_id，Monitor 仍拥有采集配置，不按名称/IP自动合并或推断服务、引擎位置。 |
-| engine deployment | 引擎部署 | 运维方实际部署和维护的一套引擎服务，可承载多个租户的 Engine Instance 登记，也可跨多个主机。 | 部署运维归属与租户业务权限分别裁决；不把 engine_id、连接地址或容器运行 ID 当成部署永久身份，不重复累计共享资源。承载关联由 System 拥有；首批开放 Business PostgreSQL 单容器、单主机的管理员确认登记，专业观测与租户引擎关联尚未开放。 |
-| business deployment inventory | Business 部署来源清单 | Business 部署入口从当前工作区的实际运行环境读取的有界来源快照，供平台管理员核对引擎部署。 | 首期仅 PostgreSQL；包含 Docker Engine、Compose 服务及当前容器证据，不含凭据或租户登记。来源快照不是签名、授权、稳定部署身份或已建立的主机关联。 |
+| engine deployment | 引擎部署 | 运维方实际部署和维护的一套引擎服务，可承载多个租户的 Engine Instance 登记，也可跨多个主机。 | 部署运维归属与租户业务权限分别裁决；不把 engine_id、连接地址或容器运行 ID 当成部署永久身份，不重复累计共享资源。承载关联由 System 拥有；首批开放 Infra／Business PostgreSQL 单容器、单主机的管理员批量确认接入，专业观测与租户引擎关联尚未开放。 |
+| engine deployment inventory | 引擎部署来源清单 | 平台管理员确认接入时，由 Infra／Business 部署发现结果生成并保存的无凭据来源快照。 | 首期仅单容器 PostgreSQL；包含 Docker Engine、Compose 服务及确认时的容器证据，不含凭据或租户登记。持续发现的当前来源与确认快照分别展示；快照不是授权、稳定部署身份或已建立的主机关联。 |
 | deployment discovery snapshot | 部署发现快照 | 部署侧只读核验当前工作区 Infra 或 Business 实际 Compose 服务后自动发布的有界来源事实。 | 两个作用域独立原子替换；包含运行身份、状态与端口，不含凭据、租户、授权或自动建立的主机关联。失败与成功空列表分别表达；发现、管理员纳管声明、服务可用性与专业采集结果分别裁决。 |
 | deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；模块实例首次声明固定，当前 node_id 必须经节点允许集合裁定，declared_node_id 仅为历史声明。无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
 | monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置；用户高级入口称“采集配置”。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |

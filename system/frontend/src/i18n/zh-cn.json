@@ -2235,7 +2235,7 @@
       "reload": "重新读取并核对",
       "empty": "尚未登记引擎部署",
       "readFailed": "读取部署失败，请刷新重试",
-      "invalidForm": "请填写部署名称、导入来源清单并选择承载主机",
+      "invalidForm": "请选择待接入服务、填写部署名称并选择承载主机",
       "hostMismatch": "主机不存在、已停用或类型不匹配，请核对后重新选择",
       "occupied": "该 Docker 引擎中的 PostgreSQL 服务已登记，请在列表中查看已有部署",
       "unknownWrite": "保存结果或版本已变化，已停止继续提交。请重新读取已有记录并核对；首次登记请关闭弹窗后刷新列表。",
@@ -2272,6 +2272,29 @@
         "unsupported_topology": "暂不支持多容器部署",
         "not_running": "当前未运行",
         "sql_port_missing": "缺少可用的 SQL 端口"
+      },
+      "currentSource": "最近发现的部署来源",
+      "currentSourceHint": "仅表示采样时的容器状态；数据库是否可连接、专业指标是否采集成功，需分别验证。",
+      "restarts": "容器重启次数",
+      "runtimeChanged": "当前容器运行身份与接入时不同；部署身份和主机关联保持原声明。",
+      "sourceStates": {
+        "loading": "正在读取来源…",
+        "read_failed": "来源读取失败，当前状态未知",
+        "available": "来源读取成功",
+        "unavailable": "来源不可用，当前状态未知",
+        "missing": "尚未生成来源，当前状态未知",
+        "unconfigured": "尚未配置发现来源",
+        "stale": "来源已过期，当前状态未知",
+        "source_mismatch": "发现环境与接入时不一致，无法确认当前来源",
+        "not_found": "本次未发现该服务的容器",
+        "unsupported_topology": "当前为多容器部署，尚未适配",
+        "running": "容器正在运行",
+        "created": "容器已创建，尚未运行",
+        "paused": "容器已暂停",
+        "restarting": "容器正在重启",
+        "exited": "容器已退出",
+        "dead": "容器处于故障状态",
+        "removing": "容器正在移除"
       }
     }
   },

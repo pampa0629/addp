@@ -14,7 +14,7 @@
       <el-table-column prop="engine_type" :label="t('system.engineDeployments.engine')" width="130" />
       <el-table-column :label="t('system.engineDeployments.state')" min-width="170"><template #default="{ row }">{{ t(`system.engineDeployments.states.${bindingState(row)}`) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.observed')" min-width="190"><template #default="{ row }">{{ formatDateTime(row.inventory.observed_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.engineDeployments.detailAction')" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button></template></el-table-column>
+      <el-table-column :label="t('system.engineDeployments.detailAction')" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" :data-testid="`deployment-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button></template></el-table-column>
       <template #empty><el-empty :description="t(listLoaded ? 'system.engineDeployments.empty' : 'system.hostNodes.notLoaded')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="listLoaded" :current-page="state.page" :page-size="state.pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="page => setQuery({page:String(page)})" @size-change="size => setQuery({page:'1',page_size:String(size)})" />
@@ -22,6 +22,22 @@
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && close()" @open-auto-focus="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
         <el-alert v-if="detailError || saveError" :title="detailError || saveError" type="error" :closable="false" data-testid="deployment-error" />
+        <section v-if="record && !creating" class="current-source" data-testid="deployment-current-source" :aria-busy="sourceLoading">
+          <div class="toolbar"><h3>{{ t('system.engineDeployments.currentSource') }}</h3>
+            <el-button :loading="sourceLoading" @click="loadCurrentSource">{{ t('system.engineDeployments.refreshDiscovery') }}</el-button>
+          </div>
+          <p role="status">{{ t(`system.engineDeployments.sourceStates.${sourceLoading ? 'loading' : sourceError ? 'read_failed' : currentSource?.state || 'read_failed'}`) }}</p>
+          <template v-if="!sourceLoading && !sourceError && currentSource">
+            <p v-if="currentSource.observedAt" class="hint">{{ t('system.engineDeployments.observed') }}: {{ formatDateTime(currentSource.observedAt) }}</p>
+            <dl v-if="currentSource.container" data-testid="deployment-current-container">
+              <dt>{{ t('system.engineDeployments.container') }}</dt><dd>{{ currentSource.container.container_id }}</dd>
+              <dt>{{ t('system.engineDeployments.started') }}</dt><dd>{{ currentSource.container.started_at ? formatDateTime(currentSource.container.started_at) : '—' }}</dd>
+              <dt>{{ t('system.engineDeployments.restarts') }}</dt><dd>{{ currentSource.container.restart_count }}</dd>
+            </dl>
+            <p v-if="currentSource.changed" class="hint">{{ t('system.engineDeployments.runtimeChanged') }}</p>
+          </template>
+          <p class="hint">{{ t('system.engineDeployments.currentSourceHint') }}</p>
+        </section>
         <el-form v-if="formReady" label-position="top" :disabled="saving || !canWrite" @submit.prevent>
           <template v-if="creating">
             <div class="toolbar"><el-button :loading="reading" :disabled="saving" @click="loadDiscovery">{{ t('system.engineDeployments.refreshDiscovery') }}</el-button></div>
@@ -79,7 +95,7 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import { useAuthStore } from '../store/auth'
 import { hostNodesAPI } from '../api/hostNodes'
 import { engineDeploymentsAPI } from '../api/engineDeployments'
-import { isDeploymentUUID, validateDeploymentInventory, validateDeploymentDiscovery } from '../utils/engineDeployment'
+import { isDeploymentUUID, validateDeploymentInventory, validateDeploymentDiscovery, resolveDeploymentSource } from '../utils/engineDeployment'
 import { resolveEngineDeploymentsRouteState } from '../utils/routeState'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 const auth=useAuthStore(), route=useRoute(), router=useRouter(), {t}=useI18n()
@@ -98,8 +114,9 @@ const dialogOpen=computed(()=>creating.value || Boolean(deploymentID.value)),can
 const container=computed(()=>form.inventory?.services[0].containers[0])
 const pickerAPI={nodes:hostNodesAPI.list,node:hostNodesAPI.get}
 const listRequests=createLatestRequestScope(),detailRequests=createLatestRequestScope(),discoveryRequests=createLatestRequestScope()
+const sourceRequests=createLatestRequestScope(),currentSource=ref(null),sourceLoading=ref(false),sourceError=ref(false)
 const candidates=ref([]),selectedCandidates=ref([]),discoveryScopes=ref([])
-let epoch=0,trigger=null
+let epoch=0,trigger=null,sourceExpiry=null
 const navigate=(path,query=state.value.query,history='push')=>navigateSystemRoute(router,{path,query},{history})
 const bindingState=row=>row.enabled?row.host_binding_state==='bound'?'bound':row.host_binding_reason==='node_kind_mismatch'?'node_kind_mismatch':'node_disabled':'deployment_disabled'
 useConsolePageDescriptor(router,'system',{title:computed(()=>t('system.engineDeployments.details')),subject:computed(()=>record.value?.display_name||''),ready:computed(()=>Boolean(record.value)&&!creating.value)})
@@ -107,6 +124,24 @@ function validRecord(value,id='') {
   if (!isDeploymentUUID(value?.deployment_id) || (id && value.deployment_id!==id) || !Number.isSafeInteger(value.version) || value.version<1 || typeof value.display_name!=='string' || typeof value.enabled!=='boolean' || !isDeploymentUUID(value.declared_node_id) || !['bound','rejected'].includes(value.host_binding_state)) throw new Error('invalid_deployment')
   validateDeploymentInventory(value.inventory);return value
 }
+async function loadCurrentSource() {
+  if(!canRead.value || !record.value || creating.value)return
+  clearTimeout(sourceExpiry)
+  const id=record.value.deployment_id,inventory=record.value.inventory,ticket=sourceRequests.invalidate()
+  currentSource.value=null;sourceError.value=false;sourceLoading.value=true
+  try {
+    const discovery=await sourceRequests.request(config=>engineDeploymentsAPI.discover(config))
+    if(sourceRequests.current(ticket) && record.value?.deployment_id===id){
+      currentSource.value=resolveDeploymentSource(inventory,discovery)
+      const at=Date.parse(currentSource.value.observedAt)
+      if(!['unavailable','missing','unconfigured','stale'].includes(currentSource.value.state) && Number.isFinite(at) && at+120000>Date.now())sourceExpiry=setTimeout(()=>{
+        if(sourceRequests.current(ticket))currentSource.value={state:'stale',observedAt:currentSource.value.observedAt,container:null,changed:false}
+      },at+120001-Date.now())
+    }
+  }catch{if(sourceRequests.current(ticket))sourceError.value=true}
+  finally{if(sourceRequests.current(ticket))sourceLoading.value=false}
+}
+function clearCurrentSource(){clearTimeout(sourceExpiry);sourceRequests.invalidate();currentSource.value=null;sourceLoading.value=false;sourceError.value=false}
 function populate(value) {
   record.value=value;Object.assign(form,{display_name:value.display_name,enabled:value.enabled,inventory:value.inventory,declared_node_id:value.declared_node_id});selectedHost.value=null;formReady.value=true
 }
@@ -123,11 +158,12 @@ async function loadList() {
 }
 async function loadDetail() {
   if(!canRead.value||!deploymentID.value)return
+  clearCurrentSource()
   const id=deploymentID.value,ticket=detailRequests.invalidate();formReady.value=false;record.value=null;detailError.value='';saveError.value='';blocked.value=false;detailLoading.value=true
   try {
     if(!isDeploymentUUID(id))throw new Error('invalid_id')
     const value=validRecord(await detailRequests.request(config=>engineDeploymentsAPI.get(id,config)),id)
-    if(detailRequests.current(ticket)){populate(value);await focusForm()}
+    if(detailRequests.current(ticket)){populate(value);loadCurrentSource();await focusForm()}
   }catch{if(detailRequests.current(ticket))detailError.value=t('system.engineDeployments.readFailed')}
   finally{if(detailRequests.current(ticket))detailLoading.value=false}
 }
@@ -145,11 +181,11 @@ async function loadDiscovery() {
 }
 function openCreate(event){
   if(!canCreate.value)return
-  trigger=event?.currentTarget;detailRequests.invalidate();record.value=null;selectedHost.value=null;saveError.value='';detailError.value='';blocked.value=false;reading.value=false
+  trigger=event?.currentTarget;detailRequests.invalidate();clearCurrentSource();record.value=null;selectedHost.value=null;saveError.value='';detailError.value='';blocked.value=false;reading.value=false
   Object.assign(form,{display_name:'',enabled:true,inventory:null,declared_node_id:''});formReady.value=true;creating.value=true;loadDiscovery()
 }
 function openDetail(id,event){trigger=event?.currentTarget;return navigate(`/engine-deployments/${id}`)}
-function close(){if(saving.value)return;epoch++;discoveryRequests.invalidate();creating.value=false;reading.value=false;if(deploymentID.value)return navigate('/engine-deployments',state.value.query,'replace')}
+function close(){if(saving.value)return;clearCurrentSource();epoch++;discoveryRequests.invalidate();creating.value=false;reading.value=false;if(deploymentID.value)return navigate('/engine-deployments',state.value.query,'replace')}
 async function focusForm(event){event?.preventDefault?.();await nextTick();if(canWrite.value && formReady.value && !creating.value)nameInput.value?.focus();else closeButton.value?.$el?.focus()}
 async function restoreFocus(){await nextTick();if(trigger?.isConnected)trigger.focus();else searchInput.value?.focus();trigger=null}
 function setQuery(patch){return navigate('/engine-deployments',{...state.value.query,...patch},'replace')}
@@ -180,13 +216,13 @@ async function save(){
   }finally{if(own===epoch)saving.value=false}
 }
 watch([()=>route.fullPath,identity],async()=>{
-  epoch++;listRequests.invalidate();detailRequests.invalidate();discoveryRequests.invalidate();candidates.value=[];selectedCandidates.value=[];discoveryScopes.value=[];rows.value=[];record.value=null;selectedHost.value=null;creating.value=false;formReady.value=false;saving.value=false;reading.value=false;blocked.value=false;detailLoading.value=false;detailError.value='';saveError.value='';listError.value='';listLoading.value=false;listLoaded.value=false;Object.assign(form,{inventory:null,declared_node_id:'',display_name:'',enabled:true});searchDraft.value=state.value.search
+  epoch++;clearCurrentSource();listRequests.invalidate();detailRequests.invalidate();discoveryRequests.invalidate();candidates.value=[];selectedCandidates.value=[];discoveryScopes.value=[];rows.value=[];record.value=null;selectedHost.value=null;creating.value=false;formReady.value=false;saving.value=false;reading.value=false;blocked.value=false;detailLoading.value=false;detailError.value='';saveError.value='';listError.value='';listLoading.value=false;listLoaded.value=false;Object.assign(form,{inventory:null,declared_node_id:'',display_name:'',enabled:true});searchDraft.value=state.value.search
   if(!canRead.value)return
   if(state.value.changed){await navigate(route.path,state.value.query,'replace');return}
   await Promise.all([loadList(),loadDetail()])
 },{immediate:true})
-onBeforeUnmount(()=>{epoch++;listRequests.dispose();detailRequests.dispose();discoveryRequests.dispose()})
+onBeforeUnmount(()=>{clearCurrentSource();epoch++;listRequests.dispose();detailRequests.dispose();discoveryRequests.dispose();sourceRequests.dispose()})
 </script>
 <style scoped>
-.engine-deployments{padding:20px;min-width:0}.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}.toolbar h2{flex:1;margin:0}.toolbar .el-input{max-width:420px}.el-pagination{margin-top:16px;overflow-x:auto}.el-alert{margin-bottom:12px}.candidate-name{margin-top:6px}.hint{color:var(--addp-text-secondary);margin:8px 0;width:100%}dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}dd{margin:0;overflow-wrap:anywhere}dt{color:var(--addp-text-secondary)}@media(max-width:600px){.engine-deployments{padding:12px}.toolbar .el-input{max-width:none;flex-basis:100%}dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:8px}}
+.engine-deployments{padding:20px;min-width:0}.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}.toolbar h2{flex:1;margin:0}.toolbar .el-input{max-width:420px}.el-pagination{margin-top:16px;overflow-x:auto}.el-alert{margin-bottom:12px}.current-source{margin-bottom:20px}.current-source h3{flex:1;margin:0}.candidate-name{margin-top:6px}.hint{color:var(--addp-text-secondary);margin:8px 0;width:100%}dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}dd{margin:0;overflow-wrap:anywhere}dt{color:var(--addp-text-secondary)}@media(max-width:600px){.engine-deployments{padding:12px}.toolbar .el-input{max-width:none;flex-basis:100%}dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:8px}}
 </style>

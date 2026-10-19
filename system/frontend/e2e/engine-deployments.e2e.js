@@ -1,6 +1,6 @@
 import { expect,test } from '@playwright/test'
 import { HOST_NODE_ID } from './host-nodes.fixture'
-import { DEPLOYMENT_ID,mockDeployments } from './engine-deployments.fixture'
+import { DEPLOYMENT_ID,mockDeployments,discoveryFixture } from './engine-deployments.fixture'
 
 async function selectHost(page){
  await page.getByRole('dialog').getByRole('combobox',{name:'承载主机',exact:true}).press('Enter')
@@ -73,6 +73,9 @@ test('a stale management update preserves draft and never resends inventory',asy
  await expect(page.getByTestId('deployment-name')).toHaveValue('Keep this draft')
  await expect(page.getByTestId('deployment-save')).toBeDisabled()
  expect(writes).toHaveLength(1);expect(writes[0].version).toBe(7);expect(writes[0]).not.toHaveProperty('inventory')
+ await page.getByTestId('deployment-current-source').getByRole('button',{name:'重新读取来源',exact:true}).click()
+ await expect(page.getByTestId('deployment-save')).toBeDisabled()
+ await expect(page.getByTestId('deployment-name')).toHaveValue('Keep this draft')
  await page.getByRole('button',{name:'重新读取并核对',exact:true}).click()
  await expect(page.getByTestId('deployment-name')).toHaveValue('Business PostgreSQL')
  await expect(page.getByTestId('deployment-save')).toBeEnabled()
@@ -96,6 +99,9 @@ test('English declaration details fit a narrow viewport',async({page})=>{
  const dialog=page.getByRole('dialog');await expect(dialog).toContainText('This snapshot describes the admission time')
  await expect(dialog).not.toContainText('system.engineDeployments.')
  expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
+ await expect(page.getByTestId('deployment-current-container')).toBeVisible()
+ await page.locator('.el-overlay').evaluate(async element=>{await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished))})
+ await page.screenshot({path:'/tmp/addp-engine-current-source-narrow.png'})
 })
 
 test('English discovery selection is usable in a narrow viewport',async({page})=>{
@@ -106,4 +112,48 @@ test('English discovery selection is usable in a narrow viewport',async({page})=
  expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
  await page.locator('.el-overlay').evaluate(async element=>{await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished))})
  await page.screenshot({path:'/tmp/addp-deployment-discovery-narrow-review.png'})
+})
+
+test('current source refresh shows a replacement container, preserves the management draft and clears failed observations',async({page})=>{
+ const {writes}=await mockDeployments(page)
+ const discovery=discoveryFixture(true);discovery.scopes[1].services[0].containers[0].container_id='c'.repeat(64)
+ let failed=false
+ await page.route('**/api/v1/system/platform/engine_deployments/discovery',route=>failed?route.fulfill({status:503,json:{error_code:'unavailable'}}):route.fulfill({json:discovery}))
+ await page.goto('/engine-deployments')
+ await page.getByTestId(`deployment-detail-${DEPLOYMENT_ID}`).click()
+ const source=page.getByTestId('deployment-current-source')
+ await expect(source).toContainText('容器正在运行');await expect(source).toContainText('c'.repeat(64))
+ await expect(source).toContainText('当前容器运行身份与接入时不同')
+ await expect(page.getByTestId('deployment-source')).toContainText('a'.repeat(64))
+ await page.getByTestId('deployment-name').fill('Keep my draft')
+ failed=true;await source.getByRole('button',{name:'重新读取来源',exact:true}).click()
+ await expect(source).toContainText('来源读取失败，当前状态未知')
+ await expect(source).not.toContainText('c'.repeat(64))
+ await expect(page.getByTestId('deployment-name')).toHaveValue('Keep my draft');expect(writes).toEqual([])
+ failed=false;discovery.scopes[1].services[0].containers[0].status='exited'
+ Object.assign(discovery.candidates.find(item=>item.scope==='business'&&item.service==='postgres'),{eligible:false,reason:'not_running'})
+ await source.getByRole('button',{name:'重新读取来源',exact:true}).click()
+ await expect(source).toContainText('容器已退出');await expect(page.getByTestId('deployment-name')).toHaveValue('Keep my draft')
+})
+test('read-only viewers can refresh sources, and a source expires while the details remain open',async({page})=>{
+ await page.clock.install()
+ const {hosts,writes}=await mockDeployments(page,{permissions:['platform.engine_deployment.read']})
+ await page.goto(`/engine-deployments/${DEPLOYMENT_ID}`)
+ const source=page.getByTestId('deployment-current-source');await expect(source).toContainText('容器正在运行')
+ await expect(source.getByRole('button',{name:'重新读取来源',exact:true})).toBeEnabled()
+ await page.clock.fastForward(121000)
+ await expect(source).toContainText('来源已过期，当前状态未知')
+ await expect(page.getByTestId('deployment-current-container')).toHaveCount(0)
+ expect(hosts.calls).toEqual([]);expect(writes).toEqual([])
+})
+test('closing details discards a delayed source response',async({page})=>{
+ await mockDeployments(page)
+ let release,arrived=false
+ const wait=new Promise(resolve=>{release=resolve})
+ await page.route('**/api/v1/system/platform/engine_deployments/discovery',async route=>{arrived=true;await wait;await route.fulfill({json:discoveryFixture(true)}).catch(()=>{})})
+ await page.goto(`/engine-deployments/${DEPLOYMENT_ID}`)
+ await expect.poll(()=>arrived).toBe(true)
+ await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();release()
+ await expect(page).toHaveURL(/\/engine-deployments$/)
+ await expect(page.getByTestId('deployment-current-source')).toHaveCount(0)
 })

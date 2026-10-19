@@ -49,3 +49,27 @@ export function validateDeploymentDiscovery(value) {
   }
   return value
 }
+
+// Match current source facts to the declared physical source, never to an address.
+export function resolveDeploymentSource(inventory, discovery, now = Date.now()) {
+  validateDeploymentInventory(inventory)
+  validateDeploymentDiscovery(discovery)
+  const scope = discovery.scopes.find(item => item.scope === (inventory.source.project === 'business' ? 'business' : 'infra'))
+  const unavailable = state => ({ state, observedAt: scope.observed_at || '', container: null, changed: false })
+  if (scope.state !== 'available') return unavailable(scope.state)
+  const sampled = Date.parse(scope.observed_at)
+  if (!Number.isFinite(sampled) || sampled > now + 30000) invalid()
+  if (sampled < now - 120000) return unavailable('stale')
+  if (['type', 'runtime', 'docker_engine_id', 'project'].some(key => scope.source?.[key] !== inventory.source[key])) return unavailable('source_mismatch')
+  const services = scope.services.filter(item => item.service === inventory.services[0].service)
+  if (!services.length) return unavailable('not_found')
+  if (services.length !== 1 || services[0].engine_type !== 'postgresql' || !Array.isArray(services[0].containers)) invalid()
+  if (!services[0].containers.length) return unavailable('not_found')
+  if (services[0].containers.length !== 1) return unavailable('unsupported_topology')
+  const container = services[0].containers[0]
+  if (!container || !/^[a-f0-9]{64}$/u.test(container.container_id) || !['created','running','paused','restarting','exited','dead','removing'].includes(container.status)
+    || (container.started_at && !Number.isFinite(Date.parse(container.started_at))) || (container.status === 'running' && !container.started_at)
+    || !Number.isSafeInteger(container.restart_count) || container.restart_count < 0) invalid()
+  const original = inventory.services[0].containers[0]
+  return { state: container.status, observedAt: scope.observed_at, container, changed: container.container_id !== original.container_id || container.started_at !== original.started_at }
+}

@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest'
-import {validateDeploymentInventory,validateDeploymentDiscovery} from '../src/utils/engineDeployment'
+import {validateDeploymentInventory,validateDeploymentDiscovery,resolveDeploymentSource} from '../src/utils/engineDeployment'
 import {resolveEngineDeploymentsRouteState,resolveHostNodesRouteState} from '../src/utils/routeState'
 import {inventory,discoveryFixture} from '../e2e/engine-deployments.fixture'
 it('validates only the canonical declaration and rejects extra credential or tenant fields',()=>{
@@ -17,4 +17,25 @@ it('retains only deployment pagination and search, independently of host filters
 it('rejects incomplete discovery and duplicate candidates before selection',()=>{
  const value=discoveryFixture();expect(validateDeploymentDiscovery(value)).toBe(value)
  for(const change of [v=>{v.scopes=[]},v=>{v.candidates.push(v.candidates[0])},v=>{v.candidates[0].fingerprint='bad'},v=>{v.candidates[1].reason='unknown'},v=>{v.scopes[0].state='stale'}]){const invalid=structuredClone(value);change(invalid);expect(()=>validateDeploymentDiscovery(invalid)).toThrow()}
+})
+
+it('matches a deployment by physical source identity and shows current container facts without changing its declaration',()=>{
+ const original=structuredClone(inventory),discovery=discoveryFixture(),now=Date.parse(discovery.scopes[1].observed_at)
+ const live=discovery.scopes[1].services[0].containers[0];live.container_id='c'.repeat(64);live.started_at='2026-10-19T01:00:00Z';live.restart_count=3
+ const result=resolveDeploymentSource(inventory,discovery,now)
+ expect(result).toMatchObject({state:'running',changed:true,container:{container_id:'c'.repeat(64),restart_count:3}})
+ expect(inventory).toEqual(original)
+ live.status='exited';Object.assign(discovery.candidates.find(item=>item.scope==='business'&&item.service==='postgres'),{eligible:false,reason:'not_running'});expect(resolveDeploymentSource(inventory,discovery,now).state).toBe('exited')
+})
+it('never substitutes admission facts or another Docker engine when a current source cannot be matched',()=>{
+ for(const [change,state] of [
+  [v=>{v.scopes[1].state='stale';v.scopes[1].services=[];v.candidates=v.candidates.filter(c=>c.scope!=='business')},'stale'],
+  [v=>{v.scopes[1].source.docker_engine_id='another-daemon'},'source_mismatch'],
+  [v=>{v.scopes[1].source.runtime='linux_docker'},'source_mismatch'],
+  [v=>{v.scopes[1].services=[];v.candidates=v.candidates.filter(c=>c.scope!=='business')},'not_found'],
+  [v=>{v.scopes[1].observed_at='2000-01-01T00:00:00Z'},'stale'],
+ ]){
+  const value=discoveryFixture();change(value)
+  expect(resolveDeploymentSource(inventory,value)).toMatchObject({state,container:null,changed:false})
+ }
 })
