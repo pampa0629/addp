@@ -20,7 +20,7 @@ import (
 
 func TestMetricsBootstrapCredentialsKeepThreeOfficersSeparate(t *testing.T) {
 	now := time.Now().UTC()
-	inputs, err := platformMetricsBootstrapInputs(now)
+	inputs, err := platformBootstrapInputs(now, "online-metrics", "Online metrics")
 	if err != nil || len(inputs) != 3 {
 		t.Fatal("bootstrap inputs", err)
 	}

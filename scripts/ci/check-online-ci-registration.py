@@ -2442,6 +2442,38 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
         raise RegistrationError("Graph protection must not also dispatch on self-hosted")
 
 
+def validate_administrator_governance_profile(repository: Path, registered: set[str]) -> None:
+    if "platform-administrator-governance" not in registered:
+        return
+    required = (
+        "scripts/test/platform-administrator-governance-online.py",
+        "scripts/test/platform-administrator-governance-online_test.py",
+        "scripts/test/online-hosted-administrator-governance-gate_test.py",
+        "system/backend/cmd/online-test-fixture/administrator_governance.go",
+        "system/backend/cmd/online-test-fixture/administrator_governance_test.go",
+        "console/frontend/e2e/online/platform-administrator-governance.spec.js",
+    )
+    for path in required:
+        if not (repository / path).is_file():
+            raise RegistrationError("administrator governance requires " + path)
+    commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
+    for fragment in ("platform-administrator-governance-online_test.py", "online-hosted-administrator-governance-gate_test.py",
+                     "platform-administrator-governance.spec.js", "test_administrator_governance_requires_manual_isolated_profile"):
+        if fragment not in commands:
+            raise RegistrationError("administrator governance regression missing: " + fragment)
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  administrator-governance-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-administrator-governance'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
+        raise RegistrationError("administrator governance must use manual Hosted Linux")
+    if "inputs.suite != 'platform-administrator-governance'" not in workflow:
+        raise RegistrationError("administrator governance must not dispatch to self-hosted")
+    gate = (repository / "scripts/test/online-hosted-administrator-governance-gate.sh").read_text()
+    for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite platform-administrator-governance',
+                     'playwright install --with-deps chromium', 'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
+        if fragment not in gate:
+            raise RegistrationError("administrator governance lifecycle missing: " + fragment)
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -2473,6 +2505,7 @@ def check_registration(repository: Path) -> None:
     validate_orchestrator_execution_profile(repository, registered)
     validate_quality_dynamic_binding_profile(repository, registered)
     validate_platform_node_metrics_profile(repository, registered)
+    validate_administrator_governance_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)

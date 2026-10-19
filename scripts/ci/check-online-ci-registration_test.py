@@ -17,6 +17,33 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_administrator_governance_requires_manual_isolated_profile(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',
+                 'scripts/test/online-hosted-administrator-governance-gate.sh',
+                 'scripts/test/platform-administrator-governance-online.py',
+                 'scripts/test/platform-administrator-governance-online_test.py',
+                 'scripts/test/online-hosted-administrator-governance-gate_test.py',
+                 'system/backend/cmd/online-test-fixture/administrator_governance.go',
+                 'system/backend/cmd/online-test-fixture/administrator_governance_test.go',
+                 'console/frontend/e2e/online/platform-administrator-governance.spec.js')
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        registered = {'platform-administrator-governance'}
+        CHECK.validate_administrator_governance_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "inputs.suite != 'platform-administrator-governance'"),
+                                   (paths[0], "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-administrator-governance'"),
+                                   (paths[1], '$(MAKE) test-platform-administrator-online-runner'),
+                                   (paths[2], 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'),
+                                   (paths[2], '--suite platform-administrator-governance')):
+            target = self.repository / relative; original = target.read_text()
+            target.write_text(original.replace(fragment, 'omitted'))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_administrator_governance_profile(self.repository, registered)
+            target.write_text(original)
+
     def test_zonal_requires_manual_nfs_identity_complete_csv_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',

@@ -206,7 +206,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return graphProtectionReaderPermissions, nil
 	case "pg-source-authorization":
 		return pgAuthorizationConsumerPermissions, nil
-	case "platform-node-metrics":
+	case "platform-node-metrics", "platform-administrator-governance":
 		return nil, nil
 	case "vector-topology-persistence":
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read"), nil
@@ -362,6 +362,9 @@ func run(args []string, environment []string) error {
 	}
 	if users != 0 {
 		return errors.New("disposable External Online database already contains User principals")
+	}
+	if *suite == "platform-administrator-governance" {
+		return prepareAdministratorGovernanceIdentities(db, cfg, *output)
 	}
 	if *suite == "platform-node-metrics" {
 		return preparePlatformMetricsIdentities(db, cfg, *output)

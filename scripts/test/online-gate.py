@@ -50,6 +50,10 @@ SUITES: Mapping[str, Suite] = {
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
                   ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("catalog", "CATALOG_URL")),
     ),
+    "platform-administrator-governance": Suite(
+        command=(sys.executable, "-m", "scripts.test.platform-administrator-governance-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+    ),
     "platform-node-metrics": Suite(
         command=(sys.executable, "-m", "scripts.test.platform-node-metrics-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("monitor", "MONITOR_URL")),

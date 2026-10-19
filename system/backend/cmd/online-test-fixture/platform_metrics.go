@@ -18,7 +18,7 @@ import (
 
 // This owner-only helper prepares identities; actual Platform login and MFA are
 // exercised through the public API by the suite, never by claiming AAL2 here.
-func platformMetricsBootstrapInputs(now time.Time) ([]iam.BootstrapAdministratorInput, error) {
+func platformBootstrapInputs(now time.Time, prefix, displayPrefix string) ([]iam.BootstrapAdministratorInput, error) {
 	roles := []string{"system", "security", "audit"}
 	inputs := make([]iam.BootstrapAdministratorInput, 0, len(roles))
 	for _, role := range roles {
@@ -28,8 +28,8 @@ func platformMetricsBootstrapInputs(now time.Time) ([]iam.BootstrapAdministrator
 		}
 		secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(entropy[:20])
 		input := iam.BootstrapAdministratorInput{
-			RoleKey: "platform." + role + "_administrator", Username: "online-metrics-" + role,
-			Password: base64.RawURLEncoding.EncodeToString(entropy[20:]), DisplayName: "Online metrics " + role,
+			RoleKey: "platform." + role + "_administrator", Username: prefix + "-" + role,
+			Password: base64.RawURLEncoding.EncodeToString(entropy[20:]), DisplayName: displayPrefix + " " + role,
 			TOTPSecret: secret,
 		}
 		// Previously verified consecutive codes leave the current code unused,
@@ -63,7 +63,7 @@ func preparePlatformMetricsIdentities(db *gorm.DB, cfg *config.Config, output st
 	if err != nil {
 		return err
 	}
-	inputs, err := platformMetricsBootstrapInputs(time.Now())
+	inputs, err := platformBootstrapInputs(time.Now(), "online-metrics", "Online metrics")
 	if err != nil {
 		return err
 	}

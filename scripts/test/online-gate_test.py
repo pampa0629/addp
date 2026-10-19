@@ -90,6 +90,7 @@ class OnlineGateTest(unittest.TestCase):
                 "metric-service-revision-lifecycle",
                 "ontology-revision-lifecycle",
                 "orchestrator-execution",
+                "platform-administrator-governance",
                 "platform-node-metrics",
                 "pg-source-authorization",
                 "module-registry-recovery",

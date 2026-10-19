@@ -35,7 +35,7 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 - 显式非默认 `ADDP_ONLINE_TEST_TENANT_ID`，禁止 Tenant 1。
 - 全局唯一的 `ADDP_ONLINE_TEST_RUN_ID`；未提供时由分发器生成并贯穿全部子测试。
 - 每个参与 HTTP 服务 `/health/live` 可用，且 Build ID、Git commit 或源码指纹与当前 checkout 匹配；进入业务断言前 `/health/ready` 必须返回 200。
-- 除[平台节点指标控制面隔离验收的限定例外](scenarios/平台观测与语义生命周期.md#platform-node-metrics)外，测试 User、Service Principal 和 OAuth Scope 只具备场景所需的最小权限；不得使用个人会话或扩大生产身份权限。平台管理员 Token 默认禁止，仅在该限定例外中允许。
+- 除[平台节点指标控制面隔离验收的限定例外](scenarios/平台观测与语义生命周期.md#platform-node-metrics)外，测试 User、Service Principal 和 OAuth Scope 只具备场景所需的最小权限；不得使用个人会话或扩大生产身份权限。平台管理员 Token 默认禁止，仅在该限定例外及 `platform-administrator-governance` 的一次性 Hosted 三员身份中允许。
 - 通过 System AuthContext API 证明 principal、context、Tenant、client、token 与 Permission 事实后，才进入资源创建或注册拓扑操作。
 - 同一 `suite + Run ID` 通过进程锁串行化，锁覆盖预检、业务断言和报告落盘全过程。
 
@@ -74,3 +74,13 @@ T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必
 ## 专用场景
 
 各场景的部署选择、夹具和固定断言见[总入口场景索引](../addp测试与验收规范.md#online-场景索引)。
+
+## 平台三员治理隔离验收
+
+`platform-administrator-governance` 仅允许人工触发 GitHub Hosted Linux x86_64 profile，不支持个人开发部署、self-hosted 或夜间调度。生命周期复用 Hosted 准入与清理；新建独占 Infra、`addp_online`、System、Gateway、Console 与 System 页面，退出销毁本轮身份、数据库卷及临时凭据。禁止运行本机开发生命周期作为验收替代。
+
+System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正式账号、成员和 MFA 登记服务准备接任候选及无平台权限的租户用户。三员必须经公开密码、TOTP 和 AuthContext 证明当前身份，不直接签发管理员会话；平台身份仅限本场景，不能用于其他业务 suite。
+
+真实断言覆盖目标岗位申请／复核矩阵、自批和错岗拒绝、版本冲突、暂停／恢复、旧会话失效、角色原子交接并交回原任、一次性密码与 MFA 登记及保持暂停状态。浏览器使用真实 Console iframe 完成申请、复核、凭据登记和重新登录，不 mock API。历史审批与审计不物理删除；场景结束核验无待办、原岗位已恢复，身份历史随本轮 Infra 整体销毁。
+
+凭据不写 URL、日志或报告；浏览器不保留截图、Trace、视频或 Storage State，报告只保存固定断言和脱敏身份。准入、业务和清理任一失败均为失败，未实际 Hosted 运行不计 T4 通过。

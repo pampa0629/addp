@@ -639,6 +639,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-transfer-continuous-online-runner
 	@$(MAKE) test-transfer-online-runner
 	@$(MAKE) test-node-metrics-online-runner
+	@$(MAKE) test-platform-administrator-online-runner
 	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
 	@$(MAKE) test-vector-pmtiles-online-runner
@@ -1067,3 +1068,10 @@ test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消�
 .PHONY: test-protection-deployment-runner
 test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户初始化和精确清理诊断
 	@python3 -m unittest scripts/test/online-hosted-metric-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-public-origin-gate_test.py scripts/test/compose-public-origin-online_test.py
+
+.PHONY: test-platform-administrator-online-runner
+test-platform-administrator-online-runner: ## 验证三员 Hosted 准入、身份矩阵、浏览器代码与退出清理
+	@node --check --input-type=module < console/frontend/e2e/online/platform-administrator-governance.spec.js
+	@bash -n scripts/test/online-hosted-administrator-governance-gate.sh
+	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_administrator_governance_requires_manual_isolated_profile
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'AdministratorGovernanceFixture|MetricsBootstrap' -count=1
