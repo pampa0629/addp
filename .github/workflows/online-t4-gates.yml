@@ -35,6 +35,7 @@ on:
           - raster-contour-persistence
           - raster-polygonize-persistence
           - vector-rasterize-persistence
+          - vector-zonal-statistics-persistence
           - raster-focal-statistics-persistence
           - raster-zonal-statistics-persistence
           - vector-pmtiles-workflow
@@ -138,7 +139,7 @@ jobs:
 
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-falkordb-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-falkordb-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -1556,6 +1557,80 @@ jobs:
           gate: Online T4 (raster-polygonize-persistence, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+
+  vector-zonal-statistics-hosted-t4:
+    name: Online T4 (vector-zonal-statistics-persistence, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-zonal-statistics-persistence'
+    concurrency:
+      group: online-t4-vector-zonal-statistics-persistence
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: vector-zonal-statistics-persistence
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Install disposable NFS dependencies
+        run: sudo apt-get update && sudo apt-get install -y nfs-kernel-server nfs-common
+
+      - name: Validate Hosted Vector Zonal Statistics readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-vector-zonal-statistics-gate.sh --check-only
+
+      - name: Run Hosted Vector Zonal Statistics Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-vector-zonal-statistics-gate.sh
+
+      - name: Upload Hosted Vector Zonal Statistics evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-vector-zonal-statistics-persistence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Vector Zonal Statistics T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (vector-zonal-statistics-persistence, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+
 
 
   raster-focal-statistics-hosted-t4:

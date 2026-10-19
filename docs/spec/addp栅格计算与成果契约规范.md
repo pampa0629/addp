@@ -159,6 +159,7 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
+| `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。入口建设中，尚未计为真实验收通过。 |
 | `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
 | `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
@@ -186,3 +187,7 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 ### 6.6 栅格邻域统计验收边界
 
 固定版本 `fe0d7cc8e` 的独立 `raster-focal-statistics-persistence` 已完成六条 COG 保存链，覆盖五项统计、两种窗口的代表组合及重分类串联。519×515 多波段旋转输入的完整像元／mask、边缘与跨块、无效中心、Float64／NaN NoData、COG、严格三方相等正整数大小、六个精确自动扫描、同用户／当前执行源输入血缘、Monitor、源及先前成果不可变、非法波段／窗口失败清理与零残留均通过，归档已独立审计。预检及业务 359770 毫秒，小于 600 秒预算；当前最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。不认证全部窗口组合的 T4 覆盖、自定义权重、距离半径、分位数、众数、Manager 绘制、NFS 客户端写、业务删除、覆盖冲突或容量；同源 Linux 全量 1251 项及 Platform 通过；最新矢量分区统计版本的 Linux 全量 1296 项另列为确定性证据，不代替其尚未执行的独立 Hosted。
+
+### 6.7 矢量分区统计验收边界
+
+独立 `vector-zonal-statistics-persistence` 复用 Hosted 一次性部署、NFS、同源产品 Runtime 和普通用户原 12 权限，不修改其他套件、权限或跨模块产品逻辑。已登记 GeoJSON 面与旋转多波段 TIFF 覆盖重叠、孔洞、多部件、网格外及全无效值；前两条 DAG 必须记录两源血缘，重分类→转面→统计仅记录实际 TIFF 输入。非法波段、统计列冲突不得发布文件或新增扫描；保存沿通用 `save`，不新增 RasterArtifact。所有成果、源和先前成果按完整物理 oracle 检查，退出核对工作区、NFS、部署和 Infra 零残留。预算独立 600 秒，不包含矢量重投影、修复、面积加权、分位数、Manager 绘制、覆盖冲突、业务删除或容量认证。真实执行证据通过后另行回填。

@@ -11,6 +11,7 @@ base = importlib.import_module('scripts.test.online-hosted-raster-gate_test')
 class HostedContourGateTest(unittest.TestCase):
     prefix = "contour"
     family = "raster"
+    runtime_family = "raster"
 
     def setUp(self):
         self.base = base.HostedRasterGateTest(); self.base.setUp(); self.addCleanup(self.base.doCleanups)
@@ -34,7 +35,7 @@ class HostedContourGateTest(unittest.TestCase):
             Path(sys.argv[-1]).write_text('export ADDP_ONLINE_CONSUMER_ENGINE_ID=15\\n')
         ''')
         fixture = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
-        fixture.install_spark_container_fixture(self.host, f'{self.family}-{self.prefix}-persistence', f'addp-raster-{self.prefix}-runtime')
+        fixture.install_spark_container_fixture(self.host, f'{self.family}-{self.prefix}-persistence', f'addp-{self.runtime_family}-{self.prefix}-runtime')
         docker = self.host.bin / 'docker'; docker.write_text(docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]'))
         self.host._executable('make', '''
             #!/usr/bin/env bash
@@ -85,7 +86,7 @@ class HostedContourGateTest(unittest.TestCase):
         self.assertIn('cleanup=failed', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_wrong_suite_and_occupied_runtime_are_rejected_before_fixture_start(self):
-        for env in ({'ONLINE_SUITE_INPUT': 'raster-workflow'}, {'ADDP_TEST_PREEXIST_CONTAINER': f'addp-raster-{self.prefix}-runtime'}):
+        for env in ({'ONLINE_SUITE_INPUT': 'raster-workflow'}, {'ADDP_TEST_PREEXIST_CONTAINER': f'addp-{self.runtime_family}-{self.prefix}-runtime'}):
             result = self.run_gate(**env)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.secrets.exists())

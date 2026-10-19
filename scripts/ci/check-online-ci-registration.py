@@ -2028,6 +2028,47 @@ def validate_vector_rasterize_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError(f'rasterize persistence contract is incomplete: {relative}')
 
 
+def validate_vector_zonal_statistics_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'vector-zonal-statistics-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  vector-zonal-statistics-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-zonal-statistics-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'vector-zonal-statistics-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('vector-zone statistics requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-vector-zonal-statistics-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'online-vector-zonal-statistics-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/vector-zonal-statistics-persistence-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'triggered_by',
+            'validate_item', 'used_sources(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
+            'rasterize.check_physical(native,previous)', "for problem in ('band','collision')", 'complete_geometry_attributes_statistics_verified'),
+        'business/scripts/online-vector-zonal-statistics-fixture.py': (
+            'NFSExport', 'owned_root', 'expected_rows', 'statistics.pstdev', 'GDAL_TIFF_INTERNAL_MASK',
+            'runtime_workspaces_removed', 'source files changed', 'shapely.intersection', 'Integer64'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_raster_fixture.py': (
+            'test_vector_zonal_persistence_real_gdal_three_gpkg_chains_and_full_content',
+            'test_vector_zonal_persistence_oracle_rejects_corruption'),
+        'Makefile': ('@$(MAKE) test-vector-zonal-statistics-online-runner',
+            'scripts/test/vector-zonal-statistics-persistence-online_test.py',
+            'scripts/test/online-vector-zonal-statistics-fixture_test.py',
+            'scripts/test/online-hosted-vector-zonal-statistics-gate_test.py',
+            'test_vector_zonal_requires_manual_nfs_complete_gpkg_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'vector-zone statistics persistence contract is incomplete: {relative}')
+
+
 def validate_raster_focal_statistics_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-focal-statistics-persistence'
     if suite not in registered:
@@ -2540,6 +2581,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_contour_profile(repository, registered)
     validate_raster_polygonize_profile(repository, registered)
     validate_vector_rasterize_profile(repository, registered)
+    validate_vector_zonal_statistics_profile(repository, registered)
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)

@@ -425,6 +425,7 @@ test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及
 	@python3 -m unittest scripts/test/starrocks-admission_test.py
 	@bash -n scripts/test/common-starrocks-gate.sh
 	@cd common && GOWORK=off go test ./engine/certification/starrocks -run '^TestAdmissionGuard'
+	@cd common && GOWORK=off go test ./engine/plugins/starrocks -run '^Test(ReadOnly|PrimaryKey|Certified)'
 
 test-common-starrocks: ## 独占官方 StarRocks 验证原生目录、精度及受控只读边界
 	@bash scripts/test/common-starrocks-gate.sh
@@ -574,6 +575,11 @@ test-vector-topology-online-runner: ## 验证构面双输出、几何检查修�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-vector-zonal-statistics-online-runner
+test-vector-zonal-statistics-online-runner: ## 验证矢量分区统计独立 T4、完整 GeoPackage 与隔离生命周期
+	@bash -n scripts/test/online-hosted-vector-zonal-statistics-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-zonal-statistics-persistence-online_test.py scripts/test/online-vector-zonal-statistics-fixture_test.py scripts/test/online-hosted-vector-zonal-statistics-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_requires_manual_nfs_complete_gpkg_and_regressions
+
 .PHONY: test-raster-focal-statistics-online-runner
 test-raster-focal-statistics-online-runner: ## 验证邻域统计独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-statistics-gate.sh
@@ -590,6 +596,7 @@ test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
 
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-vector-zonal-statistics-online-runner
 	@$(MAKE) test-raster-focal-statistics-online-runner
 	@$(MAKE) test-raster-zonal-statistics-online-runner
 	@$(MAKE) test-vector-rasterize-online-runner

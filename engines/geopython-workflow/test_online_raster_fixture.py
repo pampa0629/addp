@@ -2273,3 +2273,80 @@ def test_focal_persistence_oracle_rejects_corruption(focal_persistence,tmp_path,
     elif corruption=='missing':path.unlink()
     else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.fixture(scope='module')
+def vector_zonal_persistence(tmp_path_factory):
+    module=importlib.import_module('business.scripts.online-vector-zonal-statistics-fixture')
+    scene=importlib.import_module('scripts.test.vector-zonal-statistics-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path_factory.mktemp('vector-zonal-export');(root/'outputs').mkdir()
+    initial=module.seed(root)
+    def execute(name,invalid=None):
+        definition=scene.definition({n:n for n in module.SOURCES},'parent',name,invalid=invalid)
+        for task in definition['tasks']:
+            params=task['params']
+            if task['operator']=='raster_load':
+                path=root/params.pop('locator')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{
+                    'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+            elif task['operator']=='load':
+                params['path']=params.pop('locator');params['connection_info']={'mount_path':str(root)}
+            elif task['operator']=='save':
+                params.pop('target_parent_locator');params['path']='outputs/'+params.pop('target_name')
+                params['connection_info']={'mount_path':str(root)}
+        return execute_workflow(definition)
+    for name in module.TARGETS:
+        result=execute(name);assert result['status']=='success',result
+    for fault in ('band','collision'):
+        result=execute('center.gpkg',fault);assert result['status']=='failed',result
+        assert not (root/'outputs'/f'failed-{fault}.gpkg').exists()
+    return module,root,initial
+
+
+def test_vector_zonal_persistence_real_gdal_three_gpkg_chains_and_full_content(vector_zonal_persistence):
+    module,root,initial=vector_zonal_persistence
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources']
+    assert len(actual['targets'])==3
+    for name,fact in actual['targets'].items():
+        assert fact['complete_geometry_attributes_statistics_verified']
+        assert fact['feature_count']==len(module.expected_rows(name))
+        assert type(fact['size_bytes']) is int and fact['size_bytes']>0
+    assert actual['targets']['center.gpkg']['feature_count']==6
+    assert actual['targets']['center.gpkg']['null_zone_count']==3
+    assert actual['targets']['touched.gpkg']['null_zone_count']==2
+    center=module.expected_rows('center.gpkg');touched=module.expected_rows('touched.gpkg')
+    assert center[-1][2][0]==0<touched[-1][2][0]
+    assert center[0][2][1]>250000 and center[1][2][1]>0
+    assert sorted(row[0]['class_value'] for row in module.expected_rows('classified.gpkg'))==[-3,-3,0,7]
+
+
+@pytest.mark.parametrize('corruption',['value','count','null','attribute','order','geometry','crs','schema','missing_row','sidecar','missing','extra'])
+def test_vector_zonal_persistence_oracle_rejects_corruption(vector_zonal_persistence,tmp_path,corruption):
+    import shutil
+    from osgeo import ogr
+    module,original,_=vector_zonal_persistence
+    root=tmp_path/'copy';shutil.copytree(original,root);path=root/'outputs/center.gpkg'
+    if corruption in ('value','count','null','attribute','order','geometry','crs','schema','missing_row'):
+        data=ogr.Open(str(path),1);layer=data.GetLayer(0);features=list(layer);feature=features[0]
+        if corruption=='value':feature.SetField('zonal_sum',999999.)
+        elif corruption=='count':feature.SetField('zonal_valid_count',-1)
+        elif corruption=='null':feature=features[3];feature.SetField('zonal_sum',0.)
+        elif corruption=='attribute':feature.SetField('label','changed')
+        elif corruption=='order':
+            # Swap FIDs while retaining every row and its contents.
+            a,b=features[:2];ida,idb=a.GetFID(),b.GetFID();layer.DeleteFeature(ida);layer.DeleteFeature(idb)
+            a.SetFID(idb);b.SetFID(ida);layer.CreateFeature(a);layer.CreateFeature(b)
+        elif corruption=='geometry':
+            ring=feature.GetGeometryRef().GetGeometryRef(0).GetGeometryRef(0)
+            x,y,_=ring.GetPoint(1);ring.SetPoint_2D(1,x+.0001,y)
+        elif corruption=='crs':data.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=3857')
+        elif corruption=='schema':layer.CreateField(ogr.FieldDefn('unexpected',ogr.OFTString))
+        else:layer.DeleteFeature(feature.GetFID())
+        if corruption not in ('order','crs','schema','missing_row'):layer.SetFeature(feature)
+        feature=None;features=None;layer=None;data=None
+    elif corruption=='sidecar':(root/'outputs/center.gpkg-wal').write_bytes(b'leftover')
+    elif corruption=='missing':path.unlink()
+    else:(root/'outputs/extra.gpkg').write_bytes(path.read_bytes())
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
