@@ -2,17 +2,11 @@
 
 ## 部署来源清单
 
-Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。System 已提供有界候选读取，页面批量确认与专业指标正在接入，当前仍使用已实现的单个 PostgreSQL 管理员确认登记；发现不等于已纳管或已采集。
+Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。
 
-平台自管服务的运维归属与租户数据权限分别维护。首期可以只读导出当前工作区已运行的 PostgreSQL 来源：
+管理员在 System“平台引擎部署”选择已发现的服务并确认承载主机，无需手工导出或导入文件。首批支持 Infra／Business 单容器 PostgreSQL；其他组件显示发现事实及未适配原因。发现、纳管和专业采集分别表达，平台运维关联不授予租户连接或业务数据权限。Docker Desktop 的来源属于 Linux VM，不属于原生 macOS 主机。
 
-```bash
-python3 scripts/utils/deployment-inventory.py export --service postgres > /tmp/addp-business-deployment.json
-```
-
-从仓库根目录执行。仅支持本地 Linux Docker 或 macOS Docker Desktop Linux VM 的 Unix Socket Context；拒绝 `DOCKER_HOST` 和 Docker TLS 环境覆盖。来源按当前工作区 Compose 标签核验，不按容器名称、IP 或登记连接猜测。输出包含 Docker Engine 来源、当前容器 ID、启动时间和实际 SQL 端口，不读取 `.env`、容器环境、业务表或凭据，不调用 System API，不启动或重启服务。服务缺失、停止、多容器或导出期间发生变化时明确失败，标准输出不产生部分清单。
-
-此文件是供管理员核对的来源快照，可以被编辑，不是签名或授权凭据。Docker/Compose 来源与容器运行身份不替代 System 部署身份、`node_id` 或 `engine_id`；System 已支持 PostgreSQL 部署登记及明确主机关联，不导入 v2 主机接入页面，引擎专业指标尚未开放。Docker Desktop 的来源归 Linux VM，不归原生 macOS 主机。确定性校验使用 `make test-deployment-discovery`，完整 Business 校验使用 `make test-business-config`，均由现有 Platform CI 覆盖。
+发现只读当前工作区 Compose 的本地 Unix Socket Context，拒绝远程端点及环境覆盖，不读取容器环境、业务表或凭据，也不启动或重启服务。确定性校验使用 `make test-deployment-discovery`，完整 Business 校验使用 `make test-business-config`，均由现有 Platform CI 覆盖。
 
 ## StarRocks Business 部署
 

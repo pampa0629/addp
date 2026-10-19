@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -107,7 +108,7 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{EngineDeploymentInput: input, Version: 1}, iam.AuditMetadata{})
+			_, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: input.DisplayName, Enabled: input.Enabled, DeclaredNodeID: input.DeclaredNodeID, Version: 1}, iam.AuditMetadata{})
 			results <- err
 		}()
 	}
@@ -178,11 +179,11 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 	if err != nil || current.NodeID != "" || current.DeclaredNodeID != node2.NodeID || current.Version != 2 || current.HostBindingReason != "node_disabled" {
 		t.Fatalf("disabled host=%+v err=%v", current, err)
 	}
-	if _, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{EngineDeploymentInput: input, Version: 2}, iam.AuditMetadata{}); !errors.Is(err, repository.ErrDeploymentHostUnavailable) {
+	if _, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: input.DisplayName, Enabled: input.Enabled, DeclaredNodeID: input.DeclaredNodeID, Version: 2}, iam.AuditMetadata{}); !errors.Is(err, repository.ErrDeploymentHostUnavailable) {
 		t.Fatalf("enabled declaration on disabled host=%v", err)
 	}
 	input.Enabled = &disabled
-	retired, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{EngineDeploymentInput: input, Version: 2}, iam.AuditMetadata{})
+	retired, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: input.DisplayName, Enabled: input.Enabled, DeclaredNodeID: input.DeclaredNodeID, Version: 2}, iam.AuditMetadata{})
 	if err != nil || retired.Version != 3 || retired.HostBindingReason != "deployment_disabled" {
 		t.Fatalf("retire=%+v err=%v", retired, err)
 	}
@@ -191,7 +192,7 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	input.Enabled = &enabled
-	restored, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{EngineDeploymentInput: input, Version: 3}, iam.AuditMetadata{})
+	restored, err := svc.Update(ctx, created.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: input.DisplayName, Enabled: input.Enabled, DeclaredNodeID: input.DeclaredNodeID, Version: 3}, iam.AuditMetadata{})
 	if err != nil || restored.Version != 4 || restored.NodeID != node2.NodeID {
 		t.Fatalf("restore=%+v err=%v", restored, err)
 	}
@@ -213,4 +214,74 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 	if err := db.Model(&iam.AuditLog{}).Where("entity_type=? AND entity_id=?", "engine_deployment", created.DeploymentID).Count(&audits).Error; err != nil || audits != 4 {
 		t.Fatalf("audit rows=%d err=%v", audits, err)
 	}
+	t.Run("batch_admission_rolls_back_all_members_and_registers_sources", func(t *testing.T) {
+		directory := t.TempDir()
+		if err := os.Chmod(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, scope := range []string{"infra", "business"} {
+			project := "business"
+			if scope == "infra" {
+				project = "addp-infra"
+			}
+			value := models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v1", Scope: scope, State: "available", ObservedAt: time.Now().UTC().Format(time.RFC3339), Source: &models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "batch-daemon", Project: project}, Services: []models.DiscoveredDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.DiscoveredDeploymentContainer{{ContainerID: strings.Repeat("b", 64), Status: "running", StartedAt: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), PublishedPorts: []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}
+			raw, _ := json.Marshal(value)
+			if err := os.WriteFile(filepath.Join(directory, scope+".json"), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		reader := service.DeploymentDiscoveryService{Directory: directory}
+		discovery := reader.Read(ctx)
+		request := models.EngineDeploymentAdmissionRequest{}
+		for _, candidate := range discovery.Candidates {
+			request.Items = append(request.Items, models.EngineDeploymentAdmissionItem{Scope: candidate.Scope, Service: candidate.Service, Fingerprint: candidate.Fingerprint, DisplayName: candidate.Scope + " PostgreSQL", Enabled: &enabled, DeclaredNodeID: node.NodeID})
+		}
+		if len(request.Items) != 2 {
+			t.Fatalf("candidates=%+v", discovery)
+		}
+		counts := func() [3]int64 {
+			var result [3]int64
+			db.Model(&models.EngineDeployment{}).Count(&result[0])
+			db.Table("engine_deployment_declarations").Count(&result[1])
+			db.Model(&iam.AuditLog{}).Where("entity_type=?", "engine_deployment").Count(&result[2])
+			return result
+		}
+		before := counts()
+		request.Items[1].DeclaredNodeID = uuid.NewString()
+		if result, err := svc.Admit(ctx, request, discovery, iam.AuditMetadata{}); !errors.Is(err, repository.ErrDeploymentHostUnavailable) || result != nil {
+			t.Fatalf("invalid second member=%+v %v", result, err)
+		}
+		if after := counts(); after != before {
+			t.Fatalf("partial batch persisted: %v -> %v", before, after)
+		}
+		request.Items[1].DeclaredNodeID = node.NodeID
+		result, err := svc.Admit(ctx, request, discovery, iam.AuditMetadata{})
+		if err != nil || len(result.Data) != 2 {
+			t.Fatalf("batch=%+v %v", result, err)
+		}
+		for _, row := range result.Data {
+			if row.Version != 1 || row.HostBindingState != "bound" || row.NodeID != node.NodeID {
+				t.Fatalf("admitted=%+v", row)
+			}
+		}
+		if after := counts(); after != [3]int64{before[0] + 2, before[1] + 2, before[2] + 2} {
+			t.Fatalf("batch counts=%v", after)
+		}
+		if err := svc.MarkRegisteredDiscovery(ctx, &discovery); err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range discovery.Candidates {
+			if candidate.DeploymentID == "" {
+				t.Fatal("registered source missing stable ID")
+			}
+		}
+		before = counts()
+		if _, err := svc.Admit(ctx, request, discovery, iam.AuditMetadata{}); !errors.Is(err, repository.ErrDeploymentSourceOccupied) {
+			t.Fatalf("duplicate batch=%v", err)
+		}
+		if counts() != before {
+			t.Fatal("duplicate batch changed state")
+		}
+	})
+
 }

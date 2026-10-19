@@ -1315,65 +1315,6 @@ definitions:
     - service_id
     - service_type
     type: object
-  github_com_addp_system_internal_models.BusinessDeploymentContainer:
-    properties:
-      container_id:
-        type: string
-      published_ports:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort'
-        type: array
-      restart_count:
-        type: integer
-      started_at:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.BusinessDeploymentInventory:
-    properties:
-      observed_at:
-        type: string
-      schema:
-        type: string
-      services:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentService'
-        type: array
-      source:
-        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource'
-    type: object
-  github_com_addp_system_internal_models.BusinessDeploymentPort:
-    properties:
-      address:
-        type: string
-      container_port:
-        type: integer
-      port:
-        type: integer
-      protocol:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.BusinessDeploymentService:
-    properties:
-      containers:
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentContainer'
-        type: array
-      engine_type:
-        type: string
-      service:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.BusinessDeploymentSource:
-    properties:
-      docker_engine_id:
-        type: string
-      project:
-        type: string
-      runtime:
-        type: string
-      type:
-        type: string
-    type: object
   github_com_addp_system_internal_models.CapabilitiesView:
     properties:
       json_view:
@@ -1485,6 +1426,10 @@ definitions:
     type: object
   github_com_addp_system_internal_models.DeploymentDiscovery:
     properties:
+      candidates:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentCandidate'
+        type: array
       scopes:
         items:
           $ref: '#/definitions/github_com_addp_system_internal_models.DeploymentDiscoveryScope'
@@ -1505,7 +1450,7 @@ definitions:
           $ref: '#/definitions/github_com_addp_system_internal_models.DiscoveredDeploymentService'
         type: array
       source:
-        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource'
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentSource'
       state:
         type: string
     type: object
@@ -1515,7 +1460,7 @@ definitions:
         type: string
       published_ports:
         items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort'
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentPort'
         type: array
       restart_count:
         type: integer
@@ -1809,7 +1754,7 @@ definitions:
       host_binding_state:
         type: string
       inventory:
-        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentInventory'
       node_id:
         type: string
       updated_at:
@@ -1817,7 +1762,7 @@ definitions:
       version:
         type: integer
     type: object
-  github_com_addp_system_internal_models.EngineDeploymentInput:
+  github_com_addp_system_internal_models.EngineDeploymentAdmissionItem:
     properties:
       declared_node_id:
         type: string
@@ -1825,13 +1770,78 @@ definitions:
         type: string
       enabled:
         type: boolean
-      inventory:
-        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
+      fingerprint:
+        type: string
+      scope:
+        type: string
+      service:
+        type: string
     required:
     - declared_node_id
     - display_name
     - enabled
-    - inventory
+    - fingerprint
+    - scope
+    - service
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentAdmissionRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionItem'
+        maxItems: 16
+        minItems: 1
+        type: array
+    required:
+    - items
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentAdmissionResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+        type: array
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentCandidate:
+    properties:
+      deployment_id:
+        type: string
+      eligible:
+        type: boolean
+      fingerprint:
+        type: string
+      reason:
+        type: string
+      scope:
+        type: string
+      service:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentContainer:
+    properties:
+      container_id:
+        type: string
+      published_ports:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentPort'
+        type: array
+      restart_count:
+        type: integer
+      started_at:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentInventory:
+    properties:
+      observed_at:
+        type: string
+      schema:
+        type: string
+      services:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentService'
+        type: array
+      source:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentSource'
     type: object
   github_com_addp_system_internal_models.EngineDeploymentPage:
     properties:
@@ -1848,6 +1858,39 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_system_internal_models.EngineDeploymentPort:
+    properties:
+      address:
+        type: string
+      container_port:
+        type: integer
+      port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentService:
+    properties:
+      containers:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentContainer'
+        type: array
+      engine_type:
+        type: string
+      service:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentSource:
+    properties:
+      docker_engine_id:
+        type: string
+      project:
+        type: string
+      runtime:
+        type: string
+      type:
+        type: string
+    type: object
   github_com_addp_system_internal_models.EngineDeploymentUpdateRequest:
     properties:
       declared_node_id:
@@ -1856,15 +1899,12 @@ definitions:
         type: string
       enabled:
         type: boolean
-      inventory:
-        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
       version:
         type: integer
     required:
     - declared_node_id
     - display_name
     - enabled
-    - inventory
     - version
     type: object
   github_com_addp_system_internal_models.EngineRasterPolicy:
@@ -9210,19 +9250,19 @@ paths:
       description: 管理员确认 PostgreSQL 来源与主机；不创建租户引擎、不探测 SQL 或 Docker | Confirm PostgreSQL
         source and host without creating Tenant engines or probing SQL or Docker
       parameters:
-      - description: 完整部署声明 | Complete deployment declaration
+      - description: 至多16个显式来源及主机确认 | Up to 16 explicit source and host confirmations
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentInput'
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionResponse'
         "400":
           description: Bad Request
           schema:
@@ -9245,7 +9285,7 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 登记平台引擎部署 | Register platform engine deployment
+      summary: 批量确认自带引擎部署 | Confirm built-in engine deployments in a batch
       tags:
       - 引擎部署 | Engine Deployments
       x-addp-auth-mode: permission

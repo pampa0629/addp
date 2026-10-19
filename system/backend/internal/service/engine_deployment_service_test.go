@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
@@ -16,6 +17,55 @@ func deploymentTestInput() models.EngineDeploymentInput {
 		Inventory: models.EngineDeploymentInventory{Schema: "addp.engine-deployment-inventory/v1", ObservedAt: "2026-10-19T00:00:00Z",
 			Source:   models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "source-daemon", Project: "business"},
 			Services: []models.EngineDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.EngineDeploymentContainer{{ContainerID: strings.Repeat("a", 64), StartedAt: "2026-10-18T00:00:00.123456789Z", PublishedPorts: []models.EngineDeploymentPort{{Address: "::", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}}
+}
+
+func TestEngineDeploymentAdmissionUsesFreshServerFacts(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	enabled := true
+	fresh := func() (models.EngineDeploymentAdmissionRequest, models.DeploymentDiscovery) {
+		scope := discoveryTestValue(now)
+		service := scope.Services[0]
+		item := models.EngineDeploymentAdmissionItem{Scope: "infra", Service: "postgres", Fingerprint: deploymentFingerprint("infra", scope.Source, service), DisplayName: "Infra PostgreSQL", Enabled: &enabled, DeclaredNodeID: "10000000-0000-4000-8000-000000000001"}
+		return models.EngineDeploymentAdmissionRequest{Items: []models.EngineDeploymentAdmissionItem{item}}, models.DeploymentDiscovery{Scopes: []models.DeploymentDiscoveryScope{scope}}
+	}
+	input, discovery := fresh()
+	values, err := buildDeploymentAdmissions(input, discovery, now)
+	if err != nil || len(values) != 1 || values[0].Inventory.Source.Project != "addp-infra" || values[0].Inventory.Schema != "addp.engine-deployment-inventory/v1" {
+		t.Fatalf("admission=%+v %v", values, err)
+	}
+	for _, kind := range []string{"expired", "changed", "missing", "stopped", "duplicate", "empty", "host"} {
+		t.Run(kind, func(t *testing.T) {
+			input, discovery := fresh()
+			want := ErrDeploymentSourceChanged
+			switch kind {
+			case "expired":
+				discovery.Scopes[0].ObservedAt = now.Add(-121 * time.Second).Format(time.RFC3339)
+			case "changed":
+				discovery.Scopes[0].Services[0].Containers[0].RestartCount++
+			case "missing":
+				discovery.Scopes = nil
+			case "stopped":
+				discovery.Scopes[0].Services[0].Containers[0].Status = "exited"
+			case "duplicate":
+				input.Items = append(input.Items, input.Items[0])
+				want = commonapi.ErrBadRequest
+			case "empty":
+				input.Items = nil
+				want = commonapi.ErrBadRequest
+			case "host":
+				input.Items[0].DeclaredNodeID = ""
+				want = commonapi.ErrBadRequest
+			}
+			if _, err := buildDeploymentAdmissions(input, discovery, now); !errors.Is(err, want) {
+				t.Fatalf("accepted invalid admission: %v", err)
+			}
+		})
+	}
+	input, discovery = fresh()
+	discovery.Scopes[0].ObservedAt = now.Add(time.Second).Format(time.RFC3339)
+	if _, err := buildDeploymentAdmissions(input, discovery, now); err != nil {
+		t.Fatalf("timestamp-only refresh invalidated facts: %v", err)
+	}
 }
 
 func TestEngineDeploymentDeclarationValidation(t *testing.T) {

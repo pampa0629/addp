@@ -87,11 +87,13 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 
 ### 4.4 平台引擎部署登记
 
-引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供 POST 创建、GET 分页/详情和 PUT 完整替换，分配稳定 `deployment_id`；首批只接受 Business PostgreSQL 单容器来源与一个明确的已纳管主机，不接受 `tenant_id/engine_id`、连接凭据或 SQL，不调用 Docker、数据库探测或部署操作。其他引擎、集群多主机、主机未知的云服务及租户引擎关联尚未开放。
+引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；首批支持 Infra 与 Business 的单容器 PostgreSQL，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
 
-来源唯一由 `python3 scripts/utils/deployment-inventory.py export --service postgres` 导出，协议 `addp.business-deployment-inventory/v1`，最多 16 KiB。内容为导出时间、本地 Docker Engine/Compose 项目服务、容器运行 ID/启动时间/重启次数及实际 SQL 端口映射；导出只访问当前工作区 Business Compose 的本地 Unix Socket Docker Context，拒绝远程端点及 `DOCKER_HOST`/TLS 覆盖，不读取 `.env`、容器环境变量或完整 inspect；运行身份、状态、端口和 Docker Engine ID 两次核对一致才输出。文件可被编辑，不是签名或授权证明。System 对完整结构、固定 PostgreSQL 类型、运行来源、IP/端口和范围再次校验；首批 Desktop 来源只可关联 virtual 主机。容器 ID 表示当次运行，不是永久部署身份。
+管理员在“平台引擎部署”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。来源项目、容器运行身份、状态及 SQL 端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
 
-管理员在 System“平台引擎部署”导入并预览来源，明确选择实际承载主机后确认；不按地址、名称或容器运行 ID 自动归并。来源按 Docker Engine ID、Compose 项目和服务唯一，即使停用也不能重复登记。同一部署后续导入新来源、改挂主机、修改名称或纳管意图均须显式带当前 `version` 完整更新。列表只接受 `page/page_size/search/node_id`，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名和附加 query。
+POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/service/fingerprint/display_name/enabled/declared_node_id`。服务端重读来源，验证 120 秒时效和预览事实摘要，再按来源键排序、整批事务写入；任何来源过期、变化、重复、主机无效或写入失败均整批回滚。摘要不含每次刷新时间，不代替持久资源版本。确认后的规范快照为 `addp.engine-deployment-inventory/v1`；旧根记录由前向迁移规范化，不改稳定身份、版本或不可变历史。
+
+来源按 Docker Engine ID、Compose 项目和服务唯一，停用也不可重复登记。PUT 仅接受名称、纳管意图、主机与当前 `version`，不接受客户端重写来源；实时运行变化由发现结果表达。列表只接受 `page/page_size/search/node_id`，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名及附加 query。结果未知或来源变化时保留草稿并停止提交，必须显式重读核对，不自动重试创建。
 
 创建与更新在同一 PostgreSQL 事务保存根版本、声明有效区间及统一审计；并发旧版本返回 409，不自动刷新版本重试。声明时间统一取数据库时间，表示管理员声明的生效/结束时刻，不能回填为实际部署历史。闭合历史不可更改或删除；首批不物理删除部署。读取在同一快照核对当前主机和部署纳管状态：有效关联为 `bound`，停用或 Desktop 主机类型变化为 `rejected`，保留原声明；这些状态均不表示服务在线、专业指标采集成功或租户业务可用性，不参与业务 Ready。
 

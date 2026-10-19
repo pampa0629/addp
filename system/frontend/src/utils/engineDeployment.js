@@ -1,17 +1,16 @@
 const fields = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
-const invalid = () => { throw new Error('invalid_business_deployment') }
+const invalid = () => { throw new Error('invalid_engine_deployment') }
 export const isDeploymentUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value) && value !== '00000000-0000-0000-0000-000000000000'
 
-// A local preview of the sole Business export protocol. System remains the
-// authoritative validator; the file itself never establishes host identity.
-export function parseBusinessDeployment(raw) {
+// Validate the canonical server declaration; it is not a live observation.
+export function validateDeploymentInventory(value) {
+  const raw = JSON.stringify(value)
   if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 16384) invalid()
-  const value = JSON.parse(raw)
-  if (!fields(value, ['schema', 'observed_at', 'source', 'services']) || value.schema !== 'addp.business-deployment-inventory/v1'
+  if (!fields(value, ['schema', 'observed_at', 'source', 'services']) || value.schema !== 'addp.engine-deployment-inventory/v1'
     || typeof value.observed_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(value.observed_at)
     || !Number.isFinite(Date.parse(value.observed_at)) || new Date(value.observed_at).toISOString() !== value.observed_at.replace('Z', '.000Z')
-    || !fields(value.source, ['type', 'runtime', 'docker_engine_id', 'project']) || value.source.type !== 'docker_compose' || value.source.project !== 'business'
+    || !fields(value.source, ['type', 'runtime', 'docker_engine_id', 'project']) || value.source.type !== 'docker_compose' || !['business', 'addp-infra'].includes(value.source.project)
     || !['desktop_linux_vm', 'linux_docker'].includes(value.source.runtime) || typeof value.source.docker_engine_id !== 'string'
     || !/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$/u.test(value.source.docker_engine_id) || !Array.isArray(value.services) || value.services.length !== 1) invalid()
   const service = value.services[0]
@@ -26,6 +25,27 @@ export function parseBusinessDeployment(raw) {
   for (const port of container.published_ports) {
     if (!fields(port, ['address', 'port', 'container_port', 'protocol']) || typeof port.address !== 'string' || !port.address
       || /[^0-9a-f:.]/iu.test(port.address) || !Number.isSafeInteger(port.port) || port.port < 1 || port.port > 65535 || port.container_port !== 5432 || port.protocol !== 'tcp') invalid()
+  }
+  return value
+}
+
+export function validateDeploymentDiscovery(value) {
+  if (!value || !Array.isArray(value.scopes) || value.scopes.length !== 2 || !Array.isArray(value.candidates) || value.candidates.length > 128) invalid()
+  const seen = new Set()
+  for (const scope of value.scopes) {
+    if (!['infra','business'].includes(scope.scope) || seen.has(scope.scope) || !['available','unavailable','missing','unconfigured','stale'].includes(scope.state) || !Array.isArray(scope.services)) invalid()
+    seen.add(scope.scope)
+  }
+  const keys = new Set()
+  for (const item of value.candidates) {
+    const scope = value.scopes.find(scope => scope.scope === item.scope)
+    const source = scope?.source
+    const service = scope?.services.find(service => service.service === item.service)
+    const key = item.scope+'/'+item.service
+    if (!source || scope.state !== 'available' || !service || keys.has(key) || typeof item.service !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/u.test(item.service) || !/^[a-f0-9]{64}$/u.test(item.fingerprint) || typeof item.eligible !== 'boolean' || (item.deployment_id && !isDeploymentUUID(item.deployment_id))) invalid()
+    if (!item.eligible && !['unsupported_engine','unsupported_topology','not_running','sql_port_missing'].includes(item.reason)) invalid()
+    if (item.eligible && (service.service !== 'postgres' || service.engine_type !== 'postgresql' || service.containers.length !== 1 || service.containers[0].status !== 'running')) invalid()
+    keys.add(key)
   }
   return value
 }

@@ -5808,15 +5808,15 @@ const docTemplate = `{
                 "tags": [
                     "引擎部署 | Engine Deployments"
                 ],
-                "summary": "登记平台引擎部署 | Register platform engine deployment",
+                "summary": "批量确认自带引擎部署 | Confirm built-in engine deployments in a batch",
                 "parameters": [
                     {
-                        "description": "完整部署声明 | Complete deployment declaration",
+                        "description": "至多16个显式来源及主机确认 | Up to 16 explicit source and host confirmations",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentInput"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionRequest"
                         }
                     }
                 ],
@@ -5824,7 +5824,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeployment"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionResponse"
                         }
                     },
                     "400": {
@@ -15838,97 +15838,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.BusinessDeploymentContainer": {
-            "type": "object",
-            "properties": {
-                "container_id": {
-                    "type": "string"
-                },
-                "published_ports": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort"
-                    }
-                },
-                "restart_count": {
-                    "type": "integer"
-                },
-                "started_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.BusinessDeploymentInventory": {
-            "type": "object",
-            "properties": {
-                "observed_at": {
-                    "type": "string"
-                },
-                "schema": {
-                    "type": "string"
-                },
-                "services": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentService"
-                    }
-                },
-                "source": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.BusinessDeploymentPort": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "container_port": {
-                    "type": "integer"
-                },
-                "port": {
-                    "type": "integer"
-                },
-                "protocol": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.BusinessDeploymentService": {
-            "type": "object",
-            "properties": {
-                "containers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentContainer"
-                    }
-                },
-                "engine_type": {
-                    "type": "string"
-                },
-                "service": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.BusinessDeploymentSource": {
-            "type": "object",
-            "properties": {
-                "docker_engine_id": {
-                    "type": "string"
-                },
-                "project": {
-                    "type": "string"
-                },
-                "runtime": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.CapabilitiesView": {
             "type": "object",
             "properties": {
@@ -16091,6 +16000,12 @@ const docTemplate = `{
         "github_com_addp_system_internal_models.DeploymentDiscovery": {
             "type": "object",
             "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentCandidate"
+                    }
+                },
                 "scopes": {
                     "type": "array",
                     "items": {
@@ -16121,7 +16036,7 @@ const docTemplate = `{
                     }
                 },
                 "source": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource"
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentSource"
                 },
                 "state": {
                     "type": "string"
@@ -16137,7 +16052,7 @@ const docTemplate = `{
                 "published_ports": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort"
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentPort"
                     }
                 },
                 "restart_count": {
@@ -16567,7 +16482,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "inventory": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory"
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentInventory"
                 },
                 "node_id": {
                     "type": "string"
@@ -16580,13 +16495,15 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.EngineDeploymentInput": {
+        "github_com_addp_system_internal_models.EngineDeploymentAdmissionItem": {
             "type": "object",
             "required": [
                 "declared_node_id",
                 "display_name",
                 "enabled",
-                "inventory"
+                "fingerprint",
+                "scope",
+                "service"
             ],
             "properties": {
                 "declared_node_id": {
@@ -16598,8 +16515,104 @@ const docTemplate = `{
                 "enabled": {
                     "type": "boolean"
                 },
-                "inventory": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory"
+                "fingerprint": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentAdmissionRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentAdmissionItem"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentAdmissionResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeployment"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentCandidate": {
+            "type": "object",
+            "properties": {
+                "deployment_id": {
+                    "type": "string"
+                },
+                "eligible": {
+                    "type": "boolean"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentContainer": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "published_ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentPort"
+                    }
+                },
+                "restart_count": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentInventory": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentService"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentSource"
                 }
             }
         },
@@ -16626,13 +16639,63 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.EngineDeploymentPort": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "container_port": {
+                    "type": "integer"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentService": {
+            "type": "object",
+            "properties": {
+                "containers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeploymentContainer"
+                    }
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeploymentSource": {
+            "type": "object",
+            "properties": {
+                "docker_engine_id": {
+                    "type": "string"
+                },
+                "project": {
+                    "type": "string"
+                },
+                "runtime": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.EngineDeploymentUpdateRequest": {
             "type": "object",
             "required": [
                 "declared_node_id",
                 "display_name",
                 "enabled",
-                "inventory",
                 "version"
             ],
             "properties": {
@@ -16644,9 +16707,6 @@ const docTemplate = `{
                 },
                 "enabled": {
                     "type": "boolean"
-                },
-                "inventory": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory"
                 },
                 "version": {
                     "type": "integer"

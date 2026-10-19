@@ -2216,17 +2216,14 @@
     },
     "engineDeployments": {
       "title": "Platform engine deployments",
-      "create": "Register deployment",
+      "create": "Connect discovered engines",
       "details": "Engine deployment details",
       "name": "Deployment name",
       "search": "Search deployment names",
       "engine": "Engine type",
       "state": "Host association",
-      "observed": "Source exported at",
-      "inventory": "Deployment source inventory",
-      "import": "Import source file",
-      "fileHint": "Import the PostgreSQL source inventory exported from Business (JSON, up to 16 KiB).",
-      "snapshotHint": "This snapshot describes the export time. It does not confirm current availability or collection.",
+      "observed": "Source sampled at",
+      "snapshotHint": "This snapshot describes the admission time; it does not prove current availability or successful collection.",
       "runtime": "Runtime environment",
       "docker": "Docker engine identity",
       "container": "Container runtime identity",
@@ -2238,7 +2235,6 @@
       "reload": "Reload and review",
       "empty": "No registered engine deployments",
       "readFailed": "Could not read deployments. Refresh to retry.",
-      "invalidFile": "Invalid source file. Only a Business PostgreSQL single-container inventory without credentials or Tenant information is accepted.",
       "invalidForm": "Enter a name, import the source inventory and select its host.",
       "hostMismatch": "The host is missing, disabled or has an incompatible type. Review and select again.",
       "occupied": "This PostgreSQL service in the Docker engine is already registered. Find its existing deployment in the list.",
@@ -2255,7 +2251,28 @@
         "desktop_linux_vm": "Docker Desktop Linux VM",
         "linux_docker": "Linux Docker"
       },
-      "detailAction": "Deployment details"
+      "detailAction": "Deployment details",
+      "refreshDiscovery": "Reload sources",
+      "service": "Deployed service",
+      "discoveryStatus": "Admission status",
+      "noCandidates": "No discovered services",
+      "discoveryHint": "Select services and confirm their host. Only single-container PostgreSQL is supported; admission does not prove successful engine metrics collection.",
+      "sourceChanged": "Sources changed or expired. Reload, check and select again.",
+      "discoveryStates": {
+        "available": "Source available",
+        "unavailable": "Source unavailable",
+        "missing": "Source not published",
+        "unconfigured": "Discovery not configured",
+        "stale": "Source expired"
+      },
+      "candidateStates": {
+        "registered": "Connected",
+        "ready": "Ready to connect",
+        "unsupported_engine": "Component not supported yet",
+        "unsupported_topology": "Multiple containers not supported",
+        "not_running": "Not running",
+        "sql_port_missing": "SQL port unavailable"
+      }
     }
   },
   "roles": {

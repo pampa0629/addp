@@ -468,3 +468,6 @@ other = "Engine deployment operation failed"
 
 [system.iam.administrator_change_conflict]
 other = "The request is stale, the state has changed, or the action cannot be applied. Refresh and submit a new request."
+
+[system.engine_deployment.source_changed]
+other = "Deployment source changed or expired; reload and confirm again"

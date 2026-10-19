@@ -100,4 +100,44 @@ func TestEngineDeploymentPublicationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow("SELECT authorization_version FROM system.principals WHERE id=$1", principal).Scan(&repeated); err != nil || repeated != current {
 		t.Fatal("repeated migration changed version", err)
 	}
+	beforeAdmission, throughAdmission := migrationFilesBeforeAndThrough(t, "000224_platform_deployment_discovery_admission.up.sql")
+	if err := (&Runner{DSN: dsn, FS: beforeAdmission, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	const deployment = "20000000-0000-4000-8000-000000000001"
+	const node = "10000000-0000-4000-8000-000000000001"
+	if _, err := db.Exec(`INSERT INTO system.host_nodes VALUES($1,'VM','virtual','[]',true,'[]',1,now(),now())`, node); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.engine_deployments VALUES($1,'PG','postgresql',true,'{"schema":"addp.business-deployment-inventory/v1","source":{"type":"docker_compose","runtime":"linux_docker","docker_engine_id":"migration-daemon","project":"business"},"services":[{"service":"postgres","engine_type":"postgresql","containers":[]}]}',$2,7,now(),now())`, deployment, node); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.engine_deployment_declarations SELECT deployment_id,version,declared_node_id,inventory,enabled,updated_at,NULL FROM system.engine_deployments WHERE deployment_id=$1`, deployment); err != nil {
+		t.Fatal(err)
+	}
+	var priorMetadata, priorHistory string
+	if err := db.QueryRow(`SELECT (to_jsonb(d)-'inventory')::text FROM system.engine_deployments d WHERE deployment_id=$1`, deployment).Scan(&priorMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT to_jsonb(d)::text FROM system.engine_deployment_declarations d WHERE deployment_id=$1`, deployment).Scan(&priorHistory); err != nil {
+		t.Fatal(err)
+	}
+	catalogBefore := snapshot()
+	admissionRunner := &Runner{DSN: dsn, FS: throughAdmission, Root: DefaultMigrationsRoot}
+	for range 2 {
+		if err := admissionRunner.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var metadata, history, schema string
+	if err := db.QueryRow(`SELECT (to_jsonb(d)-'inventory')::text,inventory->>'schema' FROM system.engine_deployments d WHERE deployment_id=$1`, deployment).Scan(&metadata, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT to_jsonb(d)::text FROM system.engine_deployment_declarations d WHERE deployment_id=$1`, deployment).Scan(&history); err != nil {
+		t.Fatal(err)
+	}
+	if schema != "addp.engine-deployment-inventory/v1" || metadata != priorMetadata || history != priorHistory || snapshot() != catalogBefore {
+		t.Fatal("canonical admission migration changed identity, history or authorization")
+	}
+
 }

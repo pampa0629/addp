@@ -468,3 +468,6 @@ other = "引擎部署操作失败"
 
 [system.iam.administrator_change_conflict]
 other = "变更请求已失效、状态已变化或当前操作无法执行，请刷新后重新申请。"
+
+[system.engine_deployment.source_changed]
+other = "部署来源已变化或过期，请重新读取并核对"

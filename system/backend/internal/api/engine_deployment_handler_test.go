@@ -106,6 +106,10 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 	request("GET", path+"/BAD-UUID", "", 400)
 	request("GET", path+"/00000000-0000-4000-8000-000000000001?page=1", "", 400)
 	request("PUT", path+"/00000000-0000-4000-8000-000000000001", "{}", 400)
+	request("PUT", path+"/00000000-0000-4000-8000-000000000001", strings.TrimSuffix(engineDeploymentAPIInput(), "}")+`,"version":7}`, 400)
+	validAdmission := `{"items":[{"scope":"infra","service":"postgres","fingerprint":"` + strings.Repeat("a", 64) + `","display_name":"Postgres","enabled":true,"declared_node_id":"10000000-0000-4000-8000-000000000001"}]}`
+	request("POST", path, validAdmission, 409)
+	request("POST", path+"?", validAdmission, 400)
 	request("DELETE", path+"/00000000-0000-4000-8000-000000000001", "", 404)
 }
 
@@ -114,21 +118,21 @@ func engineDeploymentAPIInput() string {
 }
 func TestEngineDeploymentJSONAcceptsCanonicalCreateAndUpdate(t *testing.T) {
 	for _, update := range []bool{false, true} {
-		body := engineDeploymentAPIInput()
+		body := `{"items":[{"scope":"infra","service":"postgres","fingerprint":"` + strings.Repeat("a", 64) + `","display_name":"Postgres","enabled":true,"declared_node_id":"10000000-0000-4000-8000-000000000001"}]}`
 		if update {
-			body = strings.TrimSuffix(body, "}") + `,"version":7}`
+			body = `{"display_name":"Postgres","enabled":true,"declared_node_id":"10000000-0000-4000-8000-000000000001","version":7}`
 		}
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest("POST", "/", strings.NewReader(body))
 		if update {
 			var input models.EngineDeploymentUpdateRequest
-			if err := bindEngineDeployment(c, &input); err != nil || input.Version != 7 || input.Inventory.Services[0].Service != "postgres" {
+			if err := bindEngineDeployment(c, &input); err != nil || input.Version != 7 || input.DisplayName != "Postgres" {
 				t.Fatalf("canonical update: %+v %v", input, err)
 			}
 		} else {
-			var input models.EngineDeploymentInput
-			if err := bindEngineDeployment(c, &input); err != nil || input.DisplayName != "Postgres" || input.Enabled == nil || !*input.Enabled {
-				t.Fatalf("canonical create: %+v %v", input, err)
+			var input models.EngineDeploymentAdmissionRequest
+			if err := bindEngineDeployment(c, &input); err != nil || len(input.Items) != 1 || input.Items[0].Scope != "infra" {
+				t.Fatalf("canonical admission: %+v %v", input, err)
 			}
 		}
 	}

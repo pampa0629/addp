@@ -4,8 +4,8 @@ import "time"
 
 // EngineDeploymentInventory is a credential-free declaration, never a live observation or grant.
 type EngineDeploymentInventory struct {
-	Schema     string                      `json:"schema"`
-	ObservedAt string                      `json:"observed_at"`
+	Schema     string                    `json:"schema"`
+	ObservedAt string                    `json:"observed_at"`
 	Source     EngineDeploymentSource    `json:"source"`
 	Services   []EngineDeploymentService `json:"services"`
 }
@@ -16,14 +16,14 @@ type EngineDeploymentSource struct {
 	Project        string `json:"project"`
 }
 type EngineDeploymentService struct {
-	Service    string                        `json:"service"`
-	EngineType string                        `json:"engine_type"`
+	Service    string                      `json:"service"`
+	EngineType string                      `json:"engine_type"`
 	Containers []EngineDeploymentContainer `json:"containers"`
 }
 type EngineDeploymentContainer struct {
-	ContainerID    string                   `json:"container_id"`
-	StartedAt      string                   `json:"started_at"`
-	RestartCount   int                      `json:"restart_count"`
+	ContainerID    string                 `json:"container_id"`
+	StartedAt      string                 `json:"started_at"`
+	RestartCount   int                    `json:"restart_count"`
 	PublishedPorts []EngineDeploymentPort `json:"published_ports"`
 }
 type EngineDeploymentPort struct {
@@ -35,40 +35,40 @@ type EngineDeploymentPort struct {
 
 // EngineDeployment belongs to Platform operations, without Tenant Engine or data permissions.
 type EngineDeployment struct {
-	DeploymentID      string                      `gorm:"primaryKey;type:uuid" json:"deployment_id"`
-	DisplayName       string                      `gorm:"not null;size:255" json:"display_name"`
-	EngineType        string                      `gorm:"not null;size:50" json:"engine_type"`
-	Enabled           bool                        `gorm:"not null" json:"enabled"`
+	DeploymentID      string                    `gorm:"primaryKey;type:uuid" json:"deployment_id"`
+	DisplayName       string                    `gorm:"not null;size:255" json:"display_name"`
+	EngineType        string                    `gorm:"not null;size:50" json:"engine_type"`
+	Enabled           bool                      `gorm:"not null" json:"enabled"`
 	Inventory         EngineDeploymentInventory `gorm:"serializer:json;type:jsonb;not null" json:"inventory"`
-	DeclaredNodeID    string                      `gorm:"type:uuid;not null" json:"declared_node_id"`
-	Version           int64                       `gorm:"not null" json:"version"`
-	CreatedAt         time.Time                   `gorm:"autoCreateTime:false" json:"created_at"`
-	UpdatedAt         time.Time                   `gorm:"autoUpdateTime:false" json:"updated_at"`
-	NodeID            string                      `gorm:"-" json:"node_id"`
-	HostBindingState  string                      `gorm:"-" json:"host_binding_state"`
-	HostBindingReason string                      `gorm:"-" json:"host_binding_reason"`
+	DeclaredNodeID    string                    `gorm:"type:uuid;not null" json:"declared_node_id"`
+	Version           int64                     `gorm:"not null" json:"version"`
+	CreatedAt         time.Time                 `gorm:"autoCreateTime:false" json:"created_at"`
+	UpdatedAt         time.Time                 `gorm:"autoUpdateTime:false" json:"updated_at"`
+	NodeID            string                    `gorm:"-" json:"node_id"`
+	HostBindingState  string                    `gorm:"-" json:"host_binding_state"`
+	HostBindingReason string                    `gorm:"-" json:"host_binding_reason"`
 }
 
 func (EngineDeployment) TableName() string { return "engine_deployments" }
 
 type EngineDeploymentInput struct {
-	DisplayName    string                      `json:"display_name" binding:"required"`
-	Enabled        *bool                       `json:"enabled" binding:"required"`
+	DisplayName    string                    `json:"display_name" binding:"required"`
+	Enabled        *bool                     `json:"enabled" binding:"required"`
 	Inventory      EngineDeploymentInventory `json:"inventory" binding:"required"`
-	DeclaredNodeID string                      `json:"declared_node_id" binding:"required"`
+	DeclaredNodeID string                    `json:"declared_node_id" binding:"required"`
 }
 type EngineDeploymentUpdateRequest struct {
-	DisplayName string `json:"display_name" binding:"required"`
-	Enabled *bool `json:"enabled" binding:"required"`
+	DisplayName    string `json:"display_name" binding:"required"`
+	Enabled        *bool  `json:"enabled" binding:"required"`
 	DeclaredNodeID string `json:"declared_node_id" binding:"required"`
-	Version int64 `json:"version" binding:"required,gt=0"`
+	Version        int64  `json:"version" binding:"required,gt=0"`
 }
 type EngineDeploymentAdmissionItem struct {
-	Scope string `json:"scope" binding:"required"`
-	Service string `json:"service" binding:"required"`
-	Fingerprint string `json:"fingerprint" binding:"required"`
-	DisplayName string `json:"display_name" binding:"required"`
-	Enabled *bool `json:"enabled" binding:"required"`
+	Scope          string `json:"scope" binding:"required"`
+	Service        string `json:"service" binding:"required"`
+	Fingerprint    string `json:"fingerprint" binding:"required"`
+	DisplayName    string `json:"display_name" binding:"required"`
+	Enabled        *bool  `json:"enabled" binding:"required"`
 	DeclaredNodeID string `json:"declared_node_id" binding:"required"`
 }
 type EngineDeploymentAdmissionRequest struct {
@@ -91,15 +91,15 @@ type EngineDeploymentFilter struct {
 
 // DeploymentDiscovery is a deployment-side snapshot, never a management grant.
 type DeploymentDiscovery struct {
-	Scopes []DeploymentDiscoveryScope `json:"scopes"`
+	Scopes     []DeploymentDiscoveryScope  `json:"scopes"`
 	Candidates []EngineDeploymentCandidate `json:"candidates"`
 }
 type EngineDeploymentCandidate struct {
-	Scope string `json:"scope"`
-	Service string `json:"service"`
-	Fingerprint string `json:"fingerprint"`
-	Eligible bool `json:"eligible"`
-	Reason string `json:"reason"`
+	Scope        string `json:"scope"`
+	Service      string `json:"service"`
+	Fingerprint  string `json:"fingerprint"`
+	Eligible     bool   `json:"eligible"`
+	Reason       string `json:"reason"`
 	DeploymentID string `json:"deployment_id,omitempty"`
 }
 type DeploymentDiscoveryScope struct {
@@ -108,7 +108,7 @@ type DeploymentDiscoveryScope struct {
 	State      string                        `json:"state"`
 	ObservedAt string                        `json:"observed_at,omitempty"`
 	Reason     string                        `json:"reason,omitempty"`
-	Source     *EngineDeploymentSource     `json:"source,omitempty"`
+	Source     *EngineDeploymentSource       `json:"source,omitempty"`
 	Services   []DiscoveredDeploymentService `json:"services"`
 }
 type DiscoveredDeploymentService struct {
@@ -117,9 +117,9 @@ type DiscoveredDeploymentService struct {
 	Containers []DiscoveredDeploymentContainer `json:"containers"`
 }
 type DiscoveredDeploymentContainer struct {
-	ContainerID    string                   `json:"container_id"`
-	Status         string                   `json:"status"`
-	StartedAt      string                   `json:"started_at"`
-	RestartCount   int                      `json:"restart_count"`
+	ContainerID    string                 `json:"container_id"`
+	Status         string                 `json:"status"`
+	StartedAt      string                 `json:"started_at"`
+	RestartCount   int                    `json:"restart_count"`
 	PublishedPorts []EngineDeploymentPort `json:"published_ports"`
 }

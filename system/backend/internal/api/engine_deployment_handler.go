@@ -42,9 +42,12 @@ func (h *EngineDeploymentHandler) Discovery(c *gin.Context) {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
-	value:=h.discovery.Read(c.Request.Context())
-	if err:=h.service.MarkRegisteredDiscovery(c.Request.Context(),&value);err!=nil {engineDeploymentError(c,err);return}
-	c.JSON(http.StatusOK,value)
+	value := h.discovery.Read(c.Request.Context())
+	if err := h.service.MarkRegisteredDiscovery(c.Request.Context(), &value); err != nil {
+		engineDeploymentError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, value)
 }
 
 func engineDeploymentActor(c *gin.Context) (int64, error) {
@@ -73,7 +76,7 @@ func engineDeploymentError(c *gin.Context, err error) {
 	case errors.Is(err, repository.ErrDeploymentHostUnavailable):
 		status, key, code = 409, "host_unavailable", "engine_deployment_host_unavailable"
 	case errors.Is(err, service.ErrDeploymentSourceChanged):
-		status,key,code=409,"source_changed","engine_deployment_source_changed"
+		status, key, code = 409, "source_changed", "engine_deployment_source_changed"
 	case errors.Is(err, commonapi.ErrUnauthorized), errors.Is(err, commonapi.ErrForbidden):
 		respondIAMError(c, err)
 		return
@@ -160,7 +163,7 @@ func (h *EngineDeploymentHandler) Get(c *gin.Context) {
 		engineDeploymentError(c, err)
 		return
 	}
-	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || c.Request.ContentLength != 0 {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
@@ -196,7 +199,7 @@ func (h *EngineDeploymentHandler) Create(c *gin.Context) {
 	}
 	var input models.EngineDeploymentAdmissionRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32768)
-	if c.Request.URL.RawQuery != "" || bindEngineDeployment(c, &input) != nil {
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || bindEngineDeployment(c, &input) != nil {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
@@ -234,7 +237,7 @@ func (h *EngineDeploymentHandler) Update(c *gin.Context) {
 	}
 	var input models.EngineDeploymentUpdateRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32768)
-	if c.Request.URL.RawQuery != "" || bindEngineDeployment(c, &input) != nil {
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || bindEngineDeployment(c, &input) != nil {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}

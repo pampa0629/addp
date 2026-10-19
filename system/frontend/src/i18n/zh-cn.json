@@ -2216,17 +2216,14 @@
     },
     "engineDeployments": {
       "title": "平台引擎部署",
-      "create": "登记引擎部署",
+      "create": "接入发现的引擎",
       "details": "引擎部署详情",
       "name": "部署名称",
       "search": "搜索部署名称",
       "engine": "引擎类型",
       "state": "主机关联状态",
-      "observed": "来源导出时间",
-      "inventory": "部署来源清单",
-      "import": "导入来源文件",
-      "fileHint": "从 Business 部署目录导出 PostgreSQL 来源清单后导入（JSON，最多 16 KiB）。",
-      "snapshotHint": "以下是导出时的部署快照；不代表当前在线或已开始采集。",
+      "observed": "来源采样时间",
+      "snapshotHint": "这是接入确认时的来源快照；不代表当前在线或已开始采集。",
       "runtime": "运行环境",
       "docker": "Docker 引擎标识",
       "container": "容器运行标识",
@@ -2238,7 +2235,6 @@
       "reload": "重新读取并核对",
       "empty": "尚未登记引擎部署",
       "readFailed": "读取部署失败，请刷新重试",
-      "invalidFile": "来源文件无效，仅接受 Business 导出的 PostgreSQL 单容器清单，且不得包含凭据或租户信息",
       "invalidForm": "请填写部署名称、导入来源清单并选择承载主机",
       "hostMismatch": "主机不存在、已停用或类型不匹配，请核对后重新选择",
       "occupied": "该 Docker 引擎中的 PostgreSQL 服务已登记，请在列表中查看已有部署",
@@ -2255,7 +2251,28 @@
         "desktop_linux_vm": "Docker Desktop Linux 虚拟机",
         "linux_docker": "Linux Docker"
       },
-      "detailAction": "部署详情"
+      "detailAction": "部署详情",
+      "refreshDiscovery": "重新读取来源",
+      "service": "部署服务",
+      "discoveryStatus": "接入状态",
+      "noCandidates": "尚未发现可展示的服务",
+      "discoveryHint": "选择服务并核对承载主机后确认接入。当前仅支持单容器 PostgreSQL；接入不代表已开始专业指标采集。",
+      "sourceChanged": "来源已变化或过期，请重新读取后核对并选择。",
+      "discoveryStates": {
+        "available": "来源读取成功",
+        "unavailable": "来源不可用",
+        "missing": "尚未生成来源",
+        "unconfigured": "尚未配置发现来源",
+        "stale": "来源已过期"
+      },
+      "candidateStates": {
+        "registered": "已接入",
+        "ready": "可接入",
+        "unsupported_engine": "此组件尚未适配",
+        "unsupported_topology": "暂不支持多容器部署",
+        "not_running": "当前未运行",
+        "sql_port_missing": "缺少可用的 SQL 端口"
+      }
     }
   },
   "roles": {
