@@ -331,10 +331,15 @@ def terminate_observer(record):
     if state == 'foreign':
         raise InventoryError('部署发现 PID 不属于当前工作区，拒绝停止')
     if state == 'owned':
-        os.kill(record['pid'], signal.SIGTERM)
+        try:
+            os.kill(record['pid'], signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # Exit may race the signal; absence still has to be verified.
         for _ in range(100):
             state = observer_state(record)
-            if state != 'owned':
+            # ps can lose command identity while the signaled process exits.
+            # Only observe after the first signal: never signal a foreign PID.
+            if state == 'absent':
                 break
             time.sleep(0.05)
         if state != 'absent':

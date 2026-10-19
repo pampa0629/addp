@@ -292,6 +292,36 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class ObserverLifecycleTests(unittest.TestCase):
+    def test_signal_exit_waits_through_transient_foreign_observation_without_another_signal(self):
+        record = {'pid': 2147483647}
+        with patch.object(inventory, 'observer_state', side_effect=['owned', 'foreign', 'absent']), \
+                patch.object(inventory.os, 'kill') as kill, patch.object(inventory.time, 'sleep'):
+            inventory.terminate_observer(record)
+        kill.assert_called_once_with(record['pid'], inventory.signal.SIGTERM)
+
+    def test_disappearance_before_signal_is_rechecked_before_cleanup(self):
+        record = {'pid': 2147483647}
+        with patch.object(inventory, 'observer_state', side_effect=['owned', 'absent']), \
+                patch.object(inventory.os, 'kill', side_effect=ProcessLookupError) as kill:
+            inventory.terminate_observer(record)
+        kill.assert_called_once_with(record['pid'], inventory.signal.SIGTERM)
+
+    def test_persistent_foreign_observation_after_signal_retains_runtime_record(self):
+        inventory.private_directory(self.directory)
+        record = {'pid': 2147483647, 'token': 'a'*32, 'script': str(Path(inventory.__file__).resolve()),
+                  'directory': str(self.directory.resolve()), 'configuration': 'b'*64}
+        inventory.write_document(self.directory, 'observer.json', record)
+        states = iter(['owned'] + ['foreign']*100)
+        try:
+            with patch.object(inventory, 'observer_state', side_effect=lambda _: next(states)), \
+                    patch.object(inventory.os, 'kill') as kill, patch.object(inventory.time, 'sleep'):
+                with self.assertRaisesRegex(ValueError, '尚未退出'):
+                    inventory.stop_observer(self.directory)
+            kill.assert_called_once_with(record['pid'], inventory.signal.SIGTERM)
+            self.assertEqual(inventory.observer_record(self.directory.resolve()), record)
+        finally:
+            (self.directory/'observer.json').unlink(missing_ok=True)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-discovery-observer-')
         self.addCleanup(self.temp.cleanup)
