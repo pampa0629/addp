@@ -1332,6 +1332,9 @@ func TestBuildTableTransferPlanDelimitedHeaderPrecedence(t *testing.T) {
 			{name: "meta-true", meta: map[string]interface{}{"has_header": true}, want: true},
 			{name: "explicit-false", meta: map[string]interface{}{"has_header": true}, options: map[string]interface{}{"header": false}},
 			{name: "explicit-true", meta: map[string]interface{}{"has_header": false}, options: map[string]interface{}{"header": true}, want: true},
+			{name: "explicit-false-over-invalid-meta", meta: map[string]interface{}{"has_header": "true"}, options: map[string]interface{}{"header": false}},
+			{name: "explicit-true-over-null-meta", meta: map[string]interface{}{"has_header": nil}, options: map[string]interface{}{"header": true}, want: true},
+			{name: "invalid-task-value-inherits-meta", meta: map[string]interface{}{"has_header": false}, options: map[string]interface{}{"header": "true"}},
 			{name: "native-string-rejected", meta: map[string]interface{}{"has_header": "false"}, invalid: true},
 			{name: "native-null-rejected", meta: map[string]interface{}{"has_header": nil}, invalid: true},
 		} {

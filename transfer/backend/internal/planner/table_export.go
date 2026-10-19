@@ -1025,9 +1025,20 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, err
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
-		if (sourceFormat == format.FormatCSV || sourceFormat == format.FormatTSV) && stringValue(endpoint.Options, "encoding") == "" {
-			if encoding := commonJSON.String(endpoint.Attributes, "format_info."+string(sourceFormat), "encoding"); encoding != "" {
-				parseOptions.Encoding = encoding
+		if sourceFormat == format.FormatCSV || sourceFormat == format.FormatTSV {
+			if stringValue(endpoint.Options, "encoding") == "" {
+				if encoding := commonJSON.String(endpoint.Attributes, "format_info."+string(sourceFormat), "encoding"); encoding != "" {
+					parseOptions.Encoding = encoding
+				}
+			}
+			if _, explicit := endpoint.Options["header"].(bool); !explicit {
+				header, err := format.HeaderModeFromOptions(commonJSON.Section(endpoint.Attributes, "type_info.table.native"))
+				if err != nil {
+					return executor.TableSourcePlan{}, fmt.Errorf("invalid source table header declaration: %w", err)
+				}
+				if header != nil {
+					parseOptions.HasHeader = *header
+				}
 			}
 		}
 		if err := applyContainerChildParseOptions(endpoint, itemDescriptor, parseOptions); err != nil {
