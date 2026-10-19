@@ -715,7 +715,12 @@ test-build-registration: ## 验证产品镜像构建登记与影响范围选择
 	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-infra-minio-cache
+test-infra-minio-cache: ## 验证 MinIO 构建缓存输入、隔离和失败传播契约
+	@python3 -m unittest scripts/ci/minio-build-cache_test.py
+
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
 	@$(MAKE) test-dev-lifecycle
 	@$(MAKE) test-infra-backup

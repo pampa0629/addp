@@ -1,0 +1,43 @@
+name: Prepare Infra MinIO build cache
+description: Restore and verify fixed-source MinIO build stages in a disposable Linux runner.
+inputs:
+  require-hit:
+    description: Require a previously saved cache in a fresh verification runner.
+    default: 'false'
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Identify MinIO build inputs
+      id: inputs
+      shell: bash
+      run: python3 scripts/ci/minio-build-cache.py key --cache-dir "$RUNNER_TEMP/addp-minio-build-cache" >> "$GITHUB_OUTPUT"
+    - name: Restore exact MinIO build cache
+      id: cache
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ runner.temp }}/addp-minio-build-cache
+        key: ${{ steps.inputs.outputs.key }}
+        fail-on-cache-miss: ${{ inputs.require-hit }}
+    - name: Build and verify MinIO cache
+      shell: bash
+      env:
+        REQUIRE_HIT: ${{ inputs.require-hit }}
+      run: |
+        set -euo pipefail
+        arguments=()
+        case "$REQUIRE_HIT" in
+          true) arguments+=(--require-hit) ;;
+          false) ;;
+          *) echo 'require-hit must be true or false' >&2; exit 1 ;;
+        esac
+        python3 scripts/ci/minio-build-cache.py build --cache-dir "$RUNNER_TEMP/addp-minio-build-cache" "${arguments[@]}"
+    - name: Save verified MinIO build cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ runner.temp }}/addp-minio-build-cache
+        key: ${{ steps.inputs.outputs.key }}
+    - name: Remove transferred image archive before product deployment
+      shell: bash
+      run: python3 scripts/ci/minio-build-cache.py clean --cache-dir "$RUNNER_TEMP/addp-minio-build-cache"

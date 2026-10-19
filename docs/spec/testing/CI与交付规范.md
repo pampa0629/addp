@@ -14,6 +14,8 @@ Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-bas
 
 发布工作流安全审计统一由 `make test-workflow-security` 执行，并纳入本地 `test-platform` 与 CI 现有 System IAM required Job。唯一脚本固定 zizmor 1.28.0，只扫描 `.github/workflows/release-and-t2-gates.yml`，使用 auditor、medium 最低严重级别、关闭在线审计，不读取自定义配置或忽略标记；安装、扫描或输入收集失败必须阻断。首次运行需联网取得固定版本的二进制 wheel，使用临时虚拟环境且退出时清理；不依赖 ADDP 服务或数据库。
 
+Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使用原 Dockerfile 与 Infra Compose 构建最终镜像，缓存同时保存带 BuildKit inline 元数据的编译阶段和最终镜像，不改变 Server / mc 源码修订或验收断言。缓存键包含 Linux amd64、构建脚本及全部已跟踪 Infra 构建上下文；只恢复精确键，加载前核对归档摘要，加载后核对镜像身份和架构。热构建必须复用 Dockerfile RUN，并保持两个二进制摘要一致；缓存损坏、缺失的必需热验或构建失败均阻断。独立 Infra MinIO build cache 工作流在全新 Runner 核验复用，原样 Compose 构建仍实际执行。转移归档在产品部署前删除以释放磁盘，仅保存公开固定源码构建层，不保存身份、配置、业务数据或测试结果；构建缓存通过不代表业务 T4 通过。
+
 Workflow 只负责：
 
 - 触发条件与 owner 影响选择。

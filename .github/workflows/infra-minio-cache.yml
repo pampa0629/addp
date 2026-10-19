@@ -1,0 +1,73 @@
+name: Infra MinIO build cache
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/infra/**
+      - scripts/ci/minio-build-cache.py
+      - scripts/ci/minio-build-cache_test.py
+      - .github/actions/prepare-minio-build-cache/**
+      - .github/workflows/infra-minio-cache.yml
+      - docker-compose.infra.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/infra/**
+      - scripts/ci/minio-build-cache.py
+      - scripts/ci/minio-build-cache_test.py
+      - .github/actions/prepare-minio-build-cache/**
+      - .github/workflows/infra-minio-cache.yml
+      - docker-compose.infra.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    name: MinIO fixed-source build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify MinIO cache contracts
+        run: make test-infra-minio-cache
+      - uses: ./.github/actions/prepare-minio-build-cache
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: minio-cache-prepare-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-minio-cache-attempt.json
+          if-no-files-found: warn
+      - name: Summarize MinIO fixed-source build
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: MinIO fixed-source build
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-minio-cache-attempt.json
+  reuse:
+    name: MinIO cache on a fresh runner
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-minio-build-cache
+        with:
+          require-hit: 'true'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: minio-cache-reuse-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-minio-cache-attempt.json
+          if-no-files-found: warn
+      - name: Summarize MinIO fresh-runner cache verification
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: MinIO cache on a fresh runner
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-minio-cache-attempt.json

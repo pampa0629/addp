@@ -841,14 +841,14 @@ jobs:
             libsm6 libx11-6 libxext6 libxinerama1 libxrender1 libxcb1 libxslt1.1 \
             libgpgme11t64 libgpgmepp6t64 nfs-kernel-server
 
-      - name: Prepare fixed-source Infra MinIO build cache
-        uses: ./.github/actions/prepare-minio-build-cache
-
       - name: Validate Hosted Manager readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
           ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
         run: bash scripts/test/online-hosted-manager-gate.sh --check-only
+
+      - name: Prepare fixed-source Infra MinIO build cache
+        uses: ./.github/actions/prepare-minio-build-cache
 
       - name: Run Hosted Manager Online gate
         env:
@@ -863,6 +863,7 @@ jobs:
           name: online-t4-manager-internal-artifact-lineage-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            ${{ runner.temp }}/addp-minio-cache-attempt.json
             logs/
           if-no-files-found: warn
           retention-days: 14
