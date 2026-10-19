@@ -7,6 +7,18 @@ import { readFileSync } from 'node:fs'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
+function collectStaticChunks(bundle, roots) {
+  const pending = [...roots]
+  const chunks = new Map()
+  while (pending.length) {
+    const chunk = pending.pop()
+    if (!chunk || chunk.type !== 'chunk' || chunks.has(chunk.fileName)) continue
+    chunks.set(chunk.fileName, chunk)
+    chunk.imports.forEach(file => pending.push(bundle[file]))
+  }
+  return [...chunks.values()]
+}
+
 export default defineConfig(withModuleFrontend('graph', withFrontendTestIsolation('graph', {
   plugins: [
     vue(),
@@ -14,18 +26,19 @@ export default defineConfig(withModuleFrontend('graph', withFrontendTestIsolatio
     {
       name: 'graph-entry-load-boundary',
       generateBundle(_, bundle) {
-        const pending = Object.values(bundle).filter(item => item.type === 'chunk' && (
+        const entries = Object.values(bundle).filter(item => item.type === 'chunk' && item.isEntry)
+        for (const chunk of collectStaticChunks(bundle, entries)) {
+          if (Object.keys(chunk.modules).some(id => /\/element-plus\/es\/components\/(color-picker|date-picker|time-picker|tree-select)\//.test(id))) {
+            this.error(`Graph entry must load page-specific Element Plus controls on demand: ${chunk.fileName}`)
+          }
+        }
+        const definitions = Object.values(bundle).filter(item => item.type === 'chunk' && (
           item.isEntry || /\/src\/views\/(OntologyList|OntologyForm|OntologyDetail|KnowledgeGraphList)\.vue$/.test(item.facadeModuleId || '')
         ))
-        const visited = new Set()
-        while (pending.length) {
-          const chunk = pending.pop()
-          if (!chunk || chunk.type !== 'chunk' || visited.has(chunk.fileName)) continue
-          visited.add(chunk.fileName)
+        for (const chunk of collectStaticChunks(bundle, definitions)) {
           if (Object.keys(chunk.modules).some(id => /\/node_modules\/@antv\/g6(?:[/-])/.test(id))) {
             this.error(`Graph entry and definition pages must load G6 only through a graph view: ${chunk.fileName}`)
           }
-          chunk.imports.forEach(file => pending.push(bundle[file]))
         }
       }
     }
@@ -65,7 +78,6 @@ export default defineConfig(withModuleFrontend('graph', withFrontendTestIsolatio
       output: {
         manualChunks(id) {
           if (id.includes('/node_modules/@antv/')) return 'graph-vendor'
-          if (id.includes('/node_modules/element-plus/')) return 'element-vendor'
         }
       }
     }
