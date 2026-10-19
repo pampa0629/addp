@@ -10,8 +10,13 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson')
-SOURCES = ('source.geojson', 'invalid.geojson')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped')
+# Explicit coordinates are independent of the production matching algorithm.
+SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
+SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
+SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 
 
 class FixtureError(RuntimeError):
@@ -48,6 +53,59 @@ def invalid_polygons():
         'features': [{'type': 'Feature', 'properties': {'source_name': f'bow-{i}', 'grade': 7+i},
             'geometry': {'type': 'Polygon', 'coordinates': [[[x,30],[x+2,32],[x,32],[x+2,30],[x,30]]]}}
             for i, x in enumerate((120,124))]}
+
+
+def seed_snap(path, coordinates):
+    from osgeo import ogr, osr
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    dataset = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer = dataset.CreateLayer(path.stem, crs, ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn('source_name', ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn('grade', ogr.OFTInteger64))
+    for index, points in enumerate(coordinates):
+        feature = ogr.Feature(layer.GetLayerDefn())
+        feature.SetField('source_name', f'snap-{index}'); feature.SetField('grade', 10+index)
+        geometry = ogr.Geometry(ogr.wkbLineString)
+        for x, y in points: geometry.AddPoint_2D(x, y)
+        feature.SetGeometry(geometry)
+        if layer.CreateFeature(feature) != 0: raise FixtureError('cannot seed projected snap source')
+    dataset = None
+
+
+def validate_snap_features(features, expected=SNAP_EXPECTED):
+    if len(features) != len(expected): raise FixtureError('snap changed source row count')
+    for index, (feature, points) in enumerate(zip(features, expected)):
+        geometry = feature['geometry']
+        if (feature['properties'] != {'source_name': f'snap-{index}', 'grade': 10+index}
+            or geometry.get('type') != 'LineString'
+            or geometry.get('coordinates') != [list(point) for point in points]):
+            raise FixtureError('snap changed original-position coordinates, order or attributes')
+
+
+def verify_snap(path, expected):
+    from osgeo import ogr, osr
+    dataset = ogr.Open(str(path), 0)
+    if dataset is None or dataset.GetLayerCount() != 1: raise FixtureError('expected one projected GeoPackage layer')
+    layer = dataset.GetLayer(0); crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs): raise FixtureError('snap lost projected CRS')
+    schema = layer.GetLayerDefn()
+    if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())] != ['source_name','grade']
+        or schema.GetFieldDefn(1).GetType() != ogr.OFTInteger64):
+        raise FixtureError('snap changed the attribute schema')
+    features = []
+    for feature in layer:
+        geometry = feature.GetGeometryRef()
+        if geometry is None or geometry.GetCoordinateDimension() != 2 or not geometry.IsValid():
+            raise FixtureError('snap persisted invalid or non-XY geometry')
+        features.append({'properties': {key: feature.GetField(key) for key in ('source_name','grade')},
+                         'geometry': json.loads(geometry.ExportToJson())})
+    validate_snap_features(features, expected)
+    result = {**digest(path), 'feature_count': len(features), 'crs': 'EPSG:3857',
+              'layer_name': layer.GetName(), 'geometry_column': schema.GetGeomFieldDefn(0).GetName(),
+              'fields': ['grade','source_name']}
+    dataset = None
+    return result
 
 
 def validate_repaired(features):
@@ -93,6 +151,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'snapped.gpkg':
+        return validate_snap_features(features)
     if name == 'repaired.geojson':
         return validate_repaired(features)
     actual = []
@@ -116,6 +176,8 @@ def worker(action, root):
             raise FixtureError('refusing existing data')
         (root / 'source.geojson').write_text(json.dumps(linework(), sort_keys=True))
         (root / 'invalid.geojson').write_text(json.dumps(invalid_polygons(), sort_keys=True))
+        seed_snap(root / 'snap-input.gpkg', SNAP_INPUT)
+        seed_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -127,8 +189,13 @@ def worker(action, root):
         raise FixtureError('cannot load the fixture CRS')
     crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     results = {}
+    verify_snap(root / 'snap-input.gpkg', SNAP_INPUT)
+    verify_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'snapped.gpkg':
+            results[name] = verify_snap(path, SNAP_EXPECTED)
+            continue
         features = json.loads(path.read_text())['features']
         validate_features(name, features)
         dataset = ogr.Open(str(path), 0)
@@ -153,6 +220,25 @@ def runtime_worker(action, root):
     return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root)], input=Path(__file__).read_text()))
 
 
+def archive_physical_evidence(root, directory, result):
+    """Retain only this synthetic fixture's verified bytes for offline audit."""
+    archive = directory / 'topology-physical'
+    if archive.is_symlink() or (archive/'outputs').is_symlink():
+        raise FixtureError('physical archive must not follow symlinks')
+    (archive/'outputs').mkdir(parents=True, exist_ok=True)
+    for relative, expected in [*((name, result['sources'][name]) for name in SOURCES),
+                               *((f'outputs/{name}', result['targets'][name]) for name in TARGETS)]:
+        source, target = root/relative, archive/relative
+        actual = digest(source)
+        if any(actual[key] != expected[key] for key in ('sha256','size_bytes')):
+            raise FixtureError('physical source changed before evidence capture')
+        if target.exists() or target.is_symlink():
+            if digest(target) != actual: raise FixtureError('refusing to replace a different physical evidence snapshot')
+        else:
+            target.write_bytes(source.read_bytes())
+        if digest(target) != actual: raise FixtureError('physical evidence capture differs')
+
+
 def main(action):
     export = NFSExport('topology', command)
     secret = export.guard(os.environ)
@@ -166,6 +252,8 @@ def main(action):
         baseline.write_text(json.dumps(result))
     elif result['sources'] != json.loads(baseline.read_text())['sources']:
         raise FixtureError('source file changed')
+    else:
+        archive_physical_evidence(root, Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']), result)
     return result
 
 

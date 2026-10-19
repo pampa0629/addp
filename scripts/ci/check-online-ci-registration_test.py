@@ -183,7 +183,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "inputs.suite != 'vector-topology-persistence'"),
             (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-hosted-topology-gate_test.py'),
             (paths[3], '--suite vector-topology-persistence'), (paths[4], 'triggered_by'), (paths[7], 'browserAPIFromResponse('),
-            (paths[5], 'validate_features'), (paths[5], 'validate_repaired'), (paths[4], 'repair_geometry'), (paths[7], 'row.after_valid'), (paths[7], 'topology-source-lineage-raw.json'), (paths[6], 'root_squash'), (paths[7], 'getImageData'),
+            (paths[5], 'validate_features'), (paths[5], 'SNAP_EXPECTED'), (paths[5], 'verify_snap'), (paths[5], 'archive_physical_evidence'), (paths[7], 'graph, preview'), (paths[4], 'snap_geometry'), (paths[4], 'validate_failed_snap'), (paths[4], 'collapsed_snap_diagnostic'), (paths[4], 'scan_ids(client)'), (paths[7], 'decodePreviewEWKB'), (paths[7], 'snapCoordinates'), (paths[7], 'failed_execution_id'), (paths[5], 'validate_repaired'), (paths[4], 'repair_geometry'), (paths[7], 'row.after_valid'), (paths[7], 'topology-source-lineage-raw.json'), (paths[6], 'root_squash'), (paths[7], 'getImageData'),
             (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle')):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):

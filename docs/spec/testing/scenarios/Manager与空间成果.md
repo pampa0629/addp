@@ -50,7 +50,7 @@ MinIO 源变更复验继续使用该 suite 的现有隔离 Business MinIO 和固
 
 ## 拓扑构面双输出持久化（vector-topology-persistence）
 
-独立手工 Hosted Linux x86_64 T4，验收 `load → polygonize → save_faces / save_diagnostics`，以及独立自相交面源的 `load → check_geometry → repair_geometry → check_geometry → save_repaired`，两条计算分支在同一 execution 中执行，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
+独立手工 Hosted Linux x86_64 T4，验收 `load → polygonize → save_faces / save_diagnostics`、独立自相交面源的 `load → check_geometry → repair_geometry → check_geometry → save_repaired` 及下述参考吸附分支，三条计算分支在同一成功 execution 中执行，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
 
 System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，精确授予 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。执行使用既有 ad-hoc API，无任务定义编辑或引擎管理权限；Engine 登记身份与业务 User 分离，登记后移除基础设施 Token。入口和 Console 浏览器均核对同一 User、Tenant 与精确权限集合，拒绝管理员和多余权限。
 
@@ -68,7 +68,11 @@ GDAL 保存成果中的显式 CRS84 声明必须进入标准空间事实 `crs_re
 
 新增 `invalid.geojson` 含两条带业务属性的自相交面；`repaired.geojson` 必须一源要素一行、每行精确两个三角面，保留 source_name/grade，修复前 false 和自交原因、复查后 true/Valid Geometry 均须物理和预览核对。两份源文件的内容与 Meta 事实在浏览器访问前后不变；不增加 User 权限、等待预算或手工补扫。旧双输出版本的真实 T4 证据仍只证明原范围，不外推本次增强。
 
-增强版最终报告使用 `addp.vector-topology-persistence/v2` 与 `addp.topology-browser/v2`；浏览器按本次导航的真实请求身份读取两源 Meta 和三个当前 active derive 原始图，归档到 `topology-source-lineage-raw.json`，不跨导航持有旧 Token。
+浏览器按本次导航的真实请求身份读取源 Meta 和当前 active derive 原始图，归档到 `topology-source-lineage-raw.json`，不跨导航持有旧 Token。当前增强版报告版本和新增参考吸附范围见下文。
+
+参考吸附扩展沿用同一 suite、原 11 项权限、独占 Hosted 生命周期和 600 秒业务预算，不增加入口或 schedule。新增 `snap-input.gpkg` 与 `snap-reference.gpkg` 两份单图层 EPSG:3857 米制源；同一成功 execution 追加双 `load → snap_geometry(tolerance=0.75) → save(mode=fail)`，生成第四份成果 `snapped.gpkg`。固定五条输入线和六条参考线，独立坐标期望核对原始位置最近匹配、0→0.5→1 链不越界、恰在容差边界不动、等距按 X/Y 决胜、不向参考线段投影且不插删点；保留 source_name/grade、行序、部件及投影 CRS。GeoPackage 保留原始投影坐标，不借转换到经纬度代替几何核验；Meta 文件须为 single/container/geopackage，图层事实保留在容器内。
+
+第四份成果须严格核对物理与 Meta 正整数大小、一次同 User/Tenant 的精确自动扫描、两个吸附源与本次 execution 的 active derive、Monitor、容器图层 EWKB 原始坐标和真实 OpenLayers 要素／像素／截图；四份源及全部既有成果在浏览器前后不变。另执行 tolerance=1.25 的失败 DAG，末条线双端吸到同一点导致塌缩，必须整批失败且保存未执行；不得出现失败成果、自动扫描或任何源／既有成果变化。失败执行状态与 Monitor 也须绑定同一用户。最终报告唯一版本升为 `addp.vector-topology-persistence/v3`、`addp.topology-browser/v3` 和 `addp.topology-checkpoint/v3`，原始血缘归档覆盖四源、第四份成果的双来源及各次实际预览响应；`topology-physical/` 保留四份合成源和四份已核验成果原文件，按 SHA/大小核对且拒绝覆盖不同证据，支持下载后独立 GDAL 复核。归档不属于已清理的 NFS 业务目录；incomplete 仍不可替代最终通过。此前构面／几何修复 T4 只证明原范围，本扩展在真实 Hosted 通过前不得计入参考吸附 T4。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费
 

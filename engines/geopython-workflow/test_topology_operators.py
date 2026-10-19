@@ -214,12 +214,18 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         {'id': 'recheck', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'repair'}, 'valid_field': 'after_valid', 'reason_field': 'after_reason'}, 'depends_on': ['repair']},
         {'id': 'save_repaired', 'operator': 'save', 'params': {'input_df': {'$ref': 'recheck'}, 'connection_info': connection, 'path': 'outputs/repaired.geojson', 'mode': 'fail'}, 'depends_on': ['recheck']},
     ])
+    tasks.extend([
+        {'id': 'snap_input', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'snap-input.gpkg'}, 'depends_on': []},
+        {'id': 'snap_reference', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'snap-reference.gpkg'}, 'depends_on': []},
+        {'id': 'snap', 'operator': 'snap_geometry', 'params': {'input_gdf': {'$ref': 'snap_input'}, 'reference_gdf': {'$ref': 'snap_reference'}, 'tolerance': .75}, 'depends_on': ['snap_input','snap_reference']},
+        {'id': 'save_snapped', 'operator': 'save', 'params': {'input_df': {'$ref': 'snap'}, 'connection_info': connection, 'path': 'outputs/snapped.gpkg', 'mode': 'fail'}, 'depends_on': ['snap']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2]
-    for name in fixture.TARGETS:
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5]
+    for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
         content = json.loads(original)
@@ -233,6 +239,36 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         with pytest.raises(fixture.FixtureError):
             fixture.worker('verify', tmp_path)
         path.write_bytes(original)
+
+
+    # Corrupt the real GeoPackage, not an in-memory mock of the snap result.
+    from osgeo import ogr, osr
+    path = tmp_path / 'outputs/snapped.gpkg'; original = path.read_bytes()
+    for problem in ('chain', 'boundary', 'tie', 'insert', 'attribute', 'crs', 'count'):
+        dataset = ogr.Open(str(path), 1); layer = dataset.GetLayer(0)
+        if problem == 'crs':
+            dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem == 'count':
+            layer.DeleteFeature(1)
+        else:
+            feature = layer.GetFeature(1 if problem in ('chain','insert','attribute') else 2 if problem=='boundary' else 3)
+            if problem == 'attribute': feature.SetField('grade', 999)
+            else:
+                coordinates = [[1,0],[10,0]] if problem=='chain' else [[.75,10],[10,10]] if problem=='boundary' else [[.5,20],[10,20]] if problem=='tie' else [[.5,0],[1,0],[10,0]]
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':coordinates})))
+            layer.SetFeature(feature)
+        dataset = None
+        with pytest.raises(fixture.FixtureError): fixture.worker('verify', tmp_path)
+        path.write_bytes(original)
+    baseline = fixture.worker('verify', tmp_path)
+    failed_tasks = tasks[-4:]
+    failed_tasks[2]['params']['tolerance'] = 1.25
+    failed_tasks[3]['params']['path'] = 'outputs/failed-snap.gpkg'
+    failed = execute_workflow({'tasks': failed_tasks})
+    assert failed['status'] == 'failed'
+    assert 'snapping produced invalid geometries' in str(failed)
+    assert not (tmp_path/'outputs/failed-snap.gpkg').exists()
+    assert fixture.worker('verify', tmp_path) == baseline
 
 
 # Single-feature validity is distinct from polygonize's whole-network face building.

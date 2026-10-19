@@ -11,6 +11,10 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'snapped.gpkg':
+        return [{'geometry': {'type': 'LineString', 'coordinates': [list(point) for point in points]},
+                 'properties': {'source_name': f'snap-{index}', 'grade': 10+index}}
+                for index, points in enumerate(m.SNAP_EXPECTED)]
     if name == 'repaired.geojson':
         return [{'geometry': {'type': 'MultiPolygon', 'coordinates': [
             [[[x,30],[x+2,30],[x+1,31],[x,30]]], [[[x,32],[x+2,32],[x+1,31],[x,32]]]]},
@@ -79,3 +83,33 @@ class TopologyFixtureTest(unittest.TestCase):
         with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='topology-1-1'), patch.object(m, 'command', return_value=json.dumps([info])) as command:
             with self.assertRaises(m.FixtureError): m.runtime_worker('verify', Path('/tmp/owned'))
             self.assertEqual(command.call_count, 1)
+
+    def test_snap_oracle_rejects_chain_boundary_tie_insertions_order_and_attributes(self):
+        original = records('snapped.gpkg')
+        m.validate_snap_features(original)
+        for mutate in (
+            lambda rows: rows[0]['geometry']['coordinates'][0].__setitem__(0, 1),
+            lambda rows: rows[1]['geometry']['coordinates'][0].__setitem__(0, .75),
+            lambda rows: rows[2]['geometry']['coordinates'][0].__setitem__(0, .5),
+            lambda rows: rows[0]['geometry']['coordinates'].insert(1, [1,0]),
+            lambda rows: rows.reverse(),
+            lambda rows: rows[0]['properties'].update(grade=11),
+            lambda rows: rows.pop(),
+        ):
+            value = copy.deepcopy(original); mutate(value)
+            with self.subTest(mutate=mutate), self.assertRaises(m.FixtureError): m.validate_snap_features(value)
+
+    def test_physical_archive_retains_verified_bytes_and_refuses_changed_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory);root=base/'root';root.mkdir();(root/'outputs').mkdir()
+            result={'sources':{},'targets':{}}
+            for name in m.SOURCES:
+                (root/name).write_bytes(name.encode());result['sources'][name]=m.digest(root/name)
+            for name in m.TARGETS:
+                (root/'outputs'/name).write_bytes(name.encode());result['targets'][name]=m.digest(root/'outputs'/name)
+            m.archive_physical_evidence(root,base/'artifacts',result)
+            m.archive_physical_evidence(root,base/'artifacts',result)
+            target=base/'artifacts'/'topology-physical'/'outputs'/'snapped.gpkg'
+            self.assertEqual(target.read_bytes(),b'snapped.gpkg')
+            target.write_bytes(b'corrupted')
+            with self.assertRaises(m.FixtureError):m.archive_physical_evidence(root,base/'artifacts',result)
