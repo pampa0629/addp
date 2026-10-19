@@ -1226,3 +1226,18 @@ func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 		t.Fatal("source authorization is outside GaussDB admission")
 	}
 }
+
+func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
+	permissions, err := suitePermissions("starrocks-consumer-flow")
+	expected := append(append([]string{}, redisConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	if err != nil || !reflect.DeepEqual(permissions, expected) || !needsEngineProvisioner("starrocks-consumer-flow") {
+		t.Fatal("minimal ordinary consumer plus independent Engine provisioner required")
+	}
+	values := consumerEnvironment("starrocks-consumer-flow", 2, "consumer-token", "private-password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" {
+		t.Fatal("same browser consumer User required")
+	}
+	if _, ok := values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; ok {
+		t.Fatal("source authorization is outside read-only fixture scope")
+	}
+}

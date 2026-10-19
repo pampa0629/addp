@@ -83,6 +83,7 @@ class OnlineGateTest(unittest.TestCase):
                 "redis-consumer-flow",
                 "highgo-consumer-flow",
                 "gaussdb-consumer-flow",
+                "starrocks-consumer-flow",
                 "enterprise-catalog-publishing",
                 "kingbase-consumer-flow",
                 "manager-internal-artifact-lineage",
@@ -121,8 +122,12 @@ class OnlineGateTest(unittest.TestCase):
         )
         gaussdb = ONLINE_GATE.SUITES["gaussdb-consumer-flow"]
         self.assertFalse(gaussdb.nightly)
-        self.assertEqual(gaussdb.command, (sys.executable, "-m", "scripts.test.gaussdb-consumer-flow-online"))
+        self.assertEqual(gaussdb.command, (sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "gaussdb"))
         self.assertEqual(gaussdb.services, (("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"), ("develop", "DEVELOP_URL")))
+        starrocks = ONLINE_GATE.SUITES["starrocks-consumer-flow"]
+        self.assertFalse(starrocks.nightly)
+        self.assertEqual(starrocks.command, (sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "starrocks"))
+        self.assertEqual(starrocks.services, gaussdb.services)
         suite = ONLINE_GATE.SUITES["standard-model-reference-deletion"]
         elasticsearch_suite = ONLINE_GATE.SUITES["elasticsearch-consumer-flow"]
         self.assertEqual(

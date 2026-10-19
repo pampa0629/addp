@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-FLOW=import_module('scripts.test.gaussdb-consumer-flow-online')
+FLOW=import_module('scripts.test.readonly-sql-consumer-flow-online')
+PROFILE=FLOW.PROFILES['gaussdb']
 FIXTURE=import_module('business.scripts.online-gaussdb-consumer-fixture')
 
 
@@ -19,14 +20,14 @@ class GaussDBConsumerTest(unittest.TestCase):
             {'id':'2','name':'保留尾空格  ','amount':'-.000000000000000001','optional_text':None}]}}
 
     def test_exact_native_precision_and_nulls(self):
-        self.assertEqual(len(FLOW.validate_preview(self.sample())),2)
+        self.assertEqual(len(FLOW.validate_preview(self.sample(),PROFILE)),2)
 
     def test_rounded_integer_numeric_decimal_and_trimmed_text_rejected(self):
         for field,value,row in [('id',9007199254740992,0),('id','9007199254740992',0),('amount',123.5,0),('amount','12345678901234567890.1',0),('name','保留尾空格',1),('optional_text','',1)]:
             data=self.sample()
             data['data']['rows'][row][field]=value
             with self.subTest(field=field,value=value), self.assertRaises(FLOW.API.SuiteError):
-                FLOW.validate_preview(data)
+                FLOW.validate_preview(data,PROFILE)
 
     def test_scanned_item_requires_precise_schema_and_primary_key(self):
         item={'item_type':'table','full_name':'addp_acceptance.source','fingerprint':'demo',
@@ -36,7 +37,7 @@ class GaussDBConsumerTest(unittest.TestCase):
                       {'name':'name','type':'string','primary_key':True},
                       {'name':'amount','type':'decimal','precision':38,'scale':18},
                       {'name':'optional_text','type':'string'}]}}}}
-        FLOW.validate_item(item)
+        FLOW.validate_item(item,PROFILE)
         for change in ('precision','primary_key','type','uncertified','wrong_partition'):
             wrong=copy.deepcopy(item)
             if change=='precision':wrong['attributes']['type_info']['table']['fields'][2]['precision']=18
@@ -44,7 +45,7 @@ class GaussDBConsumerTest(unittest.TestCase):
             elif change=='primary_key':wrong['attributes']['type_info']['table']['primary_key']=[]
             elif change=='wrong_partition':wrong['attributes']['table']=wrong['attributes'].pop('type_info')['table']
             else:wrong['attributes']['capabilities']={'indexes':[],'indexing':{}}
-            with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):FLOW.validate_item(wrong)
+            with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):FLOW.validate_item(wrong,PROFILE)
 
     def test_workbench_evidence_requires_two_distinct_successful_exact_reads(self):
         report={'run_id':'run','tenant_id':2,'principal_id':'33','engine_id':17}
@@ -53,7 +54,7 @@ class GaussDBConsumerTest(unittest.TestCase):
         evidence={**report,'queries':[
             {'execution_id':'first','status':'success','effect':'read','rows':rows,'fields':fields},
             {'execution_id':'second','status':'success','effect':'read','rows':[{**row,'bound_text':"中文' OR 1=1 --"} for row in rows if int(row['id'])>=3],'fields':fields+[{'name':'bound_text','type':'string'}]}]}
-        FLOW.validate_browser_report(evidence,report)
+        FLOW.validate_browser_report(evidence,report,PROFILE)
         for change in ('identity','missing','duplicate','failed','write','precision','schema','schema_order','parameter','integer_filter'):
             bad=copy.deepcopy(evidence)
             if change=='identity':bad['principal_id']='other'
@@ -67,7 +68,7 @@ class GaussDBConsumerTest(unittest.TestCase):
             elif change=='integer_filter':bad['queries'][1]['rows'].append(rows[1])
             else:bad['queries'][1]['rows'][0]['bound_text']='rewritten'
             with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):
-                FLOW.validate_browser_report(bad,report)
+                FLOW.validate_browser_report(bad,report,PROFILE)
 
     def test_fixture_rejects_public_or_repository_state_before_docker(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -8,8 +8,8 @@ function required(name) {
   return process.env[name]
 }
 
-test('GaussDB SELECT-only source retains precise values and field facts in Console', async ({ page }) => {
-  const expected = JSON.parse(required('ADDP_ONLINE_GAUSSDB_EXPECTATIONS'))
+test('Read-only SQL SELECT-only source retains precise values and field facts in Console', async ({ page }) => {
+  const expected = JSON.parse(required('ADDP_ONLINE_READONLY_SQL_EXPECTATIONS'))
   const api = await request.newContext({ baseURL: required('GATEWAY_URL'), extraHTTPHeaders: {
     Authorization: `Bearer ${required('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN')}`
   } })
@@ -31,13 +31,13 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
     await expect(manager.getByRole('treeitem', { name: 'source', exact: true })).toBeVisible()
     await manager.getByRole('treeitem', { name: 'source', exact: true }).click()
     await manager.getByRole('tab', { name: /^(预览|Preview)$/ }).click()
-    await expect(manager.getByText('addp_acceptance/source - 数据预览', { exact: true })).toBeVisible()
+    await expect(manager.getByText(`${expected.namespace}/source - 数据预览`, { exact: true })).toBeVisible()
     await expect(manager.getByText('共 2 行', { exact: true })).toBeVisible()
-    for (const value of ['9007199254740993', '12345678901234567890.123456789012345678', '高斯正式接入中文']) {
+    for (const value of ['9007199254740993', '12345678901234567890.123456789012345678', expected.sample_name]) {
       await expect(manager.getByRole('cell', { name: value, exact: true })).toBeVisible()
     }
     await expect(manager.getByText('数据预览失败', { exact: true })).toHaveCount(0)
-    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'gaussdb-preview-console.png') })
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `${expected.engine_type}-preview-console.png`) })
     await manager.getByRole('tab', { name: /^(属性|Attributes)$/ }).click()
     await manager.getByRole('button', { name: /^(查看 JSON|View JSON)$/ }).click()
     const dialog = manager.getByRole('dialog', { name: '完整属性 JSON', exact: true })
@@ -45,7 +45,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
     const attrs = JSON.parse(await dialog.locator('pre.attribute-json').innerText())
     expect(attrs.type_info.table.primary_key).toEqual(['name', 'id'])
     expect(attrs.type_info.table.fields.find(f => f.name === 'amount')).toMatchObject({ type: 'decimal', precision: 38, scale: 18 })
-    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'gaussdb-facts-console.png') })
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `${expected.engine_type}-facts-console.png`) })
     const engineResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines')
     await page.goto('/develop/sql?action=create')
     const engines = await engineResponse
@@ -53,7 +53,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       principalID: current.principalID, tenantID: current.tenantID, permissions: current.permissions
     })
     await workbenchAPI.dispose()
-    expect((await json(engines, 'Develop engines')).some(engine => engine.id === expected.engine_id && engine.engine_type === 'gaussdb')).toBe(true)
+    expect((await json(engines, 'Develop engines')).some(engine => engine.id === expected.engine_id && engine.engine_type === expected.engine_type)).toBe(true)
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(frame.locator('.engine-select')).toContainText(expected.engine_name)
     await expect(frame.locator('.toolbar-primary .el-tag')).toHaveText('SQL')
@@ -94,7 +94,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       }, { timeout: 120_000 })
       await frame.locator('.toolbar-actions').getByRole('button', { name: /^(执行|Execute)$/ }).click()
       if (parameterized) await frame.locator('.el-dialog').filter({ hasText: /执行参数|Execution Parameters/ }).getByRole('button', { name: /^(执行|Execute)$/ }).click()
-      const analysis = await json(await analyzed, 'GaussDB read preflight')
+      const analysis = await json(await analyzed, 'read-only SQL read preflight')
       expect(analysis.allowed).toBe(true)
       expect(analysis.effect).toBe('read')
       expect(analysis.diagnostics.filter(item => item.severity === 'error')).toEqual([])
@@ -105,16 +105,16 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       expect(body.execution_config.engine_id).toBe(expected.engine_id)
       const locator = new URL(body.content.target_locator)
       expect(locator.hostname).toBe('engine')
-      expect(decodeURIComponent(locator.pathname)).toBe(`/${expected.engine_id}/path/addp_acceptance/source`)
+      expect(decodeURIComponent(locator.pathname)).toBe(`/${expected.engine_id}/path/${expected.namespace}/source`)
       expect(locator.searchParams.get('type')).toBe('table')
       expect(body.content.query_parameters.map(({ name, type, default: value }) => ({ name, type, value }))).toEqual(parameterized ? [
         { name: 'text', type: 'string', value: textValue }, { name: 'minimum', type: 'integer', value: 3 }
       ] : [])
-      const started = await json(response, 'GaussDB workbench submission')
+      const started = await json(response, 'read-only SQL workbench submission')
       expect(started.execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
       const terminal = await finished
       expect(new URL(terminal.url()).pathname).toBe(`/api/v1/develop/executions/${started.execution_id}/result`)
-      const execution = await json(terminal, 'GaussDB query result')
+      const execution = await json(terminal, 'read-only SQL query result')
       expect(execution.execution_id).toBe(started.execution_id)
       expect(execution.status).toBe('success')
       expect(execution.metadata.result.result_kind).toBe('table')
@@ -135,16 +135,16 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       if (parameterized) expect(rows.every(row => row.bound_text === textValue)).toBe(true)
       const table = frame.locator('.query-result .result-table.el-table')
       await expect(table.locator('.el-table__body-wrapper tr')).toHaveCount(expectedRows.length)
-      for (const value of ['9007199254740993', '12345678901234567890.123456789012345678', '高斯正式接入中文']) {
+      for (const value of ['9007199254740993', '12345678901234567890.123456789012345678', expected.sample_name]) {
         await expect(table.getByRole('cell', { name: value, exact: true })).toBeVisible()
       }
       if (parameterized) await expect(table).toContainText(textValue)
-      await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `gaussdb-query-${parameterized ? 'parameters' : 'source'}-console.png`) })
+      await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `${expected.engine_type}-query-${parameterized ? 'parameters' : 'source'}-console.png`) })
       queries.push({ execution_id: started.execution_id, status: execution.status, effect: analysis.effect, rows, fields })
     }
-    await execute('SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id', false)
-    await execute('SELECT id,name,amount,optional_text,CAST(:text AS TEXT) AS bound_text FROM addp_acceptance.source WHERE id >= :minimum ORDER BY id', true)
-    writeFileSync(required('ADDP_ONLINE_GAUSSDB_BROWSER_REPORT'), JSON.stringify({ ...Object.fromEntries(
+    await execute(`SELECT id,name,amount,optional_text FROM ${expected.namespace}.source ORDER BY id`, false)
+    await execute(`SELECT id,name,amount,optional_text,CAST(:text AS ${expected.text_cast}) AS bound_text FROM ${expected.namespace}.source WHERE id >= :minimum ORDER BY id`, true)
+    writeFileSync(required('ADDP_ONLINE_READONLY_SQL_BROWSER_REPORT'), JSON.stringify({ ...Object.fromEntries(
       ['run_id', 'tenant_id', 'principal_id', 'engine_id'].map(key => [key, expected[key]])), queries }))
   } finally { await browserAPI.dispose() }
 })

@@ -432,11 +432,19 @@ test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及
 test-common-starrocks: ## 独占官方 StarRocks 验证原生目录、精度及受控只读边界
 	@bash scripts/test/common-starrocks-gate.sh
 
+.PHONY: test-starrocks-online-runner
+test-starrocks-online-runner: ## 验证 StarRocks 只读页面验收、原生边界及 Hosted 隔离清理
+	@python3 -m unittest scripts/test/starrocks-consumer-flow-online_test.py scripts/test/online-hosted-starrocks-gate_test.py scripts/test/online-gate_test.py
+	@node --check console/frontend/e2e/online/readonly-sql-consumer-flow.spec.js
+	@bash -n scripts/test/online-hosted-starrocks-gate.sh
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 .PHONY: test-common-gaussdb test-common-gaussdb-unit
 test-common-gaussdb-unit: ## GaussDB 只读能力、独立驱动与标准入口确定性验证
 	@cd common && GOWORK=off go test ./engine/plugins/gaussdb
 	@python3 -m unittest scripts/test/gaussdb-consumer-flow-online_test.py scripts/test/online-hosted-gaussdb-gate_test.py
-	@node --check console/frontend/e2e/online/gaussdb-consumer-flow.spec.js
+	@node --check console/frontend/e2e/online/readonly-sql-consumer-flow.spec.js
 	@bash -n scripts/test/common-gaussdb-gate.sh scripts/test/online-hosted-gaussdb-gate.sh
 
 test-common-gaussdb: ## 独占官方 GaussDB 验证 SELECT-only Provider 和读取集合
@@ -652,6 +660,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-starrocks-online-runner
 	@$(MAKE) test-common-gaussdb-unit
 	@$(MAKE) test-security-online-runner
 	@$(MAKE) test-highgo-online-runner
