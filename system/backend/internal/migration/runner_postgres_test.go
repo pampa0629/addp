@@ -2333,7 +2333,7 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if authorizationVersionAfter <= authorizationVersionBefore {
 		t.Fatalf("authorization version after catalog migrations = %d, want greater than %d", authorizationVersionAfter, authorizationVersionBefore)
 	}
-	assertManagerDataProfileAuthorizationCatalog(t, db, "ARRAY['tenant', 'department', 'project_group']::text[]")
+	assertManagerDataProfileAuthorizationCatalog(t, db, "ARRAY['tenant']::text[]")
 }
 
 func TestAssetPortalBoundaryForwardMigrationAgainstPostgres(t *testing.T) {
