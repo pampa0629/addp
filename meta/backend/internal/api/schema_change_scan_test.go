@@ -25,6 +25,7 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		t.Fatal(err)
 	}
 	request := map[string]interface{}{"source": "transfer", "engine_id": 9, "targets": []string{locator}, "scan_depth": "deep", "force": true, "schema_change_source": map[string]interface{}{"execution_id": id, "request_id": 61, "claim_token": token}}
+	caseLabel := "valid_applied_fact"
 	post := func(auth string, body map[string]interface{}, want int) string {
 		t.Helper()
 		data, _ := json.Marshal(body)
@@ -33,8 +34,27 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
+		if caseLabel == "valid_applied_fact" || strings.HasPrefix(caseLabel, "fact_") || w.Code != want {
+			databaseNow := time.Now().UTC()
+			if db.Dialector.Name() == "postgres" {
+				if err := db.Raw("SELECT clock_timestamp()").Scan(&databaseNow).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			var persisted execution.TaskExecution
+			if err := db.Where("id = ?", record.ID).First(&persisted).Error; err != nil {
+				t.Fatal(err)
+			}
+			var fact execution.AppliedSchemaChangeScanOrigin
+			encoded, err := json.Marshal(persisted.Metadata[execution.SchemaChangeScanOriginKey])
+			if err != nil || json.Unmarshal(encoded, &fact) != nil {
+				t.Fatal("cannot observe applied schema fact")
+			}
+			// Only synthetic identity and timing facts; never the private claim token.
+			t.Logf("schema origin case=%s status=%d want=%d host_now=%s database_now=%s applied_at=%s lease_until=%v actor=%d triggered_by=%d revisions=%d/%d", caseLabel, w.Code, want, time.Now().UTC().Format(time.RFC3339Nano), databaseNow.Format(time.RFC3339Nano), fact.AppliedAt.Format(time.RFC3339Nano), fact.LeaseUntil, fact.ActorPrincipalID, fact.TriggeredBy, fact.FromRevision, fact.ToRevision)
+		}
 		if w.Code != want {
-			t.Fatalf("schema origin: status=%d want=%d body=%s", w.Code, want, w.Body)
+			t.Fatalf("schema origin case=%s: status=%d want=%d body=%s", caseLabel, w.Code, want, w.Body)
 		}
 		var out map[string]interface{}
 		_ = json.Unmarshal(w.Body.Bytes(), &out)
@@ -64,9 +84,11 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 	read("owner", "/executions/"+childID, 200)
 	read("peer", "/executions/"+childID, 404)
 	read("foreign", "/executions/"+childID, 404)
+	caseLabel = "caller_authentication"
 	for _, auth := range []string{"owner", "develop-machine", "manager-machine", "wrong-machine"} {
 		post(auth, request, 403)
 	}
+	caseLabel = "malformed_source_ref"
 	for _, source := range []map[string]interface{}{{"execution_id": "invalid", "request_id": 61, "claim_token": token}, {"execution_id": id, "request_id": 0, "claim_token": token}, {"execution_id": id, "request_id": 61, "claim_token": ""}} {
 		changed := map[string]interface{}{}
 		for k, v := range request {
@@ -75,6 +97,7 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		changed["schema_change_source"] = source
 		post("transfer-machine", changed, 400)
 	}
+	caseLabel = "mismatched_source_ref"
 	for _, change := range []map[string]interface{}{{"claim_token": uuid.NewString()}, {"request_id": 62}, {"execution_id": uuid.NewString()}} {
 		changed := map[string]interface{}{}
 		for k, v := range request {
@@ -87,6 +110,7 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		changed["schema_change_source"] = source
 		post("transfer-machine", changed, 404)
 	}
+	caseLabel = "invalid_scan_scope"
 	for _, change := range []map[string]interface{}{{"parent_execution_id": id}, {"catalog_paths": []string{"public"}}, {"targets": []string{"addp://engine/9/path/public/other?type=table"}}, {"targets": []string{locator, "addp://engine/9/path/public/other?type=table"}}} {
 		changed := map[string]interface{}{}
 		for k, v := range request {
@@ -98,6 +122,9 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		post("transfer-machine", changed, 400)
 	}
 	for _, fields := range []map[string]interface{}{{"tenant_id": scanReadTenant + 1}, {"status": "running"}, {"execution_boundary": "bounded"}, {"module": "meta"}} {
+		for field := range fields {
+			caseLabel = "historical_" + field
+		}
 		original := record
 		if err := db.Model(&execution.TaskExecution{}).Where("id = ?", record.ID).Updates(fields).Error; err != nil {
 			t.Fatal(err)
@@ -108,6 +135,9 @@ func testAppliedSchemaChangeScan(t *testing.T, db *gorm.DB, router http.Handler,
 		}
 	}
 	for _, change := range []map[string]interface{}{{"actor_principal_id": 0}, {"triggered_by": 32}, {"to_revision": 3}, {"lease_until": time.Now().Add(-time.Second)}} {
+		for field := range change {
+			caseLabel = "fact_" + field
+		}
 		stored := map[string]interface{}{}
 		for k, v := range origin {
 			stored[k] = v
