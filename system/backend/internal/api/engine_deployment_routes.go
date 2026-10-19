@@ -26,6 +26,7 @@ func RegisterEngineDeploymentRoutes(api *gin.RouterGroup, runtime *IAMRuntime, h
 	routes := api.Group("/platform/engine_deployments")
 	routes.Use(runtime.Authentication, runtime.UserAccessCredential, platform)
 	routes.GET("", read, h.List)
+	routes.GET("/discovery", read, h.Discovery)
 	routes.GET("/:deployment_id", read, h.Get)
 	routes.POST("", create, h.Create)
 	routes.PUT("/:deployment_id", update, h.Update)

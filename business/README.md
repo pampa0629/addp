@@ -2,7 +2,7 @@
 
 ## 部署来源清单
 
-Infra、普通 Business 启停及开发启动会自动刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。自动候选的页面批量确认与专业指标正在接入，当前仍使用已实现的单个 PostgreSQL 管理员确认登记；发现不等于已纳管或已采集。
+Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。System 已提供有界候选读取，页面批量确认与专业指标正在接入，当前仍使用已实现的单个 PostgreSQL 管理员确认登记；发现不等于已纳管或已采集。
 
 平台自管服务的运维归属与租户数据权限分别维护。首期可以只读导出当前工作区已运行的 PostgreSQL 来源：
 

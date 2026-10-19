@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import os
+import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -387,6 +389,108 @@ class DiscoveryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
             self.assertEqual((directory/'business.json').read_bytes(), previous)
+
+
+class ObserverLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-discovery-observer-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.directory = self.root/'snapshots'
+        self.bin = self.root/'bin'
+        self.bin.mkdir()
+        docker = self.bin/'docker'
+        docker.write_text('#!/bin/sh\nexit 1\n')
+        docker.chmod(0o755)
+        self.environment = dict(os.environ, PATH=str(self.bin)+os.pathsep+os.environ['PATH'])
+        self.addCleanup(self.stop)
+
+    def stop(self):
+        inventory.stop_observer(self.directory)
+
+    def test_start_is_idempotent_and_stop_clears_only_owned_process(self):
+        with patch.dict(os.environ, self.environment, clear=True):
+            inventory.start_observer(self.directory)
+            record = inventory.observer_record(self.directory.resolve())
+            self.assertEqual(inventory.observer_state(record), 'owned')
+            inventory.start_observer(self.directory)
+            self.assertEqual(inventory.observer_record(self.directory.resolve()), record)
+            deadline = time.monotonic()+3
+            while not (self.directory/'business.json').exists() and time.monotonic()<deadline:
+                time.sleep(0.02)
+            self.assertEqual(json.loads((self.directory/'business.json').read_text())['state'], 'unavailable')
+            inventory.stop_observer(self.directory)
+            self.assertEqual(inventory.observer_state(record), 'absent')
+            self.assertFalse((self.directory/'observer.json').exists())
+            self.assertFalse((self.directory/'observer-ready.json').exists())
+            for scope in inventory.SCOPES:
+                self.assertEqual(json.loads((self.directory/(scope+'.json')).read_text())['state'], 'unavailable')
+
+    def test_observer_does_not_inherit_application_credentials_or_lifecycle_lock(self):
+        real_popen = subprocess.Popen
+        processes = []
+        def launch(*args, **kwargs):
+            if 'watch' in args[0]:
+                processes.append(kwargs['env'])
+            return real_popen(*args, **kwargs)
+        with patch.dict(os.environ, dict(self.environment, POSTGRES_PASSWORD='private-sentinel', SYSTEM_SERVICE_CLIENT_SECRET='private-sentinel', ADDP_DEV_LIFECYCLE_LOCK_OWNER='private-sentinel'), clear=True), \
+                patch.object(inventory.subprocess, 'Popen', side_effect=launch):
+            inventory.start_observer(self.directory)
+        self.assertEqual(len(processes), 1)
+        self.assertNotIn('private-sentinel', json.dumps(processes[0]))
+        self.assertEqual(processes[0]['PATH'], self.environment['PATH'])
+
+    def test_failed_runtime_record_publication_reaps_new_child(self):
+        real_popen = subprocess.Popen
+        children = []
+        def launch(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+        with patch.dict(os.environ, self.environment, clear=True), \
+                patch.object(inventory.subprocess, 'Popen', side_effect=launch), \
+                patch.object(inventory, 'write_document', side_effect=OSError('record publication failed')):
+            with self.assertRaises(OSError):
+                inventory.start_observer(self.directory)
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].poll())
+
+    def test_cli_process_inspection_failure_is_redacted(self):
+        with patch.object(inventory.sys, 'argv', ['deployment-inventory.py', 'stop', '--directory', str(self.directory)]), \
+                patch.object(inventory, 'stop_observer', side_effect=subprocess.TimeoutExpired(['ps','private-sentinel'],3)), \
+                patch.object(inventory.sys, 'stderr', new_callable=io.StringIO) as error:
+            self.assertEqual(inventory.main(), 1)
+            self.assertNotIn('private-sentinel', error.getvalue())
+
+    def test_foreign_pid_is_never_reused_or_stopped(self):
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            inventory.private_directory(self.directory)
+            inventory.write_document(self.directory, 'observer.json', {'pid':child.pid, 'token':'a'*32,
+                'script':str(Path(inventory.__file__).resolve()),'directory':str(self.directory.resolve()),'configuration':'b'*64})
+            with self.assertRaises(ValueError):
+                inventory.start_observer(self.directory)
+            with self.assertRaises(ValueError):
+                inventory.stop_observer(self.directory)
+            self.assertIsNone(child.poll())
+            (self.directory/'observer.json').unlink()
+        finally:
+            child.terminate()
+            child.wait(timeout=5)
+
+    def test_source_environment_change_replaces_owned_observer_but_credentials_do_not(self):
+        with patch.dict(os.environ, self.environment, clear=True):
+            inventory.start_observer(self.directory)
+            first = inventory.observer_record(self.directory.resolve())
+            with patch.dict(os.environ, {'POSTGRES_PASSWORD': 'changed-credential'}):
+                inventory.start_observer(self.directory)
+            self.assertEqual(inventory.observer_record(self.directory.resolve()), first)
+            with patch.dict(os.environ, {'DOCKER_CONTEXT': 'explicit-local-context'}):
+                inventory.start_observer(self.directory)
+                second = inventory.observer_record(self.directory.resolve())
+            self.assertNotEqual(first['pid'], second['pid'])
+            self.assertEqual(inventory.observer_state(first), 'absent')
+            self.assertEqual(inventory.observer_state(second), 'owned')
 
 
 if __name__ == '__main__':

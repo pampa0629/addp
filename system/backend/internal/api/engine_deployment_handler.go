@@ -16,7 +16,33 @@ import (
 )
 
 type EngineDeploymentHandler struct {
-	service *service.EngineDeploymentService
+	service   *service.EngineDeploymentService
+	discovery *service.DeploymentDiscoveryService
+}
+
+// Discovery godoc
+// @Summary 查看自带部署发现来源 | Read built-in deployment discovery
+// @Description 仅读取部署侧有界快照；过期或失败清除候选，不自动登记或推断主机 | Read bounded deployment snapshots; stale or failed sources clear candidates without registration or host inference
+// @Tags 引擎部署 | Engine Deployments
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.DeploymentDiscovery
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.engine_deployment.read"]
+// @Router /platform/engine_deployments/discovery [get]
+func (h *EngineDeploymentHandler) Discovery(c *gin.Context) {
+	if _, err := engineDeploymentActor(c); err != nil {
+		engineDeploymentError(c, err)
+		return
+	}
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || c.Request.ContentLength != 0 {
+		engineDeploymentError(c, commonapi.ErrBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, h.discovery.Read(c.Request.Context()))
 }
 
 func engineDeploymentActor(c *gin.Context) (int64, error) {

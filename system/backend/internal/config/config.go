@@ -26,6 +26,8 @@ type Config struct {
 	ProjectName                 string
 	ServiceClientSecrets        map[string]string
 
+	DeploymentDiscoveryDirectory string
+
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
 	PostgresPort     string
@@ -147,6 +149,8 @@ func Load() *Config {
 			"addp-spark":        getEnv("SPARK_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-transfer":     getEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
 		},
+
+		DeploymentDiscoveryDirectory: getEnv("ADDP_DEPLOYMENT_DISCOVERY_DIR", ""),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

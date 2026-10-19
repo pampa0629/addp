@@ -53,14 +53,17 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 		grant(permissions...)
 		if scope == "tenant" {
 			request("POST", path, "{}", 403)
+			request("GET", path+"/discovery", "", 403)
 		} else {
 			grant()
 			request("POST", path, "{}", 403)
+			request("GET", path+"/discovery", "", 403)
 		}
 	}
 	actor = testIAMServiceActorContext("platform", "addp-system")
 	grant(permissions...)
 	request("POST", path, "{}", 403)
+	request("GET", path+"/discovery", "", 403)
 	actor = testIAMActorContext("platform")
 	actor.Token.Type = middleware.IAMTokenTypeDelegatedAccess
 	clientID := "addp-monitor"
@@ -71,10 +74,17 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 	actor.Delegation = &commonauth.DelegationFacts{DelegatedByClientID: clientID, AgentRunID: "test-run", ToolCallID: "test-call"}
 	grant(permissions...)
 	request("POST", path, "{}", 403)
+	request("GET", path+"/discovery", "", 403)
 	actor = testIAMActorContext("platform")
 	grant("platform.engine_deployment.create")
 	request("POST", path, "{}", 403)
+	request("GET", path+"/discovery", "", 403)
 	grant(permissions...)
+	request("GET", path+"/discovery", "", 200)
+	for _, query := range []string{"?", "?scope=infra", "?path=/private", "?tenant_id=1"} {
+		request("GET", path+"/discovery"+query, "", 400)
+	}
+	request("GET", path+"/discovery", "{}", 400)
 	for _, body := range []string{"{}", `{"tenant_id":1}`, `{"engine_id":1}`, `{"password":"secret"}`, `{"inventory":{"source":{"password":"secret"}}}`, `{"enabled":true,"enabled":false}`, `{"Enabled":true}`, `{} {}`, `{"display_name":"` + strings.Repeat("x", 40000) + `"}`} {
 		request("POST", path, body, 400)
 	}

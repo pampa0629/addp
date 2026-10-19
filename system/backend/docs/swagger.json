@@ -5858,6 +5858,53 @@
                 ]
             }
         },
+        "/platform/engine_deployments/discovery": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅读取部署侧有界快照；过期或失败清除候选，不自动登记或推断主机 | Read bounded deployment snapshots; stale or failed sources clear candidates without registration or host inference",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎部署 | Engine Deployments"
+                ],
+                "summary": "查看自带部署发现来源 | Read built-in deployment discovery",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.DeploymentDiscovery"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.engine_deployment.read"
+                ]
+            }
+        },
         "/platform/engine_deployments/{deployment_id}": {
             "get": {
                 "security": [
@@ -16031,6 +16078,86 @@
                     "items": {
                         "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference"
                     }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DeploymentDiscovery": {
+            "type": "object",
+            "properties": {
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.DeploymentDiscoveryScope"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DeploymentDiscoveryScope": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.DiscoveredDeploymentService"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DiscoveredDeploymentContainer": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "published_ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort"
+                    }
+                },
+                "restart_count": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.DiscoveredDeploymentService": {
+            "type": "object",
+            "properties": {
+                "containers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.DiscoveredDeploymentContainer"
+                    }
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
                 }
             }
         },

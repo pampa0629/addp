@@ -957,6 +957,8 @@ fi
 echo ""
 
 # Refresh deployment-side facts even when healthy Infra was reused above.
+export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-${ROOT_DIR}/.dev-state/deployment-discovery}"
+python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" start || echo 'Deployment discovery unavailable; business startup continues' >&2
 for deployment_scope in infra business; do
   python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" refresh --scope "$deployment_scope" || echo "Deployment discovery unavailable: $deployment_scope; business startup continues" >&2
 done

@@ -146,6 +146,11 @@ fi
 echo ""
 
 # 执行停止操作
+discovery_cleanup_result=0
+python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" stop || {
+  echo 'Infra deployment discovery shutdown could not be verified' >&2
+  discovery_cleanup_result=1
+}
 if [[ "$REMOVE_VOLUMES" == true ]]; then
   echo -e "${RED}⚠️  警告：即将删除所有数据卷，所有数据将丢失！${NC}"
   echo -e "${YELLOW}▶ 停止并删除基础设施容器和数据卷${NC}"
@@ -155,5 +160,5 @@ else
   compose down
 fi
 
-python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" refresh --scope infra || echo 'Infra deployment discovery unavailable; shutdown result is unchanged' >&2
 echo -e "${GREEN}✓ 完成${NC}"
+exit "$discovery_cleanup_result"

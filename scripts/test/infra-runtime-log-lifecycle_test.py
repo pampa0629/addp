@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         self.repo = self.root / "repository"
         shutil.copytree(ROOT / "scripts/infra", self.repo / "scripts/infra")
         shutil.copytree(ROOT / "scripts/utils", self.repo / "scripts/utils")
+        self.addCleanup(self.stop_discovery_observer)
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.shell_init = self.root / "mock-commands.sh"
@@ -77,10 +79,17 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
 
     def fixture_environment(self):
         env = dict(os.environ)
+        env.pop('ADDP_DEPLOYMENT_DISCOVERY_DIR', None)
         for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
             env.pop(key, None)
         env['BASH_ENV'] = str(self.shell_init)
         return env
+
+    def stop_discovery_observer(self):
+        result = subprocess.run([sys.executable, str(self.repo/'scripts/utils/deployment-inventory.py'), 'stop',
+                                 '--directory', str(self.repo/'.dev-state/deployment-discovery')],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def run_up(self, cli=(), **values):
         env = self.fixture_environment()

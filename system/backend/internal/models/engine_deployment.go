@@ -72,3 +72,29 @@ type EngineDeploymentFilter struct {
 	Search string
 	NodeID string
 }
+
+// DeploymentDiscovery is a deployment-side snapshot, never a management grant.
+type DeploymentDiscovery struct {
+	Scopes []DeploymentDiscoveryScope `json:"scopes"`
+}
+type DeploymentDiscoveryScope struct {
+	Schema     string                        `json:"schema"`
+	Scope      string                        `json:"scope"`
+	State      string                        `json:"state"`
+	ObservedAt string                        `json:"observed_at,omitempty"`
+	Reason     string                        `json:"reason,omitempty"`
+	Source     *BusinessDeploymentSource     `json:"source,omitempty"`
+	Services   []DiscoveredDeploymentService `json:"services"`
+}
+type DiscoveredDeploymentService struct {
+	Service    string                          `json:"service"`
+	EngineType string                          `json:"engine_type"`
+	Containers []DiscoveredDeploymentContainer `json:"containers"`
+}
+type DiscoveredDeploymentContainer struct {
+	ContainerID    string                   `json:"container_id"`
+	Status         string                   `json:"status"`
+	StartedAt      string                   `json:"started_at"`
+	RestartCount   int                      `json:"restart_count"`
+	PublishedPorts []BusinessDeploymentPort `json:"published_ports"`
+}

@@ -13,6 +13,10 @@ import os
 import tempfile
 import stat
 import fcntl
+from contextlib import contextmanager
+import signal
+import uuid
+import hashlib
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -29,6 +33,7 @@ CONTAINER = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
              '"ports":{{json .NetworkSettings.Ports}}}')
 SCOPES = {'infra': ('addp-infra', REPOSITORY), 'business': ('business', ROOT)}
 DISCOVERY_LIMIT = 256 * 1024
+_observer_children = {}  # Reap observers started by this interpreter when stopped.
 # Explicit product services; unknown services remain visible as unclassified.
 ENGINE_TYPES = {
     'postgres': 'postgresql', 'redis': 'redis', 'falkordb': 'falkordb', 'minio': 'minio',
@@ -278,13 +283,9 @@ def private_directory(directory):
         raise InventoryError('部署发现目录须仅由当前部署用户访问')
 
 
-def publish(scope, directory, **kwargs):
-    if scope not in SCOPES:
-        raise InventoryError('部署发现仅支持 infra 或 business')
-    directory = Path(directory)
-    private_directory(directory)
-    target = directory / (scope+'.json')
-    lock = directory / (scope+'.lock')
+@contextmanager
+def private_lock(directory, name):
+    lock = directory / name
     fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     try:
         info = os.fstat(fd)
@@ -299,32 +300,224 @@ def publish(scope, directory, **kwargs):
                 if time.monotonic() >= deadline:
                     raise InventoryError('部署发现正在刷新')
                 time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)
+
+
+def write_document(directory, name, value):
+    target = directory / name
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise InventoryError('部署发现目标不是普通文件')
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=directory, prefix='.'+name+'-', delete=False) as out:
+            temporary = Path(out.name)
+            out.write(json.dumps(value, ensure_ascii=False, separators=(',', ':'))+'\n')
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def unavailable_snapshot(scope):
+    return {'schema': 'addp.deployment-discovery/v1', 'scope': scope, 'state': 'unavailable',
+            'observed_at': observed_at(), 'reason': 'source_unavailable', 'services': []}
+
+
+def publish(scope, directory, **kwargs):
+    if scope not in SCOPES:
+        raise InventoryError('部署发现仅支持 infra 或 business')
+    directory = Path(directory)
+    private_directory(directory)
+    with private_lock(directory, scope+'.lock'):
         failed = False
         try:
             value = discover(scope, **kwargs)
         except (ValueError, TypeError, KeyError, OSError):
             # Never retain an earlier successful snapshot as the current result.
             failed = True
-            value = {'schema': 'addp.deployment-discovery/v1', 'scope': scope, 'state': 'unavailable',
-                     'observed_at': observed_at(), 'reason': 'source_unavailable', 'services': []}
-        if target.is_symlink() or (target.exists() and not target.is_file()):
-            raise InventoryError('部署发现目标不是普通文件')
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=directory, prefix='.'+scope+'-', delete=False) as out:
-                temporary = Path(out.name)
-                out.write(json.dumps(value, ensure_ascii=False, separators=(',', ':'))+'\n')
-                out.flush()
-                os.fsync(out.fileno())
-            os.replace(temporary, target)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+            value = unavailable_snapshot(scope)
+        write_document(directory, scope+'.json', value)
         if failed:
             raise InventoryError('部署发现来源不可用，已清除当前有效候选')
         return value
-    finally:
-        os.close(fd)
+
+
+def read_private_document(directory, name):
+    try:
+        fd = os.open(directory / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'r', encoding='utf-8') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 4096:
+            raise InventoryError('部署发现运行记录权限或大小无效')
+        return json.loads(source.read(4097))
+
+
+def observer_record(directory):
+    value = read_private_document(directory, 'observer.json')
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or set(value) != {'pid', 'token', 'script', 'directory', 'configuration'}
+            or type(value['pid']) is not int or value['pid'] <= 1
+            or not isinstance(value['token'], str) or not re.fullmatch(r'[0-9a-f]{32}', value['token'])
+            or value['script'] != str(Path(__file__).resolve()) or value['directory'] != str(directory)
+            or not isinstance(value['configuration'], str) or not re.fullmatch(r'[0-9a-f]{64}', value['configuration'])):
+        raise InventoryError('部署发现运行记录与当前工作区不符')
+    return value
+
+
+def observer_state(record):
+    result = subprocess.run(['ps', '-ww', '-p', str(record['pid']), '-o', 'stat=', '-o', 'command='],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3)
+    if result.returncode == 1 and not result.stdout.strip():
+        return 'absent'
+    if result.returncode != 0 or len(result.stdout) > 16384:
+        raise InventoryError('无法核验部署发现进程归属')
+    state, _, command = result.stdout.strip().partition(' ')
+    if state.startswith('Z'):
+        return 'absent'
+    if (record['script'] not in command or record['directory'] not in command
+            or not re.search(r'(?<!\S)--observer-token '+record['token']+r'(?!\S)', command)):
+        return 'foreign'
+    return 'owned'
+
+
+def observer_environment():
+    keys = ('PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'XDG_CONFIG_HOME',
+            'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH')
+    return {key: os.environ[key] for key in keys if key in os.environ}
+
+
+def observer_configuration(env):
+    return hashlib.sha256(Path(__file__).read_bytes()+json.dumps(env, sort_keys=True).encode()).hexdigest()
+
+
+def terminate_observer(record):
+    state = observer_state(record)
+    if state == 'foreign':
+        raise InventoryError('部署发现 PID 不属于当前工作区，拒绝停止')
+    if state == 'owned':
+        os.kill(record['pid'], signal.SIGTERM)
+        for _ in range(100):
+            state = observer_state(record)
+            if state != 'owned':
+                break
+            time.sleep(0.05)
+        if state != 'absent':
+            raise InventoryError('部署发现进程尚未退出，不删除运行记录')
+    child = _observer_children.pop(record['pid'], None)
+    if child is not None:
+        child.wait(timeout=3)
+
+
+def start_observer(directory):
+    directory = Path(directory)
+    private_directory(directory)
+    directory = directory.resolve()
+    with private_lock(directory, 'observer-control.lock'):
+        env = observer_environment()
+        configuration = observer_configuration(env)
+        record = observer_record(directory)
+        if record is not None:
+            state = observer_state(record)
+            if state == 'owned' and record['configuration'] == configuration:
+                return
+            if state == 'owned':
+                terminate_observer(record)
+            elif state != 'absent':
+                raise InventoryError('部署发现 PID 不属于当前工作区，拒绝接管')
+        token = uuid.uuid4().hex
+        # The source observer has no ADDP/SQL credentials in its environment.
+        process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), 'watch', '--directory', str(directory),
+                                    '--observer-token', token], cwd=REPOSITORY, env=env,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   close_fds=True, start_new_session=True)
+        try:
+            record = {'pid': process.pid, 'token': token, 'script': str(Path(__file__).resolve()),
+                      'directory': str(directory), 'configuration': configuration}
+            write_document(directory, 'observer.json', record)
+            for _ in range(100):
+                if process.poll() is not None:
+                    raise InventoryError('部署发现进程启动失败')
+                ready = read_private_document(directory, 'observer-ready.json')
+                if ready == {'token': token}:
+                    _observer_children[process.pid] = process
+                    return
+                time.sleep(0.05)
+            raise InventoryError('部署发现进程启动超过期限')
+        except BaseException:
+            # The unreaped Popen child cannot have its PID reused; never leave
+            # an unregistered observer alive if publishing its record fails.
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+            raise
+
+
+def stop_observer(directory):
+    directory = Path(directory)
+    if not directory.exists():
+        return
+    private_directory(directory)
+    directory = directory.resolve()
+    with private_lock(directory, 'observer-control.lock'):
+        record = observer_record(directory)
+        if record is not None:
+            terminate_observer(record)
+            (directory / 'observer.json').unlink(missing_ok=True)
+            (directory / 'observer-ready.json').unlink(missing_ok=True)
+        for scope in SCOPES:
+            with private_lock(directory, scope+'.lock'):
+                write_document(directory, scope+'.json', unavailable_snapshot(scope))
+
+
+def watch(directory, token):
+    directory = Path(directory)
+    private_directory(directory)
+    directory = directory.resolve()
+    if not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise InventoryError('部署发现运行标识无效')
+    def terminate(_signum, _frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+    with private_lock(directory, 'observer-runtime.lock'):
+        for _ in range(100):
+            record = observer_record(directory)
+            if record is not None and record['pid'] == os.getpid() and record['token'] == token:
+                if record['configuration'] != observer_configuration(observer_environment()):
+                    raise InventoryError('部署发现源码或运行环境已改变')
+                break
+            time.sleep(0.05)
+        else:
+            raise InventoryError('部署发现运行记录缺失')
+        write_document(directory, 'observer-ready.json', {'token': token})
+        try:
+            while True:
+                if observer_record(directory) != record:
+                    raise InventoryError('部署发现运行记录已改变')
+                for scope in SCOPES:
+                    try:
+                        publish(scope, directory)
+                    except (InventoryError, OSError):
+                        pass  # The failure snapshot or freshness deadline clears candidates.
+                time.sleep(30)
+        finally:
+            for scope in SCOPES:
+                try:
+                    with private_lock(directory, scope+'.lock'):
+                        write_document(directory, scope+'.json', unavailable_snapshot(scope))
+                except (InventoryError, OSError):
+                    pass
 
 
 def main():
@@ -335,16 +528,29 @@ def main():
     refresh = commands.add_parser('refresh', help='部署生命周期自动发布无凭据发现快照')
     refresh.add_argument('--scope', required=True, choices=sorted(SCOPES))
     refresh.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
+    for name in ('start', 'stop', 'watch'):
+        command = commands.add_parser(name, help='部署发现观测进程的标准生命周期')
+        command.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
+        if name == 'watch':
+            command.add_argument('--observer-token', required=True)
     args = parser.parse_args()
     try:
         if args.command == 'refresh':
             publish(args.scope, args.directory)
             return 0
+        if args.command in ('start', 'stop', 'watch'):
+            if args.command == 'watch':
+                watch(args.directory, args.observer_token)
+            elif args.command == 'start':
+                start_observer(args.directory)
+            else:
+                stop_observer(args.directory)
+            return 0
         encoded = export_inventory(args.service)
     except InventoryError as error:
         print('部署来源读取失败：' + str(error), file=sys.stderr)
         return 1
-    except (ValueError, TypeError, KeyError, OSError):
+    except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
         # Raw Docker/JSON errors may embed untrusted source content. Never echo it.
         print('部署来源导出失败：请确认本地 Linux Docker／Docker Desktop、当前工作区的单个运行服务及实际端口；不接受远程或环境覆盖，导出期间服务须保持稳定。', file=sys.stderr)
         return 1

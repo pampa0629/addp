@@ -209,6 +209,9 @@ TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_DIR"' EXIT
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
+mkdir -p "$TEST_DIR/repo/scripts/utils"
+cp "${SCRIPT_DIR}/../utils/deployment-inventory.py" "$TEST_DIR/repo/scripts/utils/deployment-inventory.py"
+export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"
 cat > "$TEST_DIR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

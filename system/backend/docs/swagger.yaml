@@ -1483,6 +1483,58 @@ definitions:
     - name
     - service_grants
     type: object
+  github_com_addp_system_internal_models.DeploymentDiscovery:
+    properties:
+      scopes:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.DeploymentDiscoveryScope'
+        type: array
+    type: object
+  github_com_addp_system_internal_models.DeploymentDiscoveryScope:
+    properties:
+      observed_at:
+        type: string
+      reason:
+        type: string
+      schema:
+        type: string
+      scope:
+        type: string
+      services:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.DiscoveredDeploymentService'
+        type: array
+      source:
+        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource'
+      state:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.DiscoveredDeploymentContainer:
+    properties:
+      container_id:
+        type: string
+      published_ports:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort'
+        type: array
+      restart_count:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.DiscoveredDeploymentService:
+    properties:
+      containers:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.DiscoveredDeploymentContainer'
+        type: array
+      engine_type:
+        type: string
+      service:
+        type: string
+    type: object
   github_com_addp_system_internal_models.Engine:
     properties:
       capabilities:
@@ -9306,6 +9358,37 @@ paths:
       x-addp-required-permissions:
       - platform.engine_deployment.update
       - platform.host_node.read
+  /platform/engine_deployments/discovery:
+    get:
+      description: 仅读取部署侧有界快照；过期或失败清除候选，不自动登记或推断主机 | Read bounded deployment snapshots;
+        stale or failed sources clear candidates without registration or host inference
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.DeploymentDiscovery'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看自带部署发现来源 | Read built-in deployment discovery
+      tags:
+      - 引擎部署 | Engine Deployments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.engine_deployment.read
   /platform/host_nodes:
     get:
       consumes:
