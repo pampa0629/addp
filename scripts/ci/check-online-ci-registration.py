@@ -2523,7 +2523,7 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             "docker-compose.graph-protection-t4.yml", "compose_graph down --remove-orphans --volumes",
             ',console,graph-frontend,develop-frontend,nginx', 'CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"',
         ),
-        "scripts/test/docker-compose.graph-protection-t4.yml": ("127.0.0.1:8180:8180", "127.0.0.1:8185:8185"),
+        "scripts/test/docker-compose.graph-protection-t4.yml": ("services:",),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-falkordb-protection-online.py": (
@@ -2554,6 +2554,22 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
         file = repository / path
         if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
             raise RegistrationError("Graph FalkorDB protection contract is incomplete: " + path)
+    # The host preflight must reach every service declared by the suite, even
+    # though normal browser traffic only enters through production Nginx.
+    lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
+    environment = (repository / "scripts/utils/hosted-online.sh").read_text() + "\n" + lifecycle
+    overlay = (repository / "scripts/test/docker-compose.graph-protection-t4.yml").read_text()
+    suite = load_suite_registry(repository)["graph-falkordb-protection"]
+    for owner, variable in suite.services:
+        ports = re.findall(rf"\b{re.escape(variable)}=http://127\.0\.0\.1:(\d+)\b", environment)
+        if not ports:
+            raise RegistrationError(f"Graph preflight requires an explicit loopback address: {variable}")
+        port = ports[-1]
+        service = "gateway" if owner == "gateway" else owner + "-backend"
+        block = compose_service_block(overlay, service) or ""
+        bindings = re.findall(r'''["']([^"']+:\d+:\d+)["']''', block)
+        if bindings != [f"127.0.0.1:{port}:{port}"]:
+            raise RegistrationError(f"Graph preflight {variable} requires exactly one loopback diagnostic binding on {service}: {port}")
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("graph-falkordb-protection-online_test.py", "online-graph-falkordb-fixture_test.py"):
         if test not in commands:
@@ -2562,7 +2578,6 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
         raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
     if "console/frontend/e2e/online/develop-falkordb-query.spec.js" not in commands:
         raise RegistrationError("Develop FalkorDB browser syntax must enter test-online-runner")
-    lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
     if 'if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
         raise RegistrationError("Graph Console requires Chromium in the same Hosted lifecycle")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()

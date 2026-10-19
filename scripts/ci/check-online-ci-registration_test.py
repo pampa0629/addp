@@ -218,7 +218,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                  'business/scripts/online-graph-falkordb-fixture.py', 'business/docker-compose.online-graph-falkordb.yml',
                  'console/frontend/e2e/online/graph-falkordb-protection.spec.js',
                  'console/frontend/e2e/online/develop-falkordb-query.spec.js',
-                 'scripts/test/docker-compose.graph-protection-t4.yml', 'graph/frontend/Dockerfile', 'graph/frontend/nginx.conf')
+                 'scripts/test/docker-compose.graph-protection-t4.yml', 'graph/frontend/Dockerfile', 'graph/frontend/nginx.conf',
+                 'scripts/test/online-gate.py', 'scripts/utils/hosted-online.sh')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -235,12 +236,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[7], 'typed_parameters: true'), (paths[7], 'protected_result_absent: true'),
                                    (paths[8], '127.0.0.1:8180:8180'), (paths[9], 'COPY graph/frontend/nginx.conf'),
                                    (paths[10], 'try_files $uri $uri/ /index.html;'), (paths[6], 'theme_canvas_pixels: true'),
+                                   (paths[8], '  graph-backend:\n    ports: ["127.0.0.1:8186:8186"]\n'),
+                                   (paths[2], 'GRAPH_URL=http://127.0.0.1:8186'),
                                    (paths[1], 'console/frontend/e2e/online/develop-falkordb-query.spec.js')):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'removed'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_graph_falkordb_protection_profile(self.repository, {'graph-falkordb-protection'})
             target.write_text(original)
+
+        overlay = self.repository / paths[8]
+        original = overlay.read_text()
+        for binding in ('0.0.0.0:8186:8186', '127.0.0.1:8187:8186', '127.0.0.1:8186:8187',
+                        '127.0.0.1:8186:8186", "0.0.0.0:18186:8186'):
+            overlay.write_text(original.replace('127.0.0.1:8186:8186', binding))
+            with self.subTest(binding=binding), self.assertRaisesRegex(CHECK.RegistrationError, 'GRAPH_URL'):
+                CHECK.validate_graph_falkordb_protection_profile(self.repository, {'graph-falkordb-protection'})
+        for owner, variable in CHECK.load_suite_registry(self.repository)['graph-falkordb-protection'].services:
+            service = 'gateway' if owner == 'gateway' else owner + '-backend'
+            block = CHECK.compose_service_block(original, service)
+            overlay.write_text(original.replace(block, ''))
+            with self.subTest(missing=service), self.assertRaisesRegex(CHECK.RegistrationError, variable):
+                CHECK.validate_graph_falkordb_protection_profile(self.repository, {'graph-falkordb-protection'})
+        overlay.write_text(original)
 
     def test_online_aggregate_follows_focused_security_owner(self):
         makefile = "test-online-runner:\n\t@$(MAKE) test-security-online-runner\n\ntest-security-online-runner:\n\t@python3 -m unittest security_fixture_test.py\n"
