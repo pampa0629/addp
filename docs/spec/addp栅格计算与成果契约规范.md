@@ -156,7 +156,7 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
-| `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算，实施中未验。 |
+| `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
 | `make test-online ONLINE_SUITE=raster-workflow` | 原 Raster Hosted T4；仅在 GitHub Hosted 独占部署运行，不接管个人开发环境。 |
 
 最小日常计算验证使用 `make test-geopython-workflow`；修改跨模块成果、授权或扫描链路时补充相应 owner 门禁与原 Hosted T4。连接本地 Infra 前先执行 `bash scripts/infra/status.sh`，PostgreSQL 仅使用规范允许的测试库。服务重启由用户按标准生命周期操作。
@@ -168,3 +168,7 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 ### 6.3 分类栅格转面验收边界
 
 `raster_polygonize` 已在 `6cd2bb7b0` 的独立 `raster-polygonize-persistence` 完成四邻接、八邻接和重分类接转面三条真实 DAG。完整像元与连通区域、Int64 分类字段、二维 MultiPolygon、源 CRS、严格物理／Meta 大小、原普通用户三个自动扫描、Monitor 与各自当前执行血缘、源及先前成果不变和零残留均通过，最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。原 Raster T4 与等值线独立基线保持；该结论不替代矢量栅格化、Manager 绘制、业务删除、覆盖冲突或容量验收。
+
+### 6.4 矢量栅格化验收边界
+
+`vector_rasterize` 已在 `764bf53a9` 的独立 `vector-rasterize-persistence` 完成属性／中心覆盖、常量／所有触及像元及分类转面再栅格化三条 COG 保存 DAG。完整像元、mask、NaN NoData、Float64、旋转网格、COG 布局和 artifact／物理／Meta 严格大小、三个精确自动扫描、原普通用户归属、Monitor、当前执行所有输入的血缘、源及先前成果不变、非法字段失败清理和零残留均通过，最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。Runtime 同路径挂载写入、Meta 经真实 NFS 读取；独立 600 秒预算。原 Raster T4、等值线与分类转面套件保持；本结论不包含点线栅格化、自动范围、插值、完整 Int64 分类码往返、Manager 绘制、业务删除、覆盖冲突或容量验收。
