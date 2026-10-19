@@ -22,6 +22,8 @@ Infra 生命周期管理独立发现进程，Business 和开发启动幂等确�
 
 2026-10-20 本机 macOS ARM64 Docker Desktop 已通过开发管理员交互验收：`Business StarRocks` 登记为 Engine 32，版本探测正常；`business.source` 为 DataItem 44684，深度扫描执行 `287694dd-0879-4bc3-a6c4-18523459acd9` 成功，识别1表4字段。Manager 真实单元格及属性 JSON 保留有序主键、bigint、Decimal(38,18)、中文、尾随空格和 NULL／空串；Develop 全表查询 `9df8653e-b7b5-404b-a81e-bf84297f514e` 与文本／整数参数查询 `95f1cffb-f687-4d2f-905a-aad55f95a96f` 均成功，含引号文本原样返回，整数参数3只返回目标一行。期间发现并修复参数面板对新增默认值属性的响应跟踪缺陷，空串、0、false 与未设置的语义不变。本机管理员证据不替代 Linux amd64 或普通最小权限 User 的 Hosted T4。
 
+包含默认值修复 `bfe5dd48b` 的 [Hosted 复验39283946474 / Job118164522204](https://github.com/pampa0629/addp/actions/runs/39283946474/job/118164522204)，源码 `1280b746f42e17c3b2a2a6d3583259abba11e443`，已通过并完成领域报告审计：普通十权限 User 经页面勾选并填写文本／整数默认值，preflight 与执行请求保持原值和类型，全表／参数查询返回2／1行，精确数值及原生空值／尾随空格通过；六服务同提交、报告一致、应用清理通过且 Infra／Business 零残留。默认值修复的云端待验项已关闭，证据与范围见上述验收场景。
+
 ## GaussDB Business 部署
 
 采用固定官方混合云开发者版 V2.0-10.0.0 Ubuntu 22.04 ARM64／amd64 介质，构建 ADDP 本地镜像；不是厂商预制镜像，也不对外发布。仅限开发者版声明允许的学习、适配及测试。介质 URL、内外层哈希与基础镜像固定事实复用 `scripts/lib/gaussdb-official-media.sh`，不替换为 openGauss。
