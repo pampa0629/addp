@@ -1128,42 +1128,6 @@ func truncateGraphData(data *plugin.GraphData, limit int) (*plugin.GraphData, bo
 	return &plugin.GraphData{Nodes: nodes, Relationships: relationships}, truncated
 }
 
-// executeScript 执行脚本任务。当前脚本开发由 Jupyter Notebook runtime 承载。
-func (e *DevExecutor) executeScript(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 20, "准备执行 Notebook")
-
-	if e.notebookExecutionService == nil {
-		return nil, "Notebook 执行服务不可用"
-	}
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook")
-
-	// 调用 NotebookExecutionService 执行
-	result, errorMsg, err := e.notebookExecutionService.ExecuteNotebook(ctx, devTask, executionID)
-	if err != nil {
-		return nil, fmt.Sprintf("Notebook 执行失败: %v", err)
-	}
-
-	if errorMsg != "" {
-		return nil, errorMsg
-	}
-
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "Notebook 执行成功")
-
-	// 转换为 JSONMap
-	executionResult := commonModels.JSONMap{
-		"status":            result.Status,
-		"output_path":       result.OutputPath,
-		"cell_count":        result.CellCount,
-		"execution_count":   result.ExecutionCount,
-		"execution_time_ms": result.ExecutionTimeMs,
-		"summary": map[string]interface{}{
-			"has_outputs": result.OutputsPreview != nil && len(result.OutputsPreview) > 0,
-		},
-	}
-
-	return executionResult, ""
-}
-
 // GetExecution 获取执行详情
 func (e *DevExecutor) GetExecution(ctx context.Context, executionID string, tenantID uint) (*models.ExecutionWithDevTask, error) {
 	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
