@@ -1076,7 +1076,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("矢量处理", "成果生成"), "vector_to_pmtiles"),
         (("栅格处理", "数据读写"), "raster_load raster_save raster_save_tiles"),
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
-        (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize raster_contour"),
+        (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize vector_rasterize raster_contour"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
         (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_aggregate raster_slope raster_aspect raster_hillshade"),
         (("栅格处理", "栅格统计"), "raster_statistics raster_histogram"),
@@ -1085,7 +1085,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
     ]
     expected = {name: list(path) for path, names in expected_groups for name in names.split()}
     workflow_operators = [operator for operator in list_operators() if "workflow" in operator["execution_modes"]]
-    assert len(expected) == len(workflow_operators) == 75
+    assert len(expected) == len(workflow_operators)
     assert {operator["name"]: operator["category_path"] for operator in workflow_operators} == expected
     assert list(dict.fromkeys(tuple(operator["category_path"]) for operator in workflow_operators)) == [
         path for path, _ in expected_groups

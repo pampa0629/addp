@@ -20,7 +20,7 @@ from operators.raster_compute import (
     raster_align, raster_stack, raster_select_bands, raster_update,
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
     raster_tile, raster_save_tiles, raster_tiles_info,
-    raster_slope, raster_aspect, raster_hillshade, raster_contour,
+    raster_slope, raster_aspect, raster_hillshade, raster_contour, vector_rasterize,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -3921,3 +3921,270 @@ def test_raster_polygonize_intermediate_failure_closes_and_cleans_files(tmp_path
         source=raster_load(source_plan(path));workspace=source.workspace
         raster_polygonize(source,1)
     assert workspace is not None and not workspace.exists() and path.read_bytes()==before
+
+
+def _rasterization_faces(transform):
+    import geopandas as gpd
+    from shapely.affinity import affine_transform
+    from shapely.geometry import Polygon, MultiPolygon, box
+    faces = [Polygon([(.1,.1),(4.9,.1),(4.9,4.9),(.1,4.9)],
+                     holes=[[(1.1,1.1),(3.9,1.1),(3.9,3.9),(1.1,3.9)]]),
+             box(4.1,.1,4.3,4.9),
+             MultiPolygon([box(5.1,.1,5.9,1.9),box(5.1,4.1,5.9,4.9)]),
+             box(-.9,2.1,.2,3.9)]
+    affine = [transform[1],transform[2],transform[4],transform[5],transform[0],transform[3]]
+    return gpd.GeoDataFrame({'code':[0,-3.25,8,21]},
+        geometry=[affine_transform(g,affine) for g in faces],crs='EPSG:3857').rename_geometry('shape')
+
+
+def _rasterization_oracle(faces, values, transform, width, height, all_touched):
+    from shapely.geometry import Polygon, Point
+    def point(x,y):
+        return (transform[0]+x*transform[1]+y*transform[2],
+                transform[3]+x*transform[4]+y*transform[5])
+    expected=np.full((height,width),np.nan)
+    for y in range(height):
+        for x in range(width):
+            cell=Polygon([point(x,y),point(x+1,y),point(x+1,y+1),point(x,y+1)])
+            for geometry,value in zip(faces.geometry,values):
+                # Test faces deliberately avoid ambiguous grid/centre coincidences.
+                covered=(geometry.intersection(cell).area>0 if all_touched else geometry.contains(Point(point(x+.5,y+.5))))
+                if covered:expected[y,x]=value
+    return expected
+
+
+@pytest.mark.parametrize('transform', [(0,1,0,6,0,-1),(100,2,.5,200,.25,-3)])
+@pytest.mark.parametrize('all_touched', [False,True])
+@pytest.mark.parametrize('mode', ['field','constant'])
+def test_vector_rasterize_independent_coverage_holes_rotation_cog_and_immutable_inputs(tmp_path,transform,all_touched,mode):
+    faces=_rasterization_faces(transform)
+    original=faces.copy(deep=True)
+    faces.index=[42,1,1,-7]  # Priority follows position, including duplicate labels.
+    original.index=faces.index
+    values=faces.code.to_list() if mode=='field' else [-1.5]*len(faces)
+    expected=_rasterization_oracle(faces,values,transform,7,6,all_touched)
+    path=create_raster(tmp_path/'reference.tif',np.full((2,6,7),-9999.),transform,'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().Fill(0);ds=None
+    before=path.read_bytes()
+    with raster_workspace():
+        reference=raster_load(source_plan(path));workspace=reference.workspace
+        result=vector_rasterize(faces,reference,all_touched=all_touched,
+            **({'field':'code'} if mode=='field' else {'burn_value':-1.5}))
+        assert result.path!=reference.path
+        output=gdal.Open(str(result.path));band=output.GetRasterBand(1)
+        assert output.RasterCount==1 and band.DataType==gdal.GDT_Float64
+        assert math.isnan(band.GetNoDataValue()) and output.GetGeoTransform()==transform
+        assert _crs_wkt_for_footprint(3857)==output.GetProjection()
+        np.testing.assert_allclose(read_band_values(band),expected,equal_nan=True)
+        np.testing.assert_array_equal(np.frombuffer(band.GetMaskBand().ReadRaster(),dtype=np.uint8).reshape(6,7),np.where(np.isfinite(expected),255,0))
+        band=output=None
+        target=tmp_path/'output.cog.tif'
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0
+        loaded=raster_load(source_plan(target));assert validate_cog(loaded)['valid']
+        saved=gdal.Open(str(loaded.path));np.testing.assert_allclose(read_band_values(saved.GetRasterBand(1)),expected,equal_nan=True);saved=None
+    assert not workspace.exists() and path.read_bytes()==before
+    import geopandas.testing
+    geopandas.testing.assert_geodataframe_equal(faces,original)
+
+
+def test_vector_rasterize_overlap_follows_current_position_not_index(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'value':[0,-7.25,13]},geometry=[box(.1,.1,2.9,2.9)]*3,crs=3857,index=[9,1,9])
+    path=create_raster(tmp_path/'reference.tif',np.ones((3,3)),(0,1,0,3,0,-1),'EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path))
+        for batch,value in [(faces,13),(faces.iloc[::-1],0)]:
+            result=vector_rasterize(batch,reference,field='value')
+            ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.full((3,3),value));ds=None
+
+
+@pytest.mark.parametrize('value', [0,-1.25,2**53-1,-(2**53-1),np.int64(2**53-1),np.float32(3.25)])
+def test_vector_rasterize_accepts_finite_values_and_safe_integer_endpoints(tmp_path,value):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[value]},geometry=[box(-1,-1,4,4)],crs=3857)
+    path=create_raster(tmp_path/'reference.tif',np.zeros((2,2)),(0,1,0,2,0,-1),'EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path))
+        for params in [{'field':'code'},{'burn_value':value}]:
+            result=vector_rasterize(faces,reference,**params)
+            ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.full((2,2),value,dtype=np.float64));ds=None
+
+
+@pytest.mark.parametrize('value', [True,np.bool_(False),'1',None,complex(1,0),np.nan,np.inf,-np.inf,2**53,-2**53,np.uint64(2**64-1),float(2**53)])
+def test_vector_rasterize_rejects_bad_values_including_off_grid_attributes(tmp_path,value):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[value]},geometry=[box(100,100,101,101)],crs=3857)
+    path=create_raster(tmp_path/'reference.tif',np.ones((2,2)),crs='EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path))
+        with pytest.raises(ValueError):vector_rasterize(faces,reference,field='code')
+        with pytest.raises(ValueError):vector_rasterize(faces,reference,burn_value=value)
+
+
+@pytest.mark.parametrize('params', [{},{'field':'code','burn_value':1},{'field':''},{'field':'missing'},
+    {'field':'geometry'},{'field':0},{'burn_value':1,'all_touched':'false'},
+    {'burn_value':1,'all_touched':0},{'burn_value':1,'all_touched':None}])
+def test_vector_rasterize_rejects_ambiguous_modes_fields_and_nonboolean_coverage(tmp_path,params):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[1]},geometry=[box(0,0,1,1)],crs=3857)
+    path=create_raster(tmp_path/'reference.tif',np.ones((2,2)),crs='EPSG:3857')
+    with raster_workspace(),pytest.raises(ValueError):
+        vector_rasterize(faces,raster_load(source_plan(path)),**params)
+
+
+@pytest.mark.parametrize('wkt', [None,'POLYGON EMPTY','POINT (0 0)','LINESTRING (0 0,1 1)',
+    'POLYGON ((0 0,2 2,0 2,2 0,0 0))','POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))',
+    'POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))',
+    'POLYGON ((0 0,Infinity 0,1 1,0 0))'])
+def test_vector_rasterize_rejects_geometry_without_dropping_or_repairing_rows(tmp_path,wkt):
+    import geopandas as gpd
+    from shapely import from_wkt
+    faces=gpd.GeoDataFrame(geometry=[from_wkt(wkt) if wkt else None],crs=3857)
+    path=create_raster(tmp_path/'reference.tif',np.ones((2,2)),crs='EPSG:3857')
+    with raster_workspace(),pytest.raises(ValueError,match='two-dimensional'):
+        vector_rasterize(faces,raster_load(source_plan(path)),burn_value=1)
+
+
+@pytest.mark.parametrize('problem', ['missing_vector_crs','different_crs','missing_grid_crs','missing_transform','singular_transform','not_gdf','no_active_geometry','duplicate_field'])
+def test_vector_rasterize_rejects_invalid_inputs_and_grid_contract(tmp_path,problem):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[1]},geometry=[box(0,0,1,1)],crs=None if problem=='missing_vector_crs' else 3857)
+    if problem=='different_crs':faces=faces.to_crs(4326)
+    if problem=='not_gdf':faces={}
+    if problem=='no_active_geometry':faces=gpd.GeoDataFrame({'code':[1]})
+    if problem=='duplicate_field':faces.insert(0,'code',2,allow_duplicates=True)
+    transform=None if problem=='missing_transform' else (0,1,1,2,1,1) if problem=='singular_transform' else (0,1,0,2,0,-1)
+    path=create_raster(tmp_path/'reference.tif',np.ones((2,2)),transform,'' if problem=='missing_grid_crs' else 'EPSG:3857')
+    with raster_workspace(),pytest.raises((ValueError,AttributeError)):
+        vector_rasterize(faces,raster_load(source_plan(path)),field='code')
+
+
+@pytest.mark.parametrize('outside_only', [False,True])
+def test_vector_rasterize_empty_or_outside_batch_is_all_nodata_without_reference_pixel_reads(tmp_path,monkeypatch,outside_only):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[1] if outside_only else []},geometry=[box(100,100,101,101)] if outside_only else [],crs=3857)
+    path=create_raster(tmp_path/'reference.tif',np.ones((3,1030)),(0,1,0,3,0,-1),'EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path))
+        def forbidden(*args,**kwargs):raise AssertionError('reference pixels must not be read')
+        with monkeypatch.context() as patch:
+            patch.setattr(gdal.Band,'ReadAsArray',forbidden);patch.setattr(gdal.Band,'ReadRaster',forbidden)
+            for params in [{'field':'code'},{'burn_value':0}]:
+                result=vector_rasterize(faces,reference,**params)
+        ds=gdal.Open(str(result.path));assert np.isnan(read_band_values(ds.GetRasterBand(1))).all();ds=None
+
+
+def test_vector_rasterize_polygonize_roundtrip_complete_validity_and_rotated_grid(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    transform=(100,2,.5,200,.25,-3)
+    values=np.array([[0,0,0,0,0], [0,2,2,2,0], [0,2,-9999,2,0], [0,2,2,2,0], [-3,0,0,0,-3]],dtype=float)
+    path=create_raster(tmp_path/'classes.tif',values,transform,'EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path));regions=raster_polygonize(reference,1,8)
+        result=vector_rasterize(regions,reference,field='class_value')
+        ds=gdal.Open(str(result.path));expected=np.where(values==-9999,np.nan,values)
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),expected,equal_nan=True);ds=None
+
+
+@pytest.mark.parametrize('invalid', [False,True],ids=['saved-cog','failure-cleanup'])
+def test_vector_rasterize_async_dag_polygonize_save_and_cleanup(tmp_path,monkeypatch,invalid):
+    import api_server
+    import workflow_engine
+    values=np.array([[0,2,2],[0,-9999,2]],dtype=float)
+    source=create_raster(tmp_path/'source.tif',values,crs='EPSG:3857')
+    before=source.read_bytes();target=tmp_path/'output.cog.tif'
+    tasks=[
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'faces','operator':'raster_polygonize','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'band':1}},
+        {'id':'burn','operator':'vector_rasterize','depends_on':['faces','load'],'params':{'input_gdf':{'$ref':'faces'},'reference_raster':{'$ref':'load'},'field':'missing' if invalid else 'class_value'}},
+        {'id':'save','operator':'raster_save','depends_on':['burn'],'params':{'input_raster':{'$ref':'burn'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}},
+    ]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='vector_rasterize':paths.append(params['reference_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not path.exists() for path in paths) and source.read_bytes()==before
+    if invalid:assert not target.exists()
+    else:
+        ds=gdal.Open(str(target));np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),np.where(values==-9999,np.nan,values),equal_nan=True);ds=None
+        artifact=json.loads(status['all_results']['save'])
+        assert artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/vector_rasterize/invoke',json={'params':{}}).status_code==403
+
+
+def test_vector_rasterize_metadata_example_is_executable_and_declares_both_typed_inputs(tmp_path):
+    spec=next(item for item in list_operators() if item['id']=='vector_rasterize')
+    params={item['name']:item for item in spec['parameters']}
+    assert params['input_gdf']['param_type']==params['reference_raster']['param_type']=='input'
+    assert params['input_gdf']['type']=='object' and params['reference_raster']['type']=='raster'
+    assert not params['field']['required'] and not params['burn_value']['required']
+    assert params['all_touched']['default'] is False
+    assert spec['output_ports'][0]['type']=='raster' and spec['execution_modes']==['workflow']
+    assert spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert not {'path','locator','engine_id','access_plan'} & params.keys()
+    path=create_raster(tmp_path/'reference.tif',np.ones((6,7)),crs='EPSG:3857')
+    with raster_workspace():
+        args=dict(spec['detailed_description']['workflow_example']['params'])
+        args['input_gdf']=_rasterization_faces((0,1,0,4,0,-1)).rename(columns={'code':'class_value'})
+        args['reference_raster']=raster_load(source_plan(path))
+        result=vector_rasterize(**args);assert result.path.exists()
+
+
+def test_vector_rasterize_cross_block_coverage_and_injected_native_failure_cleanup(tmp_path,monkeypatch):
+    import geopandas as gpd
+    from shapely.geometry import box
+    path=create_raster(tmp_path/'reference.tif',np.ones((3,1030)),(0,1,0,3,0,-1),'EPSG:3857')
+    faces=gpd.GeoDataFrame({'value':[0,-2.5]},geometry=[box(.1,.1,1029.9,2.9),box(510.1,.1,514.9,2.9)],crs=3857)
+    with raster_workspace():
+        reference=raster_load(source_plan(path));workspace=reference.workspace
+        result=vector_rasterize(faces,reference,field='value')
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        expected=np.zeros((3,1030));expected[:,510:515]=-2.5
+        np.testing.assert_array_equal(actual,expected)
+        def fail_after_partial_write(output,*args,**kwargs):
+            output.GetRasterBand(1).WriteArray(np.array([[1.]]))
+            raise RuntimeError('injected native rasterization failure')
+        monkeypatch.setattr(gdal,'RasterizeLayer',fail_after_partial_write)
+        with pytest.raises(RuntimeError,match='injected native'):
+            vector_rasterize(faces,reference,field='value')
+        assert workspace.exists()
+    assert not workspace.exists()
+
+
+def test_vector_rasterize_explicit_vector_reproject_chain_and_expired_reference(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+    from operators.spatial_transform_operators import vector_reproject
+    faces=gpd.GeoDataFrame(geometry=[box(-1,-1,1,1)],crs=4326)
+    original=faces.copy(deep=True)
+    path=create_raster(tmp_path/'reference.tif',np.ones((2,2)),(-1000,1000,0,1000,0,-1000),'EPSG:3857')
+    with raster_workspace():
+        reference=raster_load(source_plan(path))
+        with pytest.raises(ValueError,match='same explicit CRS'):
+            vector_rasterize(faces,reference,burn_value=0)
+        result=vector_rasterize(vector_reproject(faces,target_crs='EPSG:3857'),reference,burn_value=0)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.zeros((2,2)));ds=None
+    import geopandas.testing
+    geopandas.testing.assert_geodataframe_equal(faces,original)
+    with raster_workspace(),pytest.raises(ValueError,match='this execution'):
+        vector_rasterize(faces,reference,burn_value=0)

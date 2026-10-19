@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 import json
 import math
+from numbers import Integral, Real
 import shutil
 from pathlib import Path
 import tempfile
@@ -15,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import geopandas as gpd
-from shapely import from_wkb, make_valid
+from shapely import from_wkb, get_coordinates, has_m, has_z, make_valid
 from shapely.geometry import MultiPolygon
 from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
@@ -764,6 +765,70 @@ def raster_footprint(input_raster, bands=None, validity='any'):
     return result
 
 
+def _rasterize_value(value):
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise ValueError('Rasterization values must be finite real numbers')
+    if isinstance(value, Integral) and abs(int(value)) > 2**53 - 1:
+        raise ValueError('Rasterization integers must be within the Float64 safe integer range')
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError('Rasterization values must be finite real numbers')
+    if number.is_integer() and abs(number) > 2**53 - 1:
+        raise ValueError('Rasterization integers must be within the Float64 safe integer range')
+    return number
+
+
+def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, all_touched=False):
+    if not isinstance(input_gdf, gpd.GeoDataFrame):
+        raise ValueError('input_gdf must be a GeoDataFrame')
+    try:
+        geometries = input_gdf.geometry
+    except AttributeError as error:
+        raise ValueError('input_gdf must have an active geometry column') from error
+    if type(all_touched) is not bool:
+        raise ValueError('all_touched must be a boolean')
+    if (field is None) == (burn_value is None):
+        raise ValueError('Exactly one of field or burn_value is required')
+    if field is not None:
+        if (not isinstance(field, str) or not field.strip() or
+                input_gdf.columns.to_list().count(field) != 1 or field == geometries.name):
+            raise ValueError('field must name one numeric attribute column')
+        values = [_rasterize_value(value) for value in input_gdf[field]]
+    else:
+        values = [_rasterize_value(burn_value)] * len(input_gdf)
+    grid = _open(reference_raster)
+    _grid(grid)
+    if input_gdf.crs is None or not _crs(input_gdf.crs.to_wkt()).IsSame(_crs(grid.GetProjection())):
+        raise ValueError('Vector and reference raster must have the same explicit CRS')
+    for geometry in geometries:
+        if (geometry is None or geometry.is_empty or geometry.geom_type not in ('Polygon', 'MultiPolygon') or
+                has_z(geometry) or has_m(geometry) or not geometry.is_valid or
+                not np.isfinite(get_coordinates(geometry)).all()):
+            raise ValueError('Rasterization requires valid non-empty finite two-dimensional Polygon or MultiPolygon geometry')
+    vector = layer = feature = output = None
+    try:
+        vector = ogr.GetDriverByName('Memory').CreateDataSource('')
+        layer = vector.CreateLayer('features', _crs(grid.GetProjection()), ogr.wkbUnknown)
+        if layer.CreateField(ogr.FieldDefn('burn_value', ogr.OFTReal)) != 0:
+            raise ValueError('Cannot create rasterization value field')
+        for geometry, value in zip(geometries, values):
+            feature = ogr.Feature(layer.GetLayerDefn())
+            feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
+            feature.SetField('burn_value', value)
+            if layer.CreateFeature(feature) != 0:
+                raise ValueError('Cannot create rasterization feature')
+            feature = None
+        output = _numeric_output(grid, 1)
+        output.GetRasterBand(1).Fill(float('nan'))
+        options = ['ATTRIBUTE=burn_value', 'ALL_TOUCHED=' + ('TRUE' if all_touched else 'FALSE')]
+        if values and gdal.RasterizeLayer(output, [1], layer, options=options) != 0:
+            raise ValueError('GDAL vector rasterization failed')
+        output.FlushCache()
+        return _raster(output.GetDescription())
+    finally:
+        feature = layer = vector = output = grid = None
+
+
 def raster_polygonize(input_raster, band, connectivity=4):
     if type(connectivity) is not int or connectivity not in (4, 8):
         raise ValueError('connectivity must be integer 4 or 8')
@@ -1384,6 +1449,7 @@ _SPECS = [
     (raster_aggregate, OperatorCategory.RASTER_CELL, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
+    (vector_rasterize, OperatorCategory.RASTER_EXTENT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
@@ -1414,6 +1480,9 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'validity': 'any'})
     if name == 'raster_polygonize':
         examples.update({'band': 1, 'connectivity': 4})
+    if name == 'vector_rasterize':
+        examples = {'input_gdf': {'$ref': 'polygons'}, 'reference_raster': {'$ref': 'reference'},
+                    'field': 'class_value', 'all_touched': False}
     if name == 'raster_aggregate':
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
