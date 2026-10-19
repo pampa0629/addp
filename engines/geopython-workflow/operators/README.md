@@ -4,7 +4,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 29 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、分类转面、矢量栅格化、坡度、坡向、地形晕渲、等值线、整幅统计、分区统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 30 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、分类转面、矢量栅格化、坡度、坡向、地形晕渲、等值线、整幅统计、分区统计、邻域统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
@@ -32,6 +32,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_zonal_statistics(input_raster, zones_raster, band, zones_band)` 显式选择同网格数值与整数分区波段，按分类值合并非连通区域，输出 `zone_value`、总／有效／无效像元数和 sum/min/max/mean/总体标准差普通表。保留零及负分类；分区无效像元排除，数值全无效的分类保留 null。原生分类保留 Int64，浮点分类仅允许安全范围内的精确整数；最多 512×512 分块，内存随分类数增长。DAG 内完整表可接既有 `save`，公开响应仅含 schema、行数与最多 50 行预览。无隐式对齐、矢量分区、面积加权或分位数；详见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md)。
 
+`raster_focal_statistics` 显式选择数据波段、3×3／5×5 像元窗口及 sum/mean/min/max/总体标准差，输出同网格单波段 Float64。中心无效保留 NaN，忽略无效邻居，图像边缘只统计实际有效像元；带邻域分块读取并保留旋转和定位缺失事实，沿既有 COG 保存。首期不含权重、距离半径、分位数或分类众数滤波；完整规则见[工作流栅格契约](../../../docs/spec/addp工作流计算引擎接口规范.md#46-栅格计算契约)。
+
 ## 目录结构
 
 ```
@@ -48,7 +50,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 78 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 30 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 79 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 31 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -70,7 +72,7 @@ operators/
 | 栅格处理 | 范围处理 | 8 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 像元计算 | 6 | `raster_band_math`、`raster_reclassify`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
-| 栅格处理 | 栅格统计 | 3 | `raster_statistics`、`raster_zonal_statistics`、`raster_histogram` |
+| 栅格处理 | 栅格统计 | 4 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 

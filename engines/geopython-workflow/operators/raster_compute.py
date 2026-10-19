@@ -1141,6 +1141,98 @@ def _numeric_output(grid, count, *, size=None):
     return output
 
 
+def raster_focal_statistics(input_raster, band, window_size, method):
+    """Reduce valid pixel neighbourhoods using bounded source reads with halos."""
+    if isinstance(window_size, bool) or not isinstance(window_size, int) or window_size not in (3, 5):
+        raise ValueError('window_size must be the integer 3 or 5')
+    if method not in ('sum', 'mean', 'min', 'max', 'stddev'):
+        raise ValueError('method must be sum, mean, min, max or stddev')
+    dataset = _open(input_raster)
+    if _band(dataset, band).GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise ValueError('Focal statistics require a data band, not alpha')
+    for index in range(1, dataset.RasterCount + 1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    output = _numeric_output(dataset, 1)
+    destination = output.GetRasterBand(1)
+    radius = window_size // 2
+    core_size = 512 - 2 * radius
+    for y in range(0, dataset.RasterYSize, core_size):
+        for x in range(0, dataset.RasterXSize, core_size):
+            width = min(core_size, dataset.RasterXSize - x)
+            height = min(core_size, dataset.RasterYSize - y)
+            left, top = max(0, x - radius), max(0, y - radius)
+            right = min(dataset.RasterXSize, x + width + radius)
+            bottom = min(dataset.RasterYSize, y + height + radius)
+            _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top)))
+            # Padding supplies only invalid placeholders, never contributing zeros.
+            values = np.pad(np.where(masks[0], arrays[0], 0.), radius)
+            valid = np.pad(masks[0], radius, constant_values=False)
+            cx, cy = x-left+radius, y-top+radius
+            center = values[cy:cy+height, cx:cx+width]
+            center_valid = valid[cy:cy+height, cx:cx+width]
+
+            def neighbours():
+                for dy in range(-radius, radius+1):
+                    for dx in range(-radius, radius+1):
+                        yield (values[cy+dy:cy+dy+height, cx+dx:cx+dx+width],
+                               valid[cy+dy:cy+dy+height, cx+dx:cx+dx+width])
+
+            if method in ('min', 'max'):
+                result = np.full(center.shape, np.inf if method == 'min' else -np.inf)
+                reduce = np.minimum if method == 'min' else np.maximum
+                for sample, mask in neighbours():
+                    reduce(result, sample, out=result, where=mask)
+            else:
+                count = np.zeros(center.shape, dtype=np.int32)
+                scale = np.zeros(center.shape)
+                for sample, mask in neighbours():
+                    count += mask
+                    np.maximum(scale, np.abs(sample), out=scale, where=mask)
+                scale[scale == 0] = 1.
+                divisor = np.maximum(count, 1)
+
+                def normalized(sample, mask):
+                    if method == 'stddev':
+                        with np.errstate(over='ignore', invalid='ignore'):
+                            delta = sample - center
+                        # Subtract first to preserve small differences on large offsets;
+                        # opposite finite extremes need normalized subtraction instead.
+                        term = np.divide(delta, scale, where=np.isfinite(delta), out=np.zeros_like(delta))
+                        np.copyto(term, sample/scale - center/scale, where=~np.isfinite(delta))
+                    else:
+                        term = sample/scale
+                    return np.where(mask, term, 0.)
+
+                total = np.zeros(center.shape)
+                correction = np.zeros(center.shape)
+                for sample, mask in neighbours():
+                    term = normalized(sample, mask)
+                    combined = total + term
+                    correction += np.where(np.abs(total) >= np.abs(term),
+                                           (total-combined)+term, (term-combined)+total)
+                    total = combined
+                total += correction
+                if method == 'stddev':
+                    mean_delta = total/divisor
+                    variance = np.zeros(center.shape)
+                    for sample, mask in neighbours():
+                        residual = normalized(sample, mask) - mean_delta
+                        variance += np.where(mask, residual*residual, 0.)
+                    result = np.sqrt(np.clip(variance/divisor, 0., 1.))*scale
+                else:
+                    with np.errstate(over='ignore', invalid='ignore'):
+                        result = (np.clip(total/divisor, -1., 1.) if method == 'mean' else total)*scale
+            result[~center_valid | ~np.isfinite(result)] = np.nan
+            destination.WriteRaster(x, y, width, height, np.ascontiguousarray(result).tobytes(),
+                                    buf_type=gdal.GDT_Float64)
+    destination = None
+    output.FlushCache()
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
 def raster_aggregate(input_raster, factors, method):
     """Reduce integer pixel groups with bounded reads and independent band validity."""
     factor_x, factor_y = _pair(factors, 'factors', integer=True)
@@ -1543,6 +1635,7 @@ _SPECS = [
     (vector_rasterize, OperatorCategory.RASTER_EXTENT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）')], 'raster', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -1564,6 +1657,8 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
     if name == 'raster_zonal_statistics':
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
+    if name == 'raster_focal_statistics':
+        examples.update({'band': 1, 'window_size': 3, 'method': 'mean'})
     if name == 'raster_mosaic':
         examples = {'input_rasters': [{'$ref': 'source'}, {'$ref': 'other'}],
                     'target_crs': 'EPSG:4326', 'resolution': [0.01, 0.01]}
