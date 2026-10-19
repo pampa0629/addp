@@ -227,7 +227,13 @@ func (s *AuthContextService) resolveSessionCredential(
 	projectCredential func(*SessionCredentialAuthSnapshot) credentialProjection,
 ) (*commonauth.AuthContext, error) {
 	var authContext *commonauth.AuthContext
+	startedAt := time.Now()
+	stage, stageStartedAt := "transaction_begin", startedAt
+	enterStage := func(next string) {
+		stage, stageStartedAt = next, time.Now()
+	}
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
+		enterStage("credential_snapshot")
 		snapshot, err := loadSnapshot(tx)
 		if err != nil {
 			return err
@@ -242,6 +248,7 @@ func (s *AuthContextService) resolveSessionCredential(
 		if snapshot.FamilyContextType == ContextTypeTenant {
 			tenantID = snapshot.TenantID
 			tenantMembershipID = snapshot.TenantMembershipID
+			enterStage("departments")
 			departments, err := tx.ListEffectiveDepartmentMemberships(
 				ctx,
 				*tenantMembershipID,
@@ -265,6 +272,7 @@ func (s *AuthContextService) resolveSessionCredential(
 				})
 			}
 
+			enterStage("project_groups")
 			projectGroups, err := tx.ListEffectiveProjectGroupMemberships(
 				ctx,
 				*tenantMembershipID,
@@ -283,6 +291,7 @@ func (s *AuthContextService) resolveSessionCredential(
 			}
 		}
 
+		enterStage("role_permissions")
 		permissionRows, err := tx.ListEffectiveRoleAssignmentPermissions(
 			ctx,
 			snapshot.FamilyPrincipalID,
@@ -295,6 +304,7 @@ func (s *AuthContextService) resolveSessionCredential(
 		if err != nil {
 			return err
 		}
+		enterStage("projection")
 		assignments, err := buildRoleAssignments(permissionRows)
 		if err != nil {
 			return err
@@ -351,9 +361,11 @@ func (s *AuthContextService) resolveSessionCredential(
 			return fmt.Errorf("project %s AuthContext: %w", projection.TokenType, err)
 		}
 		authContext = candidate
+		enterStage("transaction_commit")
 		return nil
 	})
 	if err != nil {
+		s.logAuthContextResolutionFailure(ctx, err, startedAt, stage, stageStartedAt)
 		return nil, err
 	}
 	return authContext, nil

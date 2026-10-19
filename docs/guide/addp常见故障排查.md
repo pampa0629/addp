@@ -1388,3 +1388,17 @@ Graph 若在首次打开本体详情时退回列表，检查 `logs/graph-fronten
 ### 血缘图自动适配后节点过小或偏离中心
 
 血缘连线的交叉描边与主路径必须同步更新。G6 初次绘制路径可能早于 Dagre 最终布局；若只在 `afterDraw` 创建描边，旧路径即使与画布同色，也会进入整体包围盒，导致自动适配错误。共享 `LineageViewer` 在 `afterUpdate` 同步描边路径，并在 `afterrender` 完成一次视口适配。回归使用 `make test-manager-frontend`，其中双节点图的中心连线点击与来源执行跳转验证适配后的实际位置。
+
+## 资源搜索提示“授权服务暂时不可用”
+
+先核对响应的 `error_code`。`authorization_service_unavailable` 表示消费方未能取得有效的 System AuthContext，不能据此判断用户没有权限，也不能把所有 HTTP 503 归为同一故障。资源树搜索实际调用 Meta `/api/v1/meta/resource-tree/:engine_id/search`；共享认证中间件向 System `/api/v1/system/auth/context` 取得当前授权上下文，上游失败或超时会使该次业务请求失败。
+
+System 的会话凭据投影在非预期失败时输出 `event=iam.auth_context.resolve_failed`，沿用当前 `request_id`，记录总耗时、当前阶段耗时、安全错误分类及合法 SQLSTATE。无效、过期或撤销凭据等预期认证拒绝不记录为内部故障；诊断不包含令牌、Hash、授权快照、SQL 参数或原始错误正文，不改变原有 HTTP 错误和权限判断。
+
+阶段按同一解析路径依次为 `transaction_begin`、`credential_snapshot`、租户上下文的 `departments`／`project_groups`、`role_permissions`、`projection`、`transaction_commit`。阶段耗时包含失败后的事务收尾，不是数据库独立执行时间。`transaction_begin` 可能在等待连接，也可能在建立事务，不能仅凭阶段名称断言连接池耗尽。
+
+失败记录中的 `pool_open`、`pool_in_use`、`pool_idle`、`pool_max_open` 是当时进程内连接池状态；`pool_max_open=0` 表示未限制最大连接数。`pool_wait_count_total` 与 `pool_wait_duration_total_ms` 是整个进程连接池的累计值，不能当作该请求独有的等待时间。读取这些统计不创建额外数据库连接。
+
+排查时以请求 ID 关联消费方和 System，结合数据库当时的连接、等待事件和阻塞者，再与同一时间窗口的运行环境指标对照。应用事件时间与采集时间需要分开，采集积压时不能按落盘先后推断因果。历史高负载与超时同时出现只能形成线索；没有等待状态或进程级证据时，不归因到具体 SQL 或测试任务，不通过延长超时、缓存旧权限或自动重试掩盖问题。
+
+诊断回归使用 `make test-module MODULE=system GO_ONLY=1`，覆盖真实 `database/sql` 连接等待取消、错误保持、安全分类和日志脱敏；这是 Go T1，不替代 PostgreSQL T2 或真实运行验收。现有 Go workspace CI 自动发现这些测试。诊断代码更新后，用户在自己的终端执行 `./scripts/dev/restart.sh -system` 使其生效；AI 不自行重启服务。
