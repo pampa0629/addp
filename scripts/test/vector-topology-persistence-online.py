@@ -209,6 +209,18 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         raise SuiteError('collapsed snap changed scans, sources or saved outputs')
     failure = {'execution_id': failed_id, 'status': 'failed', 'no_publication_or_scan': True,
                'monitor': failed_monitor, 'diagnostic': diagnostic}
+    failed_metadata = obj(failed.get('metadata'), 'failed metadata')
+    failed_result = failed_metadata.get('result')
+    failure['observation'] = {'status': failed['status'], 'outputs': failed.get('outputs'),
+        'lineage_facts': failed_metadata.get('lineage_facts'),
+        'meta_scan_runs': failed_result.get('meta_scan_runs') if isinstance(failed_result, dict) else None}
+    # Preserve the already verified negative case even if a later map fails.
+    # This remains an incomplete suite checkpoint, never a successful T4 report.
+    (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-snap-failure.json').write_text(json.dumps({
+        'schema_version': 'addp.topology-snap-failure/v1', 'result': 'incomplete',
+        'stage': 'collapsed_snap_validated', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'],
+        'identity': identity, 'failed_snap': failure, 'scan_inventory': before_scans,
+        'physical_unchanged': True}, indent=2)+'\n')
     # Browser evidence deliberately contains only stable identities and expected content.
     evidence = {'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity, 'execution_id': identifier,
                 'outputs': [{key: value for key, value in output.items() if key not in ('lineage', 'size_evidence')} for output in outputs],

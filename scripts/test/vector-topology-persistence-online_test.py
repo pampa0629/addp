@@ -145,6 +145,22 @@ class TopologyOnlineTest(unittest.TestCase):
                 m.run_scenario(Path('.'),self.env,client,physical,
                     lambda *args:self.fail('failure must stop before browser'), diagnostic_runner=lambda *args:{})
 
+    def test_browser_failure_preserves_verified_negative_case_without_claiming_suite_success(self):
+        self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'] = 'must-not-archive'
+        def unavailable(*args): raise m.SuiteError('map failed')
+        with self.assertRaisesRegex(m.SuiteError,'map failed'):
+            m.run_scenario(Path('.'),self.env,Client(),physical,unavailable,
+                diagnostic_runner=lambda *args:{'cause':'invalid_snapped_geometry'})
+        path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-snap-failure.json'
+        saved=json.loads(path.read_text())
+        self.assertEqual((saved['result'],saved['stage']),('incomplete','collapsed_snap_validated'))
+        self.assertEqual(saved['failed_snap']['execution_id'],'failed-snap')
+        self.assertEqual(saved['failed_snap']['observation'],{'status':'failed','outputs':None,'lineage_facts':None,'meta_scan_runs':None})
+        self.assertEqual(len(saved['scan_inventory']),8)
+        self.assertEqual(saved['identity']['principal_id'],'33')
+        self.assertNotIn('must-not-archive',path.read_text())
+        self.assertFalse((path.parent/'topology-persistence.json').exists())
+
     def test_geo_package_container_boundary_and_both_snap_lineage_sources_are_required(self):
         item = Client().targets[23]
         m.validate_item(item,physical()['targets']['snapped.gpkg'],'snapped.gpkg')
