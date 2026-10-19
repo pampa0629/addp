@@ -46,7 +46,7 @@
                 size="small"
                 style="margin: 2px"
               >{{ p.name }}</el-tag>
-              <span v-if="(row.properties?.length || 0) > 5" style="color:#999;font-size:12px">
+              <span v-if="(row.properties?.length || 0) > 5" style="color:var(--addp-text-tertiary);font-size:12px">
                 +{{ row.properties.length - 5 }}
               </span>
             </template>
@@ -214,20 +214,20 @@ defineExpose({ open })
   gap: 10px;
   justify-content: center;
   padding: 40px 0;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 .summary-bar {
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin-bottom: 8px;
 }
 .apply-row {
@@ -236,12 +236,12 @@ defineExpose({ open })
   gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--addp-border-color-light);
   flex-wrap: wrap;
 }
 .apply-label, .conflict-label {
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   white-space: nowrap;
 }
 </style>

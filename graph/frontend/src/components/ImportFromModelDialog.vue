@@ -71,7 +71,7 @@
           <el-table-column :label="t('graph.importFromModel.target')" prop="target_name" min-width="100" />
           <el-table-column :label="t('graph.importFromModel.directed')" min-width="70">
             <template #default="{ row }">
-              <el-icon v-if="row.directed" color="#67c23a"><Check /></el-icon>
+              <el-icon v-if="row.directed" color="var(--el-color-success)"><Check /></el-icon>
             </template>
           </el-table-column>
           <el-table-column :label="t('graph.importFromModel.status')" min-width="100">
@@ -216,7 +216,7 @@ defineExpose({ open })
   gap: 10px;
   justify-content: center;
   padding: 40px 0;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 .step-header {
   display: flex;
@@ -224,7 +224,7 @@ defineExpose({ open })
   align-items: center;
   margin-bottom: 12px;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 .conflict-row {
   display: flex;
@@ -232,11 +232,11 @@ defineExpose({ open })
   gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--addp-border-color-light);
 }
 .conflict-label {
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   white-space: nowrap;
 }
 </style>

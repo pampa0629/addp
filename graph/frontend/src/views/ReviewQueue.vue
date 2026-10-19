@@ -356,6 +356,6 @@ onMounted(restoreTabFromRoute)
 .filter-bar { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; }
 .filter-actions { display: flex; gap: 8px; align-items: center; padding-bottom: 8px; }
 .content-summary { font-size: 13px; }
-.source-text { color: #888; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.source-text { color: var(--addp-text-tertiary); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
 </style>

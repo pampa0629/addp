@@ -408,7 +408,7 @@ function formatScore(score) {
 
 .result-warning {
   font-size: 11px;
-  color: #e6a23c;
+  color: var(--el-color-warning);
   margin-bottom: 6px;
 }
 

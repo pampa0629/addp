@@ -278,9 +278,9 @@ onUnmounted(() => {
 .info-card, .materials-card { margin-bottom: 16px; }
 .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
 .info-item { display: flex; align-items: center; gap: 8px; }
-.info-item .label { color: #666; font-size: 13px; min-width: 70px; }
-.stats-row { display: flex; gap: 32px; padding: 12px 0; border-top: 1px solid #f0f0f0; }
-.error-msg { color: #f56c6c; font-size: 13px; margin-top: 8px; }
+.info-item .label { color: var(--addp-text-secondary); font-size: 13px; min-width: 70px; }
+.stats-row { display: flex; gap: 32px; padding: 12px 0; border-top: 1px solid var(--addp-border-color-light); }
+.error-msg { color: var(--el-color-danger); font-size: 13px; margin-top: 8px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .uploading-list { margin-bottom: 12px; }
 .uploading-item { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
