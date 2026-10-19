@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,34 @@ scan_ids=importlib.import_module('scripts.test.vector-pmtiles-workflow-online').
 support=raster.support
 obj,array,positive,SuiteError=raster.obj,raster.array,raster.positive,raster.SuiteError
 SUITE=fixture.SUITE
+
+
+class DiagnosticClient(raster.GatewayClient):
+    """Retain a bounded sanitized public submission error, without extra requests."""
+    def __init__(self,base_url,token,timeout,artifact_dir):
+        super().__init__(base_url,token,timeout)
+        self.artifact_dir=Path(artifact_dir)
+
+    def request(self,method,path,expected,body=None,headers=None):
+        expected=tuple(expected)
+        observed=expected+(500,) if method=='POST' and path=='/api/v1/develop/executions' else expected
+        response=super().request(method,path,observed,body,headers)
+        if response.status in expected:return response
+        payload=obj(response.payload,'submission error')
+        error=payload.get('error')
+        text=error if isinstance(error,str) else 'non-string public error'
+        secrets=[self.token]+[v for k,v in os.environ.items() if any(p in k for p in ('TOKEN','PASSWORD','SECRET','ACCESS_KEY')) and len(v)>=8]
+        for value in secrets:
+            if value:text=text.replace(value,'<redacted>')
+        text=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','<redacted-jwt>',text)
+        text=re.sub(r'(?i)Bearer\s+[^\s,;\"]+','Bearer <redacted>',text)
+        text=re.sub(r'(?i)(password|passwd|token|secret_key|access_key|authorization)([\"\s]*[:=][\"\s]*)[^\s,;\"}]+',r'\1\2<redacted>',text)
+        text=re.sub(r'(https?://)[^/\s:@]+:[^/\s@]+@',r'\1<redacted>@',text)
+        record={'schema_version':'addp.vector-rasterize-submission-diagnostic/v1','status':response.status,
+            'method':method,'path':path,'error':text[:2000]}
+        with (self.artifact_dir/'rasterize-submission-error.json').open('x') as stream:
+            os.chmod(stream.name,0o600);json.dump(record,stream,ensure_ascii=False,indent=2)
+        raise SuiteError(f'{method} {path} returned HTTP {response.status}; see sanitized rasterize-submission-error.json')
 
 
 def definition(sources,parent,name,*,invalid=False):
@@ -116,7 +145,7 @@ def run_scenario(repository,env,client,physical_runner=physical):
 def main():
     env=dict(os.environ)
     report=run_scenario(Path(__file__).resolve().parents[2],env,
-        raster.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30))
+        DiagnosticClient(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30,env['ADDP_ONLINE_ARTIFACT_DIR']))
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'rasterize-persistence.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False,sort_keys=True))
 

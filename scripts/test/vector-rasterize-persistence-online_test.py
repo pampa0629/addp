@@ -109,3 +109,34 @@ class RasterizePersistenceTest(unittest.TestCase):
         target=execution['outputs']['save']['resource']['locator']
         with self.assertRaisesRegex(m.SuiteError,'wrong locator/type'):
             m.raster.validate_success(execution,sources,target,'create',m.fixture.artifact_expectation())
+
+
+class DiagnosticClientTest(unittest.TestCase):
+    def test_only_failed_submission_is_retained_without_credentials_or_extra_requests(self):
+        import json,tempfile,os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            client=m.DiagnosticClient('http://localhost:8000','owned-token-for-test',30,directory)
+            response=SimpleNamespace(status=500,payload={'error':'preparation failed: password=hidden-test; Bearer owned-token-for-test https://user:private-test@host/a','secret_key':'must-not-be-copied'})
+            with patch.object(m.raster.GatewayClient,'request',return_value=response) as request:
+                with self.assertRaisesRegex(m.SuiteError,'sanitized'):
+                    client.request('POST','/api/v1/develop/executions',(200,),{'content':{}})
+                self.assertEqual(request.call_count,1);self.assertEqual(request.call_args.args[2],(200,500))
+            path=Path(directory)/'rasterize-submission-error.json';record=json.loads(path.read_text())
+            self.assertEqual(record['status'],500)
+            for secret in ['hidden-test','owned-token-for-test','private-test','must-not-be-copied']:
+                self.assertNotIn(secret,path.read_text())
+            self.assertEqual(os.stat(path).st_mode & 0o777,0o600)
+
+    def test_success_and_unrelated_routes_keep_existing_client_contract(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            client=m.DiagnosticClient('http://localhost:8000','token',30,directory)
+            response=SimpleNamespace(status=200,payload={})
+            with patch.object(m.raster.GatewayClient,'request',return_value=response) as request:
+                self.assertIs(client.request('POST','/api/v1/develop/executions',(200,),{}),response)
+                self.assertEqual(request.call_args.args[2],(200,500))
+                self.assertIs(client.request('GET','/api/v1/system/auth/context',(200,)),response)
+                self.assertEqual(request.call_args.args[2],(200,))
+            self.assertEqual(list(Path(directory).iterdir()),[])
