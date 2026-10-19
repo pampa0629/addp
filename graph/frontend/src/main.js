@@ -10,7 +10,8 @@ import { useTheme } from '@common-ui'
 import { createAddpI18n } from '../../../common-frontend/basic/src/composables/useAddpI18n'
 import zhCnMessages from './i18n/zh-cn.json'
 import enMessages from './i18n/en.json'
-import { graphMessagesEn, graphMessagesZhCn } from '@addp/common-frontend/graph'
+import graphMessagesEn from '@addp/common-frontend/graph/i18n/en.json'
+import graphMessagesZhCn from '@addp/common-frontend/graph/i18n/zh-cn.json'
 
 const app = createApp(App)
 const pinia = createPinia()

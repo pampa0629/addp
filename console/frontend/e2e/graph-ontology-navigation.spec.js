@@ -37,17 +37,24 @@ test('Graph list opens a stable ontology detail and synchronizes tabs without re
 
 test('Graph ontology name opens the graph tab, shares its URL and returns to the list', async ({ page, context }) => {
   const unexpected = await mockGraph(page)
+  const graphLibraryRequests = []
+  page.on('request', request => {
+    if (/@antv_g6|\/@antv\/g6\//.test(request.url())) graphLibraryRequests.push(request.url())
+  })
   await page.goto('/graph/ontologies')
   const graph = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(graph.getByText('导航测试本体', { exact: true })).toBeVisible()
+  expect(graphLibraryRequests).toEqual([])
   const frame = page.frames().find(frame => frame.parentFrame())
   const documentID = await frame.evaluate(() => performance.timeOrigin)
   await graph.getByText('导航测试本体', { exact: true }).click()
   await expect(page).toHaveURL('/graph/ontologies/1')
   await expect(graph.getByRole('heading', { name: '导航测试本体' })).toBeVisible()
+  expect(graphLibraryRequests).toEqual([])
   await graph.getByRole('tab', { name: '图形视图', exact: true }).click()
   await expect(page).toHaveURL('/graph/ontologies/1?tab=graph')
   await expect(graph.locator('.ontology-view canvas')).toBeVisible()
+  expect(graphLibraryRequests.length).toBeGreaterThan(0)
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(documentID)
   const sharedPage = await context.newPage()
   const sharedUnexpected = await mockGraph(sharedPage)

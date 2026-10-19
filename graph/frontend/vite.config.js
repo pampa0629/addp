@@ -10,7 +10,25 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 export default defineConfig(withModuleFrontend('graph', withFrontendTestIsolation('graph', {
   plugins: [
     vue(),
-    Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
+    Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
+    {
+      name: 'graph-entry-load-boundary',
+      generateBundle(_, bundle) {
+        const pending = Object.values(bundle).filter(item => item.type === 'chunk' && (
+          item.isEntry || /\/src\/views\/(OntologyList|OntologyForm|OntologyDetail|KnowledgeGraphList)\.vue$/.test(item.facadeModuleId || '')
+        ))
+        const visited = new Set()
+        while (pending.length) {
+          const chunk = pending.pop()
+          if (!chunk || chunk.type !== 'chunk' || visited.has(chunk.fileName)) continue
+          visited.add(chunk.fileName)
+          if (Object.keys(chunk.modules).some(id => /\/node_modules\/@antv\/g6(?:[/-])/.test(id))) {
+            this.error(`Graph entry and definition pages must load G6 only through a graph view: ${chunk.fileName}`)
+          }
+          chunk.imports.forEach(file => pending.push(bundle[file]))
+        }
+      }
+    }
   ],
   // Lazy component auto-imports must not replace the optimizer generation while
   // a module navigation is being synchronized with Console.

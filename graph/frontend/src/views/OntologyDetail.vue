@@ -358,12 +358,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus, Location } from '@element-plus/icons-vue'
 import { ontologyAPI } from '../api/ontology'
-import { OntologyView } from '@addp/common-frontend/graph'
 import ImportFromModelDialog from '../components/ImportFromModelDialog.vue'
 import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
 import { useI18n } from 'vue-i18n'
@@ -372,6 +371,7 @@ import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const OntologyView = defineAsyncComponent(() => import('@addp/common-frontend/graph/OntologyView.vue'))
 const authStore = useAuthStore()
 
 const route = useRoute()
