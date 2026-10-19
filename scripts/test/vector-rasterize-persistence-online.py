@@ -61,7 +61,7 @@ def definition(sources,parent,name,*,invalid=False):
         'params':{'input_gdf':{'$ref':'faces'},'reference_raster':{'$ref':'reference'},**params}})
     tasks.append({'id':'save','operator':'raster_save','depends_on':['burn'],
         'params':{'input_raster':{'$ref':'burn'},'target_parent_locator':parent,
-                  'target_name':'invalid.cog.tif' if invalid else name,'mode':'create','profile':'cog','blocksize':128}})
+                  'target_name':'invalid.cog.tif' if invalid else name,'write_mode':'create','profile':'cog','blocksize':128}})
     return {'tasks':tasks}
 
 

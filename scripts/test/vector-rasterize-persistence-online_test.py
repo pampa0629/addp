@@ -40,6 +40,8 @@ class Client:
         elif path.endswith('/workflow-engines'):data=[{'id':7,'engine_type':'geopython_workflow','connection_status':'online'}]
         elif path=='/api/v1/develop/executions' and method=='POST':
             tasks=body['content']['workflow_definition']['tasks'];name=tasks[-1]['params']['target_name'];identifier='exec-'+name
+            if tasks[-1]['params'].get('write_mode')!='create' or 'mode' in tasks[-1]['params']:
+                raise AssertionError('raster_save requires the formal write_mode parameter')
             if name=='invalid.cog.tif':
                 self.executions[identifier]={'status':'failed','outputs':{'save':{}} if self.failure_publishes else {},'metadata':{'result':{}}}
                 if self.failure_scans:self.scans.append('invalid-scan')
@@ -72,12 +74,19 @@ class Client:
 
 
 class RasterizePersistenceTest(unittest.TestCase):
+    def test_raster_save_keys_match_the_existing_formal_raster_workflow(self):
+        canonical=m.raster.workflow('source',3,'b1','create')['tasks'][-1]['params']
+        for name in m.fixture.TARGETS:
+            tasks=m.definition({n:n for n in m.fixture.SOURCES},'parent',name)['tasks']
+            self.assertEqual(set(tasks[-1]['params']),set(canonical))
+            self.assertEqual(tasks[-1]['params']['write_mode'],canonical['write_mode'])
+
     def test_three_exact_dags_and_negative_share_the_public_canonical_nodes(self):
         sources={name:name for name in m.fixture.SOURCES}
         for name in m.fixture.TARGETS:
             tasks=m.definition(sources,'parent',name)['tasks']
             self.assertEqual([t['operator'] for t in tasks],['raster_load','raster_polygonize' if name=='roundtrip.cog.tif' else 'load','vector_rasterize','raster_save'])
-            self.assertEqual(tasks[-1]['params']['profile'],'cog');self.assertEqual(tasks[-1]['params']['mode'],'create')
+            self.assertEqual(tasks[-1]['params']['profile'],'cog');self.assertEqual(tasks[-1]['params']['write_mode'],'create')
             self.assertEqual(tasks[2]['params'].get('all_touched',False),name=='constant.cog.tif')
         self.assertEqual(m.definition(sources,'parent','field.cog.tif',invalid=True)['tasks'][2]['params']['field'],'missing_field')
         with self.assertRaises(m.SuiteError):m.definition(sources,'parent','../outside.tif')
