@@ -1556,8 +1556,7 @@ _ELEVATION_UNIT_NAMES = {'m': 'metre', 'meter': 'metre', 'metre': 'metre',
                          'us survey foot': 'us_survey_foot', 'us_survey_foot': 'us_survey_foot'}
 
 
-def _dem_source(input_raster, elevation_unit, band, minimum_size):
-    dataset = _open(input_raster)
+def _projected_north_up_grid(dataset):
     _, _, transform = _grid(dataset)
     reference = _crs(dataset.GetProjection())
     horizontal_metres = reference.GetLinearUnits()
@@ -1565,7 +1564,142 @@ def _dem_source(input_raster, elevation_unit, band, minimum_size):
         or not math.isfinite(horizontal_metres) or horizontal_metres <= 0
         or reference.GetLinearUnitsName().lower() in ('unknown', '')
         or transform[1] <= 0 or transform[5] >= 0 or transform[2] != 0 or transform[4] != 0):
-        raise ValueError('DEM requires a projected north-up grid with known linear units; reproject explicitly')
+        raise ValueError('Raster analysis requires a projected north-up grid with known linear units; reproject explicitly')
+    return horizontal_metres
+
+
+def _squared_distance_line(cost):
+    """Lower envelope of (x-q)^2 + cost[q], excluding infinite sites."""
+    sites = np.flatnonzero(np.isfinite(cost))
+    if not len(sites):
+        return np.full(cost.shape, np.inf)
+    vertices = np.empty(len(sites), dtype=np.int64)
+    boundaries = np.empty(len(sites) + 1, dtype=np.float64)
+    vertices[0] = sites[0]
+    boundaries[0], boundaries[1] = -np.inf, np.inf
+    top = 0
+    for site in sites[1:]:
+        while True:
+            previous = vertices[top]
+            # Equivalent to subtracting parabola intercepts, without forming
+            # two large squared coordinates and then cancelling them.
+            crossing = ((cost[site] - cost[previous]) / (int(site) - int(previous))
+                        + int(site) + int(previous)) / 2
+            if top == 0 or crossing > boundaries[top]:
+                break
+            top -= 1
+        top += 1
+        vertices[top] = site
+        boundaries[top], boundaries[top + 1] = crossing, np.inf
+    coordinates = np.arange(len(cost), dtype=np.float64)
+    owners = vertices[np.searchsorted(boundaries[1:top + 1], coordinates, side='left')]
+    return np.square(coordinates - owners) + cost[owners]
+
+
+def _read_distance_values(stream, count):
+    values = np.frombuffer(stream.read(count * 8), dtype=np.float64)
+    if values.size != count:
+        raise RuntimeError('Incomplete private distance intermediate')
+    return values
+
+
+def _transpose_distance_file(source, target, width, height):
+    """Transpose owned raw Float64 storage with one bounded tile, no mmap."""
+    with source.open('rb') as reader, target.open('xb+') as writer:
+        writer.truncate(width * height * 8)
+        for y in range(0, height, 512):
+            rows = min(512, height - y)
+            for x in range(0, width, 512):
+                columns = min(512, width - x)
+                tile = np.empty((rows, columns), dtype=np.float64)
+                for row in range(rows):
+                    reader.seek(((y + row) * width + x) * 8)
+                    tile[row] = _read_distance_values(reader, columns)
+                for column in range(columns):
+                    writer.seek(((x + column) * height + y) * 8)
+                    writer.write(tile[:, column].tobytes())
+
+
+def raster_proximity(input_raster, band, target_values):
+    dataset = _open(input_raster)
+    horizontal_metres = _projected_north_up_grid(dataset)
+    width, height, transform = _grid(dataset)
+    if transform[1] != -transform[5]:
+        raise ValueError('Proximity requires square pixels; resample explicitly')
+    step_metres = transform[1] * horizontal_metres
+    if not math.isfinite(step_metres) or step_metres <= 0:
+        raise ValueError('Pixel distance must be a finite positive metre value')
+    selected = _band(dataset, band)
+    ranges = {gdal.GDT_Byte: (0, 255), gdal.GDT_Int8: (-128, 127),
+              gdal.GDT_UInt16: (0, 65535), gdal.GDT_Int16: (-32768, 32767),
+              gdal.GDT_UInt32: (0, 4294967295), gdal.GDT_Int32: (-2147483648, 2147483647)}
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand or selected.DataType not in ranges:
+        raise ValueError('Proximity requires a non-alpha integer data band of at most 32 bits')
+    lower, upper = ranges[selected.DataType]
+    if (not isinstance(target_values, list) or not target_values
+        or any(isinstance(v, bool) or not isinstance(v, Integral) or not lower <= v <= upper for v in target_values)
+        or len(set(target_values)) != len(target_values)):
+        raise ValueError('target_values must be distinct integers within the selected band type')
+    for index in range(1, dataset.RasterCount + 1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    indices = np.arange(width, dtype=np.int64)
+    rows_path, columns_path = _path('.distance'), _path('.distance')
+    output = destination = None
+    try:
+        target_count = 0
+        with rows_path.open('xb') as rows:
+            for row in range(height):
+                targets = np.zeros(width, dtype=bool)
+                for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1)):
+                    matched = masks[0][0] & np.isin(arrays[0][0], target_values)
+                    targets[x:x + matched.size] = matched
+                target_count += int(np.count_nonzero(targets))
+                left = np.maximum.accumulate(np.where(targets, indices, -1))
+                right = np.minimum.accumulate(np.where(targets, indices, width)[::-1])[::-1]
+                distances = np.minimum(np.where(left >= 0, indices - left, np.inf),
+                                       np.where(right < width, right - indices, np.inf))
+                rows.write(np.square(distances).tobytes())
+        if target_count == 0:
+            raise ValueError('Proximity requires at least one valid target pixel')
+        _transpose_distance_file(rows_path, columns_path, width, height)
+        rows_path.unlink()
+        with columns_path.open('r+b') as columns:
+            for column in range(width):
+                columns.seek(column * height * 8)
+                distances = _squared_distance_line(_read_distance_values(columns, height))
+                columns.seek(column * height * 8)
+                columns.write(distances.tobytes())
+        output = _numeric_output(dataset, 1)
+        destination = output.GetRasterBand(1)
+        destination.SetUnitType('metre')
+        with columns_path.open('rb') as columns:
+            for x, y, arrays, masks in _blocks(dataset, [band]):
+                rows, count = arrays[0].shape
+                distances = np.empty((rows, count), dtype=np.float64)
+                for column in range(count):
+                    columns.seek(((x + column) * height + y) * 8)
+                    distances[:, column] = _read_distance_values(columns, rows)
+                with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                    distances = np.sqrt(distances) * step_metres
+                if np.any(masks[0] & ~np.isfinite(distances)):
+                    raise ValueError('Proximity exceeds finite Float64 metre distances')
+                distances[~masks[0]] = np.nan
+                destination.WriteArray(distances, x, y)
+        path = output.GetDescription()
+        destination = None
+        output.FlushCache()
+        output = None
+        return _raster(path)
+    finally:
+        destination = output = None
+        rows_path.unlink(missing_ok=True)
+        columns_path.unlink(missing_ok=True)
+
+
+def _dem_source(input_raster, elevation_unit, band, minimum_size):
+    dataset = _open(input_raster)
+    horizontal_metres = _projected_north_up_grid(dataset)
     if min(dataset.RasterXSize, dataset.RasterYSize) < minimum_size:
         raise ValueError(f'DEM must be at least {minimum_size} by {minimum_size} pixels')
     if not isinstance(elevation_unit, str) or elevation_unit not in _ELEVATION_METRES:
@@ -1716,6 +1850,7 @@ _SPECS = [
     (raster_select_bands, OperatorCategory.RASTER_BAND, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, OperatorCategory.RASTER_CELL, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CELL, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
+    (raster_proximity, OperatorCategory.RASTER_CELL, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CELL, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
@@ -1745,6 +1880,8 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
     if name == 'raster_zonal_statistics':
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
+    if name == 'raster_proximity':
+        examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_focal_statistics':
         examples.update({'band': 1, 'window_size': 3, 'method': 'mean'})
     if name == 'raster_vector_zonal_statistics':

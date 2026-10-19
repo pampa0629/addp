@@ -100,6 +100,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-proximity-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-proximity-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "raster-focal-statistics-persistence": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-focal-statistics-persistence-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

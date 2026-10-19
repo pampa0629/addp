@@ -22,7 +22,7 @@ from operators.raster_compute import (
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
     raster_tile, raster_save_tiles, raster_tiles_info,
     raster_slope, raster_aspect, raster_hillshade, raster_contour, vector_rasterize,
-    raster_focal_statistics, raster_vector_zonal_statistics,
+    raster_focal_statistics, raster_vector_zonal_statistics, raster_proximity,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -4821,3 +4821,249 @@ def test_vector_zonal_statistics_metadata_example_and_native_failure_cleanup(tmp
         monkeypatch.setattr(gdal,'RasterizeLayer',fail)
         with pytest.raises(RuntimeError,match='injected'):raster_vector_zonal_statistics(**args)
     assert not workspace.exists() and path.read_bytes()==before
+
+
+def proximity_source(path, values, *, dtype=gdal.GDT_Int16, crs='EPSG:3857', transform=(100,2,0,200,0,-2), nodata=-9999):
+    data=values[None,...] if values.ndim==2 else values
+    dataset=gdal.GetDriverByName('GTiff').Create(str(path),data.shape[2],data.shape[1],data.shape[0],dtype)
+    if transform is not None:dataset.SetGeoTransform(transform)
+    if crs:
+        reference=osr.SpatialReference();reference.SetFromUserInput(crs);dataset.SetProjection(reference.ExportToWkt())
+    for index,array in enumerate(data,1):
+        band=dataset.GetRasterBand(index);band.WriteArray(array)
+        if nodata is not None:band.SetNoDataValue(nodata)
+    band=dataset=None
+    return path
+
+
+def proximity_oracle(values, codes, valid, step):
+    y,x=np.indices(values.shape)
+    targets=np.argwhere(valid & np.isin(values,codes))
+    squared=np.full(values.shape,np.inf)
+    for row,column in targets:
+        squared=np.minimum(squared,(x-int(column))**2+(y-int(row))**2)
+    return np.where(valid,np.sqrt(squared)*step,np.nan)
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,9),(9,1),(37,41)])
+@pytest.mark.parametrize('crs,factor',[('EPSG:3857',1.),('EPSG:2277',1200/3937)])
+def test_raster_proximity_exact_centres_targets_zero_raw_values_units_and_cog(tmp_path,shape,crs,factor):
+    values=np.full(shape,8,dtype=np.int16)
+    values.flat[0]=0;values.flat[-1]=-3
+    if values.size>2:values.flat[1]=-9999
+    path=proximity_source(tmp_path/'source.tif',values,crs=crs)
+    dataset=gdal.Open(str(path),gdal.GA_Update);band=dataset.GetRasterBand(1)
+    band.SetScale(17);band.SetOffset(500);band=None;dataset=None
+    before=path.read_bytes();valid=values!=-9999
+    with raster_workspace():
+        result=raster_proximity(raster_load(source_plan(path)),1,[0,-3]);workspace=result.workspace
+        assert not list(workspace.glob('*.distance'))
+        target=tmp_path/'distance.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        dataset=gdal.Open(str(target));band=dataset.GetRasterBand(1)
+        assert dataset.GetGeoTransform()==(100,2,0,200,0,-2) and dataset.RasterCount==1
+        reference=osr.SpatialReference();reference.ImportFromWkt(dataset.GetProjection());assert reference.GetAuthorityCode(None)==crs.split(':')[-1]
+        assert band.DataType==gdal.GDT_Float64 and np.isnan(band.GetNoDataValue()) and band.GetUnitType()=='metre'
+        assert band.GetScale() is None and band.GetOffset() is None
+        np.testing.assert_allclose(read_band_values(band),proximity_oracle(values,[0,-3],valid,2*factor),rtol=1e-14,atol=1e-14,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(valid,255,0))
+        band=dataset=None
+    assert not workspace.exists() and path.read_bytes()==before
+
+
+def test_raster_proximity_independent_random_nearest_oracle_catches_gdal_approximation(tmp_path):
+    # Seed 37 includes a configuration where GDAL's neighbour propagation
+    # misses the true nearest centre by about .088 pixels, beyond Float32 error.
+    shape=(37,41)
+    for seed in (0,1,13,37,73):
+        values=np.full(shape,9,dtype=np.int16)
+        values.flat[np.random.default_rng(seed).choice(values.size,size=20,replace=False)]=1
+        source=proximity_source(tmp_path/f'source-{seed}.tif',values)
+        with raster_workspace():
+            result=raster_proximity(raster_load(source_plan(source)),1,[1]);dataset=gdal.Open(str(result.path))
+            np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)),proximity_oracle(values,[1],np.ones(shape,bool),2),rtol=1e-14,atol=1e-14)
+            dataset=None
+
+
+def test_raster_proximity_cross_block_selected_band_validity_holes_are_not_obstacles(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    values=np.full((515,519),9,dtype=np.int16);values[0,0]=0;values[514,518]=-3
+    values[200:207,200:207]=-9999
+    alpha=np.full(values.shape,255,dtype=np.int16);alpha[0,0]=128;alpha[100:103,:]=0;alpha[511,511]=-1
+    mask=np.full(values.shape,255,dtype=np.uint8);mask[508,510]=0
+    source=proximity_source(tmp_path/'source.tif',np.stack([np.zeros_like(values),values,alpha]))
+    dataset=gdal.Open(str(source),gdal.GA_Update);dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+    dataset.GetRasterBand(1).GetMaskBand().WriteArray(mask);dataset=None
+    before=source.read_bytes();reads=[];original=compute._read_values
+    def bounded(band,x,y,width,height):
+        assert width<=512 and height<=512
+        reads.append((width,height));return original(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',bounded)
+    with raster_workspace():
+        result=raster_proximity(raster_load(source_plan(source)),2,[0,-3]);dataset=gdal.Open(str(result.path))
+        valid=(values!=-9999)&(alpha>0)&(mask>0)
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)),proximity_oracle(values,[0,-3],valid,2),rtol=1e-14,atol=1e-14,equal_nan=True)
+        assert read_band_values(dataset.GetRasterBand(1))[104,0]==208
+        dataset=None
+    assert reads and max(w for w,h in reads)==512 and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('dtype,code',[(gdal.GDT_Byte,255),(gdal.GDT_Int8,-128),(gdal.GDT_UInt16,65535),(gdal.GDT_Int16,-32768),(gdal.GDT_UInt32,4294967295),(gdal.GDT_Int32,-2147483648)])
+def test_raster_proximity_preserves_all_approved_integer_class_limits(tmp_path,dtype,code):
+    source=proximity_source(tmp_path/'source.tif',np.array([[0,code],[0,0]],dtype=np.int64),dtype=dtype,nodata=None)
+    with raster_workspace():
+        result=raster_proximity(raster_load(source_plan(source)),1,[code]);dataset=gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)),[[2,0],[math.sqrt(8),2]],rtol=1e-14)
+        dataset=None
+
+
+@pytest.mark.parametrize('fault',['geographic','missing-crs','missing-grid','rotated','south-up','west-up','nonsquare','unknown-unit',
+    'float32','float64','int64','uint64','complex','alpha','band-zero','band-bool','band-float','band-missing',
+    'empty-targets','tuple-targets','float-target','bool-target','outside-type','duplicate-target','none-targets','no-targets','all-invalid'])
+def test_raster_proximity_rejects_unapproved_inputs_without_intermediates(tmp_path,fault):
+    transform={'missing-grid':None,'rotated':(0,2,.1,0,0,-2),'south-up':(0,2,0,0,0,2),
+        'west-up':(0,-2,0,0,0,-2),'nonsquare':(0,2,0,0,0,-3)}.get(fault,(0,2,0,0,0,-2))
+    crs='EPSG:4326' if fault=='geographic' else '' if fault=='missing-crs' else 'EPSG:3857'
+    dtype={'float32':gdal.GDT_Float32,'float64':gdal.GDT_Float64,'int64':gdal.GDT_Int64,
+        'uint64':gdal.GDT_UInt64,'complex':gdal.GDT_CFloat32}.get(fault,gdal.GDT_Int16)
+    source=proximity_source(tmp_path/'bad.tif',np.ones((3,4)),dtype=dtype,crs=crs,transform=transform,nodata=None if fault=='uint64' else -9999)
+    if fault in ('alpha','unknown-unit','all-invalid'):
+        data=gdal.Open(str(source),gdal.GA_Update)
+        if fault=='alpha':data.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+        elif fault=='all-invalid':data.GetRasterBand(1).SetNoDataValue(1)
+        else:
+            srs=osr.SpatialReference();srs.SetProjCS('Unspecified linear unit grid');srs.SetWellKnownGeogCS('WGS84')
+            srs.SetMercator(0,13,1,0,0);srs.SetLinearUnits('unknown',1.23456789);data.SetProjection(srs.ExportToWkt())
+        data=None
+    band={'band-zero':0,'band-bool':True,'band-float':1.,'band-missing':2}.get(fault,1)
+    codes={'empty-targets':[],'tuple-targets':(1,),'float-target':[1.],'bool-target':[True],'outside-type':[32768],
+        'duplicate-target':[1,1],'none-targets':None,'no-targets':[0]}.get(fault,[1])
+    before=source.read_bytes()
+    with raster_workspace(),pytest.raises(ValueError):
+        loaded=raster_load(source_plan(source));workspace=loaded.workspace;raster_proximity(loaded,band,codes)
+    assert not workspace.exists() and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('failure',['transpose','line','write'])
+def test_raster_proximity_failure_closes_files_and_cleans_private_intermediates(tmp_path,monkeypatch,failure):
+    import operators.raster_compute as compute
+    source=proximity_source(tmp_path/'source.tif',np.array([[1,0],[0,0]],dtype=np.int16))
+    def fail(*args,**kwargs):raise RuntimeError('injected distance failure')
+    if failure=='transpose':monkeypatch.setattr(compute,'_transpose_distance_file',fail)
+    elif failure=='line':monkeypatch.setattr(compute,'_squared_distance_line',fail)
+    else:
+        class FailingBand:
+            def SetUnitType(self,*a):pass
+            WriteArray=fail
+        class FailingOutput:
+            def GetRasterBand(self,*a):return FailingBand()
+        monkeypatch.setattr(compute,'_numeric_output',lambda *a:FailingOutput())
+    with raster_workspace():
+        loaded=raster_load(source_plan(source));workspace=loaded.workspace
+        with pytest.raises(RuntimeError,match='injected'):raster_proximity(loaded,1,[1])
+        assert not list(workspace.glob('*.distance'))
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize('invalid',[False,True])
+def test_raster_proximity_async_cog_dag_metadata_example_and_workspace_cleanup(tmp_path,monkeypatch,invalid):
+    import api_server
+    import workflow_engine
+    source=proximity_source(tmp_path/'source.tif',np.array([[0,9,9],[9,9,1]],dtype=np.int16))
+    target=tmp_path/'distance.cog.tif';before=source.read_bytes()
+    spec=next(s for s in list_operators() if s['name']=='raster_proximity')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    params=spec['detailed_description']['workflow_example']['params'].copy();params['target_values']=[7] if invalid else [0,1]
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'distance','operator':'raster_proximity','depends_on':['source'],'params':params},
+        {'id':'save','operator':'raster_save','depends_on':['distance'],'params':{
+            'input_raster':{'$ref':'distance'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_proximity':paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and source.read_bytes()==before
+    if invalid:assert not target.exists()
+    else:
+        artifact=json.loads(status['result']);assert artifact['size_bytes']==target.stat().st_size>0
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+    assert client.post('/api/operators/raster_proximity/invoke',json={'params':{}}).status_code==403
+
+
+def test_raster_proximity_lower_envelope_matches_definition_for_missing_sites_and_ties():
+    from operators.raster_compute import _squared_distance_line
+    random=np.random.default_rng(84019)
+    for length in (1,2,3,17,100):
+        for _ in range(20):
+            cost=random.integers(0,1000,size=length).astype(float)
+            cost[random.random(length)<.4]=np.inf
+            coordinates=np.arange(length)
+            expected=np.minimum.reduce([(coordinates-i)**2+value for i,value in enumerate(cost)])
+            np.testing.assert_array_equal(_squared_distance_line(cost),expected)
+
+
+@pytest.mark.parametrize('fault',['alpha','mask','nodata','all-invalid-targets'])
+def test_raster_proximity_excludes_invalid_targets_without_other_band_interference(tmp_path,fault):
+    values=np.array([[1,9,1],[1,1,9]],dtype=np.int16)
+    alpha=np.array([[128,255,0],[-1,255,255]],dtype=np.int16)
+    mask=np.array([[255,255,255],[255,0,255]],dtype=np.uint8)
+    if fault=='alpha':mask[:]=255
+    if fault=='mask':alpha[:]=255
+    if fault=='nodata':values[0,2]=-9999
+    if fault=='all-invalid-targets':alpha[0,0]=0
+    path=proximity_source(tmp_path/'targets.tif',np.stack([np.full_like(values,-9999),values,alpha]))
+    dataset=gdal.Open(str(path),gdal.GA_Update);dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+    dataset.GetRasterBand(1).GetMaskBand().WriteArray(mask);dataset=None
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        if fault=='all-invalid-targets':
+            with pytest.raises(ValueError,match='valid target'):raster_proximity(loaded,2,[1])
+        else:
+            result=raster_proximity(loaded,2,[1]);dataset=gdal.Open(str(result.path))
+            valid=(alpha>0)&(mask>0)&(values!=-9999)
+            np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)),proximity_oracle(values,[1],valid,2),rtol=1e-14,equal_nan=True)
+            dataset=None
+
+
+def test_raster_proximity_truncated_intermediate_fails_and_is_removed(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    source=proximity_source(tmp_path/'source.tif',np.array([[1,0],[0,0]],dtype=np.int16))
+    transpose=compute._transpose_distance_file
+    def truncated(source,target,width,height):
+        transpose(source,target,width,height)
+        with target.open('r+b') as file:file.truncate(0)
+    monkeypatch.setattr(compute,'_transpose_distance_file',truncated)
+    with raster_workspace():
+        loaded=raster_load(source_plan(source))
+        with pytest.raises(RuntimeError,match='Incomplete private distance'):raster_proximity(loaded,1,[1])
+        assert not list(loaded.workspace.glob('*.distance'))
+
+
+def test_raster_proximity_overflow_fails_only_for_valid_distance_values(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute,'_projected_north_up_grid',lambda dataset:1e308)
+    for invalid_far in (False,True):
+        values=np.array([[1,9,-9999 if invalid_far else 9]],dtype=np.int16)
+        source=proximity_source(tmp_path/f'source-{invalid_far}.tif',values,transform=(0,1,0,0,0,-1))
+        with raster_workspace():
+            loaded=raster_load(source_plan(source))
+            if not invalid_far:
+                with pytest.raises(ValueError,match='finite Float64'):raster_proximity(loaded,1,[1])
+            else:
+                result=raster_proximity(loaded,1,[1]);dataset=gdal.Open(str(result.path))
+                np.testing.assert_array_equal(read_band_values(dataset.GetRasterBand(1)),[[0.,1e308,np.nan]])
+                dataset=None
+            assert not list(loaded.workspace.glob('*.distance'))

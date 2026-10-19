@@ -4,7 +4,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 31 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、分类转面、矢量栅格化、坡度、坡向、地形晕渲、等值线、整幅统计、分区统计、邻域统计、矢量分区统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 32 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、分类转面、矢量栅格化、坡度、坡向、地形晕渲、等值线、整幅统计、分区统计、邻域统计、矢量分区统计、邻近距离及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
@@ -15,6 +15,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 `raster_update(input_raster, update_raster)` 保持基底网格，逐数据波段用更新源有效像元覆盖，更新源无效时保留基底原值，二者均无效时输出 NaN。输入须同宽高、同六参数仿射网格、等价 CRS 和等数据波段数；先用 `raster_align` 对齐、用 `raster_select_bands` 重排，多个来源通过节点顺序串联，后一次有效更新优先。结果为新的 Float64 数据波段，不改写源，不保留 alpha 大小或颜色模型；合法零和部分透明有效值按原数值更新。只支持 workflow，输出继续由 `raster_save` 持久化。
 
 `raster_reclassify` 对 `band`（默认 1）应用非空 JSON 规则数组，例如 `[{"min":0,"max":10,"class":1},{"value":10,"class":2}]`。区间左闭右开，`null` 端点表示无界，规则重叠或重复时拒绝执行。未命中的有效像元默认设为 NaN，可设置 `unmatched=keep` 保留原值；源无效像元始终无效。输出同网格 Float64 单波段，不复制分类色表，不将 alpha 当作分类数据。无需空间定位，保留源定位缺失事实；在现有参数面板中填写 JSON 数组即可。
+
+`raster_proximity(input_raster, band, target_values)` 计算每个有效像元中心到最近有效目标分类像元中心的平面欧氏距离，输出同网格、同 CRS 的米制 Float64 单波段。显式选择不超过 32 位的整数数据波段及非空、不重复的目标整数数组，允许合法零，使用原始分类值。源须为已知线性单位的二维投影、北向无旋转且方形像元；无效像元保留 NaN，距离可跨越无效区域，没有有效目标则失败。通过一维抛物线下包络分离计算精确距离，私有文件承载整幅中间数据，内存随行列长度及固定块增长；不承诺任意规模容量。复用原 COG 保存，不含测地、成本或路径计算。
 
 `raster_aggregate` 使用必填 `factors=[列倍数,行倍数]` 和 `method=sum/mean/min/max`，按整数像元组逐数据波段计算。忽略无效像元，全无效组输出 NaN；保留边缘不足整块的组，按已有像元计算。有定位时按倍数缩放仿射列、行向量，因此边缘像元的完整空间大小可能使输出范围超出源右侧或底侧。保留定位缺失事实，不插值、不自动添加 alpha 或颜色模型。读取和输出累积均分块，均值通过两遍扫描避免直接求和溢出及微小值直接除以数量下溢。
 
@@ -52,7 +54,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 80 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 32 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 81 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 33 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -73,7 +75,7 @@ operators/
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
 | 栅格处理 | 范围处理 | 8 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 像元计算 | 6 | `raster_band_math`、`raster_reclassify`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
+| 栅格处理 | 像元计算 | 7 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
 | 栅格处理 | 栅格统计 | 5 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |

@@ -590,6 +590,11 @@ test-vector-zonal-statistics-online-runner: ## 验证矢量分区统计独立 T4
 	@bash -n scripts/test/online-hosted-vector-zonal-statistics-gate.sh
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-zonal-statistics-persistence-online_test.py scripts/test/online-vector-zonal-statistics-fixture_test.py scripts/test/online-hosted-vector-zonal-statistics-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_vector_zonal_requires_manual_nfs_complete_gpkg_and_regressions
 
+.PHONY: test-raster-proximity-online-runner
+test-raster-proximity-online-runner: ## 验证邻近距离独立 T4、完整 COG 与隔离生命周期
+	@bash -n scripts/test/online-hosted-raster-proximity-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-proximity-persistence-online_test.py scripts/test/online-raster-proximity-fixture_test.py scripts/test/online-hosted-raster-proximity-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_proximity_requires_manual_nfs_identity_exact_distances_and_regressions
+
 .PHONY: test-raster-focal-statistics-online-runner
 test-raster-focal-statistics-online-runner: ## 验证邻域统计独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-statistics-gate.sh
@@ -606,6 +611,7 @@ test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
 
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-raster-proximity-online-runner
 	@$(MAKE) test-vector-zonal-statistics-online-runner
 	@$(MAKE) test-raster-focal-statistics-online-runner
 	@$(MAKE) test-raster-zonal-statistics-online-runner

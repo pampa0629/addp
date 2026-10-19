@@ -61,6 +61,7 @@
 | `raster_zonal_statistics` | 同网格数值／整数分区 raster、必填数值／分区波段 | 同类非连通区域合并，分区无效像元排除；输出每类像元计数及 sum/min/max/mean/总体标准差普通表，全无效数值为 null，沿既有保存。Native 与真实跨模块验收分别记账。 |
 | `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；Native 与真实跨模块验收分别记账。 |
 | `raster_vector_zonal_statistics` | raster、同 CRS 有效二维面、必填数据波段，可选覆盖规则及列前缀 | 首期已实现；每面独立，重叠分别计入，保留原面／属性／顺序并追加计数与五项统计，复用矢量保存；Native 与真实跨模块验收分别记账。 |
+| `raster_proximity` | raster、必填不超过 32 位的整数数据波段、显式目标分类值 | 首期已实现；投影北向方形网格，最近有效目标像元中心的米制 Float64 欧氏距离；源无效位置保留 NoData，不作为障碍，无有效目标失败；Native 与真实链路分开记账。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |
 | `raster_slope` | raster、必填高程单位、band、degree/percent | 同网格单波段坡度，默认角度。 |
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
@@ -159,7 +160,8 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
-| `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。入口建设中，尚未计为真实验收通过。 |
+| `make test-online ONLINE_SUITE=raster-proximity-persistence` | 邻近距离米制多波段及英尺制 UInt32 两条 COG 保存链；完整像元／mask、米制单位、源网格／CRS、COG、严格三方大小、精确扫描、同用户／当前执行输入血缘及失败清理；独立手工 Hosted，600 秒预算。入口已登记，真实 Hosted 尚未运行。 |
+| `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。入口已登记，真实 Hosted 尚未通过。 |
 | `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
 | `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
@@ -190,4 +192,4 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 
 ### 6.7 矢量分区统计验收边界
 
-独立 `vector-zonal-statistics-persistence` 复用 Hosted 一次性部署、NFS、同源产品 Runtime 和普通用户原 12 权限，不修改其他套件、权限或跨模块产品逻辑。已登记 GeoJSON 面与旋转多波段 TIFF 覆盖重叠、孔洞、多部件、网格外及全无效值；前两条 DAG 必须记录两源血缘，重分类→转面→统计仅记录实际 TIFF 输入。非法波段、统计列冲突不得发布文件或新增扫描；保存沿通用 `save`，不新增 RasterArtifact。所有成果、源和先前成果按完整物理 oracle 检查，退出核对工作区、NFS、部署和 Infra 零残留。预算独立 600 秒，不包含矢量重投影、修复、面积加权、分位数、Manager 绘制、覆盖冲突、业务删除或容量认证。真实执行证据通过后另行回填。
+独立 `vector-zonal-statistics-persistence` 复用 Hosted 一次性部署、NFS、同源产品 Runtime 和普通用户原 12 权限，不修改其他套件、权限或跨模块产品逻辑。已登记 GeoJSON 面与旋转多波段 TIFF 覆盖重叠、孔洞、多部件、网格外及全无效值；前两条 DAG 必须记录两源血缘，重分类→转面→统计仅记录实际 TIFF 输入。非法波段、统计列冲突不得发布文件或新增扫描；保存沿通用 `save`，不新增 RasterArtifact。所有成果、源和先前成果按完整物理 oracle 检查，退出核对工作区、NFS、部署和 Infra 零残留。预算独立 600 秒，不包含矢量重投影、修复、面积加权、分位数、Manager 绘制、覆盖冲突、业务删除或容量认证。脚本及物理 oracle 专项已通过，真实 Hosted 尚未通过；最终证据通过后回填。

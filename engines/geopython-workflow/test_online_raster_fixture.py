@@ -2354,3 +2354,82 @@ def test_vector_zonal_persistence_oracle_rejects_corruption(vector_zonal_persist
     elif corruption=='missing':path.unlink()
     else:(root/'outputs/extra.gpkg').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.fixture(scope='module')
+def proximity_persistence(tmp_path_factory):
+    module=importlib.import_module('business.scripts.online-raster-proximity-fixture')
+    scene=importlib.import_module('scripts.test.raster-proximity-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path_factory.mktemp('proximity-export');(root/'outputs').mkdir()
+    initial=module.seed(root)
+    def execute(name,invalid=None):
+        definition=scene.definition({n:n for n in module.SOURCES},'parent',name,invalid=invalid)
+        for task in definition['tasks']:
+            params=task['params']
+            if task['operator']=='raster_load':
+                path=root/params.pop('locator')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{
+                    'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+            elif task['operator']=='raster_save':
+                params.pop('target_parent_locator');target=root/'outputs'/params.pop('target_name')
+                mode=params.pop('write_mode')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','target':{
+                    'kind':'file','format':'tiff','name':target.name,'write_mode':mode,
+                    'access':{'method':'mounted_path','path':str(target)}}}
+        return execute_workflow(definition)
+    for name in module.TARGETS:
+        result=execute(name);assert result['status']=='success',result
+        artifact=json.loads(result['final_result'])
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==(root/'outputs'/name).stat().st_size>0
+    for fault in ('band','targets'):
+        result=execute('metres.cog.tif',fault)
+        assert result['status']=='failed',result
+        assert not (root/'outputs'/f'failed-{fault}.cog.tif').exists()
+    return module,root,initial
+
+
+def test_proximity_persistence_real_gdal_two_cog_chains_and_complete_distances(proximity_persistence):
+    module,root,initial=proximity_persistence
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources']
+    assert len(actual['targets'])==2
+    for fact in actual['targets'].values():
+        assert fact['full_pixel_and_mask_verification'] and fact['cog_valid'] and fact['has_overviews']
+        assert 0<fact['valid_pixels']<module.WIDTH*module.HEIGHT and fact['distance_unit']=='metre'
+    assert module.expected_pixels('metres.cog.tif')[0,2]==5.
+    assert module.expected_pixels('feet.cog.tif')[0,2]==6*(1200/3937)
+
+
+@pytest.mark.parametrize('corruption',['value','seam','invalid_center','mask','crs','grid','dtype','nodata','scale','unit','feet_conversion','overviews','sidecar','missing','extra'])
+def test_proximity_persistence_oracle_rejects_corruption(proximity_persistence,tmp_path,corruption):
+    import shutil
+    import numpy as np
+    from osgeo import gdal
+    module,original,_=proximity_persistence
+    root=tmp_path/'changed';shutil.copytree(original,root)
+    path=root/'outputs'/'metres.cog.tif'
+    if corruption=='feet_conversion':path=root/'outputs'/'feet.cog.tif'
+    if corruption in ('value','seam','invalid_center','mask','crs','grid','nodata','scale','unit','feet_conversion'):
+        ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES'])
+        if corruption in ('value','seam','invalid_center'):
+            x,y={'value':(0,0),'seam':(512,514),'invalid_center':(1,0)}[corruption]
+            ds.GetRasterBand(1).WriteRaster(x,y,1,1,np.array([123456.],dtype=np.float64).tobytes(),buf_type=gdal.GDT_Float64)
+        elif corruption=='mask':
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            ds.GetRasterBand(1).GetMaskBand().Fill(255)
+        elif corruption=='crs':ds.SetProjection('')
+        elif corruption=='grid':ds.SetGeoTransform((1,1,0,1,0,-1))
+        elif corruption=='nodata':ds.GetRasterBand(1).SetNoDataValue(-999)
+        elif corruption=='unit':ds.GetRasterBand(1).SetUnitType('foot')
+        elif corruption=='feet_conversion':ds.GetRasterBand(1).WriteArray(ds.GetRasterBand(1).ReadAsArray()*(3937/1200))
+        else:ds.GetRasterBand(1).SetScale(2.)
+        ds=None
+    elif corruption in ('dtype','overviews'):
+        alternate=root/'replacement.tif'
+        ds=gdal.Translate(str(alternate),str(path),format='GTiff',outputType=gdal.GDT_Float32 if corruption=='dtype' else gdal.GDT_Float64)
+        ds=None;alternate.replace(path)
+    elif corruption=='sidecar':(root/'outputs'/'metres.cog.tif.aux.xml').write_text('unexpected')
+    elif corruption=='missing':path.unlink()
+    else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))

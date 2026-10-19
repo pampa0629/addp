@@ -29,4 +29,6 @@ Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hos
 
 `make test-online ONLINE_SUITE=vector-rasterize-persistence` 为二维面矢量栅格化的独立手工 Hosted T4；600 秒业务预算，复用 NFS 与普通用户原 12 权限，验证三条 COG 链和非法字段失败清理。实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-rasterize-persistence)。原 Raster、Contour、分类转面套件保持不变。
 
-`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 为矢量分区统计独立手工 Hosted；原普通用户 12 权限、NFS 与同源默认产品入口、独立 600 秒预检／业务预算，验证中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘及零残留。脚本回归入口 `make test-vector-zonal-statistics-online-runner` 并入栅格 Runner，真实 GDAL oracle 沿已有 Native 门禁；仅登记入口不代表 T4 通过，当前真实 Hosted 待执行。详见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
+`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 为矢量分区统计独立手工 Hosted；原普通用户 12 权限、NFS 与同源默认产品入口、独立 600 秒预检／业务预算，验证中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘及零残留。脚本回归入口 `make test-vector-zonal-statistics-online-runner` 并入栅格 Runner，真实 GDAL oracle 沿已有 Native 门禁；仅登记入口不代表 T4 通过，当前真实 Hosted 尚未通过。详见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
+
+邻近距离首期已获授权增加独立手工 `raster-proximity-persistence`：复用 Hosted／NFS／同源产品镜像和原 12 权限，米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘、源与先前成果不可变及失败零残留；独立 600 秒预算；16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过，真实 Hosted 尚未执行。

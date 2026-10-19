@@ -185,4 +185,13 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 物理 oracle 独立以像元平面几何运算、标量四邻接遍历与标准库统计核对完整几何、属性、计数／五项统计／null、CRS 和字段类型，不调用产品统计／GDAL Rasterize／Polygonize。通用矢量保存不新增 RasterArtifact；物理／Meta 大小必须为相等正整数。只手工扫描两份精确源，三份成果各自精确自动扫描，核对同租户／同用户、Monitor 和当前执行全部输入的 active derive 血缘。非法波段／列名冲突不得发布文件或新增扫描；每轮检查源物理／Meta 与先前成果不变、精确输出清单和工作区清理。退出核对归属 NFS export／目录、Runtime／镜像／registry、部署与 Infra 零残留。Runtime bind 写入与 Meta NFS 读取分别记账；不认证 Manager 绘制、NFS 客户端写、业务 DELETE、覆盖冲突或容量，不改已有套件、权限或跨模块产品逻辑。
 
-标准入口 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence`；脚本／生命周期／登记正反例沿 `make test-vector-zonal-statistics-online-runner`，由 `make test-raster-online-runner` 聚合；真实 GDAL 与篡改拒绝由现有 `make test-geopython-workflow` 自动发现。仅手工触发，当前尚未执行真实 Hosted，不能记作 T4 通过。
+标准入口 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence`；脚本／生命周期／登记正反例沿 `make test-vector-zonal-statistics-online-runner`，由 `make test-raster-online-runner` 聚合；真实 GDAL 与篡改拒绝由现有 `make test-geopython-workflow` 自动发现。仅手工触发，当前真实 Hosted 尚未通过，不能记作 T4 通过。
+
+
+## raster-proximity-persistence
+
+独立手工 Hosted 复用普通用户原 12 权限、NFS、同源七个 Backend 和默认入口产品 Runtime，独立 600 秒预检／业务预算。已登记投影米制 Int32 多波段及美制测量英尺 UInt32 TIFF 分别执行 `raster_load → raster_proximity → raster_save`；显式波段、合法零／负分类／UInt32 最大分类值、跨块、无效目标、部分透明和无效区域可跨越由完整像元核验。源均为北向无旋转方形网格；输出保留源网格及 CRS，距离统一为米制 Float64／NaN，沿 COG 保存。
+
+独立 oracle 逐个有效目标中心穷举欧氏距离，不调用产品变换、下包络或 GDAL 距离算法。检查完整像元／mask、单位、网格／CRS、COG／金字塔与严格相等正整数的 artifact／物理／Meta 大小；精确两源手工扫描、两个当前执行自动扫描、同用户／租户、Monitor 以及各 DAG 仅自身实际源输入的 active derive 血缘。每次重核源物理／Meta 与先前成果不变；非法波段及无有效目标失败不得发布或新增扫描。退出核验工作目录、归属 NFS export／目录、产品 Runtime／registry／镜像、部署及 Infra 零残留。
+
+标准入口 `make test-online ONLINE_SUITE=raster-proximity-persistence`；真实 GDAL／COG 和错误像元／mask／单位／网格等篡改拒绝沿 `make test-geopython-workflow`，脚本／登记／隔离生命周期沿 `make test-raster-proximity-online-runner`，由原 `make test-raster-online-runner` 聚合。仅手工触发，不改原套件、权限或跨模块产品逻辑；不认证测地距离、成本／路径、旋转／非方形网格、容量或 Manager 绘制。当前尚未执行真实 Hosted，不能记作 T4 通过。

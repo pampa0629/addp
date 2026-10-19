@@ -45,7 +45,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 80 个支持 workflow，另有 10 个仅支持 direct |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 81 个支持 workflow，另有 10 个仅支持 direct |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 21 个支持 workflow |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | 12 个，均支持 workflow + direct |
 | **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | 5 个，均支持 workflow + direct |
@@ -1048,6 +1048,12 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 
 输出保留原属性、active geometry 名、几何、行序、索引及 CRS 的 GeoDataFrame，沿既有矢量保存路径。逐面按保守像元包围窗口裁至栅格，使用最多 512×512 的值读取与 GDAL 内存覆盖 mask，复用整数分区统计的缩放补偿和及稳定中心二阶矩；真正超出有限 Float64 输出范围时明确失败。几何及结果驻内存，多面重叠会重复读取，不承诺固定进程内存或全场景容量。算子 workflow-only、read、raster 资源组，无新资源身份、权限或扫描路径；首期不含自动重投影、几何修复、面积加权、分位数或属性归并。Native 与真实跨模块持久化分别记账。
 
+`raster_proximity(input_raster, band, target_values)`（栅格邻近距离）显式选择一基数据波段及非空、互不重复的整数目标分类值列表；拒绝布尔、浮点目标、超出所选原生类型范围的目标值。所选数据波段限 Byte／Int8／UInt16／Int16／UInt32／Int32，不能选择 alpha 或浮点／复数／64 位整数，其他数据波段不参与；所选波段原始存储分类值不应用 scale/offset。合法零可显式列为目标，部分透明有效像元保留；NoData、mask 和无效 alpha 排除，复数 alpha 拒绝。若没有任何有效目标像元则整个算子失败，不返回全空伪成功。
+
+输入须为有明确线性单位的二维、非复合投影 CRS，有限可逆北向无旋转网格，X 分辨率为正、Y 为负且绝对值严格相等；地理坐标、未知单位、非方形或旋转网格须先显式转换，不自动修补。计算当前有效像元中心到最近有效目标中心的平面欧氏距离，单位按 CRS 换算为米；目标像元为零。输出同尺寸／CRS／完整仿射网格的单波段 Float64／NaN NoData，波段单位为 metre；源无效位置保持 NaN，直线距离可跨无效区域，不视为障碍，也不产生图外覆盖。有效像元的距离超出有限 Float64 范围时失败，不输出 Inf。
+
+采用行列可分离的平方欧氏距离变换，以一维抛物线下包络确定最近距离，再开平方及换算单位。算法依据 [Distance Transforms of Sampled Functions](https://theoryofcomputing.org/articles/v008a019/)；实现自行按该数学定义构造，不引入第三方实现或新依赖。固定版本 GDAL 的近邻传播及 Float32 中间缓冲不能替代上述最近距离契约，因此不设置近似算法分支。源按最多 512×512 读取；两个执行内私有 Float64 原始文件存储行向与转置后的距离，按 512×512 分块转置，线缓冲／下包络随单行或列长度增长。中间文件及文件句柄在成功／失败后清理；不宣称任意场景固定内存、磁盘或容量安全。workflow-only、read、raster 资源组，沿既有 `raster_save`／COG，无新路径、权限或扫描；首期不含测地距离、非方形／旋转网格、成本距离、最短路径或矢量输入。Native 与真实跨模块持久化分别记账。
+
 `raster_aggregate` 按必填整数 `factors=[列倍数,行倍数]` 从左上像元开始分组，逐数据波段执行必填 `method=sum/mean/min/max`，输出 Float64。倍数必须为 1–2147483647 的整数，拒绝布尔值与浮点倍数；输出宽高向上取整，边缘不足整块时只使用实际存在的源像元，不补零、不丢弃边缘。源 mask、NoData、非有限值和 alpha 覆盖无效的像元不参与计算，全无效组输出 NaN；合法零和部分透明的有效像元正常参与，各数据波段独立处理。alpha 不作为输出数据波段，不保留原分类色表、颜色模型或透明度大小；复数数据拒绝。求和结果超出 Float64 有限范围时写 NaN；均值先计有效数量及最大绝对值，按该尺度归一化后累加各值除以数量，再恢复尺度，避免直接求和溢出或微小值直接除以数量下溢造成不必要的丢失。
 
 聚合属于原像素网格的整数分组，不调用重采样插值，也不按指定输出尺寸调整分组。保留源原点、CRS 与定位缺失事实；有仿射变换时，列向量乘列倍数、行向量乘行倍数，保持旋转方向。由于输出必须为规则网格，边缘不足整块时最终像元仍具有完整聚合像元的空间大小，输出矩形覆盖范围可超出源右侧或底侧；数值只来自源覆盖内的有效像元。无需补造空间定位。计算复用源 512×512 分块读取，以最多 512×512 输出单元累积单个数据波段，不把大倍数组或整幅影像一次读入内存；均值为两遍分块读取，其余方法为一遍。
@@ -1087,6 +1093,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_zonal_statistics` | 同网格 `input_raster/zones_raster`、必填 `band/zones_band` | `DataFrame`，按整数分类值分组的计数及数值统计 |
 | `raster_focal_statistics` | `input_raster`、必填 `band/window_size/method` | `raster`，3×3／5×5 有效邻域的同网格 Float64 统计 |
 | `raster_vector_zonal_statistics` | `input_raster/input_gdf`、必填数据 `band`、可选 `all_touched/field_prefix` | `GeoDataFrame`，原始每个面独立的计数及数值统计 |
+| `raster_proximity` | `input_raster`、必填整数数据 `band`、显式 `target_values` | `raster`，同网格米制 Float64 最近有效目标像元中心距离 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 
 COG 参数为 `compression`（DEFLATE/LZW/ZSTD/NONE）、`blocksize`（128–4096 内的 16 倍数）、`overview_resampling`；转换入口将其放在 `options` 中，保存入口直接声明。波段表达式支持 `b1/b2/...`、有限常量、加减乘除、-16 到 16 的常数幂与 `abs/sqrt/log/minimum/maximum`。统计忽略 mask、nodata 和非有限像元；标准差为总体标准差，全无效栅格返回 null 统计值。直方图 `bins` 为 1–4096，未指定范围时按有效 min/max 派生。

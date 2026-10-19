@@ -2070,6 +2070,47 @@ def validate_vector_zonal_statistics_profile(repository: Path, registered: set[s
             raise RegistrationError(f'vector-zone statistics persistence contract is incomplete: {relative}')
 
 
+def validate_raster_proximity_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-proximity-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-proximity-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-proximity-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-proximity-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('proximity requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-raster-proximity-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'online-raster-proximity-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/raster-proximity-persistence-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'triggered_by',
+            'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
+            'rasterize.check_physical(native,previous)', "for problem in ('band','targets')", 'full_pixel_and_mask_verification'),
+        'business/scripts/online-raster-proximity-fixture.py': (
+            'NFSExport', 'owned_root', 'expected_pixels', 'np.hypot', 'GDAL_TIFF_INTERNAL_MASK',
+            'runtime_workspaces_removed', 'source file changed', 'full_check=True'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_raster_fixture.py': (
+            'test_proximity_persistence_real_gdal_two_cog_chains_and_complete_distances',
+            'test_proximity_persistence_oracle_rejects_corruption'),
+        'Makefile': ('@$(MAKE) test-raster-proximity-online-runner',
+            'scripts/test/raster-proximity-persistence-online_test.py',
+            'scripts/test/online-raster-proximity-fixture_test.py',
+            'scripts/test/online-hosted-raster-proximity-gate_test.py',
+            'test_proximity_requires_manual_nfs_identity_exact_distances_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'proximity persistence contract is incomplete: {relative}')
+
+
 def validate_raster_focal_statistics_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-focal-statistics-persistence'
     if suite not in registered:
@@ -2586,6 +2627,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_polygonize_profile(repository, registered)
     validate_vector_rasterize_profile(repository, registered)
     validate_vector_zonal_statistics_profile(repository, registered)
+    validate_raster_proximity_profile(repository, registered)
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)
