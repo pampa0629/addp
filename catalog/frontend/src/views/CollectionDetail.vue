@@ -66,7 +66,6 @@ import { deleteCollection, getCollection, listMyProjectGroups, updateCollection 
 import CollectionEntryPicker from '../components/CollectionEntryPicker.vue'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
-import { canAccessProjectGroup } from '../utils/projectGroupScope'
 
 const route = useRoute()
 const router = useRouter()
@@ -81,7 +80,9 @@ const versionConflict = ref(false)
 const projectGroupOptions = ref([])
 const editForm = reactive({ name: '', description: '', entry_ids: [] })
 let requestVersion = 0
-const canUpdate = computed(() => Boolean(collection.value) && canAccessProjectGroup(authStore.authContext, 'catalog.collection.update', collection.value.project_group_id))
+const canUpdate = computed(() => authStore.hasPermission('catalog.collection.read') &&
+  authStore.hasPermission('catalog.collection.update') && projectGroupOptions.value.some(group =>
+    group.project_group_id === String(collection.value?.project_group_id || '') && group.can_read && group.can_update))
 const projectGroupLabel = computed(() => {
   const group = projectGroupOptions.value.find(item => item.project_group_id === String(collection.value?.project_group_id || ''))
   if (!group) return t('catalog.collections.projectGroupNameUnavailable')

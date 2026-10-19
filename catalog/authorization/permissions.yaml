@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: catalog
-manifest_version: 8
+manifest_version: 9
 permissions:
   - key: catalog.audit.read
     allowed_scope_types: [tenant]
@@ -11,7 +11,7 @@ permissions:
     name_i18n_key: permissions.catalog.audit.read.name
     description_i18n_key: permissions.catalog.audit.read.description
   - key: catalog.collection.read
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: true
@@ -19,7 +19,7 @@ permissions:
     name_i18n_key: permissions.catalog.collection.read.name
     description_i18n_key: permissions.catalog.collection.read.description
   - key: catalog.collection.update
-    allowed_scope_types: [tenant, project_group]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -43,7 +43,7 @@ permissions:
     name_i18n_key: permissions.catalog.entry.deprecate.name
     description_i18n_key: permissions.catalog.entry.deprecate.description
   - key: catalog.entry.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [tenant]
     risk_level: low
     tenant_customizable: true
     delegable: true
@@ -51,7 +51,7 @@ permissions:
     name_i18n_key: permissions.catalog.entry.read.name
     description_i18n_key: permissions.catalog.entry.read.description
   - key: catalog.entry.update
-    allowed_scope_types: [tenant, department]
+    allowed_scope_types: [tenant]
     risk_level: medium
     tenant_customizable: true
     delegable: false

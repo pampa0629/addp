@@ -130,7 +130,7 @@ func (h *Handler) WithDomainOverviewReader(reader service.DomainOverviewReader) 
 
 // ListMyProjectGroups 动态解析当前 User 可访问的目录集合项目组。
 // @Summary 查询我的目录集合项目组 | List my catalog collection project groups
-// @Description 只组合当前 AuthContext 中有效 Project Group membership 与 Catalog Collection Scope，并由 System 动态解析名称；不枚举租户全部项目组 | Combine only effective Project Group memberships from the current AuthContext with Catalog Collection scopes, and resolve names dynamically from System; does not enumerate every project group in the tenant
+// @Description 只组合当前 Tenant 集合功能权限与 AuthContext 中有效 Project Group membership，并由 System 动态解析名称；不枚举租户全部项目组 | Intersect current tenant collection permissions with effective Project Group memberships from AuthContext, and resolve names dynamically from System; does not enumerate every project group in the tenant
 // @Tags Catalog Personal
 // @Produce json
 // @Success 200 {object} service.CollectionProjectGroupList "当前可访问项目组 | Currently accessible project groups"
@@ -1394,28 +1394,11 @@ func collectionAccess(c *gin.Context, userID int64) service.CollectionAccess {
 
 func permissionProjectGroupIDs(c *gin.Context, permission string) []int64 {
 	authContext, ok := commonAuth.AuthContextFromGin(c)
-	if !ok {
+	if !ok || !commonAuth.HasRolePermission(c, permission) {
 		return nil
-	}
-	tenantScope := false
-	projectGroupScopes := make(map[string]struct{})
-	for _, scope := range commonAuth.RolePermissionScopes(c, permission) {
-		switch scope.Type {
-		case "tenant":
-			tenantScope = true
-		case "project_group":
-			if scope.ProjectGroupID != nil {
-				projectGroupScopes[*scope.ProjectGroupID] = struct{}{}
-			}
-		}
 	}
 	result := make([]int64, 0, len(authContext.Organization.ProjectGroups))
 	for _, membership := range authContext.Organization.ProjectGroups {
-		if !tenantScope {
-			if _, exists := projectGroupScopes[membership.ProjectGroupID]; !exists {
-				continue
-			}
-		}
 		id, err := strconv.ParseInt(membership.ProjectGroupID, 10, 64)
 		if err == nil && id > 0 {
 			result = append(result, id)
