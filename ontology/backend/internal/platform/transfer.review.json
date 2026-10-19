@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "001b0a4db63c93c5c9e1f6efb2d91965c19e77f5",
-      "sha256": "766bf75343c995baa6b25f33300be332317e1c7684bc85616e9b67ad43a462a3",
+      "commit": "69950334194b78ac08137de9801e4f707b6ea264",
+      "sha256": "8418ca09a89bca9918ad8d7025638abe171ac137dcfcdf7902d88d0142c00fc5",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略及只读预检的权限交集和三态限制；复核 replace 需实例删除声明与当前插件删除声明及 Provider，已知不支持优先于结构 unknown，不扩张创建切片或实际执行保证；复核运行后仅扫描目标表，不扩大 schema／database；创建切片仍禁用自动扫描",
-        "en": "Task, execution, apply policy and read-only precheck permissions and tri-state limits; reviewed replace requirements for registered delete capability and the current plugin declaration and Provider, with known unsupported taking precedence over unknown structure; no expanded creation coverage or execution guarantee; reviewed post-write scans restricted to the target table, without schema/database expansion; creation still disables automatic scanning"
+        "zh-cn": "任务、执行、写入策略及只读预检权限和三态边界；replace须实例与插件删除声明及Provider，确定不支持优先于unknown；写后只扫目标表。复核CSV/TSV表头优先级与字段冲突拒绝、保留Meta类型；encoded读取未建模，停止态native创建仍不执行、调度或扫描，不增加执行保证。",
+        "en": "Task, execution, apply policy and read-only precheck permissions/tri-state limits. Replace requires registered/plugin delete support and Provider; known unsupported precedes unknown. Post-write scans target only the table. Reviewed CSV/TSV header precedence and field rejection preserving Meta types; encoded reading remains unmodeled. Native creation stays stopped without execution, schedules or scans and gives no execution guarantee."
       }
     },
     {
@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "69bc839ca0c9f2f94d9661a0904cafd5c2c58b78",
-      "sha256": "8656d331fec7cba24592beefe14701ea2f528098c57f410f562e72a7e595af9b",
+      "commit": "477199916679b23644d3cab2321bf6c0c4d7f593",
+      "sha256": "2003049e4fb773d433dbaa3dc91e43484188a6c5ee7e73aba57764a4dba55478",
       "use": {
-        "zh-cn": "Transfer Planner 对快照目标 apply_mode 仅接受 replace/append，拒绝其他组合；已复核 CSV/TSV 的 Meta 编码消费调整，写入模式约束不变",
-        "en": "Transfer Planner admits only replace/append as snapshot target apply modes; reviewed CSV/TSV consumption of Meta encoding facts without changing apply mode constraints"
+        "zh-cn": "快照目标apply_mode仍只接受replace/append；复核CSV/TSV从Meta继承编码，以及有效任务header优先于严格Meta native.has_header和默认值。encoded读取不扩张native table创建范围、权限、条件或执行保证。",
+        "en": "Transfer Planner admits only replace/append as snapshot target apply modes. Reviewed CSV/TSV Meta encoding consumption and encoded source selection of a valid task header before strict Meta native.has_header and the default; native table creation scope, permissions, conditions and execution guarantees are unchanged."
       }
     },
     {

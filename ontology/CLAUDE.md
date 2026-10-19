@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 28 复核 `699503341` 的 CSV/TSV 表头及字段一致性说明和 `477199916` 的 Planner 表头继承实现，更新 config/planner 来源冻结。有效任务 `header` 优先于 Meta `native.has_header`，encoded 单资源字段冲突在目标 IO 前拒绝并保留 Meta 类型；这些读取行为仍在创建能力选定范围之外。创建能力继续只保存停止态 native table 定义，不执行、调度或扫描，原权限、确认条件、replace/append 约束与 encoded 未建模声明不变。本次静态来源刷新使用平台来源审查与 Ontology Go T1 核验编译和恢复；发布/投影实现及 schema 未变，现有 PostgreSQL/FalkorDB CI 门禁保持覆盖，不据此声明运行时已激活。无新增入口或依赖。
+
 平台 Transfer 修订 25 复核 `7b337b9c4` 的结构审批补扫来源：handler 独立固化当前审批用户，Transfer 发布已应用审批事实，Meta 核对事实、有效领取与精确目标表后创建独立扫描。这里只更新 handler 来源冻结；创建仍只保存停止态定义，条件、权限及选定覆盖范围不变。沿用平台来源审查、Ontology Go 与 PostgreSQL/FalkorDB 门禁，无新增入口或依赖。
 
 平台 Transfer 修订 24 复核 `ebe4ebb99` 的当前用户来源固化与产物扫描归属变更，更新 handler/service 的已提交来源及摘要。人工启动、恢复和重放使用当前用户，创建能力仍只保存停止态定义，不创建执行或扫描；选定覆盖、权限及确认条件不变。沿用平台来源审查、Ontology Go 与 PostgreSQL/FalkorDB 发布门禁，无新增入口或依赖。
