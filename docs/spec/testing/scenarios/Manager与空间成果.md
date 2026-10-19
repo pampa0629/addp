@@ -160,7 +160,7 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 ## raster-zonal-statistics-persistence
 
-独立手工 Hosted 入口使用普通用户原 12 权限、同源七个 Backend 与默认入口 GeoPython Runtime、共享 NFS 和独立 600 秒预检／业务预算。验证已登记且同 CRS／旋转网格的数值与分区 TIFF：显式多波段分类分区、重分类接统计、超过 50 类的完整 CSV 保存与有限预览、全无效分区空表四条 DAG；非法波段和不同网格两条失败不得发布目标或新增扫描。此入口已获批准，代码和 Native 回归不代表真实 Hosted 通过。
+独立手工 Hosted 入口使用普通用户原 12 权限、同源七个 Backend 与默认入口 GeoPython Runtime、共享 NFS 和独立 600 秒预检／业务预算。验证已登记且同 CRS／旋转网格的数值与分区 TIFF：显式多波段分类分区、重分类接统计、超过 50 类的完整 CSV 保存与有限预览、全无效分区空表四条 DAG；非法波段和不同网格两条失败不得发布目标或新增扫描。固定版本 `5e49199e8` 的[独立 Hosted 39217208101](https://github.com/pampa0629/addp/actions/runs/39217208101/job/117943758382) 已通过并经独立归档复核：四份 CSV 为 4／3／70／0 行，严格物理／Meta 大小为 253／206／1900／73 字节；预检与业务 210767 毫秒，清理与 Infra 零残留通过。Native 与真实跨模块结论分别记账。
 
 独立标量分组与标准库统计 oracle 逐行核对分类值、三项计数、五项统计、null、排序和固定 Schema，完整结果必须经既有 `save` 持久化；响应仅为有限表摘要，不新增 RasterArtifact。物理文件／Meta 大小严格为相等正整数；只手工扫描两份精确源，四份 CSV 各自自动扫描，核对同租户／同用户、Monitor 和当前执行所有输入的 active derive 血缘。每轮核对源物理字节／Meta 和先前成果不变、精确输出与扫描清单及执行工作目录清理；退出核对归属 NFS export／目录、部署及 Infra 零残留。Runtime bind 写入与 Meta 真实 NFS 读取分开记录，不计为 Manager 绘制、NFS 客户端写、HTTP Range、业务 DELETE、覆盖冲突或容量；原 Raster／Contour／Polygonize／Rasterize T4 保持。
 

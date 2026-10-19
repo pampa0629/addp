@@ -157,7 +157,7 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
-| `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算，尚未运行。 |
+| `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
 | `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
 | `make test-online ONLINE_SUITE=raster-workflow` | 原 Raster Hosted T4；仅在 GitHub Hosted 独占部署运行，不接管个人开发环境。 |
 
@@ -174,3 +174,7 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 ### 6.4 矢量栅格化验收边界
 
 `vector_rasterize` 已在 `764bf53a9` 的独立 `vector-rasterize-persistence` 完成属性／中心覆盖、常量／所有触及像元及分类转面再栅格化三条 COG 保存 DAG。完整像元、mask、NaN NoData、Float64、旋转网格、COG 布局和 artifact／物理／Meta 严格大小、三个精确自动扫描、原普通用户归属、Monitor、当前执行所有输入的血缘、源及先前成果不变、非法字段失败清理和零残留均通过，最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。Runtime 同路径挂载写入、Meta 经真实 NFS 读取；独立 600 秒预算。原 Raster T4、等值线与分类转面套件保持；本结论不包含点线栅格化、自动范围、插值、完整 Int64 分类码往返、Manager 绘制、业务删除、覆盖冲突或容量验收。
+
+### 6.5 栅格分区统计验收边界
+
+`raster_zonal_statistics` 已在 `5e49199e8` 的独立 `raster-zonal-statistics-persistence` 完成显式多波段分类分区、重分类接统计、超过预览上限及全无效分区四条 CSV 保存 DAG。完整分类值、计数、统计值、null、固定列结构及有限表预览，严格物理／Meta 大小，四个精确自动扫描、原普通用户归属、Monitor、当前执行两源血缘、源及先前成果不变、非法波段／网格失败清理与零残留均通过；最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。沿用通用 `save`，不新增 RasterArtifact；Runtime 同路径挂载写、Meta 经真实 NFS 读取，独立 600 秒预算。原四套栅格相关 T4 保持；本结论不含矢量分区、分位数、面积加权、自动对齐、Manager 绘制、业务删除、覆盖冲突或容量验收。
