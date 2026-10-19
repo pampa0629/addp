@@ -1992,6 +1992,42 @@ def validate_raster_polygonize_profile(repository: Path, registered: set[str]) -
         ('expected_regions', 'region.equals', 'OFTInteger64'))
 
 
+def validate_vector_rasterize_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'vector-rasterize-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  vector-rasterize-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-rasterize-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'vector-rasterize-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('rasterize requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-vector-rasterize-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+            'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+            '--wait-protection-owners develop,manager', 'online-vector-rasterize-fixture.py stop',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/vector-rasterize-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
+            'fixture.SOURCES', 'triggered_by', "resource_type='file'", 'raster.strict_sizes', 'raster.wait_lineage',
+            'raster.validate_target_item', 'scan_ids(client)!=before_scans', 'check_physical(native,previous)'),
+        'business/scripts/online-vector-rasterize-fixture.py': ('NFSExport', 'owned_root', 'IsSame',
+            'expected_pixels', 'full_check=True', 'runtime_workspaces_removed', 'source file changed'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_raster_fixture.py': (
+            'test_rasterize_persistence_real_gdal_three_cog_chains_and_reference_independence',
+            'test_rasterize_persistence_oracle_rejects_real_file_corruption'),
+        'Makefile': ('@$(MAKE) test-vector-rasterize-online-runner', 'scripts/test/vector-rasterize-persistence-online_test.py',
+            'scripts/test/online-vector-rasterize-fixture_test.py', 'scripts/test/online-hosted-vector-rasterize-gate_test.py',
+            'test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'rasterize persistence contract is incomplete: {relative}')
+
+
 def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> None:
     if "raster-workflow-capacity" not in registered:
         return
@@ -2388,6 +2424,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_capacity_profile(repository, registered)
     validate_raster_contour_profile(repository, registered)
     validate_raster_polygonize_profile(repository, registered)
+    validate_vector_rasterize_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)

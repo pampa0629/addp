@@ -896,3 +896,5 @@ Redis Online 验收使用 `make test-online ONLINE_SUITE=redis-consumer-flow`，
 确定性门禁为 `make test-node-metrics-online-runner`，由 `make test-online-runner`、`make test-platform` 和既有 Platform CI 聚合；身份数据库验证进入 `bash scripts/test/system-iam-postgres-gate.sh --package online-fixture`。真实 T4 在 `Online T4 gates` 手工选择同名 suite，首次真实通过前不加入 schedule。本地 macOS 不启动这套部署，也不以 T2 协议夹具替代 T4。
 
 节点指标 suite 的首次真实 Hosted T4 已在 `456d3bb84` 通过：[Run 37463003308](https://github.com/pampa0629/addp/actions/runs/37463003308)。业务报告的阶段为 `complete`，保存与活动目标版本均为 2；独立清理摘要确认部署/凭据销毁及 Infra 零残留。原生 OAuth `token_type` 按既有 Common Client 的大小写不敏感标准校验，保持唯一认证协议。该结果仅覆盖当次 Linux VM 链路，suite 继续手工触发；生产 T5 和用户资源查询页面尚未交付。
+
+`make test-online ONLINE_SUITE=vector-rasterize-persistence` 为二维面矢量栅格化的独立手工 Hosted T4；600 秒业务预算，复用 NFS 与普通用户原 12 权限，验证三条 COG 链和非法字段失败清理。实现与证据边界见 [Manager 与空间成果](../docs/spec/testing/scenarios/Manager与空间成果.md#vector-rasterize-persistence)。原 Raster、Contour、分类转面套件保持不变。

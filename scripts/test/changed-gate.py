@@ -105,6 +105,8 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         "business/scripts/online-raster-capacity-fixture.py",
         "business/scripts/online-raster-contour-fixture.py",
         "business/scripts/online-raster-polygonize-fixture.py",
+        "business/scripts/online-vector-rasterize-fixture.py",
+        "scripts/test/vector-rasterize-persistence-online.py",
         "scripts/utils/online_vector_persistence.py",
         "scripts/utils/online_nfs_fixture.py",
         "scripts/test/raster-polygonize-persistence-online.py",

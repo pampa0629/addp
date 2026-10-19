@@ -569,7 +569,13 @@ test-vector-topology-online-runner: ## 验证构面双输出、几何检查修�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-vector-rasterize-online-runner
+test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、断言与生命周期
+	@bash -n scripts/test/online-hosted-vector-rasterize-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
+
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-vector-rasterize-online-runner
 	@bash -n scripts/test/online-hosted-raster-polygonize-gate.sh
 	@python3 -m unittest scripts/test/raster-polygonize-persistence-online_test.py scripts/test/online-raster-polygonize-fixture_test.py scripts/test/online-hosted-raster-polygonize-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_polygonize_requires_manual_nfs_identity_and_registered_regressions scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

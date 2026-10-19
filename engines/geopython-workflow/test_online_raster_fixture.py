@@ -2081,3 +2081,63 @@ def test_polygonize_persistence_oracle_rejects_real_file_corruption(polygonize_p
     elif corruption == 'sidecar': (root / 'outputs/unexpected.gpkg-wal').write_bytes(b'leftover')
     else: names = ['../four.gpkg']
     with pytest.raises(module.FixtureError): module.verify(root, names)
+
+
+@pytest.fixture
+def rasterize_persistence(tmp_path):
+    spec=importlib.util.spec_from_file_location('rasterize_fixture',ROOT/'business/scripts/online-vector-rasterize-fixture.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    from operators.raster_compute import raster_workspace,raster_load,raster_save,raster_polygonize,vector_rasterize
+    from operators.io_operators import load
+    root=tmp_path/'export';root.mkdir();(root/'outputs').mkdir()
+    initial=module.seed(root)
+    source={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'tiff',
+        'access':{'method':'mounted_path','path':str(root/'reference.tif')}}}
+    faces=load(connection_info={'mount_path':str(root)},path='zones.geojson')
+    for name in module.TARGETS:
+        with raster_workspace():
+            reference=raster_load(source);workspace=reference.workspace
+            if name=='roundtrip.cog.tif':
+                regions=raster_polygonize(reference,1,8);result=vector_rasterize(regions,reference,field='class_value')
+            else:
+                result=vector_rasterize(faces,reference,**({'field':'class_code'} if name=='field.cog.tif' else {'burn_value':-1.5,'all_touched':True}))
+            target={'schema_version':'addp.workflow.access-plan/v1','target':{'kind':'file','format':'tiff','name':name,
+                'write_mode':'create','access':{'method':'mounted_path','path':str(root/'outputs'/name)}}}
+            artifact=raster_save(result,target,profile='cog',blocksize=128)
+            assert type(artifact['size_bytes']) is int and artifact['size_bytes']==(root/'outputs'/name).stat().st_size>0
+        assert not workspace.exists()
+    return module,root,initial
+
+
+def test_rasterize_persistence_real_gdal_three_cog_chains_and_reference_independence(rasterize_persistence):
+    import numpy as np
+    module,root,initial=rasterize_persistence
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources'] and len(actual['targets'])==3
+    assert all(f['cog_valid'] and f['full_pixel_and_mask_verification'] for f in actual['targets'].values())
+    values,alpha,mask=module.source_arrays()
+    invalid=(values==-999)|(alpha<=0)|(mask<=0)
+    assert np.any(invalid & np.isfinite(module.expected_pixels('field.cog.tif')))
+    assert not np.array_equal(np.isfinite(module.expected_pixels('field.cog.tif')),np.isfinite(module.expected_pixels('constant.cog.tif')))
+    field=module.expected_pixels('field.cog.tif')
+    assert 0 in field and -3.25 in field and 2.75 in field
+
+
+@pytest.mark.parametrize('corruption',['value','nodata','mask','grid','sidecar','missing','extra'])
+def test_rasterize_persistence_oracle_rejects_real_file_corruption(rasterize_persistence,corruption):
+    import numpy as np
+    module,root,_=rasterize_persistence
+    path=root/'outputs'/'field.cog.tif'
+    if corruption in {'value','nodata','mask','grid'}:
+        ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES'])
+        if corruption=='value':ds.GetRasterBand(1).WriteArray(np.array([[123.]]))
+        elif corruption=='nodata':ds.GetRasterBand(1).DeleteNoDataValue()
+        elif corruption=='grid':ds.SetGeoTransform((0,1,0,0,0,-1))
+        else:
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            ds.GetRasterBand(1).GetMaskBand().Fill(0)
+        ds=None
+    elif corruption=='sidecar':(root/'outputs'/'field.cog.tif.aux.xml').write_text('unexpected')
+    elif corruption=='missing':path.unlink()
+    else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))

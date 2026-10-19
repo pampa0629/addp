@@ -502,11 +502,11 @@ def submit(client, engine_id, definition, *, execution_timeout=180):
     return value
 
 
-def validate_success(execution, source_locators, target_locator, mode, expectation=None, output_node='save'):
+def validate_success(execution, source_locators, target_locator, mode, expectation=None, output_node='save', resource_type='object'):
     expectation = expectation or fixture.artifact_expectation()
     metadata = obj(execution.get('metadata'), 'Develop metadata')
     resource = obj(obj(obj(execution.get('outputs'), 'outputs').get(output_node), 'target output').get('resource'), 'resource')
-    if resource != {'locator': target_locator, 'type': 'object', 'write_mode': mode}:
+    if resource != {'locator': target_locator, 'type': resource_type, 'write_mode': mode}:
         raise SuiteError('Develop stable output has the wrong locator/type/write_mode')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     if facts.get('schema_version') != 'addp.lineage-facts/v1':

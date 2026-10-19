@@ -151,3 +151,9 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 夹具为 EPSG:3857、8×6、带旋转仿射的整数分类 TIFF，包含负数、合法零、孔洞、对角相连区域、NoData、共享 mask、全透明和部分透明像元。三条正式 DAG 分别执行四邻接转面、八邻接转面和重分类后四邻接转面，复用现有 `save(mode=replace)` 写入本轮三个尚不存在的唯一 GeoPackage。独立标量 flood-fill 和逐像元多边形并集核对完整连通区域、分类代码、精确像元覆盖、合法二维 MultiPolygon、Int64 `class_value`、孔洞及源 CRS。Oracle 不调用产品转面、重分类或 GDAL Polygonize 计算期望值，并以真实文件篡改回归证明拒绝错误分类、几何、维度、区域丢失和额外 sidecar。
 
 仅源文件手工扫描，三个目标必须由当前 Develop 执行自动扫描；校验原普通用户公开扫描归属、GeoPackage 单文件容器及内部图层、物理与 Meta 大小严格为相等正整数、Monitor 与当前执行 active derive 血缘。保存 API 校验和 Runtime worker 归属检查分别复用共享唯一实现。每轮保存重核先前成果 SHA／大小和源字节，源 Meta 记录不变。所有退出路径清理本轮 NFS export、已确认归属的目录、Runtime／registry／镜像和 Infra。Runtime 同路径 bind 写入与 Meta 真实 NFS 读取分别记录；不据此宣称 NFS 客户端写、Manager 绘制／业务 DELETE、HTTP Range、覆盖冲突或容量验收通过。代码、Native 和真实 Hosted 结果分开记账；本段登记不表示 T4 已通过。
+
+## vector-rasterize-persistence
+
+独立手工 Hosted 入口验证已登记 GeoJSON 二维面与同 CRS 参考 TIFF：属性／中心覆盖、常量／所有触及像元、分类转面再栅格化三条 COG 保存 DAG，以及非法字段导致失败后的无发布、无新增扫描与清理。输入为同一普通 User 的原 12 项权限；复用独占 Hosted 生命周期和共享 NFS，Runtime 同路径挂载写入，Meta 经 NFS 读取，不接管个人服务。
+
+独立几何 oracle 核对每个像元、mask、NaN NoData、Float64、旋转网格与 COG 布局；artifact／物理文件／Meta 大小必须为相等正整数。只手工扫描两份精确源，输出只能由各父执行自动扫描；逐一验证同用户／租户、Monitor 和当前执行所有输入的 active derive 血缘。源与先前成果不可变；非法参数后精确输出清单、扫描清单和 Runtime 工作目录不变。退出核对 NFS export、归属目录、部署和 Infra 零残留。业务预检与执行共用独立 600 秒预算；不改变原 Raster T4、Contour、分类转面套件、产品权限和跨模块产品逻辑。该入口实施中，尚无真实 T4 通过结论。标准入口 `make test-online ONLINE_SUITE=vector-rasterize-persistence`；Native oracle 沿现有 GeoPython 门禁、脚本回归沿 `make test-raster-online-runner`，Hosted workflow 仅编排上述入口。
