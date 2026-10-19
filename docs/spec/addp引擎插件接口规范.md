@@ -728,6 +728,8 @@ Service 在唯一 `source_snapshot` 中冻结 `object_table` 描述符、`federa
 
 TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务语句，并提示 `READ ONLY` 只有 noop 实现；因此 TiDB 固定声明 `validated_statement`，普通查询必须先通过共享只读 SQL 校验，bounded watermark 只能在 Snapshot Isolation 事务中执行 Provider 内部生成的 `SELECT`。不得启用 `tidb_enable_noop_functions` 伪装数据库事务只读，也不得把 TiDB 回退为 MySQL 的 `database_transaction` 声明。
 
+StarRocks 3.5.21 已确认采用 `validated_statement` 的单语句执行方式：专用 SELECT 账号、共享 SQL 副作用校验与服务端参数绑定共同限定只读入口，不建立显式事务、不通过客户端插值规避原生限制，不在执行失败后切换路线。共享执行实现应复用参数绑定、连接池、分页及原生结果扫描，只将执行方式与数据库事务入口分开；其他引擎的既有事务方式保持原有契约。它不声明跨语句／跨批一致性快照或 bounded watermark。StarRocks 专属字段映射按固定版本的已验证原生结果元数据修正 Decimal 精度，不根据采样值、源列或别名猜测表达式结果类型。正式插件仍须通过双架构准入和自身 Provider T2，平台链另验 T4。
+
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
 ### SQL 文本筛选

@@ -39,6 +39,29 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	ConnectionPoolPlugin
 	SQLQueryRuntimeProvider
 }, connInfo ConnectionInfo, querySQL string, opts QueryOptions, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
+	return executeSQLWithConnectionPool(ctx, poolPlugin, connInfo, querySQL, opts, mapField, false)
+}
+
+// ExecuteSingleStatementReadOnlySQLWithConnectionPool executes one guarded SQL
+// statement without an explicit transaction. Only a validated_statement Provider
+// may use it; it does not establish a snapshot or retry with another strategy.
+func ExecuteSingleStatementReadOnlySQLWithConnectionPool(ctx context.Context, poolPlugin interface {
+	ConnectionPoolPlugin
+	SQLQueryRuntimeProvider
+}, connInfo ConnectionInfo, querySQL string, opts QueryOptions, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
+	if !opts.ReadOnly {
+		return nil, fmt.Errorf("single-statement SQL execution requires read-only options")
+	}
+	if opts.analytical != nil {
+		return nil, ErrAnalyticalUnsupported
+	}
+	return executeSQLWithConnectionPool(ctx, poolPlugin, connInfo, querySQL, opts, mapField, true)
+}
+
+func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
+	ConnectionPoolPlugin
+	SQLQueryRuntimeProvider
+}, connInfo ConnectionInfo, querySQL string, opts QueryOptions, mapField func(*sql.ColumnType) datatype.FieldInfo, singleStatement bool) (*QueryResult, error) {
 	if opts.analytical != nil && !opts.ReadOnly {
 		return nil, ErrAnalyticalInvalid
 	}
@@ -67,6 +90,9 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		readOnlyBoundary = controlled.ControlledReadOnlySQLBoundary()
 		if !readOnlyBoundary.Valid() {
 			return nil, fmt.Errorf("引擎 %s 的受控只读 SQL 边界无效：%q", poolPlugin.Type(), readOnlyBoundary)
+		}
+		if singleStatement && readOnlyBoundary != ControlledReadOnlySQLBoundaryValidatedStatement {
+			return nil, fmt.Errorf("single-statement SQL execution requires validated_statement boundary")
 		}
 	}
 	if opts.Limit > 0 {
@@ -101,6 +127,21 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		}
 	}
 
+	if singleStatement {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return nil, err
+		}
+		rows, err := sqlDB.QueryContext(ctx, querySQL, opts.Args...)
+		if err != nil {
+			return nil, &sqlStatementFailure{statement: querySQL, cause: err}
+		}
+		result, err := scanRuntimeSQLRows(rows, mapField)
+		if err != nil {
+			return nil, &sqlStatementFailure{statement: querySQL, cause: err}
+		}
+		return result, nil
+	}
 	if opts.ReadOnly {
 		var preflight func(context.Context, *sql.Tx) error
 		if opts.analytical != nil {
