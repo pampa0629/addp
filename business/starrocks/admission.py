@@ -85,7 +85,7 @@ def start():
     if architecture is None or daemon not in ('linux/' + architecture, 'linux/' + ('aarch64' if architecture == 'arm64' else 'x86_64')):
         raise RuntimeError('native matching Linux Docker architecture required')
     state = {'run_id': uuid.uuid4().hex}
-    name = 'addp-starrocks-admission-' + state['run_id']
+    name = 'addp-starrocks-' + state['run_id']
     state.update(name=name, image=name + ':local', volumes=[name + '-fe', name + '-be'])
     private(path / 'state.json', state)
     for kind, resource in [('container', name), ('image', state['image']), *[('volume', v) for v in state['volumes']]]:

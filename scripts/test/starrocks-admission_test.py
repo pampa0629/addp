@@ -19,6 +19,18 @@ class StarRocksAdmissionTest(unittest.TestCase):
                      [{**ready, 'AvailCapacity': '0.000 B'}]):
             self.assertFalse(FIXTURE.backend_ready(rows))
 
+    def test_generated_business_hostname_fits_linux_and_dns_limits(self):
+        class StateCaptured(Exception): pass
+        def capture(path, state):
+            self.assertLessEqual(len(state['name'] + '-business'), 63)
+            self.assertRegex(state['name'], r'^[a-z][a-z0-9-]+$')
+            raise StateCaptured()
+        with patch.object(FIXTURE, 'directory', return_value=Path('/tmp')), \
+             patch.object(FIXTURE.platform, 'machine', return_value='aarch64'), \
+             patch.object(FIXTURE, 'run', return_value='linux/aarch64'), \
+             patch.object(FIXTURE, 'private', side_effect=capture):
+            with self.assertRaises(StateCaptured): FIXTURE.start()
+
     def test_official_version_and_multiplatform_index_are_pinned(self):
         self.assertEqual(FIXTURE.IMAGE, 'starrocks/allin1-ubuntu:3.5.21@sha256:faf5f6b17a301b276b829482af11d350004833dc9162232e1083a2aad0fa8b2a')
 
