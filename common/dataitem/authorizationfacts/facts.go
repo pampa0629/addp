@@ -29,11 +29,12 @@ const (
 	AuthorizationBasisUnsupported  AuthorizationBasisState = "unsupported"
 )
 
-// AuthorizationBoundary is the currently supported native single-item boundary.
-// Other layouts remain unsupported until their executable composition contract exists.
+// AuthorizationBoundary is one exact single-item representation. NativeTarget
+// and FileComposition are mutually exclusive; neither is a permission decision.
 type AuthorizationBoundary struct {
-	Layout       string                   `json:"layout" enums:"single"`
-	NativeTarget plugin.EngineCatalogPath `json:"native_target"`
+	Layout          string                   `json:"layout" enums:"single"`
+	NativeTarget    plugin.EngineCatalogPath `json:"native_target"`
+	FileComposition *FileCompositionBoundary `json:"file_composition,omitempty"`
 }
 
 // AuthorizationFacts contains only Meta's current resource facts, never an Allow.
@@ -180,10 +181,20 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	if f.Boundary == nil || f.Boundary.Layout != "single" {
 		return "", errors.New("unsupported authorization boundary")
 	}
-	p := f.Boundary.NativeTarget
-	itemType, fullName, err := nativeSingleIdentity(p)
-	if err != nil || p.EngineID != f.EngineID || f.ItemType != itemType || f.FullName != fullName {
-		return "", errors.New("native boundary does not match data item")
+	if f.Boundary.FileComposition != nil {
+		if !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || f.Boundary.FileComposition.Validate(f.EngineID) != nil {
+			return "", errFileComposition
+		}
+		primary, err := f.Boundary.FileComposition.PrimaryTarget()
+		if err != nil || f.ItemType != primary.Segments[len(primary.Segments)-1].Term || f.FullName != primary.StringPath() {
+			return "", errors.New("file composition does not match data item")
+		}
+	} else {
+		p := f.Boundary.NativeTarget
+		itemType, fullName, err := nativeSingleIdentity(p)
+		if err != nil || p.EngineID != f.EngineID || f.ItemType != itemType || f.FullName != fullName {
+			return "", errors.New("native boundary does not match data item")
+		}
 	}
 	canonical := struct {
 		SchemaVersion   string                 `json:"schema_version"`
