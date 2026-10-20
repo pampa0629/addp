@@ -51,7 +51,7 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         return {item['id']: {**item, 'role_key': f'platform.{"system" if actor == "successor" else actor}_administrator'}
                 for actor, item in credentials.items()}
 
-    def collect_dialog(self, holders, order=('audit', 'security', 'system', 'successor'), mutate=None):
+    def collect_dialog(self, holders, order=('audit', 'security', 'system', 'successor'), mutate=None, interrupt_before_last=False):
         by_username = {item['username']: item for item in holders.values()}
         outputs = []
         secrets = ('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 'JBSWY3DPEHPK3PXP',
@@ -73,11 +73,12 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
                 return match
             def send_line(self, value, hidden=False): self.writes.append((value, hidden))
             def finish(self, code): self.exits.append(code)
+            def interrupt(self): self.exits.append(-SCENE.signal.SIGTERM)
         terminal = Dialog()
         now = [1800000001.0]
         def advance(seconds): now[0] += seconds
         with patch.object(SCENE.time, 'time', side_effect=lambda: now[0]), patch.object(SCENE.time, 'sleep', side_effect=advance):
-            result = SCENE.collect_recovery_credentials(terminal, holders)
+            result = SCENE.collect_recovery_credentials(terminal, holders, **({'interrupt_before_last': True} if interrupt_before_last else {}))
         return terminal, result, secrets
 
     def test_offline_dialog_binds_each_principal_including_same_role_and_consecutive_counters(self):
@@ -99,6 +100,30 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         self.assertEqual(len({item['password'] for item in recovered.values()}), 4)
         self.assertEqual(recovered['1']['role_key'], recovered['4']['role_key'])
         self.assertNotEqual(recovered['1']['totp'], recovered['4']['totp'])
+
+    def test_interrupted_dialog_stops_after_three_validated_holders_before_fourth_password(self):
+        terminal, (partial, counters, attempt), _ = self.collect_dialog(self.recovery_holders(), interrupt_before_last=True)
+        self.assertEqual(set(partial), {'1', '2', '3'})
+        self.assertEqual(len(counters), 3)
+        self.assertIsNone(attempt)
+        self.assertEqual(terminal.exits, [-SCENE.signal.SIGTERM])
+        self.assertEqual(len(terminal.writes), 12)
+        self.assertTrue(terminal.values[0].startswith('再次输入新密码'))
+        self.assertTrue(any(item['role_key'] == 'platform.system_administrator' for item in partial.values()))
+
+    def test_interrupted_recovery_requires_prepared_only_audit_and_no_credentials(self):
+        valid = {'total': 1, 'data': [{'event_name': 'iam.recovery.prepared', 'entity_id': '7',
+                  'result': 'succeeded', 'details': {'administrator_count': 4}}]}
+        self.assertEqual(SCENE.assert_recovery_prepared_audit(valid, 4, ['private-secret']), '7')
+        cases = []
+        value = copy.deepcopy(valid); value['data'][0]['event_name'] = 'iam.recovery.completed'; cases.append(value)
+        value = copy.deepcopy(valid); value['data'][0]['details']['administrator_count'] = 3; cases.append(value)
+        value = copy.deepcopy(valid); value['data'][0]['details']['secret'] = 'private-secret'; cases.append(value)
+        value = copy.deepcopy(valid); value['data'][0]['entity_id'] = None; cases.append(value)
+        value = copy.deepcopy(valid); value['total'] = 2; cases.append(value)
+        value = copy.deepcopy(valid); value['data'].append(copy.deepcopy(value['data'][0])); cases.append(value)
+        for value in cases:
+            with self.assertRaises(API.SuiteError): SCENE.assert_recovery_prepared_audit(value, 4, ['private-secret'])
 
     def test_offline_dialog_rejects_duplicate_unexpected_wrong_role_and_missing_principal(self):
         def replace(index, value): return lambda outputs: outputs.__setitem__(index, value)
@@ -153,6 +178,9 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
                 if path == SCENE.CONTEXT:
                     return API.Response(expected[0], context(self.actor))
                 if 'audit/events' in path:
+                    if not state['recovered']:
+                        return API.Response(200, {'total': 1, 'data': [{'event_name': 'iam.recovery.prepared',
+                            'entity_id': '7', 'result': 'succeeded', 'details': {'administrator_count': 4}}]})
                     rows = [{'event_name': 'iam.recovery.'+name, 'entity_id': '7', 'result': 'succeeded', 'details': {}}
                             for name in ('prepared', 'completed')]
                     rows += [{'event_name': 'iam.recovery.administrator_credentials_replaced', 'entity_id': '7',
@@ -175,8 +203,11 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         def create(author, kind, target, **extra):
             governance.append((author, kind, target, extra))
             return {'kind': kind}
-        def collect(_, expected):
+        def collect(_, expected, *, interrupt_before_last=False):
             self.assertEqual(expected, holders)
+            checks.append(('collector', interrupt_before_last))
+            if interrupt_before_last:
+                return {pid: item for pid, item in recovered.items() if pid != '4'}, {}, None
             state['recovered'] = True
             return recovered, {}, '7'
         tenant = {'principal': {'id': '4', 'type': 'user'},
@@ -199,12 +230,16 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
                                                        'platform_identity_reactivate', 'platform_role_revoke'])
         self.assertEqual(governance[0], ('security', 'platform_role_grant', 'successor', {'target_role_key': 'platform.system_administrator'}))
         self.assertEqual(governance[-1], ('security', 'platform_role_revoke', 'successor', {'target_role_key': 'platform.system_administrator'}))
+        requests = [row for row in checks if row[0] != 'collector']
         for actor in (*SCENE.ROLES, 'successor'):
-            self.assertTrue(any(row[:4] == (actor, 'GET', SCENE.CONTEXT, (401,)) for row in checks))
+            self.assertTrue(any(row[:4] == (actor, 'GET', SCENE.CONTEXT, (401,)) for row in requests))
+            self.assertTrue(any(row[:4] == (actor, 'GET', SCENE.CONTEXT, (200,)) for row in requests))
             self.assertTrue(any(row[2] == '/api/v1/system/login' and row[3] == (401,)
-                                and row[4]['username'] == actor and row[4]['password'] == 'fixture-password' for row in checks))
+                                and row[4]['username'] == actor and row[4]['password'] == 'fixture-password' for row in requests))
             self.assertEqual(scene.credentials[actor], recovered[holders[scene.credentials[actor]['id']]['id']])
-        self.assertEqual(sum(row[2] == '/api/v1/system/auth/mfa-verifications' and row[3] == (401,) for row in checks), 4)
+        self.assertEqual([row[1] for row in checks if row[0] == 'collector'], [True, False])
+        requests = [row for row in checks if row[0] != 'collector']
+        self.assertEqual(sum(row[2] == '/api/v1/system/auth/mfa-verifications' and row[3] == (401,) for row in requests), 7)
 
     def test_offline_credentials_never_reenter_browser_child_environment(self):
         scene = SCENE.Scenario(environment())
@@ -241,6 +276,16 @@ print('accepted' if len(value)>5 else 'rejected',flush=True)
             terminal.finish(0)
         self.assertEqual(terminal.pending, '')
         self.assertEqual(terminal.process.returncode, 0)
+
+    def test_recovery_terminal_interrupts_only_its_private_process_and_clears_memory(self):
+        child = 'import time; print("ready",flush=True); time.sleep(20)'
+        terminal = SCENE.RecoveryTerminal([sys.executable, '-c', child], dict(os.environ))
+        with terminal:
+            terminal.expect('ready')
+            terminal.interrupt()
+            self.assertEqual(terminal.process.returncode, -SCENE.signal.SIGTERM)
+        self.assertEqual(terminal.pending, '')
+        self.assertIsNone(terminal.decoder)
 
     def test_recovery_terminal_rejects_echo_and_closes_children_on_failure(self):
         child = 'import sys; print("ready",flush=True); sys.stdin.readline()'

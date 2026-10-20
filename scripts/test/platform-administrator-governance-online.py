@@ -39,7 +39,8 @@ OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovere
                   'old_credentials_rejected', 'old_sessions_revoked', 'roles_unchanged', 'suspension_preserved',
                   'secret_single_use', 'bootstrap_not_reopened', 'audit_complete', 'credentials_memory_only',
                   'tenant_boundary_preserved', 'same_role_multiple_holders', 'additional_holder_recovered',
-                  'additional_role_revoked'}
+                  'additional_role_revoked', 'interrupted_before_apply', 'interrupted_credentials_unchanged',
+                  'interrupted_sessions_valid', 'interrupted_audit_prepared_only', 'same_secret_retry_completed'}
 
 
 class GovernanceAssertion(API.SuiteError):
@@ -120,6 +121,11 @@ class RecoveryTerminal:
     def finish(self, expected_exit):
         require(self.process.wait(timeout=10) == expected_exit, 'offline CLI returned an unexpected exit status')
 
+    def interrupt(self):
+        require(self.process.poll() is None, 'offline CLI exited before the interruption boundary')
+        os.killpg(self.process.pid, signal.SIGTERM)
+        self.finish(-signal.SIGTERM)
+
     def __exit__(self, *_):
         try:
             if self.process.poll() is None:
@@ -134,7 +140,7 @@ class RecoveryTerminal:
             self.decoder = None
 
 
-def collect_recovery_credentials(terminal, credentials):
+def collect_recovery_credentials(terminal, credentials, *, interrupt_before_last=False):
     replacements, counters = {}, {}
     by_username = {item['username']: pid for pid, item in credentials.items()}
     require(len(by_username) == len(credentials) and all(pid == item['id'] for pid, item in credentials.items()),
@@ -145,6 +151,12 @@ def collect_recovery_credentials(terminal, credentials):
         require(principal_id in credentials and principal_id not in replacements
                 and target[1] == credentials[principal_id]['role_key'],
                 'offline CLI selected an unexpected administrator identity')
+        if interrupt_before_last and len(replacements) == len(credentials)-1:
+            require(any(item['role_key'] == credentials[principal_id]['role_key'] for item in replacements.values()),
+                    'interruption must separate holders of the same role')
+            terminal.expect('输入新密码（至少 14 字符）: ')
+            terminal.interrupt()
+            return replacements, counters, None
         password = 'Offline-recovered-' + secrets.token_urlsafe(24)
         terminal.expect('输入新密码（至少 14 字符）: ')
         terminal.send_line(password, hidden=True)
@@ -212,9 +224,26 @@ def assert_recovery_audit(events, attempt_id, credentials, sensitive):
     require({(row.get('principal_id'), row['details'].get('role_key')) for row in replaced} ==
             {(item['id'], item['role_key']) for item in credentials.values()},
             'offline audit did not cover every recovered principal')
+    assert_audit_credentials_absent(rows, sensitive)
+
+
+def assert_audit_credentials_absent(rows, sensitive):
     audit = json.dumps(rows)
     for value in sensitive:
         require(value not in audit, 'offline recovery audit contains a credential')
+
+
+def assert_recovery_prepared_audit(events, holder_count, sensitive):
+    rows = events.get('data', [])
+    require(events.get('total') == 1 and len(rows) == 1, 'interrupted recovery changed more than preparation audit')
+    row = rows[0]
+    attempt = row.get('entity_id')
+    require(row.get('event_name') == 'iam.recovery.prepared' and row.get('result') == 'succeeded'
+            and row.get('details', {}).get('administrator_count') == holder_count
+            and isinstance(attempt, str) and re.fullmatch('[1-9][0-9]*', attempt) is not None,
+            'interrupted recovery preparation audit differs')
+    assert_audit_credentials_absent(rows, sensitive)
+    return attempt
 
 
 class Scenario:
@@ -355,6 +384,20 @@ class Scenario:
         successor.request('GET', CONTEXT, (401,))
         self.login('system')
 
+    def reject_totp(self, actor, rejected_secret):
+        credentials = self.credentials[actor]
+        # A six-digit collision with the current credential is not evidence of
+        # acceptance of the rejected secret. Submit only a distinct value.
+        now = time.time()
+        while totp(rejected_secret, now) in {totp(credentials['totp'], now+offset) for offset in (-30, 0, 30)}:
+            time.sleep(30 - now % 30 + .2)
+            now = time.time()
+        challenge = self.public.request('POST', '/api/v1/system/login', (200,),
+                    {key: credentials[key] for key in ('username', 'password')}).payload
+        require(challenge.get('next_action') == 'verify_mfa', 'offline credential verification bypassed MFA')
+        self.public.request('POST', '/api/v1/system/auth/mfa-verifications', (401,),
+                    {'challenge_token': challenge['mfa']['challenge_token'], 'code': totp(rejected_secret, now)})
+
     def offline_recovery(self):
         self.stage = 'offline-admission'
         validate_hosted(self.env)
@@ -379,9 +422,6 @@ class Scenario:
                 for item in holders.values()) == 2, 'offline recovery requires four distinct current holders')
         old_credentials = {actor: dict(self.credentials[actor]) for actor in holder_actors}
         old_sessions = {actor: self.actors[actor] for actor in holder_actors}
-        # A suspended Audit administrator cannot independently review a System
-        # recovery. Offline credential replacement must preserve this suspension.
-        self.review('system', self.create('security', 'platform_identity_suspend', 'audit'))
         self.stage = 'offline-tty-boundary'
         for action in ('prepare', 'apply'):
             result = subprocess.run([str(binaries['recovery']), action], stdin=subprocess.DEVNULL,
@@ -402,11 +442,45 @@ class Scenario:
             console.expect('IAM Recovery 失败: 未授权')
             console.finish(1)
 
+        self.stage = 'offline-interrupted-apply'
+        with terminal('recovery', 'apply') as console:
+            console.expect('Recovery Secret: ')
+            console.send_line(proof, hidden=True)
+            uncommitted, _, interrupted_attempt = collect_recovery_credentials(console, holders, interrupt_before_last=True)
+        require(interrupted_attempt is None and len(uncommitted) == len(holders)-1,
+                'offline CLI did not stop before the final holder')
+        self.stage = 'offline-interrupted-identities'
+        for actor in holder_actors:
+            current = old_sessions[actor].request('GET', CONTEXT, (200,)).payload
+            assert_identity(current, 'system' if actor == 'successor' else actor, self.credentials[actor]['id'])
+            require(current['authorization']['role_assignments'] == before[actor]['role_assignments']
+                    and current['authorization']['authorization_version'] == before[actor]['authorization_version'],
+                    'interrupted recovery changed a principal authorization')
+            # All four original passwords and TOTP credentials must still
+            # complete real MFA, including the two same-role principals.
+            self.login(actor)
+            partial = uncommitted.get(self.credentials[actor]['id'])
+            if partial:
+                self.public.request('POST', '/api/v1/system/login', (401,),
+                            {key: partial[key] for key in ('username', 'password')})
+                self.reject_totp(actor, partial['totp'])
+        interrupted_sessions = dict(self.actors)
+        self.stage = 'offline-interrupted-audit'
+        sensitive = [proof, *(item[key] for item in uncommitted.values() for key in ('password', 'totp'))]
+        events = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=iam_recovery_attempt&page_size=100', (200,)).payload
+        prepared_attempt = assert_recovery_prepared_audit(events, len(holders), sensitive)
+        with terminal('recovery', 'prepare') as console:
+            console.expect('an IAM recovery attempt is already prepared')
+            console.finish(1)
+        # Preserve the original suspension acceptance after checking that all
+        # four original identities survived the interrupted input collection.
+        self.review('system', self.create('security', 'platform_identity_suspend', 'audit'))
         self.stage = 'offline-apply'
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
             console.send_line(proof, hidden=True)
             recovered, counters, attempt_id = collect_recovery_credentials(console, holders)
+        require(attempt_id == prepared_attempt, 'offline retry consumed a different recovery attempt')
         self.stage = 'offline-single-use'
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
@@ -418,6 +492,7 @@ class Scenario:
             console.finish(1)
         for actor in holder_actors:
             old_sessions[actor].request('GET', CONTEXT, (401,))
+            interrupted_sessions[actor].request('GET', CONTEXT, (401,))
             self.credentials[actor] = recovered[self.credentials[actor]['id']]
         self.used_steps.update(counters)
 
@@ -436,18 +511,7 @@ class Scenario:
         for role in holder_actors:
             self.public.request('POST', '/api/v1/system/login', (401,),
                         {key: old_credentials[role][key] for key in ('username', 'password')})
-            # Do not mistake a coincidentally equal six-digit value for proof
-            # that the disabled secret still works. Wait before submitting it.
-            now = time.time()
-            while totp(old_credentials[role]['totp'], now) in {
-                    totp(self.credentials[role]['totp'], now+offset) for offset in (-30, 0, 30)}:
-                time.sleep(30 - now % 30 + .2)
-                now = time.time()
-            challenge = self.public.request('POST', '/api/v1/system/login', (200,),
-                        {key: self.credentials[role][key] for key in ('username', 'password')}).payload
-            require(challenge.get('next_action') == 'verify_mfa', 'offline replacement bypassed MFA')
-            self.public.request('POST', '/api/v1/system/auth/mfa-verifications', (401,),
-                        {'challenge_token': challenge['mfa']['challenge_token'], 'code': totp(old_credentials[role]['totp'], now)})
+            self.reject_totp(role, old_credentials[role]['totp'])
             current = self.actors[role].request('GET', CONTEXT, (200,)).payload
             require(current['authorization']['role_assignments'] == before[role]['role_assignments'],
                     'offline recovery changed role assignments')
@@ -463,7 +527,7 @@ class Scenario:
         self.stage = 'offline-audit'
         events = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=iam_recovery_attempt&page_size=100', (200,)).payload
         assert_recovery_audit(events, attempt_id, recovered,
-                [proof, *(item[key] for item in [*old_credentials.values(), *recovered.values()] for key in ('password', 'totp'))])
+                [proof, *(item[key] for item in [*old_credentials.values(), *uncommitted.values(), *recovered.values()] for key in ('password', 'totp'))])
         self.stage = 'offline-remove-additional-holder'
         additional_session = self.actors['successor']
         revoked = self.review('audit', self.create('security', 'platform_role_revoke', 'successor',
