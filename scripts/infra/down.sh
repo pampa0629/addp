@@ -147,6 +147,15 @@ echo ""
 
 # 执行停止操作
 discovery_cleanup_result=0
+(
+  runtime_env_file="$PROJECT_ROOT/.env"
+  if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then runtime_env_file="${ADDP_ONLINE_ENV_FILE:?}"; fi
+  if [[ -f "$runtime_env_file" ]]; then set -a; source "$runtime_env_file"; set +a; fi
+  python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" down --scope infra
+) || {
+  echo 'PostgreSQL metrics shutdown could not be fully verified; core shutdown continues' >&2
+  discovery_cleanup_result=1
+}
 python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" stop || {
   echo 'Infra deployment discovery shutdown could not be verified' >&2
   discovery_cleanup_result=1

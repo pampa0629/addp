@@ -352,7 +352,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
 | 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL/MySQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
-| 工作流运行时 | GeoPython Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
+| 工作流运行时 | GeoPython Workflow / Spark Workflow、手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 | AI 推理运行时 | ADDP Inference Runtime（统一承载在线厂商连接与内网模型服务） |
 

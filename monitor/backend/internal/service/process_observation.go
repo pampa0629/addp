@@ -81,6 +81,16 @@ func (s *ResourceObservationService) ProcessTrend(ctx context.Context, principal
 // observeProcesses is the single owner authorization, identity, admission and
 // completion-time lease check for current process resources.
 func (s *ResourceObservationService) observeProcesses(ctx context.Context, principal, token string, ids []uint, start, end time.Time, trend bool) (ProcessResourceSummaryResponse, resourcequery.Plan, error) {
+	return s.observeProcessesUsing(ctx, principal, token, ids, start, end, trend, nil, nil)
+}
+
+// observeProcessesUsing keeps current-user authorization, private identity,
+// source admission, budgets and completion-time lease checks in one path for
+// process resources and HTTP quality. Only fixed query planning/reading differs.
+func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, principal, token string, ids []uint, start, end time.Time, trend bool,
+	planFor func(int, time.Time, time.Time, time.Time, bool, resourcequery.Budget) (resourcequery.Plan, error),
+	read func(context.Context, resourcequery.Plan, []resourcequery.ProcessScope, resourcequery.Budget) (map[uint]resourcequery.Summary, error),
+) (ProcessResourceSummaryResponse, resourcequery.Plan, error) {
 	result := ProcessResourceSummaryResponse{}
 	var plan resourcequery.Plan
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -107,7 +117,9 @@ func (s *ResourceObservationService) observeProcesses(ctx context.Context, princ
 	ctx, budgetCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer budgetCancel()
 	now := s.now().UTC()
-	if trend {
+	if planFor != nil {
+		plan, err = planFor(len(ids), start, end, now, trend, cfg.Budget)
+	} else if trend {
 		if len(ids) != 1 {
 			return result, plan, resourcequery.ErrInvalid
 		}
@@ -202,7 +214,9 @@ func (s *ResourceObservationService) observeProcesses(ctx context.Context, princ
 	}
 	if len(scopes) > 0 {
 		var observed map[uint]resourcequery.Summary
-		if trend {
+		if read != nil {
+			observed, err = read(ctx, plan, scopes, cfg.Budget)
+		} else if trend {
 			var series []resourcequery.Series
 			series, err = s.process.Backend.ProcessTrend(ctx, plan, scopes[0], cfg.Budget)
 			observed = map[uint]resourcequery.Summary{scopes[0].ID: {Series: series}}
@@ -225,7 +239,7 @@ func (s *ResourceObservationService) observeProcesses(ctx context.Context, princ
 				return result, plan, resourcequery.ErrUnavailable
 			}
 			row.Series = data.Series
-			if !trend {
+			if !trend || read != nil {
 				row.Collection = ProcessCollection{State: data.Collection.State, SampledAt: data.Collection.SampledAt}
 			}
 		}
@@ -245,7 +259,7 @@ func (s *ResourceObservationService) observeProcesses(ctx context.Context, princ
 			row.Series = resourcequery.Empty(plan, "not_active")
 			continue
 		}
-		if trend {
+		if trend && read == nil {
 			continue
 		}
 		// Reuse the same completion-time freshness check as host observations.

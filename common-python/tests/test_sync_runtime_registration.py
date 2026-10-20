@@ -1,6 +1,35 @@
 import httpx
 
 from addp_common.client.runtime_registration import register_runtime_engine, retry_runtime_registration, runtime_advertised_port
+
+
+def test_listener_registration_waits_for_http_but_not_readiness(monkeypatch):
+    import io
+    from urllib.error import HTTPError
+    from addp_common.client import runtime_registration as registration
+
+    for status in (200, 503):
+        events = []
+
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+
+        class Opener:
+            def open(self, *args, **kwargs):
+                events.append("probe")
+                if len(events) == 1:
+                    raise OSError("not listening yet")
+                if status == 503:
+                    raise HTTPError("http://127.0.0.1/health", 503, "unhealthy", {}, io.BytesIO(b"{}"))
+                response = Response()
+                response.status = status
+                return response
+
+        monkeypatch.setattr(registration, "build_opener", lambda *args: Opener())
+        monkeypatch.setattr(registration.threading.Event, "wait", lambda *args: events.append("wait"))
+        registration.register_after_listener(lambda: events.append("register"), 8102)
+        assert events == ["probe", "wait", "probe", "register"]
 from addp_common.client.service_token import SyncOAuthServiceTokenSource
 
 

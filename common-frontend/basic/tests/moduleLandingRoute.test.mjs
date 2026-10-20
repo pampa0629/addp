@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
+test('HTTP observations require current Platform scope and both owner permissions; rule reads stay separate', () => {
+  const permissions = ['monitor.http_observation.read', 'platform.module.read']
+  assert.equal(allowsConsoleRoute('/monitor/http-quality', 'platform', permissions), true)
+  assert.equal(allowsConsoleRoute('/monitor/http-quality', 'tenant', permissions), false)
+  for (const key of permissions) assert.equal(allowsConsoleRoute('/monitor/http-quality', 'platform', [key]), false)
+  assert.equal(allowsConsoleRoute('/monitor/platform-alerts', 'platform', ['monitor.http_observation.read']), false)
+  assert.equal(allowsConsoleRoute('/monitor/platform-alerts', 'platform', ['monitor.platform_http_rule.read']), true)
+})
+
 test('Ontology platform inspection and Tenant modeling have disjoint entry permissions', () => {
   const paths = ['/platform/definitions', '/ontologies']
   assert.equal(resolveModuleLandingRoute('/ontology', paths, 'platform', ['ontology.platform_definition.read']), '/platform/definitions')

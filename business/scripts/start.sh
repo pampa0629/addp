@@ -343,6 +343,7 @@ fi
 
 # 3. 检测 CPU 架构
 if [ "$ENABLE_PG" = true ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" down --scope business || echo 'Previous PostgreSQL metrics unavailable; business startup continues' >&2
     # Deployment-owned directory mount: atomic host replacement becomes visible
     # inside the read-only container without rewriting repository configuration.
     ADDP_BUSINESS_POSTGRES_AUTH_DIR=$(python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/authentication.py" prepare-business) || exit 1
@@ -1278,3 +1279,9 @@ if [ "$ENABLE_FALKORDB" = true ]; then
 fi
 
 python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" start || echo 'Business deployment discovery unavailable; business services remain running' >&2
+if [ "$ENABLE_PG" = true ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" up --scope business || {
+        echo 'PostgreSQL metrics unavailable; business services remain running' >&2
+        exit 1
+    }
+fi

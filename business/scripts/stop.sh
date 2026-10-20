@@ -102,6 +102,13 @@ for arg in "$@"; do
 done
 
 echo -e "${YELLOW}🛑 停止服务...${NC}"
+postgres_metrics_result=0
+if [ "$HAS_ARGS" = false ] || [ ${#SERVICES[@]} -eq 0 ] || [[ " ${SERVICES[*]} " == *" postgres "* ]]; then
+    (
+        if [ -f .env ]; then set -a; source .env; set +a; fi
+        python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" down --scope business
+    ) || postgres_metrics_result=1
+fi
 
 if [ "$HAS_ARGS" = false ] || [ ${#SERVICES[@]} -eq 0 ]; then
     # 无参数或 -all：停止所有
@@ -114,3 +121,4 @@ else
 fi
 
 python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" refresh --scope business || echo 'Business deployment discovery unavailable; shutdown result is unchanged' >&2
+exit "$postgres_metrics_result"

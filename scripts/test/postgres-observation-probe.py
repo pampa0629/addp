@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL = ROOT / 'scripts/infra/postgres-observation/000001_init.sql'
+SQL = ROOT / 'scripts/infra/postgres-observation/000002_lifecycle.sql'
 FIELDS = {
     'observed_at', 'server_started_at', 'statistics_generation', 'track_counts_enabled',
     'connections', 'active_connections', 'idle_connections', 'idle_in_transaction_connections',
@@ -205,7 +205,7 @@ trap - EXIT
             self.hba_original = self.hba_current = None
 
     def install(self, scope, password, expected=None):
-        sql = ('\\set observer_scope ' + quoted(scope) + '\n\\set observer_verifier '
+        sql = ('\\set observer_scope ' + quoted(scope) + '\n\\set observer_enabled true\n\\set observer_verifier '
                + quoted(verifier(password)) + '\n' + SQL.read_text())
         return self.sql(sql, expected=expected)
 

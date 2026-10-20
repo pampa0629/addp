@@ -30,15 +30,22 @@ def client():
         yield client
 
 
-def test_health(client):
+@pytest.mark.parametrize("ifc_available,expected_code,status", [(True, 200, "healthy"), (False, 503, "unhealthy")])
+def test_health_requires_complete_catalog(client, monkeypatch, ifc_available, expected_code, status):
+    import api_server
+    monkeypatch.setattr(api_server, "converter_dependencies", lambda: {
+        "assimp": {"required": True, "available": True},
+        "ifcconvert": {"required": True, "available": ifc_available},
+    })
     response = client.get("/health")
-    assert response.status_code == 200
+    assert response.status_code == expected_code
     data = response.get_json()
-    assert data["status"] in {"healthy", "degraded"}
+    assert data["status"] == status
     assert data["service"] == "model3d-workflow-engine"
+    assert data["version"] == "1.0.0"
     assert data["operators_count"] == 12
-    assert "conversion_ready" in data
-    assert data["dependencies"]["converter"]["binding"] == "model3d_workflow"
+    assert "conversion_ready" not in data
+    assert data["dependencies"]["ifcconvert"]["available"] == ifc_available
 
 
 def test_get_operators(client):
@@ -222,3 +229,29 @@ def test_register_to_system_posts_model3d_workflow_payload(monkeypatch, tmp_path
                 "is_builtin": True,
             },
     )]
+
+
+def test_registration_is_independent_of_missing_converters(monkeypatch):
+    import api_server
+    monkeypatch.setattr(api_server, "converter_dependencies", lambda: {"ifcconvert": {"available": False, "required": True}})
+    calls = []
+    monkeypatch.setattr("addp_common.client.register_runtime_engine", lambda *args: (calls.append(args) or (202, "accepted")))
+    assert api_server.register_to_system() is True
+    assert len(calls) == 1
+
+
+def test_script_entry_defers_registration_until_listener(monkeypatch):
+    import api_server
+    import runpy
+    from unittest.mock import patch
+    from addp_common.client.runtime_registration import register_after_listener
+
+    monkeypatch.setenv("PORT", "28101")
+    with patch("threading.Thread") as thread, patch("flask.Flask.run") as run:
+        runpy.run_path(api_server.__file__, run_name="__main__")
+    thread.assert_called_once()
+    assert thread.call_args.kwargs["target"] is register_after_listener
+    callback, port = thread.call_args.kwargs["args"]
+    assert callable(callback) and port == 28101
+    assert thread.call_args.kwargs["daemon"] is True
+    run.assert_called_once()

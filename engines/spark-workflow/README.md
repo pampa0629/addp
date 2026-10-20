@@ -1,425 +1,103 @@
-# Spark 工作流 空间计算引擎
+# Spark Workflow 分布式空间计算引擎
 
-Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apache Spark 和 Apache Sedona (原 GeoSpark) 构建,支持大规模空间数据处理和分析。
+Spark Workflow 是基于 Apache Spark 和 Apache Sedona 的工作流运行时，连接 System 中登记的 Spark 集群执行 DataFrame 与空间算子。算子协议见[工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)，本文说明 Spark 的运行、资源绑定、存储接入与验证边界。
 
-## 核心特性
+## 配置与启动
 
-MinIO Parquet 成果按《工作流计算引擎接口规范》的独立目录规则发布：每次执行创建普通 Parquet whole scope，通过实际 ResourceLocator 复用；不提供目录 overwrite/append 或数据集级事务保证。Spark 使用固定 Hadoop 3.3.4 S3A 与 Spark 3.5.0 云提交组件，连接只取自已授权的存储 Engine。成功核验 Magic 提交标记和全部分片 footer 行数；失败按 Magic pending 记录精确取消本次已记录上传，再清理独占目录；无记录且无有效成功标记、记录损坏或取消失败时保留证据并报告清理未核验，不用目录前缀 multipart 空列表证明清理成功。GeoParquet 与其他对象输出格式不进入此发布路线。
+部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
 
-- **分布式计算**: 支持 TB 级空间数据处理,自动并行化
-- **Sedona 空间算子**: 提供核心空间算子 (buffer, intersection, spatial_join 等)
-- **统一存储访问**: 支持数据库 (PostgreSQL/MySQL/Doris)、对象存储 (S3/MinIO/HDFS)、湖仓 (Iceberg/Delta/Hudi)，以及 Elasticsearch 具体索引只读批量加载
-- **动态 Spark 资源**: 用户注册多个 Spark 集群,工作流执行时选择
-- **DAG 工作流**: 拓扑排序 + DataFrame 内存传递,最小化序列化开销
-- **与 GeoPython Workflow 互补**: 快速原型用 GeoPython Workflow,生产大规模用 Spark
+在仓库根目录启动；需要重启时，由用户在自己的终端执行对应命令：
 
-## 目录结构
-
+```bash
+bash scripts/dev/start.sh -spark-workflow
+# 修改运行时代码后重启原生开发服务
+./scripts/dev/restart.sh -spark-workflow
 ```
-engines/spark-workflow/
-├── api_server.py           # Flask API Server (端口 8098)
-├── runtime_server.py       # 原生开发与产品容器共用的 HTTP 启动和就绪后注册
-├── workflow_engine.py      # 公共 WorkflowRunner 的 Spark 领域算子适配
-├── spark_connector.py      # 动态 SparkSession 管理器
-├── elasticsearch_adapter.py # ES 具体索引 Mapping、数组和只读访问
-├── spark_dependencies.py   # 固定 ES Spark JAR 下载和 SHA256 校验
-├── storage_adapters.py     # 统一存储访问适配器
-├── operators/              # 算子实现与 Pydantic 元数据定义
-├── operator_metadata.py    # 公开算子元数据出口 (供前端使用)
-├── requirements.txt        # Python 依赖
-├── start.sh                # 启动脚本
-└── README.md               # 本文件
-```
-
-## 算子列表
-
-### 1. 数据 I/O (5个)
-- `load` - 数据加载 (数据库/文件/湖仓/SQL/Elasticsearch 索引)
-- `save` - 数据保存 (数据库/文件)
-- `preview` - 数据预览
-- `cache` - 内存缓存
-- `persist` - 持久化
-
-### 2. Sedona 空间算子 (7个)
-- `buffer` - 缓冲区分析
-- `centroid` - 质心计算
-- `intersection` - 几何相交
-- `union` - 几何合并
-- `spatial_join` - 空间连接 (核心)
-- `distance` - 距离计算
-- `transform` - 坐标转换
-
-### 3. 数据转换 (5个)
-- `select` - 选择列
-- `filter` - 条件过滤
-- `add_column` - 添加列 (支持SQL表达式)
-- `rename_column` - 重命名列
-- `drop_column` - 删除列
-
-### 4. 聚合分析 (2个)
-- `group_by` - 分组聚合
-- `join` - 表连接
-
-### 5. SQL 查询 (2个)
-- `sql` - 自由SQL查询
-- `create_temp_view` - 创建临时视图
-
-## 快速开始
 
 Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套与局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 完成 Java、Python、依赖和共享地址验证；准备失败的服务不启动，入口返回非零。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
 
+原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。依赖版本只在进程加载时读取；健康请求直接读取算子注册表的数量，不重建元数据或重复查询安装包。请求日志记录方法、路径、状态和耗时，不记录 query、请求体或认证头；真实 HTTP 回归同时验证执行任务和等待注册期间仍可查询健康状态与执行快照。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
+
+默认 API 端口为 8098；实际端口以标准启动脚本输出和 `.dev-state/ports.env` 为准。服务提供 `GET /health` 和 `GET /api/operators`，完整接口见 [HTTP 协议](../../docs/spec/workflow/HTTP协议.md)。产品镜像构建入口见[运行测试](#运行测试)。
+
+### Driver 与 Executor 连接
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。JDBC、ES 和 S3A 统一将回环主机派生为 `SPARK_WORKFLOW_SHARED_HOST`；System 中保存的连接配置不变，远程主机地址不会被改写。S3A 保留协议和显式端口，并将同一派生端点用于操作配置、bucket 配置、成果核验与失败清理。缺少或非法的共享主机配置在存储访问前拒绝。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
 
 原生开发启动将本机回环地址与 `host.docker.internal` 加入 Java 和 Python 的代理绕过名单，保留已有条目和外部下载代理。Java 名单取自所选 Java 11 的有效 `http.nonProxyHosts`，覆盖 Driver 的 S3A 客户端；不依赖 Python `NO_PROXY` 间接影响 Java。该规则仅注入 Spark Runtime 子进程，需重启生效，不修改全局代理或远程引擎策略。`make test-dev-lifecycle` 验证合并、重复准备、其他 JVM 参数保留和启动失败边界。
 
+连接失败时先核对所选集群的 Standalone Master、Driver 与 Executor 的双向可达性，以及存储端点的共同可达性。SparkSession 通过 Master 提交作业；Thrift 端口用于 SQL 查询，不参与该连接。依赖准备和分发使用标准生命周期及 `spark_dependencies.py`，不另行拼装 Session 依赖或在全局 Python 环境安装包。
+
+## 资源绑定与执行
+
+1. 在 System 注册 Spark 通用引擎资源，在 Develop 的 `execution_config.engine_specific.spark_cluster_id` 中记录所选资源。
+2. Develop 校验资源为已启用的 `engine_type=spark`，执行时映射为请求顶层 `engine_id`。它与 Workflow Runtime 实例 ID、数据源 locator 中的存储引擎 ID 分属不同职责。
+3. 后端按当前用户授权，从输入 `locator` 或输出 `target_parent_locator + target_name` 派生连接、表名或路径；用户与 AI 侧任务不保存明文连接。Runtime 不解析 `addp://` locator。
+4. 后端注入 `runtime.tenant_id` 与 `runtime.execution_authorization`，授权 effects 必须覆盖整个 DAG。`SparkConnector.get_or_create_session(engine_id, tenant_id)` 使用可信租户上下文查询 System，并按 `(tenant_id, engine_id)` 缓存会话。
+
+公开与内部参数边界见 [Develop 资源与执行规范](../../docs/spec/workflow/Develop资源与执行.md#算子契约分层)，授权摘要及请求封装见 [HTTP 执行协议](../../docs/spec/workflow/HTTP协议.md#执行工作流)。`engine_id`、租户和授权上下文不得混入算子的公开参数或工作流示例 `params`。
+
+工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
+
+当前 `POST /api/workflow` 同步等待执行结束，成功返回 HTTP 200；工作流校验失败返回 400，执行失败返回 500。执行期间及结束后可通过 `GET /api/executions/{execution_id}` 查询进程内快照。当前内置算子只声明 `workflow` 模式；只有元数据明确声明 `direct` 的算子才允许通过单算子接口调用，不能把 `buffer` 作为 direct 成功示例。
+
+## 算子发现与扩展
+
+`GET /api/operators` 返回 `operator_metadata.py` 从 `operators/` 聚合的标准元数据，包含参数、端口、执行模式和 effects；算子清单以该出口为准。
+
+| 类别 | 算子 |
+| --- | --- |
+| 数据 I/O | `load`、`save`、`preview`、`cache`、`persist` |
+| 空间计算 | `buffer`、`centroid`、`intersection`、`union`、`spatial_join`、`distance`、`transform` |
+| 数据转换 | `select`、`filter`、`add_column`、`rename_column`、`drop_column` |
+| 聚合与连接 | `group_by`、`join` |
+| SQL | `sql`、`create_temp_view` |
+
+新增算子时，在对应 `operators/*_operators.py` 实现函数、定义 `OperatorMetadata` 并通过 `register_operator` 注册，再由 `operators/__init__.py` 汇总。参数命名、`execution_modes`、effects 和输出端口遵循[算子元数据与实现规范](../../docs/spec/workflow/算子元数据与实现.md)；`operator_metadata.py` 只提供统一出口，不重复手写单个算子定义。领域结果通过 `workflow_engine.py` 的适配进入公共 `WorkflowRunner`。
+
+## 存储接入与结果发布
+
+### 存储接入声明
+
+`storage_adapters.STORAGE_ACCESS` 是 Spark Runtime 自注册 `compute.workflow.storage_access` 与直接接入校验的同一事实源。当前读取 PostgreSQL、MySQL、Doris、Elasticsearch、HDFS、MinIO；写入 PostgreSQL、MySQL、Doris、MinIO。NFS 服务器与导出路径尚未接入，不声明支持；本地文件辅助函数不代表已注册 NFS Engine 接入。MinIO 写入继续仅普通 Parquet + create。最小确定性验证为 `make test-spark-workflow`；前后端选择与执行校验由 `make test-module MODULE=develop` 验证。
+
+### MinIO Parquet 成果
+
+MinIO Parquet 成果按《工作流计算引擎接口规范》的独立目录规则发布：每次执行创建普通 Parquet whole scope，通过实际 ResourceLocator 复用；不提供目录 overwrite/append 或数据集级事务保证。Spark 使用固定 Hadoop 3.3.4 S3A 与 Spark 3.5.0 云提交组件，连接只取自已授权的存储 Engine。成功核验 Magic 提交标记和全部分片 footer 行数；失败按 Magic pending 记录精确取消本次已记录上传，再清理独占目录；无记录且无有效成功标记、记录损坏或取消失败时保留证据并报告清理未核验，不用目录前缀 multipart 空列表证明清理成功。GeoParquet 与其他对象输出格式不进入此发布路线。
+
+完整成果身份、授权和扫描规则见 [Spark 对象存储 Parquet 成果规范](../../docs/spec/workflow/Develop资源与执行.md#spark-对象存储-parquet-成果)。
+
+### Elasticsearch 只读加载
+
 Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 均直接访问源端点，不继承系统 HTTP/SOCKS 代理；必须能访问同一端点，回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存，通过 `PYSPARK_SUBMIT_ARGS --jars` 在 Spark 提交阶段与 Sedona/JDBC Maven 依赖合并分发，避免该制品 POM 引入另一版 Spark。Python Session 不设置 `spark.jars`，以免覆盖提交阶段已解析的完整依赖列表。生产 Runtime、镜像构建和分布式 T2 共用同一个依赖配置入口；T2 必须同时核对实际 JAR 分发列表和 Worker 上的 Sedona/ES 计算。
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 
+### PostgreSQL 发布
+
 保存到 PostgreSQL 时，普通表和空间表统一通过 Worker JDBC 写入同 schema 的唯一暂存表。Runtime 按 DataFrame schema 识别 Geometry 列并以 EWKT 暂存，在发布事务中恢复 PostGIS geometry。已有目标的覆盖保存只 DELETE + INSERT，保留结构、约束、索引、权限和注释；追加只 INSERT。字段、类型或约束不匹配时，确认回滚后清理暂存表；回滚未确认或提交响应丢失时保留现有证据，不自动重试。已有目标的暂存表在提交确认后另行清理，新目标仍由事务内改名发布。资源关闭或清理失败不覆盖原始错误，也不把已确认提交改报失败；返回实际提交行数，暂存表不作为工作流产物暴露。表目标需要 write + ddl 授权；详细类型与事务边界见工作流计算引擎接口规范。 提交异常的确定性回归使用 `make test-spark-workflow`；真实事务回归复用 `make test-common-hdfs` 已有的独占 PostGIS、真实 Worker 和全退出路径清理。
 
+### MySQL 发布
+
 MySQL 保存限定普通 InnoDB 表，先由 Worker JDBC 写独占暂存表，再在 SERIALIZABLE 事务内发布。覆盖只替换数据，保留表定义；生成列、自增列明确拒绝；原有约束和触发器保持数据库语义，目标外副作用不属于目标表事务保证。时间列保留微秒，TIMESTAMP 统一使用 UTC JDBC 会话。新表通过暂存表原子改名发布。发布响应丢失时保留证据并报告状态不确定，不自动重试；MySQL DDL 不进入数据发布事务。
+
+### Doris 读取与发布
 
 Doris 表读取和暂存写入统一使用官方 `spark-doris-connector-spark-3.5:25.2.0` 完整 JAR，固定 SHA256 并与 ES JAR 一起在 submit 阶段分发，不通过连接器 POM 引入另一版 Spark。不再通过 MySQL JDBC 读取 Doris 表，避免协议将 VARCHAR 报告为 CHAR 后触发 Spark 补空格；保留原始字符串及合法尾随空格，不执行 trim。System Engine 的 `http_port` 是独立 FE HTTP 部署端口；已有连接须显式配置实际映射，不从 JDBC 端口猜测。官方连接器通过两阶段提交、严格模式和零错误行容忍写独占暂存表；JSON 导入固定设置 `doris.sink.properties.num_as_string=true`，保留数字原文后由目标列解析，避免 Decimal 经浮点数解析丢失精度；缓存本次输入并核对全部预期行可见后，Driver 才通过 JDBC 控制连接执行原生 INSERT OVERWRITE SELECT 或 INSERT INTO SELECT，等待原发布标签的 FINISHED 状态。首期仅支持字段类型一致的普通 Duplicate Key OLAP 表；覆盖保留模型、分区、分桶和属性。未确认可见的发布保留证据，不重放，不承诺跨表事务、跨 action 快照或端到端恰好一次。Driver/Executor 必须能访问 FE 和承载读取、导入的 BE。
 
 确定性验证使用 `make test-spark-workflow`；真实 Worker 与独占 MySQL 8.0 / Doris 2.1.0 的完整发布验证在原生 Linux x86_64 使用 `make test-common-spark-table`，与现有 Doris 门禁同属 Hosted T2；macOS 可显式运行 `SPARK_TABLE_TEST_ENGINE=mysql make test-common-spark-table` 验证 MySQL 子集（不计为完整 T2 通过），覆盖覆盖/追加、空成果、结构拒绝、计算失败、精确 bigint/Decimal、MySQL 约束回滚及提交响应丢失，Doris 另覆盖官方连接器完整读写回路，核对中文、emoji、空串、null、合法尾随空格、超 85 字符文本及 bigint/Decimal 精度；退出核对本轮容器、卷和网络零残留。T2 不替代 Develop/Console 的正式 T4。
 
-### 1. 配置与启动
+## 实现导航与验证
 
-部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
-
-在仓库根目录执行：
-
-```bash
-bash scripts/dev/start.sh -spark-workflow
-# 修改运行时代码后，使用同一产品构建和启动入口
-./scripts/dev/restart.sh -spark-workflow
-```
-
-原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。依赖版本只在进程加载时读取；健康请求直接读取算子注册表的数量，不重建元数据或重复查询安装包。请求日志记录方法、路径、状态和耗时，不记录 query、请求体或认证头；真实 HTTP 回归同时验证执行任务和等待注册期间仍可查询健康状态与执行快照。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
-
-工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
-
-服务启动后:
-- API 端口: 8098
-- 健康检查: http://localhost:8098/health
-- 算子列表: http://localhost:8098/api/operators
-
-## 使用示例
-
-### 示例 1: 单算子 direct 调用
-
-```bash
-curl -X POST http://localhost:8098/api/operators/buffer/invoke \
-  -H "Content-Type: application/json" \
-  -d '{
-    "engine_id": 34,
-    "params": {
-      "input_df": {...},
-      "distance": 100,
-      "geom_column": "geom"
-    }
-  }'
-```
-
-### 示例 2: 工作流执行
-
-```bash
-curl -X POST http://localhost:8098/api/workflow \
-  -H "Content-Type: application/json" \
-  -d '{
-    "engine_id": 34,
-    "workflow_def": {
-      "tasks": [
-        {
-          "id": "load_poi",
-          "operator": "load",
-          "params": {
-            "source_type": "table",
-            "connection_info": {
-              "engine_type": "postgresql",
-              "host": "postgres",
-              "port": 5432,
-              "database": "addp",
-              "user": "addp",
-              "password": "secret"
-            },
-            "schema": "public",
-            "table": "poi_data"
-          },
-          "depends_on": []
-        },
-        {
-          "id": "buffer_analysis",
-          "operator": "buffer",
-          "params": {
-            "input_df": {"$ref": "load_poi"},
-            "distance": 100
-          },
-          "depends_on": ["load_poi"]
-        },
-        {
-          "id": "save_result",
-          "operator": "save",
-          "params": {
-            "input_df": {"$ref": "buffer_analysis"},
-            "target_type": "table",
-            "connection_info": {
-              "engine_type": "postgresql",
-              "host": "postgres",
-              "port": 5432,
-              "database": "addp",
-              "user": "addp",
-              "password": "secret"
-            },
-            "schema": "public",
-            "table": "poi_buffer_result",
-            "mode": "overwrite"
-          },
-          "depends_on": ["buffer_analysis"]
-        }
-      ]
-    }
-  }'
-```
-
-## 工作流定义格式
-
-工作流定义只支持 `tasks` 数组格式，且 `tasks` 必须非空：
-
-```json
-{
-  "engine_id": 34,
-  "workflow_def": {
-    "tasks": [
-      {
-        "id": "task1",
-        "operator": "load",
-        "params": {...},
-        "depends_on": []
-      },
-      {
-        "id": "task2",
-        "operator": "buffer",
-        "params": {
-          "input_df": {"$ref": "task1"},
-          "distance": 100
-        },
-        "depends_on": ["task1"]
-      }
-    ]
-  }
-}
-```
-
-上例展示的是 Spark Workflow runtime 收到的已预处理形态。用户和 AI 侧配置表、NFS 文件或对象存储输入/输出时使用 `locator` 或 `target_parent_locator + target_name`；Develop 后端会在调用 Spark Workflow runtime 前派生 `connection_info`、`schema/table` 或 `path`。Spark Workflow 顶层 `engine_id` 只绑定实际 Spark 通用引擎资源，不用于表达数据源。
-
-## 核心设计
-
-### 动态 Spark 资源管理
-
-Spark 工作流 Engine 不内置 Spark 集群,而是动态连接到用户注册的 Spark 资源:
-
-1. 用户在 System 模块注册 Spark 资源 (多个)
-2. 创建 Spark Workflow 工作流时，Develop 前端用 `spark_cluster_id` 记录用户选择的 Spark 通用引擎资源
-3. Develop 后端校验该资源为已启用的 `engine_type=spark`，调用运行时时映射为请求顶层 `engine_id`
-4. Engine 通过 System API 获取资源配置,动态创建 SparkSession
-5. 每个运行时 `engine_id` 对应一个 SparkSession (缓存复用)
-
-```python
-# spark_connector.py
-connector = get_spark_connector()
-spark = connector.get_or_create_session(engine_id=34)
-```
-
-### 统一存储访问
-
-`StorageAdapter` 提供统一的数据加载/保存接口:
-
-```python
-# 加载: 数据库
-df = StorageAdapter.load(spark, {
-    "source_type": "table",
-    "connection_info": {
-        "engine_type": "postgresql",
-        "host": "postgres",
-        "port": 5432,
-        "database": "addp",
-        "user": "addp",
-        "password": "secret"
-    },
-    "schema": "public",
-    "table": "poi_data"
-})
-
-# 加载: S3
-df = StorageAdapter.load(spark, {
-    "source_type": "file",
-    "connection_info": {
-        "engine_type": "minio",
-        "endpoint": "http://minio:9000",
-        "access_key": "minioadmin",
-        "secret_key": "minioadmin"
-    },
-    "path": "s3a://bucket/data.parquet",
-    "format": "geoparquet"
-})
-
-# 加载: Iceberg
-df = StorageAdapter.load(spark, {
-    "source_type": "catalog",
-    "catalog_name": "iceberg_catalog",
-    "database": "analytics",
-    "table": "poi"
-})
-```
-
-### DAG 工作流执行
-
-`SparkWorkflowRunner` 只注入可信 Spark 集群与租户上下文，并将领域算子结果映射到声明端口。公共 `WorkflowRunner` 校验 DAG、排序、解析嵌套 `$ref` / `$input`，在节点间直接传递 DataFrame；HTTP API 在执行结束后将结果投影为摘要。
-
-```python
-from workflow_engine import SparkWorkflowRunner
-
-result = SparkWorkflowRunner(engine_id=34, tenant_id=7).execute(workflow_def, input_data={})
-# result.final_result / result.all_results / result.task_order
-```
-
-## 与 GeoPython Workflow 的对比
-
-| 特性 | GeoPython Workflow | Spark 工作流 Engine |
-|------|------------------|---------------------|
-| **适用场景** | 快速原型、探索分析 | 生产环境、大规模处理 |
-| **数据规模** | < 10 GB | > 100 GB (TB 级) |
-| **并行化** | 单机多进程 | 分布式集群 |
-| **空间算子** | Python 空间分析算子 | Sedona 分布式空间算子 |
-| **性能** | 单机 CPU/内存限制 | 集群自动扩展 |
-| **部署方式** | 内置服务 (端口 8099) | 动态注册 (端口 8098) |
-| **存储支持** | 数据库 + S3 | 数据库 + S3 + 湖仓 (Iceberg/Delta) |
-
-**使用建议**:
-- **原型开发**: 使用 GeoPython Workflow (快速迭代)
-- **生产部署**: 使用 Spark (大规模稳定)
-- **混合使用**: 在 Orchestrator 中跨引擎编排
-
-## API 端点
-
-### 健康检查
-```
-GET /health
-```
-
-### 获取算子列表
-```
-GET /api/operators
-```
-
-### 执行工作流
-```
-POST /api/workflow
-Body: {"engine_id": 34, "workflow_def": {...}}
-```
-
-### direct 调用单个算子
-```
-POST /api/operators/{operator_name}/invoke
-Body: {"engine_id": 34, "params": {...}}
-```
-
-### 查询执行状态
-```
-GET /api/executions/{execution_id}
-```
-
-## 故障排查
-
-### 1. PySpark 导入失败
-
-```bash
-# 检查 PySpark 版本
-python3 -c "import pyspark; print(pyspark.__version__)"
-
-# 重新安装
-pip install pyspark==3.5.0
-```
-
-### 2. Sedona 函数不可用
-
-确保 Spark 配置中包含 Sedona 扩展:
-
-```python
-spark = SparkSession.builder \
-    .config("spark.jars.packages", "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3,org.datasyslab:geotools-wrapper:1.5.3-28.2,org.postgresql:postgresql:42.7.4,com.mysql:mysql-connector-j:8.4.0") \
-    .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
-    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
-    .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator") \
-    .getOrCreate()
-```
-
-### 3. 连接到远程 Spark 集群失败
-
-检查 Spark 资源配置:
-- 确保 Spark Thrift Server 正在运行
-- 验证 host 和 port 可访问
-- 检查 engine_id 是否正确
-
-### 4. S3 访问失败
-
-确保配置了 S3 凭证:
-```python
-spark.conf.set("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
-spark.conf.set("spark.hadoop.fs.s3a.access.key", "minioadmin")
-spark.conf.set("spark.hadoop.fs.s3a.secret.key", "minioadmin")
-```
-
-## 开发指南
-
-### 添加新算子
-
-1. 在对应的 `operators/*_operators.py` 中实现算子函数:
-```python
-def my_operator(input_df: DataFrame, param1: str, param2: int) -> DataFrame:
-    """算子说明"""
-    # 实现逻辑
-    return result_df
-```
-
-2. 在同一文件中定义 `OperatorMetadata` 并注册到该分类的 `OPERATORS`:
-```python
-MY_OPERATOR_METADATA = OperatorMetadata(
-    name="my_operator",
-    category=OperatorCategory.DATA_TRANSFORM,
-    description="我的算子",
-    brief_description="执行自定义 Spark DataFrame 处理",
-    overview="...",
-    params=[
-        OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame"),
-        OperatorParam(name="param1", type="str", required=True, description="参数 1"),
-    ],
-    use_cases=[...],
-    notes=[...],
-    input_desc="DataFrame",
-    output_desc="DataFrame",
-    workflow_example={
-        "id": "my_operator_task",
-        "operator": "my_operator",
-        "params": {
-            "input_df": {"$ref": "load_data"},
-            "param1": "value"
-        },
-        "depends_on": ["load_data"]
-    },
-)
-
-OPERATORS = dict([
-    register_operator(MY_OPERATOR_METADATA, my_operator),
-])
-```
-
-3. 在 `operators/__init__.py` 中导入算子函数和分类 `OPERATORS`。`operator_metadata.py` 是统一公开出口，不在其中手写单个算子的元数据。
-
-`engine_id` 是 Spark Workflow 执行请求的顶层运行时绑定，由执行引擎注入到 `load`、`save`、`sql` 等内部函数；不要把它写入算子公开参数或 workflow example 的 `params`。
+| 文件 | 职责 |
+| --- | --- |
+| [api_server.py](api_server.py) / [runtime_server.py](runtime_server.py) | HTTP 接口、执行快照与共用启动入口 |
+| [workflow_engine.py](workflow_engine.py) | 公共 WorkflowRunner 的 Spark 算子与端口适配 |
+| [spark_connector.py](spark_connector.py) | 可信租户上下文与 SparkSession 管理 |
+| [storage_adapters.py](storage_adapters.py) / [elasticsearch_adapter.py](elasticsearch_adapter.py) | 存储接入声明、加载和发布 |
+| [spark_dependencies.py](spark_dependencies.py) | 固定连接器依赖及 SHA256 校验 |
+| [operators/](operators/) / [operator_metadata.py](operator_metadata.py) | 算子实现与公开元数据出口 |
+| [requirements.txt](requirements.txt) / [原生生命周期脚本](../../scripts/dev/spark-workflow.sh) | 依赖与开发运行环境 |
 
 ### 运行测试
 
@@ -440,11 +118,7 @@ make test-common-hdfs
 
 ## 相关文档
 
+- [ADDP 开发原则](../../docs/spec/addp开发原则.md)
+- [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)
 - [Apache Spark 文档](https://spark.apache.org/docs/latest/)
 - [Apache Sedona 文档](https://sedona.apache.org/)
-- [ADDP 开发指南](../../docs/spec/addp开发原则.md)
-- [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)
-
-### 存储接入声明
-
-`storage_adapters.STORAGE_ACCESS` 是 Spark Runtime 自注册 `compute.workflow.storage_access` 与直接接入校验的同一事实源。当前读取 PostgreSQL、MySQL、Doris、Elasticsearch、HDFS、MinIO；写入 PostgreSQL、MySQL、Doris、MinIO。NFS 服务器与导出路径尚未接入，不声明支持；本地文件辅助函数不代表已注册 NFS Engine 接入。MinIO 写入继续仅普通 Parquet + create。最小确定性验证为 `make test-spark-workflow`；前后端选择与执行校验由 `make test-module MODULE=develop` 验证。

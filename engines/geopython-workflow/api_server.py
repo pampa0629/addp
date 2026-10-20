@@ -9,30 +9,20 @@ def run_runtime():
     """One HTTP process model for native development and the product image."""
     import os
     import threading
-    import time
     from dotenv import find_dotenv, load_dotenv
-    from urllib.request import ProxyHandler, build_opener
     from gunicorn.app.base import BaseApplication
 
     load_dotenv(find_dotenv())
     port = int(os.getenv('PORT', '8099'))
 
-    def register_after_ready():
+    def register_runtime():
         from api_server import register_to_system_with_retry
+        from addp_common.client.runtime_registration import register_after_listener
 
-        opener = build_opener(ProxyHandler({}))
-        while True:
-            try:
-                with opener.open(f'http://127.0.0.1:{port}/health', timeout=2) as response:
-                    if response.status == 200:
-                        break
-            except OSError:
-                pass
-            time.sleep(1)
-        register_to_system_with_retry()
+        register_after_listener(register_to_system_with_retry, port)
 
     def post_worker_init(worker):
-        threading.Thread(target=register_after_ready,
+        threading.Thread(target=register_runtime,
                          name='geopython-runtime-registration', daemon=True).start()
 
     class RuntimeApplication(BaseApplication):
@@ -60,6 +50,8 @@ if __name__ == '__main__':
 
 
 import base64
+
+from addp_common.workflow_runtime.health import health_dependency, runtime_health
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -157,52 +149,25 @@ def error_response(error_code: str, message: str, details: str = None):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """
-    健康检查端点（符合 ADDP 工作流计算引擎接口规范）
-
-    Returns:
-        {
-            "status": "healthy",
-            "service": "geopython-workflow-engine",
-            "version": "1.0.0",
-            "uptime": 3600,
-            "operators_count": len(list_operators()),
-            "dependencies": {
-                "geopandas": "0.14.1",
-                "pandas": "2.1.4"
-            }
-        }
-    """
-    try:
+    def probe():
         import geopandas as gpd
         import pandas as pd
+        from osgeo import gdal
 
-        uptime = int((datetime.now() - start_time).total_seconds())
-        operators = list_operators()
-
-        return jsonify({
-            "status": "healthy",
-            "service": "geopython-workflow-engine",
-            "version": "1.0.0",
-            "uptime": uptime,
-            "operators_count": len(operators),
+        return {
+            "operators_count": len(list_operators()),
             "raster_resources": raster_resources.snapshot(),
             "dependencies": {
-                "geopandas": gpd.__version__,
-                "pandas": pd.__version__
-            }
-        }), 200
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
+                "geopandas": health_dependency(True, version=gpd.__version__),
+                "pandas": health_dependency(True, version=pd.__version__),
+                "gdal": health_dependency(True, version=gdal.VersionInfo("RELEASE_NAME")),
+            },
+        }
 
-
-# ========================================
-# 算子列表（供前端使用）
-# ========================================
+    body, code = runtime_health(
+        "geopython-workflow-engine", "1.0.0", int((datetime.now() - start_time).total_seconds()), probe,
+    )
+    return jsonify(body), code
 
 @app.route('/api/operators', methods=['GET'])
 def get_operators():

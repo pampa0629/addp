@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,10 +12,71 @@ import (
 	"testing"
 	"time"
 
+	engineplugin "github.com/addp/common/engine/plugin"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"gorm.io/gorm"
 )
+
+func TestWorkflowHealthObservationRecoversWithoutChangingIdentityOrLifecycle(t *testing.T) {
+	var ready atomic.Bool
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		status := "unhealthy"
+		if ready.Load() {
+			status = "healthy"
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status, "service": "test-workflow", "version": "1",
+			"dependencies": map[string]interface{}{"sdk": map[string]bool{"available": ready.Load(), "required": true}},
+		})
+	}))
+	defer runtime.Close()
+	u, err := url.Parse(runtime.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := newServiceTestDB(t)
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	caps, err := engineplugin.MarshalEngineCapabilities(engineplugin.NewWorkflowCapabilities("health_test_workflow", engineplugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := commonmodels.JSONString(caps)
+	engine := &models.Engine{Name: "Unready Workflow", EngineType: "health_test_workflow", EngineOrigin: "extension",
+		ConnectionInfo: models.ConnectionInfo{"protocol": u.Scheme, "host": u.Hostname(), "port": port},
+		Capabilities:   &capabilities, LifecycleState: models.EngineLifecycleActive, ConnectionStatus: "unknown"}
+	if err := repo.Create(engine); err != nil {
+		t.Fatal(err)
+	}
+	service := NewEngineService(repo, nil, nil)
+	for _, state := range []bool{false, true, false} {
+		ready.Store(state)
+		if online := service.CheckAndUpdateConnectionStatus(engine.ID); online != state {
+			t.Fatalf("online=%v want=%v", online, state)
+		}
+		stored, err := repo.GetByID(engine.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "offline"
+		if state {
+			want = "online"
+		}
+		if stored.ConnectionStatus != want || stored.ID != engine.ID || stored.LifecycleState != models.EngineLifecycleActive {
+			t.Fatalf("unexpected observation: %+v", stored)
+		}
+	}
+}
 
 func TestRetryConnectionCheckRecoversWithinStartupWindow(t *testing.T) {
 	attempts := 0

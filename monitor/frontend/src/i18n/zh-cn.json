@@ -1064,7 +1064,8 @@
       "allCategories": "全部类别",
       "categories": {
         "log_pipeline": "日志链路",
-        "resource": "主机资源"
+        "resource": "主机资源",
+        "http_quality": "HTTP 接口质量"
       },
       "refresh": "刷新",
       "active": "未恢复",
@@ -1135,6 +1136,69 @@
         "query_policy": "暂时无法读取查询预算",
         "unconfigured": "评估所需配置暂不可用"
       }
+    },
+    "http": {
+      "title": "接口质量",
+      "denied": "无权查看平台接口质量",
+      "boundary": "平台共享接口由平台运维负责。入口请求与后端处理分别统计，不能相加为全局 QPS。",
+      "layer": "观测层",
+      "layers": {
+        "backend": "后端处理",
+        "ingress": "网关入口"
+      },
+      "window": "统计窗口",
+      "minutes": "{count} 分钟",
+      "instance": "运行实例",
+      "collection": "采集状态",
+      "details": "接口与趋势",
+      "empty": "没有符合条件的当前实例",
+      "sort": "排行依据",
+      "route": "路由模板",
+      "unmatched": "未匹配路由",
+      "allRoutes": "实例整体趋势",
+      "noInterfaces": "没有完整窗口的接口样本",
+      "metric": "趋势指标",
+      "range": "趋势时段",
+      "trend": "接口质量趋势",
+      "samples": "按所选指标展示前 10 个有完整窗口的接口模板；缺样不显示为零。新模板需先积累完整窗口。",
+      "metrics": {
+        "qps": "QPS",
+        "failure": "失败率（%）",
+        "clientError": "4xx 比例（%）",
+        "mean": "平均耗时（秒）",
+        "p95": "P95（秒）",
+        "p99": "P99（秒）",
+        "active": "并发请求数"
+      },
+      "states": {
+        "collecting": "采集中",
+        "failed": "采集失败",
+        "stale": "采集过期",
+        "identity_mismatch": "来源身份不符",
+        "not_active": "实例已退出",
+        "not_connected": "未接入采集",
+        "not_instrumented": "未接入 HTTP 埋点",
+        "no_sample": "暂无采集样本"
+      }
+    },
+    "httpRules": {
+      "title": "HTTP 接口质量规则",
+      "scope": "规则作用于所选模块和处理层的全部当前实例。新建规则默认停用。",
+      "create": "新增接口规则",
+      "edit": "编辑接口规则",
+      "subject": "模块与接口范围",
+      "anchor": "选择当前实例",
+      "anchorHint": "实例用于核验模块和处理层；规则持续跟随该模块的当前实例。",
+      "perRoute": "限定接口模板",
+      "template": "框架路由模板，如 /items/:id；空值表示未匹配请求",
+      "triggerValue": "触发值",
+      "recoveryValue": "恢复值",
+      "above": "高于 {value}，持续 {seconds} 秒",
+      "below": "低于 {value}，持续 {seconds} 秒",
+      "policyHint": "阈值使用所选指标单位；启用后重新积累窗口。活动告警沿用触发时的恢复条件，停用不会将其标记恢复。",
+      "invalid": "请填写名称、合法接口模板、0 < 恢复值 < 触发值，以及 15–300 秒且为 15 倍数的连续时长。",
+      "conflict": "规则版本已变化，或该接口范围已有同指标规则。当前输入已保留，请关闭并刷新后核对。",
+      "slow": "持续慢接口"
     }
   }
 }

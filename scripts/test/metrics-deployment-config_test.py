@@ -24,6 +24,20 @@ auth_spec.loader.exec_module(postgres_auth)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_http_quality_uses_native_source_and_standard_lifecycle_registration(self):
+        probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
+        selected = re.findall(r"'\^TestIntegrationMetrics\(([^)]+)\)\$'", probe)
+        self.assertEqual(len(selected), 1)
+        self.assertIn('HTTPWindow', selected[0].split('|'))
+        self.assertIn('^TestIntegrationMetricsHTTPRealSource$', probe)
+        self.assertIn('^TestIntegrationMetricsHTTPAlertLifecycle$', probe)
+        self.assertIn("'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'", probe)
+        gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
+        self.assertIn('common/httpmetrics/ common/modulelifecycle/', gate)
+        self.assertIn('--case=http-quality) metrics_case=http-quality ;;', gate)
+        self.assertIn('export ADDP_METRICS_T2_CASE="$metrics_case"', gate)
+        self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality'", probe)
+
     def test_postgres_auth_directory_reuses_runtime_and_preserves_managed_policy(self):
         directory = self.directory.resolve() / 'authentication'
         baseline = 'local all all trust\nhost all all 0.0.0.0/0 scram-sha-256\n'

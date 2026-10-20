@@ -26,17 +26,17 @@ class Model3DLinuxImagesTest(unittest.TestCase):
             with self.subTest(binding=key):
                 self.assertNotRegex(block, r'(?m)^\s+- ' + key + '=')
 
-    def test_compose_health_executes_real_probe_and_rejects_degraded_or_unready_body(self):
+    def test_compose_health_consumes_single_readiness_status(self):
         compose = (ROOT / 'docker-compose.runtimes.yml').read_text()
         block = re.search(r'^  model3d-workflow-engine:\n(.*?)(?=^  [a-zA-Z]|\Z)', compose, re.M | re.S).group(1)
         command = json.loads(re.search(r'^\s+test: (\[.*\])$', block, re.M).group(1))
         self.assertEqual(command[0], 'CMD-SHELL')
         executable, flag, code = shlex.split(command[1])
         self.assertEqual((executable, flag), ('python', '-c'))
-        for body, expected in (({'status': 'healthy', 'conversion_ready': True}, 0),
-                               ({'status': 'degraded', 'conversion_ready': False}, 1),
-                               ({'status': 'healthy'}, 1),
-                               ({'status': 'healthy', 'conversion_ready': False}, 1)):
+        for body, expected in (({'status': 'healthy'}, 0),
+                               ({'status': 'unhealthy'}, 1),
+                               ({'status': 'degraded'}, 1),
+                               ({}, 1)):
             with self.subTest(body=body):
                 setup = 'import io,json,urllib.request\nurllib.request.urlopen=lambda *a,**kw: io.StringIO(' + repr(json.dumps(body)) + ')\n'
                 checked = subprocess.run([sys.executable, '-c', setup + code], capture_output=True, text=True)

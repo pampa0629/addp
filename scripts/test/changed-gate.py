@@ -216,6 +216,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         affected.update(
             file_consumers(repository, "*/backend/requirements*.txt", "common-python")
         )
+        # Standalone runtimes install Common Python through their image/CI
+        # editable-install, rather than a backend requirements file. Their
+        # actual imports must also select the existing engines owner gates.
+        affected.update(file_consumers(repository, "engines/*/*.py", "addp_common"))
     return sorted(affected & registered)
 
 

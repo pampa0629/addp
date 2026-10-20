@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner
 import api_server
 from workflow_engine import SparkWorkflowRunner, execute_workflow
-from runtime_server import RuntimeApplication, register_after_ready, post_worker_init
+from runtime_server import RuntimeApplication, register_runtime, post_worker_init
 
 
 def task(identifier, operator='preview', params=None, dependencies=None):
@@ -25,6 +25,19 @@ class WorkflowRuntimeTest(unittest.TestCase):
     def setUp(self):
         api_server.executions.clear()
 
+    def test_health_requires_local_java_and_sedona_without_remote_cluster(self):
+        with patch.dict(os.environ, {"JAVA_HOME": "/nonexistent-java"}), api_server.app.test_client() as client:
+            response = client.get('/health')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json['status'], 'unhealthy')
+        self.assertFalse(response.json['dependencies']['java']['available'])
+        self.assertTrue(response.json['dependencies']['java']['required'])
+        self.assertEqual(response.json['service'], 'spark-workflow-engine')
+        with patch('api_server.SEDONA_VERSION', ''), api_server.app.test_client() as client:
+            response = client.get('/health')
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.json['dependencies']['sedona']['available'])
+
     def test_health_does_not_inspect_packages_or_rebuild_operator_metadata_per_request(self):
         with patch('api_server.package_version', side_effect=AssertionError('package inspection in health request')), \
              patch('operator_metadata.get_operator_metadata', side_effect=AssertionError('operator metadata rebuild in health request')), \
@@ -33,7 +46,8 @@ class WorkflowRuntimeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json['status'], 'healthy')
         self.assertEqual(response.json['operators_count'], len(api_server.OPERATOR_REGISTRY))
-        self.assertEqual(response.json['dependencies'], {'pyspark': api_server.SPARK_VERSION, 'sedona': api_server.SEDONA_VERSION})
+        self.assertEqual(response.json['dependencies']['pyspark'], {'available': True, 'required': True, 'version': api_server.SPARK_VERSION})
+        self.assertEqual(response.json['dependencies']['sedona']['version'], api_server.SEDONA_VERSION)
 
     def test_domain_runner_uses_common_core_and_declared_ports_with_nested_inputs(self):
         self.assertTrue(issubclass(SparkWorkflowRunner, WorkflowRunner))
@@ -221,19 +235,10 @@ run()
         self.assertFalse(application.cfg.preload_app)
         self.assertEqual(application.cfg.post_worker_init, post_worker_init)
 
-    def test_registration_waits_for_http_readiness_then_reuses_unbounded_retry(self):
-        events = []
-        class Response:
-            status = 200
-            def __enter__(self): return self
-            def __exit__(self, *args): pass
-        def ready(*args, **kwargs):
-            events.append('probe')
-            if len(events) == 1: raise OSError('not listening')
-            return Response()
-        with patch('runtime_server.urlopen', side_effect=ready), patch('runtime_server.time.sleep', side_effect=lambda s: events.append('wait')), patch('api_server.register_to_system_with_retry', side_effect=lambda: events.append('register')):
-            register_after_ready(28098)
-        self.assertEqual(events, ['probe', 'wait', 'probe', 'register'])
+    def test_registration_reuses_shared_listener_policy(self):
+        with patch('addp_common.client.runtime_registration.register_after_listener') as listener:
+            register_runtime(28098)
+        listener.assert_called_once_with(api_server.register_to_system_with_retry, 28098)
 
     def test_hook_is_nonblocking_daemon_in_worker(self):
         with patch('runtime_server.threading.Thread') as thread:

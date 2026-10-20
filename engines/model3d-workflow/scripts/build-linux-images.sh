@@ -80,9 +80,10 @@ from skp_converter import convert
 from glb_validation import validate_glb
 import trimesh
 
-status = operators.converter_status()
-if not status.get("available"):
-    raise SystemExit(f"model3d workflow converters are unavailable: {status.get('details')}")
+dependencies = operators.converter_dependencies()
+missing = [name for name, fact in dependencies.items() if fact["required"] and not fact["available"]]
+if missing:
+    raise SystemExit(f"model3d workflow converters are unavailable: {missing}")
 
 with tempfile.TemporaryDirectory() as tmp:
     # Object-store staging yields longer paths than a direct mounted fixture.

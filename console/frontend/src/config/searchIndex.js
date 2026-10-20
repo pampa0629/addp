@@ -54,6 +54,7 @@ export const SEARCH_INDEX = [
   // 运行监控
   { labelKey: 'console.menus.monitor.resourceOverview', module: 'monitor', route: '/monitor/resource-overview', keywords: ['资源总览', 'TOP5', 'CPU忙碌率', '采集覆盖', 'resource overview', 'coverage'] },
   { labelKey: 'console.menus.monitor.serviceResources', module: 'monitor', route: '/monitor/service-resources', keywords: ['服务监控', '进程内存', 'CPU核占用', 'service resources', 'process RSS'] },
+  { labelKey: 'console.menus.monitor.httpQuality', module: 'monitor', route: '/monitor/http-quality', keywords: ['接口质量', '失败率', 'QPS', '慢接口', 'HTTP quality', 'latency'] },
   { labelKey: 'console.menus.monitor.monitoringTargets', module: 'monitor', route: '/monitor/monitoring-targets', keywords: ['采集配置', '采集来源', 'monitoring targets', 'metrics'] },
   { labelKey: 'console.menus.monitor.nodeResources', module: 'monitor', route: '/monitor/node-resources', keywords: ['主机监控', '内存', '负载', 'node resources', 'memory', 'load'] },
   { labelKey: 'console.menus.monitor.dashboard',   module: 'monitor', route: '/monitor/dashboard',  keywords: ['监控仪表盘', '监控', '运行状态', 'monitor', 'dashboard'] },

@@ -4,12 +4,37 @@ from __future__ import annotations
 
 import os
 import threading
+from urllib.error import HTTPError
+from urllib.request import ProxyHandler, build_opener
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
 from .service_token import SyncOAuthServiceTokenSource
+
+
+def register_after_listener(register: Callable[[], Any], port: int) -> None:
+    """Wait for local HTTP listening, then register independently of readiness.
+
+    Both protocol outcomes (200 healthy / 503 unhealthy) prove the listener is
+    serving requests. No remote System availability or tool binding gates this.
+    """
+    opener = build_opener(ProxyHandler({}))
+    while True:
+        try:
+            with opener.open(f"http://127.0.0.1:{port}/health", timeout=2) as response:
+                if response.status == 200:
+                    break
+        except HTTPError as error:
+            listening = error.code == 503
+            error.close()
+            if listening:
+                break
+        except OSError:
+            pass
+        threading.Event().wait(1)
+    register()
 
 
 def runtime_advertised_port(listen_port: int) -> int:

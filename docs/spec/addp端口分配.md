@@ -41,7 +41,7 @@ Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127
 
 独立 Linux node_exporter 使用 host 网络；`ADDP_NODE_METRICS_LISTEN` 必须由节点部署方明确给出本机 IP:端口，无默认生产监听和自动避让，冲突时失败。其地址必须同时落入 Monitor 明确配置的 CIDR/端口允许集合，服务器证书包含发现使用的 IP SAN；部署入口不自动放行防火墙。T2 仅在独占 bridge 中使用容器 `9100`，映射随机回环端口，不与生产监听形成第二套端口事实。
 
-PostgreSQL 固定指标来源的 SQL Exporter 仅监听来源网络命名空间的 `127.0.0.1:9399`，受控 mTLS 入口使用同命名空间 `9443`；两者由 `scripts/infra/postgres-metrics.yml` 组织，不默认发布宿主端口。T2 仅临时发布随机回环 TLS 端口；正式自动接入和具体宿主发布尚待来源生命周期实施，不能将私有 HTTP 端口直接作为采集端点。
+PostgreSQL 固定指标来源的 SQL Exporter 仅监听来源网络命名空间的 `127.0.0.1:9399`，受控 mTLS 入口使用同命名空间 `9443`；两者由 `scripts/infra/postgres-metrics.yml` 组织。可选生命周期要求 `ADDP_POSTGRES_METRICS_LISTEN` 显式指定本机 IP 与非零宿主端口，不设默认或冲突避让；T2 使用当次临时回环端口。采集地址为此端口的 HTTPS `/metrics`，不能将私有 HTTP 端口直接作为采集端点。Docker Desktop 回环发布沿既有唯一宿主通道声明，不修改 TLS 名称或主机归属。
 
 ## Business (业务库)
 
@@ -189,7 +189,7 @@ make ports-validate
 | **Security Frontend** | **5191** | 80 | **数据安全与隐私保护 UI** |
 | **Ontology Backend** | **8195** | **8195** | **原生领域本体、修订与投影运行时** |
 | **Ontology Frontend** | **5192** | 80 | **领域本体建模与修订管理 UI** |
-| Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
+| Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
 | GeoPython Workflow     | 8099     | 8099        | 空间计算引擎 (Python)      |
@@ -239,7 +239,7 @@ make ports-validate
   - **8193: Workbench（服务消费工作台）**
   - **8194: Security（数据安全）**
 - **引擎服务**：808x-809x 系列
-  - 8089: Math Workflow Engine（参考实现，自动启动服务、手动注册）
+  - 8089: Math Workflow Engine（参考实现，手动注册）
   - 8097: Jupyter API Server
   - 8098: Spark Workflow Engine
   - 8099: GeoPython Workflow

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -10,8 +9,6 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"gorm.io/gorm"
-	"io"
-	"net/http"
 	"strconv"
 	"time"
 )
@@ -165,30 +162,13 @@ func (s *EngineRasterPolicyService) RuntimeHealth(ctx context.Context, id uint) 
 		if e.ID != id {
 			continue
 		}
-		base, err := engineplugin.RuntimeBaseURL(engineplugin.ConnectionInfo(e.ConnectionInfo))
+		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		health, err := engineplugin.HTTPWorkflowHealth(probeCtx, engineplugin.ConnectionInfo(e.ConnectionInfo))
 		if err != nil {
 			return nil
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)
-		if err != nil {
-			return nil
-		}
-		client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		response, err := client.Do(request)
-		if err != nil {
-			return nil
-		}
-		defer response.Body.Close()
-		if response.StatusCode != 200 {
-			return nil
-		}
-		var body struct {
-			RasterResources map[string]interface{} `json:"raster_resources"`
-		}
-		if json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&body) != nil {
-			return nil
-		}
-		return body.RasterResources
+		return health.RasterResources
 	}
 	return nil
 }

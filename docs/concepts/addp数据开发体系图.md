@@ -319,7 +319,7 @@ sequenceDiagram
 | 用户选择的界面 | 需要的能力 | 筛选后的引擎示例 | 编辑器组件 |
 |--------------|----------------|----------------|-----------|
 | 查询工作台 | `compute.query.supported=true` | PostgreSQL, MySQL, MongoDB, Neo4j, ClickHouse, Doris, Spark SQL | Monaco Editor |
-| 工作流编辑器 | `compute.workflow.supported=true` | GeoPython Workflow, Spark Workflow, Model3D Workflow, PointCloud Workflow, SuperMap Workflow, Math Workflow（自动启动服务、手动注册示例） | 算子拖拽 + DAG Canvas |
+| 工作流编辑器 | `compute.workflow.supported=true` | GeoPython Workflow, Spark Workflow, Model3D Workflow, PointCloud Workflow, SuperMap Workflow, Math Workflow（手动注册参考实现） | 算子拖拽 + DAG Canvas |
 | Notebook 编辑器 | `compute.script.supported=true` | Jupyter | Jupyter Notebook |
 
 ### 引擎能力声明示例

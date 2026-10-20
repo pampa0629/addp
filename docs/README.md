@@ -182,7 +182,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 
 1. [术语表](concepts/addp术语表.md)：确认 ADDP Operator、Workflow Runtime、SuperMap iObjects C++ 和 `supermap_workflow` 的术语边界。
 2. [引擎体系图](concepts/addp引擎体系图.md)：确认 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的模块边界。
-3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
+3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：统一 HTTP 协议、算子、Develop 资源与执行、Runtime 接入及矢量/栅格契约的专题入口。
 4. [SuperMap Workflow Engine README](../engines/supermap-workflow/README.md)：查看 C++ Runtime、算子、镜像构建、SDK 母版、裁剪结果和验证方式。
 5. [数据血缘能力规范](spec/addp数据血缘能力规范.md)：确认统一执行事实、关系类型、Meta collector 和服务依赖边界。
 

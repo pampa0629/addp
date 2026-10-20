@@ -1064,7 +1064,8 @@
       "allCategories": "All categories",
       "categories": {
         "log_pipeline": "Log pipeline",
-        "resource": "Host resources"
+        "resource": "Host resources",
+        "http_quality": "HTTP quality"
       },
       "refresh": "Refresh",
       "active": "Active",
@@ -1135,6 +1136,69 @@
         "query_policy": "Query budget is temporarily unavailable",
         "unconfigured": "Required evaluation configuration is unavailable"
       }
+    },
+    "http": {
+      "title": "HTTP quality",
+      "denied": "Platform HTTP quality access denied",
+      "boundary": "Platform operations own shared HTTP quality. Ingress and backend request rates are separate and must not be added into a global QPS.",
+      "layer": "Observation layer",
+      "layers": {
+        "backend": "Backend processing",
+        "ingress": "Gateway ingress"
+      },
+      "window": "Request window",
+      "minutes": "{count} minutes",
+      "instance": "Runtime instance",
+      "collection": "Collection",
+      "details": "Interfaces and trends",
+      "empty": "No matching current instances",
+      "sort": "Rank by",
+      "route": "Route template",
+      "unmatched": "Unmatched route",
+      "allRoutes": "Whole instance trend",
+      "noInterfaces": "No route samples with a complete window",
+      "metric": "Trend metric",
+      "range": "Trend range",
+      "trend": "HTTP quality trend",
+      "samples": "The top 10 eligible templates by the selected metric. Missing samples remain unavailable; new templates need a complete window.",
+      "metrics": {
+        "qps": "QPS",
+        "failure": "Failure (%)",
+        "clientError": "4xx (%)",
+        "mean": "Mean (s)",
+        "p95": "P95 (s)",
+        "p99": "P99 (s)",
+        "active": "Active requests"
+      },
+      "states": {
+        "collecting": "Collecting",
+        "failed": "Collection failed",
+        "stale": "Stale collection",
+        "identity_mismatch": "Source identity mismatch",
+        "not_active": "Instance inactive",
+        "not_connected": "Collection not connected",
+        "not_instrumented": "HTTP not instrumented",
+        "no_sample": "No collection sample"
+      }
+    },
+    "httpRules": {
+      "title": "HTTP quality rules",
+      "scope": "Rules cover all current instances of the selected module and runtime layer. New rules start disabled.",
+      "create": "New HTTP rule",
+      "edit": "Edit HTTP rule",
+      "subject": "Module and interface scope",
+      "anchor": "Select a current instance",
+      "anchorHint": "The instance verifies the module and runtime layer. The rule follows current instances of that module.",
+      "perRoute": "Limit to a route template",
+      "template": "Framework template such as /items/:id; empty means unmatched requests",
+      "triggerValue": "Trigger value",
+      "recoveryValue": "Recovery value",
+      "above": "Above {value} for {seconds} seconds",
+      "below": "Below {value} for {seconds} seconds",
+      "policyHint": "Thresholds use the metric unit. Enabling restarts the observation window. Active alerts retain their opening recovery policy; disabling does not resolve them.",
+      "invalid": "Enter a name, valid template, 0 < recovery < trigger, and durations of 15–300 seconds in multiples of 15.",
+      "conflict": "The rule version changed or this interface scope already has the same metric rule. Your draft is retained; close and refresh to review.",
+      "slow": "Sustained slow interface"
     }
   }
 }

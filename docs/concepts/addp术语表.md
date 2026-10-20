@@ -30,6 +30,7 @@
 | Engine Server Version | 引擎实例原生产品版本 | 插件在真实只读连接探测中返回的产品版本。 | System 将其与独立探测时间保存为只读 `server_version` / `server_version_checked_at`，不属于能力声明，不等同于聚合根 `version`。探测失败保留最后一次成功结果。 |
 | Workflow storage access | 工作流直接存储接入能力 | 计算引擎在 `compute.workflow.storage_access` 中声明自身直接连接的存储引擎类型与读写方向。 | 不是存储引擎自身能力，也不是算子名单；仅约束直接使用执行期 `connection_info` 的接入路径。受控 access-plan 路径按对应 Provider 能力校验。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
+| Workflow Runtime readiness | 工作流运行时整体就绪 | `addp.workflow/v1` Runtime 当前算子目录所承诺能力的本地必需条件全部满足。 | `/health` 只使用 `healthy`（HTTP 200）与 `unhealthy`（HTTP 503）；依赖事实统一声明 `available`、`required`。可选依赖不可用不改变整体就绪；不证明某次任务的输入、远端连接或权限有效。身份登记、Engine Instance 生命周期和最近连通性观测分别维护，注册成功不代表就绪。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费、正在退出平台或已成为墓碑的状态。 | 统一使用 `active`、`disabled`、`deleting`、`deleted`；`deleting` 保留连接只用于 cleanup，`deleted` 仅保留永久身份和审计并移除敏感凭据，二者都不进入正常业务选择。 |
 | engine connectivity observation | 引擎连通性观测 | System 对 Engine Instance 最近一次连接检测得到的运行时观测结果。 | 统一使用 `online`、`offline`、`unknown`、`checking`；它是带检测时间和消息的缓存，不改变生命周期，也不等同于持续保持的物理连接。 |
 | engine selection option | 引擎选择项 | 业务选择器中展示的、已在 System 注册且 capability 与当前功能匹配的 Engine Instance。 | 选择项保留最近连接状态；离线、未知或检测中的实例仍展示，但必须禁选并说明原因。 |
@@ -636,6 +637,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | filesystem available-capacity usage | 文件系统可用容量使用率 | 已用容量占已用与普通用户可用容量之和的百分比；已用为同次采样总量减空闲。 | 采用非特权可用容量分母，保留空间使其区别于已用占总量的比例；分母为零或采样不一致时无有效值。 |
 | filesystem inode observation | 文件系统 inode 观测 | 文件系统报告的 inode 总数、空闲数及同次采样的使用情况。 | 不等于文件数量或字节容量；总数为零、超出精确整数范围或采样异常时无有效值，不能按文件系统类型猜测或按挂载重复汇总。 |
 | service quality metric | 服务质量指标 | 请求量、错误率、延迟分布等应用服务行为指标。 | 接口采用规范化 route；不使用完整 URL、请求正文或用户身份作为指标标签。 |
+| HTTP interface quality | HTTP 接口质量 | 平台实际运行实例在确定窗口内处理 HTTP 请求的数量、服务端失败比例、耗时分布及独立活动请求数。 | 5xx 及超时、取消、写失败或异常中断计服务端失败，同一请求最多一次；4xx 单列，不解析正文推断业务失败。平台共享接口总体归平台运维；租户发布服务的调用统计归 Service 对象授权，二者不混合。 |
+| ingress request rate | 入口请求速率 | Gateway ingress 实例在确定窗口内接收请求的每秒平均数量。 | 与 Backend 处理速率分别解释，不能相加为全局 QPS；活动请求数表示并发，不能由 QPS 代替。 |
 | distributed trace | 分布式追踪 | 由 Trace/Span 与上下文传播描述的一次跨服务调用过程。 | request_id、trace_id 和 execution 身份不互相替代；缺失或采样不能证明没有调用关系。 |
 | observed call relationship | 观测调用关系 | 从明确配置或实际追踪得到的服务、引擎之间的调用关系。 | 注明来源、窗口和覆盖范围；与部署关联、数据血缘分别表达，不能仅凭关系染色确认根因。 |
 

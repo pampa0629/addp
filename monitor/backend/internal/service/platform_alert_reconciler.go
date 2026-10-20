@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/addp/common/logpipeline"
@@ -23,6 +24,7 @@ const (
 // PlatformAlertEvaluation covers exactly one source-owned signal. Missing
 // evaluations are never inferred to mean normal for any other source or subject.
 type PlatformAlertEvaluation struct {
+	HTTPEvidence                                                   *models.HTTPAlertEvidence
 	ResourceEvidence                                               *models.ResourceAlertEvidence
 	Category, SubjectKind, SubjectID, Signal, InstanceID, Severity string
 	Verdict                                                        PlatformAlertVerdict
@@ -40,6 +42,10 @@ func (e PlatformAlertEvaluation) valid() bool {
 	case models.PlatformAlertCategoryResource:
 		id, err := uuid.Parse(e.SubjectID)
 		if e.SubjectKind != models.PlatformAlertSubjectHostNode || err != nil || id.String() != e.SubjectID || e.InstanceID != "" {
+			return false
+		}
+	case models.PlatformAlertCategoryHTTP:
+		if e.SubjectKind != models.PlatformAlertSubjectModule || e.InstanceID != "" || len(e.SubjectID) > 50 || strings.TrimSpace(e.SubjectID) != e.SubjectID || strings.ContainsAny(e.SubjectID, "\r\n\x00") || !resourceRuleUUID(e.Signal) {
 			return false
 		}
 	default:
@@ -85,7 +91,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 		incident = models.PlatformAlertIncident{
 			Version: 1, Category: e.Category, SubjectKind: e.SubjectKind, SubjectID: e.SubjectID,
 			Signal: e.Signal, InstanceID: e.InstanceID, Severity: e.Severity,
-			Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: e.ResourceEvidence,
+			Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence,
 		}
 		if err := tx.Create(&incident).Error; err != nil {
 			return err
@@ -108,7 +114,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 	if eventType == "" {
 		return nil
 	}
-	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now, ResourceEvidence: e.ResourceEvidence}
+	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence}
 	if err := tx.Create(&event).Error; err != nil {
 		return err
 	}

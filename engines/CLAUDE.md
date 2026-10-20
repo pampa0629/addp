@@ -12,7 +12,7 @@
 engines/
 ├── geopython-workflow/  # GeoPython Workflow 运行时，默认端口 8099
 ├── spark-workflow/   # Spark 工作流引擎，默认端口 8098
-├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
+├── math-workflow/    # 数学工作流参考实现，默认端口 8089，全量或显式选择时启动，手动注册
 ├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
 ├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102；绑定 engine runtime 内部 PDAL 后自注册，POINTCLOUD_PDAL_BIN 不指向宿主机全局命令
 ├── document-workflow/ # 文档转换运行时，默认端口 8105；开发态私有官方 LibreOffice 与字体；生产镜像保留隔离
@@ -31,7 +31,7 @@ engines/
 - 生产 Runtime 必须先监听、再异步自注册，并在 System 尚未就绪时持续退避重试；注册失败不得阻塞 Runtime readiness。容器部署必须声明稳定服务名，不能把临时容器 IP 当作 Engine Instance 身份。
 - 算子元数据要包含输入、输出、参数、示例和开发模式，保证 Develop 工作流画布可动态消费。
 - `model3d-workflow` 开发态在 macOS Apple Silicon 使用固定版本私有原生工具包；start/restart 复用 `scripts/dev/model3d-workflow.sh`，不保留 Docker 转换 wrapper。正式 Linux 产品镜像与 Hosted 产品验收独立于开发生命周期。
-- `pointcloud-workflow` 开发态使用独立 Conda 前缀中的 Python 3.12、PDAL core/E57 2.10.2，start/restart/stop 只管理原生进程，产品部署使用正式镜像。PDAL 属于该 engine runtime 内部依赖；不得要求 Manager、System 或宿主机全局安装 PDAL。未绑定 PDAL 时健康检查应保持 `degraded`，且不自注册。
+- `pointcloud-workflow` 开发态使用独立 Conda 前缀中的 Python 3.12、PDAL core/E57 2.10.2，start/restart/stop 只管理原生进程，产品部署使用正式镜像。PDAL 属于该 engine runtime 内部依赖；不得要求 Manager、System 或宿主机全局安装 PDAL。未绑定 PDAL 时健康检查返回 HTTP 503 + unhealthy，但监听后仍异步登记实例身份，由 System 探测标为 offline；工具恢复后通过周期探测恢复 online。
 - `supermap-workflow` 的 SuperMap iObjects C++ 属于该 engine runtime 内部依赖；完整 SDK 作为外部只读母版保存，通过 Docker build context 构建稳定基础镜像，不提交 SDK、native `.so` 或许可文件到仓库。
 - SuperMap Workflow 本地开发固定使用两层镜像：基础镜像承载指定版本的完整 C++ SDK 和系统依赖，代码镜像只编译并承载 ADDP C++ Runtime。`restart.sh -supermap-workflow` 和 `restart.sh -all` 必须按 C++ 源码、构建文件、基础镜像 ID 和目标平台计算构建指纹；不得保留 Java/GPA 回退、胖/瘦镜像分支、源码挂载或运行时编译路线。
 - 引擎目录中不要沉淀一次性实验脚本；临时验证放到操作系统临时目录。

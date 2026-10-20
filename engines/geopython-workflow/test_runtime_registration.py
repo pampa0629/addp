@@ -1,6 +1,34 @@
 import json
 
 
+def test_health_uses_structured_local_dependency_facts():
+    import api_server
+    with api_server.app.test_client() as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "healthy"
+    assert body["service"] and body["version"]
+    assert {"geopandas", "pandas", "gdal"} == set(body["dependencies"])
+    assert all(fact["available"] is True and fact["required"] is True
+               for fact in body["dependencies"].values())
+
+
+def test_health_probe_failure_returns_503_and_keeps_identity(monkeypatch):
+    import api_server
+    def fail():
+        raise RuntimeError("private diagnostic")
+    monkeypatch.setattr(api_server, "list_operators", fail)
+    with api_server.app.test_client() as client:
+        response = client.get("/health")
+    body = response.get_json()
+    assert response.status_code == 503
+    assert body["status"] == "unhealthy"
+    assert body["service"] and body["version"]
+    assert body["error_code"] == "health_check_failed"
+    assert "private diagnostic" not in response.get_data(as_text=True)
+
+
 def test_real_entry_executes_first_crs_workflow_without_worker_replacement(tmp_path):
     """The real script must initialize native CRS safely in its execution thread."""
     import os

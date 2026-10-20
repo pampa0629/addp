@@ -33,7 +33,7 @@ func NewPlatformAlertService(db *gorm.DB, key []byte, allowPrivate bool, webhook
 }
 
 type PlatformAlertDestinationInput struct {
-	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource"`
+	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource,http_quality"`
 	Version    uint64   `json:"version"`
 	Name       string   `json:"name" binding:"required"`
 	Channel    string   `json:"channel" binding:"required" enums:"webhook,email,wecom"`
@@ -48,7 +48,7 @@ func (n *PlatformAlertService) validate(ctx context.Context, input PlatformAlert
 	if d.Name == "" || len(d.Name) > 100 {
 		return d, ErrLogInvalid
 	}
-	if len(input.Categories) < 1 || len(input.Categories) > 2 {
+	if len(input.Categories) < 1 || len(input.Categories) > 3 {
 		return d, ErrLogInvalid
 	}
 	for _, category := range input.Categories {
@@ -249,6 +249,9 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 	if incident.Category == models.PlatformAlertCategoryResource && (incident.Severity != "warning" || (incident.Signal != "node.cpu.busy_percent" && incident.Signal != "node.memory.used_percent")) {
 		return ErrLogInvalid
 	}
+	if incident.Category == models.PlatformAlertCategoryHTTP && incident.Severity != "warning" {
+		return ErrLogInvalid
+	}
 	var destinations []models.PlatformAlertDestination
 	categoryJSON, _ := json.Marshal([]string{incident.Category})
 	if err := tx.Where("enabled=true AND categories @> ?::jsonb", string(categoryJSON)).Order("id").Find(&destinations).Error; err != nil {
@@ -260,6 +263,12 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 	}
 	if incident.Category == models.PlatformAlertCategoryResource && event.ResourceEvidence != nil {
 		payload["evidence"] = event.ResourceEvidence
+	}
+	if incident.Category == models.PlatformAlertCategoryHTTP {
+		if event.HTTPEvidence == nil || event.HTTPEvidence.RuleID != incident.Signal || event.HTTPEvidence.ModuleName != incident.SubjectID || !event.HTTPEvidence.Policy.Valid(event.HTTPEvidence.MetricKey) {
+			return ErrLogInvalid
+		}
+		payload = map[string]any{"schema": "addp.platform-http-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now, "evidence": event.HTTPEvidence}
 	}
 	body, _ := json.Marshal(payload)
 	for _, d := range destinations {
@@ -338,6 +347,9 @@ func (n *PlatformAlertService) send(ctx context.Context, d models.PlatformAlertD
 	}
 	if message.Schema == "addp.platform-resource-alert/v1" {
 		subject = "ADDP platform resource alert"
+	}
+	if message.Schema == "addp.platform-http-alert/v1" {
+		subject = "ADDP platform HTTP quality alert"
 	}
 	return n.email.SendMessage(ctx, EmailMessage{DeliveryID: d.ID, Recipients: d.Recipients, Subject: subject, TextBody: d.Payload, HTMLBody: "<pre>" + html.EscapeString(d.Payload) + "</pre>"}, now)
 }

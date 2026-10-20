@@ -58,7 +58,7 @@ macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`，随后使�
 **已有引擎**：
 - `geopython_workflow` - GeoPython Workflow，适合中小规模空间与数据处理。
 - `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
-- `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
+- `math_workflow` - Math Workflow 参考实现，手动注册后可用；启动与连接配置见 [Math README](math-workflow/README.md)。
 - `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
 - `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` direct 算子；绑定 engine runtime 内部 PDAL 后会自注册到 System，实际转换通过 `POINTCLOUD_PDAL_BIN` 指向引擎部署内的 PDAL 可执行文件路径，不依赖宿主机全局 PDAL。Manager 负责派生源 URI 和 Manager infra MinIO 发布计划，运行时通过 PDAL 读取源 URI，先写入受控工作目录，再发布为 Manager 私有 COPC artifact。
 - `document_workflow` - Document Workflow 文档转换运行时，提供 `document_to_pdf` workflow/direct 算子；LibreOffice 和字体固定在运行镜像中，Manager 通过访问计划生成私有 PDF 快显 artifact，Runtime 不解析 ResourceLocator 或拥有任务定义。
@@ -195,7 +195,7 @@ Runtime 使用自身 Confidential OAuth Client 获取 Platform Service Access To
 
 容器 Runtime 必须通过 `host` 声明稳定、可从其他 ADDP 服务访问的服务名；本地 Runtime 未声明时由 System 根据请求来源规范化为 `localhost`。不得把临时容器 IP 保存为 Engine Instance 身份。
 
-Math Workflow 是参考实现，随无参数全量启动运行服务，但不会随 `-develop` 隐式启动，也不会自动注册。需要使用时，显式执行 `scripts/dev/start.sh -math-workflow`，再在 System 引擎管理中使用扩展引擎注册表单填入示例值、测试连接并保存。
+Math Workflow 是参考实现，服务启动后仍需在 System 中手动注册。启动范围见[模块选择指南](../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)，连接填写见 [Math README](math-workflow/README.md#开发启动)。
 
 ## 新增独立 Runtime checklist
 

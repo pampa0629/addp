@@ -68,6 +68,19 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_common_python_health_changes_select_importing_runtime_owner(self) -> None:
+        for name, content in {
+            "engines/workflow/requirements.txt": "Flask==3.0.0\n",
+            "engines/workflow/api_server.py": "from addp_common.workflow_runtime.health import runtime_health\n",
+            "engines/runtime/CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\n",
+        }.items():
+            path = self.repository / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertEqual(["agent", "common-python", "engines"], MODULE.affected_modules(
+            self.repository, ["common-python/addp_common/workflow_runtime/health.py"]))
+
     def test_shared_browser_launcher_selects_its_package_consumers(self) -> None:
         package = self.repository / 'other/frontend/package.json'
         package.write_text('{"scripts":{"test:e2e":"node ../../scripts/test/frontend-browser-gate.mjs"}}')

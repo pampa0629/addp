@@ -54,8 +54,8 @@ export function validateProcessTrend(value, owner, params) {
   }
   return value
 }
-export function validateProcessInstances(value, page, filters = {}) {
-  if (!Array.isArray(value?.data) || value.data.length > 20 || !Number.isSafeInteger(value.total) || value.total < value.data.length || value.page !== page || value.page_size !== 20) invalid()
+export function validateProcessInstances(value, page, filters = {}, pageSize = 20) {
+  if (!Array.isArray(value?.data) || value.data.length > pageSize || !Number.isSafeInteger(value.total) || value.total < value.data.length || value.page !== page || value.page_size !== pageSize) invalid()
   const ids = new Set(), names = new Set()
   for (const row of value.data) {
     const identity = JSON.stringify([row.module_name, row.instance_id])

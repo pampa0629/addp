@@ -2,7 +2,6 @@ package resourcequery
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -87,12 +86,7 @@ func (c *Client) Summaries(ctx context.Context, scopes []Scope, at time.Time, b 
 func (c *Client) readSummaryGroups(ctx context.Context, parts []string, at time.Time, b Budget, ids map[string]bool, bound int, label string) (map[string]envelope, error) {
 	form := url.Values{"query": {strings.Join(parts, " or ")}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(b.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}}
 	// Prometheus accepts read-only queries as form POST, avoiding URI limits.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+"/api/v1/query", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, ErrUnavailable
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	data, err := c.readRequest(ctx, req)
+	data, err := c.readForm(ctx, "/api/v1/query", form)
 	if err != nil {
 		return nil, err
 	}

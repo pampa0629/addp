@@ -3,32 +3,36 @@
     "tasks": [
       {
         "id": "task1",
-        "operator": "buffer",
+        "operator": "add",
         "params": {
-          "distance": 500,
-          "resolution": 16
+          "a": 10,
+          "b": 20
         },
         "depends_on": []
       },
       {
         "id": "task2",
-        "operator": "centroid",
+        "operator": "multiply",
         "params": {
-          "input_gdf": {"$ref": "task1"}
+          "a": {
+            "$ref": "task1"
+          },
+          "b": 2
         },
-        "depends_on": ["task1"]
-      },
-      {
-        "id": "task3",
-        "operator": "get_area",
-        "params": {
-          "input_gdf": {"$ref": "task1"}
-        },
-        "depends_on": ["task1"]
+        "depends_on": [
+          "task1"
+        ]
       }
     ]
   },
-  "input_data": {
-    "geometry": "POINT(116.4074 39.9042)"
+  "input_data": {},
+  "runtime": {
+    "tenant_id": 7,
+    "execution_authorization": {
+      "id": 71,
+      "effects": [
+        "read"
+      ]
+    }
   }
 }

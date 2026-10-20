@@ -1,29 +1,19 @@
 """The native development and product container HTTP entry; Spark executors remain remote."""
 import os
 import threading
-import time
-from urllib.request import urlopen
 
 from gunicorn.app.base import BaseApplication
 
 
-def register_after_ready(port):
-    # The hook runs before the worker request loop. Probe from a daemon thread,
-    # so registration starts only after this process can serve HTTP requests.
-    while True:
-        try:
-            with urlopen(f'http://127.0.0.1:{port}/health', timeout=2) as response:
-                if response.status == 200:
-                    break
-        except OSError:
-            pass
-        time.sleep(1)
+def register_runtime(port):
     from api_server import register_to_system_with_retry
-    register_to_system_with_retry()
+    from addp_common.client.runtime_registration import register_after_listener
+
+    register_after_listener(register_to_system_with_retry, port)
 
 
 def post_worker_init(worker):
-    threading.Thread(target=register_after_ready, args=(int(os.getenv('PORT', '8098')),),
+    threading.Thread(target=register_runtime, args=(int(os.getenv('PORT', '8098')),),
                      name='spark-runtime-registration', daemon=True).start()
 
 

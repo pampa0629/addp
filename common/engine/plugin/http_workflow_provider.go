@@ -2,10 +2,7 @@ package plugin
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"strings"
-	"time"
 )
 
 const WorkflowRuntimeAPIAddpV1 = "addp.workflow/v1"
@@ -71,24 +68,8 @@ func (p *HTTPWorkflowRuntimeProvider) TestConnection(ctx context.Context, connIn
 	if err := p.ValidateConnectionInfo(connInfo); err != nil {
 		return err
 	}
-	baseURL, err := RuntimeBaseURL(connInfo)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("workflow runtime health check failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("workflow runtime health check failed with status %d", resp.StatusCode)
-	}
-	return nil
+	_, err := HTTPWorkflowHealth(ctx, connInfo)
+	return err
 }
 
 func (p *HTTPWorkflowRuntimeProvider) RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error) {

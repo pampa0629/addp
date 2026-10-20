@@ -137,7 +137,7 @@ rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
-                '^TestIntegrationMetrics(CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
+                '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
                check=True, timeout=60)
@@ -223,7 +223,7 @@ try:
         address = source_ip + ':' + str(19440 + index)
         envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
                 'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://metrics-source:{19440 + index}/metrics',
-                'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index)}
+                'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index), 'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'}
         command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
         for key, value in envs.items(): command.extend(['-e', key + '=' + value])
         command.extend(['metrics-source', '/source/process-source.test', '-test.run=^TestIntegrationMetricsSelfSource$', '-test.timeout=9m'])
@@ -238,7 +238,7 @@ try:
         records.append(json.loads(path.read_text()))
     projection = [{'targets': ['metrics-source:' + str(19440 + index)], 'labels': {
         '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
-        'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': 'worker'}} for index in (1, 2)]
+        'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': records[index - 1]['role']}} for index in (1, 2)]
     if desktop_transport:
         process_loopback_ports = [port('metrics-source', 19440 + index) for index in (1, 2)]
         os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORTS'] = ','.join(process_loopback_ports)
@@ -268,6 +268,15 @@ try:
                MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
     subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
                    cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+    subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsHTTPAlertLifecycle$', '-count=1', '-timeout=300s', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                   env=dict(env, ADDP_HTTP_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
+                            ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
+                            ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
+                            ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                            ADDP_TEST_POSTGRES_SSLMODE='disable'), check=True, timeout=320)
     process, log, path = processes[0]
     Path(str(path) + '.stop').touch()
     assert process.wait(timeout=10) == 0
@@ -276,6 +285,8 @@ try:
     assert bool(query('up{job="addp_nodes",addp_instance_id="native-2"} == 1'))
     assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'
     env['ADDP_PROCESS_T2_STOPPED'] = '1'
+    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
     subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
                    cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
     print('Metrics T2: two native Linux SDK processes isolated; stopped source clears values while peer stays live', flush=True)
@@ -288,6 +299,9 @@ finally:
         finally: log.close()
     discovery_text(original_discovery)
 eventually(valid_sample, 'fixture scope restored after native process checks')
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality':
+    print('Metrics T2: HTTP quality scope complete; remaining host-resource regression belongs to --case=all', flush=True)
+    raise SystemExit(0)
 
 
 def failures():

@@ -141,6 +141,19 @@ func (c *Client) Query(ctx context.Context, p Plan, s Scope, b Budget) ([]Series
 // queryExpression is the single instant/range transport and normalizer for
 // catalog expressions built by the host or process scope.
 func (c *Client) queryExpression(ctx context.Context, p Plan, expression string, b Budget) ([]Series, error) {
+	data, err := c.readPlanExpression(ctx, p, expression, b)
+	if err != nil {
+		return nil, err
+	}
+	return normalize(data, p, b)
+}
+
+func (c *Client) readPlanExpression(ctx context.Context, p Plan, expression string, b Budget) (envelope, error) {
+	endpoint, q := planExpressionQuery(p, expression, b)
+	return c.read(ctx, endpoint, q)
+}
+
+func planExpressionQuery(p Plan, expression string, b Budget) (string, url.Values) {
 	endpoint := "/api/v1/query"
 	q := url.Values{"query": {expression}, "timeout": {strconv.Itoa(b.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}}
 	if p.Trend {
@@ -151,11 +164,16 @@ func (c *Client) queryExpression(ctx context.Context, p Plan, expression string,
 	} else {
 		q.Set("time", p.End.Format(time.RFC3339))
 	}
-	data, err := c.read(ctx, endpoint, q)
+	return endpoint, q
+}
+
+func (c *Client) readForm(ctx context.Context, endpoint string, q url.Values) (envelope, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+endpoint, strings.NewReader(q.Encode()))
 	if err != nil {
-		return nil, err
+		return envelope{}, ErrUnavailable
 	}
-	return normalize(data, p, b)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return c.readRequest(ctx, req)
 }
 
 func (c *Client) read(ctx context.Context, endpoint string, q url.Values) (envelope, error) {

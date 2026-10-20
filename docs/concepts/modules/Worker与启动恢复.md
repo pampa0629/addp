@@ -127,7 +127,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 
 4. 扩展运行时层（可并行，也可早于 System 或业务模块启动）
    ├─ GeoPython Workflow 运行时
-   ├─ Math Workflow 参考运行时（自动启动服务、手动注册）
+   ├─ Math Workflow 参考运行时（按选择范围启动，手动注册）
    ├─ Spark Workflow 运行时
    └─ Jupyter 脚本运行时
 

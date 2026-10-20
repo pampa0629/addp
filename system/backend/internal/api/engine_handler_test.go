@@ -302,7 +302,7 @@ func TestTestConnectionBeforeCreateProbesCustomWorkflowRuntime(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/health":
 			healthChecked = true
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy"})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy", "service": "test-workflow", "version": "1.0.0"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			operatorsListed = true
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -384,7 +384,7 @@ func TestProbeWorkflowRuntimeBeforeSaveRejectsMismatchedOperatorEngineType(t *te
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/health":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy"})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy", "service": "test-workflow", "version": "1.0.0"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
@@ -452,5 +452,31 @@ func systemTestWorkflowConnectionInfo(t *testing.T, rawURL string) map[string]in
 		"protocol": parsed.Scheme,
 		"host":     host,
 		"port":     port,
+	}
+}
+
+func TestManualWorkflowRegistrationAndConnectionRejectUnreadyRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// A superficially successful HTTP response must not bypass readiness.
+		_, _ = w.Write([]byte(`{"status":"healthy","service":"test","version":"1","dependencies":{"pdal":{"required":true,"available":false}}}`))
+	}))
+	defer server.Close()
+	const engineType = "unready_workflow"
+	caps, err := engineplugin.MarshalEngineCapabilities(engineplugin.NewWorkflowCapabilities(engineType, engineplugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := models.JSONString(caps)
+	connection := models.ConnectionInfo(systemTestWorkflowConnectionInfo(t, server.URL))
+	handler := NewEngineHandler(nil)
+	if err := handler.probeWorkflowRuntimeBeforeSave(&models.EngineCreateRequest{
+		EngineType: engineType, EngineOrigin: "extension", Name: "Unready", ConnectionInfo: connection, Capabilities: &capabilities,
+	}); err == nil {
+		t.Fatal("manual creation accepted an unready runtime")
+	}
+	if _, err := handler.testEngineConnection(&models.Engine{
+		EngineType: engineType, EngineOrigin: "extension", ConnectionInfo: connection, Capabilities: &capabilities,
+	}); err == nil {
+		t.Fatal("manual connection test accepted an unready runtime")
 	}
 }

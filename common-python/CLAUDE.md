@@ -54,7 +54,7 @@ common-python/
 - `addp auth status` 必须刷新并解析权威 AuthContext，不能把 Keychain 中存在值视为已认证；OAuth Family Context 在批准后不可切换。
 - OAuth 授权页面负责在批准前展示并选择 Browser Context；CLI 需要其他 Context 时必须退出后重新授权。
 - 修改公共客户端后，至少验证直接使用它的 Python 模块。
-- `workflow_runtime` 只承载 `addp.workflow/v1` 的通用 DAG、引用和 execution 状态，不依赖 Flask、GeoPandas、Spark、PDAL 或三维转换器。
+- `workflow_runtime` 只承载 `addp.workflow/v1` 的通用 DAG、引用、execution 状态及整体就绪响应，不依赖 Flask、GeoPandas、Spark、PDAL 或三维转换器。健康响应统一汇总结构化本地依赖，required 条件全部可用时为 HTTP 200 + healthy，否则为 HTTP 503 + unhealthy；实例身份登记与就绪独立。
 - 各 Python Workflow Runtime 使用公共核心后，必须删除本地重复实现，不保留兼容执行路径。
 
 ## 验证

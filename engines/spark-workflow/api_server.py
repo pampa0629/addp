@@ -3,6 +3,8 @@ Spark 工作流引擎 Flask API Server
 提供 REST API 接口供 Develop 和 Orchestrator 调用
 """
 
+from addp_common.workflow_runtime.health import health_dependency, runtime_health
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
@@ -31,7 +33,7 @@ from importlib.metadata import version as package_version
 try:
     SEDONA_VERSION = package_version('apache-sedona')
 except Exception:
-    SEDONA_VERSION = "unknown"
+    SEDONA_VERSION = ""
 
 try:
     from pyspark.sql import DataFrame
@@ -143,47 +145,23 @@ def runtime_tenant_id(data):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """
-    健康检查端点（符合 ADDP 工作流计算引擎接口规范）
-
-    Returns:
-        {
-            "status": "healthy",
-            "service": "spark-workflow-engine",
-            "version": "1.0.0",
-            "uptime": 3600,
-            "operators_count": 35,
-            "dependencies": {
-                "pyspark": "3.5.0",
-                "sedona": "1.5.3"
-            }
-        }
-    """
-    try:
-        uptime = int((datetime.now() - start_time).total_seconds())
-
-        return jsonify({
-            "status": "healthy",
-            "service": "spark-workflow-engine",
-            "version": "1.0.0",
-            "uptime": uptime,
+    def probe():
+        import shutil
+        java = os.path.join(os.environ["JAVA_HOME"], "bin", "java") if os.getenv("JAVA_HOME") else shutil.which("java")
+        java_available = bool(java and os.path.isfile(java) and os.access(java, os.X_OK))
+        return {
             "operators_count": len(OPERATOR_REGISTRY),
             "dependencies": {
-                "pyspark": SPARK_VERSION,
-                "sedona": SEDONA_VERSION
-            }
-        }), 200
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
+                "pyspark": health_dependency(True, version=SPARK_VERSION),
+                "sedona": health_dependency(bool(SEDONA_VERSION), version=SEDONA_VERSION),
+                "java": health_dependency(java_available, details="" if java_available else "Java executable is unavailable"),
+            },
+        }
 
-
-# ========================================
-# 算子列表 (供前端使用)
-# ========================================
+    body, code = runtime_health(
+        "spark-workflow-engine", "1.0.0", int((datetime.now() - start_time).total_seconds()), probe,
+    )
+    return jsonify(body), code
 
 @app.route('/api/operators', methods=['GET'])
 def get_operators():

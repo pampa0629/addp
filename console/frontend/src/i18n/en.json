@@ -571,7 +571,8 @@
         "resourceOverview": "Resource overview",
         "nodeResources": "Host monitoring",
         "serviceResources": "Service monitoring",
-        "platformAlerts": "Platform alerts"
+        "platformAlerts": "Platform alerts",
+        "httpQuality": "HTTP quality"
       },
       "catalog": {
         "label": "Enterprise Catalog",

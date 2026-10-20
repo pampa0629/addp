@@ -122,6 +122,11 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(runtime-health-test src/test/cpp/runtime_health_test.cpp)
+  target_link_libraries(runtime-health-test PRIVATE addp_workflow_core)
+  target_compile_options(runtime-health-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME runtime-health-test COMMAND runtime-health-test)
+
   add_executable(workflow-core-test src/test/cpp/workflow_test.cpp)
   target_link_libraries(workflow-core-test PRIVATE addp_workflow_core)
   target_compile_options(workflow-core-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

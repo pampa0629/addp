@@ -51,7 +51,7 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 统一 OSGB 转换器的 Rust → C++ 输入路径使用 NUL 终止的 `CString`，转换失败返回非零。Linux 产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线；长暂存路径、无效 OSGB 的失败退出和旧产物保留分别验证。
 
-本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
+本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。本地必需转换工具缺失时，`/health` 返回 HTTP 503 + unhealthy，并按工具名称列出结构化依赖事实，实例不作为可执行候选。健康不代替单次转换验收；执行失败或输出缺失仍由算子报错，不生成伪结果。
 
 SKP 使用固定的 MIT 许可 `openskp[textures]==1.3.0`，在当前 Python Runtime 的独立子进程中执行 `skp_converter.py`，不调用 SuperMap、SketchUp 桌面 SDK 或 Assimp。输入为单文件，贴图须已内嵌；导出的毫米坐标通过统一场景根缩放为米，保持 Y 上轴和实例变换。只发布经过统一校验的 GLB，临时 JSON 与缩略图不会发布。首期不声明动态组件、动画、标注、孤立线段或全部 SKP 版本支持；固定版本的导出器未应用可见性，含隐藏组件、隐藏面或关闭图层的模型明确拒绝，避免发布错误场景。解析失败、空场景、缺失贴图和非法 GLB 保留旧产物。项目与发行版依据见平台内置格式规范。
 
@@ -127,7 +127,7 @@ PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
 ```
 
-这些工具与资源路径由 Runtime 镜像唯一定义，正式 Compose 直接继承，不重复覆盖。容器健康检查必须同时确认 `status=healthy` 与 `conversion_ready=true`；HTTP 200 的 `degraded` 响应不算就绪，不能据此进入依赖 Runtime 自注册的页面验收。
+这些工具与资源路径由 Runtime 镜像唯一定义，正式 Compose 直接继承，不重复覆盖。容器健康检查只认 HTTP 200 + `status=healthy`；任一必需工具缺失时返回 HTTP 503 + unhealthy。Runtime 监听后仍异步登记身份，System 将未就绪实例标为 offline，工具恢复后由周期探测恢复 online；注册成功不能作为页面验收中的可执行证据。
 
 本机验证：
 

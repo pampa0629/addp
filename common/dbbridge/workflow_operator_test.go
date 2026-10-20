@@ -331,7 +331,7 @@ func TestTestConnectionUsesGenericHTTPProviderForCustomWorkflowRuntime(t *testin
 			return
 		}
 		healthChecked = true
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy"})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy", "service": "test-workflow", "version": "1.0.0"})
 	}))
 	defer server.Close()
 
@@ -351,12 +351,38 @@ func TestTestConnectionUsesGenericHTTPProviderForCustomWorkflowRuntime(t *testin
 	}
 }
 
+func TestWorkflowProbeRejectsUnreadyBodyBeforeOperatorDiscovery(t *testing.T) {
+	operatorsCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/operators" {
+			operatorsCalled = true
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "healthy", "service": "test-workflow", "version": "1",
+			"dependencies": map[string]interface{}{"sdk": map[string]bool{"required": true, "available": false}},
+		})
+	}))
+	defer server.Close()
+	engine := &models.Engine{EngineType: "unready_workflow", EngineOrigin: "extension",
+		ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
+		Capabilities:   testWorkflowCapabilities(t, "unready_workflow")}
+	if err := TestConnection(context.Background(), engine); err == nil {
+		t.Fatal("connection probe accepted unready runtime")
+	}
+	if _, err := ProbeWorkflowRuntimeContract(context.Background(), engine); err == nil {
+		t.Fatal("registration probe accepted unready runtime")
+	}
+	if operatorsCalled {
+		t.Fatal("operator discovery ran before readiness succeeded")
+	}
+}
+
 func TestProbeWorkflowRuntimeContractRejectsMismatchedOperatorEngineType(t *testing.T) {
 	engineType := "acme_geo_workflow"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/health":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy"})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy", "service": "test-workflow", "version": "1.0.0"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{

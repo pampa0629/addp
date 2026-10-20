@@ -303,6 +303,7 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/monitor/resource-overview', icon: DataBoard, label: 'console.menus.monitor.resourceOverview' },
       { index: '/monitor/service-resources', icon: Monitor, label: 'console.menus.monitor.serviceResources' },
+      { index: '/monitor/http-quality', icon: DataLine, label: 'console.menus.monitor.httpQuality', contexts: ['platform'] },
       { index: '/monitor/node-resources', icon: DataLine, label: 'console.menus.monitor.nodeResources' },
       { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard', recentLabel: 'console.menus.monitor.recentDashboard' },
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },

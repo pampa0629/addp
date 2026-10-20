@@ -8,12 +8,14 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from addp_common.workflow_runtime.health import runtime_health
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from addp_common.workflow_access import WorkflowAccessError
 from addp_common.workflow_runtime import ExecutionRegistry, ExecutionSnapshot, WorkflowRunner, WorkflowValidationError, validate_execution_authorization, validate_workflow_def
-from operators import ConverterError, converter_status, invoke_operator, list_operators
+from operators import ConverterError, converter_dependencies, invoke_operator, list_operators
 
 
 app = Flask(__name__)
@@ -48,23 +50,11 @@ def error_response(error_code: str, message: str, details: str | None = None) ->
 
 @app.route("/health", methods=["GET"])
 def health():
-    uptime = int((datetime.now() - start_time).total_seconds())
-    converter = converter_status()
-    conversion_ready = bool(converter.get("available"))
-    return jsonify(
-        {
-            "status": "healthy" if conversion_ready else "degraded",
-            "service": "model3d-workflow-engine",
-            "version": "1.0.0",
-            "uptime": uptime,
-            "operators_count": len(list_operators()),
-            "conversion_ready": conversion_ready,
-            "dependencies": {
-                "converter": converter,
-            },
-        }
-    ), 200
-
+    body, code = runtime_health(
+        "model3d-workflow-engine", "1.0.0", int((datetime.now() - start_time).total_seconds()),
+        lambda: {"operators_count": len(list_operators()), "dependencies": converter_dependencies()},
+    )
+    return jsonify(body), code
 
 @app.route("/api/operators", methods=["GET"])
 def get_operators():
@@ -195,11 +185,6 @@ def get_execution_status(execution_id: str):
 def register_to_system() -> bool:
     from addp_common.client import register_runtime_engine
 
-    converter = converter_status()
-    if not converter.get("available"):
-        logger.warning("skip model3d_workflow registration because converter is not bound: %s", converter.get("details"))
-        return False
-
     system_url = os.getenv("SYSTEM_URL", "http://localhost:8180")
     client_secret = os.getenv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "")
     port = int(os.getenv("PORT", 8101))
@@ -273,11 +258,13 @@ def _timeout_seconds(value: Any) -> int | None:
 
 if __name__ == "__main__":
     import threading
-
-    registration_thread = threading.Thread(target=register_to_system_with_retry, daemon=True)
-    registration_thread.start()
+    from addp_common.client.runtime_registration import register_after_listener
 
     port = int(os.getenv("PORT", 8101))
+
+    registration_thread = threading.Thread(target=register_after_listener, args=(register_to_system_with_retry, port), daemon=True)
+    registration_thread.start()
+
     bind_host = os.getenv("WORKFLOW_BIND_HOST", "0.0.0.0")
     logger.info("Model3D Workflow Engine listening on http://%s:%s", bind_host, port)
     logger.info("Operators: %s", len(list_operators()))

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,6 +20,45 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestRegisterUnhealthyWorkflowRuntimeCreatesIdentityAndObservesOffline(t *testing.T) {
+	db := newRuntimeRegistrationTestDB(t)
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"unhealthy","service":"test-workflow","version":"1","dependencies":{"pdal":{"available":false,"required":true}}}`))
+	}))
+	defer runtime.Close()
+	repo := repository.NewEngineRepository(db)
+	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
+	router := gin.New()
+	router.POST("/runtime/engines", handler.RegisterRuntimeEngine)
+	payload, err := json.Marshal(map[string]interface{}{
+		"engine_type": "unready_workflow", "name": "Unready Workflow", "is_builtin": true,
+		"connection_info": systemTestWorkflowConnectionInfo(t, runtime.URL),
+		"capabilities": map[string]interface{}{"schema_version": "engine.capabilities/v1",
+			"engine_type": "unready_workflow", "engine_family": "workflow",
+			"compute": map[string]interface{}{"workflow": map[string]interface{}{
+				"supported": true, "runtime_api": "addp.workflow/v1", "dynamic_operators": true}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/runtime/engines", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("unhealthy registration rejected: %d %s", response.Code, response.Body.String())
+	}
+	var stored models.Engine
+	if err := db.Where("engine_type = ?", "unready_workflow").First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.ID == 0 || stored.LifecycleState != models.EngineLifecycleActive {
+		t.Fatalf("identity not retained: %+v", stored)
+	}
+	// The fixture cleanup waits for the asynchronous observation and asserts offline.
+}
 
 func newRuntimeRegistrationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

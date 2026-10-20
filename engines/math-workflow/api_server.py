@@ -11,6 +11,8 @@ Math Workflow Engine - API 服务
 注意：引擎层面使用通用 API 路径，不包含领域特定前缀（如 spatial）
 """
 
+from addp_common.workflow_runtime.health import runtime_health
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
@@ -67,28 +69,11 @@ def error_response(error_code: str, message: str, details: str = None):
 
 @app.route('/health', methods=['GET'])
 def health():
-    """
-    健康检查（符合 OpenAPI 规范）
-
-    Returns:
-        {
-            "status": "healthy",
-            "service": "math-workflow-engine",
-            "version": "1.0.0",
-            "uptime": 3600,
-            "operators_count": 5
-        }
-    """
-    uptime = int((datetime.now() - start_time).total_seconds())
-
-    return jsonify({
-        "status": "healthy",
-        "service": "math-workflow-engine",
-        "version": "1.0.0",
-        "uptime": uptime,
-        "operators_count": len(OPERATORS)
-    }), 200
-
+    body, code = runtime_health(
+        "math-workflow-engine", "1.0.0", int((datetime.now() - start_time).total_seconds()),
+        lambda: {"operators_count": len(OPERATORS)},
+    )
+    return jsonify(body), code
 
 @app.route('/api/operators', methods=['GET'])
 def get_operators():

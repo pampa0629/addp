@@ -57,7 +57,7 @@ paths:
   /health:
     get:
       summary: 健康检查
-      description: 检查引擎服务是否正常运行
+      description: 检查当前算子目录承诺能力的本地必需条件是否全部满足；不依赖 System 注册，不验证任务数据、远端连接或权限。
       operationId: healthCheck
       tags: [Infrastructure]
       responses:
@@ -69,10 +69,25 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
               example:
                 status: healthy
-                service: geopython-workflow-engine
+                service: math-workflow-engine
                 version: 1.0.0
                 uptime: 3600
-                operators_count: 42
+                operators_count: 5
+        '503':
+          description: Runtime 整体未就绪；身份仍可登记，System 探测记为 offline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: unhealthy
+                service: pointcloud-workflow-engine
+                version: 1.0.0
+                dependencies:
+                  pdal:
+                    available: false
+                    required: true
+                    details: PDAL executable is unavailable
 
   # ==================== 算子列表 ====================
   /api/operators:
@@ -90,7 +105,7 @@ paths:
           description: 按分类过滤
           schema:
             type: string
-            example: 几何处理
+            example: 数学运算
       responses:
         '200':
           description: 算子列表
@@ -98,6 +113,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperatorListResponse'
+              examples:
+                math:
+                  summary: Math add 算子的响应结构示例，非完整算子目录
+                  externalValue: ./examples/operator-list-response.json
         '500':
           description: 服务器错误
           content:
@@ -114,7 +133,7 @@ paths:
 
         **关键**: 所有工作流引擎必须实现此接口
 
-        `engine_id` 是条件运行时绑定字段。普通工作流运行时可以不传；
+        `engine_id` 只用于 Spark Workflow；其他工作流运行时不得携带。
         Spark Workflow 执行时必须传入顶层 `engine_id`，该值指向已注册且已启用的
         Apache Spark 通用引擎资源，并由 Develop 后端从
         `execution_config.engine_specific.spark_cluster_id` 映射而来。
@@ -126,21 +145,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/WorkflowExecuteRequest'
-            example:
-              workflow_def:
-                tasks:
-                  - id: task1
-                    operator: buffer
-                    params:
-                      distance: 100
-                      resolution: 16
-                    depends_on: []
-                  - id: task2
-                    operator: centroid
-                    params: {}
-                    depends_on: [task1]
-              input_data:
-                geometry: "POINT(116.4 39.9)"
+            examples:
+              math:
+                summary: Math 两节点工作流；runtime 由调用方后端注入
+                externalValue: ./examples/workflow-execute-request.json
       responses:
         '200':
           description: 执行成功
@@ -178,21 +186,15 @@ paths:
         - name: name
           in: path
           required: true
-          description: 算子名称
+          description: 从同一运行时的算子元数据中选择 execution_modes 包含 direct 的算子名称
           schema:
             type: string
-          example: buffer
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/OperatorInvokeRequest'
-            example:
-              engine_id: 34
-              params:
-                distance: 200.0
-                resolution: 16
       responses:
         '200':
           description: 调用成功
@@ -273,31 +275,55 @@ components:
         status:
           type: string
           enum: [healthy, unhealthy]
-          description: 健康状态
+          description: 整体就绪状态；healthy 仅对应 HTTP 200，unhealthy 仅对应 HTTP 503。必需依赖全部可用才允许 healthy。
         service:
           type: string
           description: 服务名称
-          example: geopython-workflow-engine
+          example: math-workflow-engine
         version:
           type: string
           description: 版本号
           example: 1.0.0
         uptime:
           type: integer
+          minimum: 0
           description: 运行时长(秒)
           example: 3600
         operators_count:
           type: integer
+          minimum: 0
           description: 算子数量
-          example: 42
+          example: 5
         dependencies:
           type: object
-          description: 依赖版本信息
+          description: 本地依赖事实；可选依赖不可用不影响整体就绪，必需依赖支撑当前目录承诺的全部能力。
           additionalProperties:
-            type: string
-          example:
-            runtime: addp.workflow/v1
-            pandas: 2.0.0
+            $ref: '#/components/schemas/HealthDependency'
+        error_code:
+          type: string
+          enum: [health_check_failed]
+          description: 本地检查异常时返回；不返回异常堆栈、凭据或下游正文。
+        raster_resources:
+          type: object
+          description: GeoPython 的本地栅格资源观测扩展，不改变统一就绪语义。
+
+    HealthDependency:
+      type: object
+      additionalProperties: false
+      required: [available, required]
+      properties:
+        available:
+          type: boolean
+          description: 本地依赖是否可用
+        required:
+          type: boolean
+          description: 是否为当前声明能力的必需条件
+        version:
+          type: string
+          description: 实际绑定版本，未知时省略
+        details:
+          type: string
+          description: 安全诊断，不包含凭据、宿主机路径、堆栈或下游响应正文
 
     # 算子列表响应
     OperatorListResponse:
@@ -563,7 +589,7 @@ components:
           description: 外部输入对象（可选）；无输入时使用空对象，不能为 null。
         engine_id:
           type: integer
-          description: 条件运行时资源 ID。Spark Workflow 必填，指向已启用的 Apache Spark 通用引擎资源；普通工作流运行时不需要。
+          description: Spark Workflow 执行期绑定，必须指向已启用的 Apache Spark 通用引擎资源；其他工作流运行时不得携带。
           example: 34
         runtime:
           $ref: '#/components/schemas/WorkflowRuntimeContext'

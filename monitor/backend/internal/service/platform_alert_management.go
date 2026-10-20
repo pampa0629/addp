@@ -12,7 +12,7 @@ import (
 )
 
 func validPlatformAlertCategory(category string) bool {
-	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource
+	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource || category == models.PlatformAlertCategoryHTTP
 }
 
 type PlatformAlertList struct {

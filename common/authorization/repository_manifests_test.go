@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 510 {
-		t.Fatalf("descriptor count = %d, want 510", len(descriptors))
+	if len(descriptors) != 515 {
+		t.Fatalf("descriptor count = %d, want 515", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
@@ -61,7 +61,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if strings.HasPrefix(key, "platform.engine_deployment.") && role.Key != "platform.system_administrator" {
 				t.Fatalf("unexpected engine deployment role %q", role.Key)
 			}
-			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") || strings.HasPrefix(key, "monitor.platform_resource_rule.") {
+			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") || strings.HasPrefix(key, "monitor.platform_resource_rule.") || strings.HasPrefix(key, "monitor.platform_http_rule.") {
 				if role.Key != "platform.system_administrator" {
 					t.Fatalf("built-in role %q unexpectedly grants platform alert permission %q", role.Key, key)
 				}
@@ -72,7 +72,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "monitor.metrics_discovery.read" && role.Key != "platform.prometheus_runtime" {
 				t.Fatalf("unexpected metrics discovery role %q", role.Key)
 			}
-			if (key == "monitor.resource_observation.read" || strings.HasPrefix(key, "monitor.monitoring_target.")) && role.Key != "platform.system_administrator" {
+			if (key == "monitor.resource_observation.read" || key == "monitor.http_observation.read" || strings.HasPrefix(key, "monitor.monitoring_target.")) && role.Key != "platform.system_administrator" {
 				t.Fatalf("unexpected target management role %q", role.Key)
 			}
 			if key == "system.observability_identity.read" && role.Key != "platform.monitor_runtime" {

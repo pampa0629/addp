@@ -159,6 +159,8 @@ func main() {
 	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go resourceRules.Run(runtimeContext)
+	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
+	go httpRules.Run(runtimeContext)
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
@@ -178,7 +180,7 @@ func main() {
 		logPipeline, platformAlerts,
 		runtimeHealthService,
 		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
-		resourceObservations, resourceRules,
+		resourceObservations, resourceRules, httpRules,
 	)
 
 	go func() {

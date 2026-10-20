@@ -15,7 +15,7 @@ for parent in Path(__file__).resolve().parents:
 from .glb_fixture import glb_bytes as _glb_bytes, triangle_doc
 
 import operators
-from operators import CommandResult, ConverterError, converter_status, invoke_operator, list_operators
+from operators import CommandResult, ConverterError, converter_dependencies, invoke_operator, list_operators
 from workflow_operator_contract import assert_operator_metadata_contract
 
 
@@ -75,13 +75,12 @@ def test_operator_metadata_contract_and_modes():
     assert all(operator["effects"] == ["read", "write"] for operator in ops)
 
 
-def test_converter_status_requires_explicit_engine_bound_binaries():
-    status = converter_status(env={})
-    assert status["binding"] == "model3d_workflow"
-    assert not status["available"]
-    assert status["path"] == ""
-    assert status["mesh_converter"]["path"] == ""
-    assert status["ifc_converter"]["path"] == ""
+def test_converter_dependencies_requires_explicit_engine_bound_binaries():
+    dependencies = converter_dependencies(env={})
+    assert set(dependencies) == {"osgb_converter", "assimp", "ifcconvert", "gaussian_splat_converter", "blender_max"}
+    assert all(fact["required"] for fact in dependencies.values())
+    for name in ("osgb_converter", "assimp", "ifcconvert", "blender_max"):
+        assert not dependencies[name]["available"]
     assert not (operators.ENGINE_ROOT / "scripts/converters").exists()
 
 

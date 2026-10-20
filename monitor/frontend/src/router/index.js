@@ -24,10 +24,11 @@ const routes = [
     meta: { handlesForbidden: true },
     beforeEnter: () => {
       const authStore = useAuthStore()
-      return resolveModuleLandingRoute('/monitor', ['/node-resources', '/service-resources', '/monitoring-targets', '/dashboard', '/executions', '/platform-alerts', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
+      return resolveModuleLandingRoute('/monitor', ['/node-resources', '/service-resources', '/http-quality', '/monitoring-targets', '/dashboard', '/executions', '/platform-alerts', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
     }
   },
   { path: '/platform-alerts', name: 'PlatformAlerts', component: () => import('../views/PlatformAlerts.vue') },
+  { path: '/http-quality', name: 'HTTPQuality', component: () => import('../views/HTTPQuality.vue') },
   { path: '/resource-overview', name: 'ResourceOverview', component: () => import('../views/ResourceOverview.vue') },
   {
     path: '/service-resources', name: 'ProcessResources', component: ProcessResources

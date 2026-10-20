@@ -9,8 +9,10 @@ case "${1:-}" in
   ''|--case=all) metrics_case=all ;;
   --case=postgres-observation) metrics_case=postgres-observation ;;
   --case=postgres-source) metrics_case=postgres-source ;;
+  --case=http-quality) metrics_case=http-quality ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac
+export ADDP_METRICS_T2_CASE="$metrics_case"
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
 # Test-owned transport starts dynamically, then the probe pins its assigned port.

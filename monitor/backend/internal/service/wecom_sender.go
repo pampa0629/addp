@@ -123,6 +123,12 @@ func wecomPlatformAlertPayload(raw, deliveryID string) (any, error) {
 			return nil, ErrLogInvalid
 		}
 		content = fmt.Sprintf("**ADDP 平台主机：%s**\n> 主机 ID：%s\n> 指标：%s\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(event.SubjectID), signal, event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
+	} else if event.Schema == "addp.platform-http-alert/v1" && event.SubjectKind == "module" && event.SubjectID != "" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
+		label := map[string]string{"opened": "接口质量告警", "resolved": "接口质量恢复"}[event.EventType]
+		if label == "" || event.Severity != "warning" {
+			return nil, ErrLogInvalid
+		}
+		content = fmt.Sprintf("**ADDP 平台接口：%s**\n> 模块：%s\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(event.SubjectID), event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
 	} else {
 		return nil, ErrLogInvalid
 	}

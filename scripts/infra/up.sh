@@ -130,8 +130,10 @@ fi
 if [[ "$METRICS_ONLY" == true ]]; then
   require_docker
   source "${SCRIPT_DIR}/ports.sh"
-  reconcile_metrics
-  exit "$?"
+  metrics_result=0
+  reconcile_metrics || metrics_result=1
+  python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || metrics_result=1
+  exit "$metrics_result"
 fi
 
 if [ -z "${INFRA_FALKORDB_PASSWORD:-}" ]; then
@@ -497,5 +499,6 @@ else
   optional_result=1
 fi
 reconcile_metrics || optional_result=1
+python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || optional_result=1
 python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" start || echo 'Infra deployment discovery unavailable; core services remain running' >&2
 exit "$optional_result"

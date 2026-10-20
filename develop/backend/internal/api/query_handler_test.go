@@ -72,7 +72,7 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 		if request.Method != http.MethodGet || request.URL.Path != "/health" {
 			t.Fatalf("unexpected runtime request: %s %s", request.Method, request.URL.Path)
 		}
-		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "math-workflow-engine", "version": "1.0.0"})
 	}))
 	defer runtimeServer.Close()
 	runtimeURL, err := url.Parse(runtimeServer.URL)

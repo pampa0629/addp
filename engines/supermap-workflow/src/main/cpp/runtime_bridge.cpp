@@ -2,6 +2,7 @@
 
 #include "operator_runtime.hpp"
 #include "workflow.hpp"
+#include "runtime_health.hpp"
 
 #include "Toolkit/UGErrorObj.h"
 #include "Toolkit/UGLicense.h"
@@ -70,40 +71,6 @@ std::string new_execution_id() {
   return result.str();
 }
 
-Json dependency(
-    const std::string& path,
-    const std::vector<std::string>& required,
-    bool require_license = false) {
-  Json missing = Json::array();
-  const std::filesystem::path root = path;
-  if (!std::filesystem::is_directory(root)) {
-    missing.push_back("directory does not exist");
-  } else {
-    for (const std::string& name : required) {
-      if (!std::filesystem::is_regular_file(root / name)) {
-        missing.push_back(name);
-      }
-    }
-    if (require_license) {
-      bool found = false;
-      for (const auto& entry : std::filesystem::directory_iterator(root)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".lic12") {
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        missing.push_back("*.lic12");
-      }
-    }
-  }
-  return {
-      {"path", path},
-      {"available", missing.empty()},
-      {"missing", std::move(missing)},
-  };
-}
-
 Json parse_body(const char* body, std::size_t body_size) {
   if (body == nullptr || body_size == 0) {
     throw std::invalid_argument("request body must be a JSON object");
@@ -170,33 +137,21 @@ class RuntimeService final {
         std::filesystem::path(sdk_root_) / "bin" / "bin";
     Json dependencies = {
         {"iobjects_cpp",
-         dependency(
+         addp::workflow::local_files_dependency(
              runtime_dir.string(),
              {"libSuEngine.so", "libSuCacheBuilder.so", "libSuGraphicsQT.so",
               "libsqlite328.so.0"},
              true)},
-        {"freetype", dependency("/lib/aarch64-linux-gnu", {"libfreetype.so.6"})},
-        {"nfs", dependency("/usr/sbin", {"mount.nfs"})},
+        {"freetype", addp::workflow::local_files_dependency("/lib/aarch64-linux-gnu", {"libfreetype.so.6"})},
+        {"nfs", addp::workflow::local_files_dependency("/usr/sbin", {"mount.nfs"})},
     };
-    bool healthy = true;
-    for (const auto& item : dependencies.items()) {
-      healthy = healthy && item.value().value("available", false);
-    }
-    return response(
-        200,
-        {
-            {"status", healthy ? "healthy" : "degraded"},
-            {"service", service_name},
-            {"version", service_version},
-            {"uptime",
-             std::max<long long>(
-                 0,
-                 std::chrono::duration_cast<std::chrono::seconds>(
-                     std::chrono::steady_clock::now() - started_at_)
-                     .count())},
-            {"operators_count", runtime_.catalog().descriptors().size()},
-            {"dependencies", std::move(dependencies)},
-        });
+    Json body = addp::workflow::runtime_health(
+        service_name, service_version,
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started_at_).count(),
+        runtime_.catalog().descriptors().size(), std::move(dependencies));
+    const int status = body.at("status") == "healthy" ? 200 : 503;
+    return response(status, body);
   }
 
   AddpRuntimeResponse operators(const std::string& category) const {
@@ -423,8 +378,9 @@ extern "C" AddpRuntimeResponse addp_supermap_runtime_health(
       throw std::invalid_argument("runtime is unavailable");
     }
     return runtime->service.health();
-  } catch (const std::exception& error) {
-    return bridge_failure(error);
+  } catch (const std::exception&) {
+    return response(503, {{"status", "unhealthy"}, {"service", service_name},
+                          {"version", service_version}, {"error_code", "health_check_failed"}});
   }
 }
 

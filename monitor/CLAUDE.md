@@ -42,7 +42,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 遵守[可恢复路由规范](../docs/spec/addp前端路由与可恢复状态规范.md)，模块内导航只通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js)；Console 跳转保持 iframe、单历史和返回筛选上下文。
 - 独立根入口在 AuthContext 加载后依次选择有权进入的平台节点资源、采集配置、仪表盘、执行记录、告警、通知；无可进入页时显示无权限，显式地址保持原样。
 - 执行详情唯一地址为 `/monitor/executions?execution_id={execution_uuid}`：打开用 push，关闭清除 execution_id 用 replace，前进/后退同步详情。默认 incidents/webhook 页签省略 tab，rules/email 等非默认值使用 replace。
-- 通知唯一入口 `/notifications`；平台事件、通知和资源规则唯一入口 `/platform-alerts`。System 保留主机与日志诊断、来源策略和带上下文跳转，不恢复旧日志管理或 webhooks 路由。
+- 通知唯一入口 `/notifications`；平台事件、通知及主机/HTTP 规则唯一入口 `/platform-alerts`。System 保留主机与日志诊断、来源策略和带上下文跳转，不恢复旧日志管理或 webhooks 路由。
 - 执行步骤复用共享 `ExecutionSteps`，资源血缘复用 Basic 的唯一 lineage_facts 归一能力；业务 ResourceLocator 通过共享 Manager 路由打开，addp-infra 平台内部产物不推断为业务数据项或生命周期。详情清空、刷新与恢复字段见[诊断页面契约](../docs/spec/tasks/执行监控.md#执行诊断页面与授权失效)。
 - 主机选择和清单校验复用共享 HostNodeSelect；System `/host-admission` 独占 v2 主机接入，Monitor 只接受同一内存导航草稿并独立校验已有主机及来源，草稿不进入 URL 或客户端持久存储，未知创建结果阻止重复提交。
 - 主机引用使用唯一 [loadHostReferences](frontend/src/utils/hostReferences.js)，仅解析当前有权读取的一页，去重且最多四并发；无权/失败只显示已有 ID，未绑定显示未关联，迟到结果不得保留。当前 System node_id 是唯一绑定事实，不用主机名、IP 或部署别名补造。
@@ -55,9 +55,10 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - `addp-prometheus` 仅以独立 Platform Service Access Token 读取原生 HTTP SD，不获目标管理或后台身份权限；成功空列表与失败分开，保存版本不是 Prometheus 生效回执。凭据、证书和 Secret 文件由各自部署/配置 owner 管理。
 - `scripts/infra/node-metrics.py` 是独立来源部署入口；原生 Linux 与 Desktop VM 身份分别确认。Desktop 当前七采集器含 diskstats，只表示 VM 内核块设备视图，不代表 Mac 本机或单容器，也不提供 filesystem/inode/netdev/netstat。
 - 固定目录当前共 25 项；CPU、负载、容量/inode、磁盘吞吐/IO 时间、网卡吞吐及进程 CPU/RSS/时长使用各自单位与完整窗口，不跨设备层累加、不用共享挂载或进程 RSS 推导集群容量。资源查询与采集证据共用现有 mTLS、预算与期限，指标和公式只由 resourcequery 维护。
+- 平台 HTTP 质量入口为 `/http-quality`，使用独立七项 HTTP 目录和固定 1/5/15 分钟窗口，模板排行最多十项；Gateway ingress 与 Backend 分层读取。统计读取与 HTTP 规则分别授权，当前 User 的实例裁决和后台最小身份投影不得混用；契约见正式规范 6.4。Go 使用 Common 唯一采集工厂，Python 未接入，Tenant 发布服务质量归 Service。
 - 资源查询策略是 Monitor 平台 CAS 单例，对新请求热生效；资源与规则后台只用最小身份投影，不保存管理员 Token。目标管理、用户观测读取和采集服务权限彼此独立。
 - 平台主机 CPU/内存规则创建即停用，按主机合并指标与 uptime；缺样、控制面不可用、预算不足、来源变化、暂停或重启均不作为恢复。活动 incident 阻止规则删除，停用不伪造恢复，历史事件保留触发时证据。
-- 平台日志与资源事件复用同一事务协调器/outbox，协议分别为 addp.platform-log-alert/v1 与 addp.platform-resource-alert/v1。旧通知目标仍只订日志，资源订阅须显式选择；Webhook/SMTP/企业微信不跨协议兜底，人工重投保留原身份和历史时间。
+- 平台日志、资源与 HTTP 事件复用同一事务协调器/outbox，协议分别为 addp.platform-log-alert/v1、addp.platform-resource-alert/v1 与 addp.platform-http-alert/v1。旧目标不自动订阅新类别；Webhook/SMTP/企业微信不跨协议兜底，人工重投保留原身份和历史时间。
 - 平台日志观测只由独立 addp-log-observer 上报有界安全事实；Monitor 不读取接收器宿主文件或上传日志正文。平台操作审计归 System，进程日志、执行事件与审计保留各自事实源。
 
 ## 开发与验证

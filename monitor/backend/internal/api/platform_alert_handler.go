@@ -46,7 +46,7 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Tags 平台告警 | Platform Alerts
 // @Produce json
 // @Security BearerAuth
-// @Param category query string false "类别 | Category" Enums(log_pipeline,resource)
+// @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
 // @Param subject_id query string false "主体 ID | Subject ID"
 // @Param page query int false "页码 | Page" default(1)

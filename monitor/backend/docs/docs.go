@@ -1863,7 +1863,8 @@ const docTemplate = `{
                     {
                         "enum": [
                             "log_pipeline",
-                            "resource"
+                            "resource",
+                            "http_quality"
                         ],
                         "type": "string",
                         "description": "类别 | Category",
@@ -2074,6 +2075,672 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "monitor.platform_alert.read",
                     "monitor.platform_alert.update"
+                ]
+            }
+        },
+        "/platform/http-alert-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "查询HTTP 接口质量告警规则 | List HTTP quality alert rules",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPAlertRulePage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_http_rule.read"
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.HTTPAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_http_rule.read",
+                    "monitor.platform_http_rule.create"
+                ]
+            }
+        },
+        "/platform/http-alert-rules/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "模块、运行角色、模板和指标不可修改；活动告警沿用触发时保存的恢复条件 | Module, runtime role, template and metric are immutable; active alerts keep the recovery policy saved at opening",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "修改HTTP 接口质量告警规则 | Update HTTP quality alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.HTTPAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_http_rule.read",
+                    "monitor.platform_http_rule.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "删除HTTP 接口质量告警规则 | Delete HTTP quality alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.HTTPAlertRuleVersion"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_http_rule.read",
+                    "monitor.platform_http_rule.delete"
+                ]
+            }
+        },
+        "/platform/http_interfaces": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅已观测且窗口完整的框架模板，显式TOP10按平均耗时或QPS排名；更紧预算相应减小排名数。六指标乘接口数计入预算，不读取原始URL | Explicit TOP10 eligible observed templates by mean latency or QPS; tighter budgets reduce the ranking size. Six metrics per route count against budget; no raw URLs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取实例接口质量与慢接口 | Read instance interface quality and slow routes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "恰好一个当前实例 ID | Exactly one current instance ID",
+                        "name": "instance_ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            60,
+                            300,
+                            900
+                        ],
+                        "type": "integer",
+                        "default": 60,
+                        "description": "固定统计窗口 | Fixed request window",
+                        "name": "window_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "mean",
+                            "qps"
+                        ],
+                        "type": "string",
+                        "default": "mean",
+                        "description": "排名依据 | Rank by",
+                        "name": "sort",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPObservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.http_observation.read"
+                ]
+            }
+        },
+        "/platform/http_observations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅非委托 Platform User；System 逐请求裁决实例读取。Gateway 与 Backend 分别解释，禁止相加为全局QPS。完整窗口、真实无请求、缺样及采集失败分别表达 | Non-delegated Platform User with current System instance authorization. Ingress and Backend rates are separate; empty traffic is distinct from missing samples or collection failure",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取平台 HTTP 实例质量 | Read platform HTTP instance quality",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "System 当前实例 ID，逗号分隔；七指标乘实例数计入预算 | Current System instance IDs, comma-separated; seven metrics per instance count against budget",
+                        "name": "instance_ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            60,
+                            300,
+                            900
+                        ],
+                        "type": "integer",
+                        "default": 60,
+                        "description": "固定统计窗口 | Fixed request window",
+                        "name": "window_seconds",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPObservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.http_observation.read"
+                ]
+            }
+        },
+        "/platform/http_trends": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "route/method 必须同时提供；省略时读取整个实例，活动请求数仅属于实例，窗口固定，复用受限时间范围和采样预算 | Supply route and method together, or omit both for the process. Active requests are process-scoped; fixed windows and bounded range/point budgets apply",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取实例或接口质量趋势 | Read instance or route quality trends",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "恰好一个当前实例 ID | Exactly one current instance ID",
+                        "name": "instance_ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            60,
+                            300,
+                            900
+                        ],
+                        "type": "integer",
+                        "default": 60,
+                        "description": "固定统计窗口 | Fixed request window",
+                        "name": "window_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "框架模板；空值表示未匹配路由 | Framework template; empty selects unmatched routes",
+                        "name": "route",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "固定 HTTP 方法 | Fixed HTTP method",
+                        "name": "method",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 整秒起点 | Whole-second RFC3339 start",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 整秒终点 | Whole-second RFC3339 end",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPObservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.http_observation.read"
                 ]
             }
         },
@@ -5033,6 +5700,150 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_models.HTTPAlertEvidence": {
+            "type": "object",
+            "properties": {
+                "evaluated_at": {
+                    "type": "string"
+                },
+                "instance_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "latest": {
+                    "type": "number"
+                },
+                "maximum": {
+                    "type": "number"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "minimum": {
+                    "type": "number"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.HTTPThresholdPolicy"
+                },
+                "query_policy_version": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_version": {
+                    "type": "integer"
+                },
+                "sampled_from": {
+                    "type": "string"
+                },
+                "sampled_to": {
+                    "type": "string"
+                },
+                "samples": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.HTTPAlertRule": {
+            "type": "object",
+            "properties": {
+                "anchor_instance_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.HTTPThresholdPolicy": {
+            "type": "object",
+            "properties": {
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_models.LogPipelineNode": {
             "type": "object",
             "properties": {
@@ -5166,6 +5977,9 @@ const docTemplate = `{
                 },
                 "category": {
                     "type": "string"
+                },
+                "http_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.HTTPAlertEvidence"
                 },
                 "id": {
                     "type": "integer"
@@ -5429,6 +6243,23 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": {
                 "type": "string"
+            }
+        },
+        "github_com_addp_monitor_internal_resourcequery.HTTPObservation": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Series"
+                    }
+                }
             }
         },
         "github_com_addp_monitor_internal_resourcequery.Point": {
@@ -5751,6 +6582,131 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.HTTPAlertRuleInput": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "instance_id",
+                "metric_key",
+                "name",
+                "recovery_seconds",
+                "recovery_value",
+                "trigger_seconds",
+                "trigger_value"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "instance_id": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string",
+                    "enum": [
+                        "http.requests.per_second",
+                        "http.failures.percent",
+                        "http.duration.mean_seconds"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.HTTPAlertRulePage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.HTTPAlertRule"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.HTTPObservationResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.HTTPProcessObservation"
+                    }
+                },
+                "end": {
+                    "type": "string"
+                },
+                "ranking_limit": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "step_seconds": {
+                    "type": "integer"
+                },
+                "window_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.HTTPProcessObservation": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessCollection"
+                },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.HTTPObservation"
+                    }
+                },
+                "policy_version": {
+                    "type": "integer"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessResourceSubject"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.HealthStatus": {
             "type": "object",
             "properties": {
@@ -6057,7 +7013,8 @@ const docTemplate = `{
                         "type": "string",
                         "enum": [
                             "log_pipeline",
-                            "resource"
+                            "resource",
+                            "http_quality"
                         ]
                     }
                 },
@@ -7359,6 +8316,85 @@ const docTemplate = `{
                 },
                 "retained_after": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.HTTPAlertRuleResponse": {
+            "type": "object",
+            "properties": {
+                "anchor_instance_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.HTTPAlertRuleVersion": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
                 }
             }
         },

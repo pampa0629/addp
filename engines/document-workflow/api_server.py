@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from addp_common.workflow_runtime.health import health_dependency, runtime_health
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -49,18 +51,21 @@ def error_response(error_code: str, message: str, details: str | None = None) ->
 
 @app.route("/health", methods=["GET"])
 def health():
-    converter = converter_status()
-    conversion_ready = bool(converter.get("available"))
-    return jsonify({
-        "status": "healthy" if conversion_ready else "degraded",
-        "service": "document-workflow-engine",
-        "version": "1.0.0",
-        "uptime": int((datetime.now() - start_time).total_seconds()),
-        "operators_count": len(list_operators()),
-        "conversion_ready": conversion_ready,
-        "dependencies": {"libreoffice": converter},
-    }), 200
+    def probe():
+        converter = converter_status()
+        available = converter["available"]
+        return {
+            "operators_count": len(list_operators()),
+            "dependencies": {"libreoffice": health_dependency(
+                available, version=converter.get("version", ""),
+                details="" if available else "libreoffice executable is unavailable",
+            )},
+        }
 
+    body, code = runtime_health(
+        "document-workflow-engine", "1.0.0", int((datetime.now() - start_time).total_seconds()), probe,
+    )
+    return jsonify(body), code
 
 @app.route("/api/operators", methods=["GET"])
 def get_operators():
@@ -177,11 +182,6 @@ def get_execution_status(execution_id: str):
 def register_to_system() -> bool:
     from addp_common.client import register_runtime_engine, runtime_advertised_port
 
-    converter = converter_status()
-    if not converter.get("available"):
-        logger.warning("skip document_workflow registration because LibreOffice is not bound: %s", converter.get("details"))
-        return False
-
     port = int(os.getenv("PORT", 8105))
     runtime_host = os.getenv("RUNTIME_HOST", "localhost").strip()
     connection_info: dict[str, Any] = {"protocol": os.getenv("PROTOCOL", "http"), "port": runtime_advertised_port(port)}
@@ -222,10 +222,6 @@ def register_to_system() -> bool:
 
 
 def register_to_system_with_retry() -> None:
-    converter = converter_status()
-    if not converter.get("available"):
-        logger.warning("skip document_workflow registration because LibreOffice is not bound: %s", converter.get("details"))
-        return
     from addp_common.client import retry_runtime_registration
     retry_runtime_registration(register_to_system, "document_workflow", logger)
 
@@ -253,8 +249,10 @@ def _timeout_seconds(value: Any) -> int | None:
 
 
 if __name__ == "__main__":
-    threading.Thread(target=register_to_system_with_retry, daemon=True).start()
+    from addp_common.client.runtime_registration import register_after_listener
+
     port = int(os.getenv("PORT", 8105))
+    threading.Thread(target=register_after_listener, args=(register_to_system_with_retry, port), daemon=True).start()
     bind_host = os.getenv("WORKFLOW_BIND_HOST", "0.0.0.0")
     logger.info("Document Workflow Engine listening on http://%s:%s", bind_host, port)
     logger.info("Operators: %s", len(list_operators()))

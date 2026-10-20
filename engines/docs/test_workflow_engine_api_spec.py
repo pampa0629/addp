@@ -14,6 +14,24 @@ def load_spec():
         return yaml.safe_load(f)
 
 
+def test_health_contract_uses_whole_runtime_readiness_and_structured_dependencies():
+    spec = load_spec()
+    responses = spec["paths"]["/health"]["get"]["responses"]
+    assert set(responses) == {"200", "503"}
+    health = spec["components"]["schemas"]["HealthResponse"]
+    assert set(health["required"]) == {"status", "service", "version"}
+    assert health["properties"]["status"]["enum"] == ["healthy", "unhealthy"]
+    assert "conversion_ready" not in health["properties"]
+    assert health["properties"]["dependencies"]["additionalProperties"] == {
+        "$ref": "#/components/schemas/HealthDependency"
+    }
+    dependency = spec["components"]["schemas"]["HealthDependency"]
+    assert set(dependency["required"]) == {"available", "required"}
+    assert dependency["additionalProperties"] is False
+    for field in ("available", "required"):
+        assert dependency["properties"][field]["type"] == "boolean"
+
+
 def test_openapi_uses_addp_workflow_v1_paths():
     spec = load_spec()
 

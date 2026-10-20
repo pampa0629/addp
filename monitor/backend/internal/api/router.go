@@ -36,6 +36,7 @@ func SetupRouter(
 	monitoringTargets *service.MonitoringTargetService,
 	resourceObservations *service.ResourceObservationService,
 	resourceRules *service.ResourceAlertRuleService,
+	httpRules *service.HTTPAlertRuleService,
 ) *gin.Engine {
 	router := modulelifecycle.NewRouter(gin.Logger())
 
@@ -134,6 +135,15 @@ func SetupRouter(
 	platform.DELETE("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetDelete), platformObservationIdentity(false), targetHandler.Delete)
 	platform.GET("/platform/metrics_discovery", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMetricsDiscoveryRead), platformObservationIdentity(true), targetHandler.Discovery)
 	resourceHandler := NewResourceObservationHandler(resourceObservations)
+	httpHandler := HTTPObservationHandler{service: resourceObservations}
+	httpRuleHandler := HTTPAlertRuleHandler{service: httpRules}
+	platform.GET("/platform/http-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformHttpRuleRead), platformObservationIdentity(false), httpRuleHandler.List)
+	platform.POST("/platform/http-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformHttpRuleRead, monitorauthorization.PermissionMonitorPlatformHttpRuleCreate), platformObservationIdentity(false), httpRuleHandler.Create)
+	platform.PUT("/platform/http-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformHttpRuleRead, monitorauthorization.PermissionMonitorPlatformHttpRuleUpdate), platformObservationIdentity(false), httpRuleHandler.Update)
+	platform.DELETE("/platform/http-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformHttpRuleRead, monitorauthorization.PermissionMonitorPlatformHttpRuleDelete), platformObservationIdentity(false), httpRuleHandler.Delete)
+	platform.GET("/platform/http_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorHttpObservationRead), platformObservationIdentity(false), httpHandler.Summaries)
+	platform.GET("/platform/http_interfaces", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorHttpObservationRead), platformObservationIdentity(false), httpHandler.Interfaces)
+	platform.GET("/platform/http_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorHttpObservationRead), platformObservationIdentity(false), httpHandler.Trend)
 	platform.GET("/platform/resource_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Instant)
 	platform.GET("/platform/resource_overview", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Overview)
 	platform.GET("/platform/resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Summaries)

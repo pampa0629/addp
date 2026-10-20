@@ -109,7 +109,7 @@ def test_register_to_system_advertises_host_mapping(monkeypatch):
     assert captured["payload"]["connection_info"]["port"] == 18102
 
 
-def test_register_to_system_with_retry_skips_when_pdal_unavailable(monkeypatch):
+def test_register_to_system_with_retry_registers_when_pdal_unavailable(monkeypatch):
     called = False
 
     def fake_register():
@@ -122,4 +122,43 @@ def test_register_to_system_with_retry_skips_when_pdal_unavailable(monkeypatch):
 
     api_server.register_to_system_with_retry()
 
-    assert called is False
+    assert called is True
+
+
+@pytest.mark.parametrize("available,code,status", [(True, 200, "healthy"), (False, 503, "unhealthy")])
+def test_health_uses_whole_runtime_readiness(client, monkeypatch, available, code, status):
+    monkeypatch.setattr(api_server, "converter_status", lambda: {"available": available, "path": "/private/runtime", "details": "private details"})
+    response = client.get("/health")
+    assert response.status_code == code
+    body = response.get_json()
+    assert body["status"] == status
+    assert body["service"] and body["version"]
+    assert "conversion_ready" not in body
+    fact = body["dependencies"]["pdal"]
+    assert fact["required"] is True and fact["available"] is available
+    assert "/private" not in response.get_data(as_text=True)
+
+
+def test_unhealthy_runtime_still_registers_identity(monkeypatch):
+    monkeypatch.setattr(api_server, "converter_status", lambda: {"available": False})
+    calls = []
+    monkeypatch.setattr("addp_common.client.register_runtime_engine", lambda *args: (calls.append(args) or (202, "accepted")))
+    assert api_server.register_to_system() is True
+    assert len(calls) == 1
+
+
+def test_script_entry_defers_registration_until_listener(monkeypatch):
+    import api_server
+    import runpy
+    from unittest.mock import patch
+    from addp_common.client.runtime_registration import register_after_listener
+
+    monkeypatch.setenv("PORT", "28101")
+    with patch("threading.Thread") as thread, patch("flask.Flask.run") as run:
+        runpy.run_path(api_server.__file__, run_name="__main__")
+    thread.assert_called_once()
+    assert thread.call_args.kwargs["target"] is register_after_listener
+    callback, port = thread.call_args.kwargs["args"]
+    assert callable(callback) and port == 28101
+    assert thread.call_args.kwargs["daemon"] is True
+    run.assert_called_once()

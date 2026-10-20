@@ -855,7 +855,9 @@
           "metrics_discovery": "Metrics discovery",
           "platform_resource_rule": "Host resource alert rules",
           "engine_deployment": "Platform engine deployment",
-          "platform_administrator_change": "Platform administrator change"
+          "platform_administrator_change": "Platform administrator change",
+          "http_observation": "HTTP quality observations",
+          "platform_http_rule": "HTTP quality alert rules"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
