@@ -98,9 +98,13 @@ func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.
 		}
 		create := func(readSet *plugin.QueryReadSet) *execution.TaskExecution {
 			t.Helper()
+			var createdAt time.Time
+			if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&createdAt).Error; err != nil {
+				t.Fatal(err)
+			}
 			job := &execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenantID), Module: "manager", Source: "manager", TaskType: "data_profiling",
 				Status: execution.ExecutionStatusPending, TriggerType: execution.TriggerTypeManual, ExecutionBoundary: execution.ExecutionBoundaryBounded, MaxAttempts: 3,
-				ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &user.MembershipID, IssuedAuthorizationVersion: &user.AuthorizationVersion,
+				ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &user.MembershipID, IssuedAuthorizationVersion: &user.AuthorizationVersion, CreatedAt: createdAt, UpdatedAt: createdAt,
 				ExecutionConfig: models.JSONMap{"config_version": "data-profile-config/v6", "engine_id": path.EngineID, "read_set": readSet,
 					"budget": map[string]any{"sample_size": 10, "max_rows_scanned": 10, "page_size": 10, "timeout_ms": 1000}}, Metadata: models.JSONMap{}, ErrorDetails: models.JSONMap{}}
 			if err := execution.NewTaskExecutionRepository(db).Create(ctx, job); err != nil {

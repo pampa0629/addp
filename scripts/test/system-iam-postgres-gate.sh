@@ -140,6 +140,10 @@ case "$TEST_FILTER" in
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "file-composition requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$'
         ;;
+    manager-source)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-source requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(current_complete_source_read_rules|file_composition_source_grants)$/^(Manager_complete_source_execution_authorization|Manager_FTP_model_source_execution_authorization)$'
+        ;;
     engine-deployments)
         case "$PACKAGE_FILTER" in
             repository) test_pattern='^TestEngineDeploymentDeclarationsAgainstPostgres$' ;;

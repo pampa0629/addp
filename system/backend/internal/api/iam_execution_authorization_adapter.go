@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
+	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
@@ -474,6 +475,14 @@ func respondExecutionAuthorizationError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	errorCode := "execution_authorization_internal_error"
 	switch {
+	case errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable):
+		status = http.StatusServiceUnavailable
+		messageID = sysi18n.MsgAuthorizationFactsUnavailable
+		errorCode = "authorization_facts_unavailable"
+	case errors.Is(err, engineaccess.ErrAuthorizationBoundaryChanged):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgExecutionAuthorizationConflict
+		errorCode = "execution_authorization_conflict"
 	case errors.Is(err, iam.ErrExecutionAuthorizationConflict):
 		status = http.StatusConflict
 		messageID = sysi18n.MsgExecutionAuthorizationConflict

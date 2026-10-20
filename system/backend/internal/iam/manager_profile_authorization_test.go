@@ -68,14 +68,14 @@ func TestManagerProfileScopeRejectsIncompleteSourcesAndFreezesWholeConfig(t *tes
 func TestManagerProfilePermissionsRequireBothTenantFunctions(t *testing.T) {
 	rows := []RoleAssignmentPermissionProjection{{ScopeType: "tenant", PermissionKey: "manager.data_profile.execute"},
 		{ScopeType: "tenant", PermissionKey: "manager.data_item.read"}}
-	if !managerProfilePermissions(rows) {
+	if !managerSourcePermissions(rows, managerSourceProfile) {
 		t.Fatal("exact functions rejected")
 	}
-	if managerProfilePermissions(rows[:1]) {
+	if managerSourcePermissions(rows[:1], managerSourceProfile) {
 		t.Fatal("execute alone became source read permission")
 	}
 	rows[1].ScopeType = "department"
-	if managerProfilePermissions(rows) {
+	if managerSourcePermissions(rows, managerSourceProfile) {
 		t.Fatal("organization scope became Tenant function permission")
 	}
 }
@@ -95,12 +95,12 @@ func TestManagerProfileUserCredentialRejectsUnrelatedCredentialsAndScopes(t *tes
 		}
 	}
 	firstParty := ordinary()
-	if !managerProfileUserCredential(&firstParty) {
+	if !managerSourceUserCredential(&firstParty, managerSourceProfile) {
 		t.Fatal("ordinary API User rejected")
 	}
 	oauth := ordinary()
 	oauth.Token.Type, oauth.Client.ScopeMode, oauth.Client.Scopes = "oauth_access_token", "restricted", []string{"addp.api"}
-	if !managerProfileUserCredential(&oauth) {
+	if !managerSourceUserCredential(&oauth, managerSourceProfile) {
 		t.Fatal("OAuth API User rejected")
 	}
 	for name, mutate := range map[string]func(*authorization.AuthContext){
@@ -125,12 +125,12 @@ func TestManagerProfileUserCredentialRejectsUnrelatedCredentialsAndScopes(t *tes
 		t.Run(name, func(t *testing.T) {
 			candidate := ordinary()
 			mutate(&candidate)
-			if managerProfileUserCredential(&candidate) {
+			if managerSourceUserCredential(&candidate, managerSourceProfile) {
 				t.Fatal("unrelated credential or function scope accepted")
 			}
 		})
 	}
-	if managerProfileUserCredential(nil) {
+	if managerSourceUserCredential(nil, managerSourceProfile) {
 		t.Fatal("missing credential accepted")
 	}
 }

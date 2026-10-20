@@ -172,6 +172,16 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("file-composition requires --package engineaccess", rejected.stderr)
 
+    def test_manager_source_filter_covers_both_purposes_and_no_other_package(self):
+        result = self.run_gate(arguments=("--package", "engineaccess", "--test", "manager-source"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("Manager_complete_source_execution_authorization", trace)
+        self.assertIn("Manager_FTP_model_source_execution_authorization", trace)
+        rejected = self.run_gate(arguments=("--package", "iam", "--test", "manager-source"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("manager-source requires --package engineaccess", rejected.stderr)
+
     def test_full_gate_sets_a_finite_timeout_for_every_package(self):
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)

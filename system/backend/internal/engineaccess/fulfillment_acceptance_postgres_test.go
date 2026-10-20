@@ -151,7 +151,10 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		closeBeforeAccept = false
 		// Expiry clips the 5-minute system window; it is not silently extended.
 		short := binding
-		expires := time.Now().UTC().Add(time.Minute).Truncate(time.Microsecond)
+		var expires time.Time
+		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()+interval '1 minute'").Scan(&expires).Error; err != nil {
+			t.Fatal(err)
+		}
 		short.ExpiryMode = shared.SharingExpiryAtTime
 		short.ExpiresAt = &expires
 		clipped, err := service.AcceptFulfillment(ctx, actor, uuid.New(), short)

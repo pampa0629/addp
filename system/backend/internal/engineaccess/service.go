@@ -41,12 +41,20 @@ type RevokeInput struct {
 	Audit                 iam.AuditMetadata
 }
 type Service struct {
-	repository         *Repository
-	catalogEligible    func(*models.Engine) bool
-	fulfillmentBasis   FulfillmentBasisReader
-	independentTarget  IndependentTargetVerifier
-	authorizationFacts AuthorizationFactsReader
-	productionReceipts TransferProductionReceiptReader
+	repository              *Repository
+	catalogEligible         func(*models.Engine) bool
+	fulfillmentBasis        FulfillmentBasisReader
+	independentTarget       IndependentTargetVerifier
+	authorizationFacts      AuthorizationFactsReader
+	productionReceipts      TransferProductionReceiptReader
+	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)
+}
+
+// WithExecutionEngineSnapshot decodes only the Engine already read and held by
+// the same authorized transaction. It must not query another resource/version.
+func (s *Service) WithExecutionEngineSnapshot(decode func(*models.Engine) (*models.Engine, error)) *Service {
+	s.executionEngineSnapshot = decode
+	return s
 }
 
 func NewService(repository *Repository, catalogEligible func(*models.Engine) bool) *Service {

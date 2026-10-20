@@ -3,11 +3,14 @@ package engineaccess
 import (
 	"context"
 	"reflect"
+	"strconv"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PrepareExecutionSourceRead runs only after IAM qualifies the actual source.
@@ -17,8 +20,12 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	if auth == nil || auth.Audience != "manager" || auth.SourceType != "user" || auth.SourceReadScope == nil {
 		return nil, commonapi.ErrForbidden
 	}
+	targets, err := auth.SourceReadScope.Targets()
+	if err != nil {
+		return nil, commonapi.ErrForbidden
+	}
 	request := sourceReadRequest{TenantID: auth.TenantID, Source: userProvenance{PrincipalID: auth.ActorPrincipalID,
-		MembershipID: auth.TenantMembershipID, AuthorizationVersion: auth.IssuedAuthorizationVersion}, Targets: auth.SourceReadScope.ReadSet.Paths}
+		MembershipID: auth.TenantMembershipID, AuthorizationVersion: auth.IssuedAuthorizationVersion}, Targets: targets}
 	scope := auth.SourceReadScope.Clone()
 	paths, _, err := encodeSourceReadTargets(request.Targets)
 	if err != nil || len(paths) == 0 || len(paths) != len(request.Targets) || len(paths) > 200 {
@@ -28,14 +35,40 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	if err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, db *gorm.DB, current *iam.ExecutionAuthorization) (time.Time, error) {
+	modelScope := scope.Model3D()
+	if modelScope != nil && (s.executionEngineSnapshot == nil || len(request.Bindings) != 1 || !reflect.DeepEqual(request.Bindings[0].FileComposition, &modelScope.FileComposition)) {
+		return nil, commonapi.ErrForbidden
+	}
+	return func(ctx context.Context, db *gorm.DB, current *iam.ExecutionAuthorization) (*iam.ExecutionSourceReadObservation, error) {
 		if db == nil || current == nil || current.Audience != "manager" || current.SourceType != "user" ||
 			current.TenantID != request.TenantID || current.ActorPrincipalID != request.Source.PrincipalID ||
 			current.TenantMembershipID != request.Source.MembershipID || current.IssuedAuthorizationVersion != request.Source.AuthorizationVersion ||
 			!reflect.DeepEqual(current.SourceReadScope, scope) {
-			return time.Time{}, commonapi.ErrForbidden
+			return nil, commonapi.ErrForbidden
 		}
-		return verifyExecutionSourceRead(ctx, db, request)
+		var stored *models.Engine
+		if modelScope != nil {
+			primary, _ := modelScope.FileComposition.PrimaryTarget()
+			version, _ := strconv.ParseInt(modelScope.EngineVersion, 10, 64)
+			var engine models.Engine
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND tenant_id=? AND version=? AND engine_type='ftp' AND lifecycle_state='active' AND deleted_at IS NULL", primary.EngineID, request.TenantID, version).Take(&engine).Error; err != nil {
+				return nil, commonapi.ErrForbidden
+			}
+			stored = &engine
+		}
+		observedAt, err := verifyExecutionSourceRead(ctx, db, request)
+		if err != nil {
+			return nil, err
+		}
+		observation := &iam.ExecutionSourceReadObservation{ObservedAt: observedAt}
+		if stored != nil {
+			decoded, err := s.executionEngineSnapshot(stored)
+			if err != nil || decoded == nil || decoded.ID != stored.ID || decoded.Version != stored.Version || decoded.EngineType != "ftp" || decoded.TenantID == nil || *decoded.TenantID != uint(request.TenantID) || decoded.DeletedAt != nil || decoded.LifecycleState != "active" || len(decoded.ConnectionInfo) == 0 {
+				return nil, commonapi.ErrForbidden
+			}
+			observation.Engine = decoded
+		}
+		return observation, nil
 	}, nil
 }
 

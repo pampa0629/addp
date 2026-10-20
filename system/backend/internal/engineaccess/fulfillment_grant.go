@@ -286,7 +286,10 @@ func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRunti
 		if err := check(); err != nil {
 			return err
 		}
-		grant := &sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}
+		// Feed the canonical validator the target already proven by the exact
+		// accepted receipt. The INSERT trigger still extracts immutable Catalog
+		// provenance; a missing target is not a generic validation bypass.
+		grant := &sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog, CatalogPath: append([]byte(nil), row.CatalogPath...)}
 		// The insert trigger sets database wall time and checks the window again.
 		if err := tx.insertSourceGrant(ctx, grant); err != nil {
 			return err

@@ -414,9 +414,10 @@ func (r *Repository) CreateExecutionAuthorization(
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
 	}
 	if authorization.Audience == "manager" || authorization.SourceReadScope != nil {
+		targets, scopeErr := authorization.SourceReadScope.Targets()
 		if authorization.Audience != "manager" || authorization.InternalTask != nil ||
-			authorization.SourceReadScope.Validate() != nil || len(accesses) != 1 ||
-			accesses[0].EngineID != int64(authorization.SourceReadScope.ReadSet.Paths[0].EngineID) ||
+			scopeErr != nil || len(targets) == 0 || len(accesses) != 1 ||
+			accesses[0].EngineID != int64(targets[0].EngineID) ||
 			len(accesses[0].Effects) != 1 || accesses[0].Effects[0] != "read" {
 			return fmt.Errorf("%w: complete Manager source boundary is required", commonapi.ErrBadRequest)
 		}

@@ -134,7 +134,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(fmt.Errorf("register raster resource policy routes: %w", err))
 	}
-	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
+	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil).
+		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	var metaFacts engineaccess.AuthorizationFactsReader
 	if err := RegisterIAMManagerProfileAuthorizationRoutes(api, runtime, &IAMManagerProfileAuthorizationHandler{
@@ -143,6 +144,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(err)
 	}
 	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
+	if err := RegisterIAMManagerModel3DAuthorizationRoutes(api, runtime, &IAMManagerModel3DAuthorizationHandler{
+		service: iam.NewManagerModel3DAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
+	}); err != nil {
 		panic(err)
 	}
 	if secret := cfg.ServiceClientSecrets["addp-system"]; secret != "" {

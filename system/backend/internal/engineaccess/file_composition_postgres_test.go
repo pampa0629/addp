@@ -29,7 +29,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		defer cancel()
 		tenant := uint(tenantID)
 		engine := models.Engine{Name: "File composition fixture", EngineType: "ftp", TenantID: &tenant, Version: 1,
-			LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"file-composition.invalid"}`)}
+			LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"host": "file-composition.invalid"}, IdentityKey: models.JSONString(`{"host":"file-composition.invalid"}`)}
 		if err := db.Table("system.engines").Create(&engine).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +90,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		}
 		actor := Actor{TenantID: tenantID, PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
 		reader, _ := newUser(t, time.Hour)
-		readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader", Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission}, ActorPrincipalID: adminID})
+		readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader", Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission, "manager.derived_artifact.create"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,8 +106,12 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		if err != nil {
 			t.Fatal(err)
 		}
+		var authenticatedAt time.Time
+		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&authenticatedAt).Error; err != nil {
+			t.Fatal(err)
+		}
 		login, err := selection.BeginContextSelection(ctx, iam.BeginContextSelectionInput{PrincipalID: reader.PrincipalID,
-			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: time.Now().Add(-time.Second)}})
+			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: authenticatedAt}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,6 +146,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 			t.Fatal("approved composition not persisted")
 		}
 		read(request, true)
+		exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, current)
 		// A primary-only row cannot become a full composition Grant.
 		bare, err := prepareIndependentGrant(input)
 		if err != nil {

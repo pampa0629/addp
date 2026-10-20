@@ -71,11 +71,14 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				binding.ExpiryMode, binding.ExpiresAt = shared.SharingExpiryAtTime, expiry
 			}
 			requestID := uuid.New()
+			if err := binding.Validate(); err != nil {
+				t.Fatalf("formal source Grant fixture binding invalid: %v", err)
+			}
 			if _, err := acceptor.AcceptFulfillment(ctx, runtime, requestID, binding); err != nil {
-				t.Fatal(err)
+				t.Fatalf("formal source Grant fixture acceptance: %v", err)
 			}
 			if _, err := service.IssueFulfillmentGrant(ctx, runtime, requestID, binding); err != nil {
-				t.Fatal(err)
+				t.Fatalf("formal source Grant fixture issuance: %v", err)
 			}
 			return requestID
 		}
