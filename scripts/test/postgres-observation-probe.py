@@ -59,21 +59,30 @@ class Probe:
                             capture_output=True, text=True, check=True, timeout=10).stdout)
         if labels.get('com.docker.compose.project') != project or labels.get('com.docker.compose.service') != 'postgres':
             raise RuntimeError('observation database ownership mismatch')
+        self.project, self.postgres_identity = project, identity
+        spec = importlib.util.spec_from_file_location('addp_postgresql_source', SQL.with_name('source.py'))
+        self.source = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.source)
+        self.hba_original = self.hba_current = None
         self.pgpass = '/tmp/addp-observation-' + secrets.token_hex(16) + '.pgpass'
         self.peers = []
 
-    def command(self, user='addp'):
+    def command(self, user='addp', *, database='addp_test', socket=False, physical=False):
+        if database not in ('addp_test', 'postgres'):
+            raise ValueError('observation authentication probe database is outside the owned fixture')
         command = self.compose + ['exec', '-T', '-e', 'PGPASSFILE=' + self.pgpass,
                                   '-e', 'PGCONNECT_TIMEOUT=3', 'postgres',
                                   'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1',
-                                  '-U', user, '-d', 'addp_test']
-        if user != 'addp':
+                                  '-U', user, '-d', database]
+        if user != 'addp' and not socket:
             command += ['-h', '127.0.0.1', '-p', '5432', '-w']
+        if physical:
+            command += ['-d', 'replication=true dbname=replication']
         return command
 
-    def sql(self, sql, user='addp', expected=None):
+    def sql(self, sql, user='addp', expected=None, *, database='addp_test'):
         # sqlstate-only failures prevent role/password DDL from entering logs.
-        result = subprocess.run(self.command(user), input='\\set VERBOSITY sqlstate\n' + sql + '\n',
+        result = subprocess.run(self.command(user, database=database), input='\\set VERBOSITY sqlstate\n' + sql + '\n',
                                 capture_output=True, text=True, timeout=15)
         if expected is not None:
             if result.returncode == 0 or expected not in result.stderr:
@@ -87,10 +96,97 @@ class Probe:
         return result.stdout.strip()
 
     def password(self, user, password):
-        value = f'127.0.0.1:5432:addp_test:{user}:{password}\n'
+        value = ''.join(f'127.0.0.1:5432:{database}:{user}:{password}\n' for database in ('addp_test', 'postgres'))
         subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c',
                        'umask 077; cat > "$1"', 'observation-pgpass', self.pgpass],
                        input=value, capture_output=True, text=True, check=True, timeout=10)
+
+    def read_hba(self):
+        assert self.sql('SHOW hba_file;') == '/var/lib/postgresql/data/pg_hba.conf'
+        return subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c',
+                              'test ! -L "$PGDATA/pg_hba.conf" && test -f "$PGDATA/pg_hba.conf" && cat "$PGDATA/pg_hba.conf"'],
+                              capture_output=True, text=True, check=True, timeout=10).stdout
+
+    def write_hba(self, expected, replacement):
+        # This is strictly an owned T2 fixture adapter, not a product file-write
+        # API. Preserve owner/mode and reject changed input before atomic rename.
+        digest = hashlib.sha256(expected.encode()).hexdigest()
+        metadata_command = self.compose + ['exec', '-T', 'postgres', 'stat', '-c', '%u:%g:%a', '/var/lib/postgresql/data/pg_hba.conf']
+        metadata = subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout
+        script = '''set -eu
+target="$PGDATA/pg_hba.conf"
+test ! -L "$target" && test -f "$target"
+test "$(sha256sum "$target" | cut -d ' ' -f 1)" = "$1"
+temporary=$(mktemp "$target.addp.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+cat > "$temporary"
+chown --reference="$target" "$temporary"
+chmod --reference="$target" "$temporary"
+test "$(sha256sum "$target" | cut -d ' ' -f 1)" = "$1"
+mv "$temporary" "$target"
+trap - EXIT
+'''
+        subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c', script, 'owned-observation-hba', digest],
+                       input=replacement, capture_output=True, text=True, check=True, timeout=10)
+        assert self.read_hba() == replacement
+        assert subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout == metadata
+        assert self.sql('SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;') == '0'
+        before = self.sql('SELECT pg_conf_load_time();')
+        assert self.sql('SELECT pg_reload_conf();') == 't'
+        deadline = time.monotonic() + 3
+        while self.sql('SELECT pg_conf_load_time();') == before:
+            if time.monotonic() >= deadline:
+                raise AssertionError('owned observation authentication reload timed out')
+            time.sleep(.05)
+
+    def install_authentication(self, scope, user):
+        networks = json.loads(subprocess.run(['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', self.postgres_identity],
+                              capture_output=True, text=True, check=True, timeout=10).stdout)
+        assert set(networks) == {self.project + '_default'}
+        network_id = networks[self.project + '_default']['NetworkID']
+        assert re.fullmatch(r'[0-9a-f]{64}', network_id)
+        network = json.loads(subprocess.run(['docker', 'network', 'inspect', network_id],
+                             capture_output=True, text=True, check=True, timeout=10).stdout)[0]
+        assert network['Labels']['com.docker.compose.project'] == self.project
+        allowed = ['127.0.0.1/32'] + [item['Subnet'] for item in network['IPAM']['Config']]
+        self.hba_original = self.hba_current = self.read_hba()
+        replacement = self.source.authentication_configuration(self.hba_original, scope, allowed, database='addp_test')
+        try:
+            self.write_hba(self.hba_original + '# stale input', replacement)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError('owned authentication writer accepted changed input')
+        assert self.read_hba() == self.hba_original
+        # A reserved database word must remain literal in the real HBA parser.
+        # No "all" database is created, and no business object is accessed.
+        literal = self.source.authentication_configuration(self.hba_original, scope, allowed, database='all')
+        self.write_hba(self.hba_current, literal)
+        self.hba_current = literal
+        self.assert_authentication_rejected(user, database='postgres')
+        self.write_hba(self.hba_current, self.hba_original)
+        self.hba_current = self.hba_original
+        self.write_hba(self.hba_current, replacement)
+        self.hba_current = replacement
+        assert self.source.authentication_configuration(replacement, scope, allowed, database='addp_test') == replacement
+        for database, socket in [('postgres', False), ('addp_test', True)]:
+            self.assert_authentication_rejected(user, database=database, socket=socket)
+        for socket in (False, True):
+            self.assert_authentication_rejected(user, database='addp_test', socket=socket, physical=True)
+        assert self.sql('SELECT 1;', database='postgres') == '1'
+        self.snapshot(user)
+        print('PostgreSQL authentication T2: ' + scope + ' maintenance SCRAM allowed, other database/socket rejected, admin preserved', flush=True)
+
+    def assert_authentication_rejected(self, user, *, database, socket=False, physical=False):
+        result = subprocess.run(self.command(user, database=database, socket=socket, physical=physical), input='SELECT 1;\n',
+                                capture_output=True, text=True, timeout=10)
+        rejection = 'pg_hba.conf rejects replication connection' if physical else 'pg_hba.conf rejects connection'
+        assert result.returncode != 0 and rejection in result.stderr, 'observer escaped the maintenance database authentication boundary'
+
+    def restore_authentication(self):
+        if self.hba_original is not None:
+            self.write_hba(self.hba_current, self.hba_original)
+            self.hba_original = self.hba_current = None
 
     def install(self, scope, password, expected=None):
         sql = ('\\set observer_scope ' + quoted(scope) + '\n\\set observer_verifier '
@@ -138,6 +234,12 @@ class Probe:
         self.peers.clear()
 
     def run_scope(self, scope):
+        try:
+            self.run_scope_case(scope)
+        finally:
+            self.restore_authentication()
+
+    def run_scope_case(self, scope):
         user = 'addp_' + scope + '_observer'
         password = secrets.token_hex(32)
         self.install(scope, password)
@@ -145,6 +247,10 @@ class Probe:
         assert self.sql('SELECT current_user;', user) == user
         assert self.sql('SHOW default_transaction_read_only;', user) == 'on'
         first = self.snapshot(user)
+        # PUBLIC CONNECT permits this before admission even though the fixed
+        # function was installed only in addp_test. Read no table or SQL text.
+        assert self.sql('SELECT current_user;', user, database='postgres') == user
+        self.install_authentication(scope, user)
         identity = self.sql("SELECT 'addp_observation.snapshot()'::regprocedure::oid;")
         self.install(scope, password)
         assert self.sql("SELECT 'addp_observation.snapshot()'::regprocedure::oid;") == identity
@@ -250,16 +356,13 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         print('PostgreSQL observation T2: ' + scope + ' password, aggregates, privilege denials, idempotence, rotation and ownership passed', flush=True)
 
     def source_transport(self, scope, user, password):
-        spec = importlib.util.spec_from_file_location('addp_postgresql_source', SQL.with_name('source.py'))
-        source = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(source)
         work = Path(os.environ['METRICS_T2_WORK']).resolve()
         directory = Path(os.environ['ADDP_POSTGRES_METRICS_SOURCE_DIR'])
         web = Path(os.environ['ADDP_POSTGRES_METRICS_WEB_DIR'])
         assert directory.resolve() == work / 'postgres-source' and web.resolve() == work / 'postgres-web'
         for path in [directory, web]:
             path.mkdir(mode=0o700, exist_ok=True)
-        config = source.configuration(scope, 'postgres', 5432, password, database='addp_test')
+        config = self.source.configuration(scope, 'postgres', 5432, password, database='addp_test')
         config_file = directory / 'sql-exporter.yml'
         config_file.write_text(json.dumps(config))
         config_file.chmod(0o600)

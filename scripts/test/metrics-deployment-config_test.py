@@ -15,13 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('metrics_config', ROOT / 'scripts/infra/generate-metrics-config.py')
 config = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(config)
+source_spec = importlib.util.spec_from_file_location('addp_postgres_source_config', ROOT / 'scripts/infra/postgres-observation/source.py')
+postgres_source = importlib.util.module_from_spec(source_spec)
+source_spec.loader.exec_module(postgres_source)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
     def test_postgres_source_configuration_is_fixed_and_bounded(self):
-        spec = importlib.util.spec_from_file_location('addp_postgres_source_config', ROOT / 'scripts/infra/postgres-observation/source.py')
-        source = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(source)
+        source = postgres_source
         infra = source.configuration('infra', 'postgres', 5432, 'a' * 64)
         business = source.configuration('business', 'business-postgres', 5432, 'b' * 64)
         self.assertEqual(infra['collectors'], business['collectors'])
@@ -37,6 +38,46 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 source.configuration('infra', host, port, password)
         with self.assertRaises(ValueError):
             source.configuration('tenant', 'postgres', 5432, 'a' * 64)
+
+    def test_postgres_authentication_preserves_other_users_and_is_idempotent(self):
+        original = '# addp_infra_observer is documented only\nlocal all all trust\nhost all all 0.0.0.0/0 scram-sha-256\nhost "db#name" ordinary_user 10.0.0.0/8 scram-sha-256\n'
+        for scope in ('infra', 'business'):
+            rendered = postgres_source.authentication_configuration(original, scope, ['172.20.0.0/16', '127.0.0.1/32'])
+            self.assertTrue(rendered.endswith(original))
+            self.assertEqual(postgres_source.authentication_configuration(rendered, scope, ['127.0.0.1/32', '172.20.0.0/16']), rendered)
+            self.assertIn(f'host "postgres" addp_{scope}_observer 172.20.0.0/16 scram-sha-256\n', rendered)
+            self.assertIn(f'local all addp_{scope}_observer reject\n', rendered)
+            for network in ('0.0.0.0/0', '::/0'):
+                self.assertIn(f'host all addp_{scope}_observer {network} reject\n', rendered)
+                self.assertIn(f'host replication addp_{scope}_observer {network} reject\n', rendered)
+            changed = postgres_source.authentication_configuration(rendered, scope, ['192.168.10.0/24'])
+            self.assertTrue(changed.endswith(original))
+            self.assertNotIn('172.20.0.0/16', changed)
+        literal = postgres_source.authentication_configuration(original, 'infra', ['::1/128', 'fd00::/64'], database='all')
+        self.assertIn('host "all" addp_infra_observer ::1/128 scram-sha-256', literal)
+
+    def test_postgres_authentication_rejects_ambiguous_or_excessive_policy(self):
+        render = postgres_source.authentication_configuration
+        valid = render('local all all trust\n', 'infra', ['172.20.0.0/16'])
+        for original in (valid.replace('scram-sha-256', 'trust'), valid.replace('"database":', '"extra":true,"database":'),
+                         '# prior operator policy\n'+valid, valid.replace(postgres_source.HBA_END, ''), valid+valid,
+                         'local all addp_infra_observer trust\n', 'host all addp_\\\ninfra_observer all trust\n',
+                         'host "db#name" addp_infra_observer 10.0.0.0/8 trust\n', 'host "unterminated all all trust\n',
+                         '\x00', '#' * postgres_source.HBA_LIMIT):
+            with self.subTest(original=original[:50]), self.assertRaises(ValueError):
+                render(original, 'infra', ['172.20.0.0/16'])
+        for networks in ([], ['0.0.0.0/0'], ['::/0'], ['8.8.8.8/32'], ['169.254.0.0/16'],
+                         ['172.20.0.1/16'], ['172.20.0.0/16']*2, ['10.0.0.0/8', '10.1.0.0/16'],
+                         ['127.0.0.1'], ['172.20.0.0/16\nlocal all all trust'], [False], ['10.0.0.0/32']*17):
+            with self.subTest(networks=networks), self.assertRaises(ValueError):
+                render('', 'infra', networks)
+        for scope, database in [('tenant', 'postgres'), ('infra', 'postgres\nlocal'), ('infra', '')]:
+            with self.assertRaises(ValueError):
+                render('', scope, ['172.20.0.0/16'], database=database)
+        with self.assertRaises(ValueError):
+            render(valid, 'business', ['172.20.0.0/16'])
+        with self.assertRaises(ValueError):
+            render(valid, 'infra', ['172.20.0.0/16'], database='other')
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-metrics-config-')

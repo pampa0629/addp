@@ -129,7 +129,11 @@ Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 安装版本
 
 函数采用固定 `pg_catalog, pg_temp` 搜索路径、全限定目录和固定 SQL，Login 不可更改函数；只读默认值和三秒语句超时是附加约束，不能替代对象权限或来源侧期限。PostgreSQL 的 PUBLIC 授权可叠加，单个角色 REVOKE 不能覆盖它；当前安装核查只覆盖所连数据库。正式部署须选择无业务对象的维护连接库，并以认证／网络策略限制其他数据库连接；未完成该部署准入不启用采集，不声称已经隔离整个实例的所有业务库。安全依据见 [PostgreSQL 函数权限](https://www.postgresql.org/docs/15/sql-createfunction.html)、[统计角色](https://www.postgresql.org/docs/15/predefined-roles.html)及[统计字段](https://www.postgresql.org/docs/15/monitoring-stats.html)。
 
-验证复用独占 `make test-monitor-metrics`；精确数据库专项为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`。私有 PostgreSQL 强制 TCP SCRAM，覆盖真实密码、固定数值与独立目录对照、等待／锁等待、统计关闭／重置、越权拒绝、临时关系遮蔽、重入／密码轮换、陌生身份、默认权限漂移和失败回滚；只用 `addp_test`，退出按原门禁核验物理零残留。默认完整门禁仍执行全部指标链路及该专项，现有 Monitor metrics CI 按声明自动发现新增 SQL 与探针；不新建 Job、不修改生产权限、不修改个人库。
+验证复用独占 `make test-monitor-metrics`；精确数据库专项为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`。私有 PostgreSQL 强制 TCP SCRAM，覆盖真实密码、固定数值与独立目录对照、等待／锁等待、统计关闭／重置、越权拒绝、临时关系遮蔽、重入／密码轮换、陌生身份、默认权限漂移和失败回滚；业务对象夹具仅用 `addp_test`，认证拒绝探测另使用镜像自带 `postgres`，退出按原门禁核验物理零残留。默认完整门禁仍执行全部指标链路及该专项，现有 Monitor metrics CI 按声明自动发现新增 SQL 与探针；不新建 Job、不修改生产权限、不修改个人库。
+
+数据库认证准入沿同一 `source.py` 的唯一规则生成器：部署 owner 在角色／函数归属校验通过后，才可为该实例对应的采集 Login 生成置于 `pg_hba.conf` 最前的受管块。只允许显式维护连接库、显式私网／回环 CIDR 与 SCRAM；拒绝该 Login 的其他数据库、Unix socket 和物理复制连接，不修改其他用户的既有记录。维护库名按字面量引用，不能把 `all` 等特殊词误作通配符。认证规则不代替函数和对象权限，也不授予 Monitor 编辑认证文件的能力。
+
+受管块包含无凭据的作用域、维护库与有界规范 CIDR 声明；原文件其余内容原样保留。既有块不在首部、作用域冲突、声明／规则漂移、残缺标记、非注释记录含保留采集账号标识或超量输入均拒绝，不修补覆盖。相同输入幂等，部署 owner 明确提交的新 CIDR 可替换经核验的本方块；来源启动前仍须确认文件原子替换、数据库配置重载及真实认证结果。HBA 只约束新连接；正式安装须先停止旧来源，并确认该受管账号没有遗留连接，存在旧会话则拒绝激活，不自动终止不明会话。当前先由独占 T2 验证生成与认证，不自动更改个人实例。T2 仅在其原生 `addp_test` 与镜像自带 `postgres` 之间验证跨库连接拒绝，不创建新 database，不读取业务表；覆盖允许连接、错误密码、回环／Docker 私网、跨库／socket 拒绝、管理员连接不受影响及原文件恢复。规则依据为 [PostgreSQL 15 HBA](https://www.postgresql.org/docs/15/auth-pg-hba-conf.html) 的首条匹配和特殊词引用语义。
 
 ### 4.7 PostgreSQL 受保护的固定指标来源
 

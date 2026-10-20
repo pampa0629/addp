@@ -1,7 +1,93 @@
 """Fixed deployment-owned SQL Exporter configuration; no editable SQL route."""
 import ipaddress
+import json
 import re
 from urllib.parse import urlencode, urlunsplit
+
+HBA_MARKER = 'ADDP PostgreSQL observation v1'
+HBA_BEGIN = '# BEGIN ' + HBA_MARKER + ' '
+HBA_END = '# END ' + HBA_MARKER + '\n'
+HBA_LIMIT = 256 * 1024
+HBA_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
+    '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7',
+    '127.0.0.0/8', '::1/128',
+))
+
+
+def _authentication_block(scope, database, networks):
+    if (scope not in ('infra', 'business') or type(database) is not str
+            or not re.fullmatch(r'[a-zA-Z0-9_]{1,63}', database)
+            or type(networks) not in (list, tuple) or not 1 <= len(networks) <= 16):
+        raise ValueError('Invalid PostgreSQL observation authentication declaration')
+    parsed = []
+    for value in networks:
+        if type(value) is not str:
+            raise ValueError('Invalid PostgreSQL observation source network')
+        try:
+            network = ipaddress.ip_network(value, strict=True)
+        except ValueError:
+            raise ValueError('Invalid PostgreSQL observation source network') from None
+        if (str(network) != value or not any(network.version == parent.version and network.subnet_of(parent)
+                                             for parent in HBA_NETWORKS)
+                or any(network.version == other.version and network.overlaps(other) for other in parsed)):
+            raise ValueError('Invalid PostgreSQL observation source network')
+        parsed.append(network)
+    canonical = sorted(parsed, key=lambda value: (value.version, int(value.network_address), value.prefixlen))
+    declaration = {'scope': scope, 'database': database, 'networks': list(map(str, canonical))}
+    user = 'addp_' + scope + '_observer'
+    lines = [HBA_BEGIN + json.dumps(declaration, sort_keys=True, separators=(',', ':'))]
+    # Quoting makes reserved database words literal names. "all" must never
+    # become permission to connect to every database.
+    lines += [f'host "{database}" {user} {network} scram-sha-256' for network in canonical]
+    # PostgreSQL's unquoted all does not cover physical replication.
+    lines += [f'local all {user} reject', f'local replication {user} reject']
+    for network in ('0.0.0.0/0', '::/0'):
+        lines += [f'host all {user} {network} reject', f'host replication {user} {network} reject']
+    return '\n'.join(lines) + '\n' + HBA_END
+
+
+def authentication_configuration(original, scope, networks, *, database='postgres'):
+    """Render only a verified role-specific HBA prefix; never write or reload.
+
+    Deployment owners must verify database role ownership, write atomically,
+    reload and check real authentication before enabling a collector.
+    """
+    if type(original) is not str or '\x00' in original or len(original.encode('utf-8')) > HBA_LIMIT:
+        raise ValueError('Invalid PostgreSQL authentication input')
+    block = _authentication_block(scope, database, networks)
+    rest = original
+    if HBA_MARKER in original:
+        if not original.startswith(HBA_BEGIN) or original.count(HBA_MARKER) != 2 or HBA_END not in original:
+            raise ValueError('Unrecognized PostgreSQL observation authentication block')
+        end = original.index(HBA_END) + len(HBA_END)
+        try:
+            declaration = json.loads(original.split('\n', 1)[0][len(HBA_BEGIN):])
+            if type(declaration) is not dict or set(declaration) != {'scope', 'database', 'networks'}:
+                raise ValueError()
+            expected = _authentication_block(**declaration)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid PostgreSQL observation authentication block') from None
+        if (original[:end] != expected or declaration['scope'] != scope or declaration['database'] != database):
+            raise ValueError('PostgreSQL observation authentication ownership or policy drift')
+        rest = original[end:]
+    # Do not silently take over explicit operator records for either account.
+    logical = rest.replace('\\\r\n', '').replace('\\\n', '')
+    for line in logical.splitlines():
+        record, quoted = [], False
+        for character in line:
+            if character == '#' and not quoted:
+                break
+            if character == '"':
+                quoted = not quoted
+            record.append(character)
+        if quoted:
+            raise ValueError('Invalid PostgreSQL authentication quoting')
+        if re.search(r'\baddp_(?:infra|business)_observer\b', ''.join(record)):
+            raise ValueError('Unmanaged PostgreSQL observation authentication record')
+    result = block + rest
+    if len(result.encode('utf-8')) > HBA_LIMIT:
+        raise ValueError('PostgreSQL authentication configuration exceeds budget')
+    return result
 
 
 METRICS = (
