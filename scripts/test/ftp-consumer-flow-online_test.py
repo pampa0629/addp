@@ -76,6 +76,59 @@ class FakeClient:
         return SimpleNamespace(payload=payload)
 
 
+class FakeSourceIssuer:
+    def __init__(self, report):
+        self.report = report
+        self.calls = []
+        self.principal = '9'
+        self.grants = {}
+        self.denies = set()
+        self.unknown_write = False
+        self.mutate_facts = None
+
+    def request(self, method, path, expected, body=None):
+        self.calls.append((method, path, body))
+        if path.endswith('/auth/context'):
+            return SimpleNamespace(payload={'principal': {'id': self.principal, 'type': 'user'},
+                'context': {'type': 'tenant', 'tenant_id': '2'}, 'token': {'type': 'first_party_access_token'},
+                'authorization': {'role_assignments': [{'role_key': 'online.ftp_initializer', 'permissions': sorted(M.ISSUER_PERMISSIONS)}]}})
+        if path.endswith('/authorization-facts'):
+            model = next(model for model in self.report['models'] if model['fingerprint'] in path)
+            composition = {'format': model['format'], 'refs': [
+                {'target': M.file_target(17, ref['path']), 'role': ref['role'], 'required': ref['required'], 'primary': ref['primary']}
+                for ref in model['composition']]}
+            result = {'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': '17',
+                      'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'], 'item_type': 'file',
+                      'basis_state': 'complete', 'boundary_hash': 'a' * 64, 'observed_at': '2026-10-20T12:00:00Z',
+                      'boundary': {'layout': 'single', 'file_composition': composition}}
+            if self.mutate_facts:
+                self.mutate_facts(result)
+            return SimpleNamespace(payload=result)
+        if path.endswith('/access_grants'):
+            if self.unknown_write:
+                raise M.SuiteError('unknown synthetic write outcome')
+            model = next(model for model in self.report['models'] if model['fingerprint'] == body['item_fingerprint'])
+            composition = {'format': model['format'], 'refs': [
+                {'target': M.file_target(17, ref['path']), 'role': ref['role'], 'required': ref['required'], 'primary': ref['primary']}
+                for ref in model['composition']]}
+            self.grants[body['request_id']] = copy.deepcopy(body)
+            return SimpleNamespace(payload={**body, 'engine_id': '17', 'approval_mode': 'independent',
+                                           'boundary_hash': body['expected_boundary_hash'], 'file_composition': composition,
+                                           'expires_at': None, 'operator_principal_id': self.principal, 'revocation': None})
+        if path.endswith('/revoke'):
+            command = path.split('/')[-2]
+            self.revoke_statuses = expected
+            return SimpleNamespace(status=200 if command in self.grants else 404, payload={'request_id': command})
+        if path.endswith('/access_denies'):
+            self.denies.add(body['deny_id'])
+            return SimpleNamespace(payload={**body, 'engine_id': '17', 'established_by_principal_id': self.principal})
+        if path.endswith('/release'):
+            command = path.split('/')[-2]
+            self.release_statuses = expected
+            return SimpleNamespace(status=200 if command in self.denies else 404, payload={'deny_id': command})
+        raise AssertionError(path)
+
+
 class FTPConsumerTest(unittest.TestCase):
     def test_exact_catalog_scan_preview_and_download(self):
         client = FakeClient()
@@ -190,6 +243,119 @@ class FTPConsumerTest(unittest.TestCase):
             self.assertFalse(observations['source_credential'])
             self.assertTrue(observations['consumer_credential'])
             validate.assert_called_once_with({}, {'run_id': 'owned-run'}, Path(directory))
+
+    def test_model_grants_use_distinct_user_and_server_snapshot_then_revoke_exact_commands(self):
+        consumer = FakeClient()
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                  'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+        issuer = FakeSourceIssuer(report)
+        authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+        receipts = [authorization.grant(model) for model in report['models']]
+        self.assertEqual(len(receipts), 2)
+        commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
+        self.assertEqual([body['recipient_id'] for body in commands], ['8', '8'])
+        for body in commands:
+            self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
+            self.assertNotIn('file_composition', body)
+            self.assertNotIn('actor_principal_id', body)
+        with self.assertRaises(M.SuiteError):
+            authorization.revoke('unowned-command')
+        deny = authorization.deny(report['models'][1])
+        deny_body = next(body for _, path, body in issuer.calls if path.endswith('/access_denies'))
+        self.assertNotIn('expected_boundary_hash', deny_body)
+        self.assertNotIn('file_composition', deny_body)
+        self.assertEqual(deny_body['item_fingerprint'], report['models'][1]['fingerprint'])
+        with self.assertRaises(M.SuiteError):
+            authorization.release('unowned-deny')
+        authorization.release(deny)
+        self.assertEqual(issuer.release_statuses, (200,))
+        authorization.cleanup()
+        self.assertEqual(authorization.grants, [])
+        self.assertEqual(issuer.revoke_statuses, (200,))
+        self.assertEqual({path.split('/')[-2] for _, path, _ in issuer.calls if path.endswith('/revoke')},
+                         {row['request_id'] for row in receipts})
+
+    def test_model_grants_reject_incomplete_or_expanded_system_facts_before_any_write(self):
+        mutations = [lambda facts: facts.update(basis_state='incomplete'),
+                     lambda facts: facts.update(item_fingerprint='b' * 64),
+                     lambda facts: facts.update(boundary_hash='invalid'),
+                     lambda facts: facts['boundary']['file_composition']['refs'].pop(),
+                     lambda facts: facts['boundary'].update(native_target=M.file_target(17, 'models/ifc/model.ifc'))]
+        for mutate in mutations:
+            consumer = FakeClient()
+            report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                      'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+            issuer = FakeSourceIssuer(report)
+            issuer.mutate_facts = mutate
+            authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+            with self.assertRaises(M.SuiteError):
+                authorization.grant(report['models'][1])
+            self.assertFalse(any(path.endswith('/access_grants') for _, path, _ in issuer.calls))
+        issuer = FakeSourceIssuer(report)
+        issuer.principal = '8'
+        with self.assertRaises(M.SuiteError):
+            M.ModelSourceAuthorization(issuer, consumer, report)
+
+    def test_unknown_model_grant_write_is_tracked_and_cleaned_by_its_original_command(self):
+        consumer = FakeClient()
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                  'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+        issuer = FakeSourceIssuer(report)
+        issuer.unknown_write = True
+        authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+        with self.assertRaises(M.SuiteError):
+            authorization.grant(report['models'][0])
+        self.assertEqual(len(authorization.grants), 1)
+        original = authorization.grants[0]
+        authorization.cleanup()
+        self.assertEqual(authorization.grants, [])
+        self.assertEqual(issuer.revoke_statuses, (200, 404))
+        self.assertTrue(any(path.endswith('/' + original + '/revoke') for _, path, _ in issuer.calls))
+
+    def test_withdrawal_checks_actual_cached_content_with_same_qualified_user(self):
+        consumer = FakeClient()
+        report = {'tenant_id': 2, 'principal_id': '8', 'browser': {'models': [
+            {'format': 'ifc', 'result_id': 20}, {'format': '3ds', 'result_id': 21}]}}
+        original = consumer.request
+        requests = []
+
+        def request(method, path, expected, body=None, *, raw_response=False):
+            if '/model_3d_glb/' in path:
+                requests.append((method, path, expected))
+                return SimpleNamespace(payload={'error': 'source denied'})
+            return original(method, path, expected, body)
+
+        with patch.object(consumer, 'request', side_effect=request):
+            self.assertEqual(M.verify_cached_results(consumer, report, {'ifc': 403, '3ds': 403}), [
+                {'format': 'ifc', 'result_id': 20, 'status': 403},
+                {'format': '3ds', 'result_id': 21, 'status': 403}])
+        self.assertEqual(requests, [('GET', '/api/v1/manager/model_3d_glb/20/content', (403,)),
+                                    ('GET', '/api/v1/manager/model_3d_glb/21/content', (403,))])
+        changed = copy.deepcopy(report)
+        changed['principal_id'] = '9'
+        with self.assertRaises(M.SuiteError):
+            M.verify_cached_results(consumer, changed, {'ifc': 403, '3ds': 403})
+
+    def test_deny_control_keeps_other_model_readable_and_release_restores_exact_bytes(self):
+        consumer = FakeClient()
+        binaries = {kind: GLB.fixture_glb(kind) for kind in ('ifc', '3ds')}
+        models = [{'format': kind, 'result_id': 20 + i, 'size': len(binaries[kind]),
+                   'sha256': hashlib.sha256(binaries[kind]).hexdigest()} for i, kind in enumerate(('ifc', '3ds'))]
+        report = {'tenant_id': 2, 'principal_id': '8', 'browser': {'models': models}}
+        original = consumer.request
+
+        def request(method, path, expected, body=None, *, raw_response=False):
+            if '/model_3d_glb/' in path:
+                kind = 'ifc' if '/20/' in path else '3ds'
+                return SimpleNamespace(payload=binaries[kind] if raw_response else {'error': 'source denied'})
+            return original(method, path, expected, body)
+
+        with patch.object(consumer, 'request', side_effect=request):
+            self.assertEqual([row['status'] for row in M.verify_cached_results(consumer, report, {'ifc': 200, '3ds': 403})], [200, 403])
+            self.assertEqual([row['status'] for row in M.verify_cached_results(consumer, report, {'ifc': 200, '3ds': 200})], [200, 200])
+            binaries['3ds'] = b'changed'
+            with self.assertRaises(M.SuiteError):
+                M.verify_cached_results(consumer, report, {'ifc': 200, '3ds': 200})
 
 
 if __name__ == '__main__':

@@ -5,20 +5,25 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
+import uuid
 from urllib.parse import quote, urlencode
 
 API = import_module('scripts.utils.online-api')
 SUPPORT = import_module('scripts.test.security-transfer-protection-online')
 SEED = import_module('business.ftp.seed')
 MODEL = import_module('scripts.test.manager-internal-artifact-lineage-online')
+REGISTRATION = import_module('scripts.test.online-engine-registration')
 SuiteError = API.SuiteError
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute',
                'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read',
                'manager.derived_artifact.create', 'manager.derived_artifact.read',
                'manager.derived_artifact.delete', 'manager.data_item.update'}
+ISSUER_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
+    'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release'}
 
 
 def require(ok, message):
@@ -55,6 +60,155 @@ def validate_item(item, sample):
 def file_locator(engine_id, item):
     path = '/'.join(quote(part, safe='') for part in item['full_name'].split('/'))
     return f'addp://engine/{engine_id}/path/{path}?' + urlencode({'type': 'file', 'item_id': item['id']})
+
+
+def file_target(engine_id, path):
+    parts = path.split('/')
+    require(type(engine_id) is int and engine_id > 0 and parts and
+            all(part and part not in {'.', '..'} and not any(char in part for char in '\\:') for part in parts),
+            'FTP approval requires an exact account-relative leaf')
+    segments = [{'term': 'root', 'kind': 'root', 'name': ''}]
+    segments.extend({'term': 'directory', 'kind': 'directory', 'name': part} for part in parts[:-1])
+    segments.append({'term': 'file', 'kind': 'file', 'name': parts[-1]})
+    return {'version': 'catalog.path/v1', 'engine_id': engine_id, 'segments': segments}
+
+
+def exact_user_principal(client, tenant, permissions):
+    API.validate_user_identity(client, tenant, permissions)
+    current = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    principal = current.get('principal', {})
+    assignments = current.get('authorization', {}).get('role_assignments', [])
+    actual_permissions = {key for role in assignments for key in role.get('permissions', [])}
+    require(principal.get('type') == 'user' and current.get('context', {}).get('type') == 'tenant' and
+            current.get('context', {}).get('tenant_id') == str(tenant) and
+            isinstance(principal.get('id'), str) and principal['id'].isascii() and principal['id'].isdecimal() and
+            str(int(principal['id'])) == principal['id'] and int(principal['id']) > 0 and
+            actual_permissions == permissions and
+            not any(role.get('role_key') in API.FORBIDDEN_ADMIN_ROLES for role in assignments),
+            'FTP identity must remain the exact ordinary User with only its declared permissions')
+    return principal['id']
+
+
+class ModelSourceAuthorization:
+    """Use the formal User APIs; receipts are history, never a cached Allow."""
+
+    def __init__(self, issuer, consumer, report):
+        tenant = report['tenant_id']
+        require(type(tenant) is int and tenant > 1, 'FTP grants require the disposable nondefault Tenant')
+        self.operator = exact_user_principal(issuer, tenant, ISSUER_PERMISSIONS)
+        self.recipient = exact_user_principal(consumer, tenant, PERMISSIONS)
+        require(self.recipient == report['principal_id'] and self.operator != self.recipient,
+                'FTP source issuer must be distinct from the actual browser consumer')
+        self.issuer = issuer
+        self.engine_id = report['engine_id']
+        self.base = f'/api/v1/system/engines/{self.engine_id}'
+        self.grants = []
+        self.confirmed = set()
+        self.denies = []
+        self.confirmed_denies = set()
+
+    def facts(self, model):
+        facts = self.issuer.request('GET', self.base + f"/data-items/{model['fingerprint']}/authorization-facts", (200,)).payload
+        expected_refs = [{'target': file_target(self.engine_id, ref['path']), 'role': ref['role'],
+                          'required': ref['required'], 'primary': ref['primary']} for ref in model['composition']]
+        boundary = {'layout': 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
+        require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
+            'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
+            'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'],
+            'item_type': 'file', 'basis_state': 'complete', 'boundary': boundary}.items()) and
+            isinstance(facts.get('boundary_hash'), str) and re.fullmatch('[0-9a-f]{64}', facts['boundary_hash']) and
+            bool(facts.get('observed_at')),
+            'FTP approval requires matching complete System facts, never a directory or caller-supplied composition')
+        return facts
+
+    def grant(self, model):
+        facts = self.facts(model)
+        command = str(uuid.uuid4())
+        body = {'request_id': command, 'catalog_path': file_target(self.engine_id, model['full_name']),
+                'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
+                'requirement_version': '1', 'initialize_approval': True, 'recipient_type': 'user',
+                'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
+                'reason': 'Disposable FTP exact model composition approval'}
+        # Retain our command before the write, including an unknown outcome.
+        self.grants.append(command)
+        receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
+        expected = {key: body[key] for key in ('request_id', 'catalog_path', 'item_fingerprint',
+                                             'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+        expected.update(engine_id=str(self.engine_id), approval_mode='independent', expires_at=None,
+                        boundary_hash=facts['boundary_hash'], file_composition=facts['boundary']['file_composition'],
+                        operator_principal_id=self.operator, revocation=None)
+        require(isinstance(receipt, dict) and all(receipt.get(key) == value for key, value in expected.items()),
+                'FTP Grant receipt changed its issuer, recipient or complete frozen composition')
+        self.confirmed.add(command)
+        return {'request_id': command, 'item_fingerprint': model['fingerprint'], 'boundary_hash': facts['boundary_hash']}
+
+    def revoke(self, command, *, cleanup=False):
+        require(command in self.grants, 'FTP cleanup must not revoke an unowned Grant')
+        statuses = (200, 404) if cleanup and command not in self.confirmed else (200,)
+        self.issuer.request('POST', self.base + f'/access_grants/{command}/revoke', statuses,
+                            {'reason': 'Disposable FTP model source withdrawal'})
+        self.grants.remove(command)
+        self.confirmed.discard(command)
+
+    def cleanup(self):
+        errors = []
+        for command in list(self.denies):
+            try:
+                self.release(command, cleanup=True)
+            except Exception:
+                errors.append(command)
+        for command in list(self.grants):
+            try:
+                self.revoke(command, cleanup=True)
+            except Exception:
+                errors.append(command)
+        require(not errors, 'FTP owned source rule cleanup failed')
+
+    def deny(self, model):
+        command = str(uuid.uuid4())
+        body = {'deny_id': command, 'catalog_path': file_target(self.engine_id, model['full_name']),
+                'item_fingerprint': model['fingerprint'], 'recipient_type': 'user', 'recipient_id': self.recipient,
+                'action': 'read', 'expiry_mode': 'until_revoked', 'reason': 'Disposable FTP stable DataItem Deny'}
+        self.denies.append(command)
+        receipt = self.issuer.request('POST', self.base + '/access_denies', (200,), body).payload
+        expected = {key: body[key] for key in ('deny_id', 'catalog_path', 'item_fingerprint', 'recipient_type',
+                                             'recipient_id', 'action', 'expiry_mode')}
+        expected.update(engine_id=str(self.engine_id), established_by_principal_id=self.operator)
+        require(isinstance(receipt, dict) and all(receipt.get(key) == value for key, value in expected.items()),
+                'FTP Deny receipt changed its stable DataItem, subject or actual issuer')
+        self.confirmed_denies.add(command)
+        return command
+
+    def release(self, command, *, cleanup=False):
+        require(command in self.denies, 'FTP cleanup must not release an unowned Deny')
+        statuses = (200, 404) if cleanup and command not in self.confirmed_denies else (200,)
+        response = self.issuer.request('POST', self.base + f'/access_denies/{command}/release', statuses,
+                                       {'reason': 'Disposable FTP model Deny release'})
+        require(response.status != 200 or response.payload.get('deny_id') == command,
+                'FTP Deny release receipt changed its original command')
+        self.denies.remove(command)
+        self.confirmed_denies.discard(command)
+
+
+def verify_cached_results(client, report, statuses):
+    principal = exact_user_principal(client, report['tenant_id'], PERMISSIONS)
+    require(principal == report['principal_id'], 'FTP withdrawal must use the same current User')
+    results = []
+    for model in report['browser']['models']:
+        result_id = model['result_id']
+        require(type(result_id) is int and result_id > 0, 'FTP withdrawal requires a real published result')
+        status = statuses[model['format']]
+        require(status in {200, 403}, 'FTP cache proof requires an explicit allow or deny status')
+        payload = client.request('GET', f'/api/v1/manager/model_3d_glb/{result_id}/content', (status,), raw_response=status == 200).payload
+        if status == 403:
+            require(isinstance(payload, dict) and bool(payload.get('error')),
+                    'FTP withdrawal must reject cached content with an explicit source denial')
+        else:
+            require(isinstance(payload, bytes) and len(payload) == model['size'] and
+                    hashlib.sha256(payload).hexdigest() == model['sha256'],
+                    'FTP source rule control must preserve the exact already-verified GLB')
+        results.append({'format': model['format'], 'result_id': result_id, 'status': status})
+    return results
 
 
 def prepare_models(items, engine_id, samples):
@@ -212,7 +366,21 @@ def main():
     model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
     client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
     report = run(client, tenant, engine, samples, model_samples, timeout)
-    report['browser'] = run_browser(report)
+    issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
+                                   SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), min(timeout, 30))
+    authorization = ModelSourceAuthorization(issuer, client, report)
+    try:
+        report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
+        report['browser'] = run_browser(report)
+        source = next(model for model in report['models'] if model['format'] == '3ds')
+        deny = authorization.deny(source)
+        report['source_deny_id'] = deny
+        report['deny_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
+        authorization.release(deny)
+        report['released_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
+    finally:
+        authorization.cleanup()
+    report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
