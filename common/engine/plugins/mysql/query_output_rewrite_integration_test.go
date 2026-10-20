@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,15 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 			{Column: "email", Kind: "constant_text", Replacement: "[protected]"},
 			{Column: "label", Kind: "omit"},
 		}
-		for _, projection := range []string{"*", "p.*"} {
+		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*"} {
+			operations := append([]plugin.QueryOutputTransform(nil), operations...)
+			if strings.Contains(projection, "copied_phone") {
+				for _, op := range operations[:3] {
+					copy := op
+					copy.Column = "copied_" + op.Column
+					operations = append(operations, copy)
+				}
+			}
 			query := "SELECT " + projection + " FROM " + table + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1"
 			expected, err := provider.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true})
 			if err != nil {
@@ -92,7 +101,7 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 						t.Fatal("wildcard differs from canonical values, missing fields, sorting or pagination")
 					}
 					for i, field := range actual.Fields {
-						if field.Name != "phone" && field.Name != "email" && !reflect.DeepEqual(field, expected.Fields[i]) {
+						if field.Name != "phone" && field.Name != "email" && field.Name != "copied_phone" && field.Name != "copied_email" && !reflect.DeepEqual(field, expected.Fields[i]) {
 							t.Fatal("wildcard changed unmodified native metadata")
 						}
 					}
@@ -303,6 +312,11 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 	t.Run("shared protection wildcard", func(t *testing.T) {
 		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
 			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: "SELECT p.* FROM " + table + " p ORDER BY id", Options: plugin.QueryOptions{ReadOnly: true}})
+		}, nil)
+	})
+	t.Run("shared protection mixed wildcard copies", func(t *testing.T) {
+		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: "SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM " + table + " p ORDER BY copied_phone,id", Options: plugin.QueryOptions{ReadOnly: true}})
 		}, nil)
 	})
 	t.Run("shared protection through service wrapper", func(t *testing.T) {

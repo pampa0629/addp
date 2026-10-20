@@ -243,3 +243,19 @@ func TestPostgresOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T)
 		t.Fatal("missing frozen facts accepted", err)
 	}
 }
+
+func TestPostgresOutputRewriteMixedWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermSchema, "public", "people"), Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "phone"}}}}}
+	ops := []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "protected"}, {Column: "copied_phone", Kind: "constant_text", Replacement: "protected"}}
+	for _, query := range []string{"SELECT p.*,p.phone AS copied_phone FROM public.people p ORDER BY 3", "SELECT p.phone AS copied_phone,p.* FROM public.people p ORDER BY copied_phone", "SELECT *,phone AS copied_phone FROM public.people ORDER BY 3"} {
+		compiled, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, ops, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "*") || len(compiled.Args) != 2 {
+			t.Fatalf("mixed direct wildcard was not guarded: %s (%v)", query, err)
+		}
+	}
+	for _, projection := range []string{"p.*,p.phone", "p.*,p.*", "p.*,p.id+1 AS computed", "p.*,q.phone AS copied_phone"} {
+		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput("SELECT "+projection+" FROM public.people p", nil, ops, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven mixed wildcard accepted: %s (%v)", projection, err)
+		}
+	}
+}

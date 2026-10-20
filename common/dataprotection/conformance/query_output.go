@@ -21,7 +21,7 @@ import (
 
 // QueryOutputProtection exercises an actual native PreparedQuery with the
 // formal shared store. prepare selects the owned fixture fields id, phone,
-// email, label and amount, with direct aliases or a standalone base-table star.
+// email, label and amount, with direct aliases or a base-table star mixed with direct field copies.
 func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, prepare func(context.Context) (plugin.PreparedQuery, error), openSession func(context.Context, plugin.PreparedQuery) (plugin.QueryReadSession, error)) {
 	t.Helper()
 	ctx := t.Context()
@@ -34,26 +34,23 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 		t.Fatal("hybrid source lineage", err)
 	}
 	source := lineage.Sources[0]
-	outputName := func(name string) string {
+	outputNames := func(name string) []string {
 		t.Helper()
 		if source.IdentityOutput {
-			return name
+			return []string{name}
 		}
-		output := ""
+		var outputs []string
 		for _, b := range source.Bindings {
 			if len(b.SourcePath) == 1 && b.SourcePath[0] == name && b.Transformation == plugin.QueryOutputTransformationDirect && len(b.OutputPath) == 1 {
-				if output != "" {
-					t.Fatal("ambiguous fixture output")
-				}
-				output = b.OutputPath[0]
+				outputs = append(outputs, b.OutputPath[0])
 			}
 		}
-		if output == "" {
+		if len(outputs) == 0 {
 			t.Fatal("missing fixture output for", name)
 		}
-		return output
+		return outputs
 	}
-	phoneOutput, emailOutput, labelOutput := outputName("phone"), outputName("email"), outputName("label")
+	phoneOutputs, emailOutputs, labelOutputs := outputNames("phone"), outputNames("email"), outputNames("label")
 
 	raw, err := original.Execute(ctx)
 	if err != nil {
@@ -182,14 +179,23 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					t.Fatal("native output changed cardinality")
 				}
 				for index, row := range actual.Rows {
-					if row[labelOutput] != "[保护]" || row[emailOutput] != raw.Rows[index][emailOutput] {
-						t.Fatal("native constant or Go SM3 partition was not respected")
+					for _, output := range labelOutputs {
+						if row[output] != "[保护]" {
+							t.Fatal("native constant was not applied to every copy")
+						}
 					}
-					if !granted && !sameJSON(row[phoneOutput], expected.Rows[index][phoneOutput]) {
-						t.Fatal("phone was not masked in native SQL")
+					for _, output := range emailOutputs {
+						if row[output] != raw.Rows[index][output] {
+							t.Fatal("Go SM3 input was altered in native SQL")
+						}
 					}
-					if granted && !sameJSON(row[phoneOutput], raw.Rows[index][phoneOutput]) {
-						t.Fatal("native SQL erased an authorized original")
+					for _, output := range phoneOutputs {
+						if !granted && !sameJSON(row[output], expected.Rows[index][output]) {
+							t.Fatal("phone copy was not masked in native SQL")
+						}
+						if granted && !sameJSON(row[output], raw.Rows[index][output]) {
+							t.Fatal("native SQL erased an authorized original copy")
+						}
 					}
 				}
 				var snapshot *dataprotection.AuthorizedQueryResult
@@ -221,8 +227,15 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					if err != nil {
 						t.Fatal(err)
 					}
-					if !sameJSON(read.Rows[0][phoneOutput], raw.Rows[0][phoneOutput]) || !sameJSON(read.Rows[0][emailOutput], expected.Rows[0][emailOutput]) {
-						t.Fatal("original capture or single SM3 changed")
+					for _, output := range phoneOutputs {
+						if !sameJSON(read.Rows[0][output], raw.Rows[0][output]) {
+							t.Fatal("authorized original copy changed")
+						}
+					}
+					for _, output := range emailOutputs {
+						if !sameJSON(read.Rows[0][output], expected.Rows[0][output]) {
+							t.Fatal("SM3 copy changed or was hashed twice")
+						}
 					}
 					projection.Revision = "00000000000000000002"
 					projection.Rules[0].Authorizations = nil

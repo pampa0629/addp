@@ -2070,6 +2070,23 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
             with self.subTest(field=field), patch.object(ONLINE, "list_pages", return_value=[self.finding()]), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.assert_bank_card_discovery(client, "enrollment-bank", "assessment-bank", "finding-bank")
 
+    def mixed_rows(self):
+        return [{**row, "copied_card": row[ONLINE.BANK_FIELD], "copied_code": row["customer_code"]} for row in self.rows()]
+
+    def test_mixed_wildcard_verifies_every_sensitive_copy(self):
+        self.assertTrue(ONLINE.assert_bank_card_mixed_rows(self.mixed_rows(), "Develop")["sensitive_copies_verified"])
+        for change in [lambda row: row.update(copied_card=ONLINE.BANK_SOURCE_VALUES["1"]),
+                       lambda row: row.pop("copied_card"), lambda row: row.update(copied_code="wrong"),
+                       lambda row: row.update(hidden_original="unexpected")]:
+            rows = self.mixed_rows()
+            change(rows[0])
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_bank_card_mixed_rows(rows, "Develop")
+        rows = self.mixed_rows()
+        rows[4].pop(ONLINE.BANK_FIELD)
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_bank_card_mixed_rows(rows, "Develop")
+
     def run_case(self, changes=None, cleanup_failure=False):
         client = Mock()
         def request(method, path, expected, body=None):
@@ -2094,7 +2111,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "ensure_detected_assessment", return_value=("assessment-bank", True, "finding-bank")),
               patch.object(ONLINE, "list_pages", return_value=[self.finding()]),
               patch.object(ONLINE, "wait_for_algorithm_projections"),
-              patch.object(ONLINE, "develop_rows", return_value=self.rows()) as develop,
+              patch.object(ONLINE, "develop_rows", side_effect=lambda *args: self.mixed_rows() if "copied_card" in args[4] else self.rows()) as develop,
               patch.object(ONLINE, "service_rows", return_value=self.rows()),
               patch.object(ONLINE, "create_and_run_task", side_effect=transfer),
               patch.object(ONLINE, "wait_for_scan", return_value=str(uuid.uuid4())),
@@ -2103,10 +2120,12 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                 return ONLINE.exercise_bank_card_metadata(client, 23, 17, "security_fixture", "run-42",
                                                           {"principal_id": "7"}, time.monotonic() + 30)
             finally:
-                self.assertEqual(develop.call_count, 3)
+                self.assertEqual(develop.call_count, 5)
                 self.assertEqual([call.args[4] for call in develop.call_args_list][1:], [
                     "SELECT * FROM bank_card_accounts ORDER BY id",
-                    "SELECT b.* FROM bank_card_accounts b ORDER BY b.id"])
+                    "SELECT b.* FROM bank_card_accounts b ORDER BY b.id",
+                    "SELECT b.*,b.bank_card_number AS copied_card,b.customer_code AS copied_code FROM bank_card_accounts b ORDER BY b.id",
+                    "SELECT b.bank_card_number AS copied_card,b.customer_code AS copied_code,b.* FROM bank_card_accounts b ORDER BY b.id"])
                 cleanup.assert_called_once_with(client, [51])
                 self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/41", (404,))
                                     for call in client.request.call_args_list))
@@ -2117,6 +2136,9 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(result["develop_wildcard"]), {"unqualified", "table_alias"})
         for output in result["develop_wildcard"].values():
             self.assertEqual(output, result["owners"]["develop"])
+        self.assertEqual(set(result["develop_mixed_wildcard"]), {"copy_after_star", "copy_before_star"})
+        for output in result["develop_mixed_wildcard"].values():
+            self.assertTrue(output["sensitive_copies_verified"] and output["non_sensitive_copy_verified"])
         self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
         self.assertTrue(result["task_deleted"] and result["service_deleted"])
         self.assertNotIn("6222000000000000001", json.dumps(result))

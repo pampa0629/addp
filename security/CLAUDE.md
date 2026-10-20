@@ -275,3 +275,6 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 
 
 2026-10-20，单表通配符 SQL 输出重写提交 `4145b1b92293c43210a4e0168a8ce57ecbb30ead` 的 [Hosted 39275743465](https://github.com/pampa0629/addp/actions/runs/39275743465) 已通过。干净预检与十个服务构建均为该精确提交；领域报告 v19、浏览器报告 v8 及十五张 PNG 完整性已独立核对。新增 Develop 独立 `SELECT *` 和 `SELECT b.*` 各返回五行，逐值核对银行卡字段掩码、NULL／空值处理及非敏感字段保持；原四出口保护场景继续通过。领域临时资源创建／删除／残留为 11／11／0，浏览器两组各为 2／2／0，生命周期清理通过、Infra 零残留。该结果补充单表通配符的真实 T4，不代表混合、多表、派生子查询通配符或任意 SQL 已支持。原生 PostgreSQL／MySQL 的编译器、结构漂移及锁验证已有对应 Common T1／真实数据库 T2 证据；本地重启后的 MySQL 工作台和同一执行历史也已核对默认掩码，混合 `p.*` 与额外字段查询明确拒绝且返回零行。本轮未新授原值权限，未将配置密钥加密计为业务数据静态加密。
+
+
+2026-10-20，单普通基表的通配符输出扩展到同表直接字段／显式别名混合投影，保持原字段顺序并拒绝重复结果列名、多表／嵌套通配符与计算表达式。同一敏感字段的各输出副本分别执行既有保护，PG／MySQL 共用原 PreparedQuery 和事务结构校验，不增加查询重试或放宽原值授权。新增 Common T1 红测已复现原拒绝，修正后通过；`make test-go`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test query-read-set"`、`make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS=--local-disposable` 通过。真实数据库验证混合投影前后位置、掩码／替换／移除、普通执行与 PG 分批读取，并在四 Owner 共享保护矩阵核对全部敏感副本、SM3 单次哈希、授权实时原值、默认历史预览与撤销回落。此 PG 结果仅为 query-read-set 分组，不计完整 Common PG 门禁。Hosted 夹具报告扩展为 v20，新增银行卡混合投影的敏感／非敏感副本与缺失语义断言；`make test-security-online-runner` 的 38＋20＋203 项及登记检查通过，真实新版 Hosted 尚待运行，旧 v19 不替代新增混合投影的 T4。

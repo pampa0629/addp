@@ -243,3 +243,39 @@ func TestMySQLCompatibleWildcardLineageRequiresSingleBaseProjection(t *testing.T
 		}
 	}
 }
+
+func TestMySQLCompatibleMixedWildcardLineage(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "orders", "order_no", "phone", "ID")}
+	for _, tc := range []struct {
+		query   string
+		outputs []string
+	}{
+		{"SELECT p.*,p.phone AS copied_phone FROM business.orders p", []string{"order_no", "phone", "ID", "copied_phone"}},
+		{"SELECT p.phone AS copied_phone,p.* FROM business.orders p", []string{"copied_phone", "order_no", "phone", "ID"}},
+	} {
+		stmt, err := sqlparser.Parse(tc.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := p.resolveSelectOutputLineage("business", stmt, sources)
+		if err != nil || len(resolved) != 1 || len(resolved[0].Bindings) != len(tc.outputs) {
+			t.Fatal("mixed wildcard lineage missing", err)
+		}
+		for i, binding := range resolved[0].Bindings {
+			want := tc.outputs[i]
+			if binding.OutputPath[0] != want || binding.Transformation != plugin.QueryOutputTransformationDirect || (want == "copied_phone" && binding.SourcePath[0] != "phone") {
+				t.Fatal("mixed wildcard lost order or source")
+			}
+		}
+	}
+	for _, query := range []string{"SELECT p.*,p.phone AS PHONE FROM orders p", "SELECT p.*,p.* FROM orders p", "SELECT p.*,p.ID+1 AS computed FROM orders p", "SELECT p.*,q.phone AS copied_phone FROM orders p"} {
+		stmt, err := sqlparser.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
+			t.Fatal("unproven mixed projection accepted", query)
+		}
+	}
+}

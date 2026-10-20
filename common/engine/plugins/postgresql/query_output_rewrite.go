@@ -299,7 +299,7 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 	fail := func() (string, func(context.Context, *sql.Tx) error, error) {
 		return "", nil, plugin.ErrQueryOutputTransformUnsupported
 	}
-	if len(stmt.GetTargetList()) != 1 || len(stmt.GetFromClause()) != 1 || stmt.GetWithClause() != nil || lineage == nil || len(lineage.Sources) != 1 {
+	if len(stmt.GetFromClause()) != 1 || stmt.GetWithClause() != nil || lineage == nil || len(lineage.Sources) != 1 {
 		return fail()
 	}
 	table := stmt.GetFromClause()[0].GetRangeVar()
@@ -311,10 +311,6 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 	qualifier := table.GetRelname()
 	if table.GetAlias() != nil {
 		qualifier = table.GetAlias().GetAliasname()
-	}
-	ref := stmt.GetTargetList()[0].GetResTarget().GetVal().GetColumnRef().GetFields()
-	if len(ref) != 1 && (len(ref) != 2 || ref[0].GetString_().GetSval() != qualifier) {
-		return fail()
 	}
 	quote := func(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
 	columns := make([]string, len(source.Fields))
@@ -328,7 +324,26 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 	if err != nil {
 		return fail()
 	}
-	stmt.TargetList = expanded.Stmts[0].Stmt.GetSelectStmt().TargetList
+	var targets []*pgquery.Node
+	for _, target := range stmt.GetTargetList() {
+		ref := target.GetResTarget().GetVal().GetColumnRef().GetFields()
+		if len(ref) == 0 || len(ref) > 2 || (len(ref) == 2 && ref[0].GetString_().GetSval() != qualifier) {
+			return fail()
+		}
+		if ref[len(ref)-1].GetAStar() != nil {
+			targets = append(targets, expanded.Stmts[0].Stmt.GetSelectStmt().TargetList...)
+			continue
+		}
+		found := false
+		for _, field := range source.Fields {
+			found = found || ref[len(ref)-1].GetString_().GetSval() == field.Name
+		}
+		if !found {
+			return fail()
+		}
+		targets = append(targets, target)
+	}
+	stmt.TargetList = targets
 	table.Schemaname = parts[1].Name
 	physical, err := pgquery.Deparse(parsed)
 	if err != nil {

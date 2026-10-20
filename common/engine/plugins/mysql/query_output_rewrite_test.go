@@ -119,3 +119,19 @@ func TestMySQLOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T) {
 		t.Fatal("missing frozen facts accepted", err)
 	}
 }
+
+func TestMySQLOutputRewriteMixedWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermDatabase, "business", "people"), Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "phone"}}}}}
+	ops := []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "protected"}, {Column: "copied_phone", Kind: "constant_text", Replacement: "protected"}}
+	for _, query := range []string{"SELECT p.*,p.phone AS copied_phone FROM business.people p ORDER BY 3", "SELECT p.phone AS copied_phone,p.* FROM business.people p ORDER BY copied_phone"} {
+		compiled, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, ops, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "*") || len(compiled.Args) != 2 {
+			t.Fatalf("mixed direct wildcard was not guarded: %s (%v)", query, err)
+		}
+	}
+	for _, projection := range []string{"p.*,p.phone", "p.*,p.phone AS PHONE", "p.*,p.*", "p.*,p.id+1 AS computed", "p.*,q.phone AS copied_phone"} {
+		if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT "+projection+" FROM business.people p", nil, ops, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven mixed wildcard accepted: %s (%v)", projection, err)
+		}
+	}
+}

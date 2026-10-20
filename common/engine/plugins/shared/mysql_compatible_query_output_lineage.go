@@ -147,14 +147,22 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 	if err != nil {
 		return nil, err
 	}
+	hasWildcard := false
+	for _, expression := range selectNode.SelectExprs {
+		_, star := expression.(*sqlparser.StarExpr)
+		hasWildcard = hasWildcard || star
+	}
 	projection := &mysqlCompatibleLineageProjection{
 		columns: make(map[string]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
 		order:   make([]string, 0, len(selectNode.SelectExprs)),
 	}
-	// A standalone wildcard over one base table has a deterministic catalog
-	// order. Do not expand joins, mixed lists or derived-table wildcards.
-	if len(selectNode.SelectExprs) == 1 && len(selectNode.From) == 1 {
-		if star, ok := selectNode.SelectExprs[0].(*sqlparser.StarExpr); ok {
+	// Expand each wildcard in place only over one base table. Direct aliases
+	// may copy the same field; result names still must be unique.
+	for _, expression := range selectNode.SelectExprs {
+		if star, ok := expression.(*sqlparser.StarExpr); ok {
+			if len(selectNode.From) != 1 {
+				return nil, p.outputLineageError("wildcard requires one base table")
+			}
 			table, ok := selectNode.From[0].(*sqlparser.AliasedTableExpr)
 			if !ok {
 				return nil, p.outputLineageError("wildcard requires a base table")
@@ -189,10 +197,8 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 				projection.columns[field.Name] = origin
 				projection.order = append(projection.order, field.Name)
 			}
-			return projection, nil
+			continue
 		}
-	}
-	for _, expression := range selectNode.SelectExprs {
 		aliased, ok := expression.(*sqlparser.AliasedExpr)
 		if !ok {
 			return nil, p.outputLineageError("wildcard and non-column projections are not supported")
@@ -208,6 +214,8 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 			if output == "" {
 				output = strings.TrimSpace(column.Name.String())
 			}
+		} else if hasWildcard {
+			return nil, p.outputLineageError("mixed wildcard requires direct fields")
 		} else if output == "" {
 			output = sqlparser.String(aliased.Expr)
 		}

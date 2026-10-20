@@ -271,7 +271,7 @@ func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.Quer
 	if !star {
 		return nil, nil
 	}
-	if len(statement.SelectExprs) != 1 || len(statement.From) != 1 || lineage == nil || len(lineage.Sources) != 1 {
+	if len(statement.From) != 1 || lineage == nil || len(lineage.Sources) != 1 {
 		return nil, plugin.ErrQueryOutputTransformUnsupported
 	}
 	table, ok := statement.From[0].(*sqlparser.AliasedTableExpr)
@@ -293,14 +293,35 @@ func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.Quer
 	if !table.As.IsEmpty() {
 		qualifier = sqlparser.TableName{Name: table.As}
 	}
-	wildcard := statement.SelectExprs[0].(*sqlparser.StarExpr)
-	if !wildcard.TableName.IsEmpty() && sqlparser.String(wildcard.TableName) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && wildcard.TableName.DbQualifier.IsEmpty() && wildcard.TableName.Name.String() == name.Name.String()) {
-		return nil, plugin.ErrQueryOutputTransformUnsupported
+	expanded := make(sqlparser.SelectExprs, 0, len(source.Fields)+len(statement.SelectExprs)-1)
+	for _, expression := range statement.SelectExprs {
+		if wildcard, ok := expression.(*sqlparser.StarExpr); ok {
+			if !wildcard.TableName.IsEmpty() && sqlparser.String(wildcard.TableName) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && wildcard.TableName.DbQualifier.IsEmpty() && wildcard.TableName.Name.String() == name.Name.String()) {
+				return nil, plugin.ErrQueryOutputTransformUnsupported
+			}
+			for _, field := range source.Fields {
+				expanded = append(expanded, &sqlparser.AliasedExpr{Expr: &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier}})
+			}
+			continue
+		}
+		aliased, ok := expression.(*sqlparser.AliasedExpr)
+		if !ok {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		column, ok := aliased.Expr.(*sqlparser.ColName)
+		if !ok || (!column.Qualifier.IsEmpty() && sqlparser.String(column.Qualifier) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && column.Qualifier.DbQualifier.IsEmpty() && column.Qualifier.Name.String() == name.Name.String())) {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		found := false
+		for _, field := range source.Fields {
+			found = found || strings.EqualFold(field.Name, column.Name.String())
+		}
+		if !found {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		expanded = append(expanded, expression)
 	}
-	statement.SelectExprs = nil
-	for _, field := range source.Fields {
-		statement.SelectExprs = append(statement.SelectExprs, &sqlparser.AliasedExpr{Expr: &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier}})
-	}
+	statement.SelectExprs = expanded
 	qualified := mysqlDialect().QualifiedTable(parts[1].Name, parts[2].Name)
 	return func(ctx context.Context, tx *sql.Tx) error {
 		// Even a zero-row SELECT acquires the transaction's metadata lock.

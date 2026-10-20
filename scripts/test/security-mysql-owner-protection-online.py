@@ -1744,6 +1744,20 @@ def assert_bank_card_rows(rows: Iterable[Mapping[str, object]], owner: str,
             "null_preserved": True, "empty_value_suppressed": protected, "non_sensitive_fields_preserved": True}
 
 
+def assert_bank_card_mixed_rows(rows: Iterable[Mapping[str, object]], owner: str) -> dict[str, object]:
+    rows = list(rows)
+    originals = []
+    for row in rows:
+        key = normalize_id(row.get("id"))
+        if (key not in EXPECTED_IDS or row.get("copied_card") != BANK_MASKED[key]
+                or ("copied_card" in row) != (BANK_FIELD in row)
+                or row.get("copied_code") != "CUST-1000" + key):
+            raise SuiteError(owner + " mixed wildcard copies are not protected consistently")
+        originals.append({k: v for k, v in row.items() if k not in {"copied_card", "copied_code"}})
+    evidence = assert_bank_card_rows(originals, owner)
+    return {**evidence, "sensitive_copies_verified": True, "non_sensitive_copy_verified": True}
+
+
 def bank_card_projections(enrollment: Mapping[str, object]) -> dict[str, object]:
     progress = _array(enrollment.get("owner_progress"), "bank-card Owner progress")
     if enrollment.get("state") != "active" or {p.get("consumer_owner") for p in progress if isinstance(p, dict)} != set(PROTECTION_OWNERS) or len(progress) != len(PROTECTION_OWNERS):
@@ -1852,6 +1866,14 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
                 "Develop bank-card wildcard " + label)
             if develop_wildcard[label] != outputs["develop"]:
                 raise SuiteError("Develop wildcard differs from direct-field protection")
+        develop_mixed_wildcard = {}
+        for label, statement in {
+            "copy_after_star": "SELECT b.*,b." + BANK_FIELD + " AS copied_card,b.customer_code AS copied_code FROM " + BANK_SOURCE + " b ORDER BY b.id",
+            "copy_before_star": "SELECT b." + BANK_FIELD + " AS copied_card,b.customer_code AS copied_code,b.* FROM " + BANK_SOURCE + " b ORDER BY b.id",
+        }.items():
+            develop_mixed_wildcard[label] = assert_bank_card_mixed_rows(
+                develop_rows(client, source_engine_id, locator, deadline, statement),
+                "Develop bank-card mixed wildcard " + label)
         service = _object(client.request("POST", "/api/v1/service/query", (201,),
             service_payload(name, source_engine_id, locator, BANK_FIELDS)).payload, "bank-card Query Service")
         service_id = positive_int(service.get("id"), "bank-card service ID")
@@ -1895,6 +1917,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "target_table": TARGET_SCHEMA + "." + BANK_TARGET, "service_id": service_id,
             "algorithm": STRUCTURED_MASK_ALGORITHM, "projections": projections, "owners": outputs,
             "develop_wildcard": develop_wildcard,
+            "develop_mixed_wildcard": develop_mixed_wildcard,
             "task_deleted": True, "service_deleted": True, "temporary_execution_resources": 2,
             "temporary_execution_resource_residuals": 0}
 
@@ -2157,7 +2180,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v19",
+            "schema_version": "addp.security-mysql-owner-protection-online/v20",
             "result": "passed",
             "identity": identity,
             "governance": governance,

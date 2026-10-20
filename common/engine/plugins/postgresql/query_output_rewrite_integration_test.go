@@ -51,7 +51,15 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			{Column: "email", Kind: "constant_text", Replacement: "[protected]"},
 			{Column: "label", Kind: "omit"},
 		}
-		for _, projection := range []string{"*", "p.*"} {
+		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*"} {
+			operations := append([]plugin.QueryOutputTransform(nil), operations...)
+			if strings.Contains(projection, "copied_phone") {
+				for _, op := range operations[:3] {
+					copy := op
+					copy.Column = "copied_" + op.Column
+					operations = append(operations, copy)
+				}
+			}
 			query := "SELECT " + projection + " FROM " + qualified + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1"
 			expected, err := pg.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true})
 			if err != nil {
@@ -124,7 +132,7 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 						t.Fatal("wildcard differs from canonical values, missing fields, sorting or pagination")
 					}
 					for i, field := range actual.Fields {
-						if field.Name != "phone" && field.Name != "email" && !reflect.DeepEqual(field, expected.Fields[i]) {
+						if field.Name != "phone" && field.Name != "email" && field.Name != "copied_phone" && field.Name != "copied_email" && !reflect.DeepEqual(field, expected.Fields[i]) {
 							t.Fatal("wildcard changed unmodified native metadata")
 						}
 					}
@@ -398,6 +406,7 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 				`SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM ` + qualified + ` ORDER BY id`,
 				`SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p ORDER BY display,id`,
 				`WITH keys AS (SELECT id FROM ` + qualified + ` WHERE id>=$1 ORDER BY id LIMIT 5 OFFSET 1) SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p JOIN keys k ON k.id=p.id ORDER BY p.id`,
+				`SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM ` + qualified + ` p ORDER BY copied_phone,id`,
 			}
 			for index, query := range queries {
 				// Cursor evidence intentionally retains its narrower native
