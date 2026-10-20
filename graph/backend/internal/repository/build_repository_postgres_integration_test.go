@@ -146,6 +146,17 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 		t.Fatalf("create pending review: %v", err)
 	}
 
+	t.Run("review_lookup_requires_graph_and_tenant", func(t *testing.T) {
+		if _, err := repo.GetReviewItem(review.ID, graph.ID, tenantID); err != nil {
+			t.Fatal(err)
+		}
+		for _, scope := range []struct{ graphID, tenant uint }{{graph.ID + 1, tenantID}, {graph.ID, tenantID + 1}} {
+			if _, err := repo.GetReviewItem(review.ID, scope.graphID, scope.tenant); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("cross-scope lookup error=%v", err)
+			}
+		}
+	})
+
 	rerunStart := make(chan struct{})
 	rerunResults := make(chan error, 2)
 	for _, executionID := range []string{

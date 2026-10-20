@@ -287,9 +287,9 @@ func (r *BuildRepository) ListReviewItems(filter ReviewFilter) ([]models.ReviewI
 	return items, total, err
 }
 
-func (r *BuildRepository) GetReviewItem(id, tenantID uint) (*models.ReviewItem, error) {
+func (r *BuildRepository) GetReviewItem(id, graphID, tenantID uint) (*models.ReviewItem, error) {
 	var item models.ReviewItem
-	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error
+	err := r.db.Where("id = ? AND graph_id = ? AND tenant_id = ?", id, graphID, tenantID).First(&item).Error
 	return &item, err
 }
 

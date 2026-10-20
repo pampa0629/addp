@@ -111,3 +111,9 @@ other = "图谱操作失败，请查看服务日志。"
 
 [graph.kg.protection_required]
 other = "数据保护门禁尚未就绪，或目标图已纳入保护，当前不允许读取"
+
+[graph.review.already_processed]
+other = "审核项已被处理，请刷新后重试"
+
+[graph.review.batch_failed]
+other = "部分审核项处理失败；已成功的结果已保留，请刷新查看"

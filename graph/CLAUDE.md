@@ -180,6 +180,7 @@ Graph 是以下 Permission 的唯一 owner：
 - 用户构建任务使用 `graph.build_task.*`；Graph TaskProvider 只允许 `addp-orchestrator` Service Client，并使用 `graph.task_provider.read|execute`。上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
 - Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
 - Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。
+- 审核单项和批量均以 `tenant_id + graph_id + item_id` 限定范围，越界返回 404；已处理单项返回 409。批量先核对全部 ID 归属再执行，任一处理失败须返回失败并保留成功结果；详情见构建规划，不吞错或回滚业务图。
 
 `delegable` 当前统一保守为 `false`，待 Graph Knowledge Service、Agent Tool 和 OAuth Scope 映射阶段逐项评审，不在首批目录中默认开放委托。
 

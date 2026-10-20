@@ -246,24 +246,28 @@ async function handleReject(itemId) {
 }
 
 async function handleBatchApprove() {
-  try {
-    await buildAPI.batchApprove(graphId, selectedIds.value)
-    ElMessage.success(t('graph.review.batchApproved', { count: selectedIds.value.length }))
-    selectedIds.value = []
-    await loadItems()
-  } catch (e) {
-    ElMessage.error(t('graph.review.batchFailed'))
-  }
+  await handleBatchReview('approve')
 }
 
 async function handleBatchReject() {
+  await handleBatchReview('reject')
+}
+
+async function handleBatchReview(action) {
+  const ids = [...selectedIds.value]
   try {
-    await buildAPI.batchReject(graphId, selectedIds.value)
-    ElMessage.success(t('graph.review.batchRejected', { count: selectedIds.value.length }))
+    if (action === 'approve') {
+      await buildAPI.batchApprove(graphId, ids)
+      ElMessage.success(t('graph.review.batchApproved', { count: ids.length }))
+    } else {
+      await buildAPI.batchReject(graphId, ids)
+      ElMessage.success(t('graph.review.batchRejected', { count: ids.length }))
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('graph.review.batchFailed'))
+  } finally {
     selectedIds.value = []
     await loadItems()
-  } catch (e) {
-    ElMessage.error(t('graph.review.batchFailed'))
   }
 }
 

@@ -51,11 +51,13 @@ const (
 	MsgTaskRunFailed            = "graph.build.task_run_failed"
 
 	// 审核
-	MsgApproved      = "graph.review.approved"
-	MsgRejected      = "graph.review.rejected"
-	MsgModified      = "graph.review.modified"
-	MsgBatchApproved = "graph.review.batch_approved"
-	MsgBatchRejected = "graph.review.batch_rejected"
+	MsgReviewAlreadyProcessed = "graph.review.already_processed"
+	MsgReviewBatchFailed      = "graph.review.batch_failed"
+	MsgApproved               = "graph.review.approved"
+	MsgRejected               = "graph.review.rejected"
+	MsgModified               = "graph.review.modified"
+	MsgBatchApproved          = "graph.review.batch_approved"
+	MsgBatchRejected          = "graph.review.batch_rejected"
 
 	// 分析
 	MsgAlgoFailed = "graph.analysis.algo_failed"

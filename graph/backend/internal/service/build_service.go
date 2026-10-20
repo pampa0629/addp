@@ -32,6 +32,8 @@ const (
 	copilotExtractPath = "/api/v1/copilot/kg-build/extract"
 )
 
+var ErrReviewBatchFailed = errors.New("one or more review items failed")
+
 var ErrBuildRuntimeNotOwned = fmt.Errorf("%w: graph build runtime is not owned by this process", commonAPI.ErrConflict)
 
 // BuildService 图谱构建业务逻辑
@@ -704,13 +706,13 @@ func (s *BuildService) ListReviewItems(filter repository.ReviewFilter) ([]models
 	return s.buildRepo.ListReviewItems(filter)
 }
 
-func (s *BuildService) ApproveReviewItem(ctx context.Context, itemID, tenantID, userID uint) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, tenantID)
+func (s *BuildService) ApproveReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint) error {
+	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
 	if err != nil {
 		return err
 	}
 	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("该条目已被处理")
+		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
 	}
 
 	elementID, err := s.writeReviewItemToGraph(ctx, item)
@@ -726,13 +728,13 @@ func (s *BuildService) ApproveReviewItem(ctx context.Context, itemID, tenantID, 
 	return s.buildRepo.UpdateReviewItem(item)
 }
 
-func (s *BuildService) RejectReviewItem(ctx context.Context, itemID, tenantID, userID uint) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, tenantID)
+func (s *BuildService) RejectReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint) error {
+	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
 	if err != nil {
 		return err
 	}
 	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("该条目已被处理")
+		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
 	}
 
 	now := time.Now()
@@ -742,13 +744,13 @@ func (s *BuildService) RejectReviewItem(ctx context.Context, itemID, tenantID, u
 	return s.buildRepo.UpdateReviewItem(item)
 }
 
-func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, itemID, tenantID, userID uint, finalContent map[string]interface{}) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, tenantID)
+func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint, finalContent map[string]interface{}) error {
+	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
 	if err != nil {
 		return err
 	}
 	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("该条目已被处理")
+		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
 	}
 
 	finalBytes := mustMarshalJSON(finalContent)
@@ -769,13 +771,39 @@ func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, itemID, t
 }
 
 func (s *BuildService) BatchReview(ctx context.Context, graphID, tenantID, userID uint, ids []uint, action string) error {
+	if action != "approve" && action != "reject" {
+		return fmt.Errorf("%w: unsupported review action", commonAPI.ErrBadRequest)
+	}
+	if len(ids) == 0 || len(ids) > 100 {
+		return fmt.Errorf("%w: review batch must contain 1-100 IDs", commonAPI.ErrBadRequest)
+	}
+	seen := make(map[uint]struct{}, len(ids))
 	for _, id := range ids {
-		switch action {
-		case "approve":
-			_ = s.ApproveReviewItem(ctx, id, tenantID, userID)
-		case "reject":
-			_ = s.RejectReviewItem(ctx, id, tenantID, userID)
+		if _, duplicate := seen[id]; id == 0 || duplicate {
+			return fmt.Errorf("%w: review IDs must be positive and distinct", commonAPI.ErrBadRequest)
 		}
+		seen[id] = struct{}{}
+	}
+	// Validate the entire ownership boundary before any graph or review mutation.
+	for _, id := range ids {
+		if _, err := s.buildRepo.GetReviewItem(id, graphID, tenantID); err != nil {
+			return err
+		}
+	}
+	var failures []error
+	for _, id := range ids {
+		var err error
+		if action == "approve" {
+			err = s.ApproveReviewItem(ctx, graphID, id, tenantID, userID)
+		} else {
+			err = s.RejectReviewItem(ctx, graphID, id, tenantID, userID)
+		}
+		if err != nil {
+			failures = append(failures, fmt.Errorf("review item %d: %w", id, err))
+		}
+	}
+	if len(failures) != 0 {
+		return fmt.Errorf("%w: %w", ErrReviewBatchFailed, errors.Join(failures...))
 	}
 	return nil
 }

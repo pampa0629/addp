@@ -111,3 +111,9 @@ other = "The graph operation failed. Check the service logs."
 
 [graph.kg.protection_required]
 other = "Data protection is not ready or the target graph is protected; reading is denied"
+
+[graph.review.already_processed]
+other = "The review item has already been processed. Refresh before retrying."
+
+[graph.review.batch_failed]
+other = "Some review items failed. Successful results were preserved; refresh to check their status."

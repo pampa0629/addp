@@ -93,6 +93,8 @@ flowchart LR
 | 批量批准／拒绝 | `POST .../review/batch/approve`、`POST .../review/batch/reject` |
 | 执行详情 | `GET /api/v1/graph/executions/:execution_id` |
 
+审核命令只处理当前租户和 URL 指定图谱中的审核项；不属于该范围的 ID 与不存在的 ID 均返回 404。单项已处理返回 409。批量请求显式提交 1–100 个互不重复的正整数 ID，先校验全部 ID 的租户及图谱归属；任一归属不符时整批不执行。归属校验通过后逐项审核，任一项失败最终返回失败，但继续处理其余项，保留已成功写图和已保存的审核状态，不回滚业务图。这是具有外部图写入副作用的逐项审核命令，不声明数据库原子批量事务。前端无论批量成功或失败均刷新队列，失败项保留实际状态；失败响应不暴露原生数据库详情。
+
 批准或修改后批准均复用 GraphDataService，原生写入成功后才保存审核状态和 `element_id`。构建与审核页通过共享 `MonitorExecutionsButton(module=graph, task_type=kg_build)` 查看执行历史，不自建另一套执行历史。
 
 ## 六、实现与验证入口
@@ -114,6 +116,8 @@ make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"
 ```
 
 Go T1 覆盖抽取／审核入库失败、后续材料继续、失败汇总、统计保留、取消和 Unicode 分块。两类原生图 T2 复用同一领域测试，验证原生实体与关系写入失败后的任务／execution 状态、已写数据及后续材料结果。PostgreSQL 分组覆盖目标约束、迁移、执行并发及事务；本地只使用 `addp_test`，连接参数按 Infra 实际映射显式注入。
+
+审核修复沿用这些标准入口：Go T1 覆盖单项批准／拒绝／修改的租户与图谱归属、批量整批归属预检、单项处理及保存失败后继续、HTTP 状态和双语安全错误；前端组件测试覆盖批量失败后刷新实际状态。两类图引擎的同一 T2 验证审核写图失败保持待审、后续合法项成功并保存原生 ID；Graph PostgreSQL 分组补查真实数据库中的审核项范围。已有 CI 按 Graph backend 输入自动触发两类图 T2 和 PostgreSQL 分组，不增加测试入口。
 
 `graph-protection` Hosted suite 的 v3 已覆盖普通 Graph 读取账号和独立 Develop 五权限账号的查询／保护链路。该结果不等同于材料上传、真实模型抽取、人工审核及 Monitor 全链路的普通账号浏览器验收；本轮原生构建故障测试控制 Copilot 响应，属于 T2。
 

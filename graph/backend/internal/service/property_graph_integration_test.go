@@ -248,13 +248,35 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		t.Fatal(err)
 	}
 	build := &BuildService{buildRepo: buildRepo, graphDataSvc: data}
-	if err = build.ApproveReviewItem(ctx, review.ID, 7, 9); err != nil {
+	if err = build.ApproveReviewItem(ctx, kg.ID, review.ID, 7, 9); err != nil {
 		t.Fatal(err)
 	}
-	approved, err := buildRepo.GetReviewItem(review.ID, 7)
+	approved, err := buildRepo.GetReviewItem(review.ID, kg.ID, 7)
 	if err != nil || approved.ElementID == "" || approved.Status != models.ReviewStatusApproved {
 		t.Fatalf("review=%+v %v", approved, err)
 	}
+	// Batch errors must remain failures while a later item still reaches the native graph.
+	invalidReviewContent, _ := json.Marshal(map[string]interface{}{"type": "Person", "node_labels": []string{"ADDPDomainPerson"}, "unique_key_field": "key", "unique_key_value": "review", "properties": map[string]interface{}{"invalid": map[string]interface{}{"nested": "not a native graph property"}}})
+	bad := models.ReviewItem{TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: invalidReviewContent, Status: models.ReviewStatusPending}
+	valid := models.ReviewItem{TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: reviewContent, Status: models.ReviewStatusPending}
+	for _, item := range []*models.ReviewItem{&bad, &valid} {
+		if err = db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = build.BatchReview(ctx, kg.ID, 7, 9, []uint{bad.ID, valid.ID}, "approve"); !errors.Is(err, ErrReviewBatchFailed) {
+		t.Fatalf("batch swallowed write error: %v", err)
+	}
+	for _, check := range []struct {
+		id     uint
+		status string
+	}{{bad.ID, models.ReviewStatusPending}, {valid.ID, models.ReviewStatusApproved}} {
+		stored, e := buildRepo.GetReviewItem(check.id, kg.ID, 7)
+		if e != nil || stored.Status != check.status || (check.status == models.ReviewStatusApproved && stored.ElementID != approved.ElementID) {
+			t.Fatalf("batch review result=%+v error=%v", stored, e)
+		}
+	}
+
 	if _, err = data.GetBrowseSnapshot(ctx, kg.ID, 8); err == nil {
 		t.Fatal("cross-tenant graph accepted")
 	}

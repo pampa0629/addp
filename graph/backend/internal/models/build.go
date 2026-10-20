@@ -123,3 +123,8 @@ const (
 	ReviewItemEntity   = "entity"
 	ReviewItemRelation = "relation"
 )
+
+// BatchReviewRequest identifies an explicit set of review commands.
+type BatchReviewRequest struct {
+	IDs []uint `json:"ids" binding:"required,min=1,max=100,unique,dive,gt=0" minItems:"1" maxItems:"100"`
+}

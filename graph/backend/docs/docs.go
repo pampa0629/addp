@@ -1542,6 +1542,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "先核对全部 ID 归属，再逐项处理；任一失败返回 500，保留成功结果 | Validate ownership of all IDs before processing; any item failure returns 500 and preserves successful results",
                 "consumes": [
                     "application/json"
                 ],
@@ -1566,13 +1567,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "array",
-                                "items": {
-                                    "type": "integer"
-                                }
-                            }
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BatchReviewRequest"
                         }
                     }
                 ],
@@ -1584,13 +1579,25 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数无效 | Invalid request parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "访问被拒绝 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "审核处理失败 | Review processing failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1609,6 +1616,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "先核对全部 ID 归属，再逐项处理；任一失败返回 500，保留成功结果 | Validate ownership of all IDs before processing; any item failure returns 500 and preserves successful results",
                 "consumes": [
                     "application/json"
                 ],
@@ -1633,13 +1641,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "array",
-                                "items": {
-                                    "type": "integer"
-                                }
-                            }
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BatchReviewRequest"
                         }
                     }
                 ],
@@ -1651,13 +1653,25 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数无效 | Invalid request parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "访问被拒绝 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "审核处理失败 | Review processing failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1766,13 +1780,31 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数无效 | Invalid request parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "访问被拒绝 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "审核项已处理 | Review item already processed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "审核处理失败 | Review processing failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1821,8 +1853,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
                         }
                     },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "访问被拒绝 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "审核项已处理 | Review item already processed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "审核处理失败 | Review processing failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1871,8 +1927,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
                         }
                     },
+                    "400": {
+                        "description": "请求参数无效 | Invalid request parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "访问被拒绝 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "审核项已处理 | Review item already processed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "审核处理失败 | Review processing failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -4035,6 +4115,23 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.BatchReviewRequest": {
+            "type": "object",
+            "required": [
+                "ids"
+            ],
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "integer"
                     }
                 }
             }

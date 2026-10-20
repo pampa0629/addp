@@ -413,20 +413,27 @@ func (h *BuildHandler) ListReviewItems(c *gin.Context) {
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        iid path int true "审核项 ID | Review item ID"
 // @Success      200 {object} models.SuccessResponse
-// @Failure      500 {object} models.ErrorResponse
+// @Failure      400 {object} models.ErrorResponse "请求参数无效 | Invalid request parameters"
+// @Failure      403 {object} models.ErrorResponse "访问被拒绝 | Access denied"
+// @Failure      404 {object} models.ErrorResponse "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph"
+// @Failure      409 {object} models.ErrorResponse "审核项已处理 | Review item already processed"
+// @Failure      500 {object} models.ErrorResponse "审核处理失败 | Review processing failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.review.approve"]
 // @Router       /graphs/{id}/review/{iid}/approve [post]
 func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
-	iid, _ := strconv.ParseUint(c.Param("iid"), 10, 64)
-
-	if err := h.buildSvc.ApproveReviewItem(c.Request.Context(), uint(iid), uint(tenantID), uint(userID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	graphID, iid, ok := reviewItemIDs(c)
+	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已确认写入"})
+
+	if err := h.buildSvc.ApproveReviewItem(c.Request.Context(), graphID, iid, uint(tenantID), uint(userID)); err != nil {
+		reviewOperationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, graphi18n.MsgApproved)})
 }
 
 // RejectReviewItem godoc
@@ -437,20 +444,27 @@ func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        iid path int true "审核项 ID | Review item ID"
 // @Success      200 {object} models.SuccessResponse
-// @Failure      500 {object} models.ErrorResponse
+// @Failure      400 {object} models.ErrorResponse "请求参数无效 | Invalid request parameters"
+// @Failure      403 {object} models.ErrorResponse "访问被拒绝 | Access denied"
+// @Failure      404 {object} models.ErrorResponse "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph"
+// @Failure      409 {object} models.ErrorResponse "审核项已处理 | Review item already processed"
+// @Failure      500 {object} models.ErrorResponse "审核处理失败 | Review processing failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.review.reject"]
 // @Router       /graphs/{id}/review/{iid}/reject [post]
 func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
-	iid, _ := strconv.ParseUint(c.Param("iid"), 10, 64)
-
-	if err := h.buildSvc.RejectReviewItem(c.Request.Context(), uint(iid), uint(tenantID), uint(userID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	graphID, iid, ok := reviewItemIDs(c)
+	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
+
+	if err := h.buildSvc.RejectReviewItem(c.Request.Context(), graphID, iid, uint(tenantID), uint(userID)); err != nil {
+		reviewOperationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, graphi18n.MsgRejected)})
 }
 
 // ModifyReviewItem godoc
@@ -463,42 +477,51 @@ func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 // @Param        iid     path int true "审核项 ID | Review item ID"
 // @Param        request body map[string]interface{} true "修改内容 | Modify content"
 // @Success      200 {object} models.SuccessResponse
-// @Failure      400 {object} models.ErrorResponse
-// @Failure      500 {object} models.ErrorResponse
+// @Failure      400 {object} models.ErrorResponse "请求参数无效 | Invalid request parameters"
+// @Failure      403 {object} models.ErrorResponse "访问被拒绝 | Access denied"
+// @Failure      404 {object} models.ErrorResponse "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph"
+// @Failure      409 {object} models.ErrorResponse "审核项已处理 | Review item already processed"
+// @Failure      500 {object} models.ErrorResponse "审核处理失败 | Review processing failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.review.update"]
 // @Router       /graphs/{id}/review/{iid} [put]
 func (h *BuildHandler) ModifyReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
-	iid, _ := strconv.ParseUint(c.Param("iid"), 10, 64)
+	graphID, iid, ok := reviewItemIDs(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		FinalContent map[string]interface{} `json:"final_content" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
 		return
 	}
 
-	if err := h.buildSvc.ModifyAndApproveReviewItem(c.Request.Context(), uint(iid), uint(tenantID), uint(userID), req.FinalContent); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.buildSvc.ModifyAndApproveReviewItem(c.Request.Context(), graphID, iid, uint(tenantID), uint(userID), req.FinalContent); err != nil {
+		reviewOperationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已修改并写入"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, graphi18n.MsgModified)})
 }
 
 // BatchApproveReviewItems godoc
 // @Summary      批量通过审核项 | Batch approve review items
+// @Description  先核对全部 ID 归属，再逐项处理；任一失败返回 500，保留成功结果 | Validate ownership of all IDs before processing; any item failure returns 500 and preserves successful results
 // @Tags         图谱构建 | Graph Build
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
-// @Param        request body map[string][]uint true "审核项 ID | Review item IDs"
+// @Param        request body models.BatchReviewRequest true "审核项 ID | Review item IDs"
 // @Success      200 {object} models.SuccessResponse
-// @Failure      400 {object} models.ErrorResponse
-// @Failure      500 {object} models.ErrorResponse
+// @Failure      400 {object} models.ErrorResponse "请求参数无效 | Invalid request parameters"
+// @Failure      403 {object} models.ErrorResponse "访问被拒绝 | Access denied"
+// @Failure      404 {object} models.ErrorResponse "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph"
+// @Failure      500 {object} models.ErrorResponse "审核处理失败 | Review processing failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.review.approve"]
 // @Router       /graphs/{id}/review/batch/approve [post]
@@ -508,15 +531,18 @@ func (h *BuildHandler) BatchApproveReviewItems(c *gin.Context) {
 
 // BatchRejectReviewItems godoc
 // @Summary      批量拒绝审核项 | Batch reject review items
+// @Description  先核对全部 ID 归属，再逐项处理；任一失败返回 500，保留成功结果 | Validate ownership of all IDs before processing; any item failure returns 500 and preserves successful results
 // @Tags         图谱构建 | Graph Build
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
-// @Param        request body map[string][]uint true "审核项 ID | Review item IDs"
+// @Param        request body models.BatchReviewRequest true "审核项 ID | Review item IDs"
 // @Success      200 {object} models.SuccessResponse
-// @Failure      400 {object} models.ErrorResponse
-// @Failure      500 {object} models.ErrorResponse
+// @Failure      400 {object} models.ErrorResponse "请求参数无效 | Invalid request parameters"
+// @Failure      403 {object} models.ErrorResponse "访问被拒绝 | Access denied"
+// @Failure      404 {object} models.ErrorResponse "当前租户及图谱内不存在审核项 | Review item not found in this tenant and graph"
+// @Failure      500 {object} models.ErrorResponse "审核处理失败 | Review processing failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.review.reject"]
 // @Router       /graphs/{id}/review/batch/reject [post]
@@ -525,23 +551,28 @@ func (h *BuildHandler) BatchRejectReviewItems(c *gin.Context) {
 }
 
 func (h *BuildHandler) batchReview(c *gin.Context, action string) {
-	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	graphID, ok := reviewPositiveID(c, "id")
+	if !ok {
+		return
+	}
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
 
-	var req struct {
-		IDs []uint `json:"ids" binding:"required"`
-	}
+	var req models.BatchReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
 		return
 	}
 
 	if err := h.buildSvc.BatchReview(c.Request.Context(), uint(graphID), uint(tenantID), uint(userID), req.IDs, action); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		reviewOperationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "批量操作完成"})
+	key := graphi18n.MsgBatchApproved
+	if action == "reject" {
+		key = graphi18n.MsgBatchRejected
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, key)})
 }
 
 // PendingReviewCount godoc
@@ -565,4 +596,40 @@ func (h *BuildHandler) PendingReviewCount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"count": count})
+}
+
+// Both native write failures and review persistence errors stay in server logs.
+func reviewOperationError(c *gin.Context, err error) {
+	status, key := 0, ""
+	switch {
+	case errors.Is(err, service.ErrReviewBatchFailed):
+		status, key = http.StatusInternalServerError, graphi18n.MsgReviewBatchFailed
+	case errors.Is(err, commonAPI.ErrConflict):
+		status, key = http.StatusConflict, graphi18n.MsgReviewAlreadyProcessed
+	case errors.Is(err, commonAPI.ErrBadRequest):
+		status, key = http.StatusBadRequest, commoni18n.MsgInvalidParams
+	default:
+		graphOperationError(c, err)
+		return
+	}
+	_ = c.Error(err)
+	c.JSON(status, gin.H{"error": commoni18n.T(c, key)})
+}
+
+func reviewPositiveID(c *gin.Context, name string) (uint, bool) {
+	id, err := strconv.ParseUint(c.Param(name), 10, strconv.IntSize)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func reviewItemIDs(c *gin.Context) (uint, uint, bool) {
+	graphID, ok := reviewPositiveID(c, "id")
+	if !ok {
+		return 0, 0, false
+	}
+	itemID, ok := reviewPositiveID(c, "iid")
+	return graphID, itemID, ok
 }
