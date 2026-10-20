@@ -38,7 +38,8 @@ CLI_DIR = ROOT/'dist/release-linux-amd64'
 OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovered',
                   'old_credentials_rejected', 'old_sessions_revoked', 'roles_unchanged', 'suspension_preserved',
                   'secret_single_use', 'bootstrap_not_reopened', 'audit_complete', 'credentials_memory_only',
-                  'tenant_boundary_preserved'}
+                  'tenant_boundary_preserved', 'same_role_multiple_holders', 'additional_holder_recovered',
+                  'additional_role_revoked'}
 
 
 class GovernanceAssertion(API.SuiteError):
@@ -135,10 +136,14 @@ class RecoveryTerminal:
 
 def collect_recovery_credentials(terminal, credentials):
     replacements, counters = {}, {}
-    for _ in ROLES:
+    by_username = {item['username']: pid for pid, item in credentials.items()}
+    require(len(by_username) == len(credentials) and all(pid == item['id'] for pid, item in credentials.items()),
+            'offline expected administrator identities are ambiguous')
+    for _ in credentials:
         target = terminal.expect(r'恢复 [^\r\n]+（(platform\.(system|security|audit)_administrator)，账号 ([^\r\n）]+)）')
-        role = target[2]
-        require(role not in replacements and target[3] == credentials[role]['username'],
+        principal_id = by_username.get(target[3])
+        require(principal_id in credentials and principal_id not in replacements
+                and target[1] == credentials[principal_id]['role_key'],
                 'offline CLI selected an unexpected administrator identity')
         password = 'Offline-recovered-' + secrets.token_urlsafe(24)
         terminal.expect('输入新密码（至少 14 字符）: ')
@@ -146,6 +151,7 @@ def collect_recovery_credentials(terminal, credentials):
         terminal.expect('再次输入新密码: ')
         terminal.send_line(password, hidden=True)
         secret = terminal.expect(r'备用 TOTP Secret: ([A-Z2-7]+=*)\r?\n')[1]
+        require(secret not in counters, 'offline CLI reused a TOTP secret across identities')
         terminal.expect('输入当前 TOTP 验证码: ')
         now = time.time()
         counter = int(now)//30
@@ -155,10 +161,10 @@ def collect_recovery_credentials(terminal, credentials):
         require(int(time.time())//30 == counter+1, 'offline consecutive TOTP window was missed')
         terminal.send_line(totp(secret, time.time()))
         counters[secret] = counter+1
-        replacements[role] = {**credentials[role], 'password': password, 'totp': secret}
+        replacements[principal_id] = {**credentials[principal_id], 'password': password, 'totp': secret}
     attempt = terminal.expect(r'IAM 管理员凭据恢复已完成于 [^\r\n]+（Attempt ([1-9][0-9]*)）')[1]
-    for role in sorted(ROLES, key=lambda role: int(credentials[role]['id'])):
-        terminal.expect(re.escape(f'platform.{role}_administrator -> Principal {credentials[role]["id"]}') + r'\r?\n')
+    for principal_id in sorted(credentials, key=int):
+        terminal.expect(re.escape(f'{credentials[principal_id]["role_key"]} -> Principal {principal_id}') + r'\r?\n')
     terminal.finish(0)
     return replacements, counters, attempt
 
@@ -196,15 +202,15 @@ def assert_identity(payload, role, principal_id):
 
 def assert_recovery_audit(events, attempt_id, credentials, sensitive):
     rows = events.get('data', [])
-    expected = {'iam.recovery.prepared': 1, 'iam.recovery.administrator_credentials_replaced': 3, 'iam.recovery.completed': 1}
-    require(events.get('total') == 5 and len(rows) == 5 and
+    expected = {'iam.recovery.prepared': 1, 'iam.recovery.administrator_credentials_replaced': len(credentials), 'iam.recovery.completed': 1}
+    require(events.get('total') == len(credentials)+2 and len(rows) == len(credentials)+2 and
             {name: sum(row.get('event_name') == name for row in rows) for name in expected} == expected,
             'offline recovery audit events are incomplete')
     require(all(row.get('entity_id') == attempt_id and row.get('result') == 'succeeded' for row in rows),
             'offline recovery audit binding differs')
     replaced = [row for row in rows if row['event_name'] == 'iam.recovery.administrator_credentials_replaced']
     require({(row.get('principal_id'), row['details'].get('role_key')) for row in replaced} ==
-            {(credentials[role]['id'], f'platform.{role}_administrator') for role in ROLES},
+            {(item['id'], item['role_key']) for item in credentials.values()},
             'offline audit did not cover every recovered principal')
     audit = json.dumps(rows)
     for value in sensitive:
@@ -223,7 +229,7 @@ class Scenario:
         self.run_id = environment['ADDP_ONLINE_TEST_RUN_ID']
         self.stage = 'authentication'
 
-    def login(self, role):
+    def authenticate(self, role):
         phase = self.stage
         self.stage = phase + '-password'
         credentials = self.credentials[role]
@@ -240,6 +246,13 @@ class Scenario:
         self.stage = phase + '-mfa'
         result = self.public.request('POST', '/api/v1/system/auth/mfa-verifications', (200,),
                     {'challenge_token': result['mfa']['challenge_token'], 'code': totp(credentials['totp'], now)}).payload
+        self.stage = phase
+        return result
+
+    def login(self, role):
+        phase = self.stage
+        credentials = self.credentials[role]
+        result = self.authenticate(role)
         if result.get('next_action') == 'select_context':
             self.stage = phase + '-context-selection'
             result = {'session': self.public.request('POST', '/api/v1/system/auth/context-selections', (200,),
@@ -352,10 +365,20 @@ class Scenario:
         def terminal(name, action):
             return RecoveryTerminal([str(binaries[name]), action], cli_env)
 
-        before = {role: self.actors[role].request('GET', CONTEXT, (200,)).payload['authorization']
-                  for role in ROLES}
-        old_credentials = {role: dict(self.credentials[role]) for role in ROLES}
-        old_sessions = {role: self.actors[role] for role in ROLES}
+        self.stage = 'offline-additional-holder'
+        granted = self.review('audit', self.create('security', 'platform_role_grant', 'successor',
+                                                    target_role_key='platform.system_administrator'))
+        require(granted.get('status') == 'applied', 'additional same-role holder was not approved')
+        self.login('successor')
+        holder_actors = (*ROLES, 'successor')
+        before = {actor: self.actors[actor].request('GET', CONTEXT, (200,)).payload['authorization']
+                  for actor in holder_actors}
+        holders = {self.credentials[actor]['id']: {**self.credentials[actor],
+                   'role_key': before[actor]['role_assignments'][0]['role_key']} for actor in holder_actors}
+        require(len(holders) == 4 and sum(item['role_key'] == 'platform.system_administrator'
+                for item in holders.values()) == 2, 'offline recovery requires four distinct current holders')
+        old_credentials = {actor: dict(self.credentials[actor]) for actor in holder_actors}
+        old_sessions = {actor: self.actors[actor] for actor in holder_actors}
         # A suspended Audit administrator cannot independently review a System
         # recovery. Offline credential replacement must preserve this suspension.
         self.review('system', self.create('security', 'platform_identity_suspend', 'audit'))
@@ -383,7 +406,7 @@ class Scenario:
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
             console.send_line(proof, hidden=True)
-            recovered, counters, attempt_id = collect_recovery_credentials(console, self.credentials)
+            recovered, counters, attempt_id = collect_recovery_credentials(console, holders)
         self.stage = 'offline-single-use'
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
@@ -393,9 +416,9 @@ class Scenario:
         with terminal('bootstrap', 'prepare') as console:
             console.expect('IAM bootstrap was already prepared')
             console.finish(1)
-        for role in ROLES:
-            old_sessions[role].request('GET', CONTEXT, (401,))
-            self.credentials[role] = recovered[role]
+        for actor in holder_actors:
+            old_sessions[actor].request('GET', CONTEXT, (401,))
+            self.credentials[actor] = recovered[self.credentials[actor]['id']]
         self.used_steps.update(counters)
 
         self.stage = 'offline-suspension-preserved'
@@ -407,9 +430,10 @@ class Scenario:
         applied = self.review('system', self.create('security', 'platform_identity_reactivate', 'audit'))
         require(applied.get('status') == 'applied', 'recovered officers could not independently restore identity')
         self.login('audit')
+        self.login('successor')
 
         self.stage = 'offline-old-credentials'
-        for role in ROLES:
+        for role in holder_actors:
             self.public.request('POST', '/api/v1/system/login', (401,),
                         {key: old_credentials[role][key] for key in ('username', 'password')})
             # Do not mistake a coincidentally equal six-digit value for proof
@@ -438,8 +462,35 @@ class Scenario:
 
         self.stage = 'offline-audit'
         events = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=iam_recovery_attempt&page_size=100', (200,)).payload
-        assert_recovery_audit(events, attempt_id, self.credentials,
+        assert_recovery_audit(events, attempt_id, recovered,
                 [proof, *(item[key] for item in [*old_credentials.values(), *recovered.values()] for key in ('password', 'totp'))])
+        self.stage = 'offline-remove-additional-holder'
+        additional_session = self.actors['successor']
+        revoked = self.review('audit', self.create('security', 'platform_role_revoke', 'successor',
+                                                   target_role_key='platform.system_administrator'))
+        require(revoked.get('status') == 'applied', 'additional same-role assignment was not revoked')
+        additional_session.request('GET', CONTEXT, (401,))
+        # Revocation must leave the candidate's original Tenant membership and
+        # the three original Platform assignments intact.
+        result = self.authenticate('successor')
+        token = result.get('session', {}).get('access_token')
+        require(result.get('next_action') == 'session_issued' and isinstance(token, str) and token.startswith('addp_at_'),
+                'candidate retained another context after role revocation')
+        candidate_context = API.GatewayClient(self.env['GATEWAY_URL'], token, 10).request('GET', CONTEXT, (200,)).payload
+        context = candidate_context.get('context', {})
+        require(candidate_context.get('principal') == {'id': self.credentials['successor']['id'], 'type': 'user'}
+                and context.get('type') == 'tenant' and context.get('tenant_id') == self.env['ADDP_ONLINE_TEST_TENANT_ID']
+                and bool(context.get('tenant_membership_id'))
+                and candidate_context.get('authentication', {}).get('assurance_level') in {'aal2', 'aal3'}
+                and candidate_context.get('token', {}).get('type') == 'first_party_access_token'
+                and all(row.get('scope', {}).get('type') == 'tenant' for row in
+                        candidate_context.get('authorization', {}).get('role_assignments', [])),
+                'candidate Tenant membership changed after role revocation')
+        for role in ROLES:
+            current = self.actors[role].request('GET', CONTEXT, (200,)).payload
+            assert_identity(current, role, self.credentials[role]['id'])
+            require(current['authorization']['role_assignments'] == before[role]['role_assignments'],
+                    'removing the additional holder changed an original assignment')
         # Only booleans are returned; no PTY output or recovery credential leaves
         # this process or enters the artifact directory.
         return {key: True for key in OFFLINE_PROOFS}
