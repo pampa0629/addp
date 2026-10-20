@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -78,6 +80,16 @@ func TestAuthContextFailureDiagnosticsPreserveErrorsAndPrivacy(t *testing.T) {
 		err               error
 	}{
 		{name: "internal", kind: "internal", err: errors.New("private-sentinel addp_at_private-sentinel")},
+		{name: "database connection refused", kind: "connection_refused", err: authContextConnectFailure(t, syscall.ECONNREFUSED)},
+		{name: "database connection reset", kind: "connection_reset", err: authContextConnectFailure(t, syscall.ECONNRESET)},
+		{name: "database unexpected EOF", kind: "connection_closed", err: authContextConnectFailure(t, io.ErrUnexpectedEOF)},
+		{name: "database connection closed", kind: "connection_closed", err: authContextConnectFailure(t, io.EOF)},
+		{name: "other database connect failure", kind: "database_connection", err: authContextConnectFailure(t, errors.New("private-sentinel addp_at_private-sentinel"))},
+		{name: "database connect deadline", kind: "deadline_exceeded", err: authContextConnectFailure(t, context.DeadlineExceeded)},
+		{name: "database connect cancellation", kind: "context_canceled", err: authContextConnectFailure(t, context.Canceled)},
+		{name: "database connect network timeout", kind: "network_timeout", err: authContextConnectFailure(t, &net.DNSError{Err: "private-sentinel", IsTimeout: true})},
+		{name: "IPv6 refusal then IPv4 timeout", kind: "network_timeout", err: authContextConnectFailure(t, syscall.ECONNREFUSED, &net.DNSError{Err: "private-sentinel", IsTimeout: true})},
+		{name: "IPv6 refusal then IPv4 EOF", kind: "connection_closed", err: authContextConnectFailure(t, syscall.ECONNREFUSED, io.ErrUnexpectedEOF)},
 		{name: "wrapped cancellation", kind: "context_canceled", err: fmt.Errorf("private-sentinel: %w", context.Canceled)},
 		{name: "deadline", kind: "deadline_exceeded", err: context.DeadlineExceeded},
 		{name: "network timeout", kind: "network_timeout", err: &net.DNSError{Err: "private-sentinel", IsTimeout: true}},
@@ -151,4 +163,31 @@ func TestAuthContextFailureDiagnosticsIdentifyConnectionPoolWait(t *testing.T) {
 	if record["pool_wait_count_total"].(float64) < 1 || record["pool_max_open"] != float64(1) {
 		t.Fatalf("missing actual pool wait evidence: %#v", record)
 	}
+}
+
+// Exercise pgx's real ConnectError and per-address wrappers without a socket,
+// server, credential exchange or production dependency.
+func authContextConnectFailure(t *testing.T, causes ...error) error {
+	t.Helper()
+	config, err := pgconn.ParseConfig("host=127.0.0.1 user=private-sentinel password=private-sentinel dbname=private-sentinel sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range causes[1:] {
+		config.Fallbacks = append(config.Fallbacks, &pgconn.FallbackConfig{Host: "127.0.0.2", Port: config.Port})
+	}
+	attempts := 0
+	config.DialFunc = func(context.Context, string, string) (net.Conn, error) {
+		cause := causes[attempts]
+		attempts++
+		return nil, fmt.Errorf("private-sentinel: %w", cause)
+	}
+	_, err = pgconn.ConnectConfig(t.Context(), config)
+	if err == nil {
+		t.Fatal("expected the injected connection failure")
+	}
+	if attempts != len(causes) {
+		t.Fatalf("connection attempts = %d, want %d", attempts, len(causes))
+	}
+	return err
 }

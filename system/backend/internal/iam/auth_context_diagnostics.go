@@ -3,12 +3,15 @@ package iam
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"syscall"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/requestid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (s *AuthContextService) logAuthContextResolutionFailure(ctx context.Context, err error, startedAt time.Time, stage string, stageStartedAt time.Time) {
@@ -31,13 +34,27 @@ func (s *AuthContextService) logAuthContextResolutionFailure(ctx context.Context
 			state, kind = code, "database"
 		}
 	}
+	cause := err
+	var connection *pgconn.ConnectError
+	if errors.As(err, &connection) {
+		if kind == "internal" {
+			kind = "database_connection"
+		}
+		cause = authContextConnectionFailure(connection)
+	}
 	switch {
 	case errors.Is(err, context.Canceled):
 		kind = "context_canceled"
 	case errors.Is(err, context.DeadlineExceeded):
 		kind = "deadline_exceeded"
-	case errors.As(err, &timeout) && timeout.Timeout():
+	case errors.As(cause, &timeout) && timeout.Timeout():
 		kind = "network_timeout"
+	case errors.Is(cause, syscall.ECONNREFUSED):
+		kind = "connection_refused"
+	case errors.Is(cause, syscall.ECONNRESET):
+		kind = "connection_reset"
+	case errors.Is(cause, io.EOF), errors.Is(cause, io.ErrUnexpectedEOF):
+		kind = "connection_closed"
 	}
 	now := time.Now()
 	fields := []any{
@@ -65,4 +82,19 @@ func (s *AuthContextService) logAuthContextResolutionFailure(ctx context.Context
 		)
 	}
 	logger.L().ErrorContext(ctx, "AuthContext resolution failed", fields...)
+}
+
+func authContextConnectionFailure(connection *pgconn.ConnectError) error {
+	cause := connection.Unwrap()
+	// pgx joins failures in address-attempt order. A fast IPv6 refusal must not
+	// obscure the later IPv4 timeout or disconnect that ended the connection.
+	for current := cause; current != nil; current = errors.Unwrap(current) {
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			failures := joined.Unwrap()
+			if len(failures) > 0 {
+				return failures[len(failures)-1]
+			}
+		}
+	}
+	return cause
 }
