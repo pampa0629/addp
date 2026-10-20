@@ -26,16 +26,26 @@ class ConsumerProfile:
     sample_name: str
     empty_value: object
     text_cast: str
+    catalog_tables: tuple[str, ...]
 
 PROFILES = {
-    'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT'),
-    'starrocks': ConsumerProfile('starrocks', 'business', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)'),
+    'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
+    'starrocks': ConsumerProfile('starrocks', 'business', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)', ('source','customers','products','orders')),
 }
 
 
 def require(ok,message):
     if not ok:
         raise API.SuiteError(message)
+
+
+def select_source(items, profile):
+    expected={profile.namespace+'.'+table for table in profile.catalog_tables}
+    require(isinstance(items,list) and len(items)==len(expected) and
+            {item.get('full_name') for item in items}==expected and
+            all(item.get('item_type')=='table' for item in items),
+            'scan leaked ungranted tables or omitted the expected examples')
+    return next(item for item in items if item['full_name']==profile.namespace+'.source')
 
 
 def validate_item(item, profile):
@@ -111,8 +121,7 @@ def run(client,tenant,engine,timeout,profile):
     require(storage.get('store',{}).get('batch_read') is True and not storage.get('store',{}).get('batch_write'), 'read-only capabilities differ')
     scan=SUPPORT.wait_for_scan(client,engine,time.monotonic()+timeout)
     items=client.request('GET',f'/api/v1/meta/engines/{engine}/items?branch={profile.namespace}',(200,)).payload
-    require(isinstance(items,list) and len(items)==1,'scan leaked ungranted tables or omitted the source')
-    item=items[0]
+    item=select_source(items,profile)
     validate_item(item,profile)
     target=SUPPORT.build_item_locator(engine,item)
     preview=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':target,'page':1,'page_size':20}),(200,)).payload

@@ -16,6 +16,20 @@ Infra 生命周期管理独立发现进程，Business 和开发启动幂等确�
 
 首次空卷创建 `business.source` 的有序复合主键、bigint、Decimal(38,18)、中文、NULL／空串和尾随空格样例，并授予普通账号该库表的 SELECT。启动只补缺失样例，不覆盖已有行、不自动轮换密码；原生数据存在但没有 ADDP 管理员标记时拒绝初始化，密码错误时拒绝就绪，不删除卷。平台登记使用普通账号。
 
+`starrocks/init.sql` 还在同一 `business` 库创建三张业务示范表：`customers`（5个湖南城市客户）、`products`（6项物联网设备／空间数据／分析服务）、`orders`（10笔订单）。可用于目录扫描、中文预览、日期／布尔／Decimal 类型查看、按城市／商品分类／订单状态聚合及三表关联；10笔订单金额合计39179.40，包含已取消和待付款订单，不能当作已实现收入。客户邮箱使用保留的 `.invalid` 示例域名。全部样例按固定主键执行 `WHERE NOT EXISTS`，已有记录和用户修改保留，缺失样例下次标准启动时补齐；普通 reader 沿现有 `business` 库 SELECT 授权可读取。对已运行实例，需要用户执行 `bash business/scripts/restart.sh -starrocks` 后重新扫描；不需要重启 ADDP。
+
+示例查询：
+
+```sql
+SELECT c.city, COUNT(*) AS order_count, SUM(o.order_amount) AS order_total
+FROM business.orders o
+JOIN business.customers c ON o.customer_id = c.customer_id
+JOIN business.products p ON o.product_id = p.product_id
+WHERE o.status = '已完成'
+GROUP BY c.city
+ORDER BY order_total DESC;
+```
+
 正式插件与范围内确定性测试已具备。Linux 双架构正式门禁 [39270948341 / ARM64 Job 118122783775](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783775) 与 [amd64 Job 118122783767](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783767)，源码 `22fce34b3b774ef32b148268df09c8a37cbda66c`，均通过五项原生协议测试、七组 Decimal 子例、两项 Provider 集成测试和 Business 持久化验证，无跳过、清理零残留；实库版本为 `3.5.21-85fccf8`。真实验证只读账号拒写、bigint／Decimal 精度、容器重建后 Backend ID 与用户修改保留。
 
 2026-10-20 核验 [Hosted T4 39271441409 / Job 118124504710](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 的完整报告及执行日志：同一源码下六服务通过构建身份核验，独立身份登记引擎，普通十权限 User 完成 Meta 扫描、Manager API／Console 预览及属性 JSON、Develop 全表查询和文本／整数参数查询。bigint 与 Decimal(38,18) 精确字符串、中文、尾随空格、NULL／空串及参数原值均通过断言，应用清理通过、Infra 与 Business 零残留。该范围仍不含 Transfer 写入、Spark、外部 Catalog、视图、跨批快照或分布式部署。完整证据见[验收场景](../docs/spec/testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)。

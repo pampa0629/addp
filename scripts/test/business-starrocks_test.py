@@ -57,6 +57,19 @@ class BusinessStarRocksTest(unittest.TestCase):
             self.assertNotEqual(result.returncode,0)
             self.assertIn('-starrocks 必须独立使用',result.stderr)
 
+    def test_restart_failure_cannot_reuse_a_previous_initialization_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta=Path(tmp,'fe/meta'); meta.mkdir(parents=True)
+            administrator=meta/'.addp-admin-initialized'; administrator.write_text('keep')
+            initialized=meta/'.addp-business-initialized'; initialized.write_text('previous startup')
+            data=meta/'existing-data'; data.write_text('keep')
+            # Fail before launching any server, after entering an owned restart.
+            result=self.shell('sed() { return 1; }; main',env={'SR_HOME':tmp})
+            self.assertNotEqual(result.returncode,0)
+            self.assertFalse(initialized.exists(),'an earlier successful startup must not make this failed startup healthy')
+            self.assertEqual(administrator.read_text(),'keep')
+            self.assertEqual(data.read_text(),'keep')
+
     def test_initialization_is_additive_and_does_not_rotate_existing_reader(self):
         sql = (ENTRY.parent/'init.sql').read_text()
         self.assertIn('WHERE NOT EXISTS', sql)

@@ -219,14 +219,33 @@ def persistence():
             raise RuntimeError('Business native Backend identity unavailable')
         return rows[0]['BackendId']
 
+    def demo_facts():
+        counts = business_sql('SELECT (SELECT COUNT(*) FROM business.customers),'
+                              '(SELECT COUNT(*) FROM business.products),(SELECT COUNT(*) FROM business.orders);', ordinary=True).splitlines()
+        joined = business_sql('SELECT COUNT(*),SUM(o.order_amount),'
+                              'SUM(CASE WHEN o.order_amount=o.quantity*o.unit_price THEN 1 ELSE 0 END) '
+                              'FROM business.orders o JOIN business.customers c ON o.customer_id=c.customer_id '
+                              'JOIN business.products p ON o.product_id=p.product_id;', ordinary=True).splitlines()
+        typed = business_sql("SELECT (SELECT COUNT(*) FROM business.customers WHERE vip=TRUE),"
+                             "(SELECT COUNT(*) FROM business.products WHERE active=TRUE),"
+                             "(SELECT COUNT(*) FROM business.orders WHERE remark IS NULL),"
+                             "(SELECT COUNT(*) FROM business.orders WHERE remark=''),"
+                             "(SELECT MIN(joined_date) FROM business.customers),"
+                             "(SELECT MAX(order_time) FROM business.orders);", ordinary=True).splitlines()
+        if counts[-1:] != ['5\t6\t10'] or joined[-1:] != ['10\t39179.40\t10'] or typed[-1:] != ['3\t5\t1\t1\t2026-01-15\t2026-10-10 10:00:00']:
+            raise RuntimeError('Business demonstration rows, references, amounts or native types differ')
+
     try:
         launch()
         original_id = backend_id()
         precise = business_sql('SELECT id,amount FROM business.source WHERE id=9007199254740993;', ordinary=True).splitlines()
         if precise[-1:] != ['9007199254740993\t12345678901234567890.123456789012345678']:
             raise RuntimeError('Business initialization lost bigint or Decimal precision')
+        demo_facts()
         business_sql("INSERT INTO business.source VALUES ('ungranted',3,1,NULL);", ordinary=True, denied=True)
         business_sql("UPDATE business.source SET optional_text='persistent-owned-marker' WHERE id=2;")
+        business_sql("UPDATE business.customers SET customer_name='示范客户修改保留' WHERE customer_id=1001;")
+        business_sql('DELETE FROM business.products WHERE product_id=2006;')
         run('docker', 'rm', '-f', state['business_name'], timeout=90)
         launch()
         if backend_id() != original_id:
@@ -235,8 +254,13 @@ def persistence():
         count = business_sql('SELECT COUNT(*) FROM business.source;', ordinary=True).splitlines()
         if marker[-1:] != ['persistent-owned-marker'] or count[-1:] != ['2']:
             raise RuntimeError('Business restart overwrote source data or duplicated examples')
+        demo_facts()
+        customer = business_sql('SELECT customer_name FROM business.customers WHERE customer_id=1001;', ordinary=True).splitlines()
+        if customer[-1:] != ['示范客户修改保留']:
+            raise RuntimeError('Business restart overwrote a demonstration customer change')
         # Restore only this synthetic fixture's modified sample for T4 readers.
         business_sql("UPDATE business.source SET optional_text='' WHERE id=2;")
+        business_sql("UPDATE business.customers SET customer_name='湘江环境监测中心' WHERE customer_id=1001;")
         value = owned('container', state['business_name'], state)
         mapping = value['NetworkSettings']['Ports']['9030/tcp']
         if len(mapping) != 1 or mapping[0]['HostIp'] != '127.0.0.1':
@@ -248,6 +272,9 @@ def persistence():
         private(path / 'business-lifecycle.json', {'result': 'passed', 'backend_id_preserved': True,
                 'user_change_preserved': True, 'example_rows': 2, 'reader_write_denied': True,
                 'precise_bigint_decimal': True,
+                'demo_rows': {'customers': 5, 'products': 6, 'orders': 10},
+                'demo_join_and_amounts': True, 'demo_types': True,
+                'demo_user_change_preserved': True, 'missing_demo_row_restored': True,
                 'initialization': 'Business official-entrypoint wrapper', 'platform_t4_verified': False})
         print('STARROCKS_BUSINESS_PERSISTENCE_PASS', flush=True)
     except (RuntimeError, OSError, ValueError, KeyError, IndexError):

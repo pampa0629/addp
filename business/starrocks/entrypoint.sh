@@ -43,6 +43,8 @@ main() {
         }
         fresh=1
     fi
+    # A persisted marker proves a previous startup, not this initialization.
+    rm -f "$SR_HOME/fe/meta/.addp-business-initialized"
     # The official director inherits MYSQL_PWD. Disable only its autostart so
     # an empty initial root password cannot race with its password check.
     sed -i '/^\[program:director\]$/,$s/^autostart=true$/autostart=false/' "$SR_HOME/supervisor/supervisord.conf"

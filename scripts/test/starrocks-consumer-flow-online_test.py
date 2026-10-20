@@ -9,6 +9,16 @@ PROFILE = FLOW.PROFILES['starrocks']
 
 
 class StarRocksConsumerTest(unittest.TestCase):
+    def test_source_selection_requires_every_demo_table_and_rejects_unexpected_items(self):
+        items=[{'full_name':'business.'+name,'item_type':'table'} for name in ('orders','source','products','customers')]
+        self.assertIs(FLOW.select_source(items,PROFILE),items[1])
+        for bad in (items[:-1],items+[items[1]],items+[{'full_name':'business.ungranted','item_type':'table'}],
+                    [{**item,'item_type':'view'} for item in items]):
+            with self.subTest(items=bad), self.assertRaises(FLOW.API.SuiteError):
+                FLOW.select_source(bad,PROFILE)
+        gauss=[{'full_name':'addp_acceptance.source','item_type':'table'}]
+        self.assertIs(FLOW.select_source(gauss,FLOW.PROFILES['gaussdb']),gauss[0])
+
     def sample(self):
         value = GAUSS.GaussDBConsumerTest().sample()
         value['data']['columns'] = list(PROFILE.source_columns)
