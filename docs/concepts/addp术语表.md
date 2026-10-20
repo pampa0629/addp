@@ -266,8 +266,11 @@
 | query cursor | 查询游标 | 由 Service 签发、绑定发布版本、查询指纹、有效排序和最后一行排序值的 opaque 分页位置。 | 游标不承载 SQL、凭据或授权；已发布数据查询使用 keyset/cursor 分页，不以 OFFSET 作为主路径。 |
 | access index | 访问定位索引 | 为高效读取内容窗口而生成的定位索引。 | 标准落点为 `attributes.access_index.<data_type>`；例如 CSV / JSONL 表格的稀疏行号到字节偏移索引。它不是全文索引。 |
 | content hash | 内容哈希 | 对原始内容二进制流计算得到的哈希值。 | 标准落点为 `attributes.storage.content_hash`，用于判断内容是否变化；不用于定位外部全文索引记录。 |
-| basic scan | 基础扫描 | 快速发现资源树和 data item 身份的低成本扫描。 | 原则上不读取 file/object 内容。 |
-| deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 可以读取内容，但必须遵守 provider / reader 边界和成本控制。 |
+| basic scan | 基础扫描 | 低成本建立资源树、data item 身份与合法组成边界的扫描。 | 使用独立且限范围的基础识别资格，不要求尚未形成的 DataItem 先有内容 Grant。必要的有限 manifest／header 读取须声明用途、上限及引用边界；不允许业务内容采样、正文提取或全量内容哈希。 |
+| deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 内容读取须经 System 当前授权裁决及适用的 Security 检查，并遵守 Provider／reader 边界和成本控制；扫描操作权限、服务连接和执行来源均不代替源数据读取资格。 |
+| metadata collection qualification | 元数据采集资格 | System 核验后台采集活动的主体、用途、精确目标或完整范围及当前有效性的依据。 | 个人交互内容扫描核验本人当前数据读取权；租户集中采集须经具备对应引擎或数据范围管理资格的主体明确批准，不永久借用任务创建人的个人权限。不授予操作人预览、下载或转授权权利，Meta 不维护第二套源 ACL。 |
+| exact-target collection | 精确目标采集 | 仅覆盖明确指定数据项及其经核验合法组成边界的采集。 | 不包含兄弟项或未来新增的独立 DataItem；有限 refs、locator 和执行来源都是范围事实，不是许可。 |
+| full-scope collection | 完整范围采集 | 租户明确批准对某个 Engine、schema 或目录等完整范围开展的集中采集。 | 包含该边界内未来新增的数据项；批准时须明确范围、用途与允许深度，Worker 重核实际成员及当前资格。跨 Engine、换根范围或外部引用不自动覆盖，也不向普通 User 签发新增数据项的内容 Grant。 |
 | scan depth | 扫描深度 | 本次扫描要达到的深度。 | 请求字段为 `scan_depth`，只允许 `basic` / `deep`。 |
 | scanned depth | 已扫深度 | 当前 `meta_node` / `meta_item` 已达到的元数据完整度。 | 落库字段为 `scanned_depth`，取值为 `none` / `basic` / `deep`。 |
 | scan status | 扫描状态 | 扫描任务或最近扫描过程的运行状态。 | node 表达最近一次覆盖其范围的过程状态，不表达当前数据可用性或扫描深度；局部 item 刷新不覆盖父 node 状态。 |
@@ -640,6 +643,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | HTTP interface quality | HTTP 接口质量 | 平台实际运行实例在确定窗口内处理 HTTP 请求的数量、服务端失败比例、耗时分布及独立活动请求数。 | 5xx 及超时、取消、写失败或异常中断计服务端失败，同一请求最多一次；4xx 单列，不解析正文推断业务失败。平台共享接口总体归平台运维；租户发布服务的调用统计归 Service 对象授权，二者不混合。 |
 | ingress request rate | 入口请求速率 | Gateway ingress 实例在确定窗口内接收请求的每秒平均数量。 | 与 Backend 处理速率分别解释，不能相加为全局 QPS；活动请求数表示并发，不能由 QPS 代替。 |
 | distributed trace | 分布式追踪 | 由 Trace/Span 与上下文传播描述的一次跨服务调用过程。 | request_id、trace_id 和 execution 身份不互相替代；缺失或采样不能证明没有调用关系。 |
+| trace retention decision | 追踪保留决策 | 收集已结束跨度后，在有界等待和容量内决定是否保留一条追踪。 | 错误和慢请求优先、普通成功概率保留；队列、迟到、限额及故障可能产生缺口，不能承诺全部异常完整保存；与全量 HTTP 质量统计分开。 |
 | observed call relationship | 观测调用关系 | 从明确配置或实际追踪得到的服务、引擎之间的调用关系。 | 注明来源、窗口和覆盖范围；与部署关联、数据血缘分别表达，不能仅凭关系染色确认根因。 |
 
 ## Cleanup 与生命周期
