@@ -24,6 +24,8 @@ REGISTRATION = import_module('scripts.test.online-engine-registration')
 SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
+READER_PERMISSIONS |= {'transfer.task.create', 'transfer.task.read', 'transfer.task.execute',
+                       'transfer.task.delete', 'system.execution_authorization.create'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
@@ -39,6 +41,9 @@ BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh
 WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_without_write',
                     'table_text_and_tree_filters', 'recipient_type_and_account_filters',
                     'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read']
+PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
+                     'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
+                     'output_withdrawal_denies_read']
 
 
 def require(condition, message):
@@ -96,6 +101,39 @@ def locator(engine, name, item_id=None):
     if item_id is not None:
         query['item_id'] = item_id
     return f'addp://engine/{engine}/path/public/{name}?' + urlencode(query)
+
+
+def production_task(engine, source, name):
+    require(re.fullmatch(r'pg_initial_[a-f0-9]{32}', name), 'invalid owned production name')
+    return {'name': name, 'task_type': 'sync', 'enabled': False, 'schedule': '', 'auto_scan_metadata': False,
+            'config': {'runtime': {'boundary': 'bounded'}, 'load': {'mode': 'snapshot'},
+                'source': {'locator': locator(engine, 'metric_people', source['id']),
+                           'data_type': 'table', 'representation': 'native'},
+                'target': {'parent_locator': f'addp://engine/{engine}/path/public?' + urlencode(
+                    {'type': 'schema', 'node_id': source['node_id']}), 'name': name,
+                    'data_type': 'table', 'representation': 'native', 'policy': {'apply_mode': 'replace'}},
+                'transforms': [{'type': 'field_mapping', 'version': 'v1', 'mode': 'project', 'fields': [
+                    {'source': 'person_id', 'target': 'person_id', 'target_type': 'string', 'nullable': False}]}],
+                'batch_size': 100}}
+
+
+def validate_production_grant(row, *, execution, path, recipient, facts, source_expiry):
+    require(row.get('approval_mode') == 'task_production' and row.get('producer_owner') == 'transfer'
+            and row.get('production_execution_id') == execution and row.get('catalog_path') == path
+            and row.get('item_fingerprint') == facts['item_fingerprint']
+            and row.get('boundary_hash') == facts['boundary_hash']
+            and row.get('recipient_type') == 'user' and row.get('recipient_id') == recipient
+            and row.get('operator_principal_id') == recipient and row.get('action') == 'read'
+            and row.get('requirement_version') == '0' and row.get('catalog_request_id') is None
+            and row.get('expiry_mode') == 'at_time' and row.get('revocation') is None
+            and re.fullmatch(r'[1-9][0-9]*', row.get('issuer_principal_id', ''))
+            and re.fullmatch(r'[1-9][0-9]*', row.get('issuer_membership_id', ''))
+            and row['issuer_principal_id'] != recipient,
+            'initial Grant did not bind the exact output, human origin and independent machine issuer')
+    require(str(uuid.UUID(row['request_id'])) == row['request_id']
+            and datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
+                == datetime.fromisoformat(source_expiry.replace('Z', '+00:00')),
+            'initial Grant changed the inherited source expiry')
 
 
 def basic_scan(reader, engine, names):
@@ -365,6 +403,97 @@ class Lifecycle:
         self.recipients = {('user', recipient)}
         self.source_observations = []
         self.expiry_grant = None
+        self.production_tasks = {}
+
+    def collect_production_grants(self):
+        # Resolve even an unknown start response using only executions of our
+        # captured task definition, never an arbitrary output Grant or prefix.
+        for task, path in self.production_tasks.items():
+            executions = self.reader.request('GET', f'/api/v1/transfer/task-definitions/{task}/executions?page_size=100', (200,)).payload
+            require(executions.get('total') == len(executions.get('data', [])), 'production history was truncated')
+            ids = {row['execution_id'] for row in executions['data'] if row.get('task_id') == task}
+            rows = self.listing(history=True, catalog_path=path)
+            require(rows.get('total') == len(rows.get('data', [])), 'production Grant history was truncated')
+            for row in rows['data']:
+                require(row.get('approval_mode') == 'task_production' and row.get('producer_owner') == 'transfer'
+                        and row.get('production_execution_id') in ids and row.get('catalog_path') == path
+                        and row.get('recipient_type') == 'user' and row.get('recipient_id') == self.recipient,
+                        'refusing to own a foreign output Grant')
+                if row['request_id'] not in self.grants:
+                    self.grants.append(row['request_id'])
+
+    def production_flow(self, report):
+        report['phase'] = 'initial_output_authorization'
+        source = item(self.reader, self.engine, 'metric_people')
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        source_grant, source_body = self.grant(facts, seconds=600)
+        name = 'pg_initial_' + uuid.uuid4().hex
+        path = table_path(self.engine, name)
+        self.paths.append(path)  # Register the exact cleanup target before any task write.
+        existing = self.reader.request('GET', f'/api/v1/meta/engines/{self.engine}/items?branch=public',
+                                       (200,), response_type=list).payload
+        require(not any(row.get('full_name') == 'public.' + name for row in existing), 'output already exists in Meta')
+        task = self.reader.request('POST', '/api/v1/transfer/task-definitions', (201,),
+                                   production_task(self.engine, source, name)).payload
+        task_id = task.get('id')
+        require(type(task_id) is int and task_id > 0, 'production task identity missing')
+        self.production_tasks[task_id] = path
+        started = self.reader.request('POST', f'/api/v1/transfer/task-definitions/{task_id}/start', (200,)).payload
+        execution = started.get('execution_id')
+        require(str(uuid.UUID(execution)) == execution, 'production execution identity missing')
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            current = self.reader.request('GET', f'/api/v1/transfer/executions/{execution}', (200,)).payload
+            require(current.get('execution_id') == execution and current.get('task_id') == task_id,
+                    'production execution binding changed')
+            require(current.get('status') in {'pending', 'running', 'success'}, 'physical production failed')
+            state = current.get('metadata', {}).get('initial_authorization')
+            if current['status'] == 'success':
+                require(current.get('records_read') == 2 and current.get('records_written') == 2,
+                        'production did not write the exact two rows')
+                require(isinstance(state, dict) and set(state) <= {'status', 'code'}
+                        and state.get('status') in {'pending', 'issued'}, 'initial authorization rejected or leaked private state')
+                if state['status'] == 'issued':
+                    break
+            time.sleep(1)
+        else:
+            raise SuiteError('initial production authorization exceeded its deadline')
+        self.collect_production_grants()
+        rows = self.listing(history=True, state='active', catalog_path=path)
+        require(rows.get('total') == 1 and len(rows.get('data', [])) == 1, 'initial output needs exactly one active Grant')
+        row = rows['data'][0]
+        output = item(self.reader, self.engine, name)
+        output_facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, path)
+        validate_production_grant(row, execution=execution, path=path, recipient=self.recipient,
+                                  facts=output_facts, source_expiry=source_body['expires_at'])
+        scans = self.reader.request('GET', '/api/v1/meta/scan/runs?page_size=100', (200,)).payload
+        require(scans.get('total') == len(scans.get('items', [])), 'basic scan history was truncated')
+        children = [scan for scan in scans['items'] if scan.get('parent_execution_id') == execution]
+        require(len(children) == 1 and children[0].get('status') == 'success'
+                and children[0].get('source') == 'transfer' and children[0].get('triggered_by') == int(self.recipient)
+                and children[0].get('scan_context') == {'engine_id': self.engine, 'scan_depth': 'basic'}
+                and children[0].get('metadata', {}).get('items_scanned') == 1
+                and children[0].get('metadata', {}).get('catalog_nodes_scanned') == 0,
+                'output was not identified by one exact basic-only child scan')
+        target = locator(self.engine, name, output['id'])
+        preview(self.reader, target, True, 2)
+        preview(self.outsider, target, False)
+        self.revoke(source_grant)
+        preview(self.reader, locator(self.engine, 'metric_people', source['id']), False)
+        preview(self.reader, target, True, 2)
+        require(self.listing(history=True, state='active', catalog_path=path) == rows,
+                'source withdrawal changed the output Grant')
+        self.revoke(row['request_id'])
+        preview(self.reader, target, False)
+        revoked = self.listing(history=True, state='revoked', catalog_path=path)
+        require(revoked['total'] == 1 and revoked['data'][0]['request_id'] == row['request_id']
+                and revoked['data'][0].get('revocation'), 'output revocation history missing')
+        report['initial_production'] = {'task_id': task_id, 'execution_id': execution,
+            'grant_id': row['request_id'], 'item_fingerprint': output_facts['item_fingerprint'],
+            'boundary_hash': output_facts['boundary_hash'], 'scan_execution_id': children[0]['execution_id'],
+            'scan_depth': 'basic', 'rows': 2, 'inherited_expiry': row['expires_at'],
+            'source_withdrawn_output_readable': True, 'output_withdrawn_read_denied': True}
+        report['checks'].extend(PRODUCTION_CHECKS)
 
     def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None, catalog_path=None):
         query = {'catalog_path': json.dumps(self.path if catalog_path is None else catalog_path, separators=(',', ':')),
@@ -485,6 +614,16 @@ class Lifecycle:
 
     def cleanup(self):
         errors = []
+        if self.production_tasks:
+            try:
+                # Close our source first. The shared source lock prevents a
+                # still-delivering claim from issuing after this observation.
+                for row in self.listing(history=True, state='active')['data']:
+                    require(row['request_id'] in self.grants, 'unowned production source Grant')
+                    self.revoke(row['request_id'])
+                self.collect_production_grants()
+            except Exception:
+                errors.append('initial production Grant recovery failed')
         for command in self.denies:
             try:
                 self.release(command, cleanup=True)
@@ -506,6 +645,12 @@ class Lifecycle:
                         'current source rules remain after cleanup')
             except Exception:
                 errors.append('residual verification failed')
+        for task in self.production_tasks:
+            try:
+                self.reader.request('DELETE', f'/api/v1/transfer/task-definitions/{task}', (200,))
+                self.reader.request('GET', f'/api/v1/transfer/task-definitions/{task}', (404,))
+            except Exception:
+                errors.append('production task cleanup failed')
         require(not errors, '; '.join(errors))
 
     def catalog_flow(self, report, business, confirmer):
@@ -1202,6 +1347,7 @@ def main():
         lifecycle.function_permission_flow(report, business, confirmer)
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
+        lifecycle.production_flow(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

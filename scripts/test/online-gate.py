@@ -49,7 +49,7 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "-m", "scripts.test.pg-source-authorization-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
                   ("meta", "META_URL"), ("security", "SECURITY_URL"),
-                  ("manager", "MANAGER_URL"), ("catalog", "CATALOG_URL")),
+                  ("manager", "MANAGER_URL"), ("catalog", "CATALOG_URL"), ("transfer", "TRANSFER_URL")),
     ),
     "platform-administrator-governance": Suite(
         command=(sys.executable, "-m", "scripts.test.platform-administrator-governance-online"),

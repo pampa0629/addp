@@ -224,7 +224,8 @@ test('PG member exits silently renew the same Console and Manager session withou
   if (!control || !artifacts || !binding.run_id || !binding.locator) throw new Error('incomplete PG browser binding')
   const destination = resolve(artifacts, 'pg-authorization-browser.json')
   const route = `/manager/data-explorer?locator=${encodeURIComponent(binding.locator)}`
-  const expectedPermissions = ['manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read']
+  const expectedPermissions = ['manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
+    'system.execution_authorization.create', 'transfer.task.create', 'transfer.task.delete', 'transfer.task.execute', 'transfer.task.read']
   const observations = [], checks = [], failedResponses = [], pageErrors = []
   let phase = 'login', businessStarted = false, loginRequests = 0, anonymousRefreshes = 0
   const refreshes = [], staleResponses = []

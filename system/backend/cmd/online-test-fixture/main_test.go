@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -112,11 +113,11 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 		t.Fatalf("PG consumer fixture is not registered: %v %v", permissions, err)
 	}
 	for _, key := range permissions {
-		if strings.HasPrefix(key, "system.") || strings.HasPrefix(key, "iam.") {
+		if (strings.HasPrefix(key, "system.") && key != "system.execution_authorization.create") || strings.HasPrefix(key, "iam.") {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 5 || len(sourceInitializerPermissions) != 4 {
+	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 5 || len(sourceInitializerPermissions) != 4 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
 	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read", "system.engine_access_approval_requirement.update"} {
@@ -392,6 +393,40 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestGraphProtectionReviewerCredentialsReachChildEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.env")
+	const token = "synthetic-review-access-token"
+	const username = "external-online-graph-reviewer"
+	const password = "synthetic-review'quoted-password"
+	if err := writeEnvironmentFile(path, map[string]string{
+		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN": token,
+		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME":     username,
+		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD":     password,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("review credentials mode = %o, want 600", info.Mode().Perm())
+	}
+	// Start without inherited credentials, then source the real exported file.
+	// This catches fields created in memory but omitted from the public helper's
+	// owner-only output, as well as quoting mistakes in the fixture password.
+	command := exec.Command("bash", "-c", `set -eu
+source "$1"
+[ "${ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN:?}" = "$2" ]
+[ "${ADDP_ONLINE_GRAPH_REVIEW_USERNAME:?}" = "$3" ]
+[ "${ADDP_ONLINE_GRAPH_REVIEW_PASSWORD:?}" = "$4" ]
+`, "graph-review-environment", path, token, username, password)
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if err := command.Run(); err != nil {
+		t.Fatalf("review credentials did not reach isolated child: %v", err)
+	}
 }
 
 func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {

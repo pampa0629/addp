@@ -1289,5 +1289,142 @@ class PGBrowserObservationTest(unittest.TestCase):
                         browser.finish()
 
 
+class InitialProductionOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.execution = 'b9041a08-785c-48bc-bb12-c0650b720dac'
+        self.command = 'c9041a08-785c-48bc-bb12-c0650b720dac'
+        self.source_command = 'd9041a08-785c-48bc-bb12-c0650b720dac'
+        self.facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64}
+        self.expiry = '2030-10-20T10:00:00+00:00'
+        self.calls, self.source_revoked, self.output_revoked = [], False, False
+        self.bad = None
+        self.reader, self.operator = Mock(), Mock()
+        self.lifecycle = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
+                                          'external-online-consumer', 'private-password')
+        self.lifecycle.grants.append(self.source_command)
+        self.lifecycle.grant = Mock(return_value=(self.source_command, {'expires_at': self.expiry}))
+        self.lifecycle.listing = Mock(side_effect=self.listing)
+        self.lifecycle.revoke = Mock(side_effect=self.revoke)
+        self.reader.request.side_effect = self.request
+        patch.object(ONLINE, 'item', return_value={'id': 10, 'node_id': 7}).start()
+        patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
+        self.preview = patch.object(ONLINE, 'preview', side_effect=self.read).start()
+        patch.object(ONLINE.time, 'sleep').start()
+        self.addCleanup(patch.stopall)
+
+    def row(self):
+        row = dict(request_id=self.command, approval_mode='task_production', producer_owner='transfer',
+                   production_execution_id=self.execution, catalog_path=self.path, recipient_type='user', recipient_id='33',
+                   operator_principal_id='33', action='read', requirement_version='0', expiry_mode='at_time',
+                   expires_at=self.expiry, revocation={'reason': 'test'} if self.output_revoked else None,
+                   issuer_principal_id='55', issuer_membership_id='66', **self.facts)
+        if self.bad:
+            row.update(self.bad)
+        return row
+
+    def request(self, method, url, expected, body=None, **kwargs):
+        self.calls.append((method, url))
+        status, result = 200, {}
+        if url.endswith('/items?branch=public'):
+            result = []
+        elif method == 'POST' and url.endswith('/task-definitions'):
+            self.assertFalse(body['auto_scan_metadata'])
+            self.assertEqual(body['config']['target']['policy'], {'apply_mode': 'replace'})
+            self.path = ONLINE.table_path(2, body['config']['target']['name'])
+            status, result = 201, {'id': 91}
+        elif url.endswith('/91/start'):
+            result = {'execution_id': self.execution}
+        elif url.endswith('/91/executions?page_size=100'):
+            result = {'total': 1, 'data': [{'execution_id': self.execution, 'task_id': 91}]}
+        elif url.endswith('/executions/' + self.execution):
+            result = {'execution_id': self.execution, 'task_id': 91, 'status': 'success',
+                      'records_read': 2, 'records_written': 2,
+                      'metadata': {'initial_authorization': {'status': 'issued'}}}
+        elif url.endswith('/scan/runs?page_size=100'):
+            result = {'total': 1, 'items': [{'parent_execution_id': self.execution, 'status': 'success',
+                'execution_id': 'e9041a08-785c-48bc-bb12-c0650b720dac', 'source': 'transfer', 'triggered_by': 33,
+                'scan_context': {'engine_id': 2, 'scan_depth': 'basic'},
+                'metadata': {'items_scanned': 1, 'catalog_nodes_scanned': 0}}]}
+        elif method == 'GET' and url.endswith('/task-definitions/91'):
+            status = 404
+        elif method != 'DELETE':
+            self.fail('unexpected production request ' + url)
+        self.assertIn(status, expected)
+        return SimpleNamespace(status=status, payload=result)
+
+    def listing(self, **options):
+        if options.get('catalog_path') == getattr(self, 'path', None):
+            rows = [self.row()]
+            if options.get('state') == 'active' and self.output_revoked:
+                rows = []
+            if options.get('state') == 'revoked' and not self.output_revoked:
+                rows = []
+            if not options.get('history') and self.output_revoked:
+                rows = []
+        else:
+            rows = [] if self.source_revoked else [{'request_id': self.source_command}]
+        return {'total': len(rows), 'data': rows}
+
+    def revoke(self, command):
+        self.calls.append(('revoke', command))
+        if command == self.source_command:
+            self.source_revoked = True
+        else:
+            self.assertEqual(command, self.command)
+            self.output_revoked = True
+
+    def read(self, client, target, allowed, expected=None):
+        source = '/metric_people?' in target
+        actual = (not self.source_revoked if source else not self.output_revoked) and client is self.reader
+        self.assertEqual(allowed, actual)
+        if allowed:
+            self.assertEqual(expected, 2)
+
+    def test_initial_output_checks_actual_reads_and_cleans_only_owned_task(self):
+        report = {'checks': []}
+        self.lifecycle.production_flow(report)
+        self.assertEqual(report['checks'], ONLINE.PRODUCTION_CHECKS)
+        self.assertIn(self.command, self.lifecycle.grants)
+        self.assertEqual(self.preview.call_count, 5)
+        self.lifecycle.cleanup()
+        self.assertIn(('DELETE', '/api/v1/transfer/task-definitions/91'), self.calls)
+        self.assertIn(('GET', '/api/v1/transfer/task-definitions/91'), self.calls)
+        self.assertEqual(report['initial_production']['scan_depth'], 'basic')
+
+    def test_initial_grant_rejects_wrong_target_origin_source_or_expiry(self):
+        for invalid in ({'approval_mode': 'independent'}, {'producer_owner': 'develop'},
+                        {'production_execution_id': 'f9041a08-785c-48bc-bb12-c0650b720dac'},
+                        {'recipient_id': '34'}, {'operator_principal_id': '35'}, {'issuer_principal_id': '33'},
+                        {'boundary_hash': 'c' * 64}, {'requirement_version': '1'},
+                        {'expires_at': '2031-10-20T10:00:00Z'}):
+            self.bad = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
+                self.lifecycle.production_flow({'checks': []})
+
+    def test_unknown_start_response_cleanup_recovers_by_owned_task_execution(self):
+        original = self.request
+        def lost(method, url, expected, body=None, **kwargs):
+            result = original(method, url, expected, body, **kwargs)
+            if url.endswith('/91/start'):
+                raise ONLINE.SuiteError('response lost')
+            return result
+        self.reader.request.side_effect = lost
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'response lost'):
+            self.lifecycle.production_flow({'checks': []})
+        self.lifecycle.cleanup()
+        self.assertTrue(self.source_revoked and self.output_revoked)
+        self.assertIn(self.command, self.lifecycle.grants)
+        self.assertLess(self.calls.index(('revoke', self.source_command)),
+                        self.calls.index(('GET', '/api/v1/transfer/task-definitions/91/executions?page_size=100')))
+
+    def test_cleanup_refuses_foreign_execution_grant(self):
+        self.bad = {'production_execution_id': 'f9041a08-785c-48bc-bb12-c0650b720dac'}
+        with self.assertRaises(ONLINE.SuiteError):
+            self.lifecycle.production_flow({'checks': []})
+        with self.assertRaises(ONLINE.SuiteError):
+            self.lifecycle.cleanup()
+        self.assertFalse(self.output_revoked)
+
+
 if __name__ == '__main__':
     unittest.main()

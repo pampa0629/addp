@@ -2589,7 +2589,7 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
     if "pg-source-authorization" not in registered:
         return
     suite = load_suite_registry(repository)["pg-source-authorization"]
-    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "security", "manager", "catalog"}:
+    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "security", "manager", "catalog", "transfer"}:
         raise RegistrationError("PG authorization requires its owners including Security and manual first acceptance")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  pg-authorization-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
@@ -2602,7 +2602,8 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
             'playwright install --with-deps chromium', 'export CONSOLE_URL=',
             'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', 'export SECURITY_URL=',
-            '-system -meta -security -manager -catalog',
+            '-system -meta -security -manager -catalog -transfer',
+            'export TRANSFER_SERVICE_CLIENT_SECRET=', 'export META_SERVICE_CLIENT_SECRET=',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
@@ -2617,7 +2618,10 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'mutate_source_content(', 'deny_survives_content_change_and_basic_rescan',
             'content_change_and_replay_do_not_restore_withdrawn_grant',
             'lifecycle.workspace_flow(', 'with WorkspaceObservation(', 'pg-authorization-workspace.json',
-            'browser withdrawal did not preserve its exact Grant history'),
+            'browser withdrawal did not preserve its exact Grant history',
+            'lifecycle.production_flow(', "'auto_scan_metadata': False", 'self.collect_production_grants()',
+            'new_pg_output_initial_grant_issued', 'output_survives_source_withdrawal',
+            'output_withdrawal_denies_read'),
         "business/scripts/online-metric-postgres-fixture.sh": (
             'content-change|content-reset)', 'pg-source-authorization', 'container ownership mismatch',
             'LOCK TABLE public.metric_people', 'pg-content:changed', 'pg-content:baseline'),

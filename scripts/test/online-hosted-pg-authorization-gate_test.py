@@ -63,6 +63,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
     def test_requires_security_before_manager_and_in_readiness_scope(self):
         gate = importlib.import_module('scripts.test.online-gate')
         self.assertIn(('security', 'SECURITY_URL'), gate.SUITES['pg-source-authorization'].services)
+        self.assertIn(('transfer', 'TRANSFER_URL'), gate.SUITES['pg-source-authorization'].services)
         self.host._executable('make', '''
             #!/usr/bin/env bash
             [ "${SECURITY_URL:-}" = http://127.0.0.1:8194 ] || exit 9
@@ -188,6 +189,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                     self.assertIn('start:-system', trace)
                     self.assertIn('start:-manager', trace)
                     self.assertIn('start:-catalog', trace)
+                    self.assertIn('start:-transfer', trace)
                     self.assertIn('browser-install', trace)
                     self.assertLess(trace.index('browser-install'), trace.index('make:test-online'))
                     self.assertIn('make:test-online ONLINE_SUITE=pg-source-authorization', trace)

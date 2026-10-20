@@ -91,6 +91,8 @@ var sourceInitializerPermissions = []string{
 
 var pgAuthorizationConsumerPermissions = []string{
 	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete",
+	"system.execution_authorization.create",
 }
 
 // The formal authorizer role supplies both handling workflows and their reads.
