@@ -122,6 +122,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_band_recommendation_profile(self.repository,registered)
             target.write_text(original)
 
+    def test_nibble_capacity_requires_manual_limits_disk_and_full_oracle(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',
+                 'scripts/test/online-hosted-raster-nibble-capacity-gate.sh',
+                 'scripts/test/raster-nibble-capacity-online.py', 'business/scripts/online-raster-nibble-capacity-fixture.py',
+                 'engines/geopython-workflow/test_online_nibble_capacity_fixture.py')
+        for relative in paths:
+            target = self.repository/relative; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source/relative, target)
+        registered = {'raster-nibble-capacity'}
+        CHECK.validate_raster_nibble_capacity_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "inputs.suite != 'raster-nibble-capacity'"),
+                (paths[3], '--cpus 4 --memory 2g --memory-swap 2g'),
+                (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800'), (paths[3], 'TMPDIR='),
+                (paths[4], 'raster.strict_sizes'), (paths[4], 'capacity.validate_measurement'),
+                (paths[4], 'validate_disk'), (paths[5], 'expected_block'),
+                (paths[5], 'running*size**2*51'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce')):
+            target = self.repository/relative; original = target.read_text()
+            target.write_text(original.replace(fragment, 'omitted'))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_nibble_capacity_profile(self.repository, registered)
+            target.write_text(original)
+
     def test_nibble_requires_manual_nfs_exact_donors_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-nibble-gate.sh', 'scripts/test/raster-nibble-persistence-online.py', 'business/scripts/online-raster-nibble-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_nibble_fixture.py', 'Makefile')

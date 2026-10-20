@@ -2211,6 +2211,49 @@ def validate_raster_band_recommendation_profile(repository: Path, registered: se
             raise RegistrationError(f'band-recommendation persistence contract is incomplete: {relative}')
 
 
+def validate_raster_nibble_capacity_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-nibble-capacity'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-nibble-capacity-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-nibble-capacity'" not in job.group('body')
+        or "&& inputs.suite != 'raster-nibble-capacity'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or 'timeout-minutes: 240' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('nibble capacity requires an independent manual Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-raster-nibble-capacity-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow',
+            '--wait-protection-owners develop,manager', '--cpus 4 --memory 2g --memory-swap 2g',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800', 'TMPDIR=', '--start-runtime',
+            'online-raster-nibble-capacity-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+        'scripts/test/raster-nibble-capacity-online.py': (
+            'raster.EDITOR_PERMISSIONS', 'capacity.cgroup_directory', 'capacity.validate_measurement',
+            'fixture.require_disk', 'validate_disk', 'raster.strict_sizes', 'raster.wait_lineage',
+            'triggered_by', 'scan_ids(client)', 'policy_restored', 'previous_artifacts_unchanged',
+            'private_allocated_peak_bytes', 'runtime_container_id'),
+        'business/scripts/online-raster-nibble-capacity-fixture.py': (
+            'NFSExport', 'SIZES = (4096, 10980)', "SPACING = {'sparse': 128, 'dense': 2}",
+            'expected_block', 'running*size**2*51', 'full_check=True',
+            'capacity complete pixel values differ', 'capacity complete mask differs',
+            'previous capacity artifact changed', 'capacity source file changed'),
+        'engines/geopython-workflow/test_online_nibble_capacity_fixture.py': (
+            'test_capacity_analytical_oracle_matches_original_donor_bruteforce',
+            'test_nibble_capacity_real_gdal_complete_pixels_and_previous_immutable',
+            'test_nibble_capacity_oracle_rejects_corrupt_or_previous_output'),
+        'Makefile': ('@$(MAKE) test-raster-nibble-capacity-online-runner',
+            'test_online_nibble_capacity_fixture.py', 'scripts/test/raster-nibble-capacity-online_test.py',
+            'scripts/test/online-raster-nibble-capacity-fixture_test.py',
+            'scripts/test/online-hosted-raster-nibble-capacity-gate_test.py',
+            'test_nibble_capacity_requires_manual_limits_disk_and_full_oracle')}
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'nibble capacity contract incomplete: {relative}')
+
+
 def validate_raster_nibble_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-nibble-persistence'
     if suite not in registered:
@@ -2820,6 +2863,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_mode_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
+    validate_raster_nibble_capacity_profile(repository, registered)
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)

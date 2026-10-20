@@ -46,3 +46,5 @@
 - [docs/guide/addp部署和开发步骤.md](../docs/guide/addp部署和开发步骤.md) - 部署与开发启动指南
 
 **Version**: 0.1.14
+
+分类蚕食容量使用独立手工入口 `make test-online ONLINE_SUITE=raster-nibble-capacity`；仅允许专属 GitHub Hosted Linux 部署，经 `online-hosted-raster-nibble-capacity-gate.sh` 完成准入、同源产品 Runtime、NFS、资源限制和零残留清理。本地确定性入口为 `make test-raster-nibble-capacity-online-runner` 与 `make test-geopython-workflow`；完整场景、资源观测和证据边界见[专项规范](../docs/spec/testing/scenarios/Manager与空间成果.md#分类蚕食容量raster-nibble-capacity)。
