@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "decision_wait_seconds": 120,
+  "pending_traces": 10000,
+  "normal_percent": 5,
+  "slow_ms": 1000,
+  "retained_spans_per_second": 100,
+  "retention_hours": 72
+}

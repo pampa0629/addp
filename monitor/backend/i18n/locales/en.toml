@@ -168,3 +168,21 @@ other = "Resource query exceeds budget"
 
 ["monitor.resource_query.busy"]
 other = "Resource query concurrency exhausted; retry later"
+
+["monitor.trace.invalid"]
+other = "Invalid trace query"
+
+["monitor.trace.unavailable"]
+other = "Trace collection is not connected or unavailable"
+
+["monitor.trace.budget"]
+other = "Trace query exceeds its budget"
+
+["monitor.trace.busy"]
+other = "Too many concurrent trace queries"
+
+["monitor.trace.not_found"]
+other = "Trace not found or not readable"
+
+["monitor.trace.timeout"]
+other = "Trace query timed out"

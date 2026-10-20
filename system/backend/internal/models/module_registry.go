@@ -146,6 +146,7 @@ type ModuleRuntimeInstanceInfo struct {
 type ModuleRuntimeInstanceFilter struct {
 	ProcessMetricsDeclared *bool
 	IDs                    []uint
+	InstanceIDs            []string
 	ModuleName             string
 	RegisteredHost         string
 	NodeName               string

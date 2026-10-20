@@ -51,7 +51,7 @@ func TestIAMDelegationHandlerContract(t *testing.T) {
 			"tool_call_id": "call-1",
 		})
 		request.Header.Set("Authorization", "Bearer addp_at_source")
-		request.Header.Set(requestidmiddleware.RequestIDHeader, "delegation-request")
+		request.Header.Set(requestidmiddleware.RequestIDHeader, "22222222-2222-4222-8222-222222222222")
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, request)
 
@@ -66,7 +66,7 @@ func TestIAMDelegationHandlerContract(t *testing.T) {
 			t.Fatalf("delegation response=%#v", response)
 		}
 		if service.input == nil || service.input.SourceAccessToken != "addp_at_source" ||
-			service.input.Audit.RequestID == nil || *service.input.Audit.RequestID != "delegation-request" ||
+			service.input.Audit.RequestID == nil || *service.input.Audit.RequestID != "22222222-2222-4222-8222-222222222222" ||
 			service.input.Audit.HTTPStatus == nil || *service.input.Audit.HTTPStatus != http.StatusCreated {
 			t.Fatalf("delegation input=%#v", service.input)
 		}

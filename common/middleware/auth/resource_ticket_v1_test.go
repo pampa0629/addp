@@ -63,7 +63,7 @@ func TestResourceTicketMiddlewareResolvesEveryRequestAndInjectsCanonicalContext(
 		request.AddCookie(&http.Cookie{Name: BrowserResourceAccessTicketCookieName, Value: "addp_rat_manager"})
 		request.AddCookie(&http.Cookie{Name: "other_cookie", Value: "must-not-forward"})
 		request.Header.Set("Accept-Language", "en")
-		request.Header.Set(requestidmiddleware.RequestIDHeader, "resource-request")
+		request.Header.Set(requestidmiddleware.RequestIDHeader, "22222222-2222-4222-8222-222222222222")
 		request.Header.Set("X-Internal-API-Key", "must-not-forward")
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
@@ -72,7 +72,7 @@ func TestResourceTicketMiddlewareResolvesEveryRequestAndInjectsCanonicalContext(
 		}
 	}
 	if calls.Load() != 2 || authorizationHeader != "Bearer addp_rat_manager" || cookieHeader != "" ||
-		internalAPIKeyHeader != "" || languageHeader != "en" || requestIDHeader != "resource-request" {
+		internalAPIKeyHeader != "" || languageHeader != "en" || requestIDHeader != "22222222-2222-4222-8222-222222222222" {
 		t.Fatalf("calls=%d auth=%q cookie=%q internal=%q language=%q request_id=%q",
 			calls.Load(), authorizationHeader, cookieHeader, internalAPIKeyHeader, languageHeader, requestIDHeader)
 	}

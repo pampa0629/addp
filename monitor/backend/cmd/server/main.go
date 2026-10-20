@@ -25,6 +25,7 @@ import (
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/service"
+	"github.com/addp/monitor/internal/tracequery"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
@@ -163,6 +164,7 @@ func main() {
 	go httpRules.Run(runtimeContext)
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
+	traceService := service.NewTraceService(systemServiceClient, tracequery.FromEnvironment())
 	router := api.SetupRouter(
 		queryService,
 		statisticsService,
@@ -181,7 +183,7 @@ func main() {
 		runtimeHealthService,
 		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
 		resourceObservations, resourceRules, httpRules,
-	)
+		traceService)
 
 	go func() {
 		ticker := time.NewTicker(cfg.AlertEvaluationInterval)

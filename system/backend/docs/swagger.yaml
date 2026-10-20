@@ -5346,9 +5346,13 @@ definitions:
         type: string
       role:
         type: string
+      span_id:
+        type: string
       stack:
         type: string
       timestamp:
+        type: string
+      trace_id:
         type: string
       truncated:
         type: boolean
@@ -9760,6 +9764,11 @@ paths:
         in: query
         name: node_ip
         type: string
+      - description: 启动实例标识精确集合，最多100个 | Exact startup instance identities, at most
+          100
+        in: query
+        name: instance_ids
+        type: string
       - description: 登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact
           match
         in: query
@@ -10101,6 +10110,10 @@ paths:
         - unknown
         in: query
         name: level
+        type: string
+      - description: 规范 Trace ID 精确过滤 | Exact canonical Trace ID filter
+        in: query
+        name: trace_id
         type: string
       - description: 字面量关键字，最多 128 字符 | Literal keyword, at most 128 characters
         in: query

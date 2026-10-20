@@ -290,6 +290,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Param        ids query string false "最多 100 个不重复规范正整数实例记录 ID，以逗号分隔，精确过滤 | Up to 100 unique canonical positive instance record IDs, comma-separated, exact filtering"
 // @Param        node_name query string false "宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname, case-insensitive exact match"
 // @Param        node_ip query string false "宿主节点 IPv4/IPv6，规范化后精确匹配 | Host node IPv4/IPv6, canonical exact match"
+// @Param        instance_ids query string false "启动实例标识精确集合，最多100个 | Exact startup instance identities, at most 100"
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
@@ -332,6 +333,19 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 			return
 		}
 	}
+	var instanceIDs []string
+	if values, exists := c.Request.URL.Query()["instance_ids"]; exists {
+		var err error
+		if len(values) != 1 {
+			commonapi.RespondError(c, 400, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+		instanceIDs, err = commonmodels.ParseProcessInstanceIDs(values[0])
+		if err != nil {
+			commonapi.RespondError(c, 400, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+	}
 	var timeFrom, timeTo time.Time
 	for _, bound := range []struct {
 		value  string
@@ -353,6 +367,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		ProcessMetricsDeclared: processMetricsDeclared,
 		IDs:                    ids,
+		InstanceIDs:            instanceIDs,
 		ModuleName:             c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
 		NodeIP: c.Query("node_ip"),
 		Role:   c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),

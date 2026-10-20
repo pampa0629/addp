@@ -128,7 +128,7 @@ func TestIAMUserSelfHandlerContract(t *testing.T) {
 			"new_password":     "new-password",
 		})
 		request.Header.Set("Authorization", "Bearer addp_at_access")
-		request.Header.Set(requestidmiddleware.RequestIDHeader, "password-request")
+		request.Header.Set(requestidmiddleware.RequestIDHeader, "33333333-3333-4333-8333-333333333333")
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, request)
 
@@ -137,7 +137,7 @@ func TestIAMUserSelfHandlerContract(t *testing.T) {
 		if recorder.Code != http.StatusOK || response.RevokedFamilyCount != 3 || !response.ChangedAt.Equal(now) ||
 			service.rotationToken != "addp_at_access" || service.currentPassword != "old-password" ||
 			service.newPassword != "new-password" || service.rotationAudit.RequestID == nil ||
-			*service.rotationAudit.RequestID != "password-request" {
+			*service.rotationAudit.RequestID != "33333333-3333-4333-8333-333333333333" {
 			t.Fatalf("password rotation status=%d response=%#v service=%#v", recorder.Code, response, service)
 		}
 		cookies := recorder.Result().Cookies()

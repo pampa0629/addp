@@ -11,6 +11,12 @@ var localeFS embed.FS
 
 // Monitor 模块消息 key 常量
 const (
+	MsgTraceInvalid         = "monitor.trace.invalid"
+	MsgTraceUnavailable     = "monitor.trace.unavailable"
+	MsgTraceBudget          = "monitor.trace.budget"
+	MsgTraceBusy            = "monitor.trace.busy"
+	MsgTraceNotFound        = "monitor.trace.not_found"
+	MsgTraceTimeout         = "monitor.trace.timeout"
 	MsgResourceQueryInvalid = "monitor.resource_query.invalid"
 	MsgResourceQueryBudget  = "monitor.resource_query.budget"
 	MsgResourceQueryBusy    = "monitor.resource_query.busy"

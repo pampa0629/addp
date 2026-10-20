@@ -161,6 +161,11 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
 	seenIDs := map[uint]bool{}
+	if len(filter.InstanceIDs) > 0 {
+		if _, err := commonmodels.ParseProcessInstanceIDs(strings.Join(filter.InstanceIDs, ",")); err != nil {
+			return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+		}
+	}
 	for _, id := range filter.IDs {
 		if id == 0 || seenIDs[id] {
 			return nil, 0, ErrInvalidModuleRuntimeInstanceQuery

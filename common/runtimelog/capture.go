@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/trace"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,6 +88,8 @@ type Entry struct {
 	Message    string `json:"message"`
 	Stack      string `json:"stack,omitempty"`
 	RequestID  string `json:"request_id,omitempty"`
+	TraceID    string `json:"trace_id,omitempty"`
+	SpanID     string `json:"span_id,omitempty"`
 	Truncated  bool   `json:"truncated,omitempty"`
 }
 
@@ -162,6 +165,20 @@ func Normalize(o Options, channel string, line []byte, seq uint64, truncated boo
 				e.Truncated = true
 			}
 		}
+		if v, ok := data["trace_id"].(string); ok {
+			id, err := trace.TraceIDFromHex(v)
+			if err == nil && id.IsValid() && strings.ToLower(v) == v {
+				e.TraceID = v
+			}
+		}
+		if v, ok := data["span_id"].(string); ok {
+			id, err := trace.SpanIDFromHex(v)
+			if err == nil && id.IsValid() && strings.ToLower(v) == v && e.TraceID != "" {
+				e.SpanID = v
+			}
+		}
+		delete(data, "trace_id")
+		delete(data, "span_id")
 		// Preserve structured fields for diagnosis without trusting their identity.
 		delete(data, "instance_id")
 		delete(data, "module_name")

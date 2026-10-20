@@ -20,11 +20,16 @@ const (
 // RequestIDMiddleware 为每个请求生成唯一的 request ID 并注入到 context 中
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if FromGinContext(c) != "" {
+			c.Next()
+			return
+		}
 		// 尝试从请求头获取 request ID
 		requestID := c.GetHeader(RequestIDHeader)
 
 		// 如果请求头中没有，生成新的 request ID
-		if requestID == "" {
+		parsed, err := uuid.Parse(requestID)
+		if c.GetBool("addp.request.external") || err != nil || parsed == uuid.Nil || parsed.String() != requestID {
 			requestID = uuid.New().String()
 		}
 

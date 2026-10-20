@@ -6457,6 +6457,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "启动实例标识精确集合，最多100个 | Exact startup instance identities, at most 100",
+                        "name": "instance_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match",
                         "name": "registered_host",
                         "in": "query"
@@ -6943,6 +6949,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "日志级别 | Log level",
                         "name": "level",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "规范 Trace ID 精确过滤 | Exact canonical Trace ID filter",
+                        "name": "trace_id",
                         "in": "query"
                     },
                     {
@@ -22039,10 +22051,16 @@ const docTemplate = `{
                 "role": {
                     "type": "string"
                 },
+                "span_id": {
+                    "type": "string"
+                },
                 "stack": {
                     "type": "string"
                 },
                 "timestamp": {
+                    "type": "string"
+                },
+                "trace_id": {
                     "type": "string"
                 },
                 "truncated": {

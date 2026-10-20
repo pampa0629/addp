@@ -27,6 +27,7 @@ import (
 // @Param from query string true "UTC RFC3339 起始时间（含） | Inclusive UTC RFC3339 start"
 // @Param to query string true "UTC RFC3339 结束时间（不含） | Exclusive UTC RFC3339 end"
 // @Param level query string false "日志级别 | Log level" Enums(debug,info,warn,error,unknown)
+// @Param trace_id query string false "规范 Trace ID 精确过滤 | Exact canonical Trace ID filter"
 // @Param keyword query string false "字面量关键字，最多 128 字符 | Literal keyword, at most 128 characters"
 // @Param limit query int false "每批上限，默认 200，最多 1000 | Batch limit, default 200, maximum 1000"
 // @Param cursor query string false "服务端产生的续查游标；须保留同一筛选与窗口 | Server-issued cursor; retain the same filters and window"
@@ -45,8 +46,8 @@ import (
 // @Router /platform/modules/{module_name}/instances/{instance_id}/logs [get]
 func (h *ModuleRegistryHandler) GetModuleRuntimeLogs(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	q := service.RuntimeLogQuery{Level: c.Query("level"), Keyword: c.Query("keyword"), Limit: 200, Cursor: c.Query("cursor"), UserID: sharedauth.GetUserID(c)}
-	allowed := map[string]bool{"from": true, "to": true, "level": true, "keyword": true, "limit": true, "cursor": true}
+	q := service.RuntimeLogQuery{Level: c.Query("level"), Keyword: c.Query("keyword"), TraceID: c.Query("trace_id"), Limit: 200, Cursor: c.Query("cursor"), UserID: sharedauth.GetUserID(c)}
+	allowed := map[string]bool{"from": true, "to": true, "level": true, "keyword": true, "limit": true, "cursor": true, "trace_id": true}
 	for key, values := range c.Request.URL.Query() {
 		if !allowed[key] || len(values) != 1 {
 			runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)

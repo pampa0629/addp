@@ -305,3 +305,40 @@ func TestRuntimeLogsUnselectedNeverContactStorage(t *testing.T) {
 		t.Fatalf("unselected logging sent %d storage requests", calls)
 	}
 }
+
+func TestRuntimeLogTraceFilterBindsOwnerAndCursor(t *testing.T) {
+	q := logQuery()
+	q.TraceID = strings.Repeat("1", 32)
+	entries := []runtimelog.Entry{testLog(1, logTestTime), testLog(2, logTestTime), testLog(3, logTestTime)}
+	for i := range entries {
+		entries[i].TraceID = q.TraceID
+		entries[i].SpanID = strings.Repeat("2", 16)
+	}
+	calls := 0
+	upstream := fakeLogStorage(t, &entries, func(r *http.Request) {
+		calls++
+		query := r.URL.Query().Get("query")
+		for _, part := range []string{`module_name="manager"`, `instance_id="instance"`, `trace_id="` + q.TraceID + `"`} {
+			if !strings.Contains(query, part) {
+				t.Error("trace query lost owner or exact filter")
+			}
+		}
+	})
+	defer upstream.Close()
+	s := NewRuntimeLogService(upstream.URL, "read-token", logTestKey)
+	first, e := s.Query(context.Background(), "manager", "instance", q)
+	if e != nil || !first.HasMore {
+		t.Fatal(first, e)
+	}
+	q.Cursor = first.NextCursor
+	q.TraceID = strings.Repeat("3", 32)
+	before := calls
+	if out, e := s.Query(context.Background(), "manager", "instance", q); out != nil || !errors.Is(e, ErrRuntimeLogsInvalid) || calls != before {
+		t.Fatal("cursor crossed trace filter", out, e)
+	}
+	q.Cursor = ""
+	q.TraceID = "private query"
+	if _, e := s.Query(context.Background(), "manager", "instance", q); !errors.Is(e, ErrRuntimeLogsInvalid) || calls != before {
+		t.Fatal("noncanonical Trace reached storage")
+	}
+}

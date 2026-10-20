@@ -169,3 +169,21 @@ other = "资源查询超过预算"
 
 ["monitor.resource_query.busy"]
 other = "资源查询并发已满，请稍后重试"
+
+["monitor.trace.invalid"]
+other = "调用链查询参数无效"
+
+["monitor.trace.unavailable"]
+other = "追踪未接入或暂不可用"
+
+["monitor.trace.budget"]
+other = "调用链查询超出预算"
+
+["monitor.trace.busy"]
+other = "调用链查询并发已满"
+
+["monitor.trace.not_found"]
+other = "未找到调用链或无权读取"
+
+["monitor.trace.timeout"]
+other = "调用链查询超时"

@@ -359,6 +359,9 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	if len(filter.IDs) > 0 {
 		query = query.Where("module_runtime_instances.id IN ?", filter.IDs)
 	}
+	if len(filter.InstanceIDs) > 0 {
+		query = query.Where("module_runtime_instances.instance_id IN ?", filter.InstanceIDs)
+	}
 	if filter.ModuleName != "" {
 		query = query.Where("module_definitions.module_name = ?", filter.ModuleName)
 	}

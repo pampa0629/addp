@@ -79,7 +79,7 @@ func TestCanonicalAuthContextMiddlewareResolvesAndInjectsDetachedContext(t *test
 	request := httptest.NewRequest(http.MethodGet, "/resource", nil)
 	request.Header.Set("Authorization", "bearer addp_at_access")
 	request.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	request.Header.Set(requestidmiddleware.RequestIDHeader, "request-42")
+	request.Header.Set(requestidmiddleware.RequestIDHeader, "11111111-1111-4111-8111-111111111111")
 	request.Header.Set("X-Internal-API-Key", "must-not-forward")
 	request.AddCookie(&http.Cookie{Name: "secret", Value: "must-not-forward"})
 	response := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestCanonicalAuthContextMiddlewareResolvesAndInjectsDetachedContext(t *test
 	if response.Code != http.StatusNoContent || requestedMethod != http.MethodGet ||
 		requestedPath != "/api/v1/system/auth/context" ||
 		authorizationHeader != "Bearer addp_at_access" ||
-		languageHeader != "en-US,en;q=0.9" || requestIDHeader != "request-42" ||
+		languageHeader != "en-US,en;q=0.9" || requestIDHeader != "11111111-1111-4111-8111-111111111111" ||
 		internalAPIKeyHeader != "" || cookieHeader != "" {
 		t.Fatalf(
 			"status=%d method=%q path=%q auth=%q language=%q request_id=%q internal=%q cookie=%q body=%s",

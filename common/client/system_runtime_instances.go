@@ -83,3 +83,42 @@ func (c *SystemServiceClient) GetRuntimeInstancesForUser(ctx context.Context, id
 	}
 	return *result.Data, nil
 }
+
+// GetProcessInstancesForUser resolves historical trace participants by startup
+// identity using the current User. It deliberately does not filter by UP/lease.
+func (c *SystemServiceClient) GetProcessInstancesForUser(ctx context.Context, ids []string, token string) ([]RuntimeInstanceReference, error) {
+	invalid := errors.New("invalid authorized process references")
+	if c == nil || !strings.HasPrefix(token, "addp_at_") || len(token) <= 8 || strings.ContainsAny(token, " \t\r\n") {
+		return nil, invalid
+	}
+	if _, e := models.ParseProcessInstanceIDs(strings.Join(ids, ",")); e != nil {
+		return nil, invalid
+	}
+	var result struct {
+		Data     *[]RuntimeInstanceReference `json:"data"`
+		Total    *int                        `json:"total"`
+		Page     int                         `json:"page"`
+		PageSize int                         `json:"page_size"`
+	}
+	params := url.Values{"instance_ids": {strings.Join(ids, ",")}, "page": {"1"}, "page_size": {"100"}}
+	status, e := c.doJSON(ctx, http.MethodGet, "/api/v1/system/platform/module-instances?"+params.Encode(), token, nil, &result, 4<<20)
+	if e != nil {
+		return nil, e
+	}
+	if status != 200 || result.Data == nil || result.Total == nil || result.Page != 1 || result.PageSize != 100 || *result.Total > 100 || *result.Total != len(*result.Data) {
+		return nil, invalid
+	}
+	wanted := map[string]bool{}
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	seen := map[string]bool{}
+	for _, row := range *result.Data {
+		key := row.ModuleName + "/" + row.InstanceID
+		if !wanted[row.InstanceID] || row.ModuleName == "" || row.ID == 0 || seen[key] || (row.Role != "backend" && row.Role != "ingress" && row.Role != "worker" && row.Role != "scheduler") {
+			return nil, invalid
+		}
+		seen[key] = true
+	}
+	return *result.Data, nil
+}

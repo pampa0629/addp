@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/common/opaquetoken"
 	"github.com/addp/common/runtimelog"
 )
@@ -30,6 +31,7 @@ var ErrRuntimeLogsBusy = errors.New("runtime log query capacity exhausted")
 type RuntimeLogQuery struct {
 	From, To       time.Time
 	Level, Keyword string
+	TraceID        string
 	Node           string
 	Limit          int
 	Cursor         string
@@ -77,7 +79,7 @@ func NewRuntimeLogService(endpoint, token string, encryptionKey []byte) *Runtime
 	return &RuntimeLogService{codec: opaquetoken.New(encryptionKey, "addp/system/runtime-log-cursor/v1"), now: time.Now, configInvalid: invalid, endpoint: strings.TrimRight(endpoint, "/"), token: token, retention: time.Duration(hours) * time.Hour, slots: make(chan struct{}, 4), client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 func (q RuntimeLogQuery) Validate() error {
-	if q.UserID == 0 || len(q.Cursor) > 4096 || !time.Unix(0, q.From.UnixNano()).Equal(q.From) || !time.Unix(0, q.To.UnixNano()).Equal(q.To) || q.From.IsZero() || q.To.IsZero() || !q.From.Before(q.To) || q.To.Sub(q.From) > 7*24*time.Hour || q.Limit < 1 || q.Limit > 1000 || utf8.RuneCountInString(q.Keyword) > 128 || strings.ContainsRune(q.Keyword, 0) {
+	if (q.TraceID != "" && !httptrace.ParseTraceID(q.TraceID)) || q.UserID == 0 || len(q.Cursor) > 4096 || !time.Unix(0, q.From.UnixNano()).Equal(q.From) || !time.Unix(0, q.To.UnixNano()).Equal(q.To) || q.From.IsZero() || q.To.IsZero() || !q.From.Before(q.To) || q.To.Sub(q.From) > 7*24*time.Hour || q.Limit < 1 || q.Limit > 1000 || utf8.RuneCountInString(q.Keyword) > 128 || strings.ContainsRune(q.Keyword, 0) {
 		return ErrRuntimeLogsInvalid
 	}
 	switch q.Level {
@@ -106,7 +108,7 @@ type runtimeLogCandidate struct {
 }
 
 func runtimeLogQueryHash(module, id string, q RuntimeLogQuery) string {
-	body, _ := json.Marshal([]any{module, id, q.From.UTC(), q.To.UTC(), q.Level, q.Keyword, q.Limit, q.Node})
+	body, _ := json.Marshal([]any{module, id, q.From.UTC(), q.To.UTC(), q.Level, q.Keyword, q.Limit, q.Node, q.TraceID})
 	return fmt.Sprintf("%x", sha256.Sum256(body))
 }
 func (s *RuntimeLogService) Query(ctx context.Context, module, id string, q RuntimeLogQuery) (*RuntimeLogResult, error) {
@@ -270,6 +272,9 @@ func (s *RuntimeLogService) fetch(ctx context.Context, module, id string, q Runt
 	if q.Node != "" {
 		logql += " | node_name=" + strconv.Quote(q.Node)
 	}
+	if q.TraceID != "" {
+		logql += " | trace_id=" + strconv.Quote(q.TraceID)
+	}
 	if q.Level != "" {
 		logql += " | level=" + strconv.Quote(q.Level)
 	}
@@ -325,7 +330,7 @@ func (s *RuntimeLogService) fetch(ctx context.Context, module, id string, q Runt
 				return nil, false, ErrRuntimeLogsUpstream
 			}
 			var entry runtimelog.Entry
-			if json.Unmarshal([]byte(line), &entry) != nil || entry.InstanceID != id || entry.Module != module || (q.Node != "" && entry.Node != q.Node) {
+			if json.Unmarshal([]byte(line), &entry) != nil || entry.InstanceID != id || entry.Module != module || (q.TraceID != "" && entry.TraceID != q.TraceID) || (entry.TraceID != "" && !httptrace.ParseTraceID(entry.TraceID)) || (entry.SpanID != "" && (!httptrace.ParseSpanID(entry.SpanID) || entry.TraceID == "")) || (q.Node != "" && entry.Node != q.Node) {
 				return nil, false, ErrRuntimeLogsUpstream
 			}
 			parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp)

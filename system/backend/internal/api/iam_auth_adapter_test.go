@@ -33,7 +33,7 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 			"username": "alice",
 			"password": "secret",
 		})
-		request.Header.Set(requestidmiddleware.RequestIDHeader, "iam-login-request")
+		request.Header.Set(requestidmiddleware.RequestIDHeader, "11111111-1111-4111-8111-111111111111")
 		request.Header.Set("User-Agent", "iam-test-agent")
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, request)
@@ -49,7 +49,7 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 			t.Fatalf("login response = %#v", response)
 		}
 		if runtime.loginInput == nil || runtime.loginInput.Username != "alice" ||
-			runtime.loginInput.Audit.RequestID == nil || *runtime.loginInput.Audit.RequestID != "iam-login-request" ||
+			runtime.loginInput.Audit.RequestID == nil || *runtime.loginInput.Audit.RequestID != "11111111-1111-4111-8111-111111111111" ||
 			runtime.loginInput.Audit.HTTPMethod == nil || *runtime.loginInput.Audit.HTTPMethod != http.MethodPost ||
 			runtime.loginInput.Audit.ResourcePath == nil || *runtime.loginInput.Audit.ResourcePath != "/api/v1/system/login" ||
 			runtime.loginInput.Audit.UserAgent == nil || *runtime.loginInput.Audit.UserAgent != "iam-test-agent" {

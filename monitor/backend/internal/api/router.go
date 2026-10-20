@@ -37,6 +37,7 @@ func SetupRouter(
 	resourceObservations *service.ResourceObservationService,
 	resourceRules *service.ResourceAlertRuleService,
 	httpRules *service.HTTPAlertRuleService,
+	traceService *service.TraceService,
 ) *gin.Engine {
 	router := modulelifecycle.NewRouter(gin.Logger())
 
@@ -150,6 +151,9 @@ func SetupRouter(
 	platform.GET("/platform/process_resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.ProcessSummaries)
 	platform.GET("/platform/process_resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.ProcessTrend)
 	platform.GET("/platform/resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Trend)
+	traceHandler := TraceHandler{service: traceService}
+	platform.GET("/platform/traces", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Search)
+	platform.GET("/platform/traces/:trace_id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Detail)
 	platform.GET("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), platformObservationIdentity(false), resourceHandler.Policy)
 	platform.PUT("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), platformObservationIdentity(false), resourceHandler.UpdatePolicy)
 	api.Use(
