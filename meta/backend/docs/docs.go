@@ -3026,6 +3026,9 @@ const docTemplate = `{
         "authorizationfacts.AuthorizationBoundary": {
             "type": "object",
             "properties": {
+                "file_composition": {
+                    "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                },
                 "layout": {
                     "type": "string",
                     "enum": [
@@ -3077,6 +3080,37 @@ const docTemplate = `{
                 },
                 "schema_version": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
+                    }
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionRef": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

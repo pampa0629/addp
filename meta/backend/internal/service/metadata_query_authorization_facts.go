@@ -28,6 +28,9 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 			ItemFingerprint: item.Fingerprint, EngineID: item.EngineID, ItemType: item.ItemType, FullName: item.FullName,
 			ObservedAt: tx.NowFunc().UTC(), BasisState: authorizationfacts.AuthorizationBasisIncomplete}
 		layout := commonjson.String(item.Attributes, "item", "layout")
+		if item.ItemType == plugin.EngineCatalogTermFile {
+			return projectFileAuthorizationFacts(tx, item, facts)
+		}
 		if (item.ItemType != "table" && item.ItemType != "collection") || (layout != "" && layout != "single") {
 			facts.BasisState = authorizationfacts.AuthorizationBasisUnsupported
 			return facts.Validate()

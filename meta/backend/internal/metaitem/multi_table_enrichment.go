@@ -870,18 +870,9 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 					continue
 				}
 			}
-			unsafe := false
-			for _, part := range strings.Split(strings.ReplaceAll(ref, "\\", "/"), "/") {
-				if part == ".." {
-					unsafe = true
-					break
-				}
-			}
-			if unsafe {
-				continue
-			}
-			resolved, texture, ok := resolveLocalModelResourcePath(file.Path, ref, byPath)
-			if !ok || seen[resolved] {
+			resolved, ok := ResolveExchangeModelTexturePath(file.Path, ref)
+			texture, found := byPath[resolved]
+			if !ok || !found || seen[resolved] {
 				continue
 			}
 			refList = append(refList, dataitem.ItemRef{Role: uniqueRefRole("texture", counts), Path: resolved, Required: true, Extension: strings.ToLower(path.Ext(resolved))})
@@ -898,4 +889,25 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 		items = append(items, item)
 	}
 	return items
+}
+
+// ResolveExchangeModelTexturePath resolves a declared local DAE/3DS reference
+// without I/O. Callers decode DAE URI escaping once; 3DS strings stay literal.
+// File names retain case and whitespace; parent traversal is never normalized.
+func ResolveExchangeModelTexturePath(modelPath, ref string) (string, bool) {
+	ref = strings.ReplaceAll(ref, "\\", "/")
+	if ref == "" || strings.HasPrefix(ref, "/") || strings.Contains(ref, ":") {
+		return "", false
+	}
+	for _, part := range strings.Split(ref, "/") {
+		if part == ".." {
+			return "", false
+		}
+	}
+	base := path.Dir(modelPath)
+	if base == "." {
+		base = ""
+	}
+	resolved := path.Join(base, ref)
+	return resolved, resolved != modelPath && isPathUnderScope(resolved, base)
 }

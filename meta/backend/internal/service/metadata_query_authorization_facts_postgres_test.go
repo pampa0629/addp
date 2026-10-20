@@ -43,4 +43,5 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 		t.Fatal(err)
 	}
 	exerciseAuthorizationFacts(t, tx)
+	exerciseFileAuthorizationFacts(t, tx)
 }

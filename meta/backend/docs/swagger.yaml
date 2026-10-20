@@ -14,6 +14,8 @@ definitions:
     - AuthorizationBasisUnsupported
   authorizationfacts.AuthorizationBoundary:
     properties:
+      file_composition:
+        $ref: '#/definitions/authorizationfacts.FileCompositionBoundary'
       layout:
         enum:
         - single
@@ -48,6 +50,26 @@ definitions:
         type: string
       schema_version:
         type: string
+    type: object
+  authorizationfacts.FileCompositionBoundary:
+    properties:
+      format:
+        type: string
+      refs:
+        items:
+          $ref: '#/definitions/authorizationfacts.FileCompositionRef'
+        type: array
+    type: object
+  authorizationfacts.FileCompositionRef:
+    properties:
+      primary:
+        type: boolean
+      required:
+        type: boolean
+      role:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
   client.MetaMosaicOutput:
     properties:

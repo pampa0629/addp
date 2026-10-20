@@ -1,0 +1,182 @@
+package service
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"path"
+	"strconv"
+	"strings"
+
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
+	commonjson "github.com/addp/common/jsonmap"
+	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm"
+)
+
+type fileAuthorizationRef struct {
+	Path      string `json:"path"`
+	Role      string `json:"role"`
+	Required  *bool  `json:"required"`
+	Primary   bool   `json:"primary"`
+	Extension string `json:"extension"`
+}
+
+// This projection consumes committed facts only. Source reads and current
+// permissions belong to the execution owner and System, respectively.
+func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *authorizationfacts.AuthorizationFacts) error {
+	finish := func(state authorizationfacts.AuthorizationBasisState) error {
+		facts.BasisState = state
+		return facts.Validate()
+	}
+	layout := commonjson.String(item.Attributes, "item", "layout")
+	dataType := commonjson.String(item.Attributes, "item", "data_type")
+	format := commonjson.String(item.Attributes, "item", "format")
+	if layout == "" || dataType == "" || format == "" {
+		return finish(authorizationfacts.AuthorizationBasisIncomplete)
+	}
+	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds") {
+		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
+	primary := plugin.FileItemPath(item.EngineID, item.FullName)
+	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
+		strings.ToLower(path.Ext(item.FullName)) != "."+format || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
+		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	state, err := validateFileAuthorizationParents(tx, item)
+	if err != nil {
+		return err
+	}
+	if state != authorizationfacts.AuthorizationBasisComplete {
+		return finish(state)
+	}
+	itemAttrs, _ := item.Attributes["item"].(map[string]interface{})
+	rawRefs, hasRefs := itemAttrs["refs"]
+	var refs []fileAuthorizationRef
+	if hasRefs {
+		encoded, err := json.Marshal(rawRefs)
+		if err != nil {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&refs) != nil || refs == nil {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+	}
+	if !hasRefs && format == "ifc" {
+		required := true
+		refs = []fileAuthorizationRef{{Path: item.FullName, Role: "model", Required: &required, Primary: true}}
+	}
+	if len(refs) == 0 {
+		return finish(authorizationfacts.AuthorizationBasisIncomplete)
+	}
+	if len(refs) > authorizationfacts.MaxFileCompositionRefs {
+		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	byPath := make(map[string]fileAuthorizationRef, len(refs))
+	compositionRefs := make([]authorizationfacts.FileCompositionRef, 0, len(refs))
+	primaryCount := 0
+	for _, ref := range refs {
+		target := plugin.FileItemPath(item.EngineID, ref.Path)
+		if ref.Path == "" || target.StringPath() != ref.Path || ref.Required == nil || !*ref.Required {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		if _, duplicate := byPath[ref.Path]; duplicate {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		if ref.Primary {
+			primaryCount++
+			if ref.Path != item.FullName || ref.Role != "model" {
+				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+			}
+		} else if ref.Role != "texture" {
+			suffix := strings.TrimPrefix(ref.Role, "texture_")
+			n, err := strconv.Atoi(suffix)
+			if !strings.HasPrefix(ref.Role, "texture_") || err != nil || n < 2 || strconv.Itoa(n) != suffix {
+				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+			}
+		}
+		byPath[ref.Path] = ref
+		compositionRefs = append(compositionRefs, authorizationfacts.FileCompositionRef{Target: target, Role: ref.Role, Required: true, Primary: ref.Primary})
+	}
+	if primaryCount != 1 {
+		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	if format == "ifc" && len(refs) != 1 {
+		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
+	if format == "3ds" {
+		native := commonjson.Section(item.Attributes, "format_info.3ds")
+		if complete, ok := native["scan_complete"].(bool); !ok || !complete {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+		encoded, err := json.Marshal(native["texture_refs"])
+		if err != nil {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		var declarations []string
+		if json.Unmarshal(encoded, &declarations) != nil || declarations == nil {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+		expected := map[string]bool{item.FullName: true}
+		for _, ref := range declarations {
+			resolved, ok := metaitem.ResolveExchangeModelTexturePath(item.FullName, ref)
+			if !ok {
+				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+			}
+			if expected[resolved] {
+				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+			}
+			expected[resolved] = true
+			if _, found := byPath[resolved]; !found {
+				return finish(authorizationfacts.AuthorizationBasisIncomplete)
+			}
+		}
+		if len(expected) != len(byPath) {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+	}
+	composition, err := authorizationfacts.NewFileCompositionBoundary(format, compositionRefs)
+	if err != nil {
+		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}
+	hash, err := facts.ComputeBoundaryHash()
+	if err != nil {
+		return err
+	}
+	facts.BoundaryHash = &hash
+	return finish(authorizationfacts.AuthorizationBasisComplete)
+}
+
+func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (authorizationfacts.AuthorizationBasisState, error) {
+	parts := strings.Split(item.FullName, "/")
+	if len(parts) > 64 {
+		return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
+	}
+	id := item.NodeID
+	for i := len(parts) - 2; i >= -1; i-- {
+		var node models.MetaNode
+		err := tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", item.TenantID, item.EngineID, id).First(&node).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return authorizationfacts.AuthorizationBasisIncomplete, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if i == -1 {
+			if node.NodeType != plugin.EngineCatalogTermRoot || node.ParentNodeID != nil || node.FullName != "" {
+				return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
+			}
+			return authorizationfacts.AuthorizationBasisComplete, nil
+		}
+		if node.NodeType != plugin.EngineCatalogTermDirectory || node.Name != parts[i] || node.FullName != strings.Join(parts[:i+1], "/") || node.ParentNodeID == nil {
+			return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
+		}
+		id = *node.ParentNodeID
+	}
+	return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
+}

@@ -428,11 +428,17 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 | 布局 | `boundary` 的组成表达 | 当次读取约束 |
 | --- | --- | --- |
-| `single` | 一个规范原生目标或 content ref，不附加目录递归范围 | 只打开该对象；内容增加行或覆盖本身不扩大目标 |
+| `single` | 一个规范原生目标或 content ref；单体模型可使用下述精确文件组成，不附加目录递归范围 | 只打开确认的精确目标；内容更新本身不扩大目标 |
 | `multi` | 唯一 primary 和明确 refs，保留路径、role、required／primary 语义；完整性由对应格式规则检查 | 使用被确认的完整组合，不自行枚举 sibling 补全；缺少必需 ref 时拒绝完整内容读取 |
 | `whole` | 根 scope、manifest／关键入口，以及格式明确声明的成员约束与引用范围 | 逐次打开均限制在该边界内；合法动态成员按同一规则进入，不列举或逐个签发 Grant |
 
 whole 的成员约束必须能由内容 I/O／Provider 执行，包括路径范围、成员角色及关联引用限制。格式名、`scope_exclusive=true` 或 `claim_policy=whole_scope` 单独不足以证明任意目录内容可读。当前格式不能提供可执行约束时，明确报告不支持；不能复制 detector 到 System，也不能用任意 glob／SQL／表达式建立第二套规则语言。
+
+**单体模型的精确文件组成。** 经确认的模型 `single` 仍以主模型文件作为 DataItem 身份；其主文件和 Meta 完整确认的本地贴图 refs 可以共同构成一个明确批准的读取边界，不将贴图伪建为独立 DataItem，也不把 `single` 改为目录授权。3DS 必须以格式解析的 `texture_refs` 与持久化 refs 精确交叉核对，保留相对路径、大小写、角色及必需性；缺失、重复矛盾、未完成的组成或越界引用不能投影为 complete。IFC 本轮使用单主文件边界。RelatedRefs 仅提供组成事实，System 仍须独立核验该完整边界的 Grant、Deny 及执行授权，原有仅主文件的批准不自动扩大到贴图。增加／移除组成、改变引用目标或组成约束后，旧批准不覆盖新摘要，须重新批准；同路径模型内容或贴图像素的正常更新不改变组成边界。大小、内容哈希及版本事实仅用于来源与 I/O 完整性检查，不进入授权边界摘要。目录中的未引用文件不属于该组成。共享文件表示、实施范围及验证结果在相应代码与验收记录落实前，不计为文件授权已接通。
+
+文件组成使用同一协议的 `boundary.file_composition={format,refs}`，与 `native_target` 互斥；每个 ref 仅含精确类型化 `target`、`role`、`required` 和 `primary`。唯一 primary 为必需主文件，所有目标同 Engine、同文件目录模型，并处于主文件父范围内；父目录本身不成为可读取目标。当前文件投影范围为 `file + model_3d + single` 的 IFC、3DS，object 型模型、其他格式及 multi／whole 不因新增表示而自动支持。IFC 的单主文件事实不表示关联文档或外部贴图已纳入转换；首期 FTP 快显使用固定工具的几何与基础颜色 profile，只批准主文件，不获取外部纹理或资料。3DS 的贴图声明完整、匹配清单与父目录归属必须来自已提交事实；GET 不访问源端补齐，不将统一 descriptor 的清洗／去重结果作为完整性证明。
+
+FTP 是本轮实际执行授权接入范围，NFS／MinIO 的 GLB 来源后续统一迁移；文件事实完整不代表其他来源已经接入执行授权，也不改变已有消费者的准入。本轮新增 FTP 路线必须消费完整授权和精确组成，缺失、损坏或旧 FTP 配置不得落入未迁移来源的执行路径。
 
 `basis_state` 固定为 `complete | incomplete | needs_refresh | unsupported`。`complete` 只表示已有依据足以描述边界；其余状态的 `boundary` 与 `boundary_hash` 为 null，分别表示基础组成缺失、已有边界失效证据、或当前格式／引擎无法提供契约。现有持久事实无法证明完整时返回 incomplete，不补造成功扫描、版本或历史依据。`data_type=unknown` 本身不使一个已确定的原生 single 目标失效；是否完整取决于该布局实际需要的事实。
 
@@ -450,7 +456,7 @@ whole 的成员约束必须能由内容 I/O／Provider 执行，包括路径范�
 
 System 在本地权威写事务外取得这一事实，事务内核验当前管理资格、规则及批准边界。新增授权的显式确认须绑定展示时的预期边界摘要；服务端从 Meta 重取可信事实，比对不同返回 409，重新展示差异后确认，不能自动换成更大的最新边界继续签发。浏览器摘要只是并发期望值，不是可信资源事实。实际读取 owner 使用同一共享边界表示核验计划与 System 当次检查的绑定；边界不一致则重新计划／核验或拒绝，不执行旧检查对应之外的入口。原生 SQL／文件 URL 到 DataItem 的归属须由 Meta 已确认的身份与组成证明，不能由消费方按名称或路径前缀猜测；该归属解析与真实 I/O 约束仍须随读取消费者单独接入。
 
-**实施与验收。** 正式事实查询、严格共享 DTO、状态投影、摘要及 single 批准绑定已实现。支持持久化的 server → schema → 普通 table、server → database → 普通 table（MySQL）及 server → database → collection（MongoDB）三类 `single`；原生坐标取自父节点名称和独立 item 名称，不拆分 `full_name`。普通表沿用标准 `storage.schema_name`（关系型扫描对 schema/database 的统一存储字段），并与父节点核对；集合以持久化 database 父节点、collection 类型、名称、身份及 single 布局为依据，不要求 deep 采样字段。已有身份、布局、类型化父子节点及存储坐标须一致；缺失、矛盾或其他布局明确返回对应状态。摘要包含 namespace 与叶子类型，相同字符串坐标不能跨 schema/database 或 table/collection 继承批准。统计、basic/deep 深度及观察时间不改变边界摘要。System 与 Catalog 均通过共享 MetaClient 消费；Manager 的预览、手工剖析和结果读取按完整原生计划反查并核验同一数据项绑定。当前不支持文件 single、multi 或 whole；Meta 事实本身不证明源对象仍存在，不代替 Provider 及 Security 核验。
+**实施与验收。** 正式事实查询、严格共享 DTO、状态投影、摘要及 single 批准绑定已实现。支持持久化的 server → schema → 普通 table、server → database → 普通 table（MySQL）及 server → database → collection（MongoDB）三类 `single`；原生坐标取自父节点名称和独立 item 名称，不拆分 `full_name`。普通表沿用标准 `storage.schema_name`（关系型扫描对 schema/database 的统一存储字段），并与父节点核对；集合以持久化 database 父节点、collection 类型、名称、身份及 single 布局为依据，不要求 deep 采样字段。已有身份、布局、类型化父子节点及存储坐标须一致；缺失、矛盾或其他布局明确返回对应状态。摘要包含 namespace 与叶子类型，相同字符串坐标不能跨 schema/database 或 table/collection 继承批准。统计、basic/deep 深度及观察时间不改变边界摘要。System 与 Catalog 均通过共享 MetaClient 消费；Manager 的预览、手工剖析和结果读取按完整原生计划反查并核验同一数据项绑定。文件 single 的 IFC／3DS 按上述精确组成契约扩展投影；object、其他文件格式及 multi／whole 仍不支持。文件事实不等于 FTP 执行授权已接通；Meta 事实本身不证明源对象仍存在，不代替 Provider 及 Security 核验。
 
 System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权；新增批准及正式读取独立消费同一事实契约，不把前端展示结果当作凭据。
 
