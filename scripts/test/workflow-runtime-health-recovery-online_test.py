@@ -1,25 +1,28 @@
-"""Deterministic safety and false-positive checks; no developer services or tools."""
-
+"""Deterministic Hosted safety and file recovery, with no developer services."""
 import copy
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
-import re
+from pathlib import Path
 import signal
 import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
-
 SCRIPT = Path(__file__).with_name("workflow-runtime-health-recovery-online.py")
-SPEC = importlib.util.spec_from_file_location("workflow_runtime_health_recovery", SCRIPT)
-SUITE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(SUITE)
 
+def module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
 
+SUITE = module("workflow_health", SCRIPT)
+AGENT_PATH = SCRIPT.with_name("workflow-runtime-health-tool.py")
+AGENT = module("workflow_health_tool", AGENT_PATH)
 class FakeObserver:
     def __init__(self, tool, name, dep):
         self.runtimes = {name: {"tool": tool, "dep": dep, "id": 42}}
@@ -57,123 +60,152 @@ class FakeObserver:
         self.events.append("stable")
 
 
+
 class RuntimeHealthRecoveryTest(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="addp-runtime-health-unit-")
-        self.root = Path(self.temporary.name).resolve() / "checkout"
-        self.root.mkdir()
-        self.artifacts = Path(self.temporary.name) / "artifacts"
-        self.artifacts.mkdir()
-        self.root_patch = patch.object(SUITE, "ROOT", self.root)
-        self.root_patch.start()
-        self.addCleanup(self.root_patch.stop)
+        self.temporary = tempfile.TemporaryDirectory(prefix="addp-health-unit-")
         self.addCleanup(self.temporary.cleanup)
-        self.fault = SUITE.ToolFault(self.artifacts / "journal.json")
+        self.root = Path(self.temporary.name).resolve()
+        self.journal = self.root / 'journal.json'
+        self.tool = self.root / 'tool'
+        self.tool.write_bytes(b'owned product executable')
+        self.tool.chmod(0o755)
+        self.fault = AGENT.ToolFault(self.tool, self.journal)
 
-    def tool(self, name="pointcloud"):
-        relative = {
-            "pointcloud": "engines/pointcloud-workflow/venv/bin/pdal",
-            "model3d": ".dev-state/model3d-native/hash/bin/IfcConvert",
-            "document": ".dev-state/document-native/hash/LibreOffice.app/Contents/MacOS/soffice",
-        }[name]
-        tool = self.root / relative
-        tool.parent.mkdir(parents=True, exist_ok=True)
-        tool.write_bytes(b"owned native executable fixture")
-        tool.chmod(0o755)
-        return tool
-
-    def test_three_cycles_hold_fault_through_unhealthy_registration_and_restore_before_periodic_online(self):
+    def test_three_cycles_preserve_order_and_file_identity(self):
         for name, dep, _ in SUITE.CASES:
+            identity = AGENT.file_identity(self.tool)
+            observer = FakeObserver(self.tool, name, dep)
+            fault = self.fault
+            class Adapter:
+                @contextmanager
+                def missing(_, runtime):
+                    fault.missing()
+                    try:
+                        yield
+                    finally:
+                        fault.restore()
             with self.subTest(name=name):
-                tool = self.tool(name)
-                original = SUITE.file_identity(tool)
-                observer = FakeObserver(tool, name, dep)
-                report = SUITE.run_cycle(observer, self.fault, name)
-                self.assertEqual(report["result"], "passed")
-                self.assertEqual(observer.events, ["healthy", "online", "missing", "offline", "register",
-                                                  "registration_probe_finished", "offline", "healthy", "online", "stable"])
-                self.assertEqual(SUITE.file_identity(tool), original)
-                self.assertFalse(self.fault.journal.exists())
+                report = SUITE.run_cycle(observer, Adapter(), name)
+                self.assertEqual(report['result'], 'passed')
+                self.assertEqual(observer.events, ['healthy','online','missing','offline','register',
+                    'registration_probe_finished','offline','healthy','online','stable'])
+                self.assertEqual(AGENT.file_identity(self.tool), identity)
+                self.assertFalse(self.journal.exists())
 
-    def test_assertion_failures_restore_tools_and_never_report_online_recovery(self):
-        for failure in ("wrong_id", "registration_rejected", "dependency_changed", "peer_changed", "probe_timeout"):
-            with self.subTest(failure=failure):
-                tool = self.tool()
-                original = SUITE.file_identity(tool)
-                observer = FakeObserver(tool, "pointcloud", "pdal")
-                if failure == "wrong_id":
-                    observer.registration["engine_id"] = 43
-                elif failure == "registration_rejected":
-                    observer.registration["http_status"] = 503
-                elif failure == "dependency_changed":
-                    observer.changed_dependency = True
-                elif failure == "peer_changed":
-                    observer.fail_offline = True
-                else:
-                    observer.registration_probe_finished = lambda *_: (_ for _ in ()).throw(SUITE.SuiteError("probe timeout"))
-                with self.assertRaises(SUITE.SuiteError):
-                    SUITE.run_cycle(observer, self.fault, "pointcloud")
-                self.assertEqual(SUITE.file_identity(tool), original)
-                self.assertFalse(self.fault.journal.exists())
-                self.assertEqual(observer.events.count("online"), 1)
+    def test_failed_assertions_restore_file_and_never_report_online_recovery(self):
+        for failure in ('wrong_id','registration_rejected','dependency_changed','peer_changed','probe_timeout'):
+            observer = FakeObserver(self.tool, 'pointcloud', 'pdal')
+            if failure == 'wrong_id': observer.registration['engine_id'] = 43
+            elif failure == 'registration_rejected': observer.registration['http_status'] = 503
+            elif failure == 'dependency_changed': observer.changed_dependency = True
+            elif failure == 'peer_changed': observer.fail_offline = True
+            else: observer.registration_probe_finished = lambda *_: (_ for _ in ()).throw(SUITE.SuiteError('timeout'))
+            fault = self.fault
+            class Adapter:
+                @contextmanager
+                def missing(_, runtime):
+                    fault.missing()
+                    try: yield
+                    finally: fault.restore()
+            with self.subTest(failure=failure), self.assertRaises(SUITE.SuiteError):
+                SUITE.run_cycle(observer, Adapter(), 'pointcloud')
+            self.assertTrue(self.tool.exists())
+            self.assertFalse(self.journal.exists())
+            self.assertEqual(observer.events.count('online'), 1)
 
-    def test_interrupt_restores_exact_file_without_chmod_of_hardlinked_cache(self):
-        tool = self.tool()
-        cache = self.artifacts / "conda-cache"
-        os.link(tool, cache)
-        original = SUITE.file_identity(cache)
-        with self.assertRaises(SUITE.SuiteError):
-            with self.fault.missing(tool):
-                self.assertFalse(tool.exists())
-                SUITE.interrupted(signal.SIGTERM, None)
-        self.assertEqual(SUITE.file_identity(tool), original)
-        self.assertEqual(SUITE.file_identity(cache), original)
-
-    def test_restore_only_handles_killed_process_and_is_idempotent(self):
-        tool = self.tool()
-        original = SUITE.file_identity(tool)
-        program = f'''import importlib.util, pathlib
-s=importlib.util.spec_from_file_location("fault",{str(SCRIPT)!r})
-m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
-m.ROOT=pathlib.Path({str(self.root)!r})
-with m.ToolFault(pathlib.Path({str(self.fault.journal)!r})).missing(pathlib.Path({str(tool)!r})):
-    import os,signal; os.kill(os.getpid(),signal.SIGKILL)
-'''
-        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True)
+    def test_sigkill_leaves_recoverable_journal_and_restore_is_idempotent(self):
+        identity = AGENT.file_identity(self.tool)
+        code = f'''import importlib.util, pathlib, os, signal
++s=importlib.util.spec_from_file_location("fault",{str(AGENT_PATH)!r})
++m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
++m.ToolFault(pathlib.Path({str(self.tool)!r}),pathlib.Path({str(self.journal)!r})).missing()
++os.kill(os.getpid(),signal.SIGKILL)
++'''.replace('\n+', '\n')
+        result = subprocess.run([sys.executable,'-c',code],capture_output=True,text=True)
         self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assertFalse(tool.exists())
-        self.fault.restore()
-        self.fault.restore()
-        self.assertEqual(SUITE.file_identity(tool), original)
-        self.assertFalse(list(tool.parent.glob("*.addp-health-recovery")))
+        self.assertFalse(self.tool.exists())
+        self.fault.restore();self.fault.restore()
+        self.assertEqual(AGENT.file_identity(self.tool),identity)
+        self.assertFalse(self.fault.backup.exists())
 
-    def test_recovery_refuses_concurrent_replacement_and_preserves_journal(self):
-        tool = self.tool()
-        original = SUITE.file_identity(tool)
-        with self.assertRaisesRegex(SUITE.SuiteError, "refusing overwrite"):
-            with self.fault.missing(tool):
-                tool.write_bytes(b"concurrent replacement")
-        self.assertTrue(self.fault.journal.exists())
-        self.assertEqual(tool.read_bytes(), b"concurrent replacement")
-        tool.unlink()
-        self.fault.restore()
-        self.assertEqual(SUITE.file_identity(tool), original)
+    def test_sigterm_finally_restores_hardlinked_file_without_chmod(self):
+        cache = self.root/'cache'
+        os.link(self.tool,cache)
+        identity = AGENT.file_identity(cache)
+        try:
+            self.fault.missing()
+            with self.assertRaises(SUITE.SuiteError): SUITE.interrupted(signal.SIGTERM,None)
+        finally: self.fault.restore()
+        self.assertEqual(AGENT.file_identity(cache),identity)
+        self.assertEqual(AGENT.file_identity(self.tool),identity)
 
-    def test_fault_refuses_external_symlink_and_unowned_paths(self):
-        outside = self.artifacts / "tool"
-        outside.write_bytes(b"external")
-        for tool in (outside, self.root / "system-tool"):
-            with self.subTest(tool=tool), self.assertRaises((SUITE.SuiteError, ValueError)):
-                with self.fault.missing(tool):
-                    self.fail("unsafe fault was allowed")
-        tool = self.tool()
-        tool.unlink()
-        tool.symlink_to(outside)
-        with self.assertRaises(SUITE.SuiteError):
-            with self.fault.missing(tool):
-                self.fail("symlink was allowed")
-        self.assertEqual(outside.read_bytes(), b"external")
+    def test_refuses_concurrent_replacement_or_modified_backup(self):
+        self.fault.missing()
+        self.tool.write_bytes(b'other owner replacement')
+        with self.assertRaisesRegex(RuntimeError,'refusing overwrite'): self.fault.restore()
+        self.assertTrue(self.journal.exists())
+        self.assertEqual(self.tool.read_bytes(),b'other owner replacement')
+        self.tool.unlink()
+        self.fault.backup.write_bytes(b'changed backup')
+        with self.assertRaisesRegex(RuntimeError,'backup identity'): self.fault.restore()
 
+    def test_agent_materializes_private_inode_then_restores_exactly(self):
+        alias = self.root/'alias'
+        alias.symlink_to(self.tool)
+        before = AGENT.file_identity(self.tool)
+        with patch.object(AGENT,'TOOLS',{'TEST_TOOL':str(self.tool)}), patch.object(AGENT,'JOURNAL',self.journal), \
+             patch.dict(os.environ,{'TEST_TOOL':str(alias)}), patch.object(sys,'argv',['agent','prepare','TEST_TOOL']):
+            AGENT.main()
+            private = AGENT.file_identity(self.tool)
+            self.assertEqual(private['sha256'],before['sha256'])
+            self.assertEqual(private['mode'],before['mode'])
+            self.assertNotEqual(private['inode'],before['inode'])
+            self.fault.missing();self.fault.restore()
+            self.assertEqual(AGENT.file_identity(self.tool),private)
+        self.assertFalse(list(self.root.glob('*.addp-health-*')))
+
+    def test_personal_environment_is_rejected_before_container_commands(self):
+        (self.root/'.env').touch()
+        env={'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux'}
+        with patch.object(SUITE,'ROOT',self.root),patch.dict(os.environ,env), self.assertRaisesRegex(SUITE.SuiteError,'repository .env'):
+            SUITE.isolation()
+
+    def test_product_identity_rejects_wrong_owner_entry_and_container_replacement(self):
+        info={'Id':'container-1','Image':'image-1','RestartCount':0,
+              'State':{'Running':True,'Pid':123,'StartedAt':'now'},'HostConfig':{'NetworkMode':'host'},
+              'Config':{'Env':['PORT=8102'],'Cmd':['python','api_server.py'],'Labels':{'com.addp.online-runtime':SUITE.SUITE,'com.addp.online-run-id':'run-1'}}}
+        def command(*args,**kwargs): return 'container-1\n' if args[0]=='ps' else json.dumps([info])
+        with patch.dict(os.environ,{'ADDP_ONLINE_TEST_RUN_ID':'run-1'}),patch.object(SUITE,'docker',side_effect=command):
+            runtime=SUITE.Runtime('pointcloud');runtime.stable()
+            info['Id']='other-container'
+            with self.assertRaises(SUITE.SuiteError):runtime.stable()
+            info['Id']='container-1';info['Config']['Labels']['com.addp.online-run-id']='other-run'
+            with self.assertRaisesRegex(SUITE.SuiteError,'ownership'):SUITE.Runtime('pointcloud')
+            info['Config']['Labels']['com.addp.online-run-id']='run-1';info['Config']['Cmd']=['fake-server']
+            with self.assertRaisesRegex(SUITE.SuiteError,'entry'):SUITE.Runtime('pointcloud')
+
+    def test_descriptor_identity_lifecycle_and_other_instances_remain_stable(self):
+        from types import SimpleNamespace
+        observer=SUITE.Observer.__new__(SUITE.Observer)
+        observer.runtimes={};observer.products={};observer.stable=lambda:None
+        descriptors=[]
+        for number,(name,dep,_) in enumerate(SUITE.CASES,42):
+            observer.runtimes[name]={'dep':dep}
+            observer.products[name]=SimpleNamespace(identity={'port':8100+number},logs=lambda name=name:f'{name}_workflow registered to System')
+            descriptors.append({'id':number,'engine_type':name+'_workflow','lifecycle_state':'active','connection_status':'online',
+                                'runtime_endpoint':{'protocol':'http','host':'127.0.0.1','port':8100+number}})
+        observer.descriptors=lambda:copy.deepcopy(descriptors)
+        observer.bind()
+        self.assertTrue(observer.state('pointcloud','online'))
+        descriptors[0]['connection_status']='offline'
+        self.assertTrue(observer.state('pointcloud','offline'))
+        descriptors[1]['connection_status']='offline'
+        self.assertFalse(observer.state('pointcloud','offline'))
+        descriptors[0]['id']=99
+        with self.assertRaises(SUITE.SuiteError):observer.state('pointcloud','offline')
+        descriptors[0]['id']=42;descriptors[0]['lifecycle_state']='retired'
+        with self.assertRaises(SUITE.SuiteError):observer.state('pointcloud','offline')
     def test_health_contract_rejects_false_positive_and_legacy_shapes(self):
         body = {"status": "healthy", "service": "pointcloud-workflow", "version": "1.0",
                 "dependencies": {"pdal": {"required": True, "available": True}}}
@@ -192,53 +224,5 @@ with m.ToolFault(pathlib.Path({str(self.fault.journal)!r})).missing(pathlib.Path
         body["dependencies"]["pdal"]["available"] = False
         SUITE.validate_health(503, body, "pdal")
 
-    def test_personal_environment_is_rejected_before_native_commands(self):
-        (self.root / ".env").touch()
-        with patch.dict(os.environ, {"ADDP_ONLINE_HOST": "1"}), patch.object(sys, "platform", "darwin"):
-            with self.assertRaisesRegex(SUITE.SuiteError, "repository .env"):
-                SUITE.isolation()
 
-    def test_exact_process_selects_only_requested_runtime_using_production_flags(self):
-        source = (SCRIPT.parents[1] / "dev/start.sh").read_text()
-        body = re.search(r'if \[ "\$EXACT_PROCESS" = true \]; then\n    case "\$SELECTED_MODULE" in\n(.*?)    esac', source, re.S).group(1)
-        for name, _, _ in SUITE.CASES:
-            shell = 'SELECTED_MODULE=$1; case "$SELECTED_MODULE" in\n' + body + '\nesac\ncompgen -A variable START_ | while read -r flag; do printf "%s=%s\\n" "$flag" "${!flag}"; done'
-            result = subprocess.run(["bash", "-c", shell, "_", name + "-workflow"], capture_output=True, text=True, check=True)
-            self.assertEqual(result.stdout.strip(), f"START_{name.upper()}_WORKFLOW=true")
-
-    def test_descriptor_endpoint_facts_bind_to_owned_listener_and_identity_changes_fail(self):
-        descriptors = []
-        observer = SUITE.Observer.__new__(SUITE.Observer)
-        observer.runtimes = {}
-        observer.processes = {}
-        observer.stable = lambda: None
-        for number, (name, dep, _) in enumerate(SUITE.CASES, 42):
-            observer.runtimes[name] = {"dep": dep}
-            observer.processes[name + "-workflow-engine"] = {"pid": number}
-            descriptors.append({"id": number, "engine_type": name + "_workflow", "lifecycle_state": "active",
-                                "connection_status": "online", "runtime_endpoint":
-                                {"protocol": "http", "host": "localhost", "port": 8100 + number}})
-            log = self.root / f"logs/{name}-workflow-engine.log"
-            log.parent.mkdir(exist_ok=True)
-            log.write_text(f"{name}_workflow registered to System\n")
-        descriptors.append({"id": 99, "engine_type": "postgresql", "lifecycle_state": "active"})
-        observer.descriptors = lambda: copy.deepcopy(descriptors)
-        with patch.object(SUITE.subprocess, "check_output", side_effect=lambda args, **_: str(int(args[2][4:]) - 8100) + "\n"):
-            observer.bind()
-        self.assertEqual(observer.runtimes["pointcloud"]["url"], "http://localhost:8142")
-        self.assertTrue(observer.state("pointcloud", "online"))
-        descriptors[0]["connection_status"] = "offline"
-        self.assertTrue(observer.state("pointcloud", "offline"))
-        descriptors[1]["connection_status"] = "offline"
-        self.assertFalse(observer.state("pointcloud", "offline"))
-        for field, value in (("id", 111), ("lifecycle_state", "retired"),
-                             ("runtime_endpoint", {"host": "other-checkout"})):
-            original = descriptors[0][field]
-            descriptors[0][field] = value
-            with self.subTest(field=field), self.assertRaises(SUITE.SuiteError):
-                observer.state("pointcloud", "offline")
-            descriptors[0][field] = original
-
-
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == '__main__': unittest.main()

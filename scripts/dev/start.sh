@@ -238,9 +238,9 @@ if [ "$EXACT_PROCESS" = true ]; then
     exit 1
   }
   case "$SELECTED_MODULE" in
-    system|manager|gateway|pointcloud-workflow|model3d-workflow|document-workflow) ;;
+    system|manager|gateway) ;;
     *)
-      echo "❌ --exact-process 仅支持 System、Manager、Gateway 及 PointCloud、Model3D、Document Runtime" >&2
+      echo "❌ --exact-process 必须且只能选择 -system、-manager 或 -gateway" >&2
       exit 1
       ;;
   esac
@@ -388,15 +388,6 @@ else
         ;;
       gateway)
         START_GATEWAY=true
-        ;;
-      pointcloud-workflow)
-        START_POINTCLOUD_WORKFLOW=true
-        ;;
-      model3d-workflow)
-        START_MODEL3D_WORKFLOW=true
-        ;;
-      document-workflow)
-        START_DOCUMENT_WORKFLOW=true
         ;;
     esac
   else

@@ -17,11 +17,12 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
-    def test_workflow_runtime_health_requires_exact_lifecycle_and_owner_regressions(self):
+    def test_workflow_runtime_health_requires_manual_hosted_lifecycle_and_regressions(self):
         source = SCRIPT.parents[2]
-        paths = ("Makefile", "scripts/test/online-host-gate.sh", "scripts/dev/start.sh",
-                 "scripts/test/workflow-runtime-health-recovery-online.py",
-                 "scripts/test/workflow-runtime-health-recovery-online_test.py")
+        paths = ("Makefile", "scripts/test/online-host-gate.sh", ".github/workflows/online-t4-gates.yml",
+                 "scripts/test/workflow-runtime-health-recovery-online.py", "scripts/test/workflow-runtime-health-recovery-online_test.py",
+                 "scripts/test/workflow-runtime-health-tool.py", "scripts/test/online-hosted-workflow-health-gate.sh",
+                 "scripts/test/online-hosted-workflow-health-gate_test.py")
         for relative in paths:
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -29,17 +30,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"workflow-runtime-health-recovery"}
         CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
         for relative, fragment in ((paths[0], "$(MAKE) test-workflow-runtime-health-online-runner"),
-                                   (paths[0], "workflow-runtime-health-recovery-online_test.py"),
-                                   (paths[1], "workflow-runtime-health-recovery-online.py --restore-only"),
-                                   (paths[1], 'scripts/dev/start.sh --exact-process "$target"'),
-                                   (paths[1], "DEVELOP_SERVICE_CLIENT_SECRET"),
-                                   (paths[2], "      pointcloud-workflow)\n        START_POINTCLOUD_WORKFLOW=true")):
+                                   (paths[0], "WorkflowRuntimeHealth"),
+                                   (paths[2], "inputs.suite != 'workflow-runtime-health-recovery'"),
+                                   (paths[6], "workflow-runtime-health-recovery-online.py --restore-only"),
+                                   (paths[6], "--suite workflow-runtime-health-recovery")):
             target = self.repository / relative
             original = target.read_text()
             target.write_text(original.replace(fragment, "omitted"))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
             target.write_text(original)
+        host = self.repository / paths[1]
+        host.write_text(host.read_text() + "\n# workflow-runtime-health-recovery\n")
+        with self.assertRaises(CHECK.RegistrationError):
+            CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
 
     def test_administrator_governance_requires_manual_isolated_profile(self):
         source = SCRIPT.parents[2]

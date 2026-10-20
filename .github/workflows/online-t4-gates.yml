@@ -156,7 +156,7 @@ jobs:
 
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'workflow-runtime-health-recovery' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -1029,6 +1029,69 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (manager-internal-artifact-lineage, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  workflow-health-hosted-t4:
+    name: Online T4 (workflow-runtime-health-recovery, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'workflow-runtime-health-recovery'
+    concurrency:
+      group: online-t4-workflow-runtime-health-recovery
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: workflow-runtime-health-recovery
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Validate Hosted Workflow Health readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-workflow-health-gate.sh --check-only
+
+      - name: Run Hosted Workflow Health Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-workflow-health-gate.sh
+
+      - name: Upload Hosted Workflow Health evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-workflow-runtime-health-recovery-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Workflow Health T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (workflow-runtime-health-recovery, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

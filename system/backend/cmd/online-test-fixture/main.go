@@ -254,7 +254,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return orchestratorPermissions, nil
 	case "manager-internal-artifact-lineage":
 		return managerArtifactPermissions, nil
-	case "compose-public-origin":
+	case "compose-public-origin", "workflow-runtime-health-recovery":
 		return nil, nil
 	default:
 		return nil, errors.New("unsupported Online identity fixture suite")

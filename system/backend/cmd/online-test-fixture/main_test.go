@@ -1329,3 +1329,10 @@ func TestFTPFixtureUsesOnlyFileConsumerPermissions(t *testing.T) {
 		t.Fatal("FTP browser must use the same ordinary User")
 	}
 }
+
+func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisioner(t *testing.T) {
+	permissions, err := suitePermissions("workflow-runtime-health-recovery")
+	if err != nil || len(permissions) != 0 || needsEngineProvisioner("workflow-runtime-health-recovery") {
+		t.Fatalf("health fixture must only create isolated tenant identities: %v, %v", permissions, err)
+	}
+}

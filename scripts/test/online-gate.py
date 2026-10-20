@@ -46,7 +46,7 @@ class Suite:
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
     "workflow-runtime-health-recovery": Suite(
-        command=("engines/pointcloud-workflow/venv/bin/python", "scripts/test/workflow-runtime-health-recovery-online.py"),
+        command=("bash", "-c", 'exec "$ADDP_ONLINE_SECRET_DIR/observer/bin/python" scripts/test/workflow-runtime-health-recovery-online.py'),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL")),
     ),
     "pg-source-authorization": Suite(

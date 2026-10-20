@@ -132,27 +132,32 @@ def validate_workflow_runtime_health_profile(repository: Path, registered: set[s
     if "workflow-runtime-health-recovery" not in registered:
         return
     host = (repository / "scripts/test/online-host-gate.sh").read_text()
-    for fragment in (
-        "for target in -system -gateway -pointcloud-workflow -model3d-workflow -document-workflow",
-        'scripts/dev/start.sh --exact-process "$target"',
-        "workflow-runtime-health-recovery-online.py --restore-only",
-        "DEVELOP_SERVICE_CLIENT_SECRET", "POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET",
-        "MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET",
-    ):
-        if fragment not in host:
-            raise RegistrationError(f"workflow-runtime-health-recovery lifecycle is missing {fragment}")
-    for filename in ("workflow-runtime-health-recovery-online.py", "workflow-runtime-health-recovery-online_test.py"):
+    if "workflow-runtime-health-recovery" in host:
+        raise RegistrationError("Runtime health must not retain a self-hosted profile")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  workflow-health-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+            or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'workflow-runtime-health-recovery'" not in job.group("body")
+            or "inputs.suite != 'workflow-runtime-health-recovery'" not in workflow):
+        raise RegistrationError("Runtime health requires one manual Hosted Linux job")
+    for filename in ("workflow-runtime-health-recovery-online.py", "workflow-runtime-health-recovery-online_test.py",
+                     "workflow-runtime-health-tool.py", "online-hosted-workflow-health-gate.sh", "online-hosted-workflow-health-gate_test.py"):
         if not (repository / "scripts/test" / filename).is_file():
-            raise RegistrationError(f"workflow-runtime-health-recovery requires {filename}")
+            raise RegistrationError(f"Runtime health requires {filename}")
     makefile = (repository / "Makefile").read_text()
     if "$(MAKE) test-workflow-runtime-health-online-runner" not in make_target_commands(makefile, "test-online-runner"):
         raise RegistrationError("Runtime health regression must belong to test-online-runner")
-    if "workflow-runtime-health-recovery-online_test.py" not in make_target_commands(makefile, "test-workflow-runtime-health-online-runner"):
-        raise RegistrationError("Runtime health owner regression is missing")
-    start = (repository / "scripts/dev/start.sh").read_text()
-    for name, flag in (("pointcloud", "POINTCLOUD"), ("model3d", "MODEL3D"), ("document", "DOCUMENT")):
-        if f"      {name}-workflow)\n        START_{flag}_WORKFLOW=true" not in start:
-            raise RegistrationError(f"Runtime health exact-process selection missing {name}")
+    commands = make_target_commands(makefile, "test-workflow-runtime-health-online-runner")
+    for fragment in ("workflow-runtime-health-recovery-online_test.py", "online-hosted-workflow-health-gate_test.py", "WorkflowRuntimeHealth"):
+        if fragment not in commands:
+            raise RegistrationError(f"Runtime health regression missing {fragment}")
+    gate = (repository / "scripts/test/online-hosted-workflow-health-gate.sh").read_text()
+    for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+                     'scripts/dev/start.sh --exact-process "$target"', 'for target in -system -gateway',
+                     '--suite workflow-runtime-health-recovery', '--services model3d-workflow-engine,pointcloud-workflow-engine,document-workflow-engine',
+                     'workflow-runtime-health-recovery-online.py --restore-only', 'docker rm -fv', 'runtime_cleanup='):
+        if fragment not in gate:
+            raise RegistrationError(f"Runtime health Hosted lifecycle missing {fragment}")
 
 
 def validate_module_registry_process_profile(repository: Path, registered: set[str]) -> None:

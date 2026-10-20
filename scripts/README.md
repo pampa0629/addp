@@ -35,7 +35,7 @@
 
 - 变更验证使用 `make test-changed`，明确单个 Owner 时使用 `make test-module MODULE=<模块>`。
 - Online 与发布认证分别使用 `make test-online ONLINE_SUITE=<suite>`、`make test-release RELEASE_SUITE=<suite>`，身份、环境与覆盖边界见[统一测试规范](../docs/spec/addp测试与验收规范.md)。
-- PDAL、IFC、LibreOffice 必需工具故障与恢复使用 `workflow-runtime-health-recovery` suite，复用专用 macOS Online Runner；本地确定性入口为 `make test-workflow-runtime-health-online-runner`，准备、断言与清理见[Runtime 健康恢复规范](../docs/spec/testing/scenarios/部署与执行恢复.md#workflow-runtime-health-recovery)。
+- PDAL、IFC、LibreOffice 必需工具故障与恢复使用 `workflow-runtime-health-recovery` suite，复用 GitHub Hosted Ubuntu 一次性部署；本地确定性入口为 `make test-workflow-runtime-health-online-runner`，准备、断言与清理见[Runtime 健康恢复规范](../docs/spec/testing/scenarios/部署与执行恢复.md#workflow-runtime-health-recovery)。
 - Infra 启停、初始化与排障直接查[Infra 专题](infra/README.md)，总入口不重复维护操作步骤。
 
 ## 相关文档
