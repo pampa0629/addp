@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 import pytest
-from osgeo import gdal, osr
+from osgeo import gdal, gdal_array, osr
 
 import operators.raster_compute as compute
 from operators import list_operators
@@ -16,7 +16,7 @@ from operators.raster_compute import (
 
 def _source(path, values, *, crs='EPSG:3857', transform=(100, 2, 0, 200, 0, -2),
             dtype=gdal.GDT_Float64, nodata=-9999, alpha=None, mask=None):
-    data = np.asarray(values)
+    data = np.asarray(values, dtype=gdal_array.GDALTypeCodeToNumericTypeCode(dtype))
     data = data[None] if data.ndim == 2 else data
     dataset = gdal.GetDriverByName('GTiff').Create(str(path), data.shape[2], data.shape[1],
                                                  len(data) + (alpha is not None), dtype)
@@ -256,6 +256,96 @@ def test_nibble_exact_safe_integer_native_types(tmp_path, dtype, values):
     with raster_workspace():
         result = raster_nibble(raster_load(_source_plan(source)), 1, [7])
         np.testing.assert_array_equal(_values(result.path), [[values[0][0], values[0][0], values[0][2]]])
+
+
+@pytest.mark.parametrize('value', [2**53 - 1, 2**53, 2**53 + 1, 2**64 - 1])
+@pytest.mark.parametrize('masked', [False, True])
+def test_nibble_uint64_stored_values_and_valid_domain(tmp_path, value, masked):
+    values = [[7, value, 1]]
+    coverage = np.array([[255, 0 if masked else 255, 255]], dtype=np.uint8)
+    source = _source(tmp_path / 'uint64.tif', values, dtype=gdal.GDT_UInt64,
+                     nodata=None, mask=coverage if masked else None)
+    dataset = gdal.Open(str(source))
+    band = dataset.GetRasterBand(1)
+    assert band.DataType == gdal.GDT_UInt64 and band.GetNoDataValue() is None
+    assert band.ReadAsArray().dtype == np.dtype(np.uint64)
+    np.testing.assert_array_equal(band.ReadAsArray(), np.asarray(values, dtype=np.uint64))
+    np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(), coverage)
+    band = dataset = None
+    before = source.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        workspace = loaded.workspace
+        if not masked and value > 2**53 - 1:
+            with pytest.raises(ValueError, match='classification'):
+                raster_nibble(loaded, 1, [7])
+        else:
+            result = raster_nibble(loaded, 1, [7])
+            expected = [[1, np.nan, 1]] if masked else [[value, value, 1]]
+            np.testing.assert_array_equal(_values(result.path), expected)
+        _assert_clean(workspace)
+    assert not workspace.exists() and source.read_bytes() == before
+
+
+@pytest.mark.parametrize('operator', ['nibble', 'mode'])
+@pytest.mark.parametrize('dtype,value,nodata', [
+    (gdal.GDT_UInt64, 2**64 - 2, 2**64 - 1),
+    (gdal.GDT_Int64, 2**53 + 1, 2**53),
+    (gdal.GDT_Int64, -(2**53 + 1), -(2**53)),
+])
+@pytest.mark.parametrize('explicit_mask', [False, True])
+def test_nibble_and_mode_native_nodata_does_not_hide_unsafe_classes(tmp_path, operator, dtype, value, nodata, explicit_mask):
+    native_type = np.uint64 if dtype == gdal.GDT_UInt64 else np.int64
+    values = np.array([[7, value, 1, nodata]], dtype=native_type)
+    source = _source(tmp_path / 'aliased.tif', values, dtype=dtype, nodata=None,
+                     mask=np.full(values.shape, 255, np.uint8) if explicit_mask else None)
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    band = dataset.GetRasterBand(1)
+    setter = band.SetNoDataValueAsUInt64 if dtype == gdal.GDT_UInt64 else band.SetNoDataValueAsInt64
+    setter(nodata)
+    band = dataset = None
+    dataset = gdal.Open(str(source))
+    band = dataset.GetRasterBand(1)
+    assert band.GetNoDataValue() == nodata
+    np.testing.assert_array_equal(band.ReadAsArray(), values)
+    assert band.GetMaskBand().ReadAsArray()[0, 1] == 255
+    band = dataset = None
+    before = source.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        workspace = loaded.workspace
+        with pytest.raises(ValueError, match='classification'):
+            if operator == 'nibble':
+                raster_nibble(loaded, 1, [7])
+            else:
+                compute.raster_focal_statistics(loaded, 1, 3, 'mode')
+        _assert_clean(workspace)
+    assert not workspace.exists() and source.read_bytes() == before
+
+
+@pytest.mark.parametrize('operator', ['nibble', 'mode'])
+@pytest.mark.parametrize('dtype,nodata', [
+    (gdal.GDT_UInt64, 2**64 - 1), (gdal.GDT_Int64, 2**53), (gdal.GDT_Int64, -(2**53)),
+])
+def test_nibble_and_mode_ignore_exact_native_nodata_with_explicit_mask(tmp_path, operator, dtype, nodata):
+    native_type = np.uint64 if dtype == gdal.GDT_UInt64 else np.int64
+    values = np.array([[7, nodata, 1]], dtype=native_type)
+    source = _source(tmp_path / 'nodata.tif', values, dtype=dtype, nodata=None,
+                     mask=np.full(values.shape, 255, np.uint8))
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    band = dataset.GetRasterBand(1)
+    setter = band.SetNoDataValueAsUInt64 if dtype == gdal.GDT_UInt64 else band.SetNoDataValueAsInt64
+    setter(nodata)
+    band = dataset = None
+    before = source.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        workspace = loaded.workspace
+        result = (raster_nibble(loaded, 1, [7]) if operator == 'nibble'
+                  else compute.raster_focal_statistics(loaded, 1, 3, 'mode'))
+        np.testing.assert_array_equal(_values(result.path), [[1 if operator == 'nibble' else 7, np.nan, 1]])
+        _assert_clean(workspace)
+    assert not workspace.exists() and source.read_bytes() == before
 
 
 @pytest.mark.parametrize('fault', ['geographic', 'missing-crs', 'missing-grid', 'rotated', 'south-up', 'west-up',

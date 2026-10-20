@@ -846,6 +846,13 @@ def _classification_values(values, valid):
     return selected.astype(np.int64)
 
 
+def _safe_classification_values(values, valid):
+    selected = values[valid]
+    if np.any(selected < -(2**53 - 1)) or np.any(selected > 2**53 - 1):
+        raise ValueError('classification values must be exact safe integers')
+    return _classification_values(values, valid)
+
+
 def raster_polygonize(input_raster, band, connectivity=4):
     if type(connectivity) is not int or connectivity not in (4, 8):
         raise ValueError('connectivity must be integer 4 or 8')
@@ -1251,11 +1258,11 @@ def raster_focal_statistics(input_raster, band, window_size, method):
             left, top = max(0, x - radius), max(0, y - radius)
             right = min(dataset.RasterXSize, x + width + radius)
             bottom = min(dataset.RasterYSize, y + height + radius)
-            _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top)))
+            _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top),
+                                               native=method == 'mode'))
             if method == 'mode':
-                # Reads are Float64: use the shared exact-safe classification contract
-                # for native inputs as well as reclassified floating storage.
-                _classification_values(arrays[0], masks[0])
+                _safe_classification_values(arrays[0], masks[0])
+                arrays[0] = arrays[0].astype(np.float64)
             # Padding supplies only invalid placeholders, never contributing zeros.
             values = np.pad(np.where(masks[0], arrays[0], 0.), radius)
             valid = np.pad(masks[0], radius, constant_values=False)
@@ -1793,8 +1800,8 @@ def raster_nibble(input_raster, band, target_values):
         if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
             _band(dataset, index)
     matches = donors = 0
-    for _, _, arrays, masks in _blocks(dataset, [band]):
-        _classification_values(arrays[0], masks[0])
+    for _, _, arrays, masks in _blocks(dataset, [band], native=True):
+        _safe_classification_values(arrays[0], masks[0])
         matched = masks[0] & np.isin(arrays[0], target_values)
         matches += int(np.count_nonzero(matched))
         donors += int(np.count_nonzero(masks[0] & ~matched))

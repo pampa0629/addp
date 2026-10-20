@@ -59,11 +59,11 @@
 | `raster_footprint` | `raster` → `GeoDataFrame` | 所选数据波段有效范围的并集/交集，保留源 CRS、孔洞与分离面片。 |
 | `raster_statistics` | raster、从 1 开始的 band | 按块全量累计 min/max/mean/总体标准差、有效/无效计数与比例；全无效时统计值为 null。 |
 | `raster_zonal_statistics` | 同网格数值／整数分区 raster、必填数值／分区波段 | 同类非连通区域合并，分区无效像元排除；输出每类像元计数及 sum/min/max/mean/总体标准差普通表，全无效数值为 null，沿既有保存。Native 与真实跨模块验收分别记账。 |
-| `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev/mode | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；mode 分类众数扩展已实现并经 Native 验证，最高频并列优先中心原分类、否则取较小分类；Native 与真实跨模块验收分别记账。 |
+| `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev/mode | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；mode 分类众数扩展已实现并经独立 Hosted 验证，最高频并列优先中心原分类、否则取较小分类；Native 与真实跨模块验收分别记账。 |
 | `raster_vector_zonal_statistics` | raster、同 CRS 有效二维面、必填数据波段，可选覆盖规则及列前缀 | 首期已实现；每面独立，重叠分别计入，保留原面／属性／顺序并追加计数与五项统计，复用矢量保存；Native 与真实跨模块验收分别记账。 |
 | `raster_proximity` | raster、必填不超过 32 位的整数数据波段、显式目标分类值 | 首期已实现；投影北向方形网格，最近有效目标像元中心的米制 Float64 欧氏距离；源无效位置保留 NoData，不作为障碍，无有效目标失败；Native 与真实链路分开记账。 |
-| `raster_recommend_band_combination` | raster、显式 3–16 个候选数据波段 | 首期已实现、完整 Native 已验证；全量共同有效像元的 OIF 三波段组合排名及推荐 object，原始存储值，不自动 RGB 或宣称专题最优。 |
-| `raster_nibble` | raster、显式分类数据波段、目标分类列表 | 首期已实现、完整 Native 已验证；全图最近有效非目标供体替换，等距按源行列，保持无效覆盖；限投影北向方形网格，沿既有 COG。 |
+| `raster_recommend_band_combination` | raster、显式 3–16 个候选数据波段 | 首期已实现并通过独立 Hosted；全量共同有效像元的 OIF 三波段组合排名及推荐 object，原始存储值，不自动 RGB 或宣称专题最优。 |
+| `raster_nibble` | raster、显式分类数据波段、目标分类列表 | 首期已实现并通过独立 Hosted；全图最近有效非目标供体替换，等距按源行列，保持无效覆盖；限投影北向方形网格，沿既有 COG。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |
 | `raster_slope` | raster、必填高程单位、band、degree/percent | 同网格单波段坡度，默认角度。 |
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
@@ -162,11 +162,11 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
-| `make test-online ONLINE_SUITE=raster-proximity-persistence` | 邻近距离米制多波段及英尺制 UInt32 两条 COG 保存链；完整像元／mask、米制单位、源网格／CRS、COG、严格三方大小、精确扫描、同用户／当前执行输入血缘及失败清理；独立手工 Hosted，600 秒预算。固定 `7c2d47ed5` 的完整 Hosted 已通过，见本节验收边界。 |
+| `make test-online ONLINE_SUITE=raster-proximity-persistence` | 邻近距离米制多波段及英尺制 UInt32 两条 COG 保存链；完整像元／mask、米制单位、源网格／CRS、COG、严格三方大小、精确扫描、同用户／当前执行输入血缘及失败清理；独立手工 Hosted，600 秒预算。首个 `7c2d47ed5` 基线及 `e712b3b13` 共享核心完整 Hosted 回归均通过，见本节验收边界。 |
 | `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。固定 `9b2830a39` 的完整 Hosted 已通过，见本节验收边界。 |
-| `make test-online ONLINE_SUITE=raster-band-recommendation-workflow` | 只读 OIF 三波段组合推荐的完整 object、共同有效域、560 个组合、无界／并列、候选顺序、非法输入和精确源身份；仅源扫描，无成果文件／派生血缘；独立手工 Hosted、600 秒预算，尚未实际通过。 |
-| `make test-online ONLINE_SUITE=raster-nibble-persistence` | 直接蚕食、重分类接蚕食及无目标命中的三条 COG 链；独立最近原供体 oracle、完整精确分类／mask、严格三方大小、扫描、同用户／当前执行血缘、非法输入失败与零残留；独立手工 Hosted、600 秒预算，尚未实际通过。 |
-| `make test-online ONLINE_SUITE=raster-focal-mode-persistence` | 分类众数3×3、5×5及重分类接3×3三条COG链；独立Counter核对完整精确整数像元／mask、旋转跨块、COG、严格三方大小、扫描、同用户／当前执行血缘及非法波段／小数／越界分类失败清理；独立手工Hosted，600秒业务预算，实际通过前不计为T4证据。 |
+| `make test-online ONLINE_SUITE=raster-band-recommendation-workflow` | 只读 OIF 三波段组合推荐的完整 object、共同有效域、560 个组合、无界／并列、候选顺序、非法输入和精确源身份；仅源扫描，无成果文件／派生血缘；独立手工 Hosted、600 秒预算，固定 `e712b3b13` 已通过完整验收及归档审计。 |
+| `make test-online ONLINE_SUITE=raster-nibble-persistence` | 直接蚕食、重分类接蚕食及无目标命中的三条 COG 链；独立最近原供体 oracle、完整精确分类／mask、严格三方大小、扫描、同用户／当前执行血缘、非法输入失败与零残留；独立手工 Hosted、600 秒预算，固定 `e712b3b13` 已通过完整验收及归档审计。 |
+| `make test-online ONLINE_SUITE=raster-focal-mode-persistence` | 分类众数3×3、5×5及重分类接3×3三条COG链；独立Counter核对完整精确整数像元／mask、旋转跨块、COG、严格三方大小、扫描、同用户／当前执行血缘及非法波段／小数／越界分类失败清理；独立手工 Hosted，600 秒业务预算，固定 `e712b3b13` 已通过完整验收及归档审计。 |
 | `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
 | `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
@@ -193,7 +193,7 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 
 ### 6.6 栅格邻域统计验收边界
 
-固定版本 `fe0d7cc8e` 的独立 `raster-focal-statistics-persistence` 已完成六条 COG 保存链，覆盖五项统计、两种窗口的代表组合及重分类串联。519×515 多波段旋转输入的完整像元／mask、边缘与跨块、无效中心、Float64／NaN NoData、COG、严格三方相等正整数大小、六个精确自动扫描、同用户／当前执行源输入血缘、Monitor、源及先前成果不可变、非法波段／窗口失败清理与零残留均通过，归档已独立审计。预检及业务 359770 毫秒，小于 600 秒预算；当前最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。不认证全部窗口组合的 T4 覆盖、自定义权重、距离半径、分位数、众数、Manager 绘制、NFS 客户端写、业务删除、覆盖冲突或容量；同源 Linux 全量 1251 项及 Platform 通过；固定 `c6daad46f` 的 Linux 全量 1435 项另列为确定性证据；众数扩展的真实平台验收仍须由独立套件取得。
+固定版本 `fe0d7cc8e` 的独立 `raster-focal-statistics-persistence` 已完成六条 COG 保存链，覆盖五项统计、两种窗口的代表组合及重分类串联。519×515 多波段旋转输入的完整像元／mask、边缘与跨块、无效中心、Float64／NaN NoData、COG、严格三方相等正整数大小、六个精确自动扫描、同用户／当前执行源输入血缘、Monitor、源及先前成果不可变、非法波段／窗口失败清理与零残留均通过，归档已独立审计。预检及业务 359770 毫秒，小于 600 秒预算；当前最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。不认证全部窗口组合的 T4 覆盖、自定义权重、距离半径、分位数、众数、Manager 绘制、NFS 客户端写、业务删除、覆盖冲突或容量；同源 Linux 全量 1251 项及 Platform 通过；固定 `c6daad46f` 的 Linux 全量 1435 项另列为确定性证据；众数扩展另在 `e712b3b13` 通过独立套件，见 6.9 节。
 
 ### 6.7 矢量分区统计验收边界
 
@@ -201,18 +201,18 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 
 ### 6.8 栅格邻近距离验收边界
 
-固定 `7c2d47ed5` 的独立 `raster-proximity-persistence` 已完成米制多波段与美制测量英尺 UInt32 两条 COG 链，完整像元／mask、米制单位、源网格／CRS、COG、严格 artifact／物理／Meta 大小、两个精确自动扫描、普通发起人和当前执行单源血缘、源及先前成果不变，以及非法波段／无有效目标失败后无发布或新增扫描均通过。两份成果三方大小分别为 1025454／2116652 字节；预检与业务 93549 毫秒，小于独立600秒预算。完整归档经独立审计，Runtime／NFS／部署清理与Infra零残留通过；最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。不计为任意网格、测地／成本距离、路径、Manager绘制、覆盖冲突、业务删除或容量保证。
+邻近距离的首个完整基线为 `7c2d47ed5`；唯一精确距离核心扩展供体身份后，固定 `e712b3b13` 的独立 `raster-proximity-persistence` 已完整复跑原米制多波段与美制测量英尺 UInt32 两条 COG 链。完整像元／mask、米制单位、源网格／CRS、COG、严格 artifact／物理／Meta 大小、两个精确自动扫描、普通发起人和当前执行单源血缘、源及先前成果不变，以及非法波段／无有效目标失败后无发布或新增扫描均通过。两份成果三方大小仍分别为 1025454／2116652 字节，有效像元仍为 265676／267235；预检与业务 130686 毫秒，小于独立 600 秒预算。完整归档经独立审计，Runtime／NFS／部署清理与 Infra 零残留通过；最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。本轮为 API 闭环，不计 UI、任意网格、测地／成本距离、路径、覆盖冲突、业务删除或容量保证。
 
 ### 6.9 分类众数滤波验收边界
 
-独立 `raster-focal-mode-persistence` 复用既有Hosted生命周期、NFS、同源产品Runtime和普通用户原12权限，覆盖3×3、5×5及重分类接3×3三条COG保存链。五波段旋转跨块输入包括合法零、负分类、±(2^53−1)及相邻大分类、并列优先中心与较小分类、NoData／mask／alpha／非有限值，以及未选择波段中的小数与越界值。完整物理结果使用独立逐窗口Counter与精确数组相等核对，不能用近似比较掩盖整数误差；同时核验严格三方大小、COG及金字塔、精确自动扫描、同用户与当前执行源输入血缘、源及先前成果不变，非法波段／小数分类／越界分类不得发布或新增扫描。独立600秒业务预算，旧各套T4保持。入口及确定性夹具不替代实际Hosted结果；当前尚无本扩展的真实平台验收。
+独立 `raster-focal-mode-persistence` 复用既有Hosted生命周期、NFS、同源产品Runtime和普通用户原12权限，覆盖3×3、5×5及重分类接3×3三条COG保存链。五波段旋转跨块输入包括合法零、负分类、±(2^53−1)及相邻大分类、并列优先中心与较小分类、NoData／mask／alpha／非有限值，以及未选择波段中的小数与越界值。完整物理结果使用独立逐窗口Counter与精确数组相等核对，不能用近似比较掩盖整数误差；同时核验严格三方大小、COG及金字塔、精确自动扫描、同用户与当前执行源输入血缘、源及先前成果不变，非法波段／小数分类／越界分类不得发布或新增扫描。独立600秒业务预算，旧各套T4保持。固定 `e712b3b13` 已通过完整 Hosted 及独立归档审计：三份 artifact／物理／Meta 大小严格相等为 23355／24782／13789 字节，每份 267227 个有效像元；预检与业务 188364 毫秒，Runtime／NFS／部署和 Infra 零残留通过。最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)；仅认证 API 保存闭环，不计 UI、全部窗口组合、边界清理或容量。
 
 ### 6.10 OIF 推荐只读验收边界
 
-独立 `raster-band-recommendation-workflow` 使用同源产品 Runtime、NFS 和普通用户原 12 权限，独立 600 秒业务预算。跨块旋转多波段与正交样本覆盖完整共同域统计、相关矩阵、560 个组合（有限评分及零方差排除）、候选逆序结果一致，以及零相关无界和并列。真实专业执行返回的完整 object 按独立全量 NumPy／解析 oracle 核对，当前执行源 locator 和参数必须与公开 DAG 快照一致；Monitor 仅核对其安全投影，不要求暴露完整 object。只执行显式源扫描，成功及非法输入失败均不得生成成果文件、派生血缘或新增扫描，核验源物理内容／mask／定位／scale、严格物理／Meta 源大小、源元数据和血缘不变，Runtime／NFS／部署及 Infra 零残留。该入口不认证影像持久化、RGB 自动应用或专题效果；当前尚未取得真实 Hosted 通过证据。
+独立 `raster-band-recommendation-workflow` 使用同源产品 Runtime、NFS 和普通用户原 12 权限，独立 600 秒业务预算。跨块旋转多波段与正交样本覆盖完整共同域统计、相关矩阵、560 个组合（有限评分及零方差排除）、候选逆序结果一致，以及零相关无界和并列。真实专业执行返回的完整 object 按独立全量 NumPy／解析 oracle 核对，当前执行源 locator 和参数必须与公开 DAG 快照一致；Monitor 仅核对其安全投影，不要求暴露完整 object。只执行显式源扫描，成功及非法输入失败均不得生成成果文件、派生血缘或新增扫描，核验源物理内容／mask／定位／scale、严格物理／Meta 源大小、源元数据和血缘不变，Runtime／NFS／部署及 Infra 零残留。固定 `e712b3b13` 已通过完整 Hosted 及独立归档审计：16 候选的共同有效像元 267275、无效 10，455 个有限评分与 105 个常量排除完整覆盖 560 个组合，候选逆序结果完全相同；正交样本的无界／并列评分结构正确，五类失败均无发布或新增扫描。预检与业务 32421 毫秒，Runtime／NFS／部署与 Infra 零残留通过。最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)；只认证 API 只读建议，不计 UI、影像持久化、RGB 自动应用、专题效果或容量。
 
 ### 6.11 分类栅格蚕食验收边界
 
-独立 `raster-nibble-persistence` 复用同源产品 Runtime、NFS、原普通用户 12 权限及既有 COG 保存，独立 600 秒业务预算。519×515 北向方形网格、多波段输入执行直接蚕食、重分类接蚕食、无目标命中等值三条链；原始稀疏供体由全幅整数平方暴力 oracle 按行列顺序裁定，精确核对完整分类／mask、合法零、负值、安全整数边界、等距及跨无效区域，不能用产品 EDT 或近似数组比较验证自身。逐成果验证 COG、网格／CRS、严格 artifact／物理／Meta 相等正整数大小、精确自动扫描、同用户／当前执行源血缘、Monitor、源及先前成果不变；非法波段、越界分类和无供体失败不得发布或新增扫描。Runtime／NFS／部署和 Infra 清理须全部通过；不含边界清理、细化、任意网格、业务删除、覆盖冲突或容量保证，当前尚未取得真实 Hosted 通过证据。
+独立 `raster-nibble-persistence` 复用同源产品 Runtime、NFS、原普通用户 12 权限及既有 COG 保存，独立 600 秒业务预算。519×515 北向方形网格、多波段输入执行直接蚕食、重分类接蚕食、无目标命中等值三条链；原始稀疏供体由全幅整数平方暴力 oracle 按行列顺序裁定，精确核对完整分类／mask、合法零、负值、安全整数边界、等距及跨无效区域，不能用产品 EDT 或近似数组比较验证自身。逐成果验证 COG、网格／CRS、严格 artifact／物理／Meta 相等正整数大小、精确自动扫描、同用户／当前执行源血缘、Monitor、源及先前成果不变；非法波段、越界分类和无供体失败不得发布或新增扫描。固定 `e712b3b13` 已通过完整 Hosted 及独立归档审计：三份 artifact／物理／Meta 大小严格相等为 27216／27216／13871 字节，每份 265670 个有效像元；预检与业务 182905 毫秒，Runtime／NFS／部署和 Infra 零残留通过。最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)；仅认证 API 保存闭环，不含 UI、边界清理、细化、任意网格、业务删除、覆盖冲突或容量保证。
 
-本批 OIF 推荐、分类蚕食与新增三套独立夹具已纳入同一标准 `make test-geopython-workflow`，完整通过 1626 项（21 条警告，654.12 秒）；运行期间源码／夹具等 255 个冻结输入及 Native Make recipe 不变。三个独立 runner、登记一致性与工作流安全检查通过；上述确定性结果不替代尚未执行的三项真实 Hosted。
+本批 OIF 推荐、分类蚕食与新增三套独立夹具已纳入同一标准 `make test-geopython-workflow`。本地 macOS 实际通过 1626 项（21 条警告，654.12 秒），运行期间 255 个冻结输入及标准入口不变；原 Linux Native 的 UInt64 边界失败已查明为夹具转换：Float64 的 `2^64` 在 GDAL 3.8.4 写成零，原生 UInt64 夹具则精确保留最大值。夹具已修正并增加原生回读；蚕食与众数另修复原生整数有效性在 Float64 NoData 比较中被误排除的问题，新增 26 条回归，标准专项 233 项通过（11.15 秒）、修复后本地完整 Native 1652 项通过（21 条警告，548.33 秒），255 个输入及标准入口前后不变，修复后 Linux 全量与两套受影响 Hosted 尚待验证。原始失败与固定源码见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。三个独立 runner、登记一致性与工作流安全检查通过；确定性、各套 Hosted、UI 与容量分别记账。
