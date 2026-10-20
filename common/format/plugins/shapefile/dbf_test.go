@@ -11,8 +11,8 @@ func TestParseDBFAttributeWithInfoUsesPrecisionForNumericValues(t *testing.T) {
 	t.Parallel()
 
 	got := parseDBFAttributeWithInfo(dbfFieldInfo{RawType: "N", Size: 10, Precision: 2}, "42")
-	if _, ok := got.(float64); !ok {
-		t.Fatalf("parseDBFAttributeWithInfo() = %T(%#v), want float64 for decimal numeric field", got, got)
+	if got != "42" {
+		t.Fatalf("parseDBFAttributeWithInfo() = %T(%#v), want exact decimal text", got, got)
 	}
 }
 

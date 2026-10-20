@@ -29,6 +29,9 @@ func parseDBFAttributeWithInfo(field dbfFieldInfo, raw string) interface{} {
 	}
 	switch t {
 	case 'N', 'F':
+		if t == 'N' && field.Precision > 0 {
+			return raw
+		}
 		if field.Precision > 0 || strings.Contains(raw, ".") {
 			if f, err := strconv.ParseFloat(raw, 64); err == nil {
 				return f
