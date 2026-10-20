@@ -671,11 +671,16 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 	}
 
 	tableInfo := s.tableInfo
+	var described *format.TableDescribeResult
 	if tableInfoEmpty(tableInfo) {
 		var err error
-		tableInfo, err = s.describeTableInfo(ctx)
+		described, err = s.describeTable(ctx)
 		if err != nil {
 			return nil, err
+		}
+		tableInfo = format.TableInfoFromDescribeResult(described)
+		if described != nil {
+			s.spatialInfo = described.Spatial.Clone()
 		}
 	}
 	if s.tableProvider == nil {
@@ -691,7 +696,25 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		_ = input.Close()
 		return nil, fmt.Errorf("open encoded source table reader: %w", err)
 	}
-	if err := validateEncodedTableFields(tableInfo, tableReader, parseOptions); err != nil {
+	actualFields := tableReader.Fields()
+	if len(actualFields) == 0 && !tableInfoEmpty(tableInfo) {
+		// Dynamic readers discover fields while consuming rows. Before any
+		// target effects, verify their current schema through the same format
+		// provider, reusing a Describe already performed by this open call.
+		if described == nil {
+			described, err = s.describeTable(ctx)
+		}
+		if err == nil && (described == nil || described.Table == nil) {
+			err = fmt.Errorf("encoded source schema is unavailable before reading rows")
+		}
+		if err != nil {
+			_ = tableReader.Close(ctx)
+			_ = input.Close()
+			return nil, err
+		}
+		actualFields = described.Table.Fields
+	}
+	if err := validateEncodedTableFields(tableInfo, actualFields, parseOptions); err != nil {
 		_ = tableReader.Close(ctx)
 		_ = input.Close()
 		return nil, err
@@ -700,13 +723,16 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		tableInfo = tableInfoFromFormatReader(tableReader)
 	}
 	spatialInfo := s.spatialInfo.Clone()
+	if spatialInfo == nil && described != nil {
+		spatialInfo = described.Spatial.Clone()
+	}
 	if spatialInfo == nil {
 		spatialInfo = spatialInfoFromFormatReader(tableReader)
 	}
 	return &encodedTableBatchReader{input: input, tableReader: tableReader, tableInfo: tableInfo, spatialInfo: spatialInfo}, nil
 }
 
-func validateEncodedTableFields(info *datatype.TableInfo, reader format.TableReader, options *format.ParseOptions) error {
+func validateEncodedTableFields(info *datatype.TableInfo, actual []datatype.FieldInfo, options *format.ParseOptions) error {
 	if tableInfoEmpty(info) {
 		return nil
 	}
@@ -718,7 +744,6 @@ func validateEncodedTableFields(info *datatype.TableInfo, reader format.TableRea
 	if err != nil {
 		return fmt.Errorf("select encoded source declared fields: %w", err)
 	}
-	actual := reader.Fields()
 	if len(declared.Fields) != len(actual) {
 		return fmt.Errorf("encoded source field count differs from declared table")
 	}
@@ -800,7 +825,7 @@ func (r *multiTableBatchReader) ResumeMarker() *resume.Marker {
 	return nil
 }
 
-func (s *encodedContentTableSource) describeTableInfo(ctx context.Context) (*datatype.TableInfo, error) {
+func (s *encodedContentTableSource) describeTable(ctx context.Context) (*format.TableDescribeResult, error) {
 	if s.infoProvider == nil {
 		return nil, nil
 	}
@@ -816,8 +841,7 @@ func (s *encodedContentTableSource) describeTableInfo(ctx context.Context) (*dat
 	if closeErr != nil {
 		return nil, fmt.Errorf("close encoded source content after table info: %w", closeErr)
 	}
-	s.spatialInfo = info.Spatial.Clone()
-	return format.TableInfoFromDescribeResult(info), nil
+	return info, nil
 }
 
 func tableInfoFromFormatReader(reader format.TableReader) *datatype.TableInfo {
