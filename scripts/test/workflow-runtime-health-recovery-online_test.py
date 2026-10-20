@@ -206,6 +206,24 @@ class RuntimeHealthRecoveryTest(unittest.TestCase):
         with self.assertRaises(SUITE.SuiteError):observer.state('pointcloud','offline')
         descriptors[0]['id']=42;descriptors[0]['lifecycle_state']='retired'
         with self.assertRaises(SUITE.SuiteError):observer.state('pointcloud','offline')
+
+    def test_registration_probe_counts_colored_werkzeug_health_responses(self):
+        from types import SimpleNamespace
+        # Hosted Docker emits Werkzeug's ANSI-styled 503 status lines.
+        plain = '127.0.0.1 - - [20/Oct/2026 15:46:13] "GET /health HTTP/1.1" 503 -\n'
+        colored = '127.0.0.1 - - [20/Oct/2026 15:46:15] "\x1b[35m\x1b[1mGET /health HTTP/1.1\x1b[0m" 503 -\n'
+        unrelated = '"GET /health HTTP/1.1" 200 -\n"GET /operators HTTP/1.1" 503 -\n'
+        observer = SUITE.Observer.__new__(SUITE.Observer)
+        stream = plain + unrelated
+        observer.products = {'pointcloud': SimpleNamespace(logs=lambda: stream)}
+        offset = observer.log_offset('pointcloud')
+        self.assertEqual(offset, 1)
+        stream += colored
+        self.assertEqual(observer.log_offset('pointcloud'), 2)
+        self.assertFalse(observer.registration_probe_finished('pointcloud', offset))
+        stream += colored
+        self.assertTrue(observer.registration_probe_finished('pointcloud', offset))
+
     def test_health_contract_rejects_false_positive_and_legacy_shapes(self):
         body = {"status": "healthy", "service": "pointcloud-workflow", "version": "1.0",
                 "dependencies": {"pdal": {"required": True, "available": True}}}

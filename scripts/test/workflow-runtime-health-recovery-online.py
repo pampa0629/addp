@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -237,7 +238,8 @@ class Observer:
         return self.products[name].register()
 
     def log_offset(self, name):
-        return self.products[name].logs().count('"GET /health HTTP/1.1" 503')
+        logs = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", self.products[name].logs())
+        return logs.count('"GET /health HTTP/1.1" 503')
 
     def registration_probe_finished(self, name, offset):
         return self.log_offset(name) - offset >= 2
