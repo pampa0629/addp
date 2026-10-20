@@ -200,6 +200,14 @@ type CommitMarkerProvider interface {
 	CommitMarker() *resume.Marker
 }
 
+// CreatedTableCommitEvidenceProvider exposes an execution fact only after a
+// successful write commit to the very table created by the supplied preparation,
+// under the documented namespace-maintenance operating precondition.
+// False means unproven, not a failed transfer. This is never a Grant or identity.
+type CreatedTableCommitEvidenceProvider interface {
+	CreatedTableCommitted() bool
+}
+
 type TableWritePreparer interface {
 	StoreProvider
 	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableWriteOptions) error
@@ -229,6 +237,8 @@ const (
 // The zero value is unavailable, not a newly created target.
 type TableTargetPreparation struct {
 	Disposition TableTargetDisposition
+	// Opaque Provider-owned handoff, not a public DTO or durable resource ID.
+	CreationWitness string `json:"-"`
 }
 
 type TableUpsertOptions struct {
@@ -707,11 +717,12 @@ type BatchWriteOptions struct {
 }
 
 type TableWriteSessionOptions struct {
-	Method       string
-	Fields       []datatype.FieldInfo
-	SpatialInfo  *datatype.SpatialInfo
-	ResumeMarker *resume.Marker
-	Replace      bool
+	Method            string
+	Fields            []datatype.FieldInfo
+	SpatialInfo       *datatype.SpatialInfo
+	ResumeMarker      *resume.Marker
+	Replace           bool
+	TargetPreparation TableTargetPreparation
 }
 
 type TableWriteOptions struct {

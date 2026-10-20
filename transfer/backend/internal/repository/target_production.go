@@ -48,7 +48,7 @@ func (r *TaskRepository) RecordTargetPreparation(ctx context.Context, lease exec
 	})
 }
 
-func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet) error {
+func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet, createdAndCommitted bool) error {
 	if err := execution.ValidateProductionReadSet(sources); err != nil {
 		return err
 	}
@@ -61,11 +61,15 @@ func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution
 		if record.Phase == models.TargetProductionPending {
 			return record, fmt.Errorf("%w: target preparation is not recorded", commonapi.ErrConflict)
 		}
+		if createdAndCommitted && record.Preparation != plugin.TableTargetCreated {
+			return record, fmt.Errorf("creation evidence cannot describe an existing target")
+		}
 		if record.Phase == models.TargetProductionPrepared {
 			record.Phase, record.CommittedAt = models.TargetProductionCommitted, &now
 			record.SourceReadSet = sources
-		} else if !reflect.DeepEqual(record.SourceReadSet, sources) {
-			return record, fmt.Errorf("%w: committed production sources are immutable", commonapi.ErrConflict)
+			record.CreatedAndCommitted = createdAndCommitted
+		} else if !reflect.DeepEqual(record.SourceReadSet, sources) || record.CreatedAndCommitted != createdAndCommitted {
+			return record, fmt.Errorf("%w: committed production facts are immutable", commonapi.ErrConflict)
 		}
 		return record, nil
 	})

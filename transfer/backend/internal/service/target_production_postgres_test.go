@@ -136,7 +136,7 @@ func TestIntegrationPostgresProductionMetadataSerialization(t *testing.T) {
 	writeWhileLocked(func() error {
 		return svc.FinishExecution(ctx, uint(item.ID), models.ExecutionStatusSuccess, nil, commonmodels.JSONMap{"lineage_facts": map[string]interface{}{"test": true}})
 	}, func(tx *gorm.DB) error {
-		return repository.NewTaskRepository(tx).RecordTargetCommit(ctx, lease, locator, sources)
+		return repository.NewTaskRepository(tx).RecordTargetCommit(ctx, lease, locator, sources, false)
 	})
 	var stored execution.TaskExecution
 	if err := db.First(&stored, item.ID).Error; err != nil {

@@ -114,6 +114,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 		tenant := 7 + index
 		record := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: tenant, ExecutionID: id, Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetCreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 		record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(uint(9007199254740993), "schema", "outdoor", "source"))
+		record.CreatedAndCommitted = true
 		encoded, err := models.EncodeTargetProduction(record)
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +141,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	defer server.Close()
 	consumer := client.NewTransferClient(server.URL, productionReceiptToken("system"))
 	receipt, err := consumer.ReadProductionReceipt(t.Context(), 7, ids[0])
-	if err != nil || receipt.ExecutionID != ids[0] || receipt.UserOrigin != nil || receipt.Preparation != plugin.TableTargetCreated {
+	if err != nil || receipt.ExecutionID != ids[0] || receipt.UserOrigin != nil || receipt.Preparation != plugin.TableTargetCreated || !receipt.CreatedAndCommitted {
 		t.Fatalf("shared client receipt=%+v error=%v", receipt, err)
 	}
 	if receipt.SourceReadSet == nil || receipt.SourceReadSet.Paths[0].EngineID != uint(9007199254740993) {
@@ -154,7 +155,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
 	var wire map[string]interface{}
-	if response.Code != 200 || response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), "private-sentinel") || json.Unmarshal(response.Body.Bytes(), &wire) != nil || wire["metadata"] != nil || wire["outputs"] != nil || wire["user_origin"] != nil {
+	if response.Code != 200 || response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), "private-sentinel") || json.Unmarshal(response.Body.Bytes(), &wire) != nil || wire["metadata"] != nil || wire["outputs"] != nil || wire["user_origin"] != nil || wire["created_and_committed"] != true {
 		t.Fatalf("unsafe receipt response: %d %s", response.Code, response.Body.String())
 	}
 }

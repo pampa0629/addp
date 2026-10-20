@@ -31,7 +31,7 @@ func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testin
 	}
 	svc := NewExecutionService(db, execution.NewTaskExecutionRepository(db))
 	result, err := svc.ReadProductionReceipt(t.Context(), 7, id)
-	if err != nil || result.UserOrigin == nil || result.UserOrigin.PrincipalID != 31 || result.Preparation != plugin.TableTargetRecreated || result.RetryOfExecutionID == nil || *result.RetryOfExecutionID != retry {
+	if err != nil || result.UserOrigin == nil || result.UserOrigin.PrincipalID != 31 || result.Preparation != plugin.TableTargetRecreated || result.CreatedAndCommitted || result.RetryOfExecutionID == nil || *result.RetryOfExecutionID != retry {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}
 	if result.SourceReadSet == nil || result.SourceReadSet.Paths[0].Segments[2].Name != "source" {

@@ -84,3 +84,45 @@ func TestPreparationPersistenceFailureAbortsBeforeRows(t *testing.T) {
 		t.Fatalf("persist failure reached rows: provider=%+v error=%v", provider, err)
 	}
 }
+
+func TestCreatedCommitEvidenceComesOnlyFromSuccessfulProviderSession(t *testing.T) {
+	for _, scenario := range []string{"created_proven", "created_unknown", "recreated_overclaim", "reused_overclaim", "close_error", "before_commit_error", "after_commit_error"} {
+		t.Run(scenario, func(t *testing.T) {
+			preparation := plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated, CreationWitness: "provider-private-creation"}
+			if scenario == "recreated_overclaim" {
+				preparation.Disposition = plugin.TableTargetRecreated
+			}
+			if scenario == "reused_overclaim" {
+				preparation.Disposition = plugin.TableTargetReused
+			}
+			writer := &fakeNativeTableWriter{creationCommitted: scenario != "created_unknown"}
+			provider := &observedTargetPreparer{fakeNativeTableWriter: writer, result: preparation}
+			exec := &TableTransferExecutor{SourceNativeReader: &fakeBatchReader{batches: []*plugin.BatchData{{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}, Rows: []map[string]interface{}{{"id": int64(1)}}}}}, TargetNativePreparer: provider, TargetNativeWriter: provider, TargetTableSessionProvider: provider}
+			plan := TableTransferPlan{Source: TableSourcePlan{Kind: TableEndpointNative}, Target: TableTargetPlan{Kind: TableEndpointNative, TableWrite: plugin.BatchWriteOptions{Method: "copy"}}}
+			failure := errors.New("failed before successful commit")
+			if scenario == "close_error" {
+				writer.sessionCloseError = failure
+			}
+			if scenario == "before_commit_error" {
+				plan.ProgressCallback = func(context.Context, TableProgressEvent) error { return failure }
+			}
+			if scenario == "after_commit_error" {
+				plan.ProgressCallback = func(_ context.Context, event TableProgressEvent) error {
+					if event.Final {
+						return failure
+					}
+					return nil
+				}
+			}
+			metrics, err := exec.Execute(t.Context(), plan)
+			wantFailure := scenario == "close_error" || scenario == "before_commit_error" || scenario == "after_commit_error"
+			wantFact := scenario == "created_proven" || scenario == "after_commit_error"
+			if (err != nil) != wantFailure || metrics == nil || metrics.TargetCreatedAndCommitted != wantFact {
+				t.Fatalf("Provider fact lost/fabricated: scenario=%s metrics=%+v error=%v", scenario, metrics, err)
+			}
+			if writer.sessionPreparation != preparation {
+				t.Fatal("preparation handoff was not the Provider's actual result")
+			}
+		})
+	}
+}

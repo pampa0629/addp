@@ -86,14 +86,14 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 		if err := recovered.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetRecreated}); err != nil {
 			t.Fatal(err)
 		}
-		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, nil); err != nil {
+		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, nil, false); err != nil {
 			t.Fatal(err)
 		}
 		if readProductionRecord(t, db, item.ID).Phase != models.TargetProductionCommitted {
 			t.Fatal("receipt not recovered")
 		}
 		sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
-		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources); err == nil {
+		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, false); err == nil {
 			t.Fatal("unavailable source evidence backfilled after recovery")
 		}
 	})
@@ -108,19 +108,19 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 		}
 		const largeEngine = uint(9007199254740993)
 		sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(largeEngine, "schema", "outdoor", "source"))
-		if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources); err != nil {
+		if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, true); err != nil {
 			t.Fatal(err)
 		}
 		original := readProductionRecord(t, db, item.ID)
 		recovered := NewTaskRepository(open())
-		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources); err != nil {
+		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, true); err != nil {
 			t.Fatal(err)
 		}
 		sources.Paths[0].Segments[2].Name = "other"
-		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources); err == nil {
+		if err := recovered.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, true); err == nil {
 			t.Fatal("recovered worker rewrote committed source proof")
 		}
-		if after := readProductionRecord(t, db, item.ID); after.SourceReadSet == nil || after.SourceReadSet.Paths[0].Segments[2].Name != "source" || after.SourceReadSet.Paths[0].EngineID != largeEngine || !after.CommittedAt.Equal(*original.CommittedAt) {
+		if after := readProductionRecord(t, db, item.ID); !after.CreatedAndCommitted || after.SourceReadSet == nil || after.SourceReadSet.Paths[0].Segments[2].Name != "source" || after.SourceReadSet.Paths[0].EngineID != largeEngine || !after.CommittedAt.Equal(*original.CommittedAt) {
 			t.Fatal("recovery changed original sources/commit time")
 		}
 	})
@@ -143,7 +143,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 		if err := repo.RecordTargetPreparation(t.Context(), newLease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err == nil {
 			t.Fatal("new attempt rewrote old outcome")
 		}
-		if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, nil); err == nil {
+		if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, nil, false); err == nil {
 			t.Fatal("stale worker completed receipt")
 		}
 		record := readProductionRecord(t, db, item.ID)

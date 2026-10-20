@@ -19,16 +19,17 @@ import (
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
 // of initial-Grant eligibility. System must independently resolve Meta and IAM.
 type TransferProductionReceipt struct {
-	SchemaVersion      string                        `json:"schema_version"`
-	TenantID           int64                         `json:"tenant_id,string" swaggertype:"string"`
-	ExecutionID        string                        `json:"execution_id"`
-	Attempt            int                           `json:"attempt"`
-	RetryOfExecutionID *string                       `json:"retry_of_execution_id,omitempty"`
-	Target             plugin.EngineCatalogPath      `json:"target"`
-	Preparation        plugin.TableTargetDisposition `json:"preparation"`
-	CommittedAt        time.Time                     `json:"committed_at"`
-	UserOrigin         *TransferProductionUserOrigin `json:"user_origin"`
-	SourceReadSet      *plugin.QueryReadSet          `json:"source_read_set"`
+	SchemaVersion       string                        `json:"schema_version"`
+	TenantID            int64                         `json:"tenant_id,string" swaggertype:"string"`
+	ExecutionID         string                        `json:"execution_id"`
+	Attempt             int                           `json:"attempt"`
+	RetryOfExecutionID  *string                       `json:"retry_of_execution_id,omitempty"`
+	Target              plugin.EngineCatalogPath      `json:"target"`
+	Preparation         plugin.TableTargetDisposition `json:"preparation"`
+	CommittedAt         time.Time                     `json:"committed_at"`
+	UserOrigin          *TransferProductionUserOrigin `json:"user_origin"`
+	SourceReadSet       *plugin.QueryReadSet          `json:"source_read_set"`
+	CreatedAndCommitted bool                          `json:"created_and_committed"`
 }
 
 type TransferProductionUserOrigin struct {
@@ -37,7 +38,7 @@ type TransferProductionUserOrigin struct {
 	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
-const TransferProductionReceiptSchema = "transfer.production-receipt/v2"
+const TransferProductionReceiptSchema = "transfer.production-receipt/v3"
 
 func (r TransferProductionReceipt) Validate() error {
 	if r.SchemaVersion != TransferProductionReceiptSchema || r.TenantID <= 0 || !nonzeroExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || r.CommittedAt.IsZero() {
@@ -51,6 +52,9 @@ func (r TransferProductionReceipt) Validate() error {
 	}
 	if r.Preparation != plugin.TableTargetCreated && r.Preparation != plugin.TableTargetRecreated && r.Preparation != plugin.TableTargetReused {
 		return errors.New("invalid Transfer production preparation")
+	}
+	if r.CreatedAndCommitted && r.Preparation != plugin.TableTargetCreated {
+		return errors.New("Transfer creation evidence contradicts preparation")
 	}
 	if r.UserOrigin != nil && (r.UserOrigin.PrincipalID <= 0 || r.UserOrigin.TenantMembershipID <= 0 || r.UserOrigin.AuthorizationVersion <= 0) {
 		return errors.New("incomplete Transfer production user origin")

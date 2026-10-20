@@ -47,6 +47,9 @@ func TestIntegrationPlannerTargetPreparationOutcomes(t *testing.T) {
 			if metrics.TargetPreparation.Disposition != step.disposition || metrics.RecordsWritten != 2 {
 				t.Fatalf("target operation was not preserved: %+v", metrics)
 			}
+			if metrics.TargetCreatedAndCommitted != (step.disposition == plugin.TableTargetCreated) {
+				t.Fatalf("created-table commit evidence was lost or inferred from replace/append: %s", step.disposition)
+			}
 			if metrics.SourceReadSet == nil || len(metrics.SourceReadSet.Paths) != 1 || metrics.SourceReadSet.Paths[0].Segments[2].Name != "source" {
 				t.Fatalf("actual PG cursor source evidence was lost: %+v", metrics.SourceReadSet)
 			}

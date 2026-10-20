@@ -57,7 +57,8 @@ func productionBindingReceipt(tenant int64, engine uint) client.TransferProducti
 		TenantID: tenant, ExecutionID: uuid.NewString(), Attempt: 1,
 		Target:      plugin.TabularItemPath(engine, "schema", "a.b", "c"),
 		Preparation: plugin.TableTargetCreated, CommittedAt: time.Now().UTC(),
-		UserOrigin: &client.TransferProductionUserOrigin{PrincipalID: 31, TenantMembershipID: 41, AuthorizationVersion: 5}}
+		CreatedAndCommitted: true,
+		UserOrigin:          &client.TransferProductionUserOrigin{PrincipalID: 31, TenantMembershipID: 41, AuthorizationVersion: 5}}
 }
 
 func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
@@ -77,8 +78,10 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 				receipt.CommittedAt = facts.ObservedAt.Add(-time.Hour)
 			case "recreated":
 				receipt.Preparation = plugin.TableTargetRecreated
+				receipt.CreatedAndCommitted = false
 			case "reused":
 				receipt.Preparation = plugin.TableTargetReused
+				receipt.CreatedAndCommitted = false
 			case "retry":
 				id := uuid.NewString()
 				receipt.Attempt, receipt.RetryOfExecutionID = 2, &id

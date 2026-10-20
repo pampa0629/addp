@@ -37,7 +37,14 @@ func (p *PostgreSQLPlugin) PrepareTableTarget(ctx context.Context, connInfo plug
 	if err != nil {
 		return plugin.TableTargetPreparation{}, fmt.Errorf("observe postgresql target: %w", err)
 	}
-	return prepareObservedPostgresTableTarget(ctx, db, schema, table, opts, existed)
+	result, err := prepareObservedPostgresTableTarget(ctx, db, schema, table, opts, existed)
+	if witness := decodePostgresCreationWitness(result.CreationWitness); err == nil && p.Type() == "postgresql" && path.EngineID != 0 && witness != nil {
+		witness.EngineID = uint64(path.EngineID)
+		result.CreationWitness = postgresCreationWitnessJSON(witness)
+	} else {
+		result.CreationWitness = ""
+	}
+	return result, err
 }
 
 func prepareObservedPostgresTableTarget(ctx context.Context, db *sql.DB, schema, table string, opts plugin.TableTargetPrepareOptions, existed bool) (plugin.TableTargetPreparation, error) {
@@ -53,8 +60,9 @@ func prepareObservedPostgresTableTarget(ctx context.Context, db *sql.DB, schema,
 	}
 	// Never delete after an absent observation. IF NOT EXISTS would silently
 	// adopt a concurrent creator's table and falsely report our own creation.
-	if err := createPostgresTableWithPolicy(ctx, db, schema, table, opts.Definition.Fields, opts.Definition.SpatialInfo, true, existed); err != nil {
+	witness, err := createPostgresTableWithPolicy(ctx, db, schema, table, opts.Definition.Fields, opts.Definition.SpatialInfo, true, existed)
+	if err != nil {
 		return plugin.TableTargetPreparation{}, err
 	}
-	return plugin.TableTargetPreparation{Disposition: disposition}, nil
+	return plugin.TableTargetPreparation{Disposition: disposition, CreationWitness: witness}, nil
 }

@@ -37,12 +37,13 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 }
 
 func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, ifNotExists bool) error {
-	return createPostgresTableWithPolicy(ctx, db, schema, table, fields, spatialInfo, ifNotExists, ifNotExists)
+	_, err := createPostgresTableWithPolicy(ctx, db, schema, table, fields, spatialInfo, ifNotExists, ifNotExists)
+	return err
 }
 
-func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, createSchema, ensureTable bool) error {
+func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, createSchema, ensureTable bool) (string, error) {
 	if len(fields) == 0 {
-		return fmt.Errorf("postgresql table write prepare requires table fields")
+		return "", fmt.Errorf("postgresql table write prepare requires table fields")
 	}
 	dialect := commonquery.ForDialect("postgresql")
 	writeFields := postgresWriteFields(fields)
@@ -51,7 +52,7 @@ func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, tabl
 	for _, field := range writeFields {
 		definition, err := postgresColumnDefinition(field, spatialInfo)
 		if err != nil {
-			return err
+			return "", err
 		}
 		definitions = append(definitions, definition)
 		if field.PrimaryKey {
@@ -59,21 +60,21 @@ func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, tabl
 		}
 	}
 	if len(definitions) == 0 {
-		return fmt.Errorf("postgresql table write prepare requires at least one named field")
+		return "", fmt.Errorf("postgresql table write prepare requires at least one named field")
 	}
 	if len(primaryKeys) > 0 {
 		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")")
 	}
 	var schemaExists bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=$1)`, schema).Scan(&schemaExists); err != nil {
-		return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
+		return "", fmt.Errorf("check postgresql target schema %s: %w", schema, err)
 	}
 	if !schemaExists {
 		if !createSchema {
-			return fmt.Errorf("postgresql replay target schema %s does not exist", schema)
+			return "", fmt.Errorf("postgresql replay target schema %s does not exist", schema)
 		}
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
-			return fmt.Errorf("create postgresql schema %s: %w", schema, err)
+			return "", fmt.Errorf("create postgresql schema %s: %w", schema, err)
 		}
 	}
 
@@ -82,16 +83,31 @@ func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, tabl
 		createPrefix = "CREATE TABLE IF NOT EXISTS "
 	}
 	createSQL := fmt.Sprintf("%s%s (%s)", createPrefix, dialect.QualifiedTable(schema, table), strings.Join(definitions, ", "))
-	if _, err := db.ExecContext(ctx, createSQL); err != nil {
-		return fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
-	}
 	if !ensureTable {
-		return nil
+		// Only the existing strict-CREATE phase is transactional here. Schema
+		// preparation and Transfer's original DROP boundary remain unchanged;
+		// rows are still written/committed by the separate original session.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, createSQL); err != nil {
+			return "", fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
+		}
+		witness := observePostgresCreationWitness(ctx, tx, schema, table, false)
+		if err := tx.Commit(); err != nil {
+			return "", fmt.Errorf("commit postgresql table preparation: %w", err)
+		}
+		return postgresCreationWitnessJSON(witness), nil
+	}
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
+		return "", fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
 	}
 	if err := evolvePostgresTableSchema(ctx, db, schema, table, writeFields, spatialInfo); err != nil {
-		return err
+		return "", err
 	}
-	return nil
+	return "", nil
 }
 
 func evolvePostgresTableSchema(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {

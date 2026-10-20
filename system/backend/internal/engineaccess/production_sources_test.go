@@ -15,7 +15,7 @@ import (
 )
 
 func TestInitialProductionSourcesRejectUnknownAndPriorOperations(t *testing.T) {
-	for _, scenario := range []string{"complete", "missing", "recreated", "reused", "retry", "later_attempt", "no_human", "unknown_sources", "empty_sources", "noncanonical_sources", "self_source", "wrong_target", "database_target", "missing_engine_version"} {
+	for _, scenario := range []string{"complete", "missing", "unproven_commit", "recreated", "reused", "retry", "later_attempt", "no_human", "unknown_sources", "empty_sources", "noncanonical_sources", "self_source", "wrong_target", "database_target", "missing_engine_version"} {
 		t.Run(scenario, func(t *testing.T) {
 			r := productionBindingReceipt(7, 2)
 			r.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(2, "schema", "public", "source"))
@@ -23,6 +23,8 @@ func TestInitialProductionSourcesRejectUnknownAndPriorOperations(t *testing.T) {
 			switch scenario {
 			case "missing":
 				prepared = nil
+			case "unproven_commit":
+				prepared.receipt.CreatedAndCommitted = false
 			case "recreated":
 				prepared.receipt.Preparation = plugin.TableTargetRecreated
 			case "reused":

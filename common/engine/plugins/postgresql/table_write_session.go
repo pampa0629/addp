@@ -50,6 +50,20 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 		db.Close()
 		return nil, fmt.Errorf("begin postgresql table write session: %w", err)
 	}
+	creationMatched := false
+	var creationWitness *postgresCreationWitness
+	if p.Type() == "postgresql" && opts.TargetPreparation.Disposition == plugin.TableTargetCreated {
+		if expected := decodePostgresCreationWitness(opts.TargetPreparation.CreationWitness); expected != nil && expected.EngineID == uint64(path.EngineID) && expected.Schema == schema && expected.Table == table {
+			current := observePostgresCreationWitness(ctx, tx, schema, table, true)
+			if current != nil {
+				current.EngineID = uint64(path.EngineID)
+			}
+			creationMatched = samePostgresCreatedTable(expected, current)
+			if creationMatched {
+				creationWitness = expected
+			}
+		}
+	}
 	if opts.Replace {
 		// Keep deletion in the COPY transaction: abort, preparation and encoding
 		// failures must restore every previous row without replacing the table.
@@ -68,13 +82,15 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 	}
 
 	return &postgresTableWriteSession{
-		db:         db,
-		tx:         tx,
-		stmt:       stmt,
-		schema:     schema,
-		table:      table,
-		columns:    columns,
-		fieldTypes: shared.TableWriteFieldTypes(opts.Fields),
+		db:              db,
+		tx:              tx,
+		stmt:            stmt,
+		schema:          schema,
+		table:           table,
+		columns:         columns,
+		fieldTypes:      shared.TableWriteFieldTypes(opts.Fields),
+		creationMatched: creationMatched,
+		creationWitness: creationWitness,
 	}, nil
 }
 
@@ -105,18 +121,21 @@ func fieldColumns(fields []datatype.FieldInfo) []string {
 }
 
 type postgresTableWriteSession struct {
-	db             *sql.DB
-	tx             *sql.Tx
-	stmt           *sql.Stmt
-	schema         string
-	table          string
-	columns        []string
-	fieldTypes     map[string]datatype.FieldType
-	batchesWritten int64
-	rowsWritten    int64
-	commitMarker   *resume.Marker
-	closed         bool
-	writeErr       error
+	db               *sql.DB
+	tx               *sql.Tx
+	stmt             *sql.Stmt
+	schema           string
+	table            string
+	columns          []string
+	fieldTypes       map[string]datatype.FieldType
+	batchesWritten   int64
+	rowsWritten      int64
+	commitMarker     *resume.Marker
+	closed           bool
+	writeErr         error
+	creationMatched  bool
+	creationWitness  *postgresCreationWitness
+	createdCommitted bool
 }
 
 func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
@@ -178,6 +197,16 @@ func (s *postgresTableWriteSession) Close(ctx context.Context) (err error) {
 		_ = s.abort()
 		return fmt.Errorf("close postgresql copy session statement: %w", err)
 	}
+	// Detect observed path changes without changing the write strategy. Schema
+	// maintenance must not overlap tasks; this is not a namespace DDL lock or
+	// an atomic guarantee against arbitrary external DDL after this observation.
+	if s.creationMatched {
+		current := observePostgresCreationWitness(ctx, s.tx, s.schema, s.table, false)
+		if current != nil {
+			current.EngineID = s.creationWitness.EngineID
+		}
+		s.creationMatched = samePostgresCreatedTable(s.creationWitness, current)
+	}
 	if err := s.tx.Commit(); err != nil {
 		_ = s.db.Close()
 		return fmt.Errorf("commit postgresql copy session: %w", err)
@@ -186,7 +215,12 @@ func (s *postgresTableWriteSession) Close(ctx context.Context) (err error) {
 	if err := s.db.Close(); err != nil {
 		return fmt.Errorf("close postgresql copy session connection: %w", err)
 	}
+	s.createdCommitted = s.creationMatched
 	return nil
+}
+
+func (s *postgresTableWriteSession) CreatedTableCommitted() bool {
+	return s != nil && s.createdCommitted && s.writeErr == nil
 }
 
 func (s *postgresTableWriteSession) CommitMarker() *resume.Marker {

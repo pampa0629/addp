@@ -30,7 +30,7 @@ func initialProductionSources(production *preparedTransferProduction) (sourceRea
 		return sourceReadRequest{}, errInitialProductionEvidence
 	}
 	r := production.receipt
-	if r.Preparation != plugin.TableTargetCreated || r.Attempt != 1 || r.RetryOfExecutionID != nil || r.UserOrigin == nil ||
+	if !r.CreatedAndCommitted || r.Preparation != plugin.TableTargetCreated || r.Attempt != 1 || r.RetryOfExecutionID != nil || r.UserOrigin == nil ||
 		r.SourceReadSet == nil || execution.ValidateProductionReadSet(r.SourceReadSet) != nil || !reflect.DeepEqual(r.Target, production.binding.NativeTarget) ||
 		len(r.Target.Segments) != 3 || !reflect.DeepEqual(r.Target, plugin.TabularItemPath(r.Target.EngineID, plugin.EngineCatalogTermSchema, r.Target.Segments[1].Name, r.Target.Segments[2].Name)) {
 		return sourceReadRequest{}, errInitialProductionEvidence

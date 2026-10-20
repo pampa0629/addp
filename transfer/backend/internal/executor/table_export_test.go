@@ -1160,6 +1160,9 @@ type fakeNativeTableWriter struct {
 	deleted             bool
 	closed              bool
 	aborted             bool
+	sessionPreparation  engineplugin.TableTargetPreparation
+	creationCommitted   bool
+	sessionCloseError   error
 }
 
 func (w *fakeNativeTableWriter) Type() string { return "fake_native_table_writer" }
@@ -1205,6 +1208,7 @@ func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.Con
 }
 
 func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.EngineCatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
+	w.sessionPreparation = opts.TargetPreparation
 	w.sessionFields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	w.sessionSpatialInfo = opts.SpatialInfo.Clone()
 	return &fakeNativeTableWriteSession{writer: w}, nil
@@ -1221,7 +1225,11 @@ func (s *fakeNativeTableWriteSession) WriteBatch(_ context.Context, batch *engin
 
 func (s *fakeNativeTableWriteSession) Close(context.Context) error {
 	s.writer.closed = true
-	return nil
+	return s.writer.sessionCloseError
+}
+
+func (s *fakeNativeTableWriteSession) CreatedTableCommitted() bool {
+	return s.writer.creationCommitted && s.writer.closed && !s.writer.aborted
 }
 
 func (s *fakeNativeTableWriteSession) Abort(context.Context) error {

@@ -11,12 +11,19 @@ func TestDecodeTargetProductionRejectsUnprovenFacts(t *testing.T) {
 	now := time.Now().UTC()
 	valid := TargetProduction{SchemaVersion: TargetProductionSchema, TenantID: 1, ExecutionID: "execution", Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: TargetProductionPending, StartedAt: now}
 	for name, change := range map[string]func(*TargetProduction){
-		"unknown schema":      func(r *TargetProduction) { r.SchemaVersion = "other" },
-		"missing tenant":      func(r *TargetProduction) { r.TenantID = 0 },
-		"missing attempt":     func(r *TargetProduction) { r.Attempt = 0 },
-		"self retry":          func(r *TargetProduction) { r.RetryOfExecutionID = &r.ExecutionID },
-		"pending preparation": func(r *TargetProduction) { r.Preparation = plugin.TableTargetCreated },
-		"pending commit":      func(r *TargetProduction) { r.CommittedAt = &now },
+		"unknown schema":            func(r *TargetProduction) { r.SchemaVersion = "other" },
+		"missing tenant":            func(r *TargetProduction) { r.TenantID = 0 },
+		"missing attempt":           func(r *TargetProduction) { r.Attempt = 0 },
+		"self retry":                func(r *TargetProduction) { r.RetryOfExecutionID = &r.ExecutionID },
+		"pending preparation":       func(r *TargetProduction) { r.Preparation = plugin.TableTargetCreated },
+		"pending commit":            func(r *TargetProduction) { r.CommittedAt = &now },
+		"pending creation evidence": func(r *TargetProduction) { r.CreatedAndCommitted = true },
+		"prepared creation evidence": func(r *TargetProduction) {
+			r.Phase, r.Preparation, r.PreparedAt, r.CreatedAndCommitted = TargetProductionPrepared, plugin.TableTargetCreated, &now, true
+		},
+		"recreated creation evidence": func(r *TargetProduction) {
+			r.Phase, r.Preparation, r.PreparedAt, r.CommittedAt, r.CreatedAndCommitted = TargetProductionCommitted, plugin.TableTargetRecreated, &now, &now, true
+		},
 		"unknown phase":       func(r *TargetProduction) { r.Phase = "success" },
 		"missing preparation": func(r *TargetProduction) { r.Phase = TargetProductionPrepared; r.PreparedAt = &now },
 		"missing prepare time": func(r *TargetProduction) {
@@ -59,7 +66,7 @@ func TestDecodeTargetProductionRejectsUnprovenFacts(t *testing.T) {
 		t.Fatal("trailing private record accepted")
 	}
 	retired := valid
-	retired.SchemaVersion = "transfer.target-production/v1"
+	retired.SchemaVersion = "transfer.target-production/v2"
 	if _, err := EncodeTargetProduction(retired); err == nil {
 		t.Fatal("retired production evidence upgraded implicitly")
 	}

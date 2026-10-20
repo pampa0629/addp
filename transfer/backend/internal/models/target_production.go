@@ -15,7 +15,7 @@ import (
 const TargetProductionMetadataKey = "target_production"
 
 const (
-	TargetProductionSchema    = "transfer.target-production/v2"
+	TargetProductionSchema    = "transfer.target-production/v3"
 	TargetProductionPending   = "pending"
 	TargetProductionPrepared  = "prepared"
 	TargetProductionCommitted = "committed"
@@ -25,18 +25,19 @@ const (
 // a public execution output. A created preparation alone does not prove an
 // initial business DataItem or a successful execution.
 type TargetProduction struct {
-	SchemaVersion      string                        `json:"schema_version"`
-	TenantID           int                           `json:"tenant_id"`
-	ExecutionID        string                        `json:"execution_id"`
-	Attempt            int                           `json:"attempt"`
-	RetryOfExecutionID *string                       `json:"retry_of_execution_id,omitempty"`
-	TargetLocator      string                        `json:"target_locator"`
-	Phase              string                        `json:"phase"`
-	Preparation        plugin.TableTargetDisposition `json:"preparation,omitempty"`
-	StartedAt          time.Time                     `json:"started_at"`
-	PreparedAt         *time.Time                    `json:"prepared_at,omitempty"`
-	CommittedAt        *time.Time                    `json:"committed_at,omitempty"`
-	SourceReadSet      *plugin.QueryReadSet          `json:"source_read_set"`
+	SchemaVersion       string                        `json:"schema_version"`
+	TenantID            int                           `json:"tenant_id"`
+	ExecutionID         string                        `json:"execution_id"`
+	Attempt             int                           `json:"attempt"`
+	RetryOfExecutionID  *string                       `json:"retry_of_execution_id,omitempty"`
+	TargetLocator       string                        `json:"target_locator"`
+	Phase               string                        `json:"phase"`
+	Preparation         plugin.TableTargetDisposition `json:"preparation,omitempty"`
+	StartedAt           time.Time                     `json:"started_at"`
+	PreparedAt          *time.Time                    `json:"prepared_at,omitempty"`
+	CommittedAt         *time.Time                    `json:"committed_at,omitempty"`
+	SourceReadSet       *plugin.QueryReadSet          `json:"source_read_set"`
+	CreatedAndCommitted bool                          `json:"created_and_committed"`
 }
 
 func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
@@ -77,6 +78,9 @@ func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
 		}
 	default:
 		return result, fmt.Errorf("unknown production phase")
+	}
+	if result.CreatedAndCommitted && (result.Phase != TargetProductionCommitted || result.Preparation != plugin.TableTargetCreated) {
+		return result, fmt.Errorf("creation commit evidence contradicts production phase or operation")
 	}
 	if execution.ValidateProductionReadSet(result.SourceReadSet) != nil || (result.Phase != TargetProductionCommitted && result.SourceReadSet != nil) {
 		return result, fmt.Errorf("invalid committed production sources")

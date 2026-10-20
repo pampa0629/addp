@@ -23,9 +23,12 @@ func TestTransferProductionReceiptBoundedServiceClient(t *testing.T) {
 		ok         bool
 	}{
 		{"valid machine origin", string(encoded), 200, true},
+		{"proven creation commit", strings.Replace(string(encoded), `"created_and_committed":false`, `"created_and_committed":true`, 1), 200, true},
+		{"recreated overclaim", strings.Replace(strings.Replace(string(encoded), `"preparation":"created"`, `"preparation":"recreated"`, 1), `"created_and_committed":false`, `"created_and_committed":true`, 1), 200, false},
+		{"invalid creation type", strings.Replace(string(encoded), `"created_and_committed":false`, `"created_and_committed":"true"`, 1), 200, false},
 		{"valid actual sources", strings.Replace(string(encoded), `"source_read_set":null`, `"source_read_set":`+string(sourceJSON), 1), 200, true},
 		{"empty actual sources", strings.Replace(string(encoded), `"source_read_set":null`, `"source_read_set":{"paths":[]}`, 1), 200, false},
-		{"retired receipt schema", strings.Replace(string(encoded), TransferProductionReceiptSchema, "transfer.production-receipt/v1", 1), 200, false},
+		{"retired receipt schema", strings.Replace(string(encoded), TransferProductionReceiptSchema, "transfer.production-receipt/v2", 1), 200, false},
 		{"valid user origin", strings.Replace(string(encoded), `"user_origin":null`, `"user_origin":{"principal_id":"31","tenant_membership_id":"33","authorization_version":"5"}`, 1), 200, true},
 		{"incomplete user origin", strings.Replace(string(encoded), `"user_origin":null`, `"user_origin":{"principal_id":"31"}`, 1), 200, false},
 		{"invalid UTF8 target", strings.Replace(string(encoded), "persons", string([]byte{255}), 1), 200, false},

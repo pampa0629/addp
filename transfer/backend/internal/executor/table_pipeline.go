@@ -21,11 +21,13 @@ import (
 type TablePipelineMetrics struct {
 	SourceReadSet     *engineplugin.QueryReadSet
 	TargetPreparation engineplugin.TableTargetPreparation
-	FieldLineage      *TableFieldLineage
-	RecordsRead       int64
-	RecordsWritten    int64
-	Batches           int64
-	TargetRefs        []format.RelatedRef
+	// Internal Provider fact, not a public result or persisted Grant receipt.
+	TargetCreatedAndCommitted bool `json:"-"`
+	FieldLineage              *TableFieldLineage
+	RecordsRead               int64
+	RecordsWritten            int64
+	Batches                   int64
+	TargetRefs                []format.RelatedRef
 }
 
 type TableBatchSource interface {
@@ -245,6 +247,9 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	}
 	if err := writer.Close(ctx); err != nil {
 		return metrics, err
+	}
+	if evidence, ok := writer.(engineplugin.CreatedTableCommitEvidenceProvider); ok && metrics.TargetPreparation.Disposition == engineplugin.TableTargetCreated {
+		metrics.TargetCreatedAndCommitted = evidence.CreatedTableCommitted()
 	}
 	metrics.TargetRefs = writer.TargetRefs()
 	writerClosed = true
@@ -1002,11 +1007,12 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 			t.effectsPossible = true
 		}
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
-			Method:       t.writeOptions.Method,
-			Fields:       fields,
-			SpatialInfo:  spatialInfo,
-			ResumeMarker: cloneResumeMarker(t.resumeMarker),
-			Replace:      t.replace && !t.managedExisting,
+			Method:            t.writeOptions.Method,
+			Fields:            fields,
+			SpatialInfo:       spatialInfo,
+			ResumeMarker:      cloneResumeMarker(t.resumeMarker),
+			Replace:           t.replace && !t.managedExisting,
+			TargetPreparation: t.preparation,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
@@ -1147,6 +1153,13 @@ func (w *nativeTableSessionBatchWriter) CommitMarker() *resume.Marker {
 		return markerProvider.CommitMarker()
 	}
 	return nil
+}
+
+func (w *nativeTableSessionBatchWriter) CreatedTableCommitted() bool {
+	if evidence, ok := w.session.(engineplugin.CreatedTableCommitEvidenceProvider); ok {
+		return evidence.CreatedTableCommitted()
+	}
+	return false
 }
 
 func (w *nativeTableSessionBatchWriter) TargetRefs() []format.RelatedRef {

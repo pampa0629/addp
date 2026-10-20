@@ -168,6 +168,28 @@ func TestIntegrationPostgresPrepareTableWriteUsesSchemaOnlyPrivileges(t *testing
 		t.Fatalf("writer must have schema-only CREATE: database=%v schema=%v error=%v", databaseCreate, schemaCreate, err)
 	}
 	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}}
+	t.Run("optional creation observation does not require extra privileges", func(t *testing.T) {
+		path := postgresPrepareTablePath(schemaName, "strict_target")
+		path.EngineID = 2
+		prepared, err := pg.PrepareTableTarget(ctx, writerInfo, path, plugin.TableTargetPrepareOptions{Definition: plugin.TableWriteOptions{Fields: fields}})
+		if err != nil || prepared.Disposition != plugin.TableTargetCreated || decodePostgresCreationWitness(prepared.CreationWitness) == nil {
+			t.Fatalf("optional observation changed schema-only creation: prepared=%+v error=%v", prepared.Disposition, err)
+		}
+		session, err := pg.OpenTableWriteSession(ctx, writerInfo, path, plugin.TableWriteSessionOptions{Method: "copy", Fields: fields, TargetPreparation: prepared})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Abort(context.Background())
+		if err := session.WriteBatch(ctx, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{"id": int64(1)}}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if !session.(plugin.CreatedTableCommitEvidenceProvider).CreatedTableCommitted() {
+			t.Fatal("schema-only creator could not use publicly readable native facts")
+		}
+	})
 	t.Run("existing schema table creation and evolution", func(t *testing.T) {
 		path := postgresPrepareTablePath(schemaName, "target")
 		if err := pg.PrepareTableWrite(ctx, writerInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
