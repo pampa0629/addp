@@ -14,6 +14,7 @@ import (
 
 	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
@@ -41,6 +42,28 @@ func (f *glbOwnerConversionFixture) BuildModel3DGLB(ctx context.Context, req Mod
 		f.t.Fatal("owner exposed pending conversion before publication")
 	}
 	if err := req.SourceAuthorization.Checkpoint(ctx); err != nil {
+		return nil, err
+	}
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || req.inputOwner == nil {
+		f.t.Fatal("dispatcher omitted durable input owner")
+	}
+	store := &stagingModelStore{}
+	err = stagingModelExecutor(store).withStagedModel3DSource(ctx, lease, "3ds", workflowaccess.KindDirectory, "Scene.3DS", []model3DStagingFile{stagingModelFile("Scene.3DS", "model"), stagingModelFile("Texture.PNG ", "image")}, req.inputOwner, func(context.Context, workflowaccess.Source) error {
+		owner, readErr := f.repo.GetByID(ctx, f.previous.ID, 7)
+		if readErr != nil {
+			return readErr
+		}
+		raw, _ := json.Marshal(owner.Metadata["model3d_output_lifecycle"])
+		var state struct {
+			Inputs []repository.Model3DGLBInputPreparation `json:"input_preparations"`
+		}
+		if json.Unmarshal(raw, &state) != nil || len(state.Inputs) != 1 || len(state.Inputs[0].Objects) != 2 || state.Inputs[0].Released {
+			f.t.Fatal("uploads reached converter without durable live ownership")
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	if f.revoke {
@@ -168,6 +191,13 @@ func TestGLBOwnerWiringPublishesOnlyAfterBoundLeaseAndFinalConsumption(t *testin
 				}
 			} else if result.StorageRef != previous.StorageRef || result.Status != "ready" || *result.LastExecutionID != previousID || result.Metadata["old_fact"] != "preserved" {
 				t.Fatalf("revocation destroyed previous renderer version: %#v", result)
+			}
+			rawInput, _ := json.Marshal(result.Metadata["model3d_output_lifecycle"])
+			var inputState struct {
+				Inputs []repository.Model3DGLBInputPreparation `json:"input_preparations"`
+			}
+			if json.Unmarshal(rawInput, &inputState) != nil || len(inputState.Inputs) != 1 || !inputState.Inputs[0].Cleaned || inputState.Inputs[0].ExecutionID != id {
+				t.Fatal("publication/denial lost exact cleaned input manifest")
 			}
 			storedTask, err := repo.GetTask(t.Context(), task.ID, 7)
 			if terminal.Status != wantStatus || terminal.CompletedAt == nil || err != nil || storedTask.LastExecutionStatus == nil || *storedTask.LastExecutionStatus != wantStatus {

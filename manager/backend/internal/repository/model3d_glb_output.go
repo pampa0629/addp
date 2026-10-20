@@ -34,9 +34,11 @@ type model3DGLBOutputRef struct {
 }
 
 type model3DGLBOutputState struct {
-	Pending   *model3DGLBOutputRef  `json:"pending,omitempty"`
-	Garbage   []model3DGLBOutputRef `json:"garbage,omitempty"`
-	CheckedAt string                `json:"checked_at,omitempty"`
+	Pending             *model3DGLBOutputRef         `json:"pending,omitempty"`
+	Garbage             []model3DGLBOutputRef        `json:"garbage,omitempty"`
+	InputPreparations   []Model3DGLBInputPreparation `json:"input_preparations,omitempty"`
+	InputCleanupPending bool                         `json:"input_cleanup_pending,omitempty"`
+	CheckedAt           string                       `json:"checked_at,omitempty"`
 }
 
 func readModel3DGLBOutputState(metadata commonModels.JSONMap) (model3DGLBOutputState, error) {
@@ -71,7 +73,16 @@ func model3DGLBOutputMetadata(metadata commonModels.JSONMap, state model3DGLBOut
 		result[key] = value
 	}
 	result[model3DGLBOutputOwnerKey] = "manager_execution"
-	if state.Pending == nil && len(state.Garbage) == 0 {
+	// Maintain the candidate marker in this sole lifecycle writer. Retained
+	// cleaned manifests are audit facts, not background cleanup work.
+	state.InputCleanupPending = false
+	for _, input := range state.InputPreparations {
+		if !input.Cleaned {
+			state.InputCleanupPending = true
+			break
+		}
+	}
+	if state.Pending == nil && len(state.Garbage) == 0 && len(state.InputPreparations) == 0 {
 		delete(result, model3DGLBOutputStateKey)
 	} else {
 		result[model3DGLBOutputStateKey] = state
@@ -285,12 +296,12 @@ func (r *Model3DGLBRepository) CompleteExecutionOutput(ctx context.Context, task
 // CleanupExecutionOutputs also sees soft-deleted result records. It never lists
 // storage directories, and never deletes the current pointer or a live pending
 // execution's output. deleteExact must validate Manager bucket/tenant ownership.
-func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limit int, deleteExact func(context.Context, uint, string) error) (int, error) {
+func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limit int, deleteInput func(context.Context, uint, Model3DGLBInputObject) error, deleteExact func(context.Context, uint, string) error) (int, error) {
 	if deleteExact == nil || limit <= 0 {
 		return 0, commonAPI.ErrConflict
 	}
 	var ids []uint
-	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).Where("metadata -> ? IS NOT NULL", model3DGLBOutputStateKey).Order("COALESCE(metadata->'"+model3DGLBOutputStateKey+"'->>'checked_at',''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
+	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).Where("(metadata -> ? -> 'pending') IS NOT NULL OR (metadata -> ? -> 'garbage') IS NOT NULL OR (metadata -> ? -> 'input_cleanup_pending') IS NOT NULL", model3DGLBOutputStateKey, model3DGLBOutputStateKey, model3DGLBOutputStateKey).Order("COALESCE(metadata->'"+model3DGLBOutputStateKey+"'->>'checked_at',''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
 		return 0, err
 	}
 	deleted := 0
@@ -349,6 +360,9 @@ func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limi
 				}
 			}
 			state.Garbage = remaining
+			inputCount, inputErr := cleanupModel3DGLBInputs(ctx, tx, &item, &state, deleteInput)
+			deleted += inputCount
+			objectErr = errors.Join(objectErr, inputErr)
 			state.CheckedAt = time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
 			// Housekeeping cannot promote a historical artifact in the current
 			// result selector, whose ordering is updated_at then id.

@@ -23,7 +23,7 @@ import (
 // authorization object. It has no directory enumeration or alternate locator.
 func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, req Model3DGLBExecutionRequest, engine *commonModels.Engine, consume func(context.Context, workflowaccess.Source, commonModels.JSONMap) error) error {
 	auth := req.SourceAuthorization
-	if e == nil || req.Task == nil || req.Config.ConfigVersion != managerModels.Model3DGLBFTPConfigVersion || auth == nil || consume == nil || engine == nil || engine.EngineType != "ftp" || engine.ID != req.Config.Source.SourceEngineID || engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
+	if e == nil || req.Task == nil || req.Config.ConfigVersion != managerModels.Model3DGLBFTPConfigVersion || auth == nil || req.inputOwner == nil || consume == nil || engine == nil || engine.EngineType != "ftp" || engine.ID != req.Config.Source.SourceEngineID || engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if err := auth.ValidateConversion(req.Config); err != nil {
@@ -183,7 +183,7 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 	if err := auth.Checkpoint(ctx); err != nil {
 		return err
 	}
-	return e.withStagedModel3DSource(ctx, lease, composition.Format, kind, entrypoint, files, func(ctx context.Context, source workflowaccess.Source) error {
+	return e.withStagedModel3DSource(ctx, lease, composition.Format, kind, entrypoint, files, req.inputOwner, func(ctx context.Context, source workflowaccess.Source) error {
 		if err := auth.Checkpoint(ctx); err != nil {
 			return err
 		}

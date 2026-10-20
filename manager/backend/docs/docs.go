@@ -2104,6 +2104,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "metadata 包含本结果生命周期内的精确临时输入归属及清理状态，不返回存储凭据；详情读取不代替内容源授权。 | Metadata includes exact temporary input ownership and cleanup state for this result lifecycle, without storage credentials; detail reads do not authorize source content.",
                 "produces": [
                     "application/json"
                 ],

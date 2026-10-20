@@ -30,6 +30,7 @@ type Model3DGLBExecutionRequest struct {
 	ExecutionID         string
 	Config              Model3DGLBExecutionConfig
 	SourceAuthorization *Model3DGLBSourceAuthorization
+	inputOwner          model3DStagingOwnership
 }
 
 type Model3DGLBExecutionResult struct {
@@ -62,6 +63,7 @@ type Model3DGLBResultConfig struct {
 }
 
 type Model3DGLBCleaner interface {
+	DeleteExactObject(context.Context, string, string) error
 	DeleteByStorageRef(ctx context.Context, storageRef string) error
 }
 
@@ -276,6 +278,7 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 			request := Model3DGLBExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg}
 			if plan != nil {
 				request.SourceAuthorization = plan.authorization
+				request.inputOwner = &model3DGLBInputOwner{repo: s.repo, resultID: result.ID, tenantID: task.TenantID, executionID: executionID, bucket: s.bucket}
 			}
 			buildResult, err = s.executor.BuildModel3DGLB(ctx, request)
 		}

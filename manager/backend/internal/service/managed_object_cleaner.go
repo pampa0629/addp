@@ -35,3 +35,14 @@ func (c *MinIOManagedObjectCleaner) DeleteByStorageRef(ctx context.Context, stor
 	}
 	return nil
 }
+
+// DeleteExactObject preserves raw input object names, including trailing spaces.
+func (c *MinIOManagedObjectCleaner) DeleteExactObject(ctx context.Context, bucket, object string) error {
+	if c == nil || c.minioClient == nil || bucket != c.bucket || object == "" {
+		return errors.New("managed exact object cleaner is not configured for this bucket")
+	}
+	if err := c.minioClient.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("delete managed exact object: %w", err)
+	}
+	return nil
+}

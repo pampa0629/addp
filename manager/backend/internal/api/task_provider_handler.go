@@ -3481,6 +3481,7 @@ func (h *TaskProviderHandler) ListModel3DGLBs(c *gin.Context) {
 
 // GetModel3DGLB GET /api/v1/manager/model_3d_glb/:id
 // @Summary 获取三维模型 GLB 快显详情 | Get model 3D GLB detail
+// @Description metadata 包含本结果生命周期内的精确临时输入归属及清理状态，不返回存储凭据；详情读取不代替内容源授权。 | Metadata includes exact temporary input ownership and cleanup state for this result lifecycle, without storage credentials; detail reads do not authorize source content.
 // @Tags Manager
 // @Produce json
 // @Param id path int true "结果ID | Result ID"

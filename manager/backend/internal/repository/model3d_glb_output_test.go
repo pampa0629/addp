@@ -44,7 +44,7 @@ func TestGLBIsolatedOutputSwitchesOnlyWithAtomicSuccess(t *testing.T) {
 				deleted = append(deleted, ref)
 				return nil
 			}
-			if n, err := repo.CleanupExecutionOutputs(ctx, 100, clean); err != nil || n != 0 {
+			if n, err := repo.CleanupExecutionOutputs(ctx, 100, nil, clean); err != nil || n != 0 {
 				t.Fatalf("live pending cleaned: %d %v", n, err)
 			}
 			status := commonExecution.ExecutionStatusSuccess
@@ -90,20 +90,20 @@ func TestGLBIsolatedOutputSwitchesOnlyWithAtomicSuccess(t *testing.T) {
 				t.Fatalf("failure changed old result: %+v", current)
 			}
 			if outcome == "failed" {
-				if _, err := repo.CleanupExecutionOutputs(context.Background(), 100, func(context.Context, uint, string) error { return errors.New("storage unavailable") }); err == nil {
+				if _, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(context.Context, uint, string) error { return errors.New("storage unavailable") }); err == nil {
 					t.Fatal("cleanup failure was hidden")
 				}
 			}
-			if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, clean); err != nil || n != 1 {
+			if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 {
 				t.Fatalf("cleanup=%d %v", n, err)
 			}
 			if outcome == "failed" {
 				// A late upload can recreate a failed attempt's object. Its exact
 				// tombstone must survive the first successful DELETE.
-				if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, clean); err != nil || n != 1 || len(deleted) != 2 {
+				if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 || len(deleted) != 2 {
 					t.Fatalf("late-write retry=%d %v refs=%v", n, err, deleted)
 				}
-			} else if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, clean); err != nil || n != 0 {
+			} else if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 0 {
 				t.Fatalf("retired object retained=%d %v", n, err)
 			}
 		})
@@ -132,10 +132,10 @@ func TestGLBOutputCleanupStorageFailureDoesNotStarveNextOwnedObject(t *testing.T
 		}
 		return nil
 	}
-	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, deleteExact); n != 0 || !errors.Is(err, storageErr) {
+	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, nil, deleteExact); n != 0 || !errors.Is(err, storageErr) {
 		t.Fatalf("first cleanup=%d %v", n, err)
 	}
-	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, deleteExact); n != 1 || err != nil {
+	if n, err := repo.CleanupExecutionOutputs(t.Context(), 1, nil, deleteExact); n != 1 || err != nil {
 		t.Fatalf("failed object starved next row: %d %v", n, err)
 	}
 }
@@ -279,7 +279,7 @@ func TestGLBOutputCleanupDoesNotPromoteHistoryOrDeleteReferencedObjects(t *testi
 	if err := db.Create(current).Error; err != nil {
 		t.Fatal(err)
 	}
-	if n, err := repo.CleanupExecutionOutputs(t.Context(), 100, func(context.Context, uint, string) error { t.Fatal("deleted a referenced object"); return nil }); err != nil || n != 0 {
+	if n, err := repo.CleanupExecutionOutputs(t.Context(), 100, nil, func(context.Context, uint, string) error { t.Fatal("deleted a referenced object"); return nil }); err != nil || n != 0 {
 		t.Fatalf("referenced cleanup=%d %v", n, err)
 	}
 	selected, err := repo.GetCurrentByFingerprint(t.Context(), 7, "same-source")
@@ -293,7 +293,7 @@ func TestGLBOutputCleanupDoesNotPromoteHistoryOrDeleteReferencedObjects(t *testi
 	if err := db.Delete(current).Error; err != nil {
 		t.Fatal(err)
 	}
-	if n, err := repo.CleanupExecutionOutputs(t.Context(), 100, func(_ context.Context, tenant uint, ref string) error {
+	if n, err := repo.CleanupExecutionOutputs(t.Context(), 100, nil, func(_ context.Context, tenant uint, ref string) error {
 		if tenant != 7 || ref != "shared.glb" {
 			t.Fatalf("unexpected cleanup %d %s", tenant, ref)
 		}
@@ -322,7 +322,7 @@ func TestGLBOutputCleanupRecoversCrashWithoutDeletingPublishedArtifact(t *testin
 		t.Fatal(err)
 	}
 	count := 0
-	if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, func(_ context.Context, tenant uint, ref string) error {
+	if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(_ context.Context, tenant uint, ref string) error {
 		count++
 		if tenant != 7 || ref != "isolated.glb" {
 			t.Fatal("unexpected cleanup")

@@ -76,7 +76,7 @@ func TestIntegrationPostgresManagerGLBIsolatedOutputPublication(t *testing.T) {
 	if err != nil || current.StorageRef != "execution-owned.glb" {
 		t.Fatalf("published=%+v %v", current, err)
 	}
-	if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, func(_ context.Context, tenant uint, ref string) error {
+	if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(_ context.Context, tenant uint, ref string) error {
 		if tenant != tenantID || ref != "published.glb" {
 			t.Fatalf("cleanup escaped owner: %d %s", tenant, ref)
 		}

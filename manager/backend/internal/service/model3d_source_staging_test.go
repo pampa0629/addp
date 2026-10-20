@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
+	"github.com/addp/manager/internal/repository"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
 	for _, attempt := range []int{1, 1, 2} {
 		lease.Attempt = attempt
 		files := []model3DStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture")}
-		err := executor.withStagedModel3DSource(context.Background(), lease, "3ds", workflowaccess.KindDirectory, "模型.3DS", files,
+		err := executor.withStagedModel3DSource(context.Background(), lease, "3ds", workflowaccess.KindDirectory, "模型.3DS", files, &recordingModel3DStagingOwner{},
 			func(_ context.Context, source workflowaccess.Source) error {
 				if source.Access.Method != workflowaccess.MethodObjectStore || source.Entrypoint != "模型.3DS" || source.Access.Path != "" {
 					t.Fatalf("not an object store source: %+v", source)
@@ -128,7 +129,7 @@ func TestModel3DStagingFailureAndCancellationCleanup(t *testing.T) {
 			if scenario == "open-second" {
 				kind = workflowaccess.KindDirectory
 			}
-			err := stagingModelExecutor(store).withStagedModel3DSource(ctx, commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", kind, "wall.ifc", files,
+			err := stagingModelExecutor(store).withStagedModel3DSource(ctx, commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", kind, "wall.ifc", files, &recordingModel3DStagingOwner{},
 				func(_ context.Context, source workflowaccess.Source) error {
 					consumed = true
 					if source.Access.Object == "" || source.Access.Prefix != "" {
@@ -172,7 +173,7 @@ func TestModel3DStagingFreezesCompositionBeforeOpening(t *testing.T) {
 		files[1].RelativePath = "../unrelated"
 		return io.NopCloser(strings.NewReader("model")), nil
 	}
-	err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "obj", workflowaccess.KindDirectory, "model.obj", files,
+	err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "obj", workflowaccess.KindDirectory, "model.obj", files, &recordingModel3DStagingOwner{},
 		func(_ context.Context, source workflowaccess.Source) error {
 			if store.objects["manager/"+source.Access.Prefix+"/model.mtl"] != "material" {
 				t.Fatal("validated input composition was mutated")
@@ -217,7 +218,7 @@ func TestModel3DStagingWithMinioClient(t *testing.T) {
 		reads++
 		return io.NopCloser(strings.NewReader("model")), nil
 	}}
-	err = executor.withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", workflowaccess.KindFile, "wall.ifc", []model3DStagingFile{file},
+	err = executor.withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", workflowaccess.KindFile, "wall.ifc", []model3DStagingFile{file}, &recordingModel3DStagingOwner{},
 		func(context.Context, workflowaccess.Source) error { return nil })
 	if err != nil || reads != 1 || writes != 1 || removes != 1 {
 		t.Fatalf("err=%v reads=%d writes=%d removes=%d", err, reads, writes, removes)
@@ -268,7 +269,7 @@ func TestModel3DStagingRejectsInvalidCompositionBeforeSourceRead(t *testing.T) {
 					return io.NopCloser(strings.NewReader("model")), nil
 				}
 			}
-			err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), lease, "obj", kind, "model.obj", files,
+			err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), lease, "obj", kind, "model.obj", files, &recordingModel3DStagingOwner{},
 				func(context.Context, workflowaccess.Source) error {
 					t.Fatal("invalid composition reached the converter")
 					return nil
@@ -357,3 +358,73 @@ func Test3DSStagingRejectsIncompleteOrFailedMainRead(t *testing.T) {
 type failed3DSStagingReader struct{}
 
 func (failed3DSStagingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+// This records persistence calls, not source authorization decisions.
+type recordingModel3DStagingOwner struct {
+	prepared              []repository.Model3DGLBInputPreparation
+	prepareErr, finishErr error
+	settled, cleaned      bool
+}
+
+func (o *recordingModel3DStagingOwner) prepare(_ context.Context, p repository.Model3DGLBInputPreparation) error {
+	o.prepared = append(o.prepared, p)
+	return o.prepareErr
+}
+func (o *recordingModel3DStagingOwner) finish(_ context.Context, _ repository.Model3DGLBInputPreparation, settled, cleaned bool) error {
+	o.settled, o.cleaned = settled, cleaned
+	return o.finishErr
+}
+
+func TestModel3DStagingPersistsAllObjectsBeforeAnyUpload(t *testing.T) {
+	for _, scenario := range []string{"success", "persist failure", "upload unknown", "delete failure", "ack failure", "no owner"} {
+		t.Run(scenario, func(t *testing.T) {
+			failure := errors.New("controlled ownership failure")
+			owner := &recordingModel3DStagingOwner{}
+			store := &stagingModelStore{}
+			lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 2}
+			files := []model3DStagingFile{stagingModelFile("Scene.3DS", "main"), stagingModelFile("textures/Color.PNG ", "image")}
+			files[0].Open = func(context.Context) (io.ReadCloser, error) {
+				if len(owner.prepared) != 1 || len(owner.prepared[0].Objects) != 2 || store.puts != 0 {
+					t.Fatal("I/O preceded complete durable ownership")
+				}
+				if err := owner.prepared[0].Validate(7); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.HasSuffix(owner.prepared[0].Objects[1].Object, "/textures/Color.PNG ") {
+					t.Fatal("raw object name changed")
+				}
+				return io.NopCloser(strings.NewReader("main")), nil
+			}
+			switch scenario {
+			case "persist failure":
+				owner.prepareErr = failure
+			case "upload unknown":
+				store.putErr = failure
+			case "delete failure":
+				store.cleanupErr = failure
+			case "ack failure":
+				owner.finishErr = failure
+			}
+			var ownership model3DStagingOwnership = owner
+			if scenario == "no owner" {
+				ownership = nil
+			}
+			err := stagingModelExecutor(store).withStagedModel3DSource(t.Context(), lease, "3ds", workflowaccess.KindDirectory, "Scene.3DS", files, ownership, func(context.Context, workflowaccess.Source) error { return nil })
+			if (err != nil) != (scenario != "success") {
+				t.Fatalf("error=%v", err)
+			}
+			if (scenario == "persist failure" || scenario == "no owner") && store.puts != 0 {
+				t.Fatal("missing ownership allowed upload")
+			}
+			if scenario == "upload unknown" && owner.settled {
+				t.Fatal("ambiguous PUT acknowledged as settled")
+			}
+			if scenario == "delete failure" && owner.cleaned {
+				t.Fatal("failed DELETE acknowledged as cleaned")
+			}
+			if scenario == "success" && (!owner.settled || !owner.cleaned || len(store.objects) != 0) {
+				t.Fatal("successful cleanup not acknowledged")
+			}
+		})
+	}
+}

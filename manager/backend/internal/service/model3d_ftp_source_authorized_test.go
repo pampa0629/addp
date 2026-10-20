@@ -171,7 +171,7 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 	}
 	expectedScope = auth.scope.Clone()
 	expectedExecution, expectedToken = executionID, token
-	return ctx, Model3DGLBExecutionRequest{Task: &models.Model3DGLBTask{ID: 17, TenantID: 7}, ExecutionID: executionID, Config: config, SourceAuthorization: auth}, engine, spy, calls
+	return ctx, Model3DGLBExecutionRequest{Task: &models.Model3DGLBTask{ID: 17, TenantID: 7}, ExecutionID: executionID, Config: config, SourceAuthorization: auth, inputOwner: &recordingModel3DStagingOwner{}}, engine, spy, calls
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {

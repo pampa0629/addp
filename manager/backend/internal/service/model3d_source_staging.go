@@ -17,6 +17,7 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
@@ -42,9 +43,10 @@ func (e *ManagerModel3DGLBExecutor) withStagedModel3DSource(
 	lease commonExecution.Lease,
 	sourceFormat, sourceKind, entrypoint string,
 	files []model3DStagingFile,
+	owner model3DStagingOwnership,
 	consume func(context.Context, workflowaccess.Source) error,
 ) (resultErr error) {
-	if e == nil || e.objectStore == nil || consume == nil {
+	if e == nil || e.objectStore == nil || consume == nil || owner == nil {
 		return errors.New("model input staging is not configured")
 	}
 	store, ok := e.objectStore.(model3DStagingStore)
@@ -66,7 +68,8 @@ func (e *ManagerModel3DGLBExecutor) withStagedModel3DSource(
 		return err
 	}
 	// A preparation nonce also isolates overlapping calls for the same attempt.
-	prefix := fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s", lease.TenantID, lease.ExecutionID, lease.Attempt, uuid.NewString())
+	preparationID := uuid.NewString()
+	prefix := fmt.Sprintf("temp/model3d-input/tenant_%d/%s/attempt_%d/%s", lease.TenantID, lease.ExecutionID, lease.Attempt, preparationID)
 	objectOrPrefix := prefix
 	if sourceKind == workflowaccess.KindFile {
 		objectOrPrefix += "/" + entrypoint
@@ -81,15 +84,26 @@ func (e *ManagerModel3DGLBExecutor) withStagedModel3DSource(
 	if _, err := workflowaccess.NewSourcePlan(source); err != nil {
 		return err
 	}
+	preparation := repository.Model3DGLBInputPreparation{ExecutionID: lease.ExecutionID, Attempt: lease.Attempt, PreparationID: preparationID}
+	for _, file := range files {
+		preparation.Objects = append(preparation.Objects, repository.Model3DGLBInputObject{Bucket: bucket, Object: prefix + "/" + file.RelativePath})
+	}
+	if err := owner.prepare(ctx, preparation); err != nil {
+		return fmt.Errorf("persist exact model input ownership: %w", err)
+	}
+	writesSettled := true
 	var attempted []string
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
+		cleaned := true
 		for _, object := range attempted {
 			if err := e.objectStore.RemoveObject(cleanupCtx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
+				cleaned = false
 				resultErr = errors.Join(resultErr, fmt.Errorf("clean temporary model input: %w", err))
 			}
 		}
+		resultErr = errors.Join(resultErr, owner.finish(cleanupCtx, preparation, writesSettled, cleaned))
 	}()
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
@@ -109,7 +123,9 @@ func (e *ManagerModel3DGLBExecutor) withStagedModel3DSource(
 		// Record before PutObject: an error response does not prove no object was written.
 		attempted = append(attempted, object)
 		limited := &io.LimitedReader{R: &model3DStagingContextReader{ctx: ctx, reader: reader}, N: file.SizeBytes + 1}
+		writesSettled = false // A panic or unknown PUT response cannot settle the producer.
 		info, putErr := store.PutObject(ctx, bucket, object, limited, file.SizeBytes, minio.PutObjectOptions{ContentType: "application/octet-stream"})
+		writesSettled = putErr == nil
 		var sizeErr error
 		if putErr == nil {
 			// A length-delimited uploader may stop before EOF. Probe one byte to
