@@ -31,7 +31,6 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_CONSUMER_ENGINE_ID" = 17 ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
-              
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
