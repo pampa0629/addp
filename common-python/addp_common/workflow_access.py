@@ -87,8 +87,12 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path) -> Path:
         return path
     client = _object_store_client(access)
     bucket = _required_text(access, "bucket")
-    object_name = _required_text(access, "object").strip("/")
-    entrypoint = _text(source.get("entrypoint")) or Path(object_name).name
+    object_name = _source_storage_name(access, "object")
+    entrypoint = source.get("entrypoint")
+    if entrypoint is None or entrypoint == "":
+        entrypoint = Path(object_name).name
+    elif not isinstance(entrypoint, str):
+        raise WorkflowAccessError("source.entrypoint must be a string")
     path = work_dir / "source" / Path(entrypoint).name
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -111,18 +115,23 @@ def stage_source_directory(plan: dict[str, Any], work_dir: Path) -> Path:
 
     client = _object_store_client(access)
     bucket = _required_text(access, "bucket")
-    prefix = _required_text(access, "prefix").strip("/")
+    prefix = _source_storage_name(access, "prefix")
     root = work_dir / "source"
     root.mkdir(parents=True, exist_ok=True)
     objects = [item for item in client.list_objects(bucket, prefix=prefix + "/", recursive=True) if not getattr(item, "is_dir", False)]
     if not objects:
         raise WorkflowAccessError(f"source prefix is empty: {bucket}/{prefix}")
     prefix_with_slash = prefix + "/"
+    members = []
     for item in objects:
-        object_name = _text(getattr(item, "object_name", ""))
-        if not object_name:
-            continue
-        relative = object_name[len(prefix_with_slash):] if object_name.startswith(prefix_with_slash) else Path(object_name).name
+        object_name = getattr(item, "object_name", None)
+        if not isinstance(object_name, str) or not object_name.startswith(prefix_with_slash):
+            raise WorkflowAccessError("source directory returned an object outside its prefix")
+        relative = object_name[len(prefix_with_slash):]
+        if Path(relative).drive or "\\" in relative or "\x00" in relative or any(part in {"", ".", ".."} for part in relative.split("/")):
+            raise WorkflowAccessError("source directory returned an unsafe relative member")
+        members.append((object_name, relative))
+    for object_name, relative in members:
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         client.fget_object(bucket, object_name, str(target))
@@ -360,6 +369,13 @@ def _required_text(parent: dict[str, Any], key: str) -> str:
     value = _text(parent.get(key))
     if not value:
         raise WorkflowAccessError(f"{key} is required")
+    return value
+
+
+def _source_storage_name(parent: dict[str, Any], key: str) -> str:
+    value = parent.get(key)
+    if not isinstance(value, str) or not value:
+        raise WorkflowAccessError(f"source {key} is required")
     return value
 
 

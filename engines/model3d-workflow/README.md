@@ -19,6 +19,8 @@
 
 Runtime Operator Spec 统一消费 `addp.workflow.access-plan/v1`。Manager direct 调用选择 infra 目标并登记私有快显 artifact；Develop workflow 调用保存公开 ResourceLocator 参数、选择业务目标，并在成功后触发 Meta scan。Runtime 不解析 ADDP locator，也不决定产物归属。
 
+对象存储源暂存保留实际对象键和目录成员的原始名称；目录主入口也不裁剪首尾空格，避免读取到另一个同名文件。目录返回集合必须全部属于给定前缀并能安全落盘，越界或路径别名直接拒绝，不以 basename 改名兜底；源授权仍由调用 Owner 独立核验。
+
 ## 转换工具与格式边界
 
 运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 使用绑定的 `_3dtile`；glTF、FBX、OBJ、STL、DAE 和 3DS 使用 Assimp；IFC 使用专用 IfcConvert，默认传入 `--center-model`。SKP 使用 OpenSKP Python 子进程，MAX 使用引擎内部的 Blender 子进程，不增加 Blender 服务。高斯泼溅使用运行时内置 Node 脚本与现有锁定依赖。转换器必须绑定当前部署中的真实原生文件，不从系统 PATH 搜索。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名。

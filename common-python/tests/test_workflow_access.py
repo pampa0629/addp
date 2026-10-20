@@ -11,6 +11,7 @@ from addp_common.workflow_access import (
     require_source_plan,
     require_target_plan,
     stage_source_file,
+    stage_source_directory,
     target_child_file_plan,
     require_empty_target_directory,
 )
@@ -96,6 +97,71 @@ def test_local_file_create_and_replace(tmp_path):
     plan["target"]["write_mode"] = "replace"
     publish_target_file(source, plan)
     assert target.read_bytes() == b"second"
+
+
+def _object_source(kind, key, *, entrypoint=None):
+    source = {"kind": kind, "format": "ifc" if kind == "file" else "3ds",
+              "access": {"method": "object_store", "endpoint": "minio:9000", "access_key": "a",
+                         "secret_key": "b", "bucket": "manager", "object" if kind == "file" else "prefix": key}}
+    if entrypoint is not None:
+        source["entrypoint"] = entrypoint
+    return {"schema_version": "addp.workflow.access-plan/v1", "source": source}
+
+
+def test_source_file_preserves_exact_object_and_entrypoint_names(tmp_path, monkeypatch):
+    import addp_common.workflow_access as access
+    key, name = "temp/source/ 模型.ifc ", " 模型.ifc "
+    calls = []
+    class Client:
+        def fget_object(self, bucket, object_name, target):
+            calls.append((bucket, object_name))
+            assert object_name == key
+            Path(target).write_bytes(b"exact source")
+    monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
+    result = stage_source_file(_object_source("file", key, entrypoint=name), tmp_path)
+    assert result.name == name
+    assert result.read_bytes() == b"exact source"
+    assert calls == [("manager", key)]
+
+
+@pytest.mark.parametrize("prefix", ["temp/source/目录 ", "/temp/source/目录 ", "temp/source/目录 /"])
+def test_directory_source_preserves_prefix_and_distinct_trailing_space_members(tmp_path, monkeypatch, prefix):
+    import addp_common.workflow_access as access
+    from types import SimpleNamespace
+    data = {prefix + "/Textures/A.PNG": b"first", prefix + "/Textures/A.PNG ": b"second"}
+    calls = []
+    class Client:
+        def list_objects(self, bucket, **options):
+            assert options == {"prefix": prefix + "/", "recursive": True}
+            return [SimpleNamespace(object_name=key, is_dir=False) for key in data]
+        def fget_object(self, bucket, key, target):
+            calls.append(key)
+            Path(target).write_bytes(data[key])
+    monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
+    result = stage_source_directory(_object_source("directory", prefix), tmp_path)
+    assert (result / "Textures/A.PNG").read_bytes() == b"first"
+    assert (result / "Textures/A.PNG ").read_bytes() == b"second"
+    assert calls == list(data)
+
+
+@pytest.mark.parametrize("key", ["outside/texture.png", "prefix", "prefix/", "prefix/../escape.png",
+                                  "prefix/nested/../../escape.png", "prefix//escape.png", "prefix/./escape.png",
+                                  "prefix/a\\escape.png", "prefix/a\x00b", None, 7])
+def test_directory_source_rejects_invalid_members_before_any_download(tmp_path, monkeypatch, key):
+    import addp_common.workflow_access as access
+    from types import SimpleNamespace
+    calls = []
+    class Client:
+        def list_objects(self, *args, **kwargs):
+            return [SimpleNamespace(object_name="prefix/valid.png", is_dir=False),
+                    SimpleNamespace(object_name=key, is_dir=False)]
+        def fget_object(self, *args):
+            calls.append(args)
+    monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
+    with pytest.raises(WorkflowAccessError):
+        stage_source_directory(_object_source("directory", "prefix"), tmp_path)
+    assert calls == []
+    assert not (tmp_path / "escape.png").exists()
 
 
 def test_local_directory_completion_marker_and_replace(tmp_path):

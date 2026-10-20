@@ -58,6 +58,29 @@ def directory_plan(source: Path, target: Path, source_format: str, target_format
     }
 
 
+def test_model_entrypoint_keeps_exact_name_instead_of_trimming_to_another_file(tmp_path):
+    source = tmp_path / "inputs"
+    source.mkdir()
+    exact = source / " 模型.3ds "
+    exact.write_bytes(b"exact model")
+    (source / "模型.3ds").write_bytes(b"different model")
+    plan = directory_plan(source, tmp_path / "output.glb", "3ds", "glb", entrypoint=exact.name)
+    selected = operators._stage_model_source(plan, tmp_path / "work")
+    assert selected == exact.resolve()
+    assert selected.read_bytes() == b"exact model"
+
+
+@pytest.mark.parametrize("entrypoint", [None, "", 7, ["model.3ds"]])
+def test_model_directory_entrypoint_requires_an_explicit_string(tmp_path, entrypoint):
+    source = tmp_path / "inputs"
+    source.mkdir()
+    plan = directory_plan(source, tmp_path / "output.glb", "3ds", "glb")
+    plan["source"]["entrypoint"] = entrypoint
+    with pytest.raises(ConverterError) as failure:
+        operators._stage_model_source(plan, tmp_path / "work")
+    assert failure.value.error_code == "INVALID_PARAMS"
+
+
 def _glb_json(data: bytes) -> dict:
     length, kind = struct.unpack_from("<I4s", data, 12)
     assert kind == b"JSON"

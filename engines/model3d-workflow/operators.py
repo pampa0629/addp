@@ -1009,8 +1009,8 @@ def _stage_model_source(access_plan: dict[str, Any], work_dir: Path) -> Path:
     if source.get("kind") == "file":
         return stage_source_file(access_plan, work_dir)
     root = stage_source_directory(access_plan, work_dir)
-    entrypoint = _text(source.get("entrypoint"))
-    if not entrypoint:
+    entrypoint = source.get("entrypoint")
+    if not isinstance(entrypoint, str) or not entrypoint:
         raise ConverterError("INVALID_PARAMS", "directory source requires access_plan.source.entrypoint")
     path = (root / entrypoint).resolve()
     if Path(entrypoint).is_absolute() or not path.is_relative_to(root.resolve()):

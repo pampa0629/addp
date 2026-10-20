@@ -56,6 +56,7 @@ common-python/
 - 修改公共客户端后，至少验证直接使用它的 Python 模块。
 - `workflow_runtime` 只承载 `addp.workflow/v1` 的通用 DAG、引用、execution 状态及整体就绪响应，不依赖 Flask、GeoPandas、Spark、PDAL 或三维转换器。健康响应统一汇总结构化本地依赖，required 条件全部可用时为 HTTP 200 + healthy，否则为 HTTP 503 + unhealthy；实例身份登记与就绪独立。
 - 各 Python Workflow Runtime 使用公共核心后，必须删除本地重复实现，不保留兼容执行路径。
+- `workflow_access` 的源对象键、目录前缀和成员名称按原始值读取，不裁剪名称中的空格。目录暂存只接受当前前缀内可安全表示的相对成员；先核对完整返回集合，再下载，不把越界成员按 basename 改名兜底。此项是共享 I/O 契约，不替代各 Owner 的源授权。
 
 ## 验证
 
