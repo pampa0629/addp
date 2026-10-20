@@ -60,7 +60,7 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标，不支持 query 参数 | 1 to 200 complete read targets; no query parameters"
+// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标；受管 FTP 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP model results require same-decision expected_source and ordinary User; no query parameters"
 // @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻，不授予访问权 | Observation time without granting access"
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
 // @x-addp-auth-mode "permission"
@@ -90,9 +90,17 @@ func (h *EngineAccessSourceReadCheckHandler) CheckManagerProfileResult(c *gin.Co
 
 func (h *EngineAccessSourceReadCheckHandler) check(c *gin.Context, check func(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)) {
 	var request engineaccess.SourceReadCheckRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
 	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || len(request.Targets) == 0 || len(request.Targets) > 200 {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
+	}
+	if request.ExpectedSource != nil {
+		current, ok := middleware.IAMAuthContextFromGin(c)
+		if !ok || current.Principal.Type != "user" || (current.Token.Type != middleware.IAMTokenTypeFirstPartyAccess && current.Token.Type != middleware.IAMTokenTypeOAuthAccess) {
+			respondIAMError(c, commonapi.ErrForbidden)
+			return
+		}
 	}
 	result, err := check(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
 	if err != nil {

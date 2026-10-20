@@ -38,7 +38,7 @@ func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, 
 		_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&failure)
 		return nil, &TenantAPIError{Method: http.MethodGet, Path: path, StatusCode: response.StatusCode, ErrorCode: failure.ErrorCode}
 	}
-	const maxBytes = 64 << 10
+	const maxBytes = authorizationfacts.MaxAuthorizationFactsBytes
 	encoded, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
 	if err != nil || len(encoded) > maxBytes {
 		return nil, errors.New("invalid Meta authorization facts response size")

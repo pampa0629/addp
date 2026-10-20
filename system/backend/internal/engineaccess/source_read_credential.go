@@ -13,7 +13,12 @@ import (
 
 // Every fixed consumer uses this one credential and rule snapshot after Meta
 // preparation. No caller-supplied AuthContext is accepted as identity evidence.
-func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
+type sourceReadEngineVersion struct {
+	ID      uint
+	Version int64
+}
+
+func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
 	paths, _, err := encodeSourceReadTargets(targets)
 	if err != nil {
 		return nil, err
@@ -62,6 +67,15 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 		}
 		if tenantID != expectedTenantID {
 			return commonapi.ErrForbidden
+		}
+		if expectedEngine != nil {
+			engine, err := tx.engine(ctx, tenantID, int64(expectedEngine.ID), false)
+			if err != nil {
+				return err
+			}
+			if engine.EngineType != "ftp" || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
+				return commonapi.ErrForbidden
+			}
 		}
 		principalID, err := parse(current.Principal.ID)
 		if err != nil {

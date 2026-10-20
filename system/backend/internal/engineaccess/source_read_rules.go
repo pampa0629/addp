@@ -64,8 +64,9 @@ func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings [
 			return nil, errSourceReadRules
 		}
 		a, err := authorization.EncodeSharingTarget(paths[i])
-		p, otherErr := authorization.EncodeSharingTarget(b.NativeTarget)
-		if err != nil || otherErr != nil || string(a) != string(p) {
+		primary, primaryErr := b.PrimaryTarget()
+		p, otherErr := authorization.EncodeSharingTarget(primary)
+		if err != nil || primaryErr != nil || otherErr != nil || string(a) != string(p) {
 			return nil, errSourceReadRules
 		}
 	}
@@ -187,10 +188,13 @@ WITH input AS MATERIALIZED (
 // Both actual reads and management inspection consume these exact predicates.
 // The caller supplies input from trusted credential resolution or IAM lookup.
 const sourceReadRuleCTEs = `, targets AS (
- SELECT target.value->'native_target' AS path, target.ordinality AS position,
-       (target.value->'native_target'->>'engine_id')::bigint AS engine_id,
+ SELECT primary_path.path, target.ordinality AS position,
+       (primary_path.path->>'engine_id')::bigint AS engine_id,
        target.value->>'item_fingerprint' AS item_fingerprint, target.value->>'boundary_hash' AS boundary_hash
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
+ CROSS JOIN LATERAL (SELECT CASE WHEN target.value ? 'file_composition' THEN
+   (SELECT ref->'target' FROM jsonb_array_elements(target.value->'file_composition'->'refs') AS ref
+    WHERE ref->>'primary' = 'true') ELSE target.value->'native_target' END AS path) primary_path
 ), current_source AS (
  SELECT input.*, m.expires_at AS membership_expires_at FROM input
 	JOIN system.principals p ON p.id = input.principal_id AND p.principal_type = 'user'
@@ -240,7 +244,8 @@ const sourceReadRuleCTEs = `, targets AS (
 SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
-                      AND e.id = target.engine_id AND e.lifecycle_state = 'active') THEN 'target_unavailable'
+                      AND e.id = target.engine_id AND e.lifecycle_state = 'active'
+                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type = 'ftp')) THEN 'target_unavailable'
      WHEN EXISTS (SELECT 1 FROM matched_denies d WHERE d.position = target.position) THEN 'explicit_deny'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason

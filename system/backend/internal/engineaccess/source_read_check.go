@@ -2,12 +2,14 @@ package engineaccess
 
 import (
 	"context"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 )
@@ -16,7 +18,8 @@ import (
 const ManagerPreviewReadPermission = "manager.data_item.read"
 
 type SourceReadCheckRequest struct {
-	Targets []engineplugin.EngineCatalogPath `json:"targets"`
+	Targets        []engineplugin.EngineCatalogPath     `json:"targets"`
+	ExpectedSource *client.ManagerModel3DExpectedSource `json:"expected_source,omitempty"`
 }
 
 // A point-in-time source check. NOT a reusable Allow, lease or execution token.
@@ -84,6 +87,21 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 	if len(request.Targets) == 0 || len(request.Targets) > 200 {
 		return nil, commonapi.ErrBadRequest
 	}
+	var expectedVersion *sourceReadEngineVersion
+	if request.ExpectedSource != nil {
+		if !preview || len(request.Targets) != 1 || request.ExpectedSource.Validate() != nil {
+			return nil, commonapi.ErrBadRequest
+		}
+		copy := *request.ExpectedSource
+		copy.FileComposition = *copy.FileComposition.Clone()
+		request.ExpectedSource = &copy
+		primary, _ := copy.FileComposition.PrimaryTarget()
+		if !reflect.DeepEqual(primary, request.Targets[0]) {
+			return nil, commonapi.ErrBadRequest
+		}
+		version, _ := strconv.ParseInt(copy.EngineVersion, 10, 64)
+		expectedVersion = &sourceReadEngineVersion{ID: primary.EngineID, Version: version}
+	}
 	paths, _, err := encodeSourceReadTargets(request.Targets)
 	if err != nil {
 		return nil, commonapi.ErrBadRequest
@@ -92,13 +110,13 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 		return nil, errSourceReadRules
 	}
 	resolve := func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
-		if preview && strings.HasPrefix(credential, "addp_dat_") {
+		if preview && request.ExpectedSource == nil && strings.HasPrefix(credential, "addp_dat_") {
 			return auth.ResolveDelegatedAccessToken(ctx, credential)
 		}
 		return auth.ResolveUserAccessToken(ctx, credential)
 	}
 	qualify := qualifyManagerProfileResultRead
-	if preview {
+	if preview && request.ExpectedSource == nil {
 		qualify = qualifyManagerPreviewRead
 	}
 	var tenantID int64
@@ -132,7 +150,10 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.repository.observeSourceRules(ctx, credential, paths, bindings, tenantID, resolve, qualify)
+	if request.ExpectedSource != nil && (len(bindings) != 1 || !reflect.DeepEqual(bindings[0].FileComposition, &request.ExpectedSource.FileComposition)) {
+		return nil, commonapi.ErrForbidden
+	}
+	result, err := s.repository.observeSourceRules(ctx, credential, paths, bindings, tenantID, resolve, qualify, expectedVersion)
 	if err != nil {
 		return nil, err
 	}

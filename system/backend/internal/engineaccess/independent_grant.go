@@ -9,7 +9,6 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
-	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -46,6 +45,7 @@ type SourceGrantView struct {
 	CatalogPath           json.RawMessage  `json:"catalog_path" swaggertype:"object"`
 	ItemFingerprint       string           `json:"item_fingerprint"`
 	BoundaryHash          string           `json:"boundary_hash"`
+	FileComposition       json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
 	RecipientType         string           `json:"recipient_type"`
 	RecipientID           int64            `json:"recipient_id,string" swaggertype:"string"`
 	Action                string           `json:"action"`
@@ -65,7 +65,7 @@ type SourceGrantView struct {
 func sourceGrantView(row *sourceGrant) SourceGrantView {
 	return SourceGrantView{RequestID: row.RequestID, GrantedAt: row.GrantedAt, ApprovalMode: row.ApprovalMode,
 		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
-		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash,
+		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, RequirementVersion: row.RequirementVersion,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
@@ -90,7 +90,7 @@ type CreateIndependentGrantInput struct {
 }
 
 func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, error) {
-	if err := (authorizationfacts.Binding{ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash, NativeTarget: input.CatalogPath}).Validate(); err != nil {
+	if err := validateExpectedPrimary(input.CatalogPath, input.ItemFingerprint, input.ExpectedBoundaryHash); err != nil {
 		return nil, commonapi.ErrBadRequest
 	}
 	path, err := shared.EncodeSharingTarget(input.CatalogPath)
@@ -113,7 +113,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 }
 
 func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) bool {
-	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection)
+	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection || segment.Kind == engineplugin.EngineCatalogKindFile)
 }
 
 func sameIndependentGrant(a, b *sourceGrant) bool {
@@ -186,8 +186,15 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	if err != nil || result != nil {
 		return result, err
 	}
-	if err := s.verifyApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash); err != nil {
+	binding, err := s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
+	if err != nil {
 		return nil, err
+	}
+	if binding.FileComposition != nil {
+		row.FileComposition, err = json.Marshal(binding.FileComposition)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if s.independentTarget == nil {
 		return nil, ErrIndependentGrantSourceUnavailable

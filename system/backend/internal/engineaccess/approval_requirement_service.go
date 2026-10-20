@@ -7,7 +7,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	authorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -272,7 +271,7 @@ func hasCurrentTenantPermission(rows []iam.RoleAssignmentPermissionProjection, t
 }
 
 func (s *Service) InitializeApprovalRequirement(ctx context.Context, input InitializeApprovalRequirementInput) (*ApprovalRequirementView, error) {
-	if (authorizationfacts.Binding{ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash, NativeTarget: input.CatalogPath}).Validate() != nil {
+	if validateExpectedPrimary(input.CatalogPath, input.ItemFingerprint, input.ExpectedBoundaryHash) != nil {
 		return nil, commonapi.ErrBadRequest
 	}
 	if input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || !validReason(input.Reason) ||

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm/clause"
@@ -27,6 +30,7 @@ type sourceGrant struct {
 	CatalogPath                  json.RawMessage `gorm:"type:jsonb"`
 	ItemFingerprint              string
 	BoundaryHash                 string
+	FileComposition              json.RawMessage `gorm:"type:jsonb"`
 	RecipientType                string
 	RecipientID                  int64
 	Action                       string
@@ -50,6 +54,25 @@ func (sourceGrant) TableName() string { return "system.engine_access_grants" }
 // exact target boundary before calling the one persistence path. The database
 // supplies issuance time and enforces immutable provenance/rule constraints.
 func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) error {
+	if grant == nil {
+		return commonapi.ErrBadRequest
+	}
+	var primary plugin.EngineCatalogPath
+	if json.Unmarshal(grant.CatalogPath, &primary) != nil {
+		return commonapi.ErrBadRequest
+	}
+	file := len(primary.Segments) > 0 && primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile
+	if file || len(grant.FileComposition) != 0 {
+		var composition authorizationfacts.FileCompositionBoundary
+		if !file || grant.ApprovalMode != approvalModeIndependent || json.Unmarshal(grant.FileComposition, &composition) != nil {
+			return commonapi.ErrBadRequest
+		}
+		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, FileComposition: &composition}
+		target, err := binding.PrimaryTarget()
+		if err != nil || !reflect.DeepEqual(target, primary) {
+			return commonapi.ErrBadRequest
+		}
+	}
 	err := r.db.WithContext(ctx).Clauses(clause.Returning{}).Create(grant).Error
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.ConstraintName == "engine_access_grant_relation_exists" {

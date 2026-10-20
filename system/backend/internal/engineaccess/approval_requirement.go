@@ -79,7 +79,7 @@ func (r *Repository) approvalRequirement(ctx context.Context, tenantID int64, en
 	if json.Unmarshal(path, &native) != nil {
 		return nil, errApprovalRequirementInput
 	}
-	fingerprint, err := authorizationfacts.NativeCandidateFingerprint(native)
+	fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(native)
 	if err != nil {
 		return nil, errApprovalRequirementInput
 	}
@@ -150,7 +150,7 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 		return row, nil
 	}
 	if creating {
-		fingerprint, err := authorizationfacts.NativeCandidateFingerprint(input.Path)
+		fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(input.Path)
 		if err != nil {
 			return nil, errApprovalRequirementInput
 		}

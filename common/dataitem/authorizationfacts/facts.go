@@ -20,6 +20,9 @@ import (
 
 const AuthorizationFactsSchemaV1 = "meta.data_item_authorization_facts/v1"
 
+// Includes the complete bounded composition plus its identity/hash envelope.
+const MaxAuthorizationFactsBytes = 128 << 10
+
 type AuthorizationBasisState string
 
 const (
@@ -96,7 +99,7 @@ func (f AuthorizationFacts) Validate() error {
 
 // UnmarshalJSON enforces this small wire schema on every consumer.
 func (f *AuthorizationFacts) UnmarshalJSON(encoded []byte) error {
-	if len(encoded) > 64<<10 || !utf8.Valid(encoded) {
+	if len(encoded) > MaxAuthorizationFactsBytes || !utf8.Valid(encoded) {
 		return errors.New("invalid authorization facts JSON")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))

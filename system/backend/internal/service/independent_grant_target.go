@@ -33,6 +33,10 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 	if engine.ID != path.EngineID || engine.TenantID == nil || int64(*engine.TenantID) != tenantID || engine.LifecycleState != models.EngineLifecycleActive {
 		return 0, commonapi.ErrForbidden
 	}
+	file := len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile
+	if file && engine.EngineType != "ftp" {
+		return 0, commonapi.ErrForbidden
+	}
 	wanted, err := shared.EncodeSharingTarget(path)
 	if err != nil {
 		return 0, commonapi.ErrBadRequest
@@ -42,7 +46,7 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 		return 0, engineaccess.ErrIndependentGrantSourceUnavailable
 	}
 	if entry == nil || entry.Role != engineplugin.EngineCatalogRoleLeaf ||
-		(entry.Kind != engineplugin.EngineCatalogKindTable && entry.Kind != engineplugin.EngineCatalogKindCollection) || entry.Term != entry.Kind {
+		(entry.Kind != engineplugin.EngineCatalogKindTable && entry.Kind != engineplugin.EngineCatalogKindCollection && !(file && entry.Kind == engineplugin.EngineCatalogKindFile)) || entry.Term != entry.Kind {
 		return 0, commonapi.ErrBadRequest
 	}
 	actual, actualErr := shared.EncodeSharingTarget(entry.Path)

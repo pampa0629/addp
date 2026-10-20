@@ -111,7 +111,7 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 	if err := json.Unmarshal(path, &target); err != nil {
 		return errFulfillmentBinding
 	}
-	fingerprint, err := authorizationfacts.NativeCandidateFingerprint(target)
+	fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
 	if err != nil {
 		return err
 	}

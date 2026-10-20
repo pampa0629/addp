@@ -56,7 +56,7 @@ type CreateDenyInput struct {
 }
 
 func prepareSourceDeny(input CreateDenyInput) (*SourceDeny, error) {
-	candidate, identityErr := authorizationfacts.NativeCandidateFingerprint(input.CatalogPath)
+	candidate, identityErr := authorizationfacts.PrimaryCandidateFingerprint(input.CatalogPath)
 	if identityErr != nil || candidate != input.ItemFingerprint {
 		return nil, commonapi.ErrBadRequest
 	}

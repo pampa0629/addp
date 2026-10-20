@@ -233,8 +233,8 @@ func TestFileFactsStrictWireAndNoNativeFallback(t *testing.T) {
 	}
 	// A file composition is not a single native target or an independently
 	// approved texture. The native proof cannot silently return its primary.
-	if _, err := f.ApprovedBinding(); err == nil {
-		t.Fatal("unimplemented native binding accepted a file composition")
+	if binding, err := f.ApprovedBinding(); err != nil || binding.FileComposition == nil {
+		t.Fatal("approved binding lost complete file composition", err)
 	}
 	if _, err := f.ProveNativeTarget(plugin.FileItemPath(33, "models/scene.3DS")); err == nil {
 		t.Fatal("native proof dropped related files")

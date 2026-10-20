@@ -1,0 +1,214 @@
+package engineaccess
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
+	commonmodels "github.com/addp/common/models"
+	systemauthorization "github.com/addp/system/internal/authorization"
+	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// Formal System commands and real User credentials; only the Meta fact owner
+// and metadata-only Provider are fixtures. This is not a real FTP content T4.
+func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
+	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
+	t.Run("file composition source grants", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+		defer cancel()
+		tenant := uint(tenantID)
+		engine := models.Engine{Name: "File composition fixture", EngineType: "ftp", TenantID: &tenant, Version: 1,
+			LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"file-composition.invalid"}`)}
+		if err := db.Table("system.engines").Create(&engine).Error; err != nil {
+			t.Fatal(err)
+		}
+		primary := plugin.FileItemPath(engine.ID, "models/scene.3ds")
+		factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
+			composition, err := authorizationfacts.NewFileCompositionBoundary("3ds", []authorizationfacts.FileCompositionRef{
+				{Target: primary, Role: "model", Required: true, Primary: true},
+				{Target: plugin.FileItemPath(engine.ID, "models/"+texture), Role: "texture", Required: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
+				EngineID: engine.ID, ItemType: "file", FullName: primary.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, primary.StringPath()),
+				BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}}
+			hash, err := facts.ComputeBoundaryHash()
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts.BoundaryHash = &hash
+			return facts
+		}
+		current := factsFor("A.PNG")
+		original := current
+		offline := false
+		repo := NewRepository(db)
+		service := NewService(repo, func(engine *models.Engine) bool { return engine.EngineType == "ftp" }).WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, wantedTenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
+			if wantedTenant != tenant || fp != current.ItemFingerprint {
+				t.Fatal("wrong trusted Meta lookup")
+			}
+			if offline {
+				return nil, errors.New("fixture Meta offline")
+			}
+			copy := current
+			return &copy, nil
+		})).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, wanted int64, target plugin.EngineCatalogPath) (int64, error) {
+			if wanted != tenantID || target.StringPath() != primary.StringPath() {
+				t.Fatal("wrong exact Provider target")
+			}
+			actual, err := repo.engine(c, tenantID, int64(engine.ID), false)
+			if err != nil {
+				return 0, err
+			}
+			return actual.Version, nil
+		}))
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_issuer", Name: "File grant issuer",
+			PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		operator, _ := newUser(t, time.Hour)
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit file issuer fixture"}); err != nil {
+			t.Fatal(err)
+		}
+		principal, err := iam.NewRepository(db).GetPrincipal(ctx, operator.PrincipalID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actor := Actor{TenantID: tenantID, PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
+		reader, _ := newUser(t, time.Hour)
+		readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader", Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission}, ActorPrincipalID: adminID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: reader.MembershipID, RoleIDs: []int64{readRole.ID}, ActorPrincipalID: adminID, Reason: "Read without issuance"}); err != nil {
+			t.Fatal(err)
+		}
+		identity := iam.NewRepository(db)
+		tokens, err := iam.NewTokenFamilyService(identity, iam.BrowserSessionConfig{AccessTokenTTL: time.Hour, ResourceTicketOwners: []string{"manager"}}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection, err := iam.NewContextSelectionService(identity, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		login, err := selection.BeginContextSelection(ctx, iam.BeginContextSelectionInput{PrincipalID: reader.PrincipalID,
+			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: time.Now().Add(-time.Second)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		session := login.Session
+		if login.Challenge != nil {
+			session, err = selection.ConsumeContextSelection(ctx, iam.ConsumeContextSelectionInput{SelectionTicket: login.Challenge.SelectionTicket, Choice: iam.ContextSelectionChoice{Type: iam.ContextTypeTenant, TenantMembershipID: &reader.MembershipID}})
+		}
+		if err != nil || session == nil {
+			t.Fatal("real User session missing", err)
+		}
+		request := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
+		read := func(request SourceReadCheckRequest, want bool) {
+			t.Helper()
+			result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request)
+			if want && (err != nil || result == nil) {
+				t.Fatalf("read denied: %v", err)
+			}
+			if !want && (result != nil || !errors.Is(err, commonapi.ErrForbidden)) {
+				t.Fatalf("unexpected rejection/result: %v %+v", err, result)
+			}
+		}
+		read(request, false)
+		input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: uuid.New(), CatalogPath: primary,
+			ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash, RequirementVersion: 1, InitializeApproval: true,
+			RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Approve complete A composition"}
+		grantA, err := service.CreateIndependentGrant(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored authorizationfacts.FileCompositionBoundary
+		if json.Unmarshal(grantA.FileComposition, &stored) != nil || len(stored.Refs) != 2 {
+			t.Fatal("approved composition not persisted")
+		}
+		read(request, true)
+		// A primary-only row cannot become a full composition Grant.
+		bare, err := prepareIndependentGrant(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bare.RequestID = uuid.New()
+		if err := repo.insertSourceGrant(ctx, bare); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatal("primary-only upgrade accepted", err)
+		}
+		current = factsFor("B.PNG")
+		currentRequest := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
+		read(currentRequest, false) // old A Grant alone does not cover B, even without a Deny.
+		read(request, false)
+		current = original
+		denyID := uuid.New()
+		if _, err := service.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, CatalogPath: primary, ItemFingerprint: original.ItemFingerprint,
+			RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Persistent same-item denial"}); err != nil {
+			t.Fatal(err)
+		}
+		current = factsFor("B.PNG")
+		read(request, false)
+		if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: grantA.RequestID, Reason: "Withdraw obsolete A"}); err != nil {
+			t.Fatal(err)
+		}
+		read(currentRequest, false)
+		input.RequestID, input.InitializeApproval, input.ExpectedBoundaryHash, input.Reason = uuid.New(), false, *current.BoundaryHash, "Explicitly approve B composition"
+		grantB, err := service.CreateIndependentGrant(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read(currentRequest, false) // old A's Deny still constrains B's new Grant.
+		if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, Reason: "Explicitly release same-item denial"}); err != nil {
+			t.Fatal(err)
+		}
+		read(currentRequest, true)
+		read(request, false) // B's active Grant must not authorize A's cached GLB.
+		delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		delegate, err := delegation.IssueDelegatedAccessToken(ctx, iam.IssueDelegatedAccessTokenInput{SourceAccessToken: session.AccessToken, Audience: "manager", Scopes: []string{"data.preview"}, AgentRunID: uuid.NewString(), ToolCallID: uuid.NewString()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result, err := service.CheckManagerPreviewRead(ctx, delegate.AccessToken, currentRequest); result != nil || (!errors.Is(err, commonapi.ErrUnauthorized) && !errors.Is(err, commonapi.ErrForbidden)) {
+			t.Fatal("raw delegated managed-result read accepted", err)
+		}
+		if err := db.Table("system.engines").Where("id=?", engine.ID).Update("version", 2).Error; err != nil {
+			t.Fatal(err)
+		}
+		read(currentRequest, false)
+		currentRequest.ExpectedSource.EngineVersion = "2"
+		read(currentRequest, true)
+		current.ObservedAt = time.Now() // re-observation is not a changed boundary.
+		read(currentRequest, true)
+		offline = true
+		if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, currentRequest); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
+			t.Fatal("Meta outage allowed cached composition", err)
+		}
+		offline = false
+		if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: grantB.RequestID, Reason: "Withdraw B"}); err != nil {
+			t.Fatal(err)
+		}
+		read(currentRequest, false)
+		prior, err := repo.findSourceGrant(ctx, grantA.RequestID)
+		if err != nil || !equalJSON(prior.FileComposition, grantA.FileComposition) || prior.BoundaryHash != *original.BoundaryHash {
+			t.Fatal("old approved composition was overwritten", err)
+		}
+	})
+}

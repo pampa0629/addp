@@ -33,6 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
+            echo "FTP file composition Grant/current read: --package engineaccess --test file-composition" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
@@ -134,6 +135,10 @@ case "$TEST_FILTER" in
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(initial_production_observes_actual_sources_and_persistent_target_history_without_issuing|initial_production_grant_terminal_lifecycle)$'
+        ;;
+    file-composition)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "file-composition requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$'
         ;;
     engine-deployments)
         case "$PACKAGE_FILTER" in

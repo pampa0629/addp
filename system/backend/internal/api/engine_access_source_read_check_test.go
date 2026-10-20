@@ -11,6 +11,8 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	auth "github.com/addp/common/authorization"
+	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -18,10 +20,11 @@ import (
 )
 
 type sourceReadCheckFixture struct {
-	calls      int
-	err        error
-	incomplete bool
-	credential string
+	calls          int
+	err            error
+	incomplete     bool
+	credential     string
+	expectedSource bool
 }
 
 func (f *sourceReadCheckFixture) CheckManagerProfileResultRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
@@ -36,6 +39,9 @@ func (f *sourceReadCheckFixture) CheckManagerPreviewRead(_ context.Context, cred
 	}
 	if credential != expected || len(request.Targets) != 1 || request.Targets[0].EngineID != 12 {
 		return nil, errors.New("unexpected trusted consumer input")
+	}
+	if f.expectedSource && (request.ExpectedSource == nil || request.ExpectedSource.Validate() != nil) {
+		return nil, errors.New("expected source missing")
 	}
 	if f.err != nil {
 		return nil, f.err
@@ -72,6 +78,43 @@ func sourceReadCheckRouter(t *testing.T, f *sourceReadCheckFixture, current auth
 		t.Fatal(err)
 	}
 	return router
+}
+
+func TestManagedFileExpectedSourceRouteRejectsDelegatesAndMachines(t *testing.T) {
+	primary := engineplugin.FileItemPath(12, "models/model.ifc")
+	composition, err := authorizationfacts.NewFileCompositionBoundary("ifc", []authorizationfacts.FileCompositionRef{{Target: primary, Role: "model", Required: true, Primary: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *composition}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tokenType := range []string{middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeDelegatedAccess, middleware.IAMTokenTypeServiceAccess} {
+		t.Run(tokenType, func(t *testing.T) {
+			current := sourceReadCheckAuth()
+			current.Token.Type = tokenType
+			credential := "addp_at_test"
+			if tokenType == middleware.IAMTokenTypeDelegatedAccess {
+				credential = "addp_dat_test"
+				current.Client.Audiences, current.Client.ScopeMode, current.Client.Scopes = []string{"manager"}, "restricted", []string{"data.preview"}
+				current.Delegation = &auth.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "run", ToolCallID: "call"}
+			}
+			fixture := &sourceReadCheckFixture{credential: credential, expectedSource: true}
+			router := sourceReadCheckRouter(t, fixture, current)
+			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-preview", strings.NewReader(string(body)))
+			request.Header.Set("Authorization", "Bearer "+credential)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if tokenType == middleware.IAMTokenTypeFirstPartyAccess {
+				if response.Code != 200 || fixture.calls != 1 {
+					t.Fatalf("human request rejected %d %s", response.Code, response.Body.String())
+				}
+			} else if (response.Code != 401 && response.Code != 403) || fixture.calls != 0 {
+				t.Fatalf("non-human expected-source reached service %d %d", response.Code, fixture.calls)
+			}
+		})
+	}
 }
 
 func TestSourceReadCheckDelegatedRouteContract(t *testing.T) {

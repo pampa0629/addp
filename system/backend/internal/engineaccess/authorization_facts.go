@@ -30,7 +30,7 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 	}
 	result := make([]authorizationfacts.Binding, 0, len(paths))
 	for _, path := range paths {
-		candidate, err := authorizationfacts.NativeCandidateFingerprint(path)
+		candidate, err := authorizationfacts.PrimaryCandidateFingerprint(path)
 		if err != nil {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
@@ -44,7 +44,7 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 		if facts == nil || facts.Validate() != nil || facts.ItemFingerprint != candidate {
 			return nil, ErrAuthorizationFactsUnavailable
 		}
-		binding, err := facts.ProveNativeTarget(path)
+		binding, err := facts.ProvePrimaryTarget(path)
 		if err != nil {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
@@ -56,14 +56,32 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 // Called only after local qualification has completed and released its locks.
 // The expected digest binds explicit confirmation; owner facts remain trusted.
 func (s *Service) verifyApprovedBoundary(ctx context.Context, tenantID int64, path plugin.EngineCatalogPath, fingerprint, expectedHash string) error {
+	_, err := s.resolveApprovedBoundary(ctx, tenantID, path, fingerprint, expectedHash)
+	return err
+}
+
+func (s *Service) resolveApprovedBoundary(ctx context.Context, tenantID int64, path plugin.EngineCatalogPath, fingerprint, expectedHash string) (*authorizationfacts.Binding, error) {
 	bindings, err := s.resolveReadBindings(ctx, tenantID, []plugin.EngineCatalogPath{path})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(bindings) != 1 || bindings[0].ItemFingerprint != fingerprint || bindings[0].BoundaryHash != expectedHash {
-		return ErrAuthorizationBoundaryChanged
+		return nil, ErrAuthorizationBoundaryChanged
 	}
-	return nil
+	return &bindings[0], nil
+}
+
+// Validate only the submitted identity/hash shape before owner facts are read.
+// A file hash cannot prove a composition until resolveApprovedBoundary succeeds.
+func validateExpectedPrimary(path plugin.EngineCatalogPath, fingerprint, hash string) error {
+	if len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile {
+		candidate, err := authorizationfacts.PrimaryCandidateFingerprint(path)
+		if err != nil || candidate != fingerprint || !authorizationfacts.ValidItemFingerprint(hash) {
+			return commonapi.ErrBadRequest
+		}
+		return nil
+	}
+	return (authorizationfacts.Binding{ItemFingerprint: fingerprint, BoundaryHash: hash, NativeTarget: path}).Validate()
 }
 
 // AuthorizationFacts only observes current resources; it does not change ACLs.

@@ -89,6 +89,10 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if primaryIndex < 0 {
 		return errFileComposition
 	}
+	encoded, err := json.Marshal(b)
+	if err != nil || len(encoded) > 64<<10 {
+		return errFileComposition
+	}
 	primary := b.Refs[primaryIndex].Target
 	parent := primary.Segments[:len(primary.Segments)-1]
 	leaf := primary.Segments[len(primary.Segments)-1]

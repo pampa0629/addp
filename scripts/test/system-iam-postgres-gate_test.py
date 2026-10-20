@@ -164,6 +164,14 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration or api", result.stderr)
 
+    def test_file_composition_filter_keeps_formal_grant_owner_and_rejects_other_packages(self):
+        result = self.run_gate(arguments=("--package", "engineaccess", "--test", "file-composition"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/engineaccess -run ^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$", (self.root / "trace-1").read_text())
+        rejected = self.run_gate(arguments=("--package", "iam", "--test", "file-composition"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("file-composition requires --package engineaccess", rejected.stderr)
+
     def test_full_gate_sets_a_finite_timeout_for_every_package(self):
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -41,7 +41,8 @@ func TestMetaAuthorizationFactsStrictRuntimeClient(t *testing.T) {
 		{"unknown field", 200, strings.Replace(string(encoded), `"layout":"single"`, `"layout":"single","token":"secret"`, 1), false},
 		{"trailing JSON", 200, string(encoded) + `{}`, false},
 		{"duplicate field", 200, strings.Replace(string(encoded), `"layout":"single"`, `"layout":"single","layout":"single"`, 1), false},
-		{"oversized", 200, strings.Repeat(" ", 64<<10) + string(encoded), false},
+		{"bounded larger envelope", 200, strings.Repeat(" ", 64<<10) + string(encoded), true},
+		{"oversized", 200, strings.Repeat(" ", authorizationfacts.MaxAuthorizationFactsBytes) + string(encoded), false},
 		{"not found", 404, `{"error":"secret","error_code":"meta_authorization_target_not_found"}`, false},
 		{"error", 500, `{"error":"secret"}`, false},
 	} {
