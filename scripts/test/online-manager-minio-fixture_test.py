@@ -95,10 +95,11 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
-        for format_name in ("ifc", "osgb", "skp", "max"):
+        for format_name in ("ifc", "osgb", "skp", "max", "3ds"):
             source = SCRIPT.parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{format_name}"
             shutil.copy2(source, self.business / "fixtures/manager" / source.name)
         shutil.copy2(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png", self.business / "fixtures/manager/addp_online_max_texture.png")
+        shutil.copy2(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_exchange_texture.png", self.business / "fixtures/manager/addp_online_exchange_texture.png")
         (self.business / "nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg").write_bytes(b"JPEG fixture")
         self._executable("uname", '#!/bin/bash\nif [ "$1" = -m ]; then echo x86_64; else echo "${ADDP_TEST_OS:-Darwin}"; fi\n')
         self._executable(
@@ -432,10 +433,13 @@ esac
         self.assertEqual(dae.find(ns + "asset/" + ns + "unit").get("meter"), "0.01")
         self.assertEqual(dae.find(ns + "library_images/" + ns + "image/" + ns + "init_from").text, "texture.png")
         model = baseline["3ds/model.3ds"]
+        self.assertEqual(model, (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.3ds").read_bytes())
+        self.assertEqual(hashlib.sha256(model).hexdigest(), "856a75ee6a2de1be4e0cf19ed67dd49018d34486c762a115a45c173e30603bd6")
         self.assertEqual(struct.unpack_from("<HI", model), (0x4D4D, len(model)))
         self.assertIn(b"texture.png\0", model)
         png = baseline["dae/texture.png"]
         self.assertEqual(png, baseline["3ds/texture.png"])
+        self.assertEqual(png, (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_exchange_texture.png").read_bytes())
         self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
         offset = 8
         while offset < len(png):

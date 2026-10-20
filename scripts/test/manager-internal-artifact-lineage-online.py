@@ -967,7 +967,8 @@ def verify_mesh_source(client: GatewayClient, model: ArtifactFixture) -> None:
     verify_source_download(client, {**MESH_SOURCE_FACTS[model.format], "format": model.format, "locator": model.locator})
 
 
-def validate_fixture_png(raw: bytes) -> None:
+def validate_fixture_png(raw: bytes, *, expected_size: int = 4,
+                         expected_rgb: tuple[int, int, int] = (220, 30, 60)) -> None:
     """Decode the bounded fixture pixels, allowing Blender to re-encode PNG."""
     import zlib
     if not raw.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -985,8 +986,8 @@ def validate_fixture_png(raw: bytes) -> None:
             if channels is not None or length != 13:
                 raise SuiteError('textured fixture PNG header is invalid')
             width, height, depth, color, compression, filtering, interlace = struct.unpack('>2I5B', data)
-            if (width, height, depth, compression, filtering, interlace) != (4, 4, 8, 0, 0, 0) or color not in (2, 6):
-                raise SuiteError('textured fixture PNG must be 4 by 4 RGB or RGBA')
+            if (width, height, depth, compression, filtering, interlace) != (expected_size, expected_size, 8, 0, 0, 0) or color not in (2, 6):
+                raise SuiteError(f'textured fixture PNG must be {expected_size} by {expected_size} RGB or RGBA')
             channels = 3 if color == 2 else 4
         elif kind == b'IDAT':
             compressed.extend(data)
@@ -999,16 +1000,16 @@ def validate_fixture_png(raw: bytes) -> None:
     if not ended or channels is None:
         raise SuiteError('textured fixture PNG is incomplete')
     decoder = zlib.decompressobj()
-    decoded = decoder.decompress(compressed, 4 * (1 + 4 * channels) + 1)
-    if not decoder.eof or decoder.unused_data or len(decoded) != 4 * (1 + 4 * channels):
+    decoded = decoder.decompress(compressed, expected_size * (1 + expected_size * channels) + 1)
+    if not decoder.eof or decoder.unused_data or len(decoded) != expected_size * (1 + expected_size * channels):
         raise SuiteError('textured fixture PNG decoded pixels exceed fixture bounds')
-    previous = [0] * (4 * channels)
-    for row in range(4):
-        start = row * (1 + 4 * channels)
+    previous = [0] * (expected_size * channels)
+    for row in range(expected_size):
+        start = row * (1 + expected_size * channels)
         filtering = decoded[start]
         if filtering > 4:
             raise SuiteError('textured fixture PNG filter is invalid')
-        current = list(decoded[start + 1:start + 1 + 4 * channels])
+        current = list(decoded[start + 1:start + 1 + expected_size * channels])
         for i in range(len(current)):
             left = current[i - channels] if i >= channels else 0
             up = previous[i]
@@ -1018,7 +1019,7 @@ def validate_fixture_png(raw: bytes) -> None:
             paeth = (left, up, corner)[distances.index(min(distances))]
             current[i] = (current[i] + (0, left, up, (left + up) // 2, paeth)[filtering]) % 256
         for i in range(0, len(current), channels):
-            if current[i:i + channels] != [220, 30, 60] + ([255] if channels == 4 else []):
+            if current[i:i + channels] != list(expected_rgb) + ([255] if channels == 4 else []):
                 raise SuiteError('textured fixture must preserve the declared red texture pixels')
         previous = current
 
@@ -1219,6 +1220,8 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
             raise SuiteError("fixture image bufferView must contain real encoded image bytes")
         if format_name == "obj":
             validate_fixture_png(image_bytes)
+        if format_name == "3ds":
+            validate_fixture_png(image_bytes, expected_size=2, expected_rgb=(255, 64, 32))
         if format_name == "skp" and hashlib.sha256(image_bytes).hexdigest() != "3168c3aa8cd3338d29b9ca74ee6794a2290b69d4da04d0869788187cb6ac4cf3":
             raise SuiteError("SKP fixture must preserve its embedded four-color PNG")
     textures = _array(doc.get("textures", []), "fixture textures")

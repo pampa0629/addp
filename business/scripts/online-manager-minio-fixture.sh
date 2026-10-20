@@ -103,7 +103,7 @@ fi
 fixture_object_count=$(printf '%s\n' "${fixture_objects[@]}" | sort -u | wc -l | tr -d ' ')
 [ "$fixture_object_count" = "${#fixture_objects[@]}" ] || fail "Manager fixture object keys must be distinct"
 [ -f "$PPTX_FIXTURE_SOURCE" ] || fail "fixture source is missing: $PPTX_FIXTURE_SOURCE"
-for format in ifc osgb skp max; do
+for format in ifc osgb skp max 3ds; do
   source="${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}"
   [ -f "$source" ] || fail "fixture source is missing: $source"
 done
@@ -112,6 +112,7 @@ done
 [ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/vCube.fbx" ] || fail "colored FBX fixture source is missing"
 [ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" ] || fail "colored FBX fixture license is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" ] || fail "MAX texture fixture source is missing"
+[ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" ] || fail "3DS texture fixture source is missing"
 
 docker_fixture() {
   env \
@@ -157,12 +158,11 @@ mc() {
 }
 
 generate_fixtures() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" <<'PY'
 import csv
 import io
 import struct
 import sys
-import zlib
 import zipfile
 import json
 from pathlib import Path
@@ -269,15 +269,7 @@ records = b"".join(struct.pack("<iiiHBBbBH", x, y, z, 100, 9, 1, 0, 0, 0)
 for format_name in ("dae", "3ds", "fbx", "obj"):
     (root / format_name).mkdir(parents=True)
 
-def png_chunk(kind, data):
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-
-png = (b"\x89PNG\r\n\x1a\n"
-       + png_chunk(b"IHDR", struct.pack(">2I5B", 2, 2, 8, 2, 0, 0, 0))
-       + png_chunk(b"IDAT", zlib.compress(b"\x00\xff\x40\x20\xff\x40\x20" * 2))
-       + png_chunk(b"IEND", b""))
-for format_name in ("dae", "3ds"):
-    (root / format_name / "texture.png").write_bytes(png)
+(root / "dae/texture.png").write_bytes(Path(sys.argv[2]).read_bytes())
 
 (root / "obj/model.obj").write_text('mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
     'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
@@ -308,18 +300,6 @@ for format_name in ("dae", "3ds"):
 </COLLADA>
 ''', encoding="utf-8")
 
-def chunk(kind, data):
-    return struct.pack("<HI", kind, len(data) + 6) + data
-
-material_name = b"preview\0"
-material = chunk(0xAFFF, chunk(0xA000, material_name)
-                 + chunk(0xA200, chunk(0xA300, b"texture.png\0")))
-vertices = chunk(0x4110, struct.pack("<H9f", 3, 0, 0, 0, 1, 0, 0, 0, 2, 0))
-faces = chunk(0x4120, struct.pack("<5H", 1, 0, 1, 2, 0)
-              + chunk(0x4130, material_name + struct.pack("<2H", 1, 0)))
-uv = chunk(0x4140, struct.pack("<H6f", 3, 0, 0, 1, 0, 0, 1))
-mesh = chunk(0x4000, b"triangle\0" + chunk(0x4100, vertices + faces + uv))
-(root / "3ds/model.3ds").write_bytes(chunk(0x4D4D, chunk(0x3D3D, material + mesh)))
 PY
 }
 
@@ -328,10 +308,11 @@ seed_fixture() {
   trap 'rm -rf "$MODEL_FIXTURE_DIR"' EXIT
   generate_fixtures "$MODEL_FIXTURE_DIR"
   python3 "$SCRIPT_DIR/online-content-boundary-fixture.py" "$MODEL_FIXTURE_DIR"
-  for format in ifc osgb skp max; do
+  for format in ifc osgb skp max 3ds; do
     mkdir -p "$MODEL_FIXTURE_DIR/$format"
     cp "${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}" "$MODEL_FIXTURE_DIR/$format/model.$format"
   done
+  cp "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" "$MODEL_FIXTURE_DIR/3ds/texture.png"
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/max/texture.png"
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/obj/texture.png"
   cp "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" "$MODEL_FIXTURE_DIR/fbx/model.fbx"

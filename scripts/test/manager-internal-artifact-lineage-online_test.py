@@ -30,11 +30,15 @@ def basic_fbx_source():
             "locator": "addp://engine/27/path/addp-online/model3d/fbx/vCube.fbx?type=object&item_id=230"}
 
 
-def fixture_glb(format_name="dae"):
+def fixture_glb(format_name="dae", *, texture_png=None):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
     png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
            + chunk(b"IDAT", zlib.compress(b"\x00\xff\x40\x20")) + chunk(b"IEND", b""))
+    if format_name == "3ds":
+        png = (Path(__file__).resolve().parents[2] / "business/fixtures/manager/addp_online_exchange_texture.png").read_bytes()
+    if texture_png is not None:
+        png = texture_png
     binary = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1 if format_name == "osgb" else 2, 0) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + png
     doc = {
         "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
@@ -1240,6 +1244,16 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 with self.assertRaisesRegex(SUITE.SuiteError, "contract mismatch"):
                     SUITE.validate_browser_report(bad, run_id="run-1", **{k: v for k, v in evidence.items() if k not in ("phase", "delimited", "structured_json", "trajectories", "vector_exchange")},
                         delimited=evidence["delimited"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"], vector_exchange=evidence["vector_exchange"], phase=phase)
+
+    def test_3ds_requires_source_texture_pixels_not_just_a_png_signature(self):
+        self.assertEqual(SUITE.validate_model_glb(fixture_glb("3ds"), "3ds")["embedded_images"], 1)
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        for color in (bytes((0, 0, 0)), bytes((255, 64, 31))):
+            wrong_png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">2I5B", 2, 2, 8, 2, 0, 0, 0))
+                         + chunk(b"IDAT", zlib.compress((b"\0" + color * 2) * 2)) + chunk(b"IEND", b""))
+            with self.assertRaisesRegex(SUITE.SuiteError, "texture pixels"):
+                SUITE.validate_model_glb(fixture_glb("3ds", texture_png=wrong_png), "3ds")
 
     def test_glb_requires_a_textured_mesh_and_embedded_image(self):
         self.assertEqual(SUITE.validate_model_glb(fixture_glb(), "dae")["embedded_images"], 1)
