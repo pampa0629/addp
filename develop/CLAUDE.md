@@ -1,5 +1,7 @@
 # Develop 模块说明
 
+查询编辑器的 Monaco 配色读取已应用的共享主题 CSS 变量，经浏览器解析为十六进制后，通过 `defineTheme` 原位刷新背景、行号、选择区及补全/悬浮控件；不能把 Element Plus 的 RGB 变量直接交给仅接受十六进制的主题接口。不接受固定主题 prop，不复制 Console 主题协议或系统偏好监听。切换四主题或系统深浅偏好不得替换模型、查询内容、光标、视口及撤销历史，组件卸载时清理主题观察器。回归由现有 `make test-develop-frontend` 和 Develop Frontend CI 自动覆盖。
+
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `develop.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=develop`；Common 变更按 `make test-changed` 扩散验证。
 
 查询参数的可选默认值必须响应属性的新增和删除，保留空串、0、false 与未设置的区别；字段存在性检查不能短路掉 Vue 对缺失 `default` 键的读取跟踪。`make test-develop-frontend` 的实际 Vue 响应式回归和真实 QueryEditor 浏览器用例共同覆盖从 SQL 提取参数后的默认值开关。

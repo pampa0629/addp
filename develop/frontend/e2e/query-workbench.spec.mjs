@@ -72,6 +72,75 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
+test('query editor follows platform themes without replacing the model or undo history', async ({ page }, testInfo) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.addInitScript(() => localStorage.setItem('theme-mode', 'system'))
+  await installMockBackend(page, { resultKind: 'table' })
+  await page.goto('/sql')
+  const container = page.locator('.monaco-editor-container')
+  await expect(container.locator('.monaco-editor')).toBeVisible()
+  const colorsMatch = () => container.evaluate(element => {
+    const css = getComputedStyle(element)
+    const color = variable => {
+      const probe = document.createElement('span')
+      probe.style.color = css.getPropertyValue(variable).trim()
+      element.appendChild(probe)
+      const value = getComputedStyle(probe).color
+      probe.remove()
+      return value
+    }
+    const lineNumber = element.querySelector('.line-numbers')
+    return getComputedStyle(element.querySelector('.monaco-editor-background')).backgroundColor === color('--addp-bg-primary') &&
+      getComputedStyle(element.querySelector('.margin')).backgroundColor === color('--addp-bg-primary') &&
+      getComputedStyle(lineNumber).color === color(lineNumber.classList.contains('active-line-number') ? '--addp-text-secondary' : '--addp-text-tertiary')
+  })
+  await expect.poll(colorsMatch).toBe(true)
+  await container.locator('.monaco-editor').click({ position: { x: 80, y: 18 } })
+  const original = 'SELECT 1 -- 保留查询'
+  await page.keyboard.insertText(original)
+  await container.evaluate(element => element.__vueParentComponent.setupState.editor.pushUndoStop())
+  await page.keyboard.insertText(' theme-edit')
+  await page.keyboard.press('Home')
+  await page.keyboard.press('Shift+ArrowRight')
+  const snapshot = () => container.evaluate(element => {
+    const editor = element.__vueParentComponent.setupState.editor
+    return { model: editor.getModel().id, value: editor.getValue(), selection: editor.getSelection(), view: editor.saveViewState() }
+  })
+  const before = await snapshot()
+  for (const scheme of ['dark', 'light']) {
+    await page.emulateMedia({ colorScheme: scheme })
+    await expect.poll(() => page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(scheme === 'dark')
+    await expect.poll(colorsMatch).toBe(true)
+    expect(await snapshot()).toEqual(before)
+  }
+  for (const theme of ['light', 'dark', 'blue', 'purple']) {
+    await page.evaluate(mode => {
+      document.documentElement.className = mode === 'light' ? '' : `dark${mode === 'dark' ? '' : ` ${mode}`}`
+    }, theme)
+    await expect.poll(colorsMatch).toBe(true)
+    expect(await snapshot()).toEqual(before)
+    await page.getByRole('button', { name: '显示补全', exact: true }).click()
+    await expect(page.locator('.suggest-widget.visible')).toBeVisible()
+    await expect.poll(() => container.evaluate(element => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--el-color-primary-light-8)'
+      element.appendChild(probe)
+      const selected = getComputedStyle(probe).color
+      probe.remove()
+      return getComputedStyle(element.querySelector('.suggest-widget .monaco-list-row.focused')).backgroundColor === selected
+    })).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`query-editor-${theme}.png`) })
+    await page.keyboard.press('Escape')
+  }
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => container.evaluate(element => element.__vueParentComponent.exposed.getValue())).toBe(original)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(() => container.evaluate(element => element.__vueParentComponent.exposed.getValue())).toBe(before.value)
+  expect(errors).toEqual([])
+})
+
 test('requests explicit Develop plaintext access through the shared dialog', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table' })
   const auth = structuredClone(developAuthContext)

@@ -38,10 +38,6 @@ const props = defineProps({
     type: String,
     default: 'sql'
   },
-  theme: {
-    type: String,
-    default: 'vs-dark'
-  },
   readOnly: {
     type: Boolean,
     default: false
@@ -57,6 +53,59 @@ const emit = defineEmits(['update:modelValue', 'execute', 'selection-change'])
 const editorContainer = ref(null)
 let editor = null
 let completionProvider = null
+let themeObserver = null
+
+// Monaco owns its drawing styles, so map the applied platform palette to its
+// theme API instead of overriding its DOM or reapplying the platform theme.
+const editorTheme = 'addp-query'
+const updateTheme = () => {
+  const css = getComputedStyle(editorContainer.value)
+  // Element Plus also supplies fractional rgb() values. Resolve CSS colors via
+  // the browser before passing the hexadecimal-only palette to Monaco.
+  const swatch = document.createElement('canvas')
+  swatch.width = swatch.height = 1
+  const context = swatch.getContext('2d', { willReadFrequently: true })
+  const color = variable => {
+    context.clearRect(0, 0, 1, 1)
+    context.fillStyle = css.getPropertyValue(variable).trim()
+    context.fillRect(0, 0, 1, 1)
+    return `#${Array.from(context.getImageData(0, 0, 1, 1).data, value => value.toString(16).padStart(2, '0')).join('')}`
+  }
+  const colors = {
+    'editor.background': '--addp-bg-primary',
+    'editor.foreground': '--addp-text-primary',
+    'editorGutter.background': '--addp-bg-primary',
+    'editorLineNumber.foreground': '--addp-text-tertiary',
+    'editorLineNumber.activeForeground': '--addp-text-secondary',
+    'editorCursor.foreground': '--el-color-primary',
+    'editor.selectionBackground': '--el-color-primary-light-8',
+    'editor.inactiveSelectionBackground': '--addp-border-color',
+    'editor.lineHighlightBackground': '--addp-bg-secondary',
+    'editor.lineHighlightBorder': '--addp-border-color-light',
+    'editorWidget.background': '--addp-bg-primary',
+    'editorWidget.foreground': '--addp-text-primary',
+    'editorWidget.border': '--addp-border-color',
+    'editorSuggestWidget.background': '--addp-bg-primary',
+    'editorSuggestWidget.foreground': '--addp-text-primary',
+    'editorSuggestWidget.border': '--addp-border-color',
+    'editorSuggestWidget.selectedBackground': '--el-color-primary-light-8',
+    'editorSuggestWidget.selectedForeground': '--addp-text-primary',
+    'editorSuggestWidget.highlightForeground': '--el-color-primary',
+    'editorHoverWidget.background': '--addp-bg-primary',
+    'editorHoverWidget.foreground': '--addp-text-primary',
+    'editorHoverWidget.border': '--addp-border-color',
+    'input.background': '--addp-bg-secondary',
+    'input.foreground': '--addp-text-primary',
+    'input.border': '--addp-border-color',
+    'focusBorder': '--el-color-primary'
+  }
+  monaco.editor.defineTheme(editorTheme, {
+    base: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [],
+    colors: Object.fromEntries(Object.entries(colors).map(([key, variable]) => [key, color(variable)]))
+  })
+}
 
 const triggerSuggest = () => {
   if (!editor) return
@@ -255,11 +304,15 @@ onMounted(() => {
     })
   }
 
+  updateTheme()
+  themeObserver = new MutationObserver(updateTheme)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
+
   // 创建编辑器
   editor = monaco.editor.create(editorContainer.value, {
     value: props.modelValue,
     language: props.language,
-    theme: props.theme,
+    theme: editorTheme,
     readOnly: props.readOnly,
     automaticLayout: true,
     fontSize: 14,
@@ -293,6 +346,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  themeObserver?.disconnect()
   if (editor) {
     editor.dispose()
   }

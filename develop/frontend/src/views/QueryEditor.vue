@@ -207,7 +207,6 @@
               v-model="queryContent"
               :language="monacoLanguage"
               :completions="completionSuggestions"
-              theme="vs-dark"
               @execute="executeQuery"
               @selection-change="selectedText = $event"
             />
