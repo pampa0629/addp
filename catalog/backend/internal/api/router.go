@@ -14,8 +14,8 @@ import (
 )
 
 func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entries *service.EntryService, governanceTasks *service.GovernanceTaskService, personal *service.PersonalCatalogService, collections *service.CollectionService, syncRunner *service.SourceSyncRunner, domains service.DomainOverviewReader) *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Recovery(), commoni18n.I18nMiddleware())
+	router := modulelifecycle.NewRouter()
+	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

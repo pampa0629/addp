@@ -23,7 +23,7 @@ import (
 )
 
 func SetupRouter(cfg *config.Config) (*gin.Engine, *commonClient.SystemServiceClient) {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 
 	// CORS 中间件
 	router.Use(cors.CORS())

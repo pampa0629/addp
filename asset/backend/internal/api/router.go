@@ -16,7 +16,7 @@ import (
 )
 
 func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, assetSvc *service.AssetService, lifecycle *modulelifecycle.Controller) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")

@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/addp/common/config"
+	"github.com/addp/common/httpmetrics"
 	"github.com/addp/common/models"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -178,6 +179,9 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 	}
 	registry := prometheus.NewRegistry()
 	if registry.Register(newCollector(identity.ModuleName, identity.Role, identity.InstanceID, identity.StartedAt, sample)) != nil {
+		return nil, ErrSourceUnavailable
+	}
+	if registry.Register(httpmetrics.Process()) != nil {
 		return nil, ErrSourceUnavailable
 	}
 	if _, err := registry.Gather(); err != nil {

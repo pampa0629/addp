@@ -18,7 +18,7 @@ func SetupRouter(
 	assetClient *commonClient.AssetClient,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {

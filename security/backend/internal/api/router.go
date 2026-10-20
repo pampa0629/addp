@@ -16,7 +16,7 @@ func getTenantID(c *gin.Context) int64 { return int64(commonauth.GetTenantID(c))
 func getUserID(c *gin.Context) int64   { return int64(commonauth.GetUserID(c)) }
 
 func SetupRouter(svc *service.DefinitionService, enrollments *service.EnrollmentService, discoveries *service.DiscoveryService, assessments *service.AssessmentService, policies *service.PolicyService, exemptions *service.ExemptionService, accessRequests *service.AccessRequestService, systemURL string, lifecycle *modulelifecycle.Controller) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 	router.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady(), commoni18n.I18nMiddleware())

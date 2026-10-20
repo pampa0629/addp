@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/addp/common/modulelifecycle"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,8 +25,7 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 	if err != nil {
 		return nil, err
 	}
-	router := gin.New()
-	router.Use(gin.Recovery())
+	router := modulelifecycle.NewRouter()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("duckdb")) })
 	queries := router.Group("/api/v1/queries", authn)
 	queries.POST("", func(c *gin.Context) {

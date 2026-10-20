@@ -26,7 +26,7 @@ func SetupRouter(
 	serviceHandler *ServiceHandler,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 
 	// i18n 中间件（解析 Accept-Language 请求头）
 	router.Use(i18nmiddleware.I18nMiddleware())

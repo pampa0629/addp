@@ -22,8 +22,7 @@ import (
 )
 
 func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lifecycle *modulelifecycle.Controller, lineageServices ...*service.LineageService) *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Recovery())
+	router := modulelifecycle.NewRouter()
 	router.Use(i18nmiddleware.I18nMiddleware())
 	router.Use(requestLogger())
 

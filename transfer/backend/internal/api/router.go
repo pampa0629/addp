@@ -32,7 +32,7 @@ func SetupRouter(
 	systemServiceClient *commonClient.SystemServiceClient,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

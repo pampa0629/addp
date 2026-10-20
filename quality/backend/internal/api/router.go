@@ -7,8 +7,8 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/quality/docs"
 	qualityauthorization "github.com/addp/quality/internal/authorization"
-	"github.com/addp/quality/internal/service"
 	"github.com/addp/quality/internal/repository"
+	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
@@ -35,7 +35,7 @@ func SetupRouter(
 	lifecycle *modulelifecycle.Controller,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 ) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

@@ -27,7 +27,7 @@ import (
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
-	router := gin.Default()
+	router := modulelifecycle.NewRouter(gin.Logger())
 	if err := cfg.ValidateTrustedProxies(); err != nil {
 		panic(err)
 	}
