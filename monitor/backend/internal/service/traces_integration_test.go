@@ -115,58 +115,7 @@ func TestOwnedTracePipeline(t *testing.T) {
 	var captures sync.WaitGroup
 	t.Cleanup(func() { captures.Wait() })
 	start := func(module, role, next string, id uint) string {
-		instance := "t2-" + module
-		address := filepath.Join(w, module+".address")
-		deployment, _ := json.Marshal([]httptrace.Deployment{{Module: module, Role: role, Endpoint: os.Getenv("TRACE_T2_OTLP"), TLSDir: filepath.Join(w, "source-tls")}})
-		exe, e := os.Executable()
-		if e != nil {
-			t.Fatal(e)
-		}
-		cmd := exec.Command(exe, "-test.run=^TestOwnedTraceProcess$", "-test.timeout=8m")
-		cmd.Env = append(os.Environ(), "TRACE_T2_CHILD=true", "ADDP_OBSERVABILITY_TRACES_ENABLED=true", "TRACE_T2_MODULE="+module, "TRACE_T2_ROLE="+role, "TRACE_T2_ADDRESS="+address, "TRACE_T2_NEXT="+next, "ADDP_TRACE_DEPLOYMENTS="+string(deployment), "ADDP_PROCESS_INSTANCE_ID="+instance)
-		out, e := cmd.StdoutPipe()
-		if e != nil {
-			t.Fatal(e)
-		}
-		errs, e := cmd.StderrPipe()
-		if e != nil {
-			t.Fatal(e)
-		}
-		if e = cmd.Start(); e != nil {
-			t.Fatal(e)
-		}
-		options := runtimelog.Options{Root: filepath.Join(w, "source"), Module: module, Role: role, InstanceID: instance, Node: "trace-t2", SegmentBytes: 1 << 20, InstanceBytes: 4 << 20, NodeBytes: 16 << 20, SourceAge: time.Hour}
-		captures.Add(1)
-		go func() {
-			defer captures.Done()
-			if e := runtimelog.Capture(options, out, errs); e != nil {
-				t.Errorf("capture: %v", e)
-			}
-		}()
-		t.Cleanup(func() {
-			_ = cmd.Process.Signal(syscall.SIGTERM)
-			done := make(chan error, 1)
-			go func() { done <- cmd.Wait() }()
-			select {
-			case e := <-done:
-				if e != nil {
-					t.Errorf("child %s: %v", module, e)
-				}
-			case <-time.After(6 * time.Second):
-				_ = cmd.Process.Kill()
-				<-done
-				t.Errorf("child shutdown timeout")
-			}
-		})
-		users.rows = append(users.rows, client.RuntimeInstanceReference{ID: id, ModuleName: module, Role: role, InstanceID: instance, Status: "down"})
-		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-			b, e := os.ReadFile(address)
-			if e == nil {
-				return string(b)
-			}
-		}
-		t.Fatal("fixture did not start")
-		return ""
+		return startOwnedTrace(t, w, users, &captures, module, role, next, id)
 	}
 	leaf := start("system", "backend", "", 3)
 	middle := start("monitor", "backend", leaf, 2)
@@ -400,4 +349,59 @@ func TestOwnedTracePipeline(t *testing.T) {
 		t.Fatal("new trace did not recover after collector restart and real 120s tail wait")
 	}
 	t.Log("real receiver → shared Alloy → Loki Trace metadata, safe Tempo projection, historical participants, current User revocation and collector outage/recovery passed")
+}
+
+func startOwnedTrace(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, module, role, next string, id uint) string {
+	instance := "t2-" + module
+	address := filepath.Join(w, module+".address")
+	deployment, _ := json.Marshal([]httptrace.Deployment{{Module: module, Role: role, Endpoint: os.Getenv("TRACE_T2_OTLP"), TLSDir: filepath.Join(w, "source-tls")}})
+	exe, e := os.Executable()
+	if e != nil {
+		t.Fatal(e)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestOwnedTraceProcess$", "-test.timeout=38m")
+	cmd.Env = append(os.Environ(), "TRACE_T2_CHILD=true", "ADDP_OBSERVABILITY_TRACES_ENABLED=true", "TRACE_T2_MODULE="+module, "TRACE_T2_ROLE="+role, "TRACE_T2_ADDRESS="+address, "TRACE_T2_NEXT="+next, "ADDP_TRACE_DEPLOYMENTS="+string(deployment), "ADDP_PROCESS_INSTANCE_ID="+instance)
+	out, e := cmd.StdoutPipe()
+	if e != nil {
+		t.Fatal(e)
+	}
+	errs, e := cmd.StderrPipe()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = cmd.Start(); e != nil {
+		t.Fatal(e)
+	}
+	options := runtimelog.Options{Root: filepath.Join(w, "source"), Module: module, Role: role, InstanceID: instance, Node: "trace-t2", SegmentBytes: 1 << 20, InstanceBytes: 4 << 20, NodeBytes: 16 << 20, SourceAge: time.Hour}
+	captures.Add(1)
+	go func() {
+		defer captures.Done()
+		if e := runtimelog.Capture(options, out, errs); e != nil {
+			t.Errorf("capture: %v", e)
+		}
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case e := <-done:
+			if e != nil {
+				t.Errorf("child %s: %v", module, e)
+			}
+		case <-time.After(6 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+			t.Errorf("child shutdown timeout")
+		}
+	})
+	users.rows = append(users.rows, client.RuntimeInstanceReference{ID: id, ModuleName: module, Role: role, InstanceID: instance, Status: "down"})
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		b, e := os.ReadFile(address)
+		if e == nil {
+			return string(b)
+		}
+	}
+	t.Fatal("fixture did not start")
+	return ""
 }

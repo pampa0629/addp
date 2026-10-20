@@ -18,12 +18,13 @@ type TraceService struct {
 	users    TraceUsers
 	backend  tracequery.Backend
 	slots    chan struct{}
+	upstream chan struct{}
 	mu       sync.Mutex
 	subjects map[string]int
 }
 
 func NewTraceService(users TraceUsers, backend tracequery.Backend) *TraceService {
-	return &TraceService{users: users, backend: backend, slots: make(chan struct{}, 8), subjects: map[string]int{}}
+	return &TraceService{users: users, backend: backend, slots: make(chan struct{}, 8), upstream: make(chan struct{}, 8), subjects: map[string]int{}}
 }
 
 type TraceQuery struct {
@@ -73,7 +74,12 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	anchor, e := s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+	var anchor []client.RuntimeInstanceReference
+	e := s.callUpstream(ctx, func() error {
+		var err error
+		anchor, err = s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+		return err
+	})
 	if e != nil {
 		return out, e
 	}
@@ -85,7 +91,11 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	}
 	ids := []string{q.ID}
 	if q.ID == "" {
-		ids, e = s.backend.Search(ctx, anchor[0], q.Start, q.End, q.Limit)
+		e = s.callUpstream(ctx, func() error {
+			var err error
+			ids, err = s.backend.Search(ctx, anchor[0], q.Start, q.End, q.Limit)
+			return err
+		})
 		if e != nil {
 			return out, e
 		}
@@ -93,43 +103,20 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if len(ids) > q.Limit {
 		return out, tracequery.ErrBudget
 	}
-	processIDs := []string{}
-	seen := map[string]bool{}
-	total := 0
-	for _, id := range ids {
-		d, err := s.backend.Trace(ctx, id, q.Start, q.End)
-		if err != nil {
-			return out, err
-		}
-		if d.ID != id {
-			return out, tracequery.ErrUpstream
-		}
-		if d.Start.IsZero() || d.End.Before(d.Start) || d.End.Before(q.Start) || !d.Start.Before(q.End) {
-			return out, tracequery.ErrNotFound
-		}
-		matched := false
-		total += len(d.Spans)
-		if total > 1000 {
-			return out, tracequery.ErrBudget
-		}
-		for _, v := range d.Spans {
-			matched = matched || (v.Module == anchor[0].ModuleName && v.Instance == anchor[0].InstanceID)
-			if !seen[v.Instance] {
-				seen[v.Instance] = true
-				processIDs = append(processIDs, v.Instance)
-			}
-		}
-		if !matched {
-			return out, tracequery.ErrDenied
-		}
-		out.Data = append(out.Data, d)
+	details, processIDs, e := s.readDetails(ctx, anchor[0], ids, q.Start, q.End)
+	if e != nil {
+		return out, e
 	}
-	if len(processIDs) > 100 {
-		return out, tracequery.ErrBudget
-	}
+	out.Data = details
+
 	authorize := func() error {
 		if len(processIDs) == 0 {
-			rows, err := s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+			var rows []client.RuntimeInstanceReference
+			err := s.callUpstream(ctx, func() error {
+				var e error
+				rows, e = s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+				return e
+			})
 			if err != nil {
 				return err
 			}
@@ -138,7 +125,12 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 			}
 			return nil
 		}
-		rows, err := s.users.GetProcessInstancesForUser(ctx, processIDs, token)
+		var rows []client.RuntimeInstanceReference
+		err := s.callUpstream(ctx, func() error {
+			var e error
+			rows, e = s.users.GetProcessInstancesForUser(ctx, processIDs, token)
+			return e
+		})
 		if err != nil {
 			return err
 		}
@@ -173,4 +165,122 @@ func boundedTraceResponse(out TraceResponse) error {
 		return tracequery.ErrBudget
 	}
 	return nil
+}
+
+// System authorization and Tempo calls share the same per-Monitor budget.
+// Waiting for capacity consumes the original request deadline, never a new one.
+func (s *TraceService) callUpstream(ctx context.Context, call func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case s.upstream <- struct{}{}:
+		defer func() { <-s.upstream }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return call()
+}
+
+// Retain search order while overlapping independent I/O. The result channel
+// and workers are bounded; cumulative budgets cancel outstanding reads early.
+func (s *TraceService) readDetails(parent context.Context, anchor client.RuntimeInstanceReference, ids []string, start, end time.Time) ([]tracequery.Detail, []string, error) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	type result struct {
+		index  int
+		detail tracequery.Detail
+		err    error
+	}
+	jobs := make(chan int, len(ids))
+	for i := range ids {
+		jobs <- i
+	}
+	close(jobs)
+	results := make(chan result, 4)
+	var workers sync.WaitGroup
+	for range min(4, len(ids)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				var d tracequery.Detail
+				err := s.callUpstream(ctx, func() error {
+					var e error
+					d, e = s.backend.Trace(ctx, ids[i], start, end)
+					return e
+				})
+				select {
+				case results <- result{i, d, err}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() { workers.Wait(); close(results) }()
+	details := make([]tracequery.Detail, len(ids))
+	processIDs := []string{}
+	seen := map[string]bool{}
+	spans, completed := 0, 0
+	var failure error
+	fail := func(err error) { failure = err; cancel() }
+	for r := range results {
+		if failure != nil {
+			continue
+		}
+		if r.err != nil {
+			fail(r.err)
+			continue
+		}
+		d := r.detail
+		if d.ID != ids[r.index] {
+			fail(tracequery.ErrUpstream)
+			continue
+		}
+		if d.Start.IsZero() || d.End.Before(d.Start) || d.End.Before(start) || !d.Start.Before(end) {
+			fail(tracequery.ErrNotFound)
+			continue
+		}
+		spans += len(d.Spans)
+		if spans > 1000 {
+			fail(tracequery.ErrBudget)
+			continue
+		}
+		matched := false
+		for _, v := range d.Spans {
+			matched = matched || (v.Module == anchor.ModuleName && v.Instance == anchor.InstanceID)
+			if !seen[v.Instance] {
+				seen[v.Instance] = true
+				processIDs = append(processIDs, v.Instance)
+			}
+		}
+		if len(processIDs) > 100 {
+			fail(tracequery.ErrBudget)
+			continue
+		}
+		if !matched {
+			fail(tracequery.ErrDenied)
+			continue
+		}
+		details[r.index] = d
+		completed++
+	}
+	// Closing results means every worker has stopped and released its slot.
+	if failure != nil {
+		return nil, nil, failure
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if completed != len(ids) {
+		return nil, nil, tracequery.ErrUpstream
+	}
+	return details, processIDs, nil
 }

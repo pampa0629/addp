@@ -68,13 +68,13 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 从仓库根目录使用 `make test-changed` 或明确 Owner 的 `make test-module MODULE=monitor`；快速 Go T1 使用 `make test-module MODULE=monitor GO_ONLY=1`，不替代完整模块门禁。
 
-持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
+持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
 
 ## 仍需独立证据的范围
 
 - 实际多主机 TOP5、独立 Owner 撤权与全平台容量，不能由六个受控指标来源 T2 或单主机 T4 外推。
-- 容器/专业引擎、Python 进程、分布式追踪和面向用户的采集生效回执按[后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md)分别推进；节点登记不自动证明承载关联。
+- 容器/专业引擎、Python 进程、Go HTTP 首批之外的追踪和面向用户的采集生效回执按[后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md)分别推进；节点登记不自动证明承载关联。
 - 180 天概览清理、专业运行时历史及其他 Owner 阶段事件沿任务规范；已落地的 30 天过程事件清理不代替这些范围。
 - 生产安装权限、物理身份、HA、规模和 T5 均需对应独立验收。历史失败、排队或部分通过仍按[证据专题](../docs/spec/testing/evidence/Monitor历史证据.md)记录，不合并为当前工作区通过。

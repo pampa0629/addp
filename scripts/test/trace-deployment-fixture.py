@@ -21,7 +21,7 @@ for identity, authority, server in [('server','server',True),('source','source',
     crt = dest / ('server.crt' if server else 'client.crt')
     openssl('req','-new','-newkey','rsa:2048','-nodes','-subj','/CN=trace-test-'+identity,'-keyout',key,'-out',w/(identity+'.csr'))
     extensions = w/(identity+'.ext')
-    extensions.write_text('subjectAltName=DNS:localhost,DNS:trace-query,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' if server else 'extendedKeyUsage=clientAuth\n')
+    extensions.write_text('subjectAltName=DNS:localhost,DNS:trace-query,DNS:alloy,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' if server else 'extendedKeyUsage=clientAuth\n')
     openssl('x509','-req','-in',w/(identity+'.csr'),'-CA',w/(authority+'-ca.crt'),'-CAkey',w/(authority+'-ca.key'),'-CAcreateserial','-days','1','-extfile',extensions,'-out',crt)
     key.chmod(0o600)
     if not server: (dest/'ca.crt').write_bytes((w/'server-ca.crt').read_bytes())

@@ -1,21 +1,32 @@
 services:
   minio:
+    cpus: 1
+    mem_limit: 1g
+    volumes: ["tempo_data:/capacity-tempo:ro", "loki_data:/capacity-loki:ro", "alloy_data:/capacity-alloy:ro"]
     extends:
       file: docker-compose.system-runtime-log-t2.yml
       service: minio
   runtime-log-store-init:
+    cpus: 0.25
+    mem_limit: 128m
     extends:
       file: docker-compose.system-runtime-log-t2.yml
       service: runtime-log-store-init
   loki:
+    cpus: 0.5
+    mem_limit: 512m
     extends:
       file: docker-compose.system-runtime-log-t2.yml
       service: loki
   runtime-log-api:
+    cpus: 0.25
+    mem_limit: 128m
     extends:
       file: docker-compose.system-runtime-log-t2.yml
       service: runtime-log-api
   trace-store-init:
+    cpus: 0.25
+    mem_limit: 128m
     build:
       context: ../..
       dockerfile: scripts/infra/Dockerfile.minio
@@ -66,6 +77,30 @@ services:
       runtime-log-api: {condition: service_healthy}
       trace-query: {condition: service_healthy}
     restart: 'no'
+  trace-load:
+    profiles: [capacity]
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.minio
+    entrypoint: [/capacity/trace-capacity.test]
+    command: [-test.run=^TestOwnedTraceCapacity$, -test.v, -test.timeout=38m]
+    user: "${ADDP_RUNTIME_LOG_OWNER}"
+    cpus: 1
+    mem_limit: 1g
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    environment:
+      TRACE_T2_WORK: /capacity
+      TRACE_T2_OTLP: https://alloy:4318/v1/traces
+      TRACE_T2_QUERY: https://trace-query:8443
+      TRACE_CAPACITY_ENABLED: 'true'
+      GOMAXPROCS: '1'
+    volumes: ["${TRACE_T2_WORK}:/capacity"]
+    networks: [backend]
+    restart: 'no'
+
 volumes:
   minio_data:
   loki_data:
