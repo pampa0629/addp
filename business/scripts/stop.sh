@@ -26,6 +26,10 @@ if [ -f "$(addp_business_network_override)" ]; then
 fi
 
 for arg in "$@"; do
+    if [ "$arg" = "-ftp" ]; then
+        [ "$#" -eq 1 ] || { echo "-ftp 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/ftp.sh" stop
+    fi
     if [ "$arg" = "-starrocks" ]; then
         [ "$#" -eq 1 ] || { echo "-starrocks 必须独立使用" >&2; exit 1; }
         exec bash "$SCRIPT_DIR/starrocks.sh" stop
@@ -61,8 +65,8 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-falkordb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-highgo|-gaussdb|-starrocks|-redpanda|-nfs|-hdfs|-all]"
-            echo "  -kingbase、-dameng、-highgo、-gaussdb 和 -starrocks 必须独立使用，且不属于 -all"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-falkordb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-highgo|-gaussdb|-starrocks|-ftp|-redpanda|-nfs|-hdfs|-all]"
+            echo "  -kingbase、-dameng、-highgo、-gaussdb 、-starrocks 和 -ftp 必须独立使用，且不属于 -all"
             exit 0
             ;;
         -nfs)

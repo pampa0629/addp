@@ -11,9 +11,43 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'business/ftp'))
 import config
 import admission
+import prepare
 
 
 class FTPAdmissionTests(unittest.TestCase):
+    def test_private_configuration_preserves_identity_and_certificate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'ftp/config'
+            root.mkdir(parents=True)
+            (root / 'server.crt').write_text('existing certificate')
+            (root / 'server.key').write_text('existing private key')
+            prepare.prepare(root, 'business_reader', 'strong-fixture-password', 'explicit_tls')
+            self.assertEqual(root.stat().st_mode & 0o777, 0o755)
+            self.assertEqual(root.parent.stat().st_mode & 0o777, 0o700)
+            original = (root / 'users.json').read_bytes()
+            prepare.prepare(root, 'business_reader', 'strong-fixture-password', 'plain')
+            self.assertEqual((root / 'server.key').read_text(), 'existing private key')
+            with self.assertRaisesRegex(ValueError, 'implicit rotation'):
+                prepare.prepare(root, 'business_reader', 'changed-fixture-password', 'explicit_tls')
+            self.assertEqual((root / 'users.json').read_bytes(), original)
+
+    def test_compose_and_standard_routes(self):
+        import subprocess
+        result = subprocess.run(['docker', 'compose', '--env-file', str(ROOT / 'business/.env.example'),
+                                 '-f', str(ROOT / 'business/docker-compose.yml'), '--profile', 'ftp',
+                                 'config', '--format', 'json'], check=True, capture_output=True, text=True)
+        value = json.loads(result.stdout)['services']['ftp']
+        self.assertEqual(value['profiles'], ['ftp'])
+        self.assertEqual(value['entrypoint'], ['sh', '/addp/ftp/entrypoint.sh'])
+        ports = {(p['host_ip'], int(p['published']), p['target']) for p in value['ports']}
+        self.assertEqual(ports, {('127.0.0.1', p, p) for p in [2121, *range(50000, 50010)]})
+        self.assertEqual({p['source'] for p in value['volumes'] if p['type'] == 'volume'}, {'ftp_data', 'ftp_state'})
+        for script in ('start.sh', 'stop.sh'):
+            result = subprocess.run(['bash', str(ROOT / 'business/scripts' / script), '-ftp', '-postgres'],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('-ftp 必须独立使用', result.stderr)
+
     def test_pinned_image_and_secure_business_defaults(self):
         self.assertRegex(config.image(), r'^drakkan/sftpgo:v2\.7\.6@sha256:[a-f0-9]{64}$')
         facts = config.server(50000, 50009)

@@ -54,7 +54,7 @@ func TestAdmissionCatalogTLSAndReadOnly(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := map[string]bool{"中文 空格%样例.csv": true, "demo.json": true, "range.bin": true, ".hidden.txt": true}
+			want := map[string]bool{"中文 空格%样例.csv": true, "demo.json": true, "range.bin": true, ".hidden.txt": true, "客户 中文%.csv": true, "订单 示例.json": true, "客户 示例.parquet": true}
 			for _, entry := range entries {
 				if !want[entry.Name] {
 					t.Fatal("unexpected or normalized name")

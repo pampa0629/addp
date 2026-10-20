@@ -30,12 +30,13 @@ services:
     image: drakkan/sftpgo:v2.7.6@sha256:1edd28d80de2a008863fbfc58c8ff7db47b1b410bae48d4e6076192337809b11
     profiles: [ftp]
     container_name: business-ftp
-    command: ["sftpgo", "serve", "--config-dir", "/addp/config", "--log-file-path", "", "--loaddata-from", "/addp/config/users.json", "--loaddata-mode", "1"]
+    entrypoint: ["sh", "/addp/ftp/entrypoint.sh"]
     ports:
       - "127.0.0.1:2121:2121"
       - "127.0.0.1:50000-50009:50000-50009"
     volumes:
-      - ./.business-state/ftp:/addp/config:ro
+      - ./.business-state/ftp/config:/addp/config:ro
+      - ./ftp:/addp/ftp:ro
       - ftp_data:/srv/sftpgo
       - ftp_state:/var/lib/sftpgo
     networks: [business-network]

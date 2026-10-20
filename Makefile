@@ -427,9 +427,9 @@ test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指�
 .PHONY: test-common-ftp test-common-ftp-unit
 test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
-	@bash -n scripts/test/common-ftp-gate.sh
+	@bash -n scripts/test/common-ftp-gate.sh business/scripts/ftp.sh business/ftp/entrypoint.sh
 	@python3 -m unittest scripts/test/ftp-admission_test.py
-	@cd common && GOWORK=off go test ./engine/internal/ftpclient ./engine/certification/ftp
+	@cd common && GOWORK=off go test ./engine/internal/ftpclient ./engine/certification/ftp ./engine/plugins/ftp
 
 test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与零残留清理
 	@bash scripts/test/common-ftp-gate.sh

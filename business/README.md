@@ -642,3 +642,14 @@ MinIO Parquet 成果沿用上述同一 T2/T4 入口。T2 另有两个独占 MinI
 Graph 中的“工作关系示例（Neo4j）”和“工作关系示例（FalkorDB）”共用“工作关系示例”本体，分别绑定 `neo4j / graph` 和 `work_relationships`。五类实体以 `name` 展示；人员、公司、项目、技术使用显式唯一属性 `id`，城市使用 `name`。这两张图保持私有，供本机登录用户体验，不计为普通账号 Hosted T4，也不是新环境的自动种子或持续同步。
 
 资源树沿原生目录展示：Neo4j 为 `server -> database -> graph`，FalkorDB 为 `server -> graph`；不为对齐外观增加虚构目录。此前从 Infra 复制的长名称 Ontology 图仍是独立副本，与本例无关。资源树的图叶子使用统一图图标；Graph 的图目标选择支持按名称筛选。
+
+
+## FTP／显式 FTPS Business 部署
+
+独立启动 `bash business/scripts/start.sh -ftp`，停止／重启分别使用同目录 `stop.sh -ftp`、`restart.sh -ftp`；不进入 `-all`。官方 SFTPGo v2.7.6 的固定多架构摘要由 Compose 唯一持有，使用只读 FTP 账号，SFTP、HTTP 管理和 WebDAV 入口均关闭。
+
+先在本机 `business/.env` 设置 `FTP_USER=business_reader`、至少12字符的 `FTP_PASSWORD`，默认 `FTP_SECURITY=explicit_tls`。需要明文协议时必须显式设置为 `plain`；默认不会因 TLS 失败而降级。控制端口 `127.0.0.1:2121`、被动端口 `127.0.0.1:50000–50009` 内外一致，冲突直接失败。证书和私钥位于忽略版本控制的 `.business-state/ftp/config/`，外层目录0700；容器仅挂载内层只读目录。脚本保留既有证书，默认本机证书覆盖 localhost／127.0.0.1；客户端须信任 `server.crt`，不能关闭校验。
+
+`ftp_data`／`ftp_state` 两个独立持久卷保存文件和账号状态。唯一 `ftp/entrypoint.sh` 按需补齐 `/examples/` 下的客户 CSV、订单 JSON、客户 Parquet，各3行，包含中文、空格和百分号；已存在普通文件不覆盖。账号变化或未受管理的既有数据库拒绝隐式初始化；启动不会轮换密码或删除卷。后续平台登记使用独立 `engine_type=ftp`、本机回环地址与只读账号；FTP 账号根与客户端管理根的最终边界仍待确认，目前未正式登记插件。Business 不调用 System API。
+
+协议准入与持久化使用 `make test-common-ftp` 的独占资源，不连接个人部署；正式插件和跨模块页面支持以数据引擎扩展指南中的实际验收状态为准，不能从镜像已启动推导平台功能已经通过。

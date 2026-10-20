@@ -6,6 +6,8 @@
 
 ## 包含组件
 
+- FTP／显式 FTPS：官方 SFTPGo v2.7.6 固定摘要，独立 `-ftp` profile，不进入 `-all`；唯一 `ftp/entrypoint.sh`、只读账号、独立文件和状态卷、回环2121及50000–50009，按需补齐中文 CSV／JSON／Parquet 示范文件，不调用 System API。协议准入、正式插件与平台 T4 分别认定。
+
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
 - OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 bounded watermark source 与 prepare/session/delete/upsert 集成验证，不包含空间、CDC 或 Oracle 模式能力。
 - TiDB 8.5.8：固定 PingCAP 官方 PD/TiKV/TiDB 三组件镜像与 OCI digest，以独立 `engine_type=tidb` 注册；启动时幂等初始化普通关系样例，首版只声明真实 T2 验证的非空间目录、查询、bounded watermark 与 prepare/session/delete/upsert，不包含 MySQL replication、TiCDC、空间或分区变化应用能力。

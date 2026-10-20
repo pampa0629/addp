@@ -12,6 +12,8 @@
 
 Business 使用固定官方 `drakkan/sftpgo:v2.7.6@sha256:1edd28d80de2a008863fbfc58c8ff7db47b1b410bae48d4e6076192337809b11`，独立 `-ftp` profile，不加入 `-all`。控制端口 2121、被动端口 50000–50009 仅绑定回环，冲突失败，内外数据端口一致；独立持久卷、只读账号与增量示范数据，Business 不调用 System API。镜像 manifest 提供 Linux ARM64／amd64 不等于两种架构已获实测认证。
 
+2026-10-20 真实 SFTPGo 反例确认：原生软链接 `/unsupported/link` 的 MLST 返回 `Type=file`，即服务器已解引用，客户端不能从协议事实推断原生文件类型。因此，严格 MLST 类型校验只能拒绝服务器明确公布的链接、未知或缺失类型；不能证明原生软链接不存在。FTP 账号的服务端根隔离和客户端管理子目录的边界仍须明确，本次发现后暂不正式注册插件，也不把内部 Provider 原型或通过的格式测试记为平台已支持 FTP。
+
 标准入口 `make test-common-ftp-unit` 负责确定性验证，`make test-common-ftp` 拥有临时真实服务并验证协议及后续 Provider，退出核对零残留；同一入口登记 Linux ARM64／amd64 T2。正式插件之后另验收普通 User 的登记、Meta 扫描、Manager 预览和下载。协议、Provider、运行中个人环境和 Hosted T4 分别认定，不互相代替。
 
 ## StarRocks 接入范围（2026-10-20 验收）

@@ -284,6 +284,11 @@ func (r *reader) Read(p []byte) (int, error) {
 	if r.done {
 		return 0, io.EOF
 	}
+	if err := r.s.ctx.Err(); err != nil {
+		r.done = true
+		r.s.Close()
+		return 0, err
+	}
 	if r.remaining == 0 && r.bounded {
 		r.done = true
 		r.s.Close()

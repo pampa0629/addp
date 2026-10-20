@@ -20,7 +20,7 @@ cd "$PROJECT_ROOT"
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     [ "$#" -eq 1 ] || { echo "帮助参数必须独立使用" >&2; exit 1; }
     echo "使用方法: bash scripts/restart.sh [start.sh 支持的单个或组合选项]"
-    echo "  -kingbase、-dameng、-highgo、-gaussdb 和 -starrocks 必须独立使用，且不属于 -all"
+    echo "  -kingbase、-dameng、-highgo、-gaussdb 、-starrocks 和 -ftp 必须独立使用，且不属于 -all"
     exit 0
 fi
 

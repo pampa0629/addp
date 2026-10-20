@@ -12,7 +12,8 @@ import subprocess
 import sys
 import time
 
-from config import image, server, users
+from config import ROOT, image, server, users
+from prepare import identity
 
 
 def run(*args, **kwargs):
@@ -67,6 +68,8 @@ def start():
     settings['ftpd']['bindings'][0]['force_passive_ip'] = '203.0.113.123'
     write(config / 'sftpgo.json', settings, 0o644)
     write(config / 'users.json', users('fixture_reader', password), 0o644)
+    (config / 'identity.sha256').write_text(identity('fixture_reader', password))
+    (config / 'identity.sha256').chmod(0o644)
     run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2',
         '-subj', '/CN=ADDP FTP admission', '-addext', 'subjectAltName=IP:127.0.0.1',
         '-keyout', str(config / 'server.key'), '-out', str(config / 'server.crt'))
@@ -81,13 +84,17 @@ def start():
             '--memory', '512m', '-p', f'127.0.0.1:{port}:2121',
             '-p', f'127.0.0.1:{port+1}-{port+10}:{port+1}-{port+10}',
             '-v', f'{config}:/addp/config:ro',
+            '-v', f'{ROOT / "business/ftp"}:/addp/ftp:ro',
+            '--entrypoint', 'sh',
             '-v', f'{state["volumes"][0]}:/srv/sftpgo',
-            '-v', f'{state["volumes"][1]}:/var/lib/sftpgo', pinned,
-            'sftpgo', 'serve', '--config-dir', '/addp/config', '--log-file-path', '',
-            '--loaddata-from', '/addp/config/users.json', '--loaddata-mode', '1']
+            '-v', f'{state["volumes"][1]}:/var/lib/sftpgo', pinned, '/addp/ftp/entrypoint.sh']
+    state['args'] = args
+    write(root / 'state.json', state)
     run(*args)
     run('docker', 'exec', '-u', '0', name, 'sh', '-ec',
         'mkdir -p /srv/sftpgo/data/examples; chown -R 1000:1000 /srv/sftpgo/data')
+    run('docker', 'exec', '-u', '0', name, 'sh', '-ec',
+        'mkdir -p /srv/sftpgo/data/unsupported; ln -s ../examples/demo.json /srv/sftpgo/data/unsupported/link')
     samples = root / 'samples'
     samples.mkdir()
     (samples / '中文 空格%样例.csv').write_text('id,name,amount\n1,长沙,100.25\n2,株洲,200.50\n')
@@ -113,6 +120,7 @@ def start():
         probe.connect('127.0.0.1', port)
         probe.login('fixture_reader', password)
         probe.prot_p()
+        link_facts = probe.sendcmd("MLST /unsupported/link")
         for expected, operation in ((553, lambda: probe.storbinary('STOR /forbidden.txt', io.BytesIO(b'no'))),
                                     (550, lambda: probe.delete('/examples/demo.json'))):
             try:
@@ -128,8 +136,45 @@ def start():
           'docker_arch': run('docker', 'info', '-f', '{{.Architecture}}'),
           'image_id': run('docker', 'inspect', '-f', '{{.Image}}', name),
           'control_port': port, 'passive_start': port+1, 'passive_end': port+10,
-          'tls_mode': 'explicit and plain admission', 'native_read_only': True, 'advertised_pasv_ip': '203.0.113.123'})
+          'tls_mode': 'explicit and plain admission', 'native_read_only': True, 'native_link_mlst': link_facts, 'advertised_pasv_ip': '203.0.113.123'})
     print('Owned FTP fixture ready; credentials remain private')
+
+
+def persistence():
+    root = owner()
+    state = json.loads((root / 'state.json').read_text())
+    name = state['name']
+    actual = run('docker', 'inspect', '-f', '{{index .Config.Labels "org.addp.ftp.owner"}}', name)
+    if actual != name:
+        raise RuntimeError('FTP lifecycle ownership mismatch')
+    csv_path = '/srv/sftpgo/data/examples/客户 中文%.csv'
+    missing = '/srv/sftpgo/data/examples/订单 示例.json'
+    run('docker', 'exec', '-u', '1000', name, 'sh', '-ec',
+        'printf "%s\\n" "custom-preserved" >> "$1"; rm "$2"', 'sh', csv_path, missing)
+    run('docker', 'rm', '-f', name)
+    run(*state['args'])
+    for _ in range(60):
+        if run('docker', 'inspect', '-f', '{{.State.Running}}', name) != 'true':
+            raise RuntimeError('FTP lifecycle container exited')
+        try:
+            connection = json.loads((root / 'connection.json').read_text())
+            context = ssl.create_default_context(cafile=connection['ca'])
+            with ftplib.FTP_TLS(context=context, timeout=2) as client:
+                client.connect(connection['host'], connection['port'])
+                client.login(connection['user'], connection['password'])
+                client.prot_p()
+                client.nlst('/examples')
+            break
+        except OSError:
+            time.sleep(1)
+    else:
+        raise RuntimeError('FTP lifecycle readiness timed out')
+    if not run('docker', 'exec', name, 'cat', csv_path).endswith('custom-preserved'):
+        raise RuntimeError('FTP sample overwritten on recreation')
+    if run('docker', 'exec', name, 'cat', missing) != (ROOT / 'business/ftp/samples/订单 示例.json').read_text().strip():
+        raise RuntimeError('FTP missing sample was not restored')
+    write(root / 'business-lifecycle.json', {'recreated': True, 'user_changes_preserved': True,
+          'missing_sample_restored': True, 'credentials_and_volumes_preserved': True})
 
 
 def stop():
@@ -156,7 +201,7 @@ def stop():
 
 if __name__ == '__main__':
     try:
-        {'start': start, 'stop': stop}[sys.argv[1]]()
+        {'start': start, 'stop': stop, 'persistence': persistence}[sys.argv[1]]()
     except subprocess.CalledProcessError:
         # Bootstrap command output can contain user records; never print it.
         print('FTP fixture command failed; private owner directory retained', file=sys.stderr)
