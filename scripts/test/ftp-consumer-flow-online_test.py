@@ -410,20 +410,39 @@ class FTPConsumerTest(unittest.TestCase):
 
     def test_exact_catalog_scan_preview_and_download(self):
         client = FakeClient()
-        with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='owned-run'), patch.object(M.SUPPORT, 'wait_for_scan', return_value='scan-owned'):
+        with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='owned-run'), patch.object(M, 'scan_scope', return_value='scan-owned') as scan:
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
         self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
+        self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
+        self.assertEqual(scan.call_args_list[1].args, (client, 17, ['examples'], 'deep', 30))
+
+    def test_model_scope_scan_uses_force_basic_and_rejects_wrong_completion_depth(self):
+        identifier = '12345678-1234-4234-8234-123456789abc'
+        for observed_depth in ('basic', 'deep'):
+            calls = []
+            def request(method, path, statuses, body=None):
+                calls.append((method, path, statuses, body))
+                return SimpleNamespace(payload={'execution_id': identifier} if method == 'POST' else
+                                       {'execution_id': identifier, 'status': 'success', 'scan_context': {'scan_depth': observed_depth}})
+            client = SimpleNamespace(request=request)
+            if observed_depth == 'basic':
+                self.assertEqual(M.scan_scope(client, 17, ['models/3ds'], 'basic', 30), identifier)
+            else:
+                with self.assertRaises(M.SuiteError):
+                    M.scan_scope(client, 17, ['models/3ds'], 'basic', 30)
+            self.assertEqual(calls[0], ('POST', '/api/v1/meta/scan/run/manual', (201,), {
+                'engine_id': 17, 'catalog_paths': ['models/3ds'], 'scan_depth': 'basic', 'trigger_type': 'manual', 'force': True}))
 
     def test_rejects_admin_write_capability_and_corrupt_download(self):
         for fault in ('admin', 'write', 'bad_download'):
             with self.subTest(fault=fault):
                 client = FakeClient()
                 setattr(client, fault, True)
-                with patch.object(M.SUPPORT, 'wait_for_scan', return_value='scan'), self.assertRaises((M.SuiteError, M.SUPPORT.SuiteError)):
+                with patch.object(M, 'scan_scope', return_value='scan'), self.assertRaises((M.SuiteError, M.SUPPORT.SuiteError)):
                     M.run(client, 2, 17, client.samples, client.model_samples, 30)
 
     def test_changed_or_partial_preview_and_schema_are_rejected(self):
@@ -817,7 +836,7 @@ class FTPConsumerTest(unittest.TestCase):
             self.assertIs(model, changed)
             events.append('check-' + str(status))
             return status
-        with patch.object(M, 'changed_texture_fixture', fixture), patch.object(M.SUPPORT, 'wait_for_scan', side_effect=scan), \
+        with patch.object(M, 'changed_texture_fixture', fixture), patch.object(M, 'scan_scope', side_effect=scan), \
                 patch.object(M, 'source_read_control', side_effect=check), \
                 patch.object(M, 'verify_cached_results', return_value=[{'status': 403}]) as cache:
             result = M.verify_composition_rules(client, Authorization(), report, 'deny-A', 30)

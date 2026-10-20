@@ -730,12 +730,35 @@ def source_read_control(client, engine_id, model, status):
     return status
 
 
+def scan_scope(client, engine_id, directories, depth, timeout):
+    require(depth in {'basic', 'deep'} and directories and all(isinstance(value, str) and
+            all(part and part not in {'.', '..'} for part in value.split('/')) for value in directories),
+            'FTP scan must use explicit account-relative directory scopes')
+    created = client.request('POST', '/api/v1/meta/scan/run/manual', (201,),
+        {'engine_id': engine_id, 'catalog_paths': directories, 'scan_depth': depth,
+         'trigger_type': 'manual', 'force': True}).payload
+    identifier = created.get('execution_id')
+    require(isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier,
+            'FTP scoped scan requires its actual execution identity')
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        current = client.request('GET', f'/api/v1/meta/executions/{identifier}', (200,)).payload
+        require(current.get('execution_id') == identifier, 'FTP scan execution identity changed')
+        if current.get('status') == 'success':
+            require(current.get('scan_context', {}).get('scan_depth') == depth,
+                    'FTP scan completed with a different depth')
+            return identifier
+        require(current.get('status') in {'pending', 'running'}, 'FTP scoped scan failed')
+        time.sleep(1)
+    raise SuiteError('FTP scoped scan did not complete within its existing budget')
+
+
 def verify_old_grant_composition(client, authorization, report, timeout):
     source = next(model for model in report['models'] if model['format'] == '3ds')
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+            scan = scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash, 'FTP composition boundary did not change')
             denied = source_read_control(client, report['engine_id'], changed, 403)
@@ -744,7 +767,7 @@ def verify_old_grant_composition(client, authorization, report, timeout):
                     'changed_boundary_hash': facts['boundary_hash'],
                     'old_grant_without_deny': denied, 'old_cached_content': stale}
     finally:
-        SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+        scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
 
 
 def verify_composition_rules(client, authorization, report, deny, timeout):
@@ -753,7 +776,7 @@ def verify_composition_rules(client, authorization, report, deny, timeout):
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+            scan = scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash,
                     'FTP changed texture reference must change the complete approval boundary')
@@ -769,7 +792,7 @@ def verify_composition_rules(client, authorization, report, deny, timeout):
                       'old_deny_after_new_grant': denied, 'new_grant_after_release': allowed,
                       'old_cached_content': stale}
     finally:
-        SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+        scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
     authorization.revoke(new_grant['request_id'])
     result['restored_grant'] = authorization.grant(source, initialize=False)
     return result
@@ -859,7 +882,8 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout):
         storage = facts.get('storage', {})
         require(storage.get('path') == sample['full_name'] and storage.get('size_bytes') == sample['size'] and not storage.get('etag'),
                 'FTP facts must preserve native path/size without inventing an ETag')
-    execution_id = SUPPORT.wait_for_scan(client, engine_id, time.monotonic() + timeout)
+    model_scan = scan_scope(client, engine_id, ['models'], 'basic', timeout)
+    execution_id = scan_scope(client, engine_id, ['examples'], 'deep', timeout)
     items = client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,)).payload
     result = []
     for sample in samples:
@@ -877,7 +901,7 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout):
             'FTP acceptance requires all three formats')
     return {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'), 'engine_id': engine_id,
             'tenant_id': tenant_id, 'principal_id': str(context['principal']['id']),
-            'scan_execution_id': execution_id, 'samples': result,
+            'scan_execution_id': execution_id, 'model_scan_execution_id': model_scan, 'samples': result,
             'models': prepare_models(items, engine_id, model_samples)}
 
 
