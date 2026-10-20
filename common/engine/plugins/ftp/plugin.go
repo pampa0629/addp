@@ -16,8 +16,9 @@ import (
 	"github.com/addp/common/mimetype"
 )
 
-// Registration is added only after the native dual-architecture admission.
 type FTPPlugin struct{}
+
+func init() { plugin.Register(&FTPPlugin{}) }
 
 func (*FTPPlugin) Type() string                         { return "ftp" }
 func (*FTPPlugin) DisplayName() string                  { return "FTP / FTPS" }

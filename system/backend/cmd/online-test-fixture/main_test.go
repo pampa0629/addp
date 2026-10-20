@@ -344,7 +344,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
 	allPermissions = append(allPermissions, transferLineagePermissions...)
-	allPermissions = append(allPermissions, redisConsumerPermissions...)
+	allPermissions = append(allPermissions, catalogConsumerPermissions...)
 	allPermissions = append(allPermissions, readWorkflowConsumerPermissions...)
 	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
 	allPermissions = append(allPermissions, vectorPMTilesPermissions...)
@@ -1146,7 +1146,7 @@ func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := append(append([]string{}, redisConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create")
+	expected := append(append([]string{}, catalogConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create")
 	if len(permissions) != len(expected) {
 		t.Fatalf("unexpected HighGo permissions: %v", permissions)
 	}
@@ -1211,7 +1211,7 @@ func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
 
 func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 	permissions, err := suitePermissions("gaussdb-consumer-flow")
-	expected := append(append([]string{}, redisConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	expected := append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
 	if err != nil || !reflect.DeepEqual(permissions, expected) {
 		t.Fatalf("minimal read-only permissions: %v", err)
 	}
@@ -1229,7 +1229,7 @@ func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 
 func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 	permissions, err := suitePermissions("starrocks-consumer-flow")
-	expected := append(append([]string{}, redisConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	expected := append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
 	if err != nil || !reflect.DeepEqual(permissions, expected) || !needsEngineProvisioner("starrocks-consumer-flow") {
 		t.Fatal("minimal ordinary consumer plus independent Engine provisioner required")
 	}
@@ -1239,5 +1239,17 @@ func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 	}
 	if _, ok := values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; ok {
 		t.Fatal("source authorization is outside read-only fixture scope")
+	}
+}
+
+func TestFTPFixtureUsesOnlyFileConsumerPermissions(t *testing.T) {
+	permissions, err := suitePermissions("ftp-consumer-flow")
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read"}
+	if err != nil || !slices.Equal(permissions, expected) || !needsEngineProvisioner("ftp-consumer-flow") {
+		t.Fatal("FTP requires a separate provisioner and the six file-consumer permissions", err)
+	}
+	environment := consumerEnvironment("ftp-consumer-flow", 2, "consumer-token", "private-password")
+	if environment["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || environment["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
+		t.Fatal("FTP browser must use the same ordinary User")
 	}
 }

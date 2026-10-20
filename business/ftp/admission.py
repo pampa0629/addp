@@ -1,5 +1,6 @@
 """Disposable FTP owner: private credentials, matching ports and labelled cleanup."""
 import json
+import hashlib
 import ftplib
 import io
 import ssl
@@ -178,6 +179,16 @@ def start():
     connection = {'host': '127.0.0.1', 'port': port, 'user': 'fixture_reader',
                   'password': password, 'ca': str(config / 'server.crt')}
     write(root / 'connection.json', connection)
+    write(root / 'ftp-engine.json', {'name': 'Hosted FTP', 'engine_type': 'ftp', 'engine_origin': 'general',
+          'connection_info': {'host': connection['host'], 'port': connection['port'],
+          'user': connection['user'], 'password': connection['password'],
+          'security': 'explicit_tls', 'tls_ca_cert': (config / 'server.crt').read_text()},
+          'description': 'Disposable FTP file consumer acceptance'})
+    write(root / 'ftp-samples.json', [
+        {'format': kind, 'full_name': 'examples/' + filename,
+         'size': (root / 'seed' / filename).stat().st_size,
+         'sha256': hashlib.sha256((root / 'seed' / filename).read_bytes()).hexdigest()}
+        for kind, filename in [('csv', '客户 中文%.csv'), ('json', '订单 示例.json'), ('parquet', '客户 示例.parquet')]])
     wait_for_greeting(root, state, connection, 'initial')
     tls = ssl.create_default_context(cafile=str(config / 'server.crt'))
     with ftplib.FTP_TLS(context=tls, timeout=5) as probe:

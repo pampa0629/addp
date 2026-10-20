@@ -6,7 +6,7 @@
 
 ## 包含组件
 
-- FTP／显式 FTPS：官方 SFTPGo v2.7.6 固定摘要，独立 `-ftp` profile，不进入 `-all`；唯一 `ftp/entrypoint.sh`、只读账号、独立文件和状态卷、回环2121及50000–50009，按需补齐中文 CSV／JSON／Parquet 示范文件，不调用 System API。协议准入、正式插件与平台 T4 分别认定。
+- FTP／显式 FTPS：官方 SFTPGo v2.7.6 固定摘要，独立 `-ftp` profile，不进入 `-all`；唯一 `ftp/entrypoint.sh`、只读账号、独立文件和状态卷、回环2121及50000–50009，按需补齐中文 CSV／JSON／Parquet 示范文件，不调用 System API。协议准入、正式插件与平台 T4 分别认定。`ftp/admission.py` 只输出私有的 FTP Engine 描述和样例大小／SHA-256 事实，供 Hosted owner 调用正式 System API 登记；Business 不持有平台身份、不调用平台 API。
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
 - OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 bounded watermark source 与 prepare/session/delete/upsert 集成验证，不包含空间、CDC 或 Oracle 模式能力。

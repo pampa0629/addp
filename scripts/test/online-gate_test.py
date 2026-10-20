@@ -81,6 +81,7 @@ class OnlineGateTest(unittest.TestCase):
                 "elasticsearch-consumer-flow",
                 "hdfs-spark-consumer-flow",
                 "redis-consumer-flow",
+                "ftp-consumer-flow",
                 "highgo-consumer-flow",
                 "gaussdb-consumer-flow",
                 "starrocks-consumer-flow",

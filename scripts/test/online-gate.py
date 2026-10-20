@@ -162,6 +162,10 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "ftp-consumer-flow": Suite(
+        command=(sys.executable, "-m", "scripts.test.ftp-consumer-flow-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL")),
+    ),
     "redis-consumer-flow": Suite(
         command=(sys.executable, "scripts/test/redis-consumer-flow-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL")),

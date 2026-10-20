@@ -434,6 +434,14 @@ test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证
 test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与零残留清理
 	@bash scripts/test/common-ftp-gate.sh
 
+.PHONY: test-ftp-online-runner
+test-ftp-online-runner: ## FTP 普通 User 页面验收与 Hosted 隔离生命周期回归
+	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-gate_test.py
+	@node --check console/frontend/e2e/online/ftp-consumer-flow.spec.js
+	@bash -n scripts/test/online-hosted-ftp-gate.sh
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 .PHONY: test-common-starrocks test-common-starrocks-unit
 test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及共享只读拒绝边界
 	@python3 -m unittest scripts/test/starrocks-admission_test.py
@@ -697,6 +705,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-starrocks-online-runner
+	@$(MAKE) test-ftp-online-runner
 	@$(MAKE) test-common-gaussdb-unit
 	@$(MAKE) test-security-online-runner
 	@$(MAKE) test-highgo-online-runner

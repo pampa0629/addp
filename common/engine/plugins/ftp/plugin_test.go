@@ -10,6 +10,10 @@ import (
 
 func TestConnectionDescriptorAndReadOnlyCapabilities(t *testing.T) {
 	p := &FTPPlugin{}
+	registered, err := plugin.Get("ftp")
+	if err != nil || registered.Type() != p.Type() || registered.EngineOrigin() != "general" {
+		t.Fatal("FTP builtin registration missing", err)
+	}
 	if err := p.ConnectionSpec().Validate(); err != nil {
 		t.Fatal(err)
 	}

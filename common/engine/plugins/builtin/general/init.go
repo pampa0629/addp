@@ -6,6 +6,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/doris"
 	_ "github.com/addp/common/engine/plugins/elasticsearch"
 	_ "github.com/addp/common/engine/plugins/falkordb"
+	_ "github.com/addp/common/engine/plugins/ftp"
 	_ "github.com/addp/common/engine/plugins/gaussdb"
 	_ "github.com/addp/common/engine/plugins/hdfs"
 	_ "github.com/addp/common/engine/plugins/highgo"

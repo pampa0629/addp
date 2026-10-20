@@ -1,6 +1,6 @@
 //go:build ftp_formats
 
-package ftp
+package ftp_test
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/contentadapter"
 	"github.com/addp/common/engine/plugin"
+	ftppkg "github.com/addp/common/engine/plugins/ftp"
 	fileformat "github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/json"
@@ -20,7 +21,7 @@ import (
 )
 
 type rangeOnly struct {
-	*FTPPlugin
+	*ftppkg.FTPPlugin
 	calls atomic.Int64
 }
 
@@ -34,7 +35,7 @@ func (r *rangeOnly) OpenRange(ctx context.Context, info plugin.ConnectionInfo, p
 
 func TestIntegrationProviderSharedFormats(t *testing.T) {
 	info := ownedInfo(t, "explicit_tls")
-	p := &FTPPlugin{}
+	p := &ftppkg.FTPPlugin{}
 	scope := plugin.FileDirectoryCatalogEntry(plugin.FileRootPath(99), "examples", "examples").Path
 	entries, err := p.ListChildren(t.Context(), info, scope, plugin.ListOptions{})
 	if err != nil {

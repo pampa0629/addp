@@ -1,4 +1,4 @@
-package ftp
+package ftp_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	ftppkg "github.com/addp/common/engine/plugins/ftp"
 )
 
 func ownedInfo(t *testing.T, security string) plugin.ConnectionInfo {
@@ -41,7 +42,7 @@ func TestIntegrationProviderCatalogFactsAndContent(t *testing.T) {
 	for _, mode := range []string{"plain", "explicit_tls"} {
 		t.Run(mode, func(t *testing.T) {
 			info := ownedInfo(t, mode)
-			p := &FTPPlugin{}
+			p := &ftppkg.FTPPlugin{}
 			root := plugin.FileRootPath(99)
 			if err := p.TestConnection(t.Context(), info); err != nil {
 				t.Fatal(err)
