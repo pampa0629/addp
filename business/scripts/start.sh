@@ -342,6 +342,13 @@ if [ "$ENABLE_FALKORDB" = true ] && [ -z "${BUSINESS_FALKORDB_PASSWORD:-}" ]; th
 fi
 
 # 3. 检测 CPU 架构
+if [ "$ENABLE_PG" = true ]; then
+    # Deployment-owned directory mount: atomic host replacement becomes visible
+    # inside the read-only container without rewriting repository configuration.
+    ADDP_BUSINESS_POSTGRES_AUTH_DIR=$(python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/authentication.py" prepare-business) || exit 1
+    export ADDP_BUSINESS_POSTGRES_AUTH_DIR
+fi
+
 if [ "$ENABLE_HDFS" = true ] || [ "$ENABLE_DORIS" = true ]; then
     python3 - <<'PY'
 import socket

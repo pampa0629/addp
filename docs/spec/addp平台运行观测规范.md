@@ -137,6 +137,10 @@ Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 安装版本
 
 ### 4.7 PostgreSQL 受保护的固定指标来源
 
+Business PostgreSQL 的运行认证文件由部署 owner 在仓库外维护，唯一容器路径为 `/etc/addp-postgres-auth/pg_hba.conf`，只读挂载其父目录，不再单文件绑定仓库模板。标准 Business 启动入口在启动 PostgreSQL 前准备该目录；默认状态目录为当前部署用户的 `~/.local/state/addp/<工作区路径摘要>/postgres-auth`，可由 `ADDP_POSTGRES_AUTH_STATE_DIR` 显式指定仓库外绝对目录。目录归属绑定当前工作区，不接管其他 owner、符号链接、硬链接或被外部改写的文件。模板仍为 `business/postgres/pg_hba.conf`，首次原样复制，后续保留经校验的采集首部块；模板和运行文件之间不存在双轨读取。模板有明确更新时，只有运行文件仍与上次生成事实一致才可重新生成，不覆盖人工漂移。
+
+部署侧文件更新使用同一受管目录锁、输入版本校验及同目录原子替换，保持原文件属主和模式；数据库容器无写权。该入口不保存数据库密码、不签发证书、不安装角色、不重启或重载运行数据库。首次切换由部署方使用标准 Business 启动入口重建容器，保留数据卷；后续认证安装仍须先检查归属／遗留会话、更新文件、检查 `pg_hba_file_rules` 并重载及验证连接。文件准备成功不能计为专业采集已生效。Infra 仍使用其数据目录内的认证文件，不为统一形式迁移数据。
+
 来源模板 `scripts/infra/postgres-metrics.yml` 与独占 T2 共用固定 SQL Exporter 0.24.11 多架构摘要；固定配置唯一生成实现为 `scripts/infra/postgres-observation/source.py`，只查询 4.6 的函数，关闭 ping、缓存和动态目标，不接受用户 SQL。每个作用域独立来源、单 SQL 连接、零空闲连接，查询上限四秒。数据库密码只在部署用户私有的只读来源配置内，不进入环境变量、命令参数、发现快照或平台 DTO。源侧 SQL 当前限定受控 Docker 私网；生产数据库 TLS 另须认证，不把本机 T2 计为生产验收。
 
 SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同命名空间 Nginx 在 `9443` 提供独立 mTLS。TLS 进程仅挂载自己的服务端证书／CA，不挂载含数据库密码的来源配置；两进程均使用显式非特权 UID/GID、只读文件系统、移除全部 capabilities 及资源限制。外部只允许无 query 的 GET `/metrics`，配置、重载、exporter 自身诊断、其他路径及方法均拒绝；凭据不因持有采集证书而可读取。没有默认宿主机端口，也未纳入个人 Infra／Business 的自动启动。

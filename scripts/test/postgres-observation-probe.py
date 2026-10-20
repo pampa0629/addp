@@ -63,6 +63,13 @@ class Probe:
         spec = importlib.util.spec_from_file_location('addp_postgresql_source', SQL.with_name('source.py'))
         self.source = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.source)
+        self.auth_directory = None
+        self.authentication = None
+        if os.environ.get('METRICS_T2_DIRECTORY_AUTH') == 'true':
+            self.auth_directory = Path(os.environ['METRICS_T2_WORK']).resolve() / 'postgres-auth'
+            spec = importlib.util.spec_from_file_location('addp_postgresql_auth_directory', SQL.with_name('authentication.py'))
+            self.authentication = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(self.authentication)
         self.hba_original = self.hba_current = None
         self.pgpass = '/tmp/addp-observation-' + secrets.token_hex(16) + '.pgpass'
         self.peers = []
@@ -102,6 +109,11 @@ class Probe:
                        input=value, capture_output=True, text=True, check=True, timeout=10)
 
     def read_hba(self):
+        if self.auth_directory is not None:
+            path = '/etc/addp-postgres-auth/pg_hba.conf'
+            assert self.sql('SHOW hba_file;') == path
+            return subprocess.run(self.compose + ['exec', '-T', 'postgres', 'cat', path],
+                                  capture_output=True, text=True, check=True, timeout=10).stdout
         assert self.sql('SHOW hba_file;') == '/var/lib/postgresql/data/pg_hba.conf'
         return subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c',
                               'test ! -L "$PGDATA/pg_hba.conf" && test -f "$PGDATA/pg_hba.conf" && cat "$PGDATA/pg_hba.conf"'],
@@ -111,7 +123,8 @@ class Probe:
         # This is strictly an owned T2 fixture adapter, not a product file-write
         # API. Preserve owner/mode and reject changed input before atomic rename.
         digest = hashlib.sha256(expected.encode()).hexdigest()
-        metadata_command = self.compose + ['exec', '-T', 'postgres', 'stat', '-c', '%u:%g:%a', '/var/lib/postgresql/data/pg_hba.conf']
+        path = '/etc/addp-postgres-auth/pg_hba.conf' if self.auth_directory is not None else '/var/lib/postgresql/data/pg_hba.conf'
+        metadata_command = self.compose + ['exec', '-T', 'postgres', 'stat', '-c', '%u:%g:%a', path]
         metadata = subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout
         script = '''set -eu
 target="$PGDATA/pg_hba.conf"
@@ -126,8 +139,11 @@ test "$(sha256sum "$target" | cut -d ' ' -f 1)" = "$1"
 mv "$temporary" "$target"
 trap - EXIT
 '''
-        subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c', script, 'owned-observation-hba', digest],
-                       input=replacement, capture_output=True, text=True, check=True, timeout=10)
+        if self.auth_directory is not None:
+            self.authentication.replace(self.auth_directory, expected, replacement)
+        else:
+            subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c', script, 'owned-observation-hba', digest],
+                           input=replacement, capture_output=True, text=True, check=True, timeout=10)
         assert self.read_hba() == replacement
         assert subprocess.run(metadata_command, capture_output=True, text=True, check=True, timeout=10).stdout == metadata
         assert self.sql('SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;') == '0'
@@ -153,7 +169,7 @@ trap - EXIT
         replacement = self.source.authentication_configuration(self.hba_original, scope, allowed, database='addp_test')
         try:
             self.write_hba(self.hba_original + '# stale input', replacement)
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, ValueError):
             pass
         else:
             raise AssertionError('owned authentication writer accepted changed input')
@@ -484,11 +500,19 @@ CREATE ROLE observation_stranger NOLOGIN;''')
         self.sql('REVOKE SELECT ON observation_business.private_rows FROM PUBLIC;')
         # Use SET ROLE in the controlled admin transport for the unrelated-user
         # rejection; actual observer authentication always uses TCP SCRAM.
-        for scope in ['infra', 'business']:
+        if self.auth_directory is not None:
+            original = self.read_hba()
+            attempted = subprocess.run(self.compose + ['exec', '-T', 'postgres', 'sh', '-c',
+                                       'printf forbidden >> /etc/addp-postgres-auth/pg_hba.conf'],
+                                      capture_output=True, text=True, timeout=10)
+            assert attempted.returncode != 0 and self.read_hba() == original, 'container authentication mount must be read-only'
+        for scope in (['business'] if self.auth_directory is not None else ['infra', 'business']):
             self.run_scope(scope)
         assert self.sql('SELECT count(*) FROM observation_business.private_rows;') == '1'
         self.sql('DROP SCHEMA observation_business CASCADE; DROP ROLE observation_stranger;')
         self.absent()
+        if self.auth_directory is not None:
+            print('PostgreSQL directory authentication T2: read-only mount, host atomic update, real reload and complete restore passed', flush=True)
 
 
 if __name__ == '__main__':

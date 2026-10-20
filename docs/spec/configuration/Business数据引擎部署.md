@@ -2,6 +2,12 @@
 
 [返回配置规范](../addp配置介绍.md)
 
+## PostgreSQL 运行认证文件
+
+标准 `business/scripts/start.sh -postgres` 在容器启动前，将仓库模板 `business/postgres/pg_hba.conf` 准备为仓库外的受管运行文件，数据库只读挂载整个认证目录。可选部署输入 `ADDP_POSTGRES_AUTH_STATE_DIR` 指定绝对、当前用户私有的状态根目录；为空时使用 `~/.local/state/addp/<工作区路径摘要>/postgres-auth`。`ADDP_BUSINESS_POSTGRES_AUTH_DIR` 仅由启动入口派生，不放入 `.env`；直接 Compose 启动缺少准备结果时拒绝挂载，不回退到仓库模板。首次切换在标准启动时重建 PostgreSQL 容器，保留原数据卷；不由 Monitor 或 Web 请求重启数据库。
+
+首次复制保持模板规则，后续保留通过校验的 Business 采集账号首部块。模板版本更新只在运行文件未漂移时应用；未知 owner、链接、权限异常或中断更新均拒绝覆盖。该阶段只准备文件，不安装采集角色、不保存密码、不重载运行数据库，也不等同于已启用专业采集。文件锁、原子替换及真实重载验证边界见[平台运行观测规范 4.7](../addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)。
+
 ## Business 数据引擎部署参数
 
 Business MySQL 作为本地 CDC 测试源时使用独立配置文件 `business/.env`：

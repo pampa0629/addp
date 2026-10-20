@@ -18,9 +18,160 @@ spec.loader.exec_module(config)
 source_spec = importlib.util.spec_from_file_location('addp_postgres_source_config', ROOT / 'scripts/infra/postgres-observation/source.py')
 postgres_source = importlib.util.module_from_spec(source_spec)
 source_spec.loader.exec_module(postgres_source)
+auth_spec = importlib.util.spec_from_file_location('addp_postgres_auth_directory', ROOT / 'scripts/infra/postgres-observation/authentication.py')
+postgres_auth = importlib.util.module_from_spec(auth_spec)
+auth_spec.loader.exec_module(postgres_auth)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_postgres_auth_directory_reuses_runtime_and_preserves_managed_policy(self):
+        directory = self.directory.resolve() / 'authentication'
+        baseline = 'local all all trust\nhost all all 0.0.0.0/0 scram-sha-256\n'
+        runtime = postgres_auth.prepare_business(directory, baseline)
+        hba = runtime / 'pg_hba.conf'
+        original_stat = hba.stat()
+        policy = postgres_source.authentication_configuration(baseline, 'business', ['172.20.0.0/16'])
+        postgres_auth.replace(directory, baseline, policy)
+        self.assertEqual(hba.read_text(), policy)
+        self.assertEqual((hba.stat().st_uid, hba.stat().st_gid, hba.stat().st_mode),
+                         (original_stat.st_uid, original_stat.st_gid, original_stat.st_mode))
+        unchanged = hba.stat()
+        self.assertEqual(postgres_auth.prepare_business(directory, baseline), runtime)
+        self.assertEqual(hba.stat().st_ino, unchanged.st_ino)
+        updated = baseline + '# deployment owner updated ordinary-user policy\n'
+        postgres_auth.prepare_business(directory, updated)
+        self.assertEqual(hba.read_text(), policy[:-len(baseline)] + updated)
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(runtime.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((directory / 'owner.json').stat().st_mode & 0o777, 0o600)
+        self.assertEqual(hba.stat().st_mode & 0o777, 0o644)
+
+    def test_postgres_auth_directory_rejects_stale_inputs_and_external_drift(self):
+        directory = self.directory.resolve() / 'authentication'
+        baseline = 'local all all trust\n'
+        hba = postgres_auth.prepare_business(directory, baseline) / 'pg_hba.conf'
+        policy = postgres_source.authentication_configuration(baseline, 'business', ['127.0.0.1/32'])
+        postgres_auth.replace(directory, baseline, policy)
+        with self.assertRaises(ValueError):
+            postgres_auth.replace(directory, baseline, policy)
+        self.assertEqual(hba.read_text(), policy)
+        with self.assertRaises(ValueError):
+            postgres_auth.replace(directory, policy, policy + '# unowned modification\n')
+        hba.write_text(policy + '# external operator drift\n')
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, baseline)
+        self.assertTrue(hba.read_text().endswith('# external operator drift\n'))
+
+    def test_postgres_auth_directory_rejects_foreign_workspace_and_scope(self):
+        directory = self.directory.resolve() / 'authentication'
+        baseline = 'local all all trust\n'
+        hba = postgres_auth.prepare_business(directory, baseline) / 'pg_hba.conf'
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, baseline, workspace=ROOT / 'other-workspace')
+        with self.assertRaises(ValueError):
+            postgres_auth.replace(directory, baseline, baseline, workspace=ROOT / 'other-workspace')
+        hba.write_text(postgres_source.authentication_configuration(baseline, 'infra', ['127.0.0.1/32']))
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, baseline)
+
+    def test_postgres_auth_directory_rejects_links_modes_and_lock_contention(self):
+        directory = self.directory.resolve() / 'authentication'
+        baseline = 'local all all trust\n'
+        hba = postgres_auth.prepare_business(directory, baseline) / 'pg_hba.conf'
+        with postgres_auth.locked(directory):
+            with self.assertRaises(ValueError):
+                postgres_auth.prepare_business(directory, baseline)
+        hba.chmod(0o666)
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, baseline)
+        hba.chmod(0o644)
+        extra = self.directory / 'extra-link'
+        os.link(hba, extra)
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, baseline)
+        extra.unlink()
+        hba.unlink()
+        hba.symlink_to(extra)
+        with self.assertRaises(OSError):
+            postgres_auth.prepare_business(directory, baseline)
+        linked = self.directory.resolve() / 'linked'
+        linked.symlink_to(directory, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(linked, baseline)
+
+    def test_postgres_auth_directory_rejects_unowned_files_and_invalid_declarations(self):
+        directory = self.directory.resolve() / 'authentication'
+        directory.mkdir(mode=0o700)
+        (directory / 'runtime').mkdir(mode=0o755)
+        (directory / 'runtime/pg_hba.conf').write_text('unowned')
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, 'local all all trust\n')
+        for value in ('', 'local all addp_business_observer trust\n', '\x00', '#' * postgres_source.HBA_LIMIT):
+            with self.subTest(value=value[:25]), self.assertRaises(ValueError):
+                postgres_auth.prepare_business(directory, value)
+        for path in ('relative', str(ROOT / '.dev-state/postgres-auth')):
+            with self.assertRaises(ValueError):
+                postgres_auth.state_directory({'ADDP_POSTGRES_AUTH_STATE_DIR': path})
+
+    def test_postgres_auth_directory_interrupted_template_update_fails_closed(self):
+        directory = self.directory.resolve() / 'authentication'
+        baseline = 'local all all trust\n'
+        hba = postgres_auth.prepare_business(directory, baseline) / 'pg_hba.conf'
+        changed = baseline + '# next deployment template\n'
+        atomic = postgres_auth._atomic
+
+        def interrupt_owner(path, *args, **kwargs):
+            if path.name == 'owner.json':
+                raise OSError('controlled fixture interruption')
+            return atomic(path, *args, **kwargs)
+
+        with mock.patch.object(postgres_auth, '_atomic', side_effect=interrupt_owner):
+            with self.assertRaises(OSError):
+                postgres_auth.prepare_business(directory, changed)
+        self.assertEqual(hba.read_text(), changed)
+        with self.assertRaises(ValueError):
+            postgres_auth.prepare_business(directory, changed)
+        self.assertEqual(hba.read_text(), changed)
+
+    def test_postgres_auth_directory_standard_entrypoint_uses_generated_mount(self):
+        directory = self.directory.resolve() / 'authentication'
+        environment = dict(os.environ, ADDP_POSTGRES_AUTH_STATE_DIR=str(directory))
+        environment.pop('ADDP_BUSINESS_POSTGRES_AUTH_DIR', None)
+        command = [sys.executable, str(ROOT / 'scripts/infra/postgres-observation/authentication.py'), 'prepare-business']
+        completed = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=5)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.strip(), str(directory / 'runtime'))
+        environment['ADDP_BUSINESS_POSTGRES_AUTH_DIR'] = str(self.directory)
+        refused = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertNotIn(str(self.directory), refused.stderr)
+        business = (ROOT / 'business/docker-compose.yml').read_text().split('\n  postgres:\n', 1)[1].split('\n  oracle:', 1)[0]
+        self.assertIn('hba_file=/etc/addp-postgres-auth/pg_hba.conf', business)
+        self.assertNotIn('./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf', business)
+
+    def test_business_postgres_compose_mount_is_readonly_and_requires_preparation(self):
+        environment = {name: os.environ[name] for name in ('PATH', 'HOME') if name in os.environ}
+        environment['ADDP_BUSINESS_POSTGRES_AUTH_DIR'] = str(self.directory.resolve() / 'prepared')
+        command = ['docker', 'compose', '--env-file', '/dev/null', '-f', str(ROOT / 'business/docker-compose.yml'),
+                   'config', '--format', 'json', 'postgres']
+        rendered = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=15)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        service = json.loads(rendered.stdout)['services']['postgres']
+        mounts = [value for value in service['volumes'] if value['target'] == '/etc/addp-postgres-auth']
+        self.assertEqual(len(mounts), 1)
+        self.assertEqual(mounts[0]['source'], environment['ADDP_BUSINESS_POSTGRES_AUTH_DIR'])
+        self.assertTrue(mounts[0]['read_only'])
+        # Compose JSON omits the false long-syntax default; true is explicit.
+        self.assertFalse(mounts[0].get('bind', {}).get('create_host_path', False))
+        self.assertIn('hba_file=/etc/addp-postgres-auth/pg_hba.conf', service['command'])
+        environment.pop('ADDP_BUSINESS_POSTGRES_AUTH_DIR')
+        rendered = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=15)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        mount = next(value for value in json.loads(rendered.stdout)['services']['postgres']['volumes']
+                     if value['target'] == '/etc/addp-postgres-auth')
+        self.assertEqual(mount['source'], '/nonexistent/addp-business-postgres-auth')
+        self.assertFalse(mount.get('bind', {}).get('create_host_path', False))
+
     def test_postgres_source_configuration_is_fixed_and_bounded(self):
         source = postgres_source
         infra = source.configuration('infra', 'postgres', 5432, 'a' * 64)
@@ -150,7 +301,10 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('go-version-file: common/go.mod', job)
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
-        self.assertIn('CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
+        selected = re.findall(r"'\^TestIntegrationMetrics\(([^)]+)\)\$'", probe)
+        self.assertEqual(len(selected), 1)
+        self.assertTrue({'CPUWindow', 'ProcessWindow', 'DiskWindow', 'DiskIOWindow', 'NetworkWindow',
+                         'Filesystem', 'FilesystemInodes'}.issubset(set(selected[0].split('|'))))
         self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
         self.assertEqual(probe.count("'^TestIntegrationMetricsResourcePressureEvidence$'"), 2)
         self.assertIn("'^TestIntegrationMetricsResourceAlertLifecycle$'", probe)

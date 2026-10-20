@@ -4,6 +4,8 @@
 
 `business/` 提供 ADDP 业务数据基础设施的本地部署样例，与系统元数据库隔离。它用于承载用户业务数据、对象文件和外部数据源测试环境，不是 ADDP 系统元数据存储。
 
+PostgreSQL 认证模板仍为 `postgres/pg_hba.conf`；标准启动入口通过 `scripts/infra/postgres-observation/authentication.py prepare-business` 准备仓库外、当前部署用户拥有的运行目录，再只读目录挂载到 `/etc/addp-postgres-auth`。`ADDP_POSTGRES_AUTH_STATE_DIR` 可显式指定私有状态根目录；`ADDP_BUSINESS_POSTGRES_AUTH_DIR` 是该入口派生的 Compose 输入，不直接填写 `.env`。不在运行时覆盖仓库模板或单文件挂载，不自动重启数据库；归属或文件漂移拒绝启动 PostgreSQL，不能回退到宽松规则。详情见平台运行观测规范 4.7。
+
 ## 包含组件
 
 - FTP／显式 FTPS：官方 SFTPGo v2.7.6 固定摘要，独立 `-ftp` profile，不进入 `-all`；唯一 `ftp/entrypoint.sh`、只读账号、宿主机 `ftp/data` 直接只读挂载为账号根、独立账号状态卷、回环2121及50000–50009。宿主机生成器仅补齐 `data/examples` 的中文 CSV／JSON／Parquet 示范文件；新目录可在线发现，不经第二个文件卷复制，不调用 System API。协议准入、正式插件与平台 T4 分别认定。`ftp/admission.py` 只输出私有的 FTP Engine 描述和样例大小／SHA-256 事实，供 Hosted owner 调用正式 System API 登记；Business 不持有平台身份、不调用平台 API。

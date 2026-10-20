@@ -19,8 +19,8 @@
 # - business-redpanda: 业务 Kafka API 消息流
 #
 # 使用方法:
-#   docker-compose up -d    # 启动
-#   docker-compose down     # 停止
+#   bash scripts/start.sh   # 准备运行配置并启动
+#   bash scripts/stop.sh    # 停止
 #   docker-compose logs -f  # 查看日志
 
 name: business
@@ -178,7 +178,7 @@ services:
       - -c
       - config_file=/etc/postgresql/postgresql.conf
       - -c
-      - hba_file=/etc/postgresql/pg_hba.conf
+      - hba_file=/etc/addp-postgres-auth/pg_hba.conf
       - -c
       - timezone=Asia/Shanghai
     environment:
@@ -190,7 +190,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro,cached
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,cached
-      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro,cached
+      - type: bind
+        source: ${ADDP_BUSINESS_POSTGRES_AUTH_DIR:-/nonexistent/addp-business-postgres-auth}
+        target: /etc/addp-postgres-auth
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:
