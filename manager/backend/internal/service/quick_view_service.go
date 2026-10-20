@@ -196,6 +196,7 @@ type SpatialMetadataResult struct {
 type QuickViewSource struct {
 	Identity           QuickViewIdentity
 	EngineID           uint
+	EngineType         string // Resolved System engine fact, not caller/Meta attributes.
 	Schema             string
 	Table              string
 	SpatialMeta        *SpatialMetadataResult
@@ -777,7 +778,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 			return nil, err
 		}
 	} else if source.Model3D != nil {
-		if err := s.applyModel3DCapability(ctx, capability, identity, source.Model3D, source.EngineID); err != nil {
+		if err := s.applyModel3DCapability(ctx, capability, identity, source.Model3D, source.EngineID, source.EngineType); err != nil {
 			return nil, err
 		}
 	} else if readyTileCache != nil {
@@ -1185,7 +1186,7 @@ func (s *QuickViewService) applyRasterMosaicCapability(capability *QuickViewCapa
 	capability.QuickView = renderInfoFromRasterMosaic(mosaic)
 }
 
-func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, model3D *Model3DGLBSource, engineID uint) error {
+func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, model3D *Model3DGLBSource, engineID uint, engineType string) error {
 	if capability == nil || model3D == nil {
 		return nil
 	}
@@ -1215,6 +1216,15 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		if capability.Model3D != nil {
 			capability.Model3D.PreviewURL = strings.TrimSpace(model3D.PreviewURL)
 		}
+		return nil
+	}
+	if engineType == "ftp" && model3D.Format != string(format.FormatIFC) && model3D.Format != string(format.Format3DS) {
+		capability.CanUseQuickView = false
+		capability.Status = QuickViewStatusUnavailable
+		capability.UnavailableReason = "model_3d_glb_source_not_supported"
+		capability.RenderSource = ""
+		capability.RecommendedMode = models.PreviewModeBasicPreview
+		capability.QuickView = QuickViewRenderInfo{}
 		return nil
 	}
 

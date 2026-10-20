@@ -16,6 +16,7 @@ const QUICK_VIEW_REASON_KEYS = {
   'gaussian_splat_preview_not_supported': 'manager.spatialPreview.gaussianSplatPreviewNotSupported',
   'requires_ksplat_generation': 'manager.spatialPreview.requiresKSplatGeneration',
   'source_format_direct_preview': 'manager.spatialPreview.sourceFormatDirectPreview',
+  'model_3d_glb_source_not_supported': 'manager.spatialPreview.model3DGLBSourceNotSupported',
   'raster preview URL is unavailable': 'manager.spatialPreview.missingQuickViewURL'
 }
 

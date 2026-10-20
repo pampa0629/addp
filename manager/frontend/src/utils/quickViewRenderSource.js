@@ -73,7 +73,8 @@ export function shouldShowQuickViewUnavailableNotice(status = {}) {
   if (!status || status.can_use_quick_view === true) return false
   const sourceKind = normalizeQuickViewSourceKind(status.source_kind)
   if (sourceKind === 'raster' || sourceKind === 'raster_mosaic') return Boolean(status.unavailable_reason)
-  if (sourceKind === 'model_3d' || sourceKind === 'gaussian_splat') return false
+  if (sourceKind === 'model_3d') return status.unavailable_reason === 'model_3d_glb_source_not_supported'
+  if (sourceKind === 'gaussian_splat') return false
   return isVectorQuickViewSource(status) && Boolean(status.unavailable_reason)
 }
 

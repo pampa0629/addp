@@ -45,6 +45,17 @@ describe('quickViewRenderSource', () => {
     })).toBe(false)
   })
 
+  it('explains a model source excluded by the backend capability', () => {
+    expect(shouldShowQuickViewUnavailableNotice({
+      source_kind: 'model_3d', can_use_quick_view: false,
+      unavailable_reason: 'model_3d_glb_source_not_supported'
+    })).toBe(true)
+    expect(shouldShowQuickViewUnavailableNotice({
+      source_kind: 'model_3d', can_use_quick_view: true,
+      unavailable_reason: 'model_3d_glb_source_not_supported'
+    })).toBe(false)
+  })
+
   it('classifies raster mosaic as raster quick view', () => {
     expect(isRasterQuickViewRenderSource('raster_mosaic_tile')).toBe(true)
     expect(isRasterQuickViewRenderSource(' client_cog_render ')).toBe(true)

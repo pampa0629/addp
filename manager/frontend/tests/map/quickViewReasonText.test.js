@@ -11,6 +11,8 @@ describe('quickViewReasonText', () => {
       .toBe('translated:manager.spatialPreview.directFlatGeobufRowLimitExceeded')
     expect(quickViewReasonText(t, 'requires_ksplat_generation'))
       .toBe('translated:manager.spatialPreview.requiresKSplatGeneration')
+    expect(quickViewReasonText(t, 'model_3d_glb_source_not_supported'))
+      .toBe('translated:manager.spatialPreview.model3DGLBSourceNotSupported')
   })
 
   it('keeps unknown reasons visible for diagnostics', () => {

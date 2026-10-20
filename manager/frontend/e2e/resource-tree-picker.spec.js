@@ -293,6 +293,26 @@ for (const format of ['dae', '3ds', 'max']) {
   })
 }
 
+test('hides GLB generation when FTP source capability excludes the format', async ({ page }) => {
+  const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'
+  const backend = await installMockBackend(page, { exchangeModel: { format: 'max', locator } })
+  await page.route('**/api/v1/manager/quick-view/capability?**', async route => {
+    await fulfillJSON(route, {
+      locator, source_kind: 'model_3d', source_engine_id: 12,
+      model_3d: { format: 'max' }, can_use_quick_view: false,
+      status: 'unavailable', unavailable_reason: 'model_3d_glb_source_not_supported',
+      available_actions: []
+    })
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const notice = page.locator('.quick-view-status-icon.is-info')
+  await expect(notice).toBeVisible()
+  await notice.hover()
+  await expect(page.getByRole('tooltip')).toContainText('FTP 的 GLB 生成仅接受 IFC、3DS 模型。')
+  await expect(page.getByRole('button', { name: '生成 GLB 快显', exact: true })).toHaveCount(0)
+  expect(backend.quickViewActions).toEqual([])
+})
+
 for (const unit of ['', 'mm']) {
   test(`MAX GLB generation ${unit ? 'uses selected millimetres' : 'allows default metres without a selection'}`, async ({ page }) => {
     const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'

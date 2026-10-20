@@ -881,6 +881,44 @@ func TestModel3DGLBCapabilityRecommendsGLBGenerationWhenMissing(t *testing.T) {
 	}
 }
 
+func TestModel3DGLBCapabilityFTPFormatBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		engine, format, reason string
+		generate               bool
+	}{
+		{"ftp", "ifc", "requires_glb_generation", true},
+		{"ftp", "3ds", "requires_glb_generation", true},
+		{"ftp", "max", "model_3d_glb_source_not_supported", false},
+		{"ftp", "dae", "model_3d_glb_source_not_supported", false},
+		{"ftp", "skp", "model_3d_glb_source_not_supported", false},
+		{"ftp", "osgb", "model_3d_glb_source_not_supported", false},
+		{"ftp", "sgm", "model_3d_glb_source_not_supported", false},
+		{"ftp", "glb", "source_format_direct_preview", false},
+		{"ftp", "ply", "source_format_direct_preview", false},
+		{"ftp", "obj", "model_3d_glb_source_not_supported", false},
+		{"ftp", "fbx", "model_3d_glb_source_not_supported", false},
+		{"nfs", "max", "requires_glb_generation", true},
+		{"minio", "max", "requires_glb_generation", true},
+	} {
+		t.Run(tc.engine+"/"+tc.format, func(t *testing.T) {
+			db := newTileCacheTaskServiceTestDB(t)
+			createModel3DGLBTableForTest(t, db)
+			svc := NewQuickViewService(db, nil)
+			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: "fp-format-boundary", Locator: "addp://engine/26/path/scene." + tc.format + "?type=file&item_id=99"},
+				EngineID: 26, EngineType: tc.engine,
+				Model3D: &Model3DGLBSource{Format: tc.format, Layout: "single", SourceSizeBytes: 4096},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if capability.UnavailableReason != tc.reason || containsString(capability.AvailableActions, QuickViewActionGenerateModel3DGLB) != tc.generate {
+				t.Fatalf("reason=%q actions=%v, want reason=%q generate=%v", capability.UnavailableReason, capability.AvailableActions, tc.reason, tc.generate)
+			}
+		})
+	}
+}
+
 func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 	t.Run("switch quick view when quick view is ready but inactive", func(t *testing.T) {
 		db := newTileCacheTaskServiceTestDB(t)

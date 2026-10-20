@@ -935,6 +935,7 @@
       "gaussianSplatPreviewNotSupported": "This Gaussian splatting model is recognized, but the dedicated quick view renderer is not connected yet.",
       "requiresKSplatGeneration": "Generate a managed 3DGS - KSplat quick view first.",
       "sourceFormatDirectPreview": "The source format can be previewed directly. No quick view generation or switch is needed.",
+      "model3DGLBSourceNotSupported": "FTP GLB generation accepts IFC and 3DS models only.",
       "loadingGaussianSplat": "Loading Gaussian splatting model...",
       "loadGaussianSplatFailed": "Failed to load Gaussian splatting model",
       "loadGaussianSplatTimeout": "Gaussian splatting model load timed out",

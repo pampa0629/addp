@@ -229,6 +229,9 @@ func TestQuickViewSourceForLocatorReadsOnlyOwnerFacts(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr=%v", err, tc.wantErr)
 			}
+			if !tc.wantErr && source.EngineType != "unregistered-facts-only" {
+				t.Fatalf("resolved System engine type lost: %q", source.EngineType)
+			}
 			if !tc.wantErr && (source.SpatialMeta == nil || source.SpatialMeta.GeomColumn != "shape" || source.SpatialMeta.RecordCount != 12) {
 				t.Fatalf("owner facts not used: %#v", source)
 			}
@@ -238,6 +241,22 @@ func TestQuickViewSourceForLocatorReadsOnlyOwnerFacts(t *testing.T) {
 			// No runtime/plugin/provider exists for this engine. Any preview execution fails.
 			if requests > 2 {
 				t.Fatalf("unexpected additional work: %d requests", requests)
+			}
+		})
+	}
+}
+
+func TestQuickViewSourceUsesResolvedEngineType(t *testing.T) {
+	for _, engineType := range []string{"ftp", "nfs", "minio"} {
+		t.Run(engineType, func(t *testing.T) {
+			req := quickViewMetaFixture(t, "addp://engine/26/path/scene.max?type=file&item_id=99&engine_type=caller-spoof", commonModels.JSONMap{
+				"engine_type": "metadata-spoof",
+				"item":        commonModels.JSONMap{"data_type": "model_3d", "format": "max", "layout": "single", "engine_type": "nested-spoof"},
+			})
+			req.Engine.EngineType = engineType
+			source := quickViewSourceFromMeta(req)
+			if source.EngineType != engineType || source.Model3D == nil || source.Model3D.Format != "max" {
+				t.Fatalf("lost authoritative source facts: %#v", source)
 			}
 		})
 	}
