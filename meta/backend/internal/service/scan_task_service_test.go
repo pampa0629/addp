@@ -88,7 +88,7 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	repo := NewScanService(db, engineSvc)
 	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	result, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7)
+	result, err := execSvc.CreateUnscannedRuns(withMetaTestUserOrigin(context.Background(), tenantID, 7), tenantID, 7)
 	if err != nil {
 		t.Fatalf("CreateUnscannedRuns() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	repo := NewScanService(db, engineSvc)
 	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, &models.ScanRequest{
+	run, err := execSvc.CreateManualRun(withMetaTestUserOrigin(context.Background(), tenantID, 7), tenantID, 7, &models.ScanRequest{
 		EngineID:    9,
 		NodeID:      bucket.ID,
 		ScanDepth:   "deep",
@@ -233,7 +233,7 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 	}
 
 	execSvc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, &models.ScanRequest{
+	run, err := execSvc.CreateManualRun(withMetaTestUserOrigin(context.Background(), tenantID, 7), tenantID, 7, &models.ScanRequest{
 		EngineID: 9,
 		ItemID:   item.ID,
 		Source:   commonExecution.ModuleManager,
@@ -693,7 +693,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 		{EngineID: 9, ItemID: item.ID, HasHeader: &headerless, ScanDepth: "basic"},
 		{EngineID: 9, CatalogPaths: []string{"bucket"}, HasHeader: &headerless, ScanDepth: "deep"},
 	} {
-		if _, err := svc.CreateManualRun(t.Context(), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
+		if _, err := svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 			t.Fatalf("invalid request %#v: %v", req, err)
 		}
 	}
@@ -704,7 +704,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 	if count != 0 {
 		t.Fatal("invalid encoding created an execution")
 	}
-	run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GBK ", HasHeader: &headerless, ScanDepth: "deep"})
+	run, err := svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GBK ", HasHeader: &headerless, ScanDepth: "deep"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -725,7 +725,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 	if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &headerless, ScanDepth: "deep"})
+	_, err = svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &headerless, ScanDepth: "deep"})
 	if !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 		t.Fatalf("JSON encoding accepted: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestManualItemHeaderModeCanBeDeclaredWithoutEncoding(t *testing.T) {
 			t.Fatal(err)
 		}
 		svc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-		run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &header, ScanDepth: "deep"})
+		run, err := svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &header, ScanDepth: "deep"})
 		if err != nil {
 			t.Fatal(err)
 		}

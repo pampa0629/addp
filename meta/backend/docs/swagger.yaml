@@ -669,6 +669,18 @@ definitions:
       target_locator:
         type: string
     type: object
+  github_com_addp_meta_internal_models.ResourceTreeRefreshEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.ResourceTreeRefreshResponse'
+    type: object
+  github_com_addp_meta_internal_models.ResourceTreeRefreshResponse:
+    properties:
+      locator:
+        type: string
+      run:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse'
+    type: object
   github_com_addp_meta_internal_models.ResourceTreeSearchResponse:
     properties:
       keyword:
@@ -1702,6 +1714,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 缺少当前用户来源 | Current User origin is required
+          schema:
+            additionalProperties: true
+            type: object
         "409":
           description: '同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active'
           schema:
@@ -2309,9 +2326,9 @@ paths:
       - meta.catalog.read
   /resource-tree/{engine_id}/refresh:
     post:
-      description: 按 node locator 提交一次后台基础扫描，重新发现 Meta 资源树中的 node 和 item | Submit
-        a background basic scan by node locator to rediscover Meta resource tree nodes
-        and items
+      description: 按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据
+        | Submit a background basic scan by node locator; run is a safe scan observation
+        without config, arbitrary raw metadata, authorization or lease credentials
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -2327,10 +2344,9 @@ paths:
       - application/json
       responses:
         "202":
-          description: 已提交的刷新运行 | Submitted refresh run
+          description: 已提交的安全刷新运行 | Submitted safe refresh run
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ResourceTreeRefreshEnvelope'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -3031,6 +3047,11 @@ paths:
             $ref: '#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse'
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 缺少当前用户来源 | Current User origin is required
           schema:
             additionalProperties: true
             type: object

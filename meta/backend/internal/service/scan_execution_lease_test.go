@@ -78,11 +78,11 @@ func TestCreateTaskRunRejectsSecondActiveExecution(t *testing.T) {
 	}
 
 	service := NewScanExecutionService(db, nil, nil, nil)
-	first, err := service.CreateTaskManualRun(context.Background(), task, 1)
+	first, err := service.CreateTaskManualRun(withMetaTestUserOrigin(context.Background(), task.TenantID, 1), task, 1)
 	if err != nil || first == nil {
 		t.Fatalf("first execution = %#v, %v", first, err)
 	}
-	second, err := service.CreateTaskManualRun(context.Background(), task, 1)
+	second, err := service.CreateTaskManualRun(withMetaTestUserOrigin(context.Background(), task.TenantID, 1), task, 1)
 	if !errors.Is(err, commonapi.ErrConflict) || second != nil {
 		t.Fatalf("second execution = %#v, %v; want conflict", second, err)
 	}

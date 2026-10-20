@@ -55,6 +55,14 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 	} else if userID == 0 && req.SchemaChangeSource == nil {
 		return nil, commonAPI.ErrForbidden
 	}
+	var userOrigin *commonExecution.TaskExecution
+	if provenance == nil && req.ParentExecutionID == "" && req.SchemaChangeSource == nil {
+		var err error
+		userOrigin, err = verifiedScanUserOrigin(ctx, tenantID, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	scope, err := s.scanService.ResolveScanScope(tenantID, scanflow.Options{
 		EngineID:     req.EngineID,
 		CatalogPaths: req.CatalogPaths,
@@ -109,6 +117,11 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 		scope.Source,
 		time.Now(),
 	)
+	if userOrigin != nil {
+		if err := commonExecution.CopyActorOrigin(execution, userOrigin); err != nil {
+			return nil, err
+		}
+	}
 
 	if req.Encoding != "" {
 		execution.ExecutionConfig["encoding"] = req.Encoding
@@ -230,6 +243,13 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 	if err != nil {
 		return nil, err
 	}
+	var userOrigin *commonExecution.TaskExecution
+	if normalizedTriggerType == commonExecution.TriggerTypeManual && parentExecutionID == nil {
+		userOrigin, err = verifiedScanUserOrigin(ctx, task.TenantID, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 	var execution *commonExecution.TaskExecution
 
@@ -248,6 +268,11 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			return fmt.Errorf("%w: meta scan task %d already has an active execution", commonAPI.ErrConflict, current.ID)
 		}
 		execution = scantask.NewTaskExecution(&current, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
+		if userOrigin != nil {
+			if err := commonExecution.CopyActorOrigin(execution, userOrigin); err != nil {
+				return err
+			}
+		}
 		if execution.ParentExecutionID != nil {
 			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
 				return err

@@ -112,7 +112,7 @@ func TestResourceTreeRefreshHandlerRejectsItemLocator(t *testing.T) {
 }
 
 func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
-	router, _, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	router, db, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()
 
 	resp := httptest.NewRecorder()
@@ -136,14 +136,42 @@ func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
 	if body.Data.Run == nil || body.Data.Run.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("run = %#v, want pending run", body.Data.Run)
 	}
-	if got := jsonMapStringSliceForAPITest(body.Data.Run.ExecutionConfig, "catalog_paths"); len(got) != 1 || got[0] != "manager" {
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", body.Data.Run.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := jsonMapStringSliceForAPITest(stored.ExecutionConfig, "catalog_paths"); len(got) != 1 || got[0] != "manager" {
 		t.Fatalf("run catalog_paths = %#v, want [manager]", got)
 	}
-	if body.Data.Run.ExecutionConfig["scan_depth"] != "basic" || body.Data.Run.ExecutionConfig["force"] != true {
-		t.Fatalf("run scan options = %#v, want basic + force", body.Data.Run.ExecutionConfig)
+	if stored.ExecutionConfig["scan_depth"] != "basic" || stored.ExecutionConfig["force"] != true || body.Data.Run.ScanContext.ScanDepth != "basic" {
+		t.Fatalf("run scan options = %#v, want basic + force", stored.ExecutionConfig)
 	}
 	if body.Data.Run.Source != commonExecution.ModuleMeta {
 		t.Fatalf("run source = %q, want meta", body.Data.Run.Source)
+	}
+	if stored.TriggeredBy == nil || *stored.TriggeredBy != 3 || stored.ActorPrincipalID == nil || *stored.ActorPrincipalID != 3 ||
+		stored.ActorTenantMembershipID == nil || stored.IssuedAuthorizationVersion == nil {
+		t.Fatal("node refresh did not freeze the authenticated human source")
+	}
+	var public struct {
+		Data struct {
+			Run map[string]json.RawMessage `json:"run"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &public); err != nil {
+		t.Fatal(err)
+	}
+	var diagnostics map[string]json.RawMessage
+	if err := json.Unmarshal(public.Data.Run["metadata"], &diagnostics); err != nil {
+		t.Fatal(err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatal("new refresh exposed unexpected diagnostic metadata")
+	}
+	for _, private := range []string{"execution_config", "actor_principal_id", "actor_tenant_membership_id", "issued_authorization_version", "execution_authorization_id", "authorization_expires_at", "lease_token", "lease_owner"} {
+		if _, exists := public.Data.Run[private]; exists {
+			t.Fatalf("refresh response leaked private field %q", private)
+		}
 	}
 }
 

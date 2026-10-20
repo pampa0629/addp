@@ -197,8 +197,12 @@ type ResourceTreeSearchResponse struct {
 }
 
 type ResourceTreeRefreshResponse struct {
-	Locator string                         `json:"locator"`
-	Run     *commonExecution.TaskExecution `json:"run"`
+	Locator string                 `json:"locator"`
+	Run     *ScanExecutionResponse `json:"run"`
+}
+
+type ResourceTreeRefreshEnvelope struct {
+	Data ResourceTreeRefreshResponse `json:"data"`
 }
 
 // MetaNodeLite 元数据节点简化模型（用于返回给 Manager）

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	metai18n "github.com/addp/meta/i18n"
@@ -65,6 +66,10 @@ func validateManualScanRequestTriggerType(triggerType string) error {
 
 // handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码
 func (h *Handler) handleServiceError(c *gin.Context, err error) {
+	if errors.Is(err, commonapi.ErrForbidden) {
+		commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+		return
+	}
 	if errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, metai18n.MsgScanDelimitedOptionsInvalid), "error_code": "scan_delimited_options_invalid"})
 		return

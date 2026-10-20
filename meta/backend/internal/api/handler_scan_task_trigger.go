@@ -19,6 +19,7 @@ import (
 // @Param task_id path int true "任务ID | Task ID"
 // @Success 200 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "缺少当前用户来源 | Current User origin is required"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -47,9 +48,9 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	run, err := h.executionService.CreateTaskManualRun(c.Request.Context(), task, userID)
+	run, err := h.executionService.CreateTaskManualRun(scanUserOriginContext(c), task, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.handleServiceError(c, err)
 		return
 	}
 

@@ -25,6 +25,7 @@ import (
 // @Success 200 {object} models.ScanResponse "刷新结果 | Refresh result"
 // @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "缺少当前用户来源 | Current User origin is required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.scan_task.execute"]
@@ -55,7 +56,7 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 		req.ScanDepth = "deep"
 	}
 
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
+	run, err := h.executionService.CreateManualRun(scanUserOriginContext(c), tenantID, userID, &req)
 	if err != nil {
 		h.handleServiceError(c, err)
 		return

@@ -187,12 +187,12 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 
 // RefreshResourceTreeNode 刷新标准资源树节点
 // @Summary 刷新标准资源树节点 | Refresh resource tree node
-// @Description 按 node locator 提交一次后台基础扫描，重新发现 Meta 资源树中的 node 和 item | Submit a background basic scan by node locator to rediscover Meta resource tree nodes and items
+// @Description 按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by node locator; run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials
 // @Tags Meta Resource Tree
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
 // @Param locator query string true "node ResourceLocator URI"
-// @Success 202 {object} map[string]interface{} "已提交的刷新运行 | Submitted refresh run"
+// @Success 202 {object} models.ResourceTreeRefreshEnvelope "已提交的安全刷新运行 | Submitted safe refresh run"
 // @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
@@ -236,16 +236,16 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 		return
 	}
 
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), refreshResourceTreeScanRequest(loc))
+	run, err := h.executionService.CreateManualRun(scanUserOriginContext(c), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), refreshResourceTreeScanRequest(loc))
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{
-		"data": models.ResourceTreeRefreshResponse{
+	c.JSON(http.StatusAccepted, models.ResourceTreeRefreshEnvelope{
+		Data: models.ResourceTreeRefreshResponse{
 			Locator: locatorURI,
-			Run:     run,
+			Run:     models.NewScanExecutionResponse(run),
 		},
 	})
 }

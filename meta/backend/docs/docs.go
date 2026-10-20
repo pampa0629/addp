@@ -689,6 +689,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "缺少当前用户来源 | Current User origin is required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "409": {
                         "description": "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active",
                         "schema": {
@@ -1501,7 +1508,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 node locator 提交一次后台基础扫描，重新发现 Meta 资源树中的 node 和 item | Submit a background basic scan by node locator to rediscover Meta resource tree nodes and items",
+                "description": "按 node locator 提交一次后台基础扫描；run 为安全扫描观察，不包含配置、任意原始 metadata、授权或租约凭据 | Submit a background basic scan by node locator; run is a safe scan observation without config, arbitrary raw metadata, authorization or lease credentials",
                 "produces": [
                     "application/json"
                 ],
@@ -1527,10 +1534,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "202": {
-                        "description": "已提交的刷新运行 | Submitted refresh run",
+                        "description": "已提交的安全刷新运行 | Submitted safe refresh run",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ResourceTreeRefreshEnvelope"
                         }
                     },
                     "400": {
@@ -2662,6 +2668,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少当前用户来源 | Current User origin is required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3998,6 +4011,25 @@ const docTemplate = `{
                 },
                 "target_locator": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ResourceTreeRefreshEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.ResourceTreeRefreshResponse"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ResourceTreeRefreshResponse": {
+            "type": "object",
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "run": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
                 }
             }
         },

@@ -38,7 +38,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
-	result, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID)
+	result, err := h.executionService.CreateUnscannedRuns(scanUserOriginContext(c), tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -118,7 +118,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 			return
 		}
 	}
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
+	run, err := h.executionService.CreateManualRun(scanUserOriginContext(c), tenantID, userID, &req)
 	if err != nil {
 		if errors.Is(err, scanflow.ErrInvalidScope) {
 			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_request_invalid", "error": commoni18n.T(c, metai18n.MsgScanRequestInvalid)})
