@@ -26,12 +26,12 @@
           v-if="selectedIds.length > 0 && authStore.hasPermission('graph.review.approve')"
           type="success"
           @click="handleBatchApprove"
-        >{{ t('graph.review.batchApprove') }} ({{ selectedIds.length }})</el-button>
+        >{{ t('graph.review.batchApprove', { count: selectedIds.length }) }}</el-button>
         <el-button
           v-if="selectedIds.length > 0 && authStore.hasPermission('graph.review.reject')"
           type="danger"
           @click="handleBatchReject"
-        >{{ t('graph.review.batchReject') }} ({{ selectedIds.length }})</el-button>
+        >{{ t('graph.review.batchReject', { count: selectedIds.length }) }}</el-button>
       </div>
     </div>
 

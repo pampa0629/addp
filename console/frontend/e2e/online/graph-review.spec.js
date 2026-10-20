@@ -75,7 +75,10 @@ test('ordinary reviewer uses the real queue and observes native batch partial fa
     await expect(row('modify')).toHaveCount(0)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-review-modified-console.png') })
     await action('review-link', '通过', 'approve')
-    for (const source of ['batch-before', 'bad-native', 'batch-after']) await row(source).getByRole('checkbox').check()
+    for (const source of ['batch-before', 'bad-native', 'batch-after']) {
+      await row(source).locator('.el-checkbox').click()
+      await expect(row(source).getByRole('checkbox')).toBeChecked()
+    }
     const batch = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === root + '/batch/approve')
     const refreshed = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === root)
     batchStage = true
