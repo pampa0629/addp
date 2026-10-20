@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -447,11 +448,15 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 		executionID := executionID
 		go func() {
 			<-start
+			execution := newManagerRepositoryTestExecution(executionID, int(tenantID), commonExecution.TaskTypeModel3DGLBGeneration, createdAt)
+			actorContext := commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext(fmt.Sprint(tenantID), "31", nil))
+			if err := commonExecution.ApplyUserOrigin(actorContext, execution); err != nil {
+				results <- err
+				return
+			}
 			_, claimErr := repo.ClaimExecution(
 				context.Background(), task.ID, tenantID,
-				newManagerRepositoryTestExecution(
-					executionID, int(tenantID), commonExecution.TaskTypeModel3DGLBGeneration, createdAt,
-				),
+				execution,
 				false,
 			)
 			results <- claimErr
@@ -484,6 +489,9 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 	}
 	if len(executions) != 1 || executions[0].Status != commonExecution.ExecutionStatusPending || executions[0].StartedAt != nil {
 		t.Fatalf("claimed executions = %#v", executions)
+	}
+	if executions[0].TriggeredBy == nil || *executions[0].TriggeredBy != 31 || executions[0].ActorPrincipalID == nil || *executions[0].ActorPrincipalID != 31 || executions[0].ActorTenantMembershipID == nil || executions[0].IssuedAuthorizationVersion == nil || executions[0].ExecutionAuthorizationID != nil {
+		t.Fatalf("GLB actor origin was lost or treated as source authorization: %#v", executions[0])
 	}
 	startedAt := createdAt.Add(time.Second)
 	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {

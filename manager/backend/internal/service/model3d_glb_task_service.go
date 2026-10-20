@@ -205,6 +205,14 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	// Actor inheritance cannot grant GLB source access. The first authorization
+	// scope supports current User manual roots only, across every entry point.
+	if parentExecutionID != nil || normalizedSource != commonExecution.ModuleManager || normalizedTriggerType != commonExecution.TriggerTypeManual {
+		return "", commonAPI.ErrForbidden
+	}
+	if err := commonExecution.ApplyUserOrigin(ctx, exec); err != nil {
+		return "", err
+	}
 	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {

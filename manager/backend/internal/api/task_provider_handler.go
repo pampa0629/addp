@@ -650,6 +650,7 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 // ProviderTaskExecute 执行 TaskProvider Manager 任务。
 // @Summary 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
 // @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time.
+// @Description model_3d_glb_generation 首期仅支持当前 User 手工根执行，本入口拒绝且不创建子执行。| model_3d_glb_generation currently requires a current User manual root; this entry rejects it without creating a child execution.
 // @Tags TaskProvider
 // @Accept json
 // @Produce json
@@ -658,6 +659,7 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 // @Param body body TaskExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} TaskExecuteResponse
 // @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{} "当前任务不支持此执行来源 | Execution origin is not supported for this task"
 // @Failure 404 {object} map[string]interface{}
 // @Failure 409 {object} map[string]interface{}
 // @x-addp-auth-mode "permission"
@@ -1636,6 +1638,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // TaskExecute POST /api/v1/manager/tasks/:task_type/:id/execute
 // @Summary 执行任务 | Execute task
 // @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.
+// @Description model_3d_glb_generation 仅接受当前 User 手工根执行，并固化认证主体来源；scheduled 请求返回 403 且不创建执行。| model_3d_glb_generation accepts current User manual roots and freezes verified actor origin; scheduled requests return 403 without creating an execution.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -1644,6 +1647,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "缺少可信发起人或执行来源不支持 | Verified actor required or unsupported execution origin"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
 // @x-addp-auth-mode "permission"
@@ -1732,6 +1736,10 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeModel3DGLBGeneration:
+		if !taskProvider {
+			facts, _ := commonauth.AuthContextFromGin(c)
+			ctx = commonExecution.WithUserOrigin(ctx, facts)
+		}
 		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)

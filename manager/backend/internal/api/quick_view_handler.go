@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -265,8 +266,19 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		model3DOptions["texture_files"] = textures
 	}
 
+	ctx := c.Request.Context()
+	if action == service.QuickViewActionGenerateModel3DGLB {
+		facts, _ := commonauth.AuthContextFromGin(c)
+		ctx = commonExecution.WithUserOrigin(ctx, facts)
+		// Validate before creating or reusing a task definition. Execute freezes
+		// the same origin again on the actual execution before persistence.
+		if err := commonExecution.ApplyUserOrigin(ctx, &commonExecution.TaskExecution{TenantID: int(tenantIDValue(c))}); err != nil {
+			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
+	}
 	tenantID := tenantIDFromContext(c)
-	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
+	capability, err := h.quickViewCapabilityForLocator(ctx, tenantID, locator)
 	if err != nil {
 		quickViewLocatorError(c, err)
 		return
@@ -286,12 +298,16 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, "source_unit and texture_files are only supported for MAX GLB generation")
 		return
 	}
-	taskType, taskID, err := h.createQuickViewTask(c.Request.Context(), userID, action, capability, source, model3DOptions)
+	taskType, taskID, err := h.createQuickViewTask(ctx, userID, action, capability, source, model3DOptions)
 	var executionID string
 	if err == nil {
-		executionID, err = h.executeQuickViewTask(c.Request.Context(), taskType, taskID, capability.TenantID, overwriteExistingResult)
+		executionID, err = h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult)
 	}
 	if err != nil {
+		if errors.Is(err, commonapi.ErrForbidden) {
+			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
 		if errors.Is(err, service.ErrExistingResultActionRequired) {
 			c.JSON(http.StatusConflict, gin.H{
 				"error": commoni18n.T(c, manageri18n.MsgExistingResultActionRequired),

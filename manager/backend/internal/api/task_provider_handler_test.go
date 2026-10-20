@@ -913,7 +913,7 @@ func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testi
 	assertStandardErrorResponse(t, second.Body.Bytes())
 }
 
-func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing.T) {
+func TestTaskProviderModel3DGLBRejectsEvenVerifiedParent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)
 	glbRepo := repository.NewModel3DGLBRepository(db)
@@ -942,22 +942,57 @@ func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing
 	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
 	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
 	first := executeTaskProviderRequest(t, router, path, body)
-	if first.Code != http.StatusAccepted {
-		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
+	if first.Code != http.StatusForbidden {
+		t.Fatalf("provider status=%d body=%s", first.Code, first.Body.String())
 	}
-	var accepted TaskExecuteResponse
-	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
-		t.Fatalf("decode first execute response: %v", err)
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("module = ?", commonExecution.ModuleManager).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("children=%d err=%v", count, err)
 	}
-	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
-		t.Fatalf("first execute response = %#v, want pending execution", accepted)
+	stored, err := glbRepo.GetTask(context.Background(), task.ID, 1)
+	if err != nil || stored.LastExecutionID != nil || stored.LastExecutionStatus != nil {
+		t.Fatalf("task changed: %#v %v", stored, err)
 	}
+	assertStandardErrorResponse(t, first.Body.Bytes())
+}
 
-	second := executeTaskProviderRequest(t, router, path, body)
-	if second.Code != http.StatusConflict {
-		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
+func TestUserTaskExecuteModel3DGLBFreezesCurrentActor(t *testing.T) {
+	for _, authenticated := range []bool{false, true} {
+		t.Run(strconv.FormatBool(authenticated), func(t *testing.T) {
+			db := newTaskProviderHandlerTestDB(t)
+			repo := repository.NewModel3DGLBRepository(db)
+			creator := uint(99)
+			task := &models.Model3DGLBTask{TenantID: 7, Name: "current actor", Enabled: true, CreatedBy: &creator, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_fingerprint": "actor-http"}}}
+			if err := repo.CreateTask(context.Background(), task); err != nil {
+				t.Fatal(err)
+			}
+			handler := NewTaskProviderHandler(nil, nil, nil, nil, nil)
+			handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(repo))
+			router := gin.New()
+			if authenticated {
+				router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
+			}
+			router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+			response := executeTaskProviderRequest(t, router, "/tasks/"+commonExecution.TaskTypeModel3DGLBGeneration+"/"+strconv.FormatUint(uint64(task.ID), 10)+"/execute", "{}")
+			var rows []commonExecution.TaskExecution
+			if err := db.Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			if !authenticated {
+				if response.Code != http.StatusForbidden || len(rows) != 0 {
+					t.Fatalf("status=%d rows=%d body=%s", response.Code, len(rows), response.Body.String())
+				}
+				return
+			}
+			if response.Code != http.StatusAccepted || len(rows) != 1 {
+				t.Fatalf("status=%d rows=%d body=%s", response.Code, len(rows), response.Body.String())
+			}
+			row := rows[0]
+			if row.TriggeredBy == nil || *row.TriggeredBy != 31 || row.ActorPrincipalID == nil || *row.ActorPrincipalID != 31 || row.ActorTenantMembershipID == nil || *row.ActorTenantMembershipID != 1 || row.IssuedAuthorizationVersion == nil || *row.IssuedAuthorizationVersion != 1 || row.ExecutionAuthorizationID != nil {
+				t.Fatalf("wrong origin: %#v", row)
+			}
+		})
 	}
-	assertStandardErrorResponse(t, second.Body.Bytes())
 }
 
 func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t *testing.T) {

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization/authtest"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	commonSpatial "github.com/addp/common/spatial"
@@ -20,6 +22,64 @@ import (
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	if err := db.Exec("CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, item_fingerprint TEXT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ALTER TABLE manager.vector_tile_cache ADD COLUMN item_fingerprint TEXT").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ALTER TABLE manager.vector_materialized_view ADD COLUMN item_fingerprint TEXT").Error; err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected source operation: %s", r.Method)
+		}
+		switch r.URL.Path {
+		case "/api/v1/system/engines/26":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 26, "tenant_id": 7, "engine_type": "nfs", "lifecycle_state": "active", "connection_status": "online"})
+		case "/api/v1/meta/items/77":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 77, "engine_id": 26, "tenant_id": 7, "item_type": "file", "name": "building.ifc", "full_name": "models/building.ifc", "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "format": "ifc", "layout": "single"}, "storage": map[string]interface{}{"total_size": 1024}}})
+		default:
+			t.Errorf("unexpected owner request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+	token := commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "facts-only-test", nil })
+	resolver := preview.NewPreviewResolver(preview.NewPreviewRegistry(), commonClient.NewSystemClient(server.URL, token), commonClient.NewMetaClient(server.URL, token))
+	handler := &QuickViewHandler{service: service.NewQuickViewService(db, nil), previewResolver: resolver, model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db))}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
+	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
+	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.ifc?type=file&item_id=77","action":"generate_model_3d_glb"}`)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var rows []commonExecution.TaskExecution
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ActorPrincipalID == nil || *rows[0].ActorPrincipalID != 31 || rows[0].ActorTenantMembershipID == nil || rows[0].IssuedAuthorizationVersion == nil || rows[0].TriggeredBy == nil || *rows[0].TriggeredBy != 31 || rows[0].ExecutionAuthorizationID != nil {
+		t.Fatalf("unexpected origin: %#v", rows)
+	}
+}
+
+func TestQuickViewModel3DGLBActionRejectsMissingActorBeforeOwnerWork(t *testing.T) {
+	// No resolver, repository or executor is installed: reaching any owner work
+	// before rejecting the missing origin would fail the test.
+	handler := &QuickViewHandler{}
+	router := gin.New()
+	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
+	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.ifc?type=file&item_id=77","action":"generate_model_3d_glb"}`)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	assertStandardErrorResponse(t, response.Body.Bytes())
+}
 
 func TestExecuteQuickViewActionRejectsLegacyAndInvalidExistingResultAction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -145,7 +205,8 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 		Model3D:  &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 1024},
 	}
 
-	if _, _, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, false); !errors.Is(err, service.ErrExistingResultActionRequired) {
+	ctx := commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "31", nil))
+	if _, _, err := handler.createAndExecuteModel3DGLBTask(ctx, 1, capability, source, false); !errors.Is(err, service.ErrExistingResultActionRequired) {
 		t.Fatalf("unconfirmed quick-view action error = %v", err)
 	}
 	var count int64
@@ -156,7 +217,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 		t.Fatalf("unconfirmed quick-view action created %d executions", count)
 	}
 
-	reusedTaskID, executionID, err := handler.createAndExecuteModel3DGLBTask(context.Background(), 1, capability, source, true)
+	reusedTaskID, executionID, err := handler.createAndExecuteModel3DGLBTask(ctx, 1, capability, source, true)
 	if err != nil {
 		t.Fatalf("confirmed quick-view action: %v", err)
 	}

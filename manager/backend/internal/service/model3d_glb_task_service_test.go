@@ -2,16 +2,140 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
+	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestModel3DGLBExecuteRequiresVerifiedUserOrigin(t *testing.T) {
+	for _, name := range []string{"missing", "other tenant", "service", "incomplete", "spoofed source", "scheduled", "valid"} {
+		t.Run(name, func(t *testing.T) {
+			db := newModel3DGLBTaskServiceTestDB(t)
+			if err := executiontest.EnsureSQLiteStore(db); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("CREATE TABLE manager.model_3d_glb (id INTEGER PRIMARY KEY, tenant_id INTEGER, task_id INTEGER, status TEXT, deleted_at DATETIME)").Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := repository.NewModel3DGLBRepository(db)
+			creator := uint(99)
+			task := &models.Model3DGLBTask{TenantID: 7, Name: name, Enabled: true, CreatedBy: &creator, Config: model3DGLBTaskTestConfig(uuid.NewString(), "building.ifc")}
+			if err := repo.CreateTask(context.Background(), task); err != nil {
+				t.Fatal(err)
+			}
+			facts := authtest.NewTenantUserAuthContext("7", "31", nil)
+			ctx := context.Background()
+			source := commonExecution.ModuleManager
+			trigger := commonExecution.TriggerTypeManual
+			switch name {
+			case "other tenant":
+				facts = authtest.NewTenantUserAuthContext("8", "31", nil)
+			case "service":
+				facts.Principal.Type = "service_principal"
+			case "incomplete":
+				facts.Context.TenantMembershipID = nil
+			case "spoofed source":
+				source = commonExecution.ModuleOrchestrator
+			case "scheduled":
+				trigger = commonExecution.TriggerTypeScheduled
+			}
+			if name != "missing" {
+				ctx = commonExecution.WithUserOrigin(ctx, facts)
+			}
+			id, err := NewModel3DGLBTaskService(repo).Execute(ctx, task.ID, 7, trigger, source, nil, false)
+			if name != "valid" {
+				if !errors.Is(err, commonAPI.ErrForbidden) || id != "" {
+					t.Fatalf("id=%q err=%v", id, err)
+				}
+				var count int64
+				if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("executions=%d err=%v", count, err)
+				}
+				stored, err := repo.GetTask(context.Background(), task.ID, 7)
+				if err != nil || stored.LastExecutionID != nil || stored.LastExecutionStatus != nil {
+					t.Fatalf("rejected origin changed task: %#v %v", stored, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			row, err := commonExecution.NewTaskExecutionRepository(db).GetByExecutionID(ctx, id, 7)
+			if err != nil || row.TriggeredBy == nil || *row.TriggeredBy != 31 || row.ActorPrincipalID == nil || *row.ActorPrincipalID != 31 || row.ActorTenantMembershipID == nil || row.IssuedAuthorizationVersion == nil {
+				t.Fatalf("origin=%#v err=%v", row, err)
+			}
+			if row.ExecutionAuthorizationID != nil {
+				t.Fatal("origin was treated as source authorization")
+			}
+		})
+	}
+}
+
+func TestModel3DGLBExecuteRejectsOrchestratorEvenWithVerifiedParent(t *testing.T) {
+	for _, name := range []string{"valid", "missing", "other tenant", "stopped", "incomplete", "wrong source"} {
+		t.Run(name, func(t *testing.T) {
+			db := newModel3DGLBTaskServiceTestDB(t)
+			if err := executiontest.EnsureSQLiteStore(db); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("CREATE TABLE manager.model_3d_glb (id INTEGER PRIMARY KEY, tenant_id INTEGER, task_id INTEGER, status TEXT, deleted_at DATETIME)").Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := repository.NewModel3DGLBRepository(db)
+			task := &models.Model3DGLBTask{TenantID: 7, Name: name, Enabled: true, Config: model3DGLBTaskTestConfig(uuid.NewString(), "building.ifc")}
+			if err := repo.CreateTask(context.Background(), task); err != nil {
+				t.Fatal(err)
+			}
+			id := uuid.NewString()
+			parent := &commonExecution.TaskExecution{ExecutionID: id, TenantID: 7, Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning, TriggerType: "manual", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+			ctx := commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "31", nil))
+			if err := commonExecution.ApplyUserOrigin(ctx, parent); err != nil {
+				t.Fatal(err)
+			}
+			source := commonExecution.ModuleOrchestrator
+			switch name {
+			case "other tenant":
+				parent.TenantID = 8
+			case "stopped":
+				parent.Status = commonExecution.ExecutionStatusSuccess
+			case "incomplete":
+				parent.ActorTenantMembershipID = nil
+			case "wrong source":
+				source = commonExecution.ModuleManager
+			}
+			if name != "missing" {
+				if err := db.Create(parent).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			childID, err := NewModel3DGLBTaskService(repo).Execute(context.Background(), task.ID, 7, "manual", source, &id, false)
+			var count int64
+			if e := db.Model(&commonExecution.TaskExecution{}).Where("module = ?", commonExecution.ModuleManager).Count(&count).Error; e != nil {
+				t.Fatal(e)
+			}
+			if !errors.Is(err, commonAPI.ErrForbidden) || childID != "" || count != 0 {
+				t.Fatalf("id=%q count=%d err=%v", childID, count, err)
+			}
+			stored, err := repo.GetTask(context.Background(), task.ID, 7)
+			if err != nil || stored.LastExecutionID != nil || stored.LastExecutionStatus != nil {
+				t.Fatalf("rejected source changed task: %#v %v", stored, err)
+			}
+		})
+	}
+}
 
 func TestModel3DGLBTaskNormalizesSingleOSGBConfig(t *testing.T) {
 	config := commonModels.JSONMap{
