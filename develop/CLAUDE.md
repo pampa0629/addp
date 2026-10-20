@@ -2,6 +2,8 @@
 
 查询编辑器的 Monaco 配色读取已应用的共享主题 CSS 变量，经浏览器解析为十六进制后，通过 `defineTheme` 原位刷新背景、行号、选择区及补全/悬浮控件；不能把 Element Plus 的 RGB 变量直接交给仅接受十六进制的主题接口。不接受固定主题 prop，不复制 Console 主题协议或系统偏好监听。切换四主题或系统深浅偏好不得替换模型、查询内容、光标、视口及撤销历史，组件卸载时清理主题观察器。回归由现有 `make test-develop-frontend` 和 Develop Frontend CI 自动覆盖。
 
+正式部署 `graph-protection` 的 Develop 四主题验收还必须检查真实编辑区、行号、补全菜单及其选中行配色，并确认打开/关闭补全后查询文本保留。已有浏览器报告增加必需事实 `theme_editor_colors=true` 和 `theme_completion_colors=true`；缺失、非布尔或失败值均拒绝，不以旧图结果画布配色证据代替编辑器验收。复用相同普通 User、合成图、正式构建/Nginx 和清理范围，未增加业务写入、账号或验收入口。最小确定性入口为 `make test-graph-online-runner`，真实结果由同一 Neo4j Hosted T4 单独记录。
+
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `develop.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=develop`；Common 变更按 `make test-changed` 扩散验证。
 
 查询参数的可选默认值必须响应属性的新增和删除，保留空串、0、false 与未设置的区别；字段存在性检查不能短路掉 Vue 对缺失 `default` 键的读取跟踪。`make test-develop-frontend` 的实际 Vue 响应式回归和真实 QueryEditor 浏览器用例共同覆盖从 SQL 提取参数后的默认值开关。

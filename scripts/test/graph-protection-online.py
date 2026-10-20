@@ -234,7 +234,9 @@ def run_develop_browser(report, engine_id, tenant_id, phase):
                     graph_nodes=3, graph_relationships=2, graph_rows=2, graph_canvas=True,
                     browser_errors=0, failed_business_responses=0, unexpected_writes=0)
     if phase == "unmanaged":
-        expected.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+        expected.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True,
+                        theme_editor_colors=True, theme_completion_colors=True,
+                        typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
     else:
         expected.update(protection_required=True, protected_result_absent=True, protection_stage="preparation", control_readable=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401", "execution_ids"} and

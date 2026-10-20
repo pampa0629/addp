@@ -53,18 +53,24 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                                graph_canvas=True, browser_errors=0, failed_business_responses=0, unexpected_writes=0,
                                anonymous_refresh_401=1, execution_ids=['71a09155-b1ec-4ae4-af2f-6689237a62f9', 'e2429cf6-a201-4ba2-8a0b-cfeff00365ca'])
                 names = ('graph', 'table', *('theme-' + mode for mode in ('light', 'dark', 'blue', 'purple'))) if phase == 'unmanaged' else ('protected', 'control')
-                if phase == 'unmanaged': payload.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+                if phase == 'unmanaged': payload.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True,
+                    theme_editor_colors=True, theme_completion_colors=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
                 else: payload.update(protection_required=True, protected_result_absent=True, protection_stage='preparation', control_readable=True)
-                payload.update(mutation)
+                payload.update({key: value for key, value in mutation.items() if key != '_omit'})
+                for key in mutation.get('_omit', []): payload.pop(key, None)
                 Path(kwargs['env']['ADDP_ONLINE_DEVELOP_GRAPH_REPORT']).write_text(json.dumps(payload))
                 if screenshots:
                     for name in names: (artifacts / f'develop-graph-{name}-console.png').write_bytes(b'unit-test-screenshot')
                 return type('Process', (), {'returncode': 0})()
             for phase in ('unmanaged', 'protected'):
                 negative = {'typed_parameters': False} if phase == 'unmanaged' else {'protected_result_absent': False}
-                for mutation, screenshots in (({}, True), ({'principal_id': '4'}, True),
+                cases = [({}, True), ({'principal_id': '4'}, True),
                         ({'permissions': ['graph.graph.read']}, True), ({'browser_errors': 1}, True),
-                        (negative, True), ({'execution_ids': ['same', 'same']}, True), ({}, False)):
+                        (negative, True), ({'execution_ids': ['same', 'same']}, True), ({}, False)]
+                if phase == 'unmanaged':
+                    for key in ('theme_editor_colors', 'theme_completion_colors'):
+                        cases.extend([({'_omit': [key]}, True), ({key: False}, True), ({key: None}, True), ({key: 1}, True)])
+                for mutation, screenshots in cases:
                     report = {'identities': {'reader': {'principal_id': '4'}}}
                     for path in artifacts.glob('*.png'): path.unlink()
                     with self.subTest(phase=phase, mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \

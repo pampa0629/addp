@@ -14,6 +14,28 @@ const permissions = ['develop.task.read', 'develop.task.execute', 'develop.data_
 const graphQuery = 'MATCH (a:Person)-[r:Link]->(b:Person) RETURN a,r,b LIMIT 10'
 const textValue = "中文' RETURN 1 //"
 
+function editorHasThemeColors(element) {
+  const css = getComputedStyle(element)
+  const color = variable => {
+    const probe = document.createElement('span')
+    probe.style.color = css.getPropertyValue(variable).trim()
+    element.appendChild(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }
+  const lineNumber = element.querySelector('.line-numbers')
+  const widget = element.querySelector('.suggest-widget.visible')
+  const selected = widget?.querySelector('.monaco-list-row.focused')
+  return {
+    editor: getComputedStyle(element.querySelector('.monaco-editor-background')).backgroundColor === color('--addp-bg-primary') &&
+      getComputedStyle(element.querySelector('.margin')).backgroundColor === color('--addp-bg-primary') &&
+      getComputedStyle(lineNumber).color === color(lineNumber.classList.contains('active-line-number') ? '--addp-text-secondary' : '--addp-text-tertiary'),
+    completion: Boolean(widget && selected && getComputedStyle(widget).backgroundColor === color('--addp-bg-primary') &&
+      getComputedStyle(selected).backgroundColor === color('--el-color-primary-light-8'))
+  }
+}
+
 test('ordinary reader executes native Cypher through the real Develop workbench and Security boundary', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_DEVELOP_GRAPH_EXPECTATIONS'))
   expect(['unmanaged', 'protected']).toContain(expected.phase)
@@ -139,6 +161,8 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
   if (expected.phase === 'unmanaged') {
     await verifyGraph(await execute(graphQuery, 0), 'graph')
     const themes = ['light', 'dark', 'blue', 'purple']
+    const editor = frame.locator('.monaco-editor-container')
+    const queryText = await editor.locator('.view-lines').textContent()
     for (const [index, label] of ['浅色模式', '深色模式', '蓝色模式', '紫色模式'].entries()) {
       const mode = themes[index]
       await page.getByRole('button', { name: /^当前主题:/ }).click()
@@ -147,7 +171,15 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
         dark: element.classList.contains('dark'), blue: element.classList.contains('blue'), purple: element.classList.contains('purple')
       }))).toEqual({ dark: mode !== 'light', blue: mode === 'blue', purple: mode === 'purple' })
       await expect.poll(() => frame.locator('.graph-result-view .graph-canvas').evaluate(graphCanvasHasThemePixels)).toBe(true)
+      await editor.locator('.monaco-editor').click({ position: { x: 80, y: 18 } })
+      await page.keyboard.press('Home')
+      await page.keyboard.press('ArrowRight')
+      await frame.getByRole('button', { name: '显示补全', exact: true }).click()
+      await expect(frame.locator('.suggest-widget.visible')).toBeVisible()
+      await expect.poll(() => editor.evaluate(editorHasThemeColors)).toEqual({ editor: true, completion: true })
       await screenshot(`theme-${mode}`)
+      await page.keyboard.press('Escape')
+      await expect.poll(() => editor.locator('.view-lines').textContent()).toBe(queryText)
     }
     await frame.locator('.result-actions .el-radio-button').filter({ hasText: /^(表格|Table)$/ }).click()
     await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(2)
@@ -180,7 +212,8 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
     await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(1)
     await expect(resultTable).toContainText(textValue)
     await screenshot('table')
-    phaseEvidence = { theme_modes: themes, theme_canvas_pixels: true, typed_parameters: true, table_rows: 1, table_visible: true, graph_table_visible: true }
+    phaseEvidence = { theme_modes: themes, theme_canvas_pixels: true, theme_editor_colors: true, theme_completion_colors: true,
+      typed_parameters: true, table_rows: 1, table_visible: true, graph_table_visible: true }
   } else {
     const denied = await execute(graphQuery, 0)
     expect(denied.status).toBe('failed')
