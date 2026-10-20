@@ -654,7 +654,7 @@ Graph 中的“工作关系示例（Neo4j）”和“工作关系示例（Falkor
 
 先在本机 `business/.env` 设置 `FTP_USER=business_reader`、至少12字符的 `FTP_PASSWORD`，默认 `FTP_SECURITY=explicit_tls`。需要明文协议时必须显式设置为 `plain`；默认不会因 TLS 失败而降级。控制端口 `127.0.0.1:2121`、被动端口 `127.0.0.1:50000–50009` 内外一致，冲突直接失败。证书和私钥位于忽略版本控制的 `.business-state/ftp/config/`，外层目录0700；容器仅挂载内层只读目录。脚本保留既有证书，默认本机证书覆盖 localhost／127.0.0.1；客户端须信任 `server.crt`，不能关闭校验。
 
-宿主机 `business/ftp/data/` 直接只读挂载到 `/srv/sftpgo/data/`，也是账号虚拟 `/`；例如宿主机 `data/examples/` 对应 Manager 的 `/examples/`。账号数据库单独保留在 `ftp_state` 卷，文件不再复制到另一个数据卷。`ftp/seed.py` 在宿主机 `data/examples/` 只补缺失的客户 CSV、订单 JSON、客户 Parquet，各3行，已有普通文件不覆盖；Git 忽略整个 data。向 data 内新增目录或文件后无需重启 FTP，Meta 扫描对应范围即可发现；其同级目录不属于共享根。Linux 下目录和文件需允许服务运行 UID 读取（常用目录0755、文件0644），初始化器不会递归更改用户文件权限。旧文件卷由人工一次性备份核对后迁移，标准启动不自动合并旧卷或旧种子目录。
+宿主机 `business/ftp/data/` 直接只读挂载到 `/srv/sftpgo/data/`，也是账号虚拟 `/`；例如宿主机 `data/examples/` 对应 Manager 的 `/examples/`。账号数据库单独保留在 `ftp_state` 卷，文件不再复制到另一个数据卷。`ftp/seed.py` 在宿主机 `data/examples/` 只补缺失的客户 CSV、订单 JSON、客户 Parquet，各3行，已有普通文件不覆盖；Git 忽略整个 data。向 data 内新增目录或文件后无需重启 FTP，Meta 扫描对应范围即可发现；其同级目录不属于共享根。Linux 下目录和文件需允许服务运行 UID 读取（常用目录0755、文件0644），初始化器不会递归更改用户文件权限。旧文件卷由人工一次性备份核对后迁移，保留文件内容和原修改时间，避免使既有读取索引失效；标准启动不自动合并旧卷或旧种子目录。
 
 唯一 `ftp/entrypoint.sh` 只检查可读根目录和账号状态后启动服务。账号变化或未受管理的既有数据库拒绝隐式初始化；启动不会轮换密码或删除数据。后续平台登记使用独立 `engine_type=ftp`、本机回环地址与只读账号；根固定为账号虚拟 `/`，不提供客户端 `root_path`；需要子目录隔离时由服务端配置独立账号与根目录，与 NFS 导出根的模型对齐。只拒绝 MLST 明确公布的链接／未知类型，不承诺识别服务端已解引用的链接。只读 `ftp` 插件现已加入 builtin；普通 User Hosted 页面验收使用独占夹具，个人环境登记须单独验收。Business 不调用 System API。
 
