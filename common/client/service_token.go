@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"net/url"
@@ -169,7 +170,7 @@ func (s *OAuthServiceTokenSource) token(ctx context.Context, cacheKey string, co
 	}
 	request.SetBasicAuth(s.clientID, s.clientSecret)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := s.httpClient.Do(request)
+	response, err := httptrace.Do(s.httpClient, request, s.tokenURL)
 	if err != nil {
 		return "", &ServiceTokenError{Code: "service_token_unavailable", Retryable: true}
 	}

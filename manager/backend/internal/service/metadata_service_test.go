@@ -637,7 +637,7 @@ func resolveStorageDownloadPlanForTest(t *testing.T, svc *MetadataService, resou
 	if err != nil {
 		return nil, err
 	}
-	item := svc.downloadMetaItem(resource.ID, displayPath, tenantID)
+	item := svc.downloadMetaItem(context.Background(), resource.ID, displayPath, tenantID)
 	return svc.resolveStorageDownloadPlan(t.Context(), resource.ID, resource.EngineType, displayPath, item, tenantID)
 }
 

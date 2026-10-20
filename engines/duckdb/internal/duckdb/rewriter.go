@@ -94,7 +94,7 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 		if !IsObjectTableEngine(engine.EngineType) {
 			continue
 		}
-		items, err := metaClient.ListEngineItems(engine.ID, "")
+		items, err := metaClient.ListEngineItems(ctx, engine.ID, "")
 		if err != nil {
 			continue
 		}

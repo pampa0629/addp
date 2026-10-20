@@ -1,12 +1,8 @@
 package execution
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"reflect"
 
 	"github.com/addp/common/authorization"
@@ -25,24 +21,14 @@ type ManagerProfileReadScope struct {
 // schema or authorize anything. Callers must supply raw database JSON, not a
 // JSONMap that has already passed through float64.
 func NewManagerProfileReadScope(raw json.RawMessage, readSet *plugin.QueryReadSet) (*ManagerProfileReadScope, error) {
-	if len(raw) == 0 || len(raw) > 512<<10 || readSet == nil {
+	if readSet == nil {
 		return nil, errors.New("invalid Manager profile configuration")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var config map[string]any
-	if err := decoder.Decode(&config); err != nil || config == nil {
-		return nil, errors.New("invalid Manager profile configuration")
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, errors.New("invalid Manager profile configuration")
-	}
-	canonical, err := json.Marshal(config)
+	_, digest, err := executionConfigObject(raw)
 	if err != nil {
 		return nil, errors.New("invalid Manager profile configuration")
 	}
-	digest := sha256.Sum256(canonical)
-	scope := &ManagerProfileReadScope{ConfigDigest: hex.EncodeToString(digest[:]), ReadSet: *readSet.Clone()}
+	scope := &ManagerProfileReadScope{ConfigDigest: digest, ReadSet: *readSet.Clone()}
 	if err := scope.Validate(); err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 func discoveryTestValue(now time.Time) models.DeploymentDiscoveryScope {
-	return models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v1", Scope: "infra", State: "available", ObservedAt: now.Format("2006-01-02T15:04:05Z"),
+	return models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v2", Scope: "infra", State: "available", ObservedAt: now.Format("2006-01-02T15:04:05Z"),
 		Source:   &models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "daemon-identity", Project: "addp-infra"},
 		Services: []models.DiscoveredDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.DiscoveredDeploymentContainer{{ContainerID: strings.Repeat("a", 64), Status: "running", StartedAt: now.Add(-time.Hour).Format(time.RFC3339), PublishedPorts: []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 25432, ContainerPort: 5432, Protocol: "tcp"}}}}}}}
 }

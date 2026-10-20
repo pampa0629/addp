@@ -3,15 +3,17 @@ package models
 import (
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
 )
 
 const (
-	Model3DGLBStatusBuilding = "building"
-	Model3DGLBStatusReady    = "ready"
-	Model3DGLBStatusFailed   = "failed"
-	Model3DGLBStatusDeleted  = "deleted"
+	Model3DGLBFTPConfigVersion = commonExecution.ManagerModel3DConfigVersion
+	Model3DGLBStatusBuilding   = "building"
+	Model3DGLBStatusReady      = "ready"
+	Model3DGLBStatusFailed     = "failed"
+	Model3DGLBStatusDeleted    = "deleted"
 )
 
 type Model3DGLBTask = TaskDefinition

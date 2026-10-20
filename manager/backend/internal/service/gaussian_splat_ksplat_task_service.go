@@ -516,7 +516,7 @@ func (s *GaussianSplatKSplatTaskService) enrichGaussianSplatKSplatTaskSourceFact
 		return nil
 	}
 	metaClient := s.metaClient.WithTenantID(task.TenantID)
-	item, err := metaClient.GetItemByID(itemID)
+	item, err := metaClient.GetItemByID(ctx, itemID)
 	if err != nil {
 		return fmt.Errorf("load gaussian splat source metadata: %w", err)
 	}

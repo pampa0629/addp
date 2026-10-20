@@ -572,7 +572,9 @@
         "nodeResources": "主机监控",
         "serviceResources": "服务监控",
         "platformAlerts": "平台告警",
-        "httpQuality": "接口质量"
+        "httpQuality": "接口质量",
+        "traces": "HTTP 调用链",
+        "engineResources": "引擎监控"
       },
       "catalog": {
         "label": "企业资源目录",

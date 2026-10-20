@@ -1,15 +1,19 @@
 package repository
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Model3DGLBRepository 维护单体三维模型 GLB 快显任务定义和结果。
@@ -77,12 +81,31 @@ func (r *Model3DGLBRepository) UpdateTask(ctx context.Context, task *models.Mode
 }
 
 func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DGLBGeneration, id, tenantID)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.Model3DGLBTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DGLBGeneration).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var active int64
+		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'config_version' = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, *commonExecution.NewSourceTaskIDFromUint(id), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, models.Model3DGLBFTPConfigVersion).Count(&active).Error; err != nil {
+			return err
+		}
+		if active != 0 {
+			return commonAPI.ErrConflict
+		}
+		return deleteTaskDefinition(ctx, tx, commonExecution.TaskTypeModel3DGLBGeneration, id, tenantID)
+	})
 }
 
 func (r *Model3DGLBRepository) ClaimExecution(
-	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
+	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool, snapshot *Model3DGLBTaskSnapshot,
 ) (*models.Model3DGLBTask, error) {
+	if snapshot == nil || snapshot.TaskID != taskID || snapshot.TenantID != tenantID || execution == nil {
+		return nil, commonAPI.ErrConflict
+	}
 	var task models.Model3DGLBTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel:      &task,
@@ -95,6 +118,42 @@ func (r *Model3DGLBRepository) ClaimExecution(
 		},
 		CurrentResultModel:      &models.Model3DGLB{},
 		OverwriteExistingResult: overwriteExistingResult,
+		BeforeCreate: func(tx *gorm.DB) error {
+			if err := verifyModel3DGLBTaskSnapshot(ctx, tx, snapshot); err != nil {
+				return err
+			}
+			if execution.ExecutionConfig["config_version"] == models.Model3DGLBFTPConfigVersion {
+				source, _ := jsonMap(execution.ExecutionConfig["source"])
+				if task.SemanticKey == "" || firstString(source, "item_fingerprint") != task.SemanticKey {
+					return commonAPI.ErrConflict
+				}
+				// The existing current result is the serialization point shared with
+				// deletion, including recreation after its generating task was removed.
+				var current models.Model3DGLB
+				err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND item_fingerprint = ? AND status <> ?", tenantID, task.SemanticKey, models.Model3DGLBStatusDeleted).Order("updated_at DESC, id DESC").First(&current).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				if err == nil && !overwriteExistingResult {
+					return ErrExistingResultActionRequired
+				}
+				active, err := activeModel3DGLBSourceExecutions(tx, tenantID, task.SemanticKey)
+				if err != nil {
+					return err
+				}
+				if active != 0 {
+					return commonAPI.ErrConflict
+				}
+			}
+			if len(execution.ExecutionConfig) == 0 {
+				decoder := json.NewDecoder(bytes.NewReader(snapshot.Config))
+				decoder.UseNumber()
+				if err := decoder.Decode(&execution.ExecutionConfig); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -137,9 +196,13 @@ func (r *Model3DGLBRepository) Create(ctx context.Context, result *models.Model3
 
 func (r *Model3DGLBRepository) GetByID(ctx context.Context, id uint, tenantID uint) (*models.Model3DGLB, error) {
 	var result models.Model3DGLB
-	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		First(&result).Error
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&result).Error; err != nil {
+			return err
+		}
+		// Read the published pointer and exact scope from the same row version.
+		return hydrateModel3DGLBOutputMetadata(ctx, tx, &result)
+	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

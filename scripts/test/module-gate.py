@@ -30,6 +30,10 @@ class Step:
 GO_T1_EXCLUDED_ENVIRONMENT = (
     "*_POSTGRES_TEST_DSN",
     "ADDP_*_INTEGRATION",
+    "ADDP_OBSERVABILITY_TRACES_ENABLED",
+    "ADDP_TRACE_DEPLOYMENTS",
+    "MONITOR_TEMPO_URL",
+    "MONITOR_TRACE_TLS_DIR",
 )
 T2_SERVICES_PATTERN = re.compile(
     r"(?m)^# ADDP_T2_SERVICES=(?P<services>[a-z0-9_-]+(?:,[a-z0-9_-]+)*)\s*$"

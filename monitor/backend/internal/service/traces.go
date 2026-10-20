@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/addp/common/client"
 	"github.com/addp/common/httptrace"
 	"github.com/addp/monitor/internal/tracequery"
@@ -79,6 +80,9 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if len(anchor) != 1 || anchor[0].ID != q.InstanceID {
 		return out, tracequery.ErrDenied
 	}
+	if anchor[0].Role != "backend" && anchor[0].Role != "ingress" {
+		return out, tracequery.ErrInvalid
+	}
 	ids := []string{q.ID}
 	if q.ID == "" {
 		ids, e = s.backend.Search(ctx, anchor[0], q.Start, q.End, q.Limit)
@@ -125,8 +129,14 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	}
 	authorize := func() error {
 		if len(processIDs) == 0 {
-			_, err := s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
-			return err
+			rows, err := s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+			if err != nil {
+				return err
+			}
+			if len(rows) != 1 || rows[0].ID != q.InstanceID || rows[0].ModuleName != anchor[0].ModuleName || rows[0].InstanceID != anchor[0].InstanceID || rows[0].Role != anchor[0].Role {
+				return tracequery.ErrDenied
+			}
+			return nil
 		}
 		rows, err := s.users.GetProcessInstancesForUser(ctx, processIDs, token)
 		if err != nil {
@@ -152,5 +162,15 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if ctx.Err() != nil {
 		return TraceResponse{}, ctx.Err()
 	}
+	if err := boundedTraceResponse(out); err != nil {
+		return TraceResponse{}, err
+	}
 	return out, nil
+}
+func boundedTraceResponse(out TraceResponse) error {
+	data, err := json.Marshal(out)
+	if err != nil || len(data) > 2<<20 {
+		return tracequery.ErrBudget
+	}
+	return nil
 }

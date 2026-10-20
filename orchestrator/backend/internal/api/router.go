@@ -31,7 +31,7 @@ func SetupRouter(
 	serviceTokens commonClient.ServiceTokenProvider,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

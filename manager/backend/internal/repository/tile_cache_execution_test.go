@@ -450,12 +450,16 @@ func TestModel3DGLBExecutionLifecycleIsAtomic(t *testing.T) {
 	db := newTileCacheExecutionRepositoryTestDB(t)
 	repo := NewModel3DGLBRepository(db)
 	task := createModel3DGLBExecutionRepositoryTestTask(t, db, 14)
+	snapshot, snapshotErr := repo.TaskConfigSnapshot(context.Background(), task.ID, task.TenantID)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
 	createdAt := time.Date(2026, 7, 17, 5, 0, 0, 0, time.UTC)
 	exec := newManagerRepositoryTestExecution(
 		"manager-model-3d-glb-atomic-1", 14, commonExecution.TaskTypeModel3DGLBGeneration, createdAt,
 	)
 
-	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false)
+	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false, snapshot)
 	if err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
@@ -474,7 +478,7 @@ func TestModel3DGLBExecutionLifecycleIsAtomic(t *testing.T) {
 	duplicate := newManagerRepositoryTestExecution(
 		"manager-model-3d-glb-atomic-duplicate", 14, commonExecution.TaskTypeModel3DGLBGeneration, createdAt,
 	)
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, duplicate, false); !errors.Is(err, commonAPI.ErrConflict) {
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, duplicate, false, snapshot); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
 	}
 
@@ -520,11 +524,15 @@ func TestModel3DGLBCompleteRollsBackWhenResultLosesOwnership(t *testing.T) {
 	db := newTileCacheExecutionRepositoryTestDB(t)
 	repo := NewModel3DGLBRepository(db)
 	task := createModel3DGLBExecutionRepositoryTestTask(t, db, 15)
+	snapshot, snapshotErr := repo.TaskConfigSnapshot(context.Background(), task.ID, task.TenantID)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
 	createdAt := time.Date(2026, 7, 17, 6, 0, 0, 0, time.UTC)
 	exec := newManagerRepositoryTestExecution(
 		"manager-model-3d-glb-complete-rollback", 15, commonExecution.TaskTypeModel3DGLBGeneration, createdAt,
 	)
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false); err != nil {
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false, snapshot); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	startedAt := createdAt.Add(time.Minute)

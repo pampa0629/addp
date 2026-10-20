@@ -110,12 +110,12 @@ func TestProcessTrendRangeUsesFixedCatalogGridAndBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	warm = LimitProcessTrendStart(warm, time.Unix(1, 0))
+	warm = LimitTrendStart(warm, time.Unix(1, 0))
 	if last := warm.Start.Add(time.Duration(int64(warm.Points-1)*warm.StepSeconds) * time.Second); last.Unix() != 46 || !last.Before(warm.End) {
 		t.Fatal("range grid must not invent an end point", warm)
 	}
 	started := testTime.Add(-time.Minute + 500*time.Millisecond)
-	limited := LimitProcessTrendStart(p, started)
+	limited := LimitTrendStart(p, started)
 	if !limited.Start.Equal(testTime.Add(-59*time.Second)) || limited.Points != 4 {
 		t.Fatal("start clamp", limited)
 	}

@@ -1472,7 +1472,7 @@ func (s *TileCacheTaskService) resolveTileCacheSourceVersion(ctx context.Context
 	if identity.ItemID == 0 {
 		return "", errors.New("vector tile cache source item_id is required")
 	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(identity.ItemID)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, identity.ItemID)
 	if err != nil {
 		return "", fmt.Errorf("get vector tile cache source item: %w", err)
 	}

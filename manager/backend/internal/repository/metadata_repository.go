@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,7 +34,7 @@ func isUndefinedTableError(err error) bool {
 }
 
 // ListScannedNodesAndItems 获取指定资源的顶层节点、子节点和条目
-func (r *MetadataRepository) ListScannedNodesAndItems(engineID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
+func (r *MetadataRepository) ListScannedNodesAndItems(ctx context.Context, engineID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
 	if engineID == 0 {
 		return nil, nil, nil, fmt.Errorf("resourceID is required")
 	}
@@ -43,7 +44,7 @@ func (r *MetadataRepository) ListScannedNodesAndItems(engineID uint, metaClient 
 	}
 
 	// 通过 Meta API 获取元数据树
-	tree, err := metaClient.GetMetadataTree(engineID)
+	tree, err := metaClient.GetMetadataTree(ctx, engineID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get metadata tree from Meta API: %w", err)
 	}
@@ -68,13 +69,13 @@ func (r *MetadataRepository) ListScannedNodesAndItems(engineID uint, metaClient 
 }
 
 // GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
-func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, objectPath string, metaClient *commonClient.MetaClient) (*models.MetaItemLite, error) {
+func (r *MetadataRepository) GetObjectMetadataItem(ctx context.Context, engineID uint, bucketName, objectPath string, metaClient *commonClient.MetaClient) (*models.MetaItemLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	catalogPath := catalogPathFromParts(bucketName, objectPath)
-	item, err := metaClient.GetItemByCatalogPath(engineID, catalogPath)
+	item, err := metaClient.GetItemByCatalogPath(ctx, engineID, catalogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata snapshot from Meta API: %w", err)
 	}
@@ -87,13 +88,13 @@ func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, ob
 }
 
 // GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
-func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, relativePath string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+func (r *MetadataRepository) GetObjectMetadataNode(ctx context.Context, engineID uint, bucketName, relativePath string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	catalogPath := catalogPathFromParts(bucketName, relativePath)
-	node, err := metaClient.GetNodeByCatalogPath(engineID, catalogPath)
+	node, err := metaClient.GetNodeByCatalogPath(ctx, engineID, catalogPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node metadata from Meta API: %w", err)
 	}
@@ -106,12 +107,12 @@ func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, re
 }
 
 // GetNodeByName 根据资源ID和节点名称获取节点信息
-func (r *MetadataRepository) GetNodeByName(engineID uint, nodeName string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+func (r *MetadataRepository) GetNodeByName(ctx context.Context, engineID uint, nodeName string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	node, err := metaClient.GetNodeByCatalogPath(engineID, nodeName)
+	node, err := metaClient.GetNodeByCatalogPath(ctx, engineID, nodeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node by name from Meta API: %w", err)
 	}
@@ -132,13 +133,13 @@ func catalogPathFromParts(parts ...string) string {
 }
 
 // GetChildNodes 获取节点的直接子节点
-func (r *MetadataRepository) GetChildNodes(parentNodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, error) {
+func (r *MetadataRepository) GetChildNodes(ctx context.Context, parentNodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	// 通过 Meta API 获取子节点
-	nodes, err := metaClient.GetNodeChildren(parentNodeID)
+	nodes, err := metaClient.GetNodeChildren(ctx, parentNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get child nodes from Meta API: %w", err)
 	}
@@ -152,13 +153,13 @@ func (r *MetadataRepository) GetChildNodes(parentNodeID uint, metaClient *common
 }
 
 // GetNodeItems 获取节点下的所有子项（表/对象）
-func (r *MetadataRepository) GetNodeItems(nodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaItemLite, error) {
+func (r *MetadataRepository) GetNodeItems(ctx context.Context, nodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaItemLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	// 通过 Meta API 获取节点下的项目
-	items, err := metaClient.GetNodeItems(nodeID)
+	items, err := metaClient.GetNodeItems(ctx, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node items from Meta API: %w", err)
 	}

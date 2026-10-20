@@ -18,7 +18,7 @@ scrape_configs:
       min_version: TLS12
     static_configs:
       - targets: [localhost:9090]
-  # Node and process sources share the sole Monitor HTTP SD job and its budget.
+  # Host, process and engine sources share one HTTP SD job and its budget.
   - job_name: addp_nodes
     scheme: https
     metrics_path: /metrics
@@ -79,6 +79,18 @@ scrape_configs:
         regex: 'process_resources;(.+)'
         replacement: '$1'
         target_label: __tmp_addp_runtime_role
+      - source_labels: [addp_monitor_kind, addp_deployment_id]
+        regex: 'engine_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_deployment_id
+      - source_labels: [addp_monitor_kind, addp_database_container_id]
+        regex: 'engine_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_database_container_id
+      - source_labels: [addp_monitor_kind, addp_database_container_started_at]
+        regex: 'engine_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_database_container_started_at
       - action: labeldrop
         regex: '(exported_)*addp_.*'
       - source_labels: [__tmp_addp_node_id]
@@ -93,5 +105,11 @@ scrape_configs:
         target_label: addp_instance_id
       - source_labels: [__tmp_addp_runtime_role]
         target_label: addp_runtime_role
+      - source_labels: [__tmp_addp_deployment_id]
+        target_label: addp_deployment_id
+      - source_labels: [__tmp_addp_database_container_id]
+        target_label: addp_database_container_id
+      - source_labels: [__tmp_addp_database_container_started_at]
+        target_label: addp_database_container_started_at
       - action: labeldrop
         regex: '__tmp_addp_.*'

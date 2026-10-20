@@ -35,7 +35,7 @@ func SetupRouter(
 	lifecycle *modulelifecycle.Controller,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

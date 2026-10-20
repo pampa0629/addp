@@ -129,7 +129,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		if s.metaClient == nil {
 			return nil, errors.New("meta client is required for table mode")
 		}
-		item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(tableRef.ItemID)
+		item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, tableRef.ItemID)
 		if err != nil {
 			return nil, fmt.Errorf("get meta item %d failed: %w", tableRef.ItemID, err)
 		}
@@ -350,7 +350,7 @@ func (s *QueryServiceService) captureFederatedDependencies(
 		if s.metaClient == nil {
 			return nil, nil, errors.New("meta client is required for object table publication")
 		}
-		items, itemErr := s.metaClient.WithTenantID(tenantID).ListEngineItems(engine.ID, "")
+		items, itemErr := s.metaClient.WithTenantID(tenantID).ListEngineItems(ctx, engine.ID, "")
 		if itemErr != nil {
 			return nil, nil, fmt.Errorf("list object tables for engine %d failed: %w", engine.ID, itemErr)
 		}
@@ -815,7 +815,7 @@ func (s *QueryServiceService) DeleteService(ctx context.Context, id, tenantID ui
 }
 
 // CheckSourceSnapshot 显式读取 Meta 当前事实并比较已发布快照。
-func (s *QueryServiceService) CheckSourceSnapshot(id, tenantID uint) (*models.QueryServiceSnapshotDiff, error) {
+func (s *QueryServiceService) CheckSourceSnapshot(ctx context.Context, id, tenantID uint) (*models.QueryServiceSnapshotDiff, error) {
 	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
@@ -829,7 +829,7 @@ func (s *QueryServiceService) CheckSourceSnapshot(id, tenantID uint) (*models.Qu
 			PublishedSnapshot:       published,
 		}, nil
 	}
-	current, err := s.currentTableDependencySnapshot(service, tenantID)
+	current, err := s.currentTableDependencySnapshot(ctx, service, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -848,7 +848,7 @@ func (s *QueryServiceService) RefreshSourceSnapshot(ctx context.Context, id, ten
 	if !service.IsTableMode() {
 		return nil, errors.New("SQL mode uses an output contract snapshot and has no single Meta item to refresh")
 	}
-	current, err := s.currentTableDependencySnapshot(service, tenantID)
+	current, err := s.currentTableDependencySnapshot(ctx, service, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -894,7 +894,7 @@ func (s *QueryServiceService) RefreshSourceSnapshot(ctx context.Context, id, ten
 	return s.convertToDTO(updated), nil
 }
 
-func (s *QueryServiceService) currentTableDependencySnapshot(service *models.QueryService, tenantID uint) (*models.QueryServiceDependencySnapshot, error) {
+func (s *QueryServiceService) currentTableDependencySnapshot(ctx context.Context, service *models.QueryService, tenantID uint) (*models.QueryServiceDependencySnapshot, error) {
 	if s.metaClient == nil {
 		return nil, errors.New("meta client is required to check source snapshot")
 	}
@@ -902,7 +902,7 @@ func (s *QueryServiceService) currentTableDependencySnapshot(service *models.Que
 	if published == nil || published.Source == nil || published.Source.ItemID == 0 {
 		return nil, errors.New("query service source snapshot is missing Meta item identity")
 	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(published.Source.ItemID)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, published.Source.ItemID)
 	if err != nil {
 		return nil, fmt.Errorf("get current Meta item %d failed: %w", published.Source.ItemID, err)
 	}

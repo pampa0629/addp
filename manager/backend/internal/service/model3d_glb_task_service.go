@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -25,9 +26,10 @@ type Model3DGLBExecutor interface {
 }
 
 type Model3DGLBExecutionRequest struct {
-	Task        *models.Model3DGLBTask
-	ExecutionID string
-	Config      Model3DGLBExecutionConfig
+	Task                *models.Model3DGLBTask
+	ExecutionID         string
+	Config              Model3DGLBExecutionConfig
+	SourceAuthorization *Model3DGLBSourceAuthorization
 }
 
 type Model3DGLBExecutionResult struct {
@@ -39,9 +41,10 @@ type Model3DGLBExecutionResult struct {
 }
 
 type Model3DGLBExecutionConfig struct {
-	Source  Model3DGLBSourceConfig
-	Result  Model3DGLBResultConfig
-	Options commonModels.JSONMap
+	ConfigVersion string
+	Source        Model3DGLBSourceConfig
+	Result        Model3DGLBResultConfig
+	Options       commonModels.JSONMap
 }
 
 type Model3DGLBSourceConfig struct {
@@ -63,10 +66,14 @@ type Model3DGLBCleaner interface {
 }
 
 type Model3DGLBTaskService struct {
-	repo     *repository.Model3DGLBRepository
-	executor Model3DGLBExecutor
-	cleaner  Model3DGLBCleaner
-	bucket   string
+	repo           *repository.Model3DGLBRepository
+	executor       Model3DGLBExecutor
+	cleaner        Model3DGLBCleaner
+	bucket         string
+	sourceEngines  model3DGLBSourceEngineClient
+	sourceMeta     model3DGLBMetaClient
+	sourceIssuer   *commonClient.SystemExecutionAuthorizationClient
+	sourceConsumer *commonClient.SystemServiceClient
 }
 
 func NewModel3DGLBTaskService(repo *repository.Model3DGLBRepository) *Model3DGLBTaskService {
@@ -167,6 +174,9 @@ func (s *Model3DGLBTaskService) DeleteResult(ctx context.Context, id uint, tenan
 	if result == nil {
 		return errors.New("model 3d GLB result not found")
 	}
+	if repository.Model3DGLBUsesExecutionOutput(result) {
+		return s.repo.DeleteExecutionOutputResult(ctx, result, s.deleteOwnedExecutionOutput)
+	}
 	if strings.TrimSpace(result.StorageRef) != "" {
 		if s.cleaner == nil {
 			return errors.New("model3d GLB cleaner is not configured")
@@ -178,7 +188,7 @@ func (s *Model3DGLBTaskService) DeleteResult(ctx context.Context, id uint, tenan
 	return s.repo.Delete(ctx, id, tenantID)
 }
 
-func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
+func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool, credential string) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return "", err
@@ -213,7 +223,18 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 	if err := commonExecution.ApplyUserOrigin(ctx, exec); err != nil {
 		return "", err
 	}
-	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	snapshot, err := s.repo.TaskConfigSnapshot(ctx, taskID, tenantID)
+	if err != nil {
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		return "", err
+	}
+	ftp, err := s.freezeSourceExecution(ctx, snapshot, exec, credential)
+	if err != nil {
+		return "", err
+	}
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult, snapshot)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -227,10 +248,15 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 		return "", err
 	}
 
+	if ftp {
+		if err := s.issueSourceAuthorization(ctx, exec, credential); err != nil {
+			return "", err
+		}
+	}
 	return executionID, nil
 }
 
-func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, task *models.Model3DGLBTask, executionID string) {
+func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, task *models.Model3DGLBTask, executionID string, plan *model3DGLBClaimPlan) {
 	startedAt := time.Now()
 	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
 		logger.L().Warn("领取三维模型 GLB execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
@@ -241,17 +267,34 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 	var errDetails commonModels.JSONMap
 	var resultFields map[string]interface{}
 
-	result, execCfg, err := s.prepareResult(ctx, task, executionID)
+	result, execCfg, err := s.prepareClaimResult(ctx, task, executionID, plan)
 	var buildResult *Model3DGLBExecutionResult
 	if err == nil {
 		if s.executor == nil {
 			err = errors.New("model 3d GLB generation executor is not configured")
 		} else {
-			buildResult, err = s.executor.BuildModel3DGLB(ctx, Model3DGLBExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
+			request := Model3DGLBExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg}
+			if plan != nil {
+				request.SourceAuthorization = plan.authorization
+			}
+			buildResult, err = s.executor.BuildModel3DGLB(ctx, request)
 		}
 	}
 	if err == nil && buildResult == nil {
 		err = errors.New("model 3d GLB generation executor returned no result")
+	}
+	if err == nil && plan != nil {
+		if buildResult.StorageRef != execCfg.Result.StorageRef || buildResult.FileName != execCfg.Result.FileName {
+			err = ErrModel3DGLBSourceAuthorizationRequired
+		} else {
+			err = plan.authorization.BeforePublish(ctx)
+		}
+		if err == nil {
+			if buildResult.Metadata == nil {
+				buildResult.Metadata = commonModels.JSONMap{}
+			}
+			buildResult.Metadata["model3d_source_scope"] = plan.authorization.scope.Clone()
+		}
 	}
 	if err != nil {
 		status = commonExecution.ExecutionStatusFailed
@@ -265,7 +308,7 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 			}
 		}
 	} else if result != nil {
-		if buildResult.ContentURL == "" {
+		if plan != nil || buildResult.ContentURL == "" {
 			buildResult.ContentURL = model3DGLBContentURL(result.ID)
 		}
 		resultFields = map[string]interface{}{
@@ -274,6 +317,13 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 			"last_execution_id": executionID,
 		}
 		applyModel3DGLBResultFields(resultFields, buildResult)
+		if plan != nil {
+			resultFields["item_id"] = optionalUint(execCfg.Source.ItemID)
+			resultFields["locator"] = execCfg.Source.ItemLocator
+			resultFields["source_engine_id"] = execCfg.Source.SourceEngineID
+			resultFields["source_format"] = execCfg.Source.Format
+			resultFields["source_size_bytes"] = execCfg.Source.SourceSizeBytes
+		}
 		metadata = buildResult.Metadata.Clone()
 		if metadata == nil {
 			metadata = commonModels.JSONMap{}
@@ -299,7 +349,7 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 	if result != nil {
 		resultID = result.ID
 	}
-	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
+	executionFields := map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
 		"metadata":          metadata,
@@ -307,8 +357,15 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"updated_at":        completedAt,
-	}, completedAt); err != nil {
-		logger.L().Warn("提交三维模型 GLB execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+	}
+	var completionErr error
+	if plan != nil && result != nil {
+		completionErr = s.repo.CompleteExecutionOutput(ctx, task.ID, task.TenantID, executionID, resultID, execCfg.Result.StorageRef, resultFields, executionFields, completedAt)
+	} else {
+		completionErr = s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, executionFields, completedAt)
+	}
+	if completionErr != nil {
+		logger.L().Warn("提交三维模型 GLB execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", completionErr)
 	}
 }
 

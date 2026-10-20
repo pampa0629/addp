@@ -1,0 +1,40 @@
+auth_enabled: false
+server:
+  http_listen_port: 3200
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+ingester:
+  trace_idle_period: 10s
+  max_block_duration: 5m
+compactor:
+  compaction:
+    block_retention: "@RETENTION_HOURS@h"
+storage:
+  trace:
+    backend: s3
+    wal:
+      path: /var/tempo/wal
+      # Tail sampling must fit inside WAL block time-range admission.
+      ingestion_time_range_slack: "@INGESTION_SLACK@s"
+    s3:
+      endpoint: minio:9000
+      bucket: ${TEMPO_BUCKET}
+      access_key: ${TEMPO_S3_ACCESS_KEY}
+      secret_key: ${TEMPO_S3_SECRET_KEY}
+      insecure: true
+      forcepathstyle: true
+overrides:
+  defaults:
+    ingestion:
+      rate_limit_bytes: 262144
+      burst_size_bytes: 524288
+    global:
+      max_bytes_per_trace: 1048576
+    read:
+      max_bytes_per_tag_values_query: 1048576
+usage_report:
+  reporting_enabled: false

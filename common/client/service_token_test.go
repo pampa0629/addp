@@ -174,7 +174,7 @@ func TestMetaClientWithServiceTokenSendsOnlyBearerToMeta(t *testing.T) {
 		t.Fatalf("NewOAuthServiceTokenSource() error = %v", err)
 	}
 	metaClient := NewMetaClient(metaServer.URL, source).WithTenantID(7)
-	if _, err := metaClient.GetItemByID(12); err != nil {
+	if _, err := metaClient.GetItemByID(context.Background(), 12); err != nil {
 		t.Fatalf("GetItemByID() error = %v", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestMetaClientRefreshesRejectedServiceTokenOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	metaClient := NewMetaClient(metaServer.URL, source).WithTenantID(7)
-	item, err := metaClient.GetItemByID(12)
+	item, err := metaClient.GetItemByID(context.Background(), 12)
 	if err != nil {
 		t.Fatalf("GetItemByID() error = %v", err)
 	}
@@ -260,7 +260,7 @@ func TestMetaClientReplaysRequestBodyAfterServiceTokenRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	metaClient := NewMetaClient(metaServer.URL, source).WithTenantID(7)
-	result, err := metaClient.CreateManualScanRun(MetaScanOptions{EngineID: 5, Force: true})
+	result, err := metaClient.CreateManualScanRun(context.Background(), MetaScanOptions{EngineID: 5, Force: true})
 	if err != nil {
 		t.Fatalf("CreateManualScanRun() error = %v", err)
 	}

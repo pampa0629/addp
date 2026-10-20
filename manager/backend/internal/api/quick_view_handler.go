@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -210,18 +211,22 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
 // @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
+// @Description 真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param body body ExecuteQuickViewActionRequest true "快显动作请求 | Quick view action request"
 // @Success 202 {object} ExecuteQuickViewActionResponse "已提交执行 | Execution submitted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "当前用户凭据失效 | Current User credential rejected"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "来源引擎不可用 | Source engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
+// @x-addp-conditional-permissions ["manager.data_item.read"]
 // @Router /quick-view/actions [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
@@ -301,11 +306,19 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	taskType, taskID, err := h.createQuickViewTask(ctx, userID, action, capability, source, model3DOptions)
 	var executionID string
 	if err == nil {
-		executionID, err = h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult)
+		executionID, err = h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")))
 	}
 	if err != nil {
+		if errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected) {
+			managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
+			return
+		}
 		if errors.Is(err, commonapi.ErrForbidden) {
 			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
 			return
 		}
 		if errors.Is(err, service.ErrExistingResultActionRequired) {
@@ -1063,6 +1076,7 @@ func (h *QuickViewHandler) executeQuickViewTask(
 	taskID uint,
 	tenantID uint,
 	overwriteExistingResult bool,
+	credential string,
 ) (string, error) {
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
@@ -1072,7 +1086,7 @@ func (h *QuickViewHandler) executeQuickViewTask(
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		return h.rasterCOGTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	case commonExecution.TaskTypeModel3DGLBGeneration:
-		return h.model3DGLBTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+		return h.model3DGLBTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult, credential)
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		return h.gaussianSplatKSplatTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
@@ -1098,7 +1112,7 @@ func (h *QuickViewHandler) createAndExecuteQuickViewTask(
 	if err != nil {
 		return taskID, "", err
 	}
-	executionID, err := h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult)
+	executionID, err := h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult, "")
 	return taskID, executionID, err
 }
 

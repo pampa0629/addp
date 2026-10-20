@@ -358,7 +358,7 @@ func (s *MetadataService) ResolveStorageAssetTarget(ctx context.Context, engineI
 	if s.metaClient == nil {
 		return nil, fmt.Errorf("meta client is not available")
 	}
-	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(itemID)
+	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(ctx, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve storage asset DataItem from Meta: %w", err)
 	}
@@ -412,7 +412,7 @@ func (s *MetadataService) resolveStorageDataItem(ctx context.Context, locatorURI
 	if s.metaClient == nil {
 		return nil, nil, fmt.Errorf("meta client is not available")
 	}
-	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(*loc.ItemID)
+	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(ctx, *loc.ItemID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve storage DataItem from Meta: %w", err)
 	}
@@ -601,7 +601,7 @@ func closeDownloadBundleEntries(entries []downloadBundleEntry) {
 	}
 }
 
-func (s *MetadataService) downloadMetaItem(engineID uint, storageRef string, tenantID *uint) *commonModels.MetaItem {
+func (s *MetadataService) downloadMetaItem(ctx context.Context, engineID uint, storageRef string, tenantID *uint) *commonModels.MetaItem {
 	if s.metaClient == nil {
 		return nil
 	}
@@ -609,7 +609,7 @@ func (s *MetadataService) downloadMetaItem(engineID uint, storageRef string, ten
 	if tenantID != nil {
 		metaClient = metaClient.WithTenantID(*tenantID)
 	}
-	item, err := metaClient.GetItemByCatalogPath(engineID, storageRef)
+	item, err := metaClient.GetItemByCatalogPath(ctx, engineID, storageRef)
 	if err == nil && item != nil {
 		return item
 	}

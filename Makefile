@@ -372,6 +372,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-system-iam-postgres
 	@$(MAKE) test-system-runtime-log
 	@$(MAKE) test-monitor-metrics
+	@$(MAKE) test-monitor-traces
 	@$(MAKE) test-asset-postgres
 	@$(MAKE) test-meta-postgres
 	@$(MAKE) test-catalog-postgres
@@ -489,7 +490,7 @@ test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 De
 	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
 test-manager-postgres: ## 使用测试 PostGIS 数据库运行 Manager 统一任务、几何声明与清理集成门禁
-	@bash scripts/test/manager-postgres-gate.sh
+	@bash scripts/test/manager-postgres-gate.sh $(MANAGER_POSTGRES_TEST_ARGS)
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
 	@bash scripts/test/manager-mongodb-security-gate.sh
@@ -767,7 +768,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 
 .PHONY: test-infra-runtime-log-lifecycle
 test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
-	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/postgres-metrics-lifecycle_test.py
+	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
@@ -778,7 +779,7 @@ test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查
 	@bash -n scripts/dev/geopython-workflow.sh
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
-	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
+	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh scripts/test/monitor-traces-gate.sh; do bash -n "$$script" || exit 1; done
 	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
 	@$(MAKE) test-infra-runtime-log-lifecycle
 	@bash scripts/test/infra-port-resolution.sh
@@ -1003,7 +1004,7 @@ test-go: ## 校验依赖文件并使用临时 workspace 运行全部已跟踪 Go
 			exit 1; \
 		fi; \
 		echo "$(GREEN)运行 $$module 测试...$(NC)"; \
-		if ! (cd "$$module" && GOWORK="$$workspace_file" go test ./...); then \
+		if ! (cd "$$module" && ADDP_OBSERVABILITY_TRACES_ENABLED=false ADDP_TRACE_DEPLOYMENTS= MONITOR_TEMPO_URL= MONITOR_TRACE_TLS_DIR= GOWORK="$$workspace_file" go test ./...); then \
 			write_summary failure "$$module" go-test; \
 			exit 1; \
 		fi; \
@@ -1179,3 +1180,7 @@ test-platform-administrator-online-runner: ## 验证三员 Hosted 准入、身�
 	@bash -n scripts/test/online-hosted-administrator-governance-gate.sh
 	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_administrator_governance_requires_manual_isolated_profile
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'AdministratorGovernanceFixture|MetricsBootstrap' -count=1
+
+.PHONY: test-monitor-traces
+test-monitor-traces: ## 隔离验证 HTTP Trace 传播、真实尾采样、Tempo 和日志关联
+	@bash scripts/test/monitor-traces-gate.sh

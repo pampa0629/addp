@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/addp/common/buildinfo"
@@ -149,7 +150,20 @@ func clientTLS(dir string) (*tls.Config, error) {
 		if e != nil || !i.Mode().IsRegular() || i.Size() < 1 || i.Size() > 256<<10 || (n == "client.key" && i.Mode().Perm()&0077 != 0) {
 			return nil, ErrDeployment
 		}
-		return os.ReadFile(p)
+		stat, ok := i.Sys().(*syscall.Stat_t)
+		if !ok || stat.Nlink != 1 {
+			return nil, ErrDeployment
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, ErrDeployment
+		}
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, (256<<10)+1))
+		if err != nil || len(data) > 256<<10 {
+			return nil, ErrDeployment
+		}
+		return data, nil
 	}
 	ca, e := read("ca.crt")
 	if e != nil {

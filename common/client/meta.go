@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"net/url"
@@ -327,8 +328,8 @@ func (c *MetaClient) ListDataItemChanges(ctx context.Context, afterCursor string
 	return &result, nil
 }
 
-func (c *MetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*models.MetaItem, error) {
-	return c.WithTenantID(tenantID).GetItemByID(itemID)
+func (c *MetaClient) GetItemByIDForTenant(ctx context.Context, tenantID, itemID uint) (*models.MetaItem, error) {
+	return c.WithTenantID(tenantID).GetItemByID(ctx, itemID)
 }
 
 func (c *MetaClient) addAuth(req *http.Request) error {
@@ -357,7 +358,7 @@ func (c *MetaClient) do(req *http.Request) (*http.Response, error) {
 		}
 		token = strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 	}
-	response, err := c.httpClient.Do(req)
+	response, err := httptrace.Do(c.httpClient, req, c.baseURL)
 	if err != nil || response.StatusCode != http.StatusUnauthorized {
 		return response, err
 	}
@@ -379,14 +380,14 @@ func (c *MetaClient) do(req *http.Request) (*http.Response, error) {
 		}
 	}
 	req.Header.Set("Authorization", "Bearer "+newToken)
-	return c.httpClient.Do(req)
+	return httptrace.Do(c.httpClient, req, c.baseURL)
 }
 
 // GetMetadataTree 获取引擎的完整元数据树
-func (c *MetaClient) GetMetadataTree(engineID uint) (*models.MetadataTree, error) {
+func (c *MetaClient) GetMetadataTree(ctx context.Context, engineID uint) (*models.MetadataTree, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/engines/%d/tree", c.baseURL, engineID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -413,11 +414,11 @@ func (c *MetaClient) GetMetadataTree(engineID uint) (*models.MetadataTree, error
 }
 
 // GetNodeByCatalogPath 按 catalog path 查询节点。
-func (c *MetaClient) GetNodeByCatalogPath(engineID uint, catalogPath string) (*models.MetaNode, error) {
+func (c *MetaClient) GetNodeByCatalogPath(ctx context.Context, engineID uint, catalogPath string) (*models.MetaNode, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/nodes/by-catalog-path?engine_id=%d&catalog_path=%s",
 		c.baseURL, engineID, url.QueryEscape(catalogPath))
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -443,11 +444,11 @@ func (c *MetaClient) GetNodeByCatalogPath(engineID uint, catalogPath string) (*m
 }
 
 // GetItemByCatalogPath 按 catalog path 查询数据项。
-func (c *MetaClient) GetItemByCatalogPath(engineID uint, catalogPath string) (*models.MetaItem, error) {
+func (c *MetaClient) GetItemByCatalogPath(ctx context.Context, engineID uint, catalogPath string) (*models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/by-catalog-path?engine_id=%d&catalog_path=%s",
 		c.baseURL, engineID, url.QueryEscape(catalogPath))
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -473,10 +474,10 @@ func (c *MetaClient) GetItemByCatalogPath(engineID uint, catalogPath string) (*m
 }
 
 // GetNodeChildren 获取节点的子节点
-func (c *MetaClient) GetNodeChildren(nodeID uint) ([]models.MetaNode, error) {
+func (c *MetaClient) GetNodeChildren(ctx context.Context, nodeID uint) ([]models.MetaNode, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d/children", c.baseURL, nodeID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -503,10 +504,10 @@ func (c *MetaClient) GetNodeChildren(nodeID uint) ([]models.MetaNode, error) {
 }
 
 // GetNodeItems 获取节点下的项目
-func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
+func (c *MetaClient) GetNodeItems(ctx context.Context, nodeID uint) ([]models.MetaItem, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d/items", c.baseURL, nodeID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -533,10 +534,10 @@ func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
 }
 
 // GetNodeByID 获取单个节点详情。
-func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
+func (c *MetaClient) GetNodeByID(ctx context.Context, nodeID uint) (*models.MetaNode, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d", c.baseURL, nodeID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -562,10 +563,10 @@ func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 }
 
 // GetNodeAncestors 获取 root 到目标 node 的祖先链，包含目标 node 自身。
-func (c *MetaClient) GetNodeAncestors(nodeID uint) ([]models.MetaNode, error) {
+func (c *MetaClient) GetNodeAncestors(ctx context.Context, nodeID uint) ([]models.MetaNode, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d/ancestors", c.baseURL, nodeID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -592,10 +593,10 @@ func (c *MetaClient) GetNodeAncestors(nodeID uint) ([]models.MetaNode, error) {
 }
 
 // GetItemByID 获取单个数据项详情。
-func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
+func (c *MetaClient) GetItemByID(ctx context.Context, itemID uint) (*models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d", c.baseURL, itemID)
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -621,10 +622,10 @@ func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 }
 
 // GetItemAncestors 获取 item 及 root 到 item 父节点的祖先链。
-func (c *MetaClient) GetItemAncestors(itemID uint) (*models.MetaItemAncestors, error) {
+func (c *MetaClient) GetItemAncestors(ctx context.Context, itemID uint) (*models.MetaItemAncestors, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/ancestors", c.baseURL, itemID)
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -705,7 +706,7 @@ func manualMetaScanBody(opts MetaScanOptions) ([]byte, error) {
 	return json.Marshal(scanReq)
 }
 
-func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
+func (c *MetaClient) CreateManualScanRun(ctx context.Context, opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
 
 	body, err := manualMetaScanBody(opts)
@@ -713,7 +714,7 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 		return nil, fmt.Errorf("encode manual scan request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", urlStr, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -745,17 +746,17 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	return &result, nil
 }
 
-func (c *MetaClient) CreateManualScanRunForTenant(tenantID uint, opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
-	return c.WithTenantID(tenantID).CreateManualScanRun(opts)
+func (c *MetaClient) CreateManualScanRunForTenant(ctx context.Context, tenantID uint, opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	return c.WithTenantID(tenantID).CreateManualScanRun(ctx, opts)
 }
 
-func (c *MetaClient) InspectAttributes(req MetaInspectRequest) (*MetaInspectResult, error) {
+func (c *MetaClient) InspectAttributes(ctx context.Context, req MetaInspectRequest) (*MetaInspectResult, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/inspect", c.baseURL)
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal inspect request: %w", err)
 	}
-	httpReq, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", urlStr, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create inspect request: %w", err)
 	}
@@ -777,13 +778,13 @@ func (c *MetaClient) InspectAttributes(req MetaInspectRequest) (*MetaInspectResu
 }
 
 // ListEngineItems 获取引擎的已扫描数据项列表，支持按 catalog 第一层业务分支过滤。
-func (c *MetaClient) ListEngineItems(engineID uint, branch string) ([]models.MetaItem, error) {
+func (c *MetaClient) ListEngineItems(ctx context.Context, engineID uint, branch string) ([]models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items", c.baseURL, engineID)
 	if branch != "" {
 		urlStr += "?branch=" + url.QueryEscape(branch)
 	}
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -811,7 +812,7 @@ func (c *MetaClient) ListEngineItems(engineID uint, branch string) ([]models.Met
 
 // GetItemFieldsByCatalogPath 获取指定 catalog path 数据项的字段列表。
 func (c *MetaClient) GetItemFieldsByCatalogPath(ctx context.Context, engineID uint, catalogPath string, includeDetails bool) ([]datatype.FieldInfo, error) {
-	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
+	item, err := c.GetItemByCatalogPath(ctx, engineID, catalogPath)
 	if err != nil {
 		return nil, err
 	}
@@ -852,19 +853,19 @@ func (c *MetaClient) GetItemFieldsByID(ctx context.Context, itemID uint, include
 }
 
 // GetItemSpatialMetadataByCatalogPath 获取指定 catalog path 数据项的空间元数据。
-func (c *MetaClient) GetItemSpatialMetadataByCatalogPath(engineID uint, catalogPath string) (*models.SpatialMetadata, error) {
-	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
+func (c *MetaClient) GetItemSpatialMetadataByCatalogPath(ctx context.Context, engineID uint, catalogPath string) (*models.SpatialMetadata, error) {
+	item, err := c.GetItemByCatalogPath(ctx, engineID, catalogPath)
 	if err != nil {
 		return nil, err
 	}
-	return c.GetItemSpatialMetadataByID(item.ID)
+	return c.GetItemSpatialMetadataByID(ctx, item.ID)
 }
 
 // GetItemSpatialMetadataByID 获取指定 item_id 数据项的空间元数据。
-func (c *MetaClient) GetItemSpatialMetadataByID(itemID uint) (*models.SpatialMetadata, error) {
+func (c *MetaClient) GetItemSpatialMetadataByID(ctx context.Context, itemID uint) (*models.SpatialMetadata, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/spatial", c.baseURL, itemID)
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

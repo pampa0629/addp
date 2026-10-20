@@ -1044,7 +1044,7 @@ func (s *QuickViewService) applyPPTXPDFCapability(ctx context.Context, capabilit
 	capability.PPTXPDF.ErrorMessage = strings.TrimSpace(current.ErrorMessage)
 	capability.PPTXPDF.Status = current.Status
 	if current.Status == models.PPTXPDFStatusReady {
-		fresh, err := s.pptxPDFResultIsFresh(identity, current)
+		fresh, err := s.pptxPDFResultIsFresh(ctx, identity, current)
 		if err != nil {
 			return err
 		}
@@ -1071,7 +1071,7 @@ func (s *QuickViewService) applyPPTXPDFCapability(ctx context.Context, capabilit
 	return nil
 }
 
-func (s *QuickViewService) pptxPDFResultIsFresh(identity QuickViewIdentity, current *models.PPTXPDF) (bool, error) {
+func (s *QuickViewService) pptxPDFResultIsFresh(ctx context.Context, identity QuickViewIdentity, current *models.PPTXPDF) (bool, error) {
 	if current == nil {
 		return false, nil
 	}
@@ -1082,7 +1082,7 @@ func (s *QuickViewService) pptxPDFResultIsFresh(identity QuickViewIdentity, curr
 	if err != nil || parsed.ItemID == nil || *parsed.ItemID == 0 {
 		return false, errors.New("PPTX PDF capability requires a scanned item locator")
 	}
-	item, err := s.metaClient.GetItemByIDForTenant(identity.TenantID, *parsed.ItemID)
+	item, err := s.metaClient.GetItemByIDForTenant(ctx, identity.TenantID, *parsed.ItemID)
 	if err != nil {
 		return false, err
 	}
@@ -1639,7 +1639,7 @@ func (s *QuickViewService) GetSpatialMetadataFromMeta(
 		return nil, fmt.Errorf("meta client not initialized, cannot query spatial metadata")
 	}
 	metaClient := s.metaClient.WithTenantID(tenantID)
-	spatialMeta, err := metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
+	spatialMeta, err := metaClient.GetItemSpatialMetadataByCatalogPath(ctx, engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
@@ -1757,6 +1757,20 @@ func (s *QuickViewService) readyModel3DGLB(ctx context.Context, identity QuickVi
 		return nil, err
 	}
 	if model3DGLBFactsMatch(result, identity, engineID) {
+		if repository.Model3DGLBUsesExecutionOutput(result) {
+			exact, err := s.model3DRepo.GetByID(ctx, result.ID, result.TenantID)
+			if err != nil || exact == nil {
+				return nil, err
+			}
+			current, err := s.model3DGLBCompositionCurrent(ctx, exact)
+			if err != nil || !current {
+				return nil, err
+			}
+			if !model3DGLBFactsMatch(exact, identity, engineID) {
+				return nil, nil
+			}
+			return exact, nil
+		}
 		return result, nil
 	}
 	return nil, nil
@@ -2686,7 +2700,7 @@ func (s *QuickViewService) RasterMosaicSourceForLocator(ctx context.Context, ten
 	if tenantID != nil {
 		metaClient = metaClient.WithTenantID(*tenantID)
 	}
-	item, err := metaClient.GetItemByID(*loc.ItemID)
+	item, err := metaClient.GetItemByID(ctx, *loc.ItemID)
 	if err != nil {
 		return QuickViewSource{}, false, err
 	}

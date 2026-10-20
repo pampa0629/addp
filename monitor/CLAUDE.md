@@ -57,6 +57,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 固定目录当前共 25 项；CPU、负载、容量/inode、磁盘吞吐/IO 时间、网卡吞吐及进程 CPU/RSS/时长使用各自单位与完整窗口，不跨设备层累加、不用共享挂载或进程 RSS 推导集群容量。资源查询与采集证据共用现有 mTLS、预算与期限，指标和公式只由 resourcequery 维护。
 - 平台 HTTP 质量入口为 `/http-quality`，使用独立七项 HTTP 目录和固定 1/5/15 分钟窗口，模板排行最多十项；Gateway ingress 与 Backend 分层读取。统计读取与 HTTP 规则分别授权，当前 User 的实例裁决和后台最小身份投影不得混用；契约见正式规范 6.4。Go 使用 Common 唯一采集工厂，Python 未接入，Tenant 发布服务质量归 Service。
 - 本地 HTTP 专项使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，复用专属指标链与规则/outbox 测试库，跳过 PostgreSQL 专业来源探针及后续主机回归；完整回归仍用默认入口。该分项不代表正式身份 T4。
+- `/traces` 及 Trace 搜索/详情使用独立 `monitor.trace.read`，逐请求以当前 User 核验所有参与实例（含离线历史），关联日志另走 System 正文权限。实际 Client/Server 父子匹配才构成调用边，采样结果不能推算全量 QPS。传播、120 秒尾采样、72 小时/20 GiB 初值及本地验收见正式规范 6.5；首批策略是 Monitor-owned 不可变版本 1，不新增热编辑控制面。
 - 资源查询策略是 Monitor 平台 CAS 单例，对新请求热生效；资源与规则后台只用最小身份投影，不保存管理员 Token。目标管理、用户观测读取和采集服务权限彼此独立。
 - 平台主机 CPU/内存规则创建即停用，按主机合并指标与 uptime；缺样、控制面不可用、预算不足、来源变化、暂停或重启均不作为恢复。活动 incident 阻止规则删除，停用不伪造恢复，历史事件保留触发时证据。
 - 平台日志、资源与 HTTP 事件复用同一事务协调器/outbox，协议分别为 addp.platform-log-alert/v1、addp.platform-resource-alert/v1 与 addp.platform-http-alert/v1。旧目标不自动订阅新类别；Webhook/SMTP/企业微信不跨协议兜底，人工重投保留原身份和历史时间。
@@ -66,7 +67,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 从仓库根目录使用 `make test-changed` 或明确 Owner 的 `make test-module MODULE=monitor`；快速 Go T1 使用 `make test-module MODULE=monitor GO_ONLY=1`，不替代完整模块门禁。
 
-持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
+持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
 

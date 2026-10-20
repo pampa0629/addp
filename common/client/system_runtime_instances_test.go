@@ -64,3 +64,39 @@ func TestRuntimeInstanceReferencesUseOnlyCurrentUserAndExactIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoricalProcessReferencesUseCurrentUserAndExactProcessIDs(t *testing.T) {
+	for _, mode := range []string{"valid", "foreign", "duplicate", "denied"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Header.Get("Authorization") != "Bearer addp_at_current_user" || r.URL.Query().Get("instance_ids") != "old-one" || r.URL.Query().Has("status") {
+					t.Error("history query changed current User or imposed a live lease")
+				}
+				if mode == "denied" {
+					w.WriteHeader(403)
+					return
+				}
+				row := RuntimeInstanceReference{ID: 1, ModuleName: "monitor", InstanceID: "old-one", Role: "backend", Status: "down"}
+				if mode == "foreign" {
+					row.InstanceID = "foreign"
+				}
+				rows := []RuntimeInstanceReference{row}
+				if mode == "duplicate" {
+					rows = append(rows, row)
+				}
+				json.NewEncoder(w).Encode(map[string]any{"data": rows, "total": len(rows), "page": 1, "page_size": 100})
+			}))
+			defer upstream.Close()
+			c := NewSystemServiceClient(upstream.URL, nil, upstream.Client())
+			rows, e := c.GetProcessInstancesForUser(context.Background(), []string{"old-one"}, "addp_at_current_user")
+			if (e == nil) != (mode == "valid") || calls != 1 {
+				t.Fatal(rows, e, calls)
+			}
+			if _, e = c.GetProcessInstancesForUser(context.Background(), []string{"old-one"}, "addp_st_machine"); e == nil || calls != 1 {
+				t.Fatal("machine token reached current User resolver")
+			}
+		})
+	}
+}

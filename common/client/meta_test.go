@@ -28,10 +28,10 @@ func TestMetaCatalogLookupsPreserveTypedErrorsWithoutResponseBodies(t *testing.T
 		}))
 		c := newTestMetaClient(server.URL).WithTenantID(7)
 		for _, lookup := range []func() error{
-			func() error { _, err := c.GetItemByID(1); return err },
-			func() error { _, err := c.GetNodeByID(1); return err },
-			func() error { _, err := c.GetItemByCatalogPath(2, "public.people"); return err },
-			func() error { _, err := c.GetNodeByCatalogPath(2, "public"); return err },
+			func() error { _, err := c.GetItemByID(context.Background(), 1); return err },
+			func() error { _, err := c.GetNodeByID(context.Background(), 1); return err },
+			func() error { _, err := c.GetItemByCatalogPath(context.Background(), 2, "public.people"); return err },
+			func() error { _, err := c.GetNodeByCatalogPath(context.Background(), 2, "public"); return err },
 		} {
 			err := lookup()
 			if got, ok := TenantAPIStatusCode(err); !ok || got != status || strings.Contains(err.Error(), "private-upstream-body") {
@@ -185,7 +185,7 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	tenantID := uint(8)
 	client = client.WithTenantID(tenantID)
 
-	result, err := client.CreateManualScanRun(MetaScanOptions{
+	result, err := client.CreateManualScanRun(context.Background(), MetaScanOptions{
 		ParentExecutionID: "11111111-1111-4111-8111-111111111111",
 		EngineID:          26,
 		NodeID:            1831,
@@ -250,7 +250,7 @@ func TestMetaClientCreateManualScanRunRejectsScheduledTrigger(t *testing.T) {
 	defer server.Close()
 
 	client := newTestMetaClient(server.URL)
-	_, err := client.CreateManualScanRun(MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
+	_, err := client.CreateManualScanRun(context.Background(), MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
 	if err == nil {
 		t.Fatal("CreateManualScanRun() should reject scheduled trigger_type")
 	}
@@ -346,7 +346,7 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	defer server.Close()
 
 	client := newTestMetaClient(server.URL).WithTenantID(8)
-	item, err := client.GetItemByID(21)
+	item, err := client.GetItemByID(context.Background(), 21)
 	if err != nil {
 		t.Fatalf("GetItemByID() error = %v", err)
 	}
@@ -393,7 +393,7 @@ func TestMetaClientManualItemRunCarriesEncoding(t *testing.T) {
 	}))
 	defer server.Close()
 	headerless := false
-	if _, err := newTestMetaClient(server.URL).WithTenantID(8).CreateManualScanRun(MetaScanOptions{ItemID: 1, Encoding: "gbk", HasHeader: &headerless}); err != nil {
+	if _, err := newTestMetaClient(server.URL).WithTenantID(8).CreateManualScanRun(context.Background(), MetaScanOptions{ItemID: 1, Encoding: "gbk", HasHeader: &headerless}); err != nil {
 		t.Fatal(err)
 	}
 }

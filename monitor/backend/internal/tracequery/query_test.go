@@ -68,3 +68,26 @@ func TestDecodeRejectsForeignTraceCyclesDuplicatesAndBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestTempoSearchIDsNormalizeAtTheProtocolBoundary(t *testing.T) {
+	for _, value := range []string{"1", "e61da62207386a80ffc6da15b292022", strings.Repeat("1", 32)} {
+		id, err := tempoTraceID(value)
+		if err != nil || len(id) != 32 || !strings.HasSuffix(id, value) {
+			t.Fatal(id, err)
+		}
+	}
+	for _, value := range []string{"", "0", "PRIVATE", strings.Repeat("1", 33)} {
+		if _, err := tempoTraceID(value); err == nil {
+			t.Fatal("accepted invalid Tempo ID")
+		}
+	}
+}
+
+func TestMissingServerDoesNotBecomeACompleteDependencyGraph(t *testing.T) {
+	raw := fixture()
+	raw.ResourceSpans = raw.ResourceSpans[:1]
+	result, e := Decode(strings.Repeat("1", 32), raw)
+	if e != nil || !result.Partial || len(result.Edges) != 0 {
+		t.Fatal("missing server was treated as complete", result, e)
+	}
+}

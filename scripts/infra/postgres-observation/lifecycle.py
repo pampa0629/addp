@@ -33,6 +33,7 @@ OWNER = 'io.addp.postgres-metrics.owner'
 SCOPE = 'io.addp.postgres-metrics.scope'
 SERVICES = {'postgres-metrics', 'postgres-metrics-web'}
 FACT = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
+        '"started_at":{{json .State.StartedAt}},'
         '"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}},'
         '"mounts":{{json .Mounts}}}')
 
@@ -370,7 +371,9 @@ class SourceLifecycle:
                         self.scope, database.address, 5432, password, database=database.maintenance)), 0o644)
                     for name in ('ca.crt', 'server.crt', 'server.key'):
                         file_write(runtime / 'web' / name, (tls / name).read_bytes().decode('utf-8'), 0o644)
-                    labels = {OWNER: str(ROOT), SCOPE: self.scope}
+                    labels = {OWNER: str(ROOT), SCOPE: self.scope,
+                              'io.addp.postgres-metrics.database-id': database.identity,
+                              'io.addp.postgres-metrics.database-started-at': database.facts['started_at']}
                     template = str(ROOT / 'scripts/infra/postgres-metrics.yml')
                     compose = {'services': {
                         'postgres-metrics': {'extends': {'file': template, 'service': 'postgres-metrics'},

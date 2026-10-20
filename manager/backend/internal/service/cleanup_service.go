@@ -130,6 +130,9 @@ func (s *CleanupService) Start(ctx context.Context) error {
 		go s.runExportSessionCleanup(ctx)
 		s.log.Info("Manager 导出暂存清理已启动")
 	}
+	if s.model3DGLBSvc != nil {
+		go s.runModel3DOutputCleanup(ctx)
+	}
 	return nil
 }
 
@@ -884,7 +887,7 @@ func (s *CleanupService) sourceExists(ctx context.Context, tenantID uint, locato
 	}
 	client := s.metaClient.WithTenantID(tenantID)
 	if itemID > 0 {
-		if _, err := client.GetItemByID(itemID); err == nil {
+		if _, err := client.GetItemByID(ctx, itemID); err == nil {
 			return true
 		}
 	}
@@ -893,15 +896,15 @@ func (s *CleanupService) sourceExists(ctx context.Context, tenantID uint, locato
 		return false
 	}
 	if loc.ItemID != nil {
-		_, err := client.GetItemByID(*loc.ItemID)
+		_, err := client.GetItemByID(ctx, *loc.ItemID)
 		return err == nil
 	}
 	if loc.NodeID != nil {
-		_, err := client.GetNodeByID(*loc.NodeID)
+		_, err := client.GetNodeByID(ctx, *loc.NodeID)
 		return err == nil
 	}
 	if len(loc.Path) > 0 {
-		_, err := client.GetItemByCatalogPath(loc.EngineID, loc.FullName())
+		_, err := client.GetItemByCatalogPath(ctx, loc.EngineID, loc.FullName())
 		return err == nil
 	}
 	return false

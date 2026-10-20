@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"net/url"
@@ -339,7 +340,7 @@ func (c *AssetClient) do(
 		request.URL.RawQuery = query.Encode()
 	}
 
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return fmt.Errorf("send Asset request: %w", err)
 	}

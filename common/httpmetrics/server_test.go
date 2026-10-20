@@ -1,6 +1,7 @@
 package httpmetrics
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -244,3 +245,25 @@ type failingWriter struct{ gin.ResponseWriter }
 
 func (failingWriter) Write([]byte) (int, error)       { return 0, io.ErrClosedPipe }
 func (failingWriter) WriteString(string) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestRecoveryDoesNotDumpRequestHeadersOrPanicText(t *testing.T) {
+	previous := gin.DefaultErrorWriter
+	var captured bytes.Buffer
+	gin.DefaultErrorWriter = &captured
+	defer func() { gin.DefaultErrorWriter = previous }()
+	router := gin.New()
+	router.Use(Recovery())
+	router.GET("/private/:id", func(c *gin.Context) { panic("sensitive-panic-payload") })
+	request := httptest.NewRequest("GET", "/private/sensitive-object?value=sensitive-query", nil)
+	request.Header.Set("Cookie", "private_session=sensitive-cookie")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != 500 {
+		t.Fatal(response.Code)
+	}
+	for _, secret := range []string{"sensitive-panic-payload", "sensitive-object", "sensitive-query", "sensitive-cookie"} {
+		if strings.Contains(captured.String(), secret) {
+			t.Fatal("recovery dumped private request or panic data")
+		}
+	}
+}

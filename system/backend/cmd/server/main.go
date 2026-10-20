@@ -12,6 +12,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
@@ -184,12 +185,14 @@ func startSystemRegistration(ctx context.Context, registry *service.ModuleRegist
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	stopTrace := httptrace.StartOptional(request.ModuleName, request.Role)
 	request.ProcessMetrics = nil
 	source := processmetrics.StartOptional(processmetrics.Identity{ModuleName: request.ModuleName, Role: request.Role, InstanceID: request.InstanceID, StartedAt: request.ProcessStartedAt})
 	if source != nil {
 		request.ProcessMetrics = source.Declaration()
 	}
 	if err := registry.Register(request); err != nil {
+		stopTrace()
 		if source != nil {
 			_ = source.Close()
 		}
@@ -199,6 +202,7 @@ func startSystemRegistration(ctx context.Context, registry *service.ModuleRegist
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer stopTrace()
 		if source != nil {
 			defer source.Close()
 		}

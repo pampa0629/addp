@@ -46,8 +46,8 @@ func TestNormalizeStaticTileSourceFreezesPMTilesCameraAndSpatialFacts(t *testing
 	config := map[string]interface{}{"source": map[string]interface{}{
 		"locator": "addp://engine/9/path/addp/vector-tiles/farmland.pmtiles?type=object&item_id=51561",
 	}}
-	if err := service.normalizeStaticTileSource(1, config); err != nil {
-		t.Fatalf("normalizeStaticTileSource() error = %v", err)
+	if err := service.normalizeStaticTileSource(context.Background(), 1, config); err != nil {
+		t.Fatalf("normalizeStaticTileSource(context.Background(), ) error = %v", err)
 	}
 
 	snapshot := config["source_snapshot"].(map[string]interface{})

@@ -185,7 +185,10 @@
         "batch": "Batch {n}",
         "window": "Query window: {from} to {to} (exclusive)",
         "lateArrival": "Refresh to check for late arrivals",
-        "end": "No earlier matching entries found in this query"
+        "end": "No earlier matching entries found in this query",
+        "traceID": "Trace ID",
+        "traceOpen": "Query traces",
+        "invalidTrace": "Use a valid instance, Trace ID and a time range of up to one hour"
       },
       "pipeline": {
         "title": "Log pipeline",
@@ -857,7 +860,8 @@
           "engine_deployment": "Platform engine deployment",
           "platform_administrator_change": "Platform administrator change",
           "http_observation": "HTTP quality observations",
-          "platform_http_rule": "HTTP quality alert rules"
+          "platform_http_rule": "HTTP quality alert rules",
+          "trace": "HTTP traces"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -2300,7 +2304,8 @@
         "exited": "Container exited",
         "dead": "Container in dead state",
         "removing": "Container being removed"
-      }
+      },
+      "monitor": "View monitoring"
     }
   },
   "roles": {

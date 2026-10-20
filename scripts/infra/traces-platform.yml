@@ -1,0 +1,14 @@
+# Applied only when tracing is selected. The same Alloy owns logs and OTLP.
+services:
+  alloy:
+    command: [run, --server.http.listen-addr=0.0.0.0:12345, --storage.path=/var/lib/alloy, /trace-deployment/runtime.alloy]
+    cpus: 1
+    mem_limit: 1g
+    ports: ["127.0.0.1:${TRACE_OTLP_PORT:-14318}:4318"]
+    volumes:
+      - type: bind
+        source: ${ADDP_TRACE_DEPLOYMENT_DIR:-/nonexistent/addp-trace-deployment}
+        target: /trace-deployment
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [trace-backend]

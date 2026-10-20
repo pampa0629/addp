@@ -25,7 +25,7 @@ func (s *WorkflowEngineService) workflowVectorTileFacts(ctx context.Context, ten
 		return invalid()
 	}
 	client := s.metaClient.WithTenantID(tenantID)
-	item, err := client.GetItemByCatalogPath(locator.EngineID, locator.FullName())
+	item, err := client.GetItemByCatalogPath(ctx, locator.EngineID, locator.FullName())
 	if err != nil {
 		return invalid()
 	}
@@ -36,7 +36,7 @@ func (s *WorkflowEngineService) workflowVectorTileFacts(ctx context.Context, ten
 	if descriptor.DataType != datatype.Table || !slices.Contains([]string{"shapefile", "geojson"}, descriptor.Format) || (descriptor.Layout != format.LayoutSingle && descriptor.Layout != format.LayoutMulti) {
 		return invalid()
 	}
-	spatial, err := client.GetItemSpatialMetadataByID(item.ID)
+	spatial, err := client.GetItemSpatialMetadataByID(ctx, item.ID)
 	if err != nil || spatial == nil || spatial.SRID <= 0 || len(spatial.Extent) != 4 {
 		return invalid()
 	}

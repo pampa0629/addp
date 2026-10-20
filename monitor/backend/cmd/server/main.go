@@ -157,7 +157,7 @@ func main() {
 		resourceBackend = cfg.MetricsQueryClient
 		defer cfg.MetricsQueryClient.Close()
 	}
-	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
+	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).WithEngines(service.EngineObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go resourceRules.Run(runtimeContext)
 	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)

@@ -1,0 +1,80 @@
+// Sampling values are generated from Monitor's immutable policy.json.
+otelcol.receiver.otlp "platform" {
+  http {
+    endpoint = "0.0.0.0:4318"
+    tls {
+      cert_file = "/trace-deployment/server.crt"
+      key_file = "/trace-deployment/server.key"
+      client_ca_file = "/trace-deployment/source-ca.crt"
+      min_version = "1.2"
+    }
+  }
+  output { traces = [otelcol.processor.filter.platform.input] }
+}
+otelcol.processor.filter "platform" {
+  error_mode = "propagate"
+  traces {
+    span = [
+      "attributes[\"addp.http.routine\"] == true and attributes[\"addp.http.server_failure\"] != true",
+    ]
+  }
+  output { traces = [otelcol.processor.memory_limiter.platform.input] }
+}
+otelcol.processor.memory_limiter "platform" {
+  check_interval = "1s"
+  limit = "700MiB"
+  spike_limit = "128MiB"
+  output { traces = [otelcol.processor.tail_sampling.platform.input] }
+}
+otelcol.processor.tail_sampling "platform" {
+  decision_wait = "@DECISION_WAIT@s"
+  num_traces = @PENDING_TRACES@
+  expected_new_traces_per_sec = 50
+  decision_cache = { sampled_cache_size = 100000, non_sampled_cache_size = 100000 }
+  policy {
+    name = "bounded-priority"
+    type = "composite"
+    composite {
+      max_total_spans_per_second = @RETAINED_SPANS@
+      policy_order = ["failure", "slow", "ordinary"]
+      composite_sub_policy {
+        name = "failure"
+        type = "boolean_attribute"
+        boolean_attribute { key = "addp.http.server_failure"
+          value = true }
+      }
+      composite_sub_policy {
+        name = "slow"
+        type = "ottl_condition"
+        ottl_condition {
+          error_mode = "propagate"
+          span = ["kind == SPAN_KIND_SERVER and end_time_unix_nano - start_time_unix_nano >= @SLOW_MS@000000"]
+        }
+      }
+      composite_sub_policy {
+        name = "ordinary"
+        type = "probabilistic"
+        probabilistic { sampling_percentage = @NORMAL_PERCENT@ }
+      }
+      rate_allocation { policy = "failure"
+        percent = 70 }
+      rate_allocation { policy = "slow"
+        percent = 20 }
+      rate_allocation { policy = "ordinary"
+        percent = 10 }
+    }
+  }
+  output { traces = [otelcol.processor.batch.platform.input] }
+}
+otelcol.processor.batch "platform" {
+  send_batch_size = 256
+  send_batch_max_size = 256
+  timeout = "1s"
+  output { traces = [otelcol.exporter.otlphttp.tempo.input] }
+}
+otelcol.exporter.otlphttp "tempo" {
+  client { endpoint = "http://tempo:4318"
+    timeout = "2s" }
+  retry_on_failure { enabled = false }
+  sending_queue { enabled = false }
+}

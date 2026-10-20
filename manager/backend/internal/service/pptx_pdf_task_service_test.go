@@ -20,7 +20,7 @@ type fakePPTXPDFMetaClient struct {
 	err  error
 }
 
-func (f fakePPTXPDFMetaClient) GetItemByIDForTenant(_, _ uint) (*commonModels.MetaItem, error) {
+func (f fakePPTXPDFMetaClient) GetItemByIDForTenant(_ context.Context, _, _ uint) (*commonModels.MetaItem, error) {
 	return f.item, f.err
 }
 
@@ -36,8 +36,8 @@ func TestNormalizePPTXPDFTaskBuildsStableManagedTarget(t *testing.T) {
 		FullName: "addp/doc/slides.pptx", ObjectSizeBytes: &size, DataUpdatedAt: &updatedAt,
 	}}
 
-	if err := resolvePPTXPDFTaskSource(meta, task, "manager"); err != nil {
-		t.Fatalf("resolvePPTXPDFTaskSource() error = %v", err)
+	if err := resolvePPTXPDFTaskSource(context.Background(), meta, task, "manager"); err != nil {
+		t.Fatalf("resolvePPTXPDFTaskSource(context.Background(), ) error = %v", err)
 	}
 	config, err := decodePPTXPDFTaskConfig(task)
 	if err != nil {
@@ -91,12 +91,12 @@ func TestNormalizePPTXPDFTaskRejectsWrongSourceIdentity(t *testing.T) {
 func TestResolvePPTXPDFTaskSourceRejectsUnverifiedMetaIdentity(t *testing.T) {
 	task := &models.PPTXPDFTask{TenantID: 7, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}}}
 	meta := fakePPTXPDFMetaClient{item: &commonModels.MetaItem{ID: 77, TenantID: 7, EngineID: 12, ItemType: "file", Name: "other.pptx", FullName: "doc/other.pptx"}}
-	if err := resolvePPTXPDFTaskSource(meta, task, "manager"); err == nil || !errors.Is(err, ErrInvalidPPTXPDFSource) || !strings.Contains(err.Error(), "does not match") {
+	if err := resolvePPTXPDFTaskSource(context.Background(), meta, task, "manager"); err == nil || !errors.Is(err, ErrInvalidPPTXPDFSource) || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v", err)
 	}
 
 	task = &models.PPTXPDFTask{TenantID: 7, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}}}
-	if err := resolvePPTXPDFTaskSource(fakePPTXPDFMetaClient{err: errors.New("meta unavailable")}, task, "manager"); err == nil || !strings.Contains(err.Error(), "meta unavailable") {
+	if err := resolvePPTXPDFTaskSource(context.Background(), fakePPTXPDFMetaClient{err: errors.New("meta unavailable")}, task, "manager"); err == nil || !strings.Contains(err.Error(), "meta unavailable") {
 		t.Fatalf("error = %v", err)
 	}
 }

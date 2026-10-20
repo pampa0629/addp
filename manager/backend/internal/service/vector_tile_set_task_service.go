@@ -272,7 +272,7 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 			err = errors.New("vector tile set meta scan submitter is not configured")
 		} else {
 			var scan *commonExecution.TaskExecution
-			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath, executionID))
+			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(ctx, task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath, executionID))
 			if err == nil && scan != nil {
 				metaScanExecutionID = scan.ExecutionID
 				metadata["meta_scan_execution_id"] = scan.ExecutionID
@@ -311,7 +311,7 @@ func (s *VectorTileSetTaskService) resolveSourceVersion(ctx context.Context, ten
 	if s.metaClient == nil || source.ItemID == 0 {
 		return "", errors.New("Meta client and source item_id are required for vector tile set source version")
 	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(source.ItemID)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, source.ItemID)
 	if err != nil {
 		return "", err
 	}

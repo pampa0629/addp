@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"log"
 	"net"
@@ -554,6 +555,8 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 	go func() {
 		defer close(lifecycle.done)
 		defer close(lifecycle.fatal)
+		stopTrace := httptrace.StartOptional(registration.ModuleName, registration.Role)
+		defer stopTrace()
 		// The SDK owns this deployment declaration; request metadata or module
 		// URLs cannot manufacture a collection source. Start once per lease
 		// lifecycle and keep it stable across retry/re-registration.
@@ -784,7 +787,7 @@ func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token st
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return 0, fmt.Errorf("send System request: %w", err)
 	}

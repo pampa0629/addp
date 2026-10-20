@@ -42,7 +42,7 @@ func SetupRouter(
 	redisClient *redis.Client,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 
 	// i18n 中间件（解析 Accept-Language 请求头）
 	router.Use(i18nmiddleware.I18nMiddleware())

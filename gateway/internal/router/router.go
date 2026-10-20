@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/common/middleware/cors"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal"
@@ -23,7 +24,8 @@ import (
 )
 
 func SetupRouter(cfg *config.Config) (*gin.Engine, *commonClient.SystemServiceClient) {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	httptrace.MarkIngressBoundary()
+	router := modulelifecycle.NewRouter()
 
 	// CORS 中间件
 	router.Use(cors.CORS())

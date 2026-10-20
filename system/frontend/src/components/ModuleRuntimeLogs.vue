@@ -13,6 +13,7 @@
       <ModuleLogPipeline v-if="!isSource && modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
       <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('system.module.instances.leaseExpiredHint') }}</p>
       <div class="log-controls">
+        <el-input v-model="traceFilter" :placeholder="t('system.module.logs.traceID')" :aria-label="t('system.module.logs.traceID')" clearable @change="changed" />
         <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" @change="changed">
           <el-option v-if="isSource" value="source" :label="t('system.module.sources.sourceWindow')" />
           <el-option v-if="instance.stopped_at" value="offline" :label="t('system.module.logs.offlineWindow')" />
@@ -53,6 +54,8 @@
             <time>{{ date(entry.timestamp) }}</time>
             <el-tag :type="levelType(entry.level)" size="small">{{ t(`system.module.logs.levels.${entry.level}`) }}</el-tag>
             <span>{{ entry.channel }}</span>
+            <el-button v-if="canReadTrace && /^[0-9a-f]{32}$/.test(entry.trace_id || '')" text @click="openTrace(entry)">{{ t('system.module.logs.traceOpen') }}</el-button>
+            <span v-if="entry.trace_id">{{ entry.trace_id }} · {{ entry.span_id }}</span>
             <el-button text size="small" @click="copy(entry)">{{ t('system.module.logs.copy') }}</el-button>
           </div>
           <pre>{{ entry.message }}</pre>
@@ -67,6 +70,7 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { openConsoleRoute } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
@@ -75,10 +79,14 @@ import { MODULE_INSTANCE_PERIODS } from '../utils/routeState'
 import ModuleLogPipeline from './ModuleLogPipeline.vue'
 import { useAuthStore } from '../store/auth'
 import ModuleInstanceNode from './ModuleInstanceNode.vue'
-const props = defineProps({ modelValue: Boolean, instance: { type: Object, default: null } })
+const props = defineProps({ modelValue: Boolean, instance: { type: Object, default: null }, traceId: { type: String, default: '' }, initialRange: { type: Array, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const authStore = useAuthStore()
+const canRead = computed(() => authStore.contextType === 'platform' && authStore.hasPermission('platform.module_log.read') && !authStore.authContext?.delegation)
+const canReadTrace = computed(() => canRead.value && authStore.hasPermission('monitor.trace.read') && authStore.hasPermission('platform.module.read') && ['backend', 'ingress'].includes(props.instance?.role) && !isSource.value)
+const identity = computed(() => JSON.stringify([authStore.authContext?.principal, authStore.authContext?.context, authStore.authContext?.delegation, authStore.permissions]))
+const traceFilter = ref('')
 const isSource = computed(() => Boolean(props.instance?.capture_started_at))
 const levels = ['debug', 'info', 'warn', 'error', 'unknown']
 const period = ref('15m'), level = ref(''), keyword = ref(''), limit = ref(200), customRange = ref(null)
@@ -109,14 +117,15 @@ function range() {
 }
 function invalidate() { generation++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; loading.value = false }
 async function loadPage(index, window, cursor = '', fresh = false) {
-  if (!props.modelValue || !props.instance || document.hidden) return
+  if (!canRead.value || !props.modelValue || !props.instance || document.hidden) return
+  if (traceFilter.value && (!/^[0-9a-f]{32}$/.test(traceFilter.value) || /^0+$/.test(traceFilter.value))) { result.value = null; error.value = t('system.module.logs.invalidTrace'); return }
   if (!window) { error.value = t('system.module.logs.invalidRange'); return }
   const id = ++generation
   controller?.abort(); controller = new AbortController()
   loading.value = true; error.value = ''
   try {
     const data = await modulesAPI.logs(props.instance.module_name, props.instance.instance_id, {
-      from: window[0], to: window[1], level: level.value, keyword: keyword.value, limit: limit.value, ...(cursor ? { cursor } : {})
+      from: window[0], to: window[1], level: level.value, keyword: keyword.value, limit: limit.value, ...(traceFilter.value ? { trace_id: traceFilter.value } : {}), ...(cursor ? { cursor } : {})
     }, controller.signal)
     if (id === generation) {
       result.value = data
@@ -151,15 +160,21 @@ function previous() {
 }
 function changed() { latest(true) }
 function schedule() { invalidate(); result.value = null; positions = ['']; pageIndex.value = 0; fixedWindow = null; timer = setTimeout(() => { timer = null; latest(true) }, 300) }
-function reset() { period.value = isSource.value ? 'source' : isRuntimeInstanceOnline(props.instance) || !props.instance.stopped_at ? '15m' : 'offline'; level.value = ''; keyword.value = ''; limit.value = 200; customRange.value = null; changed() }
+function reset() { period.value = isSource.value ? 'source' : isRuntimeInstanceOnline(props.instance) || !props.instance.stopped_at ? '15m' : 'offline'; level.value = ''; keyword.value = ''; limit.value = 200; customRange.value = props.initialRange?.map(v => new Date(v)) || null; traceFilter.value = props.traceId; if (customRange.value) period.value = 'custom'; changed() }
 async function copy(entry) {
   try { await navigator.clipboard.writeText(JSON.stringify(entry, null, 2)); ElMessage.success(t('system.module.logs.copied')) }
   catch { ElMessage.error(t('system.module.logs.copyFailed')) }
 }
-watch(() => [props.modelValue, props.instance?.instance_id], () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (props.modelValue && props.instance) reset() }, { immediate: true })
+function openTrace(entry) {
+  if (!canReadTrace.value || !result.value) return
+  const from = Date.parse(entry.timestamp) - 60000, to = Math.min(Date.now(), from + 120000)
+  return openConsoleRoute('/monitor/traces?' + new URLSearchParams({ instance_id: String(props.instance.id), module_name: props.instance.module_name, role: props.instance.role, trace_id: entry.trace_id, start: new Date(from).toISOString(), end: new Date(to).toISOString() }), { history: 'push' })
+}
+watch(identity, () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (!canRead.value) emit('update:modelValue', false); else if (props.modelValue) reset() })
+watch(() => [props.modelValue, props.instance?.instance_id, props.traceId], () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (props.modelValue && props.instance) reset() }, { immediate: true })
 watch(follow, value => { if (value) latest() })
 const polling = setInterval(() => { if (follow.value && !loading.value && !timer) latest() }, 3000)
-function visibility() { if (!document.hidden && follow.value) latest(); else if (document.hidden) invalidate() }
+function visibility() { if (!document.hidden && follow.value) latest(); else if (document.hidden) { invalidate(); result.value = null } }
 document.addEventListener('visibilitychange', visibility)
 onUnmounted(() => { invalidate(); clearInterval(polling); document.removeEventListener('visibilitychange', visibility) })
 </script>

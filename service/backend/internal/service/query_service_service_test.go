@@ -48,7 +48,7 @@ func TestCreateServiceUsesTenantContextForDirectSQLEngine(t *testing.T) {
 		}},
 	}, 7, 11)
 	if err == nil {
-		t.Fatal("CreateService() error = nil, want System API failure")
+		t.Fatal("CreateService(context.Background(), ) error = nil, want System API failure")
 	}
 	if got := tokenProvider.tenantID.Load(); got != 7 {
 		t.Fatalf("System service token tenant ID = %d, want 7", got)
@@ -96,7 +96,7 @@ func TestCreateServiceRemovesRecordWhenLineagePublicationFails(t *testing.T) {
 		},
 	}, 7, 11)
 	if err == nil {
-		t.Fatal("CreateService() error = nil, want lineage publication failure")
+		t.Fatal("CreateService(context.Background(), ) error = nil, want lineage publication failure")
 	}
 	var count int64
 	if err := db.Model(&serviceModels.QueryService{}).Where("service_name = ?", "lineage_failure").Count(&count).Error; err != nil {

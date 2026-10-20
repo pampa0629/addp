@@ -6,8 +6,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	"github.com/addp/common/middleware/logging"
-	"github.com/addp/common/middleware/requestid"
+
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/transfer/docs"
 	_ "github.com/addp/transfer/i18n"
@@ -32,7 +31,7 @@ func SetupRouter(
 	systemServiceClient *commonClient.SystemServiceClient,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -41,7 +40,6 @@ func SetupRouter(
 	router.Use(commonCors.CORS())
 	router.Use(i18nmiddleware.I18nMiddleware()) // 国际化中间件
 	router.Use(requestid.RequestIDMiddleware()) // Request ID 追踪
-	router.Use(logging.LoggingMiddleware())     // 结构化日志记录
 
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

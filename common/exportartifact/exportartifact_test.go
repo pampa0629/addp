@@ -28,7 +28,7 @@ func (s *transferStub) CreateExecution(_ context.Context, request *commonClient.
 	return &commonClient.CreateTransferExecutionResponse{ExecutionID: request.ExportSession.ExecutionID, Status: StatusPending}, nil
 }
 
-func (s *transferStub) GetExecution(_ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
+func (s *transferStub) GetExecution(_ context.Context, _ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
 	return &commonClient.TransferExecutionResponse{Status: StatusPending}, nil
 }
 

@@ -579,8 +579,8 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 		TenantID: 7,
 	}
 
-	if err := service.attachSourceMetaAttributes(task, spec); err != nil {
-		t.Fatalf("attachSourceMetaAttributes() error = %v", err)
+	if err := service.attachSourceMetaAttributes(context.Background(), task, spec); err != nil {
+		t.Fatalf("attachSourceMetaAttributes(context.Background(), ) error = %v", err)
 	}
 	itemAttrs, ok := spec.Source.Attributes["item"].(map[string]interface{})
 	if !ok || itemAttrs["format"] != "parquet" {
@@ -623,8 +623,8 @@ func TestAttachEncodedRecordSourceMetaAttributesLoadsProtectionSchema(t *testing
 	}}
 	task := &models.TransferTask{TenantID: 7}
 
-	if err := service.attachEncodedRecordSourceMetaAttributes(task, spec); err != nil {
-		t.Fatalf("attachEncodedRecordSourceMetaAttributes() error = %v", err)
+	if err := service.attachEncodedRecordSourceMetaAttributes(context.Background(), task, spec); err != nil {
+		t.Fatalf("attachEncodedRecordSourceMetaAttributes(context.Background(), ) error = %v", err)
 	}
 	fields := planner.EncodedRecordSourceFields(*spec)
 	if len(fields) != 2 || fields[1].Name != "userInfo.phone" {
@@ -878,8 +878,8 @@ func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 		TenantID: 7,
 	}
 
-	if err := service.attachSourceMetaAttributes(task, spec); err == nil {
-		t.Fatal("attachSourceMetaAttributes() succeeded, want engine mismatch error")
+	if err := service.attachSourceMetaAttributes(context.Background(), task, spec); err == nil {
+		t.Fatal("attachSourceMetaAttributes(context.Background(), ) succeeded, want engine mismatch error")
 	}
 }
 

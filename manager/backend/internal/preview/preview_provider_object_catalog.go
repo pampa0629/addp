@@ -124,21 +124,21 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	var node *models.MetaNodeLite
 
 	if objectPath != "" {
-		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath, metaClient); err == nil {
+		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(ctx, resource.ID, bucket, objectPath, metaClient); err == nil {
 			item = fetchedItem
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
 			// 只有在非"记录不存在"错误时才返回错误
 			return nil, err
 		}
 
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, metaClient); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(ctx, resource.ID, bucket, objectPath, metaClient); err == nil {
 			node = fetchedNode
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
 			// 只有在非"记录不存在"错误时才返回错误
 			return nil, err
 		}
 	} else {
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, metaClient); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(ctx, resource.ID, bucket, objectPath, metaClient); err == nil {
 			node = fetchedNode
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
 			// 只有在非"记录不存在"错误时才返回错误

@@ -129,7 +129,7 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 		return nil, ErrDataProfileUnsupported
 	}
 
-	item, err := p.metaClient.WithTenantID(tenantID).GetItemByID(*resolved.MetaItemID)
+	item, err := p.metaClient.WithTenantID(tenantID).GetItemByID(ctx, *resolved.MetaItemID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: resolve profile source item: %v", ErrDataProfileUnavailable, err)
 	}

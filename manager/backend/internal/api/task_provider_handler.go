@@ -11,12 +11,14 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -1212,6 +1214,7 @@ func (h *TaskProviderHandler) UpdateDerivedTask(c *gin.Context) {
 // @Param task_type path string true "任务类型 | Task type"
 // @Param id path int true "任务 ID | Task ID"
 // @Success 204 "删除成功 | Deleted"
+// @Failure 409 {object} map[string]interface{} "FTP GLB 任务存在活动执行 | FTP GLB task has an active execution"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /tasks/{task_type}/{id} [delete]
@@ -1245,6 +1248,10 @@ func (h *TaskProviderHandler) DeleteDerivedTask(c *gin.Context) {
 		return
 	}
 	if err := taskService.Delete(c.Request.Context(), uint(id), tenantIDValue(c)); err != nil {
+		if taskType == commonExecution.TaskTypeModel3DGLBGeneration && errors.Is(err, commonapi.ErrConflict) {
+			managerError(c, http.StatusConflict, manageri18n.MsgTaskExecutionBusy)
+			return
+		}
 		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
 		return
 	}
@@ -1639,6 +1646,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Summary 执行任务 | Execute task
 // @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.
 // @Description model_3d_glb_generation 仅接受当前 User 手工根执行，并固化认证主体来源；scheduled 请求返回 403 且不创建执行。| model_3d_glb_generation accepts current User manual roots and freezes verified actor origin; scheduled requests return 403 without creating an execution.
+// @Description 真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -1647,11 +1655,14 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 202 {object} TaskExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "当前用户凭据失效 | Current User credential rejected"
 // @Failure 403 {object} map[string]interface{} "缺少可信发起人或执行来源不支持 | Verified actor required or unsupported execution origin"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
+// @Failure 503 {object} map[string]interface{} "来源引擎不可用 | Source engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
+// @x-addp-conditional-permissions ["manager.data_item.read"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
@@ -1740,7 +1751,7 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 			facts, _ := commonauth.AuthContextFromGin(c)
 			ctx = commonExecution.WithUserOrigin(ctx, facts)
 		}
-		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
+		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")))
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
@@ -1755,8 +1766,16 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	}
 
 	if err != nil {
+		if errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected) {
+			managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
+			return
+		}
 		if errors.Is(err, commonapi.ErrForbidden) {
 			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
 			return
 		}
 		if errors.Is(err, service.ErrTaskNotFound) {
@@ -3495,6 +3514,7 @@ func (h *TaskProviderHandler) GetModel3DGLB(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 409 {object} map[string]interface{} "FTP GLB 存在活动执行或清理归属未闭合 | FTP GLB has an active execution or unresolved cleanup ownership"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /model_3d_glb/{id} [delete]
@@ -3507,6 +3527,10 @@ func (h *TaskProviderHandler) DeleteModel3DGLB(c *gin.Context) {
 		return
 	}
 	if err := h.model3DGLBTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		if errors.Is(err, commonapi.ErrConflict) {
+			managerError(c, http.StatusConflict, manageri18n.MsgTaskExecutionBusy)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

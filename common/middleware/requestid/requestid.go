@@ -20,7 +20,7 @@ const (
 // RequestIDMiddleware 为每个请求生成唯一的 request ID 并注入到 context 中
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if FromGinContext(c) != "" {
+		if existing := FromGinContext(c); existing != "" && existing == FromContext(c.Request.Context()) {
 			c.Next()
 			return
 		}

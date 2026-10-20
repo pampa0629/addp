@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,14 +65,6 @@ type Detail struct {
 	Partial       bool      `json:"partial"`
 	PolicyVersion int       `json:"policy_version"`
 	Coverage      string    `json:"coverage"`
-}
-type Summary struct {
-	ID         string    `json:"trace_id"`
-	Start      time.Time `json:"start"`
-	DurationMS float64   `json:"duration_ms"`
-	SpanCount  int       `json:"span_count"`
-	Failed     bool      `json:"failed"`
-	Partial    bool      `json:"partial"`
 }
 type Backend interface {
 	Search(context.Context, commonclient.RuntimeInstanceReference, time.Time, time.Time, int) ([]string, error)
@@ -155,14 +148,34 @@ func (c *Client) Search(ctx context.Context, subject commonclient.RuntimeInstanc
 	ids := []string{}
 	seen := map[string]bool{}
 	for _, v := range result.Traces {
-		if !httptrace.ParseTraceID(v.ID) || seen[v.ID] {
+		id, err := tempoTraceID(v.ID)
+		if err != nil || seen[id] {
 			return nil, ErrUpstream
 		}
-		seen[v.ID] = true
-		ids = append(ids, v.ID)
+		seen[id] = true
+		ids = append(ids, id)
 	}
 	return ids, nil
 }
+
+// Tempo's JSON search API serializes trace IDs as unpadded lowercase hex.
+// Normalize once at this protocol boundary; the ADDP API remains fixed-width.
+func tempoTraceID(value string) (string, error) {
+	if len(value) < 1 || len(value) > 32 {
+		return "", ErrUpstream
+	}
+	for _, r := range value {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return "", ErrUpstream
+		}
+	}
+	id := strings.Repeat("0", 32-len(value)) + value
+	if !httptrace.ParseTraceID(id) {
+		return "", ErrUpstream
+	}
+	return id, nil
+}
+
 func (c *Client) Trace(ctx context.Context, id string, start, end time.Time) (Detail, error) {
 	if !httptrace.ParseTraceID(id) {
 		return Detail{}, ErrInvalid
@@ -187,6 +200,10 @@ func attrs(v []*commonpb.KeyValue) map[string]*commonpb.AnyValue {
 	}
 	return out
 }
+
+var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,49}$`)
+var instanceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$`)
+
 func bounded(v string, max int) bool { return len(v) <= max && !strings.ContainsAny(v, "\x00\r\n?#") }
 func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error) {
 	result := Detail{ID: id, Spans: []Span{}, Edges: []Edge{}, PolicyVersion: Definition().Version, Coverage: "sampled"}
@@ -194,7 +211,7 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 	for _, batch := range raw.GetResourceSpans() {
 		a := attrs(batch.GetResource().GetAttributes())
 		module, instance, role := a["service.name"].GetStringValue(), a["service.instance.id"].GetStringValue(), a["addp.role"].GetStringValue()
-		if module == "" || instance == "" || !bounded(module, 50) || !bounded(instance, 100) || (role != "backend" && role != "ingress") {
+		if !moduleName.MatchString(module) || !instanceName.MatchString(instance) || (role != "backend" && role != "ingress") {
 			return result, ErrUpstream
 		}
 		for _, scope := range batch.GetScopeSpans() {
@@ -250,9 +267,13 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 	for _, s := range result.Spans {
 		byID[s.ID] = s
 	}
+	matchedClients := map[string]bool{}
 	roots := 0
 	for _, s := range result.Spans {
 		if s.ParentID == "" {
+			if s.Kind != "server" {
+				result.Partial = true
+			}
 			roots++
 			continue
 		}
@@ -275,7 +296,13 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 			p = next
 		}
 		if s.Kind == "server" && parent.Kind == "client" {
+			matchedClients[parent.ID] = true
 			result.Edges = append(result.Edges, Edge{parent.Module, parent.Instance, s.Module, s.Instance, parent.ID, s.ID})
+		}
+	}
+	for _, s := range result.Spans {
+		if s.Kind == "client" && !matchedClients[s.ID] {
+			result.Partial = true
 		}
 	}
 	if roots != 1 {

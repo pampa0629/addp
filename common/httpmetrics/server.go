@@ -36,13 +36,20 @@ const panicKey = "addp.httpmetrics.recovered_panic"
 // runtime declaration supplies its identity through the existing metrics source.
 func Process() *Server { return process() }
 
-// Recovery preserves Gin's ordinary recovery behavior while recording that a
+// Recovery preserves response status/write semantics while recording that a
 // response interrupted after its headers were sent was not a successful request.
 func Recovery() gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, _ any) {
-		c.Set(panicKey, true)
-		c.AbortWithStatus(http.StatusInternalServerError)
-	})
+	return func(c *gin.Context) {
+        defer func() {
+            if recover() != nil {
+                c.Set(panicKey,true)
+                // Shared request logging emits only bounded transport facts.
+                // Gin's default recovery dumps raw request headers and panic text.
+                c.AbortWithStatus(http.StatusInternalServerError)
+            }
+        }()
+        c.Next()
+    }
 }
 
 // New uses OpenTelemetry HTTP server metric names, seconds, explicit duration
@@ -111,6 +118,39 @@ func (s *Server) Collect(ch chan<- prometheus.Metric) {
 	s.started.Collect(ch)
 }
 
+// CanonicalMethod is shared by process metrics, traces and request logs.
+func (s *Server) CanonicalMethod(value string) string {
+	if s.methods[value] {
+		return value
+	}
+	return "_OTHER"
+}
+
+// FailureType exposes the existing transport fact without adding a collector
+// or interpreting a response body. A 4xx status alone is not a server failure.
+func FailureType(c *gin.Context) string {
+	failed := false
+	if w, ok := c.Writer.(interface{ WriteFailed() bool }); ok {
+		failed = w.WriteFailed()
+	}
+	return failureType(c, false, failed)
+}
+func failureType(c *gin.Context, panicked, failed bool) string {
+	switch {
+	case panicked || c.GetBool(panicKey):
+		return "_OTHER"
+	case errors.Is(c.Request.Context().Err(), context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(c.Request.Context().Err(), context.Canceled):
+		return "canceled"
+	case failed:
+		return "_OTHER"
+	case c.Writer.Status() >= 500 && c.Writer.Status() <= 599:
+		return strconv.Itoa(c.Writer.Status())
+	}
+	return ""
+}
+
 // Middleware must enclose recovery and every request handler, including health,
 // readiness, authentication rejection and NoRoute. Gin's matched template is the
 // only route source. Neither URL paths nor forwarded/request identity headers
@@ -118,10 +158,7 @@ func (s *Server) Collect(ch chan<- prometheus.Metric) {
 func (s *Server) Middleware() gin.HandlerFunc {
 	s.started.Set(float64(time.Now().UnixNano()) / 1e9)
 	return func(c *gin.Context) {
-		method := c.Request.Method
-		if !s.methods[method] {
-			method = "_OTHER"
-		}
+		method := s.CanonicalMethod(c.Request.Method)
 		scheme := "http"
 		if c.Request.TLS != nil {
 			scheme = "https"
@@ -141,19 +178,7 @@ func (s *Server) Middleware() gin.HandlerFunc {
 					status = strconv.Itoa(code)
 				}
 			}
-			errorType := ""
-			switch {
-			case panicValue != nil || c.GetBool(panicKey):
-				errorType = "_OTHER"
-			case errors.Is(c.Request.Context().Err(), context.DeadlineExceeded):
-				errorType = "timeout"
-			case errors.Is(c.Request.Context().Err(), context.Canceled):
-				errorType = "canceled"
-			case writer.failed:
-				errorType = "_OTHER"
-			case c.Writer.Status() >= http.StatusInternalServerError:
-				errorType = status
-			}
+			errorType := failureType(c, panicValue != nil, writer.failed)
 			elapsed := time.Since(started).Seconds()
 			s.duration.WithLabelValues(method, scheme, c.FullPath(), status, errorType).Observe(elapsed)
 			s.aggregate.Observe(elapsed)
@@ -179,6 +204,8 @@ type observedWriter struct {
 	gin.ResponseWriter
 	failed bool
 }
+
+func (w *observedWriter) WriteFailed() bool { return w.failed }
 
 func (w *observedWriter) Write(data []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(data)

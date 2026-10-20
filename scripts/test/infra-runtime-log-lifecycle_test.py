@@ -84,7 +84,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
             env.pop(key, None)
         env['ADDP_POSTGRES_METRICS_STATE_DIR'] = str((self.root / 'postgres-metrics').resolve())
         env.pop('ADDP_DEPLOYMENT_DISCOVERY_DIR', None)
-        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
+        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES", "ADDP_OBSERVABILITY_TRACES_ENABLED", "ADDP_TRACE_DEPLOYMENTS", "ADDP_TRACE_DEPLOYMENT_DIR", "MONITOR_TEMPO_URL", "MONITOR_TRACE_TLS_DIR", "TEMPO_S3_ACCESS_KEY", "TEMPO_S3_SECRET_KEY", "TEMPO_BUCKET", "TRACE_OTLP_PORT", "TRACE_QUERY_PORT"):
             env.pop(key, None)
         env['BASH_ENV'] = str(self.shell_init)
         return env
@@ -192,6 +192,7 @@ case "$1" in
             case "$service" in
                 prometheus) key=MOCK_EXISTING_METRICS ;;
                 metrics-control) key=MOCK_EXISTING_CONTROL ;;
+                trace-query|tempo|trace-store-init) key=MOCK_EXISTING_TRACES ;;
                 *) key=MOCK_EXISTING_LOGS ;;
             esac
             if [[ "${!key:-}" == 1 ]]; then printf 'addp-%s\n' "$service"; fi
@@ -485,7 +486,7 @@ exit 0
         result = self.run_up(**self.healthy_docker(), MOCK_FAIL_LOG_BUILD='1',
                              ADDP_OBSERVABILITY_METRICS_ENABLED='true', **self.metrics_certificates())
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertTrue(any('up' in a and 'prometheus' in a for a in self.calls()))
+        self.assertTrue(any('up' in a and 'prometheus' in a for a in self.calls()), result.stdout + result.stderr)
         self.assertFalse(any('stop' in a or 'down' in a for a in self.calls()))
 
     def test_dev_ready_components_still_validate_selected_log_configuration(self):

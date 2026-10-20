@@ -14,7 +14,7 @@ func DecodeDeploymentJSON(raw []byte, dst interface{}) error {
 		return commonapi.ErrBadRequest
 	}
 	allowed := map[string]bool{}
-	for _, key := range []string{"items", "fingerprint", "scope", "state", "reason", "status", "display_name", "enabled", "inventory", "declared_node_id", "version", "schema", "observed_at", "source", "services", "type", "runtime", "docker_engine_id", "project", "service", "engine_type", "containers", "container_id", "started_at", "restart_count", "published_ports", "address", "port", "container_port", "protocol"} {
+	for _, key := range []string{"items", "fingerprint", "scope", "state", "reason", "status", "display_name", "enabled", "inventory", "declared_node_id", "version", "schema", "observed_at", "source", "services", "type", "runtime", "docker_engine_id", "project", "service", "engine_type", "containers", "container_id", "started_at", "restart_count", "published_ports", "address", "port", "container_port", "protocol", "postgresql_metrics", "endpoint"} {
 		allowed[key] = true
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))

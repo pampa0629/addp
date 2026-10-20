@@ -322,7 +322,7 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
 		return
 	}
-	result, err := h.svc.CheckSourceSnapshot(uint(id), tenantIDValue(c))
+	result, err := h.svc.CheckSourceSnapshot(c.Request.Context(), uint(id), tenantIDValue(c))
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, commonapi.ErrNotFound) {

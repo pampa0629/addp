@@ -20,9 +20,9 @@ func NewProcessTrendPlan(start, end, now time.Time, b Budget) (Plan, error) {
 	return newPlan([]string{processDefinitions[0].Key, processDefinitions[1].Key}, start, end, now, true, nil, b, processDefinitions)
 }
 
-// LimitProcessTrendStart preserves the validated budget and excludes the time
+// LimitTrendStart preserves the validated budget and excludes the time
 // before this process started. A brand-new process can have one empty point.
-func LimitProcessTrendStart(p Plan, started time.Time) Plan {
+func LimitTrendStart(p Plan, started time.Time) Plan {
 	first := started.UTC().Truncate(time.Second)
 	if first.Before(started) {
 		first = first.Add(time.Second)

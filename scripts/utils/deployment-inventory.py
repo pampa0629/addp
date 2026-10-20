@@ -30,6 +30,13 @@ CONTAINER = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
              '"working_dir":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},'
              '"oneoff":{{json (index .Config.Labels "com.docker.compose.oneoff")}},'
              '"ports":{{json .NetworkSettings.Ports}}}')
+# Deliberately selected labels, never Config.Env, arbitrary labels or Secrets.
+METRICS_CONTAINER = CONTAINER[:-1] + (
+    ',"owner":{{json (index .Config.Labels "io.addp.postgres-metrics.owner")}}'
+    ',"scope":{{json (index .Config.Labels "io.addp.postgres-metrics.scope")}}'
+    ',"database_id":{{json (index .Config.Labels "io.addp.postgres-metrics.database-id")}}'
+    ',"database_started_at":{{json (index .Config.Labels "io.addp.postgres-metrics.database-started-at")}}'
+    ',"network_mode":{{json .HostConfig.NetworkMode}}}')
 SCOPES = {'infra': ('addp-infra', REPOSITORY), 'business': ('business', ROOT)}
 DISCOVERY_LIMIT = 256 * 1024
 _observer_children = {}  # Reap observers started by this interpreter when stopped.
@@ -161,6 +168,59 @@ def discovery_container(value, project, root):
                      'restart_count': value['restart_count'], 'published_ports': published}
 
 
+def postgres_metrics(docker, scope, containers):
+    """A missing/invalid optional source never invalidates core deployment facts."""
+    missing = {'state': 'not_deployed'}
+    unavailable = {'state': 'unavailable'}
+    try:
+        project = 'addp-postgres-metrics-' + scope
+        ids = docker('ps', '--all', '--no-trunc', '--filter',
+                     'label=com.docker.compose.project='+project, '--format', '{{.ID}}').splitlines()
+        if not ids:
+            return missing
+        if len(ids) != 2 or len(set(ids)) != 2 or any(not identifier(cid) for cid in ids):
+            return unavailable
+        databases = [value for service, value in containers.values() if service == 'postgres']
+        if len(databases) != 1 or databases[0]['status'] != 'running':
+            return unavailable
+        database = databases[0]
+        sources = {}
+        for cid in ids:
+            value = json.loads(docker('inspect', '--type', 'container', '--format', METRICS_CONTAINER, cid))
+            service = value.get('service')
+            if (value.get('id') != cid or value.get('project') != project or value.get('oneoff') != 'False'
+                    or value.get('owner') != str(REPOSITORY) or value.get('scope') != scope
+                    or value.get('database_id') != database['container_id']
+                    or value.get('database_started_at') != database['started_at']
+                    or value.get('running') is not True or value.get('status') != 'running'
+                    or service not in ('postgres-metrics', 'postgres-metrics-web') or service in sources):
+                return unavailable
+            sources[service] = value
+        exporter, web = sources['postgres-metrics'], sources['postgres-metrics-web']
+        if web.get('network_mode') != 'container:'+exporter['id']:
+            return unavailable
+        ports = exporter.get('ports')
+        if (not isinstance(ports, dict) or len(ports) > 8 or not isinstance(ports.get('9443/tcp'), list)
+                or len(ports['9443/tcp']) != 1 or any(bindings for port, bindings in ports.items() if port != '9443/tcp')
+                or any((web.get('ports') or {}).values())):
+            return unavailable
+        binding = ports['9443/tcp'][0]
+        if not isinstance(binding, dict) or set(binding) != {'HostIp', 'HostPort'}:
+            return unavailable
+        ip, port = ipaddress.ip_address(binding['HostIp']), binding['HostPort']
+        if (str(ip) != binding['HostIp'] or ip.is_unspecified or ip.is_multicast or ip.is_link_local
+                or getattr(ip, 'ipv4_mapped', None) or '%' in str(ip)
+                or not (ip.is_loopback or any(ip in network for network in
+                    (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'), ipaddress.ip_network('fc00::/7')) if ip.version == network.version))
+                or not isinstance(port, str) or not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535):
+            return unavailable
+        host = '['+str(ip)+']' if ip.version == 6 else str(ip)
+        return {'state': 'available', 'endpoint': 'https://'+host+':'+port+'/metrics',
+                'container_id': database['container_id'], 'started_at': database['started_at']}
+    except (ValueError, TypeError, KeyError, OSError):
+        return unavailable
+
+
 def discover(scope, *, env=None, reader=None, system=None, root=None):
     if scope not in SCOPES:
         raise InventoryError('部署发现仅支持 infra 或 business')
@@ -186,15 +246,18 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
         return result
 
     first = read()
-    if read() != first or ids() != container_ids or json.loads(docker('info', '--format', INFO)) != info:
+    metrics = postgres_metrics(docker, scope, first)
+    if (read() != first or postgres_metrics(docker, scope, first) != metrics or ids() != container_ids
+            or json.loads(docker('info', '--format', INFO)) != info):
         raise InventoryError('部署发现期间来源发生变化')
     services = {}
     for service, container in first.values():
         services.setdefault(service, []).append(container)
     if len(services) > 64 or any(len(containers) > 16 for containers in services.values()):
         raise InventoryError('部署发现服务数量超出预算')
-    result = {'schema': 'addp.deployment-discovery/v1', 'scope': scope, 'state': 'available',
+    result = {'schema': 'addp.deployment-discovery/v2', 'scope': scope, 'state': 'available',
               'observed_at': observed_at(),
+              'postgresql_metrics': metrics,
               'source': {'type': 'docker_compose', 'runtime': kind, 'docker_engine_id': info['id'], 'project': project},
               'services': [{'service': service, 'engine_type': ENGINE_TYPES.get(service, 'unclassified'),
                             'containers': containers} for service, containers in sorted(services.items())]}
@@ -252,7 +315,7 @@ def write_document(directory, name, value):
 
 
 def unavailable_snapshot(scope):
-    return {'schema': 'addp.deployment-discovery/v1', 'scope': scope, 'state': 'unavailable',
+    return {'schema': 'addp.deployment-discovery/v2', 'scope': scope, 'state': 'unavailable',
             'observed_at': observed_at(), 'reason': 'source_unavailable', 'services': []}
 
 

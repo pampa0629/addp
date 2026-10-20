@@ -15,6 +15,7 @@
       <el-table-column :label="t('system.engineDeployments.state')" min-width="170"><template #default="{ row }">{{ t(`system.engineDeployments.states.${bindingState(row)}`) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.observed')" min-width="190"><template #default="{ row }">{{ formatDateTime(row.inventory.observed_at) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.detailAction')" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" :data-testid="`deployment-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button></template></el-table-column>
+      <el-table-column v-if="canObserve" :label="t('system.engineDeployments.monitor')" width="110"><template #default="{ row }"><el-button text type="primary" @click="openMonitoring(row.deployment_id)">{{ t('system.engineDeployments.monitor') }}</el-button></template></el-table-column>
       <template #empty><el-empty :description="t(listLoaded ? 'system.engineDeployments.empty' : 'system.hostNodes.notLoaded')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="listLoaded" :current-page="state.page" :page-size="state.pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="page => setQuery({page:String(page)})" @size-change="size => setQuery({page:'1',page_size:String(size)})" />
@@ -89,7 +90,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
+import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor, navigateConsoleModuleRoute } from '@common-ui'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { useAuthStore } from '../store/auth'
@@ -102,6 +103,8 @@ const auth=useAuthStore(), route=useRoute(), router=useRouter(), {t}=useI18n()
 const identity=computed(()=>JSON.stringify([auth.authContext?.principal,auth.authContext?.context,auth.authContext?.delegation,auth.permissions]))
 const canRead=computed(()=>auth.contextType==='platform' && auth.authContext?.principal?.type==='user' && !auth.authContext?.delegation && auth.hasPermission('platform.engine_deployment.read'))
 const canReadHosts=computed(()=>canRead.value && auth.hasPermission('platform.host_node.read'))
+const canObserve=computed(()=>canRead.value && auth.hasPermission('monitor.resource_observation.read'))
+const openMonitoring=id=>navigateConsoleModuleRoute(router,'monitor',{path:'/engine-resources',query:{deployment_id:id}},{history:'push'})
 const canCreate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.create'))
 const canUpdate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.update'))
 const deploymentID=computed(()=>typeof route.params.deployment_id==='string'?route.params.deployment_id:'')

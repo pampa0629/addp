@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -12,7 +13,7 @@ import (
 	"github.com/addp/common/resourcetree"
 )
 
-func (s *TileServiceService) normalizeStaticTileSource(tenantID uint, config map[string]interface{}) error {
+func (s *TileServiceService) normalizeStaticTileSource(ctx context.Context, tenantID uint, config map[string]interface{}) error {
 	if s.metaClient == nil {
 		return errors.New("meta client is required for static tile publication")
 	}
@@ -31,7 +32,7 @@ func (s *TileServiceService) normalizeStaticTileSource(tenantID uint, config map
 	if loc.Type != resourcetree.TypeObject && loc.Type != resourcetree.TypeFile {
 		return fmt.Errorf("static tile source must be an object or file item, got %s", loc.Type)
 	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(*loc.ItemID)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, *loc.ItemID)
 	if err != nil {
 		return fmt.Errorf("get static tile meta item %d: %w", *loc.ItemID, err)
 	}

@@ -224,7 +224,7 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 			if scope == "infra" {
 				project = "addp-infra"
 			}
-			value := models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v1", Scope: scope, State: "available", ObservedAt: time.Now().UTC().Format(time.RFC3339), Source: &models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "batch-daemon", Project: project}, Services: []models.DiscoveredDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.DiscoveredDeploymentContainer{{ContainerID: strings.Repeat("b", 64), Status: "running", StartedAt: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), PublishedPorts: []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}
+			value := models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v2", Scope: scope, State: "available", ObservedAt: time.Now().UTC().Format(time.RFC3339), Source: &models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "batch-daemon", Project: project}, Services: []models.DiscoveredDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.DiscoveredDeploymentContainer{{ContainerID: strings.Repeat("b", 64), Status: "running", StartedAt: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), PublishedPorts: []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}
 			raw, _ := json.Marshal(value)
 			if err := os.WriteFile(filepath.Join(directory, scope+".json"), raw, 0600); err != nil {
 				t.Fatal(err)

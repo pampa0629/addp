@@ -238,7 +238,7 @@ func (s *EmbeddingService) GetItemEmbeddingState(ctx context.Context, tenantID, 
 	if s.metaClient == nil {
 		return nil, "", errors.New("meta client is not available")
 	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(itemID)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, itemID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -289,7 +289,7 @@ func (s *EmbeddingService) resolveExecutionItems(ctx context.Context, tenantID u
 		if req.Target.ItemID == 0 {
 			return nil, errors.New("scope=item requires target.item_id")
 		}
-		item, err := client.GetItemByID(req.Target.ItemID)
+		item, err := client.GetItemByID(ctx, req.Target.ItemID)
 		if err != nil {
 			return nil, err
 		}
@@ -308,14 +308,14 @@ func (s *EmbeddingService) resolveExecutionItems(ctx context.Context, tenantID u
 }
 
 func (s *EmbeddingService) collectNodeItems(ctx context.Context, client *commonClient.MetaClient, nodeID uint, recursive bool) ([]commonModels.MetaItem, error) {
-	items, err := client.GetNodeItems(nodeID)
+	items, err := client.GetNodeItems(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
 	if !recursive {
 		return items, nil
 	}
-	children, err := client.GetNodeChildren(nodeID)
+	children, err := client.GetNodeChildren(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +663,7 @@ func (s *EmbeddingService) buildExecutionConfig(ctx context.Context, tenantID ui
 		if req.Target.ItemID == 0 {
 			return nil, errors.New("scope=item requires target.item_id")
 		}
-		item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(req.Target.ItemID)
+		item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(ctx, req.Target.ItemID)
 		if err != nil {
 			return nil, err
 		}

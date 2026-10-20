@@ -70,6 +70,13 @@ export function resolveModulesRouteState(routeQuery = {}) {
         Object.assign(preservedQuery, { time_period: period, time_from: from, time_to: to })
       }
     }
+    const logInstance = singleQueryValue(routeQuery.log_instance)
+    const traceID = singleQueryValue(routeQuery.trace_id)
+    const logFrom = queryTime(routeQuery.log_from), logTo = queryTime(routeQuery.log_to)
+    if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(logInstance) && /^[0-9a-f]{32}$/.test(traceID) && !/^0+$/.test(traceID) && logFrom && logTo && logFrom < logTo && Date.parse(logTo) - Date.parse(logFrom) <= 3600000) {
+      Object.assign(preservedQuery, { log_instance: logInstance, trace_id: traceID, log_from: logFrom, log_to: logTo })
+      filters.logInstance = logInstance
+    }
     const page = Number(singleQueryValue(routeQuery.page))
     const pageSize = Number(singleQueryValue(routeQuery.page_size))
     if (Number.isSafeInteger(page) && page > 1) {

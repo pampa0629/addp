@@ -6,6 +6,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
+	"github.com/addp/common/httptrace"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,7 +23,7 @@ func NewServiceProxy(targetURL string) *ServiceProxy {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DisableCompression = true
 	reverseProxy := httputil.NewSingleHostReverseProxy(target)
-	reverseProxy.Transport = transport
+	reverseProxy.Transport = httptrace.Transport(transport, targetURL)
 	reverseProxy.ErrorHandler = func(w http.ResponseWriter, request *http.Request, proxyErr error) {
 		log.Printf("代理请求失败: %v (target: %s)", proxyErr, targetURL)
 		w.Header().Set("Content-Type", "application/json")

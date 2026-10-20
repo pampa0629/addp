@@ -456,7 +456,7 @@ func (s *TaskService) runClaimedSchemaChangeMetaScan(ctx context.Context, tenant
 		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", "metadata scan requires a target table locator")
 		return
 	}
-	run, err := s.metaClient.WithTenantID(tenantID).CreateManualScanRun(commonClient.MetaScanOptions{
+	run, err := s.metaClient.WithTenantID(tenantID).CreateManualScanRun(ctx, commonClient.MetaScanOptions{
 		EngineID: target.ID, Targets: targets, SchemaChangeSource: &commonExecution.SchemaChangeScanSource{ExecutionID: request.ExecutionID, RequestID: request.ID, ClaimToken: request.MetadataScanClaimToken},
 		ScanDepth: "deep", Force: true, TriggerType: commonExecution.TriggerTypeManual, Source: commonExecution.ModuleTransfer,
 	})

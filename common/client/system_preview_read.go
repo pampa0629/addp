@@ -31,6 +31,13 @@ func (c *SystemServiceClient) CheckManagerProfileResultRead(ctx context.Context,
 }
 
 func (c *SystemServiceClient) checkManagerSourceRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool) error {
+	request := struct {
+		Targets []plugin.EngineCatalogPath `json:"targets"`
+	}{Targets: targets}
+	return c.checkManagerSourceReadRequest(ctx, credential, targets, path, delegated, request)
+}
+
+func (c *SystemServiceClient) checkManagerSourceReadRequest(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool, request any) error {
 	validToken := false
 	prefixes := []string{"addp_at_"}
 	if delegated {
@@ -63,9 +70,7 @@ func (c *SystemServiceClient) checkManagerSourceRead(ctx context.Context, creden
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	bound.httpClient = &httpClient
 	status, err := bound.doJSON(ctx, http.MethodPost, path, credential,
-		struct {
-			Targets []plugin.EngineCatalogPath `json:"targets"`
-		}{Targets: targets}, &response, 4096)
+		request, &response, 4096)
 	if status == http.StatusUnauthorized {
 		return ErrManagerPreviewCredentialRejected
 	}

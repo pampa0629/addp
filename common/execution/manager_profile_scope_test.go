@@ -14,6 +14,9 @@ func TestManagerProfileScopeBindsEntireRawConfigWithoutFloatRoundTrip(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	if left.ConfigDigest != "07ebf6cd1efa71303bcb188d44470d87a11657858858e3582f21516443898507" {
+		t.Fatal("existing canonical profile digest changed")
+	}
 	reordered, _ := NewManagerProfileReadScope(json.RawMessage(`{ "timeout":120000, "condition":9007199254740993, "engine_id":12 }`), set)
 	if reordered.ConfigDigest != left.ConfigDigest {
 		t.Fatal("key order or whitespace changed the digest")
@@ -36,7 +39,7 @@ func TestManagerProfileScopeBindsEntireRawConfigWithoutFloatRoundTrip(t *testing
 
 func TestManagerProfileScopeRejectsInvalidRawConfig(t *testing.T) {
 	set, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(12, "schema", "public", "C"))
-	for _, raw := range []string{"", "null", "[]", "1", "{", "{} {}", `{"x":NaN}`, strings.Repeat(" ", 512<<10) + "{}"} {
+	for _, raw := range []string{"", "null", "[]", "1", "{", "{} {}", `{"x":NaN}`, `{"x":1,"x":2}`, `{"options":{"x":1,"x":2}}`, strings.Repeat(" ", 512<<10) + "{}"} {
 		if scope, err := NewManagerProfileReadScope(json.RawMessage(raw), set); err == nil || scope != nil {
 			t.Fatalf("invalid raw configuration accepted, length=%d", len(raw))
 		}

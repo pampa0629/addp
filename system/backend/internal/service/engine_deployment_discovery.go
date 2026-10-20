@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 )
 
@@ -25,13 +26,14 @@ var discoveredServiceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127
 type DeploymentDiscoveryService struct{ Directory string }
 
 func discoveryState(scope, state, reason string) models.DeploymentDiscoveryScope {
-	return models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v1", Scope: scope, State: state, Reason: reason, Services: []models.DiscoveredDeploymentService{}}
+	return models.DeploymentDiscoveryScope{Schema: "addp.deployment-discovery/v2", Scope: scope, State: state, Reason: reason, Services: []models.DiscoveredDeploymentService{}}
 }
 
 func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.DeploymentDiscovery {
 	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2), Candidates: []models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.readScope(ctx, scope)
+		value.PostgreSQLMetrics = nil // The browser projection has no professional source endpoint.
 		result.Scopes = append(result.Scopes, value)
 		if value.State == "available" {
 			for _, service := range value.Services {
@@ -161,8 +163,15 @@ func (s *DeploymentDiscoveryService) readScope(ctx context.Context, scope string
 
 func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.DeploymentDiscoveryScope {
 	bad := discoveryState(scope, "unavailable", "source_invalid")
-	var value models.DeploymentDiscoveryScope
-	if len(raw) > deploymentDiscoveryLimit || DecodeDeploymentJSON(raw, &value) != nil || value.Schema != "addp.deployment-discovery/v1" || value.Scope != scope || value.Services == nil || (scope != "infra" && scope != "business") {
+	var document struct {
+		models.DeploymentDiscoveryScope
+		Metrics json.RawMessage `json:"postgresql_metrics,omitempty"`
+	}
+	if len(raw) > deploymentDiscoveryLimit || DecodeDeploymentJSON(raw, &document) != nil {
+		return bad
+	}
+	value := document.DeploymentDiscoveryScope
+	if value.Schema != "addp.deployment-discovery/v2" || value.Scope != scope || value.Services == nil || (scope != "infra" && scope != "business") {
 		return bad
 	}
 	at, err := time.Parse(time.RFC3339, value.ObservedAt)
@@ -226,6 +235,28 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	}
 	if value.Services == nil {
 		value.Services = []models.DiscoveredDeploymentService{}
+	}
+	value.PostgreSQLMetrics = &commonmodels.PostgreSQLMetricsSource{State: "not_deployed"}
+	if len(document.Metrics) != 0 {
+		var metrics commonmodels.PostgreSQLMetricsSource
+		if DecodeDeploymentJSON(document.Metrics, &metrics) != nil || metrics.Validate() != nil ||
+			(metrics.StartedAt != nil && metrics.StartedAt.After(at)) {
+			metrics = commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
+		}
+		if metrics.State == "available" {
+			matched := false
+			for _, service := range value.Services {
+				if service.Service == "postgres" && service.EngineType == "postgresql" && len(service.Containers) == 1 {
+					container := service.Containers[0]
+					started, err := time.Parse(time.RFC3339Nano, container.StartedAt)
+					matched = err == nil && container.Status == "running" && container.ContainerID == metrics.ContainerID && started.Equal(*metrics.StartedAt)
+				}
+			}
+			if !matched {
+				metrics = commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
+			}
+		}
+		value.PostgreSQLMetrics = &metrics
 	}
 	return value
 }

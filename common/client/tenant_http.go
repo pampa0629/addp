@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"strings"
@@ -117,7 +118,7 @@ func (c tenantHTTPClient) doJSONWithToken(ctx context.Context, method, path, tok
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return 0, &TenantTransportError{Method: method, Path: pathWithoutQuery(path), Cause: err}
 	}

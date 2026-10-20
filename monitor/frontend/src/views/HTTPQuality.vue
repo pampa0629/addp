@@ -20,7 +20,7 @@
       </el-table>
       <el-pagination layout="total, prev, pager, next" :total="total" :page-size="10" :current-page="state.page" @current-change="page => navigate({ ...state.query, page: String(page) })" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.http.details')" width="90%" @close="closeDetail">
-        <p v-if="selected" class="subject">{{ selected.module_name }} · {{ selected.instance_id }}</p>
+        <p v-if="selected" class="subject">{{ selected.module_name }} · {{ selected.instance_id }} <el-button v-if="auth.hasPermission('monitor.trace.read')" link @click="openTraces">{{ t('monitor.traces.open') }}</el-button></p>
         <el-alert v-if="detailError" :title="t(detailError)" type="warning" :closable="false" data-testid="http-detail-error" />
         <p class="hint">{{ t('monitor.http.samples') }}</p>
         <div class="filters"><el-select :model-value="state.sort" :aria-label="t('monitor.http.sort')" @update:model-value="sort => navigate({ ...state.query, sort })"><el-option v-for="sort in ['mean', 'qps']" :key="sort" :value="sort" :label="t(`monitor.http.metrics.${sort}`)" /></el-select><el-button v-if="state.route !== null" @click="selectRoute(null)">{{ t('monitor.http.allRoutes') }}</el-button></div>
@@ -65,6 +65,11 @@ const summary = row => summaries.value.find(item => item.subject.id === row.id)
 function display(row, name) { const value = httpValue(row, name); return value === null ? '—' : new Intl.NumberFormat(locale.value, { maximumFractionDigits: name === 'active' ? 0 : 3 }).format(value) }
 const navigate = (query, history = 'replace') => navigateMonitorRoute(router, { path: '/http-quality', query: resolveHTTPRoute(query).query }, { history })
 function filter() { return navigate({ ...state.value.query, page: undefined, instance_id: undefined, route: undefined, method: undefined, module_name: moduleDraft.value.trim(), role: roleDraft.value }) }
+function openTraces() {
+  if (!selected.value || !canRead.value || !auth.hasPermission('monitor.trace.read')) return
+  const end = new Date(), start = new Date(end.getTime() - 900000)
+  return navigateMonitorRoute(router, { path: '/traces', query: { instance_id: String(selected.value.id), module_name: selected.value.module_name, role: selected.value.role, start: start.toISOString(), end: end.toISOString() } }, { history: 'push' })
+}
 function closeDetail() { const { instance_id, route, method, range, ...query } = state.value.query; return navigate(query) }
 function selectRoute(row) { const { route, method, ...query } = state.value.query; return navigate({ ...query, ...(row ? { route: row.route, method: row.method } : {}) }) }
 function invalidChart() { history.value = null; detailError.value = 'monitor.resources.errors.invalidResponse' }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -33,7 +34,7 @@ func NewTileServiceService(repo *repository.TileServiceRepository, metaClient *c
 // ============================================================================
 
 // CreateService 创建瓦片服务（包括第一个图层）
-func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest, tenantID uint, createdBy uint) (*models.TileServiceDTO, error) {
+func (s *TileServiceService) CreateService(ctx context.Context, req *models.CreateTileServiceRequest, tenantID uint, createdBy uint) (*models.TileServiceDTO, error) {
 	// 1. 验证服务名称唯一性
 	unique, err := s.repo.CheckServiceNameUnique(req.ServiceName, tenantID, nil)
 	if err != nil {
@@ -47,7 +48,7 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 	if req.FirstLayer == nil {
 		return nil, errors.New("first_layer is required")
 	}
-	if err := s.normalizeLayerConfig(tenantID, req.FirstLayer.LayerType, req.FirstLayer.LayerConfig); err != nil {
+	if err := s.normalizeLayerConfig(ctx, tenantID, req.FirstLayer.LayerType, req.FirstLayer.LayerConfig); err != nil {
 		return nil, fmt.Errorf("invalid first layer config: %w", err)
 	}
 
@@ -93,7 +94,7 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 	// 注意：GORM 会自动通过 ForeignKey 设置 ServiceID
 	service.Layers = []models.TileServiceLayer{*firstLayer}
 
-	if err := s.repo.CreateService(service); err != nil {
+	if err := s.repo.CreateService( service); err != nil {
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 
@@ -233,7 +234,7 @@ func (s *TileServiceService) DeleteService(id, tenantID uint) error {
 // ============================================================================
 
 // AddLayer 为服务添加新图层
-func (s *TileServiceService) AddLayer(serviceID, tenantID uint, req *models.CreateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
+func (s *TileServiceService) AddLayer(ctx context.Context, serviceID, tenantID uint, req *models.CreateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
 	// 1. 验证服务是否存在
 	serviceModel, err := s.repo.GetServiceByIDAndTenant(serviceID, tenantID)
 	if err != nil {
@@ -250,7 +251,7 @@ func (s *TileServiceService) AddLayer(serviceID, tenantID uint, req *models.Crea
 	}
 
 	// 3. 验证图层配置
-	if err := s.normalizeLayerConfig(serviceModel.TenantID, req.LayerType, req.LayerConfig); err != nil {
+	if err := s.normalizeLayerConfig(ctx, serviceModel.TenantID, req.LayerType, req.LayerConfig); err != nil {
 		return nil, fmt.Errorf("invalid layer config: %w", err)
 	}
 
@@ -308,7 +309,7 @@ func (s *TileServiceService) ListLayers(serviceID, tenantID uint) ([]models.Tile
 }
 
 // UpdateLayer 更新图层
-func (s *TileServiceService) UpdateLayer(layerID, serviceID, tenantID uint, req *models.UpdateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
+func (s *TileServiceService) UpdateLayer(ctx context.Context, layerID, serviceID, tenantID uint, req *models.UpdateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
 	// 获取现有图层
 	layer, err := s.repo.GetLayerByIDAndTenant(layerID, serviceID, tenantID)
 	if err != nil {
@@ -330,7 +331,7 @@ func (s *TileServiceService) UpdateLayer(layerID, serviceID, tenantID uint, req 
 		if err != nil {
 			return nil, fmt.Errorf("get layer service failed: %w", err)
 		}
-		if err := s.normalizeLayerConfig(serviceModel.TenantID, layer.LayerType, req.LayerConfig); err != nil {
+		if err := s.normalizeLayerConfig(ctx, serviceModel.TenantID, layer.LayerType, req.LayerConfig); err != nil {
 			return nil, fmt.Errorf("invalid layer config: %w", err)
 		}
 		updates["layer_config"] = req.LayerConfig
@@ -343,7 +344,7 @@ func (s *TileServiceService) UpdateLayer(layerID, serviceID, tenantID uint, req 
 	}
 
 	// 执行更新
-	if err := s.repo.UpdateLayer(layerID, serviceID, tenantID, updates); err != nil {
+	if err := s.repo.UpdateLayer( layerID, serviceID, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update layer failed: %w", err)
 	}
 
@@ -369,7 +370,7 @@ func (s *TileServiceService) DeleteLayer(layerID, serviceID, tenantID uint) erro
 // ============================================================================
 
 // normalizeLayerConfig 校验图层配置，并把静态来源收敛为后端生成的发布快照。
-func (s *TileServiceService) normalizeLayerConfig(tenantID uint, layerType string, config map[string]interface{}) error {
+func (s *TileServiceService) normalizeLayerConfig(ctx context.Context, tenantID uint, layerType string, config map[string]interface{}) error {
 	// 验证图层类型
 	if layerType != "dynamic" && layerType != "static" {
 		return errors.New("layer_type must be 'dynamic' or 'static'")
@@ -400,7 +401,7 @@ func (s *TileServiceService) normalizeLayerConfig(tenantID uint, layerType strin
 	}
 
 	if layerType == "static" {
-		return s.normalizeStaticTileSource(tenantID, config)
+		return s.normalizeStaticTileSource(ctx, tenantID, config)
 	}
 
 	return nil

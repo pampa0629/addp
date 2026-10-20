@@ -438,6 +438,10 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 	}
 
 	repo := NewModel3DGLBRepository(db)
+	snapshot, snapshotErr := repo.TaskConfigSnapshot(context.Background(), task.ID, tenantID)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
 	createdAt := time.Now().UTC()
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -457,7 +461,7 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 			_, claimErr := repo.ClaimExecution(
 				context.Background(), task.ID, tenantID,
 				execution,
-				false,
+				false, snapshot,
 			)
 			results <- claimErr
 		}()

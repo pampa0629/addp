@@ -75,6 +75,14 @@ if addp_metrics_enabled && [[ -n "${MONITOR_PROMETHEUS_URL:-}" ]]; then
     echo 'Monitor metrics query unconfigured; business startup remains independent' >&2
   fi
 fi
+if addp_traces_enabled; then
+  if python3 scripts/prod/generate-trace-platform.py; then
+    PLATFORM_COMPOSE_FILES+=(-f "$ADDP_TRACE_DEPLOYMENT_DIR/platform-traces.json")
+  else
+    infra_result=1
+    echo 'Trace producer/query deployment unconfigured; business startup remains independent' >&2
+  fi
+fi
 # Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
 export LOKI_URL=''
 if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi

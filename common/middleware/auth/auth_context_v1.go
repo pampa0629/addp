@@ -1,6 +1,7 @@
 package auth
 
 import (
+"github.com/addp/common/httptrace"
 	"bytes"
 	"context"
 	"errors"
@@ -133,7 +134,7 @@ func (r *authContextHTTPResolver) resolve(
 		request.Header.Set(requestidmiddleware.RequestIDHeader, headers.RequestID)
 	}
 
-	response, err := r.httpClient.Do(request)
+	response, err := httptrace.Do(r.httpClient, request, r.endpoint)
 	if err != nil {
 		return commonauth.AuthContext{}, errAuthContextUnavailable
 	}

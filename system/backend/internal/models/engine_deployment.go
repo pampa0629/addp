@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	commonmodels "github.com/addp/common/models"
+	"time"
+)
 
 // EngineDeploymentInventory is a credential-free declaration, never a live observation or grant.
 type EngineDeploymentInventory struct {
@@ -103,13 +106,16 @@ type EngineDeploymentCandidate struct {
 	DeploymentID string `json:"deployment_id,omitempty"`
 }
 type DeploymentDiscoveryScope struct {
-	Schema     string                        `json:"schema"`
-	Scope      string                        `json:"scope"`
-	State      string                        `json:"state"`
-	ObservedAt string                        `json:"observed_at,omitempty"`
-	Reason     string                        `json:"reason,omitempty"`
-	Source     *EngineDeploymentSource       `json:"source,omitempty"`
-	Services   []DiscoveredDeploymentService `json:"services"`
+	// Only the private observation projection consumes this field. Neither the
+	// public discovery JSON nor an immutable deployment inventory contains it.
+	PostgreSQLMetrics *commonmodels.PostgreSQLMetricsSource `json:"-"`
+	Schema            string                                `json:"schema"`
+	Scope             string                                `json:"scope"`
+	State             string                                `json:"state"`
+	ObservedAt        string                                `json:"observed_at,omitempty"`
+	Reason            string                                `json:"reason,omitempty"`
+	Source            *EngineDeploymentSource               `json:"source,omitempty"`
+	Services          []DiscoveredDeploymentService         `json:"services"`
 }
 type DiscoveredDeploymentService struct {
 	Service    string                          `json:"service"`

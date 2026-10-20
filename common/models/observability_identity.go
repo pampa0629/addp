@@ -41,6 +41,7 @@ type ObservabilityEngineIdentity struct {
 	EngineType   string                       `json:"engine_type"`
 	NodeID       string                       `json:"node_id"`
 	SourceKey    ObservabilityEngineSourceKey `json:"source_key"`
+	Metrics      *PostgreSQLMetricsSource     `json:"metrics,omitempty"`
 }
 
 var observabilityDockerEngineID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$`)
@@ -57,7 +58,7 @@ func (i ObservabilityEngineIdentity) Validate() error {
 		!((i.Scope == "infra" && i.SourceKey.Project == "addp-infra") || (i.Scope == "business" && i.SourceKey.Project == "business")) {
 		return errors.New("invalid observability engine identity")
 	}
-	return nil
+	return i.Metrics.Validate()
 }
 
 type ObservabilityNodeIdentity struct {

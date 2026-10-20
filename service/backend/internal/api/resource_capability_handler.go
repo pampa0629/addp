@@ -172,7 +172,7 @@ func (h *ResourceCapabilityHandler) GetGraphNodeShapes(c *gin.Context) {
 		return
 	}
 	metaClient := h.metaClient.WithTenantID(commonAuth.GetTenantID(c))
-	item, err := metaClient.GetItemByCatalogPath(uint(engineID), fmt.Sprintf("%s.graph", database))
+	item, err := metaClient.GetItemByCatalogPath(c.Request.Context(), uint(engineID), fmt.Sprintf("%s.graph", database))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get graph item: " + err.Error()})
 		return

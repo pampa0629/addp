@@ -97,3 +97,15 @@ Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_
 
 
 macOS 本地 Docker Desktop 的稳定指标访问由 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS` 显式列出来源回环端口，格式与限制见本文“平台观测配置边界”中的部署契约。中心唯一 HTTP SD Job 只将列出的 `127.0.0.1:端口` 传输地址映射到 `host.docker.internal:端口`，instance 仍保留 Monitor 的规范来源地址。叶子证书须包含两种访问名称，mTLS 身份与信任根不变；不放宽通配监听、自动改端口或读取任意目标。中心配置经标准 Infra 生命周期生效，不隐式重启业务进程；来源及 Monitor 的部署输入有变更时，分别由用户沿对应模块标准入口重启。
+
+## Go HTTP 追踪部署
+
+二期第一批使用 `ADDP_OBSERVABILITY_TRACES_ENABLED=true` 显式选择；默认关闭。`ADDP_TRACE_DEPLOYMENTS` 是严格 JSON 数组，每项仅含正式 `module_name`、`role`（backend/ingress）、HTTPS `/v1/traces` 的 `endpoint` 及仓库外绝对 `tls_dir`，每个 module/role 唯一。单个进程只消费自身项，未选择时不导出；不使用 OTEL_* 作为另一套配置。每个 TLS 目录仅含 `ca.crt/client.crt/client.key`，目录 owner-only、私钥 0600，部署者提供独立客户端证书，不复制到仓库、普通配置或浏览器。
+
+中心 `ADDP_TRACE_DEPLOYMENT_DIR` 也是仓库外 owner-only 目录，部署者提供 `server.crt/server.key/source-ca.crt/query-ca.crt`；服务端证书 SAN 覆盖实际来源/查询访问地址，两套客户端 CA 分开。标准 Infra 入口从 Monitor 的 `internal/tracequery/policy.json` 生成共用 Alloy 与 Tempo 配置；日志启用时沿原管线合并，不能再启动第二个 Alloy。Tempo WAL 时间容差随等待加 180 秒生成，避免尾采样后原始历史窗口被排除。
+
+Tempo 使用独立 `TEMPO_BUCKET/TEMPO_S3_ACCESS_KEY/TEMPO_S3_SECRET_KEY`，不得复用日志或 MinIO 根账号；初始化只管理该 bucket 的 20 GiB 配额及其最小账号。72 小时为按容量约束的保留配置，另预留约 5 GiB WAL/工作空间，不构成文件系统硬配额。Alloy/Tempo 资源、采样及预算计算见[正式规范 6.5](../addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)。
+
+Monitor 查询通过独立 `MONITOR_TEMPO_URL` HTTPS origin 和 `MONITOR_TRACE_TLS_DIR` 三文件客户端目录访问只读代理，不能复用来源证书。原生开发显式使用 Infra 实际回环映射；容器部署由唯一生产入口将 SDK 数组与私有目录投影为每服务独立只读挂载，查询目录仅挂 Monitor。改变部署输入由用户按标准生命周期重启相应进程；配置失败或中心故障不影响业务 Ready，接受导出不等于采样保留回执。
+
+本轮只使用 `make test-monitor-traces` 的当次隔离设施验证，不接管个人服务，不扩展或运行 Hosted。

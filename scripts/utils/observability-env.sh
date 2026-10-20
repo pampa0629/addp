@@ -39,6 +39,7 @@ addp_observability_profiles() {
   unset COMPOSE_PROFILES
   local profiles=()
   if addp_runtime_logs_enabled; then profiles+=(observability-logs); fi
+  if addp_traces_enabled; then profiles+=(observability-traces); fi
   if addp_metrics_enabled; then
     profiles+=(observability-metrics)
     if [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == true ]]; then profiles+=(observability-metrics-control); fi
@@ -88,6 +89,11 @@ if os.environ.get('ADDP_OBSERVABILITY_LOGS_ENABLED', 'true') == 'true':
             updates[key] = secrets.token_hex(32)
     if not os.environ.get('LOKI_S3_ACCESS_KEY'):
         updates['LOKI_S3_ACCESS_KEY'] = 'addp-runtime-logs'
+if os.environ.get('ADDP_OBSERVABILITY_TRACES_ENABLED', 'false') == 'true':
+    if not os.environ.get('TEMPO_S3_SECRET_KEY'):
+        updates['TEMPO_S3_SECRET_KEY'] = secrets.token_hex(32)
+    if not os.environ.get('TEMPO_S3_ACCESS_KEY'):
+        updates['TEMPO_S3_ACCESS_KEY'] = 'addp-runtime-traces'
 if not os.environ.get('ADDP_HOST_NODE_NAME'):
     node = socket.gethostname().split('.')[0]
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}', node):
@@ -127,6 +133,16 @@ PYLOGENV
 
 addp_metrics_enabled() {
   [[ "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" == true ]]
+}
+
+addp_traces_enabled() { [[ "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" == true ]]; }
+
+addp_traces_preflight() {
+  case "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" in false) return 0 ;; true) ;; *) echo 'Invalid Trace capability selection' >&2; return 1 ;; esac
+  [[ "${TEMPO_S3_SECRET_KEY:-}" =~ ^[a-zA-Z0-9_-]{32,128}$ && "${TEMPO_S3_ACCESS_KEY:-}" =~ ^[a-zA-Z0-9_-]{3,64}$ ]] || { echo 'Trace storage credential is missing or invalid' >&2; return 1; }
+  [[ "${TEMPO_S3_SECRET_KEY}" != "${LOKI_S3_SECRET_KEY:-}" && "${TEMPO_S3_SECRET_KEY}" != "${MINIO_ROOT_PASSWORD:-}" ]] || { echo 'Trace storage requires an independent credential' >&2; return 1; }
+  [[ "${TEMPO_BUCKET:-addp-runtime-traces}" != "${LOKI_BUCKET:-addp-runtime-logs}" ]] || { echo 'Trace and log buckets must be separate' >&2; return 1; }
+  python3 "$PROJECT_ROOT/scripts/infra/generate-trace-config.py"
 }
 
 addp_metrics_preflight() {

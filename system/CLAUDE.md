@@ -75,6 +75,7 @@ PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，�
 - 模块注册与发现（供 Gateway 动态路由）
 - 平台节点台账：`/platform/host_nodes` 创建/分页读取/版本更新；独立 `platform.host_node.*`，Platform User、默认平台系统管理员。模块实例通过部署 `ADDP_HOST_NODE_ID` 声明，System 从真实 Client 校验节点允许集合；首次声明不可改挂，拒绝/撤销关联不影响登记与租约。节点基础不含 SSH 或采集；引擎部署另走独立登记与显式承载声明，见平台运行观测规范 4.1、4.4。
 - 平台引擎部署：`/platform/engine_deployments` 管理 Infra／Business PostgreSQL 来源快照与明确的单主机承载声明；稳定部署 UUID 与租户 Engine 分开。独立平台权限、版本 CAS、数据库时间声明区间和审计同事务，不探测 SQL/Docker、不授予业务数据读取。System 前端“平台引擎部署”提供自动发现、批量确认及详情的最近来源展示；T2 精确入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`，权限迁移用同入口 `--package migration`，均由既有门禁自动发现。
+- PostgreSQL 专业观测沿唯一私有观测投影增加已纳管、主机关联有效的 Infra／Business 指标 HTTPS 端点与当前数据库容器 ID／启动时刻。部署发现 v2 的专业来源字段仅在该投影使用，不进入普通浏览器 DTO、管理员确认摘要或部署声明；后台身份不代替当前用户读取授权。
 - TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
 

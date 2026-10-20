@@ -40,6 +40,8 @@ class Source:
         if args[2] == 'info':
             return json.dumps(self.info)
         if args[2] == 'ps':
+            if 'label=com.docker.compose.project=addp-postgres-metrics-' in ' '.join(args):
+                return ''
             return self.ids
         if args[2] == 'inspect':
             value = copy.deepcopy(self.container)
@@ -47,6 +49,27 @@ class Source:
                 self.after(self)
             return json.dumps(value)
         raise AssertionError('Unexpected/mutating Docker command: ' + args[2])
+
+
+class MetricsSource(Source):
+    def __init__(self):
+        super().__init__()
+        self.metrics = {}
+        for name, cid in [('postgres-metrics', 'b'*64), ('postgres-metrics-web', 'c'*64)]:
+            self.metrics[cid] = dict(self.container, id=cid, service=name,
+                project='addp-postgres-metrics-business', owner=str(ROOT), scope='business',
+                database_id=CID, database_started_at=self.container['started_at'],
+                network_mode='container:'+'b'*64 if name.endswith('-web') else 'fixture-database',
+                ports={} if name.endswith('-web') else {'9399/tcp': None, '9443/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '19443'}]})
+
+    def __call__(self, *args):
+        if len(args) > 2 and args[2] == 'ps' and 'addp-postgres-metrics-business' in ' '.join(args):
+            self.commands.append(args)
+            return '\n'.join(self.metrics)
+        if len(args) > 2 and args[2] == 'inspect' and args[-1] in self.metrics:
+            self.commands.append(args)
+            return json.dumps(self.metrics[args[-1]])
+        return super().__call__(*args)
 
 
 class DockerReaderTests(unittest.TestCase):
@@ -83,12 +106,40 @@ class DiscoveryTests(unittest.TestCase):
     def discover(self, source=None, scope='business'):
         return inventory.discover(scope, env={}, reader=source or self.source(scope), system='Darwin')
 
+    def test_metrics_are_bound_to_exact_database_without_secret_reads(self):
+        source = MetricsSource()
+        value = self.discover(source)
+        metrics = value['postgresql_metrics']
+        self.assertEqual(metrics, {'state': 'available', 'endpoint': 'https://127.0.0.1:19443/metrics',
+                                  'container_id': CID, 'started_at': source.container['started_at']})
+        self.assertNotIn('.Config.Env', inventory.METRICS_CONTAINER)
+        self.assertNotIn('.Mounts', inventory.METRICS_CONTAINER)
+        self.assertEqual(self.discover()['postgresql_metrics'], {'state': 'not_deployed'})
+
+    def test_invalid_optional_metrics_preserve_core_discovery(self):
+        for key, value in [('owner', '/foreign'), ('scope', 'infra'), ('database_id', 'd'*64),
+                           ('database_started_at', '2026-10-18T00:00:00Z'), ('running', False),
+                           ('network_mode', 'container:'+'d'*64)]:
+            source = MetricsSource()
+            source.metrics['c'*64][key] = value
+            result = self.discover(source)
+            self.assertEqual(result['state'], 'available')
+            self.assertEqual(len(result['services']), 1)
+            self.assertEqual(result['postgresql_metrics'], {'state': 'unavailable'}, key)
+        for address in ['0.0.0.0', '8.8.8.8', 'fe80::1', '::ffff:127.0.0.1']:
+            source = MetricsSource()
+            source.metrics['b'*64]['ports']['9443/tcp'][0]['HostIp'] = address
+            self.assertEqual(self.discover(source)['postgresql_metrics'], {'state': 'unavailable'})
+        source = MetricsSource()
+        del source.metrics['c'*64]
+        self.assertEqual(self.discover(source)['postgresql_metrics'], {'state': 'unavailable'})
+
     def test_both_scopes_use_actual_runtime_and_project(self):
         for scope in inventory.SCOPES:
             with self.subTest(scope=scope):
                 source = self.source(scope)
                 value = self.discover(source, scope)
-                self.assertEqual(value['schema'], 'addp.deployment-discovery/v1')
+                self.assertEqual(value['schema'], 'addp.deployment-discovery/v2')
                 self.assertEqual(value['scope'], scope)
                 self.assertEqual(value['state'], 'available')
                 self.assertEqual(value['source']['project'], inventory.SCOPES[scope][0])

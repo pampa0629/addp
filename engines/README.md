@@ -61,7 +61,7 @@ macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`，随后使�
 - `geopython_workflow` - GeoPython Workflow，适合中小规模空间与数据处理。
 - `spark_workflow` - Spark Workflow 引擎，适合分布式计算。
 - `math_workflow` - Math Workflow 参考实现，手动注册后可用；启动与连接配置见 [Math README](math-workflow/README.md)。
-- `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
+- `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供三维模型、BIM、高斯泼溅及 OSGB Scene 的持久化转换，算子均支持 workflow/direct；完整清单、工具绑定和启动方式见 [Model3D README](model3d-workflow/README.md)。
 - `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` direct 算子；绑定 engine runtime 内部 PDAL 后会自注册到 System，实际转换通过 `POINTCLOUD_PDAL_BIN` 指向引擎部署内的 PDAL 可执行文件路径，不依赖宿主机全局 PDAL。Manager 负责派生源 URI 和 Manager infra MinIO 发布计划，运行时通过 PDAL 读取源 URI，先写入受控工作目录，再发布为 Manager 私有 COPC artifact。
 - `document_workflow` - Document Workflow 文档转换运行时，提供 `document_to_pdf` workflow/direct 算子；LibreOffice 和字体固定在运行镜像中，Manager 通过访问计划生成私有 PDF 快显 artifact，Runtime 不解析 ResourceLocator 或拥有任务定义。
 - `supermap_workflow` - SuperMap Workflow 超图工作流运行时，对外实现 `addp.workflow/v1`，对内绑定 SuperMap iObjects C++ SDK；运行时独立校验并按稳定拓扑顺序执行 DAG，同一 C++ 执行上下文内通过类型化共享句柄传递 Datasource、Dataset 等对象。完整 SDK 作为仓库外只读母版保存，最终运行镜像只包含已验证的运行期文件，许可作为受控制品单独注入。
@@ -125,7 +125,7 @@ Math Workflow 是参考实现，服务启动后仍需在 System 中手动注册�
 | Math Workflow | [README](math-workflow/README.md) | 协议与公共执行核心参考实现、手动注册 |
 | GeoPython Workflow | [运行说明](geopython-workflow/docs/geopython-workflow容器管理指南.md) | [矢量与栅格算子模块](geopython-workflow/operators/README.md) |
 | Spark Workflow | [README](spark-workflow/README.md) | [引擎关系与资源绑定](spark-workflow/docs/spark-design.md)、[Spark 与 Sedona 用户手册](spark-workflow/docs/spark-user-guide.md) |
-| Model3D Workflow | [README](model3d-workflow/README.md) | OSGB 与 3D Tiles 转换运行时 |
+| Model3D Workflow | [README](model3d-workflow/README.md) | 三维模型、BIM、高斯泼溅与 3D Tiles 转换 |
 | PointCloud Workflow | [README](pointcloud-workflow/README.md) | 点云转 COPC 运行时与 PDAL 依赖 |
 | Document Workflow | [README](document-workflow/README.md) | PPTX 转 PDF 运行时与原生依赖 |
 | SuperMap Workflow | [README](supermap-workflow/README.md) | iObjects C++ SDK、镜像和许可 |

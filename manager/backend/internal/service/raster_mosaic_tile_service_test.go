@@ -16,7 +16,7 @@ type fakeRasterMosaicMetaClient struct {
 	tenantID *uint
 }
 
-func (f *fakeRasterMosaicMetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error) {
+func (f *fakeRasterMosaicMetaClient) GetItemByIDForTenant(_ context.Context, tenantID, itemID uint) (*commonModels.MetaItem, error) {
 	f.tenantID = &tenantID
 	if f.item == nil || f.item.ID != itemID {
 		return nil, nil

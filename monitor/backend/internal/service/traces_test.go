@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/addp/common/client"
 	"github.com/addp/monitor/internal/tracequery"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,5 +65,19 @@ func TestTraceQueryRejectsUnboundedWindowBeforeReading(t *testing.T) {
 	_, e := s.Query(context.Background(), "user", "addp_at_user", TraceQuery{InstanceID: 1, Start: now.Add(-2 * time.Hour), End: now, Limit: 20})
 	if !errors.Is(e, tracequery.ErrInvalid) || u.reads != 0 {
 		t.Fatal(e, u.reads)
+	}
+}
+
+func TestTraceJSONBudgetCountsEscapedRouteBytes(t *testing.T) {
+	out := TraceResponse{Data: []tracequery.Detail{{Spans: make([]tracequery.Span, 1000)}}}
+	for i := range out.Data[0].Spans {
+		out.Data[0].Spans[i].Route = strings.Repeat("<", 1024)
+	}
+	if e := boundedTraceResponse(out); !errors.Is(e, tracequery.ErrBudget) {
+		t.Fatal("escaped JSON exceeded response budget", e)
+	}
+	out.Data[0].Spans = out.Data[0].Spans[:1]
+	if e := boundedTraceResponse(out); e != nil {
+		t.Fatal(e)
 	}
 }

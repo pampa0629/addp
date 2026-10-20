@@ -50,7 +50,7 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 	}
 
 	// 2. 调用服务层创建瓦片服务
-	tileServiceDTO, err := h.tileServiceService.CreateService(
+	tileServiceDTO, err := h.tileServiceService.CreateService(c.Request.Context(),
 		&req,
 		tenantIDValue(c),
 		userIDValue(c),
@@ -327,7 +327,7 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 	}
 
 	// 3. 调用服务层添加图层
-	layerDTO, err := h.tileServiceService.AddLayer(uint(serviceID), tenantIDValue(c), &req)
+	layerDTO, err := h.tileServiceService.AddLayer(c.Request.Context(), uint(serviceID), tenantIDValue(c), &req)
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
@@ -444,7 +444,7 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 	}
 
 	// 3. 调用服务层更新图层
-	layerDTO, err := h.tileServiceService.UpdateLayer(uint(layerID), serviceID, tenantIDValue(c), &req)
+	layerDTO, err := h.tileServiceService.UpdateLayer(c.Request.Context(), uint(layerID), serviceID, tenantIDValue(c), &req)
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Layer not found"})

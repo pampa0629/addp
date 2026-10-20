@@ -113,7 +113,7 @@
     <el-pagination v-if="lastSuccessAt !== null" v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
       @current-change="changePage" @size-change="changePageSize" />
-    <ModuleRuntimeLogs v-model="logsOpen" :instance="logInstance" />
+    <ModuleRuntimeLogs v-model="logsOpen" :instance="logInstance" :trace-id="logTraceID" :initial-range="logRange" />
   </div>
 </template>
 
@@ -138,6 +138,8 @@ const { t, te } = useI18n()
 const authStore = useAuthStore()
 const canReadLogs = computed(() => authStore.hasPermission('platform.module_log.read'))
 const logInstance = ref(null), logsOpen = ref(false)
+const logTraceID = computed(() => resolveModulesRouteState(route.query).query.trace_id || '')
+const logRange = computed(() => { const q = resolveModulesRouteState(route.query).query; return q.log_from ? [q.log_from, q.log_to] : null })
 const route = useRoute()
 const router = useRouter()
 const roles = MODULE_INSTANCE_ROLES
@@ -191,7 +193,8 @@ function formatDate(value) {
 
 function currentParams() {
   const params = {
-    page: page.value, page_size: pageSize.value,
+    page: applied.value.logInstance ? 1 : page.value, page_size: pageSize.value,
+    ...(applied.value.logInstance ? { instance_ids: applied.value.logInstance } : {}),
     ...(applied.value.moduleName ? { module_name: applied.value.moduleName } : {}),
     ...(applied.value.registeredHost ? { registered_host: applied.value.registeredHost } : {}),
     ...(applied.value.nodeName ? { node_name: applied.value.nodeName } : {}),
@@ -225,6 +228,10 @@ async function load({ silent = false } = {}) {
     const response = await modulesAPI.listInstances(currentParams())
     if (requestGeneration !== generation) return
     rows.value = response.data || []
+    if (applied.value.logInstance && canReadLogs.value) {
+      logInstance.value = rows.value.find(row => row.instance_id === applied.value.logInstance) || null
+      logsOpen.value = Boolean(logInstance.value)
+    }
     total.value = response.total || 0
     lastSuccessAt.value = Date.now()
     observedAt.value = lastSuccessAt.value
@@ -320,6 +327,7 @@ function restoreRoute() {
   page.value = filters.page
   pageSize.value = filters.pageSize
   applied.value = filters
+  logInstance.value = null; logsOpen.value = false
   clearResults()
   load()
 }
@@ -327,6 +335,13 @@ function autoRefresh() {
   observedAt.value = Date.now()
   load({ silent: true })
 }
+watch(logsOpen, value => {
+  if (!value && logTraceID.value && logInstance.value) {
+    const query = { ...route.query }; for (const key of ['log_instance', 'trace_id', 'log_from', 'log_to']) delete query[key]
+    navigateSystemRoute(router, { path: '/modules', query }, { history: 'replace' })
+  }
+})
+watch(canReadLogs, value => { if (!value) { logsOpen.value = false; logInstance.value = null } })
 watch(() => route.fullPath, restoreRoute, { immediate: true })
 onMounted(() => {
   refreshTimer = window.setInterval(autoRefresh, refreshIntervalMs)

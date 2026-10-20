@@ -9,7 +9,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	requestidmiddleware "github.com/addp/common/middleware/requestid"
+
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/engineaccess"
@@ -27,7 +27,7 @@ import (
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 	if err := cfg.ValidateTrustedProxies(); err != nil {
 		panic(err)
 	}
@@ -88,6 +88,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
 	apiConsumerService := service.NewAPIConsumerService(apiConsumerRepo)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
+	moduleRegistryService.SetDeploymentDiscovery(&service.DeploymentDiscoveryService{Directory: cfg.DeploymentDiscoveryDirectory})
 	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
 	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService, cfg.EncryptionKey)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -103,7 +104,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}()
 
 	router.Use(corsMiddleware(cfg))
-	router.Use(requestidmiddleware.RequestIDMiddleware())
+
 	router.Use(middleware.LoggerMiddleware(auditWriter))
 	router.Use(i18nmiddleware.I18nMiddleware())
 

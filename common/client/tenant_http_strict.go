@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"unicode/utf8"
+
+	"github.com/addp/common/httptrace"
 )
 
 // Strict machine-history transport: exact HTTP 200, bounded closed JSON, no
@@ -30,7 +32,7 @@ func (c tenantHTTPClient) doStrictJSON(ctx context.Context, method, path string,
 	req.Header.Set("Authorization", "Bearer "+token)
 	transport := *c.httpClient
 	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	response, err := transport.Do(req)
+	response, err := httptrace.Do(&transport, req, c.baseURL)
 	if err != nil {
 		return &TenantTransportError{Method: method, Path: path, Cause: err}
 	}

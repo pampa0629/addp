@@ -792,7 +792,7 @@ func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
 		}
 		opts := workflowProducedTargetScanOptions(target)
 		opts.ParentExecutionID = executionID
-		run, err := metaClient.CreateManualScanRun(opts)
+		run, err := metaClient.CreateManualScanRun(ctx, opts)
 		entry := map[string]interface{}{
 			"target_locator": target.Locator,
 			"engine_id":      target.EngineID,

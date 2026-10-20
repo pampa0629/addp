@@ -26,7 +26,7 @@ type RasterMosaicExecutor interface {
 }
 
 type RasterMosaicMetaScanSubmitter interface {
-	CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
+	CreateManualScanRunForTenant(ctx context.Context, tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
 }
 
 type RasterMosaicMetaScanClient interface {
@@ -503,7 +503,7 @@ func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(ctx context.Context
 	if err := s.taskExecRepo.UpdateWithLease(ctx, lease, map[string]interface{}{"metadata": persisted}); err != nil {
 		return nil, err
 	}
-	return s.metaScanSubmitter.CreateManualScanRunForTenant(tenantID, commonClient.MetaScanOptions{
+	return s.metaScanSubmitter.CreateManualScanRunForTenant(ctx, tenantID, commonClient.MetaScanOptions{
 		ParentExecutionID: executionID,
 		EngineID:          cfg.Target.TargetEngineID,
 		CatalogPaths:      []string{catalogPath},

@@ -38,7 +38,7 @@ func SetupRouter(
 	lifecycle *modulelifecycle.Controller,
 	executionPolicyHandlers ...*ExecutionPolicyHandler,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

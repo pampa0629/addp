@@ -35,7 +35,7 @@ func (s transferSourceCheck) CreateExecution(_ context.Context, request *client.
 	}
 	return &client.CreateTransferExecutionResponse{ExecutionID: id, Status: StatusPending}, nil
 }
-func (transferSourceCheck) GetExecution(string, uint) (*client.TransferExecutionResponse, error) {
+func (transferSourceCheck) GetExecution(context.Context, string, uint) (*client.TransferExecutionResponse, error) {
 	return &client.TransferExecutionResponse{Status: StatusPending}, nil
 }
 

@@ -26,6 +26,7 @@ var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime in
 type ModuleRegistryService struct {
 	repo          *repository.ModuleRegistryRepository
 	leaseDuration time.Duration
+	deploymentDiscovery *DeploymentDiscoveryService
 }
 
 const moduleRegistryWatchPollInterval = 250 * time.Millisecond
@@ -39,6 +40,7 @@ func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*c
 	ctx, cancel := context.WithTimeout(ctx, commonmodels.ObservabilityIdentityTimeout)
 	defer cancel()
 	result, err := s.repo.ObservabilityIdentities(ctx)
+	if err == nil { s.enrichEngineMetrics(ctx, result) }
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

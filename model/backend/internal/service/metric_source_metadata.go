@@ -88,7 +88,7 @@ func (s *MetricImplementationService) metricSourceMetadata(ctx context.Context, 
 		if err != nil {
 			return nil, invalidRequest()
 		}
-		metadata, err := s.meta.WithTenantID(uint(item.TenantID)).GetItemByCatalogPath(engine.ID, identity.FullName)
+		metadata, err := s.meta.WithTenantID(uint(item.TenantID)).GetItemByCatalogPath(ctx, engine.ID, identity.FullName)
 		if err != nil {
 			return nil, apperrors.Wrap(apperrors.KindUnavailable, "metric_metadata_unavailable", i18n.MsgMetricMetadataUnavailable, err)
 		}

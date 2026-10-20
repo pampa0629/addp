@@ -39,7 +39,7 @@ func SetupRouter(
 	httpRules *service.HTTPAlertRuleService,
 	traceService *service.TraceService,
 ) *gin.Engine {
-	router := modulelifecycle.NewRouter(gin.Logger())
+	router := modulelifecycle.NewRouter()
 
 	// i18n 中间件（解析 Accept-Language 请求头）
 	router.Use(i18nmiddleware.I18nMiddleware())
@@ -150,6 +150,9 @@ func SetupRouter(
 	platform.GET("/platform/resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Summaries)
 	platform.GET("/platform/process_resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.ProcessSummaries)
 	platform.GET("/platform/process_resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.ProcessTrend)
+	platform.GET("/platform/engine_resource_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.EngineInstant)
+	platform.GET("/platform/engine_resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.EngineSummaries)
+	platform.GET("/platform/engine_resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.EngineTrend)
 	platform.GET("/platform/resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Trend)
 	traceHandler := TraceHandler{service: traceService}
 	platform.GET("/platform/traces", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Search)

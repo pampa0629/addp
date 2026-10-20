@@ -32,7 +32,7 @@ type PPTXPDFCleaner interface {
 }
 
 type pptxPDFMetaClient interface {
-	GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error)
+	GetItemByIDForTenant(ctx context.Context, tenantID, itemID uint) (*commonModels.MetaItem, error)
 }
 
 type pptxPDFTaskConfig struct {
@@ -133,7 +133,7 @@ func (s *PPTXPDFTaskService) DeleteResult(ctx context.Context, id, tenantID uint
 }
 
 func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPDFTask) error {
-	if err := resolvePPTXPDFTaskSource(s.meta, task, s.bucket); err != nil {
+	if err := resolvePPTXPDFTaskSource(ctx, s.meta, task, s.bucket); err != nil {
 		return err
 	}
 	config, err := decodePPTXPDFTaskConfig(task)
@@ -306,7 +306,7 @@ func (s *PPTXPDFTaskService) prepareResult(ctx context.Context, task *models.PPT
 	return result, nil
 }
 
-func resolvePPTXPDFTaskSource(meta pptxPDFMetaClient, task *models.PPTXPDFTask, bucket string) error {
+func resolvePPTXPDFTaskSource(ctx context.Context, meta pptxPDFMetaClient, task *models.PPTXPDFTask, bucket string) error {
 	if err := normalizePPTXPDFTask(task); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidPPTXPDFSource, err)
 	}
@@ -317,7 +317,7 @@ func resolvePPTXPDFTaskSource(meta pptxPDFMetaClient, task *models.PPTXPDFTask, 
 	if meta == nil {
 		return errors.New("Meta client is required to resolve PPTX source identity")
 	}
-	item, err := meta.GetItemByIDForTenant(task.TenantID, config.Source.ItemID)
+	item, err := meta.GetItemByIDForTenant(ctx, task.TenantID, config.Source.ItemID)
 	if err != nil {
 		return fmt.Errorf("resolve PPTX source item from Meta: %w", err)
 	}

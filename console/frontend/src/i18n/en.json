@@ -572,7 +572,9 @@
         "nodeResources": "Host monitoring",
         "serviceResources": "Service monitoring",
         "platformAlerts": "Platform alerts",
-        "httpQuality": "HTTP quality"
+        "httpQuality": "HTTP quality",
+        "traces": "HTTP traces",
+        "engineResources": "Engine monitoring"
       },
       "catalog": {
         "label": "Enterprise Catalog",

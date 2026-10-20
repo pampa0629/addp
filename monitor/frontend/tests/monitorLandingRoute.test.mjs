@@ -61,3 +61,10 @@ test('Platform service entry requires resource and module reads and never requir
   assert.equal(denied.currentRoute.value.path, '/forbidden')
  }
 })
+
+test('Trace landing requires its independent read and module read in Platform context', () => {
+  const keys = ['monitor.trace.read','platform.module.read']
+  assert.equal(resolveModuleLandingRoute('/monitor',['/traces'],'platform',keys),'/traces')
+  assert.equal(resolveModuleLandingRoute('/monitor',['/traces'],'tenant',keys),'/forbidden')
+  assert.equal(resolveModuleLandingRoute('/monitor',['/traces'],'platform',['platform.module.read']),'/forbidden')
+})

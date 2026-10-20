@@ -87,7 +87,7 @@ func TestBuildObjectTableMapUsesMetaItemList(t *testing.T) {
 	metaClient := commonClient.NewMetaClient(server.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "test-token", nil
 	}))
-	tables := BuildObjectTableMap(nil, 7, []commonModels.Engine{{
+	tables := BuildObjectTableMap(context.Background(), 7, []commonModels.Engine{{
 		ID:         3,
 		Name:       "lake",
 		EngineType: "minio",

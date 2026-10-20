@@ -674,7 +674,7 @@ func (f *fakeRasterMosaicMetaScanSubmitter) GetMosaicScanResult(ctx context.Cont
 		Output: &commonClient.MetaMosaicOutput{Locator: "addp://engine/27/path/mosaics/srtm_mosaic?type=object&item_id=42", ItemID: 42, Fingerprint: "whole-fingerprint"}}, nil
 }
 
-func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRunForTenant(_ context.Context, tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
 	if f.before != nil {
 		f.before()
 	}

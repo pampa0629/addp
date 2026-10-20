@@ -9,13 +9,13 @@ loki.source.file "runtime" {
 }
 loki.process "runtime" {
   stage.json {
-    expressions = {module_name = "module_name", role = "role", instance_id = "instance_id", timestamp = "timestamp", level = "level", node_name = "node_name", entry_id = "entry_id"}
+    expressions = {module_name = "module_name", role = "role", instance_id = "instance_id", timestamp = "timestamp", level = "level", node_name = "node_name", entry_id = "entry_id", trace_id = "trace_id", span_id = "span_id"}
   }
   stage.labels {
     values = {module_name = "", role = ""}
   }
   stage.structured_metadata {
-    values = {instance_id = "", level = "", node_name = "", entry_id = ""}
+    values = {instance_id = "", level = "", node_name = "", entry_id = "", trace_id = "", span_id = ""}
   }
   stage.timestamp {
     source = "timestamp"

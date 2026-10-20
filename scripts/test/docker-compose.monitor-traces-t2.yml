@@ -1,0 +1,76 @@
+services:
+  minio:
+    extends:
+      file: docker-compose.system-runtime-log-t2.yml
+      service: minio
+  runtime-log-store-init:
+    extends:
+      file: docker-compose.system-runtime-log-t2.yml
+      service: runtime-log-store-init
+  loki:
+    extends:
+      file: docker-compose.system-runtime-log-t2.yml
+      service: loki
+  runtime-log-api:
+    extends:
+      file: docker-compose.system-runtime-log-t2.yml
+      service: runtime-log-api
+  trace-store-init:
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.minio
+    entrypoint: [/bin/sh, /init-trace-store.sh]
+    environment:
+      TEMPO_BUCKET: addp-runtime-traces-test
+      TEMPO_S3_ENDPOINT: http://minio:9000
+      TEMPO_S3_ACCESS_KEY: test-traces
+      TEMPO_S3_SECRET_KEY: ${TEMPO_S3_SECRET_KEY}
+      MINIO_ROOT_USER: test-admin
+      MINIO_ROOT_PASSWORD: ${LOKI_TEST_SECRET}
+    volumes: ["../infra/init-trace-store.sh:/init-trace-store.sh:ro", "tempo_data:/var/tempo"]
+    networks: [backend]
+    depends_on:
+      minio: {condition: service_healthy}
+  tempo:
+    extends:
+      file: ../infra/traces.yml
+      service: tempo
+    environment: {TEMPO_BUCKET: addp-runtime-traces-test, TEMPO_S3_ACCESS_KEY: test-traces}
+    volumes: ["tempo_data:/var/tempo"]
+    networks: [backend]
+    depends_on:
+      trace-store-init: {condition: service_completed_successfully}
+    restart: 'no'
+  trace-query:
+    extends:
+      file: ../infra/traces.yml
+      service: trace-query
+    ports: ["127.0.0.1::8443"]
+    networks: [backend, frontend]
+    depends_on: [tempo]
+    restart: 'no'
+  alloy:
+    extends:
+      file: ../infra/runtime-logs.yml
+      service: alloy
+    command: [run, --server.http.listen-addr=0.0.0.0:12345, --storage.path=/var/lib/alloy, /trace-deployment/runtime.alloy]
+    cpus: 1
+    mem_limit: 1g
+    ports: ["127.0.0.1:${TRACE_T2_OTLP_PUBLISH_PORT:-0}:4318", "127.0.0.1::12345"]
+    volumes:
+      - ${LOKI_TEST_SOURCE}:/var/log/addp:ro
+      - ${ADDP_TRACE_DEPLOYMENT_DIR}:/trace-deployment:ro
+      - alloy_data:/var/lib/alloy
+    networks: [backend, frontend]
+    depends_on:
+      runtime-log-api: {condition: service_healthy}
+      trace-query: {condition: service_healthy}
+    restart: 'no'
+volumes:
+  minio_data:
+  loki_data:
+  tempo_data:
+  alloy_data:
+networks:
+  backend: {internal: true}
+  frontend:

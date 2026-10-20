@@ -237,7 +237,7 @@ func (s *GormStore) Delete(ctx context.Context, id, tenantID, userID uint) error
 
 type TransferClient interface {
 	CreateExecution(context.Context, *commonClient.CreateTransferExecutionRequest) (*commonClient.CreateTransferExecutionResponse, error)
-	GetExecution(string, uint) (*commonClient.TransferExecutionResponse, error)
+	GetExecution(context.Context, string, uint) (*commonClient.TransferExecutionResponse, error)
 }
 
 type Service struct {
@@ -411,7 +411,7 @@ func (s *Service) refresh(ctx context.Context, session *Session) error {
 	if session == nil || session.Status == StatusSuccess || session.Status == StatusFailed {
 		return nil
 	}
-	execution, err := s.transfer.GetExecution(session.TransferExecutionID, session.TenantID)
+	execution, err := s.transfer.GetExecution(ctx, session.TransferExecutionID, session.TenantID)
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 COMPOSE_FILES=(-f docker-compose.infra.yml)
+TRACE_CONFIG_READY=false
 BUILD_REPOSITORY_POSTGRES_IMAGE=false
 CORE_SERVICES=(postgres redis falkordb minio meilisearch redpanda redpanda-init kafka-connect)
 METRICS_ONLY=false
@@ -26,12 +27,14 @@ case "$#:${1-}" in
 esac
 
 compose() {
+  local trace_files=()
+  if [[ "$TRACE_CONFIG_READY" == true ]]; then trace_files=(-f scripts/infra/traces-platform.yml); fi
   # Inactive optional profiles are still interpolated by Compose. Their unused
   # ports cannot prevent core or the other capability from starting.
   case "${ADDP_INFRA_PORT_SCOPE:-core}" in
-    logs) PROMETHEUS_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
-    metrics) LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
-    *) PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
+    logs|traces) PROMETHEUS_PORT=0 docker compose "${COMPOSE_FILES[@]}" ${trace_files[@]+"${trace_files[@]}"} "$@" ;;
+    metrics) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
+    *) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
   esac
 }
 
@@ -460,6 +463,36 @@ else
   optional_result=1
 fi
 
+start_central_traces() {
+  addp_traces_preflight || return 1
+  local ADDP_INFRA_PORT_SCOPE=all
+  addp_infra_resolve_ports || return 1
+  TRACE_CONFIG_READY=true
+  local ADDP_INFRA_PORT_SCOPE=traces
+  compose run --rm --no-deps --entrypoint /bin/alloy alloy validate /trace-deployment/runtime.alloy || return 1
+  compose up -d --wait --wait-timeout 120 trace-store-init tempo trace-query alloy || return 1
+  addp_infra_read_actual_ports || return 1
+  echo 'Trace center started with policy definition 1; retained delivery requires verification'
+}
+
+if addp_traces_enabled; then
+  if ! start_central_traces; then
+    TRACE_CONFIG_READY=false
+    echo 'Trace center unavailable; core services remain running' >&2
+    optional_result=1
+  fi
+elif [[ "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" == false ]]; then
+  for service in trace-query tempo trace-store-init; do
+    container=$(compose ps -aq "$service") || { optional_result=1; continue; }
+    if [[ -n "$container" ]]; then
+      if addp_infra_verify_container "$service" "$container"; then compose stop "$service" || optional_result=1; else optional_result=1; fi
+    fi
+  done
+else
+  echo 'Trace center selection is invalid; core remains running' >&2
+  optional_result=1
+fi
+
 start_central_logs() {
   local ADDP_INFRA_PORT_SCOPE=logs
   addp_runtime_log_preflight || return 1
@@ -470,7 +503,8 @@ start_central_logs() {
   while IFS= read -r image; do
     if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
   done <<< "$images"
-  compose up -d loki alloy runtime-log-api runtime-log-observer runtime-log-store-init || return 1
+  compose up -d --wait --wait-timeout 90 loki runtime-log-api runtime-log-store-init || return 1
+  compose up -d alloy runtime-log-observer || return 1
   ADDP_INFRA_PORT_SCOPE=logs addp_infra_read_actual_ports || return 1
   curl -fsS --max-time 5 --retry 30 --retry-delay 2 --retry-connrefused "http://127.0.0.1:${LOKI_PORT}/ready" >/dev/null || return 1
   curl -fsS --max-time 5 --retry 30 --retry-delay 2 --retry-connrefused "http://127.0.0.1:${ALLOY_PORT}/-/ready" >/dev/null || return 1
@@ -485,6 +519,7 @@ if addp_runtime_logs_enabled; then
 elif [[ "${ADDP_OBSERVABILITY_LOGS_ENABLED-true}" == false ]]; then
   # Verify ownership before stopping only this workspace's unselected collectors.
   for service in runtime-log-observer alloy runtime-log-api loki runtime-log-store-init; do
+    if [[ "$service" == alloy && "$TRACE_CONFIG_READY" == true ]]; then continue; fi
     container=$(compose ps -aq "$service") || { optional_result=1; continue; }
     if [[ -n "$container" ]]; then
       if addp_infra_verify_container "$service" "$container"; then

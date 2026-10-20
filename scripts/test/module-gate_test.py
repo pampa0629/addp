@@ -115,7 +115,8 @@ class ModuleGateTest(unittest.TestCase):
         )
         self.assertEqual((("GOWORK", "off"),), steps[1].environment)
         self.assertEqual(
-            ("*_POSTGRES_TEST_DSN", "ADDP_*_INTEGRATION"),
+            ("*_POSTGRES_TEST_DSN", "ADDP_*_INTEGRATION", "ADDP_OBSERVABILITY_TRACES_ENABLED",
+             "ADDP_TRACE_DEPLOYMENTS", "MONITOR_TEMPO_URL", "MONITOR_TRACE_TLS_DIR"),
             steps[1].excluded_environment,
         )
         self.assertEqual((), steps[-2].required_environment)
@@ -294,6 +295,37 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn('cd "$SOURCE_ROOT/meta/backend"', source)
         self.assertIn('addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"', source)
         self.assertIn("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ", source)
+
+    def test_manager_postgres_source_checkout_rejects_before_database_access(self) -> None:
+        repository = SCRIPT.parents[2]
+        environment = dict(os.environ)
+        environment.pop("MANAGER_POSTGRES_TEST_DSN", None)
+        for arguments, expected in ((["--source-root"], "requires a checkout path"),
+                                    (["--source-root", str(self.repository)], "must have a source commit"),
+                                    (["--source-root", str(repository)], "MANAGER_POSTGRES_TEST_DSN must reference")):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(["bash", str(repository / "scripts/test/manager-postgres-gate.sh"), *arguments],
+                    cwd=repository, env=environment, capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected, result.stderr)
+        module = self.repository / "manager/backend/go.mod"
+        module.parent.mkdir(parents=True)
+        module.write_text("module github.com/addp/manager\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture"], cwd=self.repository, check=True)
+        result = subprocess.run(["bash", str(repository / "scripts/test/manager-postgres-gate.sh"), "--source-root", str(self.repository)],
+            cwd=repository, env=environment, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("commit belongs to this repository", result.stderr)
+
+    def test_manager_postgres_source_checkout_keeps_infra_owner_and_full_suite(self) -> None:
+        source = (SCRIPT.parents[2] / "scripts/test/manager-postgres-gate.sh").read_text()
+        self.assertIn('source "$ROOT_DIR/scripts/infra/ports.sh"', source)
+        self.assertIn('addp_infra_verify_test_postgres_dsn "$MANAGER_POSTGRES_TEST_DSN"', source)
+        self.assertIn('cd "$SOURCE_ROOT/manager/backend"', source)
+        self.assertIn("./internal/repository ./internal/service ./internal/preview", source)
+        self.assertIn("^TestIntegrationPostgresManagerExecutionReadIsolation$", source)
+        self.assertIn("Manager PostgreSQL gate refuses skipped tests", source)
 
     def test_common_postgres_graph_scope_requires_real_target_contract_and_rejects_skips(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "graph"])

@@ -32,7 +32,7 @@ var (
 )
 
 type RasterMosaicMetaClient interface {
-	GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error)
+	GetItemByIDForTenant(ctx context.Context, tenantID, itemID uint) (*commonModels.MetaItem, error)
 }
 
 type RasterMosaicRuntime interface {
@@ -182,7 +182,7 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	if req.TenantID == nil || *req.TenantID == 0 {
 		return nil, ErrEngineAccessDenied
 	}
-	item, err := s.metaClient.GetItemByIDForTenant(*req.TenantID, *loc.ItemID)
+	item, err := s.metaClient.GetItemByIDForTenant(ctx, *req.TenantID, *loc.ItemID)
 	if err != nil {
 		return nil, err
 	}

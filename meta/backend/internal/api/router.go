@@ -1,10 +1,7 @@
 package api
 
 import (
-	"time"
-
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/audit"
 	auth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -24,7 +21,6 @@ import (
 func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lifecycle *modulelifecycle.Controller, lineageServices ...*service.LineageService) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 	router.Use(i18nmiddleware.I18nMiddleware())
-	router.Use(requestLogger())
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -144,42 +140,5 @@ func metaDelegatedToolPolicies() map[string]auth.DelegatedRoutePolicyEntry {
 			RequiredScopes:      []string{"resource.ancestors.get"},
 			RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
 		},
-	}
-}
-
-func requestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-
-		latency := time.Since(start)
-		status := c.Writer.Status()
-
-		path := c.FullPath()
-		if path == "" {
-			path = c.Request.URL.Path
-		}
-
-		log := logger.With(
-			"component", "http_server",
-			"method", c.Request.Method,
-			"path", path,
-			"status", status,
-			"latency_ms", latency.Milliseconds(),
-			"client_ip", c.ClientIP(),
-		)
-
-		if len(c.Errors) > 0 {
-			log = log.With("errors", c.Errors.String())
-		}
-
-		switch {
-		case status >= 500:
-			log.Error("请求处理完成")
-		case status >= 400:
-			log.Warn("请求处理完成")
-		default:
-			log.Info("请求处理完成")
-		}
 	}
 }

@@ -57,7 +57,7 @@ func TestProductionGoRoutersUseSingleInstrumentationFactory(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if strings.Contains(text, "gin.Default()") || strings.Contains(text, "gin.New()") || !strings.Contains(text, "modulelifecycle.NewRouter(") {
+		if strings.Contains(text, "gin.Logger()") || strings.Contains(text, "logging.LoggingMiddleware()") || strings.Contains(text, "requestLogger()") || strings.Contains(text, "gin.Default()") || strings.Contains(text, "gin.New()") || !strings.Contains(text, "modulelifecycle.NewRouter(") {
 			t.Fatalf("%s bypasses the sole HTTP instrumentation factory", path)
 		}
 	}

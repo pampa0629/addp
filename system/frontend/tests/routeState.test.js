@@ -165,3 +165,14 @@ describe('System recoverable route state', () => {
     })
   })
 })
+
+it('restores an exact instance Trace log window without preserving malformed correlation', () => {
+  const q = { tab: 'instances', status: 'all', module_name: 'monitor', log_instance: 'old-one', trace_id: '1'.repeat(32), log_from: '2026-10-20T00:00:00.000Z', log_to: '2026-10-20T00:01:00.000Z' }
+  const state = resolveModulesRouteState(q)
+  expect(state.changed).toBe(false)
+  expect(state.filters.logInstance).toBe('old-one')
+  expect(state.query.trace_id).toBe(q.trace_id)
+  expect(resolveModulesRouteState({ ...q, trace_id: 'private query' }).query.trace_id).toBeUndefined()
+  expect(resolveModulesRouteState({ ...q, log_instance: '../private' }).query.log_instance).toBeUndefined()
+  expect(resolveModulesRouteState({ ...q, log_to: '2026-10-20T02:00:00Z' }).query.trace_id).toBeUndefined()
+})

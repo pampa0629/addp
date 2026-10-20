@@ -29,7 +29,7 @@ func (s *queryExportTransferClientStub) CreateExecution(_ context.Context, reque
 	return &commonClient.CreateTransferExecutionResponse{ExecutionID: request.ExportSession.ExecutionID, Status: "pending"}, nil
 }
 
-func (s *queryExportTransferClientStub) GetExecution(_ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
+func (s *queryExportTransferClientStub) GetExecution(_ context.Context, _ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
 	return &commonClient.TransferExecutionResponse{Status: "pending"}, nil
 }
 

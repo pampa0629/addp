@@ -1,57 +1,28 @@
 package logging
 
 import (
-	"time"
-
+	"github.com/addp/common/httpmetrics"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/requestid"
 	"github.com/gin-gonic/gin"
+	"log/slog"
+	"time"
 )
 
-// LoggingMiddleware 记录请求日志，包含 request ID
+// LoggingMiddleware is the sole bounded HTTP request log. Framework templates
+// replace raw paths; body, credentials, peer addresses and raw errors stay out.
 func LoggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 记录请求开始时间
-		startTime := time.Now()
-
-		// 获取 request ID
-		reqID := requestid.FromGinContext(c)
-
-		// 记录请求信息
-		logger.L().Info("request started",
-			"request_id", reqID,
-			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
-			"client_ip", c.ClientIP(),
-			"user_agent", c.Request.UserAgent(),
-		)
-
-		// 处理请求
-		c.Next()
-
-		// 计算请求耗时
-		duration := time.Since(startTime)
-
-		// 记录请求完成信息
-		logger.L().Info("request completed",
-			"request_id", reqID,
-			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
-			"status", c.Writer.Status(),
-			"duration_ms", duration.Milliseconds(),
-			"client_ip", c.ClientIP(),
-		)
-
-		// 如果有错误，记录错误日志
-		if len(c.Errors) > 0 {
-			for _, e := range c.Errors {
-				logger.L().Error("request error",
-					"request_id", reqID,
-					"method", c.Request.Method,
-					"path", c.Request.URL.Path,
-					"error", e.Error(),
-				)
+		started := time.Now()
+		defer func() {
+			level := slog.LevelInfo
+			if httpmetrics.FailureType(c) != "" {
+				level = slog.LevelError
+			} else if c.Writer.Status() >= 400 {
+				level = slog.LevelWarn
 			}
-		}
+			logger.L().Log(c.Request.Context(), level, "http.request.completed", "request_id", requestid.FromGinContext(c), "method", httpmetrics.Process().CanonicalMethod(c.Request.Method), "route", c.FullPath(), "status", c.Writer.Status(), "duration_ms", time.Since(started).Milliseconds())
+		}()
+		c.Next()
 	}
 }

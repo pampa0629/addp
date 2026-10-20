@@ -113,8 +113,11 @@ func (d *BoundedExecutionDispatcher) RunClaimedExecution(ctx context.Context, ex
 		if err != nil || task == nil {
 			return taskLoadError(execution, err)
 		}
-		task.Config = execution.ExecutionConfig.Clone()
-		d.model3DGLB.runModel3DGLBGeneration(ctx, task, execution.ExecutionID)
+		plan, err := d.model3DGLB.prepareClaim(ctx, task, execution)
+		if err != nil {
+			return err
+		}
+		d.model3DGLB.runModel3DGLBGeneration(ctx, task, execution.ExecutionID, plan)
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		task, err := d.model3DTiles.repo.GetTask(ctx, taskID, tenantID)
 		if err != nil || task == nil {

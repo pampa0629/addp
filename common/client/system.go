@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"net/url"
@@ -181,7 +182,7 @@ func (c *SystemClient) doJSON(ctx context.Context, method, path, token string, r
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return 0, err
 	}
@@ -217,7 +218,7 @@ func (c *SystemClient) doTenantJSONWithPayload(ctx context.Context, method, path
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return err
 	}

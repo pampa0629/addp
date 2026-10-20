@@ -389,7 +389,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 
 		if loc.ItemID != nil && *loc.ItemID > 0 {
 			itemID := *loc.ItemID
-			item, err := metaClient.GetItemByID(itemID)
+			item, err := metaClient.GetItemByID(ctx, itemID)
 			if err == nil && item != nil {
 				metaItem = item
 				identityResolved = true
@@ -404,7 +404,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 			}
 		} else if loc.NodeID != nil && *loc.NodeID > 0 {
 			nodeID := *loc.NodeID
-			node, err := metaClient.GetNodeByID(nodeID)
+			node, err := metaClient.GetNodeByID(ctx, nodeID)
 			if err == nil && node != nil {
 				metaNode = node
 				identityResolved = true
@@ -425,7 +425,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 		if !identityResolved && len(loc.Path) > 0 {
 			catalogPath := strings.Join(loc.Path, "/")
 			if isPreviewItemLocator(loc) {
-				item, err := metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
+				item, err := metaClient.GetItemByCatalogPath(ctx, loc.EngineID, catalogPath)
 				if err == nil && item != nil {
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到数据项元数据",
@@ -439,7 +439,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 				}
 			} else {
 				// Bucket 或 Prefix 路径
-				node, err := metaClient.GetNodeByCatalogPath(loc.EngineID, catalogPath)
+				node, err := metaClient.GetNodeByCatalogPath(ctx, loc.EngineID, catalogPath)
 				if err == nil && node != nil {
 					metaNode = node
 					logger.L().Debug("从 Meta 获取到节点元数据",

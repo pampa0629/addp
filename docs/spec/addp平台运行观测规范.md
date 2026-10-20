@@ -105,7 +105,7 @@ T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS
 
 ### 4.5 部署侧自动发现来源
 
-唯一 Docker 读取实现位于 `scripts/utils/deployment-inventory.py`，由 Infra、普通 Business 启停和开发启动按各自作用域自动刷新，不调用 System API 或数据库。发现协议为 `addp.deployment-discovery/v1`，最多 256 KiB；仅核验本地 Unix Socket Context 的 Linux Docker 或 macOS Desktop Linux VM，以当前工作区的 Compose project/working_dir 校验归属。最多读取 128 个容器、64 个服务、单服务 16 个容器和单容器 64 个实际端口，整体 Docker 读取期限 30 秒；前后读取服务运行身份、状态、启动时间、重启次数、端口及 Docker Engine 身份一致才输出。
+唯一 Docker 读取实现位于 `scripts/utils/deployment-inventory.py`，由 Infra、普通 Business 启停和开发启动按各自作用域自动刷新，不调用 System API 或数据库。发现协议为 `addp.deployment-discovery/v2`，最多 256 KiB；仅核验本地 Unix Socket Context 的 Linux Docker 或 macOS Desktop Linux VM，以当前工作区的 Compose project/working_dir 校验归属。最多读取 128 个容器、64 个服务、单服务 16 个容器和单容器 64 个实际端口，整体 Docker 读取期限 30 秒；前后读取服务运行身份、状态、启动时间、重启次数、端口及 Docker Engine 身份一致才输出。
 
 快照区分 `scope=infra|business`、`state=available|unavailable`，带 UTC 读取时间；成功空集合与失败分别表达。未知组件只标记未分类，不猜测集群、主机关联、引擎专业监控或租户归属。快照不含环境变量、密码、SQL、租户或授权，System Web 服务不因此获得 Docker 权限。
 
@@ -321,7 +321,7 @@ HTTP 事件类别为 `http_quality`、主体为模块，触发/恢复沿同一�
 
 ### 6.5 分布式追踪与日志关联（二期第一批）
 
-2026-10-20 用户确认以下初值，本次仅本地验证，不扩展或运行 Hosted 验收。第一批覆盖 Go 同步 HTTP Server/Client、日志关联与实际跨度证明的调用关系；Python、异步 execution 关联、数据库/SQL 跨度、浏览器采集及生产 HA 不在本批。实现状态须由分项证据证明。
+2026-10-20 用户确认以下初值，本次仅本地验证，不扩展或运行 Hosted 验收。第一批覆盖已登记 Go 平台模块（backend/ingress）的同步 HTTP Server/Client、日志关联与实际跨度证明的调用关系；Python、异步 execution 关联、数据库/SQL 跨度、浏览器采集及生产 HA 不在本批。实现状态须由分项证据证明。
 
 唯一路径为 Go Common Trace SDK → Alloy OTLP → Tempo；Trace 读取归 Monitor，日志仍由 System 沿原 Loki 路径授权。Common Router 工厂独占服务端追踪及请求关联，Common Client 与 Gateway 代理复用唯一传输实现，保留 Context、超时、TLS 和响应流语义。不安装第二套 HTTP 指标，不从采样追踪推算全量 QPS。
 
@@ -332,15 +332,15 @@ Gateway 外部入口重新生成 W3C Trace Context；内部同步 HTTP 传播 tr
 | 策略 | 首批契约 |
 | --- | --- |
 | 生产端 | 异步导出已结束 Span，队列最多 2048，满时丢弃计数、不阻塞业务；导出超时和退出刷新有界；关闭或配置失败不影响业务 Ready。 |
-| 保留 | 服务端失败沿 6.4 优先保留，4xx 不自动归为服务端失败；单次 Server 请求 ≥1 秒优先保留；普通成功保留 5%，例行成功健康/心跳不保留；遥测自身不递归追踪。 |
+| 保留 | 服务端失败沿 6.4 优先保留，4xx 不自动归为服务端失败；单次 Server 请求 ≥1 秒优先保留；普通成功保留 5%，例行成功健康/心跳不保留；遥测导出自身不递归追踪。 |
 | 等待与容量 | 等待 120 秒，最多 10000 待决 Trace，采样后目标预算 100 Span/秒；超长、迟到、队列满、限额及重启可能不完整，须计数并说明缺口。 |
 | 部署 | 复用 Alloy v1.10.2 已支持参数，不使用新版提前 Trace 字节裁剪；初始 Alloy 1 CPU/1 GiB、Tempo 单进程 2 CPU/2 GiB，不增加 Kafka；内存保护与容器硬上限分别解释，共享故障不宣称物理隔离。 |
 | 存储 | Tempo 72 小时、独立 MinIO bucket/凭据，初始 bucket 硬配额 20 GiB，另预留约 5 GiB 工作空间（工作空间预留不是文件系统硬配额）；容量优先，不保证任何负载均留满 72 小时；日志仍为 168 小时。 |
-| 查询 | 默认 15 分钟，单次最长 1 小时，最多 100 摘要；详情最多 1000 Span/2 MiB、整次 5 秒，单主体 2、单 Monitor 8 并发；无任意 TraceQL、端点、标签或属性查询。 |
+| 查询 | 默认 15 分钟，单次最长 1 小时，最多 100 条调用链；整次最多 1000 Span/2 MiB JSON 响应，单个上游响应同样受 2 MiB 限额、整次 5 秒，单主体 2、单 Monitor 8 并发；无任意 TraceQL、端点、标签或属性查询。 |
 
 容量估算按 `保留 Span/秒 × 实测平均压缩字节/Span × 259200 秒 × 索引/冗余系数` 计算。仅作预算示例：100 Span/秒、512 字节/Span、系数 1.5 约占 18.5 GiB；若平均 1 KiB，即使未计额外开销也超过 20 GiB，不能保证 72 小时。正常 50 请求/秒、每请求 8 Span、5% 普通采样约为 20 Span/秒，错误和慢请求额外占用预算。10000 待决 Trace 在 120 秒下最多容纳约 83 条新 Trace/秒的稳态等待，超过须有丢弃证据，不能视为已保留。固定 100 Span/秒预算内错误、慢、普通依次分配 70%/20%/10%；这是有界优先级，不承诺任意负载都保留 5% 普通请求或所有错误。上线前必须按实测 Span 大小、吞吐、丢失与对象存储占用复核；本次本地小样本不构成容量压测。查询代理另限 0.25 CPU/128 MiB，复用的日志与 MinIO 成本单独计算。
 
-首批采样使用 Monitor-owned 不可变版本化定义（版本 1），Infra 生成唯一 Alloy 配置并记录版本；不新增策略编辑/热发布控制面。端点、证书及资源/存储额度归部署输入，不通过环境变量并列维护采样策略。策略变更沿版本发布和门禁，配置意图不等于运行生效或投递确认。
+首批采样使用 Monitor-owned 不可变版本化定义（版本 1），Infra 生成唯一 Alloy 配置并记录版本；不新增策略编辑/热发布控制面。端点、证书及资源/存储额度归部署输入，不通过环境变量并列维护采样策略。策略变更沿版本发布和门禁，配置意图不等于运行生效或投递确认。Tempo WAL 的时间范围容差由尾采样等待加 180 秒生成（首批 300 秒），覆盖已结束跨度在尾采样、导出和入库期间的延迟；不得沿用恰好 120 秒的默认容差，否则原始时间窗口可能查不到已入库追踪。
 
 OTLP 使用独立 TLS/认证和部署来源约束，不公开任意写入。查询用独立 monitor.trace.read，限非委托 Platform User，默认现有平台系统管理员；逐请求核验 System 对所涉模块/实例的读取，历史不以当前租约 UP 作为可读条件，不可裁决/无权整份拒绝。日志跳转独立核验 platform.module_log.read，Tenant 不开放平台链路，浏览器不直连 Tempo。
 
@@ -440,3 +440,5 @@ Prometheus 始终使用原独立最小身份。每次退出释放压力和接收
 - [Prometheus HTTP SD](https://prometheus.io/docs/prometheus/latest/http_sd/)、[配置](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)、[存储](https://prometheus.io/docs/prometheus/latest/storage/)
 - [node_exporter 容器部署](https://github.com/prometheus/node_exporter#docker)、[exporter-toolkit Web/TLS](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md)
 - [Linux 磁盘统计](https://www.kernel.org/doc/html/latest/admin-guide/iostats.html)、[OpenTelemetry 采样](https://opentelemetry.io/docs/concepts/sampling/)
+
+PostgreSQL 专业来源沿同一发现文件与 System 私有观测投影提供：部署侧仅核对两个自有采集容器的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。专业来源缺失、停用、归属不明或数据库容器变化时只移除该来源，不清空合法主机／进程身份。Monitor 继续统一 mTLS／CIDR／端口准入、端点去重及样本预算。当前用户查询同时核验 monitor.resource_observation.read 与 System 的 platform.engine_deployment.read，查询后重核；仅显示当前数据库容器运行段，最长七天，重启／统计重置处的速率留空。

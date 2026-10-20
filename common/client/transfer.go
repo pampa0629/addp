@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"strings"
@@ -170,7 +171,7 @@ func (c *TransferClient) doUserTaskRequest(req *http.Request, userBearer string)
 	req.Header.Set("Authorization", "Bearer "+userBearer)
 	transport := *c.httpClient
 	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := transport.Do(req)
+	resp, err := httptrace.Do(&transport, req, c.baseURL)
 	if err != nil {
 		return nil, errors.New("Transfer task submission unavailable")
 	}
@@ -265,7 +266,7 @@ func (c *TransferClient) CreateExecution(ctx context.Context, req *CreateTransfe
 	if err := c.addAuthWithTenant(httpReq, req.TenantID); err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := httptrace.Do(c.httpClient, httpReq, c.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -288,10 +289,10 @@ func (c *TransferClient) CreateExecution(ctx context.Context, req *CreateTransfe
 }
 
 // GetExecution queries the caller module's own one-off Transfer execution.
-func (c *TransferClient) GetExecution(executionID string, tenantID uint) (*TransferExecutionResponse, error) {
+func (c *TransferClient) GetExecution(ctx context.Context, executionID string, tenantID uint) (*TransferExecutionResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/transfer/executions/%s/result", c.baseURL, executionID)
 
-	httpReq, err := http.NewRequest("GET", url, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -299,7 +300,7 @@ func (c *TransferClient) GetExecution(executionID string, tenantID uint) (*Trans
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := httptrace.Do(c.httpClient, httpReq, c.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

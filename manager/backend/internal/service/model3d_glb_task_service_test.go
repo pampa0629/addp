@@ -55,7 +55,10 @@ func TestModel3DGLBExecuteRequiresVerifiedUserOrigin(t *testing.T) {
 			if name != "missing" {
 				ctx = commonExecution.WithUserOrigin(ctx, facts)
 			}
-			id, err := NewModel3DGLBTaskService(repo).Execute(ctx, task.ID, 7, trigger, source, nil, false)
+			svc := NewModel3DGLBTaskService(repo)
+			tenant := uint(7)
+			svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: &commonModels.Engine{ID: 26, TenantID: &tenant, EngineType: "nfs", LifecycleState: "active", ConnectionStatus: "online"}})
+			id, err := svc.Execute(ctx, task.ID, 7, trigger, source, nil, false, "")
 			if name != "valid" {
 				if !errors.Is(err, commonAPI.ErrForbidden) || id != "" {
 					t.Fatalf("id=%q err=%v", id, err)
@@ -121,7 +124,7 @@ func TestModel3DGLBExecuteRejectsOrchestratorEvenWithVerifiedParent(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			childID, err := NewModel3DGLBTaskService(repo).Execute(context.Background(), task.ID, 7, "manual", source, &id, false)
+			childID, err := NewModel3DGLBTaskService(repo).Execute(context.Background(), task.ID, 7, "manual", source, &id, false, "")
 			var count int64
 			if e := db.Model(&commonExecution.TaskExecution{}).Where("module = ?", commonExecution.ModuleManager).Count(&count).Error; e != nil {
 				t.Fatal(e)

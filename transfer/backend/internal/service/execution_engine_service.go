@@ -180,7 +180,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		if err := s.protectionGate.RequireSourceConfig(ctx, task.TenantID, task.Config); err != nil {
 			return err
 		}
-		if err := s.attachRawCopySourceMetaAttributes(task, &rawSpec); err != nil {
+		if err := s.attachRawCopySourceMetaAttributes(ctx, task, &rawSpec); err != nil {
 			wrapped := fmt.Errorf("load source meta item attributes: %w", err)
 			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
@@ -191,7 +191,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 
 	recordSpec, recordErr := planner.ParseEncodedRecordExportTaskSpec(task.Config, task.BatchSize)
 	if recordErr == nil {
-		if err := s.attachEncodedRecordSourceMetaAttributes(task, &recordSpec); err != nil {
+		if err := s.attachEncodedRecordSourceMetaAttributes(ctx, task, &recordSpec); err != nil {
 			wrapped := fmt.Errorf("load encoded record source meta item attributes: %w", err)
 			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
@@ -210,7 +210,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.attachSourceMetaAttributes(task, &spec); err != nil {
+	if err := s.attachSourceMetaAttributes(ctx, task, &spec); err != nil {
 		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
@@ -381,28 +381,28 @@ func (s *ExecutionEngineService) infraEngineResolver() *planner.InfraEngineResol
 	})
 }
 
-func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
+func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(ctx context.Context, task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
 	if spec == nil {
 		return nil
 	}
-	return s.attachEndpointSourceMetaAttributes(task, &spec.Source)
+	return s.attachEndpointSourceMetaAttributes(ctx, task, &spec.Source)
 }
 
-func (s *ExecutionEngineService) attachEncodedRecordSourceMetaAttributes(task *models.TransferTask, spec *planner.EncodedRecordExportTaskSpec) error {
+func (s *ExecutionEngineService) attachEncodedRecordSourceMetaAttributes(ctx context.Context, task *models.TransferTask, spec *planner.EncodedRecordExportTaskSpec) error {
 	if spec == nil {
 		return nil
 	}
-	return s.attachEndpointSourceMetaAttributes(task, &spec.Source)
+	return s.attachEndpointSourceMetaAttributes(ctx, task, &spec.Source)
 }
 
-func (s *ExecutionEngineService) attachEndpointSourceMetaAttributes(task *models.TransferTask, endpoint *planner.EndpointSpec) error {
+func (s *ExecutionEngineService) attachEndpointSourceMetaAttributes(ctx context.Context, task *models.TransferTask, endpoint *planner.EndpointSpec) error {
 	if task == nil || endpoint == nil || endpoint.LocatorItemID() == 0 {
 		return nil
 	}
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(endpoint.LocatorItemID())
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(ctx, endpoint.LocatorItemID())
 	if err != nil {
 		return err
 	}
@@ -413,14 +413,14 @@ func (s *ExecutionEngineService) attachEndpointSourceMetaAttributes(task *models
 	return nil
 }
 
-func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
+func (s *ExecutionEngineService) attachSourceMetaAttributes(ctx context.Context, task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
 	if task == nil || spec == nil || spec.Source.LocatorItemID() == 0 {
-		return s.attachSourceInspectAttributes(task, spec)
+		return s.attachSourceInspectAttributes(ctx, task, spec)
 	}
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(spec.Source.LocatorItemID())
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(ctx, spec.Source.LocatorItemID())
 	if err != nil {
 		return err
 	}
@@ -431,14 +431,14 @@ func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.Transfe
 	return nil
 }
 
-func (s *ExecutionEngineService) attachSourceInspectAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
+func (s *ExecutionEngineService) attachSourceInspectAttributes(ctx context.Context, task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
 	if task == nil || spec == nil || !planner.IsInfraLocatorURI(spec.Source.Locator) {
 		return nil
 	}
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator is infra")
 	}
-	result, err := s.metaClient.WithTenantID(task.TenantID).InspectAttributes(commonClient.MetaInspectRequest{
+	result, err := s.metaClient.WithTenantID(task.TenantID).InspectAttributes(ctx, commonClient.MetaInspectRequest{
 		Locator:   spec.Source.Locator,
 		ScanDepth: "deep",
 	})
@@ -1460,7 +1460,7 @@ func (s *ExecutionEngineService) submitProducedMetadataScan(ctx context.Context,
 	}
 	opts.ParentExecutionID, opts.Source = parent.ExecutionID, commonExecution.ModuleTransfer
 	opts.ScanDepth, opts.Force, opts.TriggerType = "deep", true, commonExecution.TriggerTypeManual
-	run, err := s.metaClient.WithTenantID(task.TenantID).CreateManualScanRun(opts)
+	run, err := s.metaClient.WithTenantID(task.TenantID).CreateManualScanRun(ctx, opts)
 	if err != nil || run == nil || run.ExecutionID == "" {
 		failure("scan_submission_failed")
 		return

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"strings"
@@ -54,7 +55,7 @@ func (c *MetaScanUserClient) CreateManualScanRun(ctx context.Context, userBearer
 	}
 	request.Header.Set("Authorization", "Bearer "+userBearer)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient.Do(request)
+	response, err := httptrace.Do(c.httpClient, request, c.baseURL)
 	if err != nil {
 		return nil, errors.New("Meta scan submission unavailable")
 	}
@@ -126,7 +127,7 @@ func (c *MetaScanUserClient) RefreshItem(ctx context.Context, userBearer string,
 
 	transport := *c.httpClient
 	transport.Timeout = 60 * time.Second
-	resp, err := transport.Do(req)
+	resp, err := httptrace.Do(&transport, req, c.baseURL)
 	if err != nil {
 		return nil, &TenantTransportError{Method: req.Method, Path: req.URL.Path, Cause: err}
 	}

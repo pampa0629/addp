@@ -18,6 +18,7 @@ import (
 
 	"github.com/addp/common/config"
 	"github.com/addp/common/httpmetrics"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/common/models"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -182,6 +183,9 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 		return nil, ErrSourceUnavailable
 	}
 	if registry.Register(httpmetrics.Process()) != nil {
+		return nil, ErrSourceUnavailable
+	}
+	if registry.Register(httptrace.Collector()) != nil {
 		return nil, ErrSourceUnavailable
 	}
 	if _, err := registry.Gather(); err != nil {

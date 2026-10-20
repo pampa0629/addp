@@ -72,6 +72,9 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 		if engine.Validate() != nil || !nodes[engine.NodeID] || deployments[engine.DeploymentID] || sources[engine.SourceKey] {
 			return invalid()
 		}
+		if engine.Metrics != nil && engine.Metrics.StartedAt != nil && engine.Metrics.StartedAt.After(snapshot.ObservedAt) {
+			return invalid()
+		}
 		deployments[engine.DeploymentID], sources[engine.SourceKey] = true, true
 	}
 	return nil

@@ -87,7 +87,7 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					p = LimitProcessTrendStart(p, scope.StartedAt)
+					p = LimitTrendStart(p, scope.StartedAt)
 					series, err := c.ProcessTrend(context.Background(), p, scope, DefaultBudget())
 					if err != nil || len(series) != 2 {
 						t.Fatal("native process trend", series, err)

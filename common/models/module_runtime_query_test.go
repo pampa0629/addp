@@ -16,3 +16,15 @@ func TestRuntimeInstanceIDsAreBoundedCanonicalAndUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessInstanceIDsAreBoundedOpaqueAndUnique(t *testing.T) {
+	ids, e := ParseProcessInstanceIDs("one,old-instance_2")
+	if e != nil || len(ids) != 2 {
+		t.Fatal(ids, e)
+	}
+	for _, value := range []string{"", "one,one", "one,", "../private", "a b", "\nprivate", strings.Repeat("a", 101), strings.Repeat("a,", 100) + "b"} {
+		if _, e := ParseProcessInstanceIDs(value); e == nil {
+			t.Fatal("unbounded process ID accepted")
+		}
+	}
+}

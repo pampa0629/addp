@@ -159,6 +159,24 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 	}
 	groups := make([]TargetGroup, 0)
+	engines := make(map[string]bool)
+	sources := make(map[models.ObservabilityEngineSourceKey]bool)
+	if len(snapshot.EngineDeployments) > models.ObservabilityIdentityEngineLimit {
+		return nil, ErrIdentityUnavailable
+	}
+	for _, engine := range snapshot.EngineDeployments {
+		if engine.Validate() != nil || nodes[engine.NodeID] == 0 || engines[engine.DeploymentID] || sources[engine.SourceKey] ||
+			(engine.Metrics != nil && engine.Metrics.StartedAt != nil && engine.Metrics.StartedAt.After(snapshot.ObservedAt)) {
+			return nil, ErrIdentityUnavailable
+		}
+		engines[engine.DeploymentID], sources[engine.SourceKey] = true, true
+		if engine.Metrics != nil && engine.Metrics.State == "available" {
+			reservation += EndpointSampleLimit
+			if reservation > TotalSampleReservation {
+				return nil, ErrBudgetExceeded
+			}
+		}
+	}
 	physical := make(map[string]bool)
 	for _, target := range targets {
 		nodeVersion := nodes[target.Subject.NodeID]
@@ -201,6 +219,28 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			"__scheme__": "https", "__metrics_path__": "/metrics",
 			"addp_module_name": instance.ModuleName, "addp_instance_id": instance.InstanceID, "addp_runtime_role": instance.Role,
 			"addp_monitor_kind": "process_resources", "addp_source": "application",
+		}})
+	}
+	for _, engine := range snapshot.EngineDeployments {
+		if engine.Metrics == nil || engine.Metrics.State != "available" {
+			continue
+		}
+		resolved, err := p.policy.Admit(ctx, engine.Metrics.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		if physical[resolved.Address] {
+			return nil, ErrInvalidTarget
+		}
+		if len(groups) >= TargetLimit {
+			return nil, ErrBudgetExceeded
+		}
+		physical[resolved.Address] = true
+		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
+			"__scheme__": "https", "__metrics_path__": "/metrics",
+			"addp_monitor_kind": "engine_resources", "addp_source": "postgresql",
+			"addp_deployment_id": engine.DeploymentID, "addp_database_container_id": engine.Metrics.ContainerID,
+			"addp_database_container_started_at": engine.Metrics.StartedAt.UTC().Format(time.RFC3339Nano),
 		}})
 	}
 	if ctx.Err() != nil || snapshot.ObservedAt.Before(p.now().UTC().Add(-Timeout)) {

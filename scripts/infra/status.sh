@@ -186,6 +186,17 @@ else
   fi
 fi
 
+case "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" in
+  false) echo '- HTTP Trace center: Disabled' ;;
+  true)
+    trace_container=$(docker compose -f docker-compose.infra.yml ps -aq trace-query 2>/dev/null || true)
+    if [[ -z "$trace_container" ]]; then echo '- HTTP Trace center: Not deployed'
+    elif ! addp_infra_verify_container trace-query "$trace_container" >/dev/null 2>&1; then echo '- HTTP Trace center: Unavailable (ownership)'
+    elif [[ "$(docker inspect --format '{{.State.Health.Status}}' "$trace_container" 2>/dev/null)" == healthy ]]; then echo '- HTTP Trace center: Ready (sampling and delivery require Monitor verification)'
+    else echo '- HTTP Trace center: Unavailable'; fi ;;
+  *) echo '- HTTP Trace center: Unconfigured (invalid selection)' ;;
+esac
+
 if ! addp_runtime_logs_enabled; then
   case "${ADDP_OBSERVABILITY_LOGS_ENABLED-true}" in
     false) echo '- Central runtime logs: Disabled' ;;

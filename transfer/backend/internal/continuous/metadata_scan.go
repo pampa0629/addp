@@ -66,7 +66,7 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 		return err
 	}
 	claimToken := task.InitialMetadataScanClaimToken
-	run, scanErr := s.Client.WithTenantID(task.TenantID).CreateManualScanRun(commonClient.MetaScanOptions{
+	run, scanErr := s.Client.WithTenantID(task.TenantID).CreateManualScanRun(ctx, commonClient.MetaScanOptions{
 		EngineID: engineID, Targets: targets, ParentExecutionID: claim.Execution.ExecutionID,
 		ScanDepth: "deep", Force: true,
 		TriggerType: commonExecution.TriggerTypeManual,

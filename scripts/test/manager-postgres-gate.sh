@@ -5,7 +5,30 @@
 
 set -euo pipefail
 
+source_root=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --source-root)
+            [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
+            source_root="$2"; shift 2 ;;
+        *) echo 'usage: manager-postgres-gate.sh [--source-root checkout]' >&2; exit 2 ;;
+    esac
+done
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+SOURCE_ROOT="$ROOT_DIR"
+if [ -n "$source_root" ]; then
+    SOURCE_ROOT=$(cd "$source_root" && pwd -P) || exit 1
+    source_checkout=$(git -C "$SOURCE_ROOT" rev-parse --show-toplevel 2>/dev/null) || { echo '--source-root must be an ADDP checkout' >&2; exit 1; }
+    source_commit=$(git -C "$SOURCE_ROOT" rev-parse HEAD 2>/dev/null) || { echo '--source-root must have a source commit' >&2; exit 1; }
+    if [ "$source_checkout" != "$SOURCE_ROOT" ] ||
+       ! git -C "$ROOT_DIR" merge-base --is-ancestor "$source_commit" HEAD ||
+       ! [ -f "$SOURCE_ROOT/manager/backend/go.mod" ] ||
+       ! grep -qx 'module github.com/addp/manager' "$SOURCE_ROOT/manager/backend/go.mod"; then
+        echo '--source-root must be an ADDP checkout whose commit belongs to this repository' >&2
+        exit 1
+    fi
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-manager-postgres.XXXXXX")
 MS_CONTAINER=""
 cleanup() {
@@ -69,7 +92,7 @@ for attempt in range(120):
 else: raise SystemExit('Meilisearch fixture did not become healthy')
 HEALTH
 
-cd "$ROOT_DIR/manager/backend"
+cd "$SOURCE_ROOT/manager/backend"
 # These packages initialize the same Manager schema; serialize their DDL and fixtures.
 ADDP_POSTGRES_INTEGRATION=1 \
     go test -p 1 ./internal/repository ./internal/service ./internal/preview \

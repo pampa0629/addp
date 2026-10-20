@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/addp/common/httpmetrics"
 	"github.com/addp/common/middleware/requestid"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,17 +20,16 @@ import (
 
 var propagationW3C = propagation.TraceContext{}
 
-func strip(h http.Header) { h.Del("traceparent"); h.Del("tracestate"); h.Del("baggage") }
-func method(v string) string {
-	switch v {
-	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY":
-		return v
-	}
-	return "_OTHER"
-}
+func strip(h http.Header)    { h.Del("traceparent"); h.Del("tracestate"); h.Del("baggage") }
+func method(v string) string { return httpmetrics.Process().CanonicalMethod(v) }
+
 func routine(p string) bool {
 	return p == "/health/live" || p == "/health/ready" || p == "/api/v1/system/runtime/modules/heartbeat"
 }
+
+// MarkIngressBoundary is called by Gateway before constructing its router.
+// External correlation is reset independently of optional SDK startup.
+func MarkIngressBoundary() { processRole.Store("ingress") }
 
 func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -57,15 +56,11 @@ func Middleware() gin.HandlerFunc {
 		c.Request.Header.Del("baggage")
 		ctx, span := tracer().Start(ctx, method(c.Request.Method), trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("http.request.method", method(c.Request.Method))))
 		c.Request = c.Request.WithContext(ctx)
-		started := time.Now()
 		defer func() {
 			panicValue := recover()
-			failure := panicValue != nil || c.GetBool("addp.httpmetrics.recovered_panic") || c.Writer.Status() >= 500 || c.Request.Context().Err() != nil
-			if w, ok := c.Writer.(interface{ WriteFailed() bool }); ok {
-				failure = failure || w.WriteFailed()
-			}
+			failure := panicValue != nil || httpmetrics.FailureType(c) != ""
 			span.SetName(method(c.Request.Method) + " " + c.FullPath())
-			span.SetAttributes(attribute.String("http.route", c.FullPath()), attribute.Int("http.response.status_code", c.Writer.Status()), attribute.Bool("addp.http.server_failure", failure), attribute.Bool("addp.http.routine", routine(c.FullPath())), attribute.Bool("addp.http.slow", time.Since(started) >= time.Second))
+			span.SetAttributes(attribute.String("http.route", c.FullPath()), attribute.Int("http.response.status_code", c.Writer.Status()), attribute.Bool("addp.http.server_failure", failure), attribute.Bool("addp.http.routine", routine(c.FullPath())))
 			if failure {
 				span.SetStatus(codes.Error, "")
 			}
@@ -98,8 +93,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	copy := req.Clone(req.Context())
 	copy.Header = req.Header.Clone()
 	strip(copy.Header)
+	copy.Header.Del(requestid.RequestIDHeader)
 	origin, e := url.Parse(t.origin)
-	if e != nil || !sameOrigin(req.URL, origin) || current.Load() == nil {
+	if e != nil || !sameOrigin(req.URL, origin) {
+		return t.base.RoundTrip(copy)
+	}
+	if id := requestid.FromContext(req.Context()); id != "" {
+		copy.Header.Set(requestid.RequestIDHeader, id)
+	}
+	if current.Load() == nil {
 		return t.base.RoundTrip(copy)
 	}
 	ctx, span := tracer().Start(req.Context(), method(req.Method), trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.String("http.request.method", method(req.Method)), attribute.Bool("addp.http.routine", routine(req.URL.Path))))
@@ -110,6 +112,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	response, err := t.base.RoundTrip(copy)
 	end := func(failed bool) {
+		failed = failed || ctx.Err() != nil
 		if failed {
 			span.SetStatus(codes.Error, "")
 			span.SetAttributes(attribute.Bool("addp.http.server_failure", true))
@@ -124,7 +127,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if response.Body == nil {
 		end(response.StatusCode >= 500)
 	} else {
-		response.Body = &body{ReadCloser: response.Body, end: end, failed: response.StatusCode >= 500}
+		wrapped := &body{ReadCloser: response.Body, end: end, failed: response.StatusCode >= 500}
+		if writer, ok := response.Body.(io.Writer); ok {
+			response.Body = &readWriteBody{body: wrapped, writer: writer}
+		} else {
+			response.Body = wrapped
+		}
 	}
 	return response, nil
 }
@@ -147,6 +155,21 @@ func (b *body) Close() error {
 	e := b.ReadCloser.Close()
 	b.once.Do(func() { b.end(b.failed || e != nil) })
 	return e
+}
+
+// HTTP 101 bodies are bidirectional. Preserve that contract for ReverseProxy
+// upgrades while keeping span completion bounded to the original stream.
+type readWriteBody struct {
+	*body
+	writer io.Writer
+}
+
+func (b *readWriteBody) Write(p []byte) (int, error) {
+	n, err := b.writer.Write(p)
+	if err != nil {
+		b.once.Do(func() { b.end(true) })
+	}
+	return n, err
 }
 
 func Do(client *http.Client, req *http.Request, origin string) (*http.Response, error) {

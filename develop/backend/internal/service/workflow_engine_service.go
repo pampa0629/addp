@@ -678,7 +678,7 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 
 		if workflowEngineType == "spark_workflow" {
 			if len(adapterSpec.ResourceInputs) > 0 && (stringParam(params, "__workflow_resource_kind") == "file" || stringParam(params, "__workflow_resource_kind") == "object") {
-				if err := s.deriveSparkFileFacts(tenantID, engineID, params); err != nil {
+				if err := s.deriveSparkFileFacts(ctx, tenantID, engineID, params); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -731,12 +731,12 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	return result, producedTargets, nil
 }
 
-func (s *WorkflowEngineService) deriveSparkFileFacts(tenantID, engineID uint, params map[string]interface{}) error {
+func (s *WorkflowEngineService) deriveSparkFileFacts(ctx context.Context, tenantID, engineID uint, params map[string]interface{}) error {
 	if s.metaClient == nil {
 		return fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkFileFactsRequired))
 	}
 	catalogPath := stringParam(params, "path")
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(engineID, catalogPath)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(ctx, engineID, catalogPath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgSparkFileFactsReadFailed), err)
 	}

@@ -418,7 +418,7 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 		nil,
 	)
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo))
-	handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(model3DGLBRepo))
+	handler.SetModel3DGLBTaskService(newGLBTaskServiceWithNFSFacts(model3DGLBRepo))
 	handler.SetGaussianSplatKSplatTaskService(service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo))
 	handler.SetTaskDefinitionRepository(repository.NewTaskDefinitionRepository(db))
 
@@ -918,7 +918,7 @@ func TestTaskProviderModel3DGLBRejectsEvenVerifiedParent(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	glbRepo := repository.NewModel3DGLBRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := service.NewModel3DGLBTaskService(glbRepo)
+	taskSvc := newGLBTaskServiceWithNFSFacts(glbRepo)
 	task := &models.Model3DGLBTask{
 		TenantID: 1,
 		Name:     "model 3d GLB execution contract",
@@ -962,12 +962,12 @@ func TestUserTaskExecuteModel3DGLBFreezesCurrentActor(t *testing.T) {
 			db := newTaskProviderHandlerTestDB(t)
 			repo := repository.NewModel3DGLBRepository(db)
 			creator := uint(99)
-			task := &models.Model3DGLBTask{TenantID: 7, Name: "current actor", Enabled: true, CreatedBy: &creator, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_fingerprint": "actor-http"}}}
+			task := &models.Model3DGLBTask{TenantID: 7, Name: "current actor", Enabled: true, CreatedBy: &creator, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_fingerprint": "actor-http", "source_engine_id": uint(26), "item_locator": "addp://engine/26/path/models/building.ifc?type=file&item_id=77"}}}
 			if err := repo.CreateTask(context.Background(), task); err != nil {
 				t.Fatal(err)
 			}
 			handler := NewTaskProviderHandler(nil, nil, nil, nil, nil)
-			handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(repo))
+			handler.SetModel3DGLBTaskService(newGLBTaskServiceWithNFSFacts(repo))
 			router := gin.New()
 			if authenticated {
 				router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })

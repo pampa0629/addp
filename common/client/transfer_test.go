@@ -186,7 +186,7 @@ func TestTransferClientGetExecutionParsesDirectResponse(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
-	result, err := client.GetExecution("exec-uuid-21", 3)
+	result, err := client.GetExecution(context.Background(), "exec-uuid-21", 3)
 	if err != nil {
 		t.Fatalf("GetExecution() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestTransferClientGetExecutionRejectsWrappedResponse(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
-	if _, err := client.GetExecution("exec-uuid-21", 0); err == nil {
+	if _, err := client.GetExecution(context.Background(), "exec-uuid-21", 0); err == nil {
 		t.Fatal("GetExecution() error = nil, want wrapped response rejection")
 	}
 }

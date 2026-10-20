@@ -200,7 +200,7 @@ func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, 
 					return result, plan, metricsdiscovery.ErrIdentityUnavailable
 				}
 				if trend {
-					plan = resourcequery.LimitProcessTrendStart(plan, scope.StartedAt)
+					plan = resourcequery.LimitTrendStart(plan, scope.StartedAt)
 				}
 				scopes = append(scopes, scope)
 				lease := owner.LeaseExpiresAt

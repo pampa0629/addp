@@ -51,7 +51,7 @@ func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
 	defer server.Close()
 	token := commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "facts-only-test", nil })
 	resolver := preview.NewPreviewResolver(preview.NewPreviewRegistry(), commonClient.NewSystemClient(server.URL, token), commonClient.NewMetaClient(server.URL, token))
-	handler := &QuickViewHandler{service: service.NewQuickViewService(db, nil), previewResolver: resolver, model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db))}
+	handler := &QuickViewHandler{service: service.NewQuickViewService(db, nil), previewResolver: resolver, model3DGLBTaskSvc: newGLBTaskServiceWithNFSFacts(repository.NewModel3DGLBRepository(db))}
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
 	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
@@ -136,7 +136,7 @@ func TestManagedQuickViewActionForTaskPreservesArtifactVariant(t *testing.T) {
 func TestRebindManagedQuickViewTaskRejectsActiveBinding(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
-	taskSvc := service.NewModel3DGLBTaskService(repo)
+	taskSvc := newGLBTaskServiceWithNFSFacts(repo)
 	task := &models.TaskDefinition{
 		TenantID: 7, Name: "active", Enabled: true,
 		Config: commonModels.JSONMap{
@@ -168,7 +168,7 @@ func TestRebindManagedQuickViewTaskRejectsActiveBinding(t *testing.T) {
 func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
-	taskSvc := service.NewModel3DGLBTaskService(repo)
+	taskSvc := newGLBTaskServiceWithNFSFacts(repo)
 	locator := "addp://engine/26/path/models/building.ifc?type=file&item_id=77"
 	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.ifc")
 	task := &models.Model3DGLBTask{
@@ -236,7 +236,7 @@ type quickViewPPTXMetaClient struct {
 	item *commonModels.MetaItem
 }
 
-func (f quickViewPPTXMetaClient) GetItemByIDForTenant(_, _ uint) (*commonModels.MetaItem, error) {
+func (f quickViewPPTXMetaClient) GetItemByIDForTenant(_ context.Context, _, _ uint) (*commonModels.MetaItem, error) {
 	return f.item, nil
 }
 
@@ -678,7 +678,7 @@ func TestQuickViewGeneratedConfigsAreAcceptedByOwningTaskServices(t *testing.T) 
 			t.Fatalf("build config: %v", err)
 		}
 		task := &models.Model3DGLBTask{TenantID: 7, Name: "model GLB", Enabled: true, Config: config}
-		if err := service.NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db)).Create(ctx, task); err != nil {
+		if err := newGLBTaskServiceWithNFSFacts(repository.NewModel3DGLBRepository(db)).Create(ctx, task); err != nil {
 			t.Fatalf("owning service rejected quick-view config: %v", err)
 		}
 	})
@@ -992,7 +992,7 @@ func TestApplyTileResponseHeadersExposesRealtimeTimeoutRecommendation(t *testing
 func TestMAXQuickViewCreationPersistsUnitAndReusesSourceTask(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
-	handler := &QuickViewHandler{model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repo)}
+	handler := &QuickViewHandler{model3DGLBTaskSvc: newGLBTaskServiceWithNFSFacts(repo)}
 	capability := &service.QuickViewCapability{
 		TenantID: 7, ItemFingerprint: "fp-max-unit",
 		Locator:    "addp://engine/26/path/3d/model.max?type=file&item_id=10441",
@@ -1032,7 +1032,7 @@ func TestMAXQuickViewCreationPersistsUnitAndReusesSourceTask(t *testing.T) {
 func TestMAXQuickViewCreationReplacesTextureDeclarationsOnSameTask(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
-	handler := &QuickViewHandler{model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repo)}
+	handler := &QuickViewHandler{model3DGLBTaskSvc: newGLBTaskServiceWithNFSFacts(repo)}
 	capability := &service.QuickViewCapability{TenantID: 7, ItemFingerprint: "fp-max-textures", Locator: "addp://engine/26/path/3d/model.max?type=file&item_id=10441", SourceKind: service.QuickViewSourceKindModel3D}
 	source := service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "max", SourceSizeBytes: 1234}}
 	var previousID uint

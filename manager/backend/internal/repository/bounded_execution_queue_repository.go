@@ -8,6 +8,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -124,6 +125,7 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 		// The reference enables claiming only. Actual source access still requires
 		// System consumption under the exact running attempt and lease.
 		claimDB := tx.Where("(task_type <> ? OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL))", commonExecution.TaskTypeDataProfiling)
+		claimDB = claimDB.Where("(task_type <> ? OR COALESCE(execution_config->>'config_version','') <> ? OR (execution_authorization_id > 0 AND authorization_expires_at > ? AND source = ? AND trigger_type = ? AND parent_execution_id IS NULL AND source_task_id IS NOT NULL AND actor_principal_id > 0 AND actor_tenant_membership_id > 0 AND issued_authorization_version > 0 AND triggered_by = actor_principal_id))", commonExecution.TaskTypeModel3DGLBGeneration, models.Model3DGLBFTPConfigVersion, now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual)
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner,
 			Now: now, LeaseDuration: leaseDuration,
@@ -253,6 +255,20 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 			}
 			if result.RowsAffected != 1 {
 				return commonAPI.ErrConflict
+			}
+			recovered++
+		}
+		var modelsPending []commonExecution.TaskExecution
+		modelUnbound := tx.Where("module = ? AND task_type = ? AND execution_config->>'config_version' = ? AND execution_boundary = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL AND created_at < ?", commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, models.Model3DGLBFTPConfigVersion, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.UTC().Add(-2*time.Minute)).Where("(execution_authorization_id IS NULL OR authorization_expires_at IS NULL OR execution_authorization_id <= 0 OR authorization_expires_at <= ? OR source <> ? OR trigger_type <> ? OR parent_execution_id IS NOT NULL OR source_task_id IS NULL OR actor_principal_id IS NULL OR actor_principal_id <= 0 OR actor_tenant_membership_id IS NULL OR actor_tenant_membership_id <= 0 OR issued_authorization_version IS NULL OR issued_authorization_version <= 0 OR triggered_by IS NULL OR triggered_by <> actor_principal_id)", now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual).Order("created_at ASC, id ASC").Limit(limit)
+		if tx.Dialector.Name() == "postgres" {
+			modelUnbound = modelUnbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+		}
+		if err := modelUnbound.Find(&modelsPending).Error; err != nil {
+			return err
+		}
+		for index := range modelsPending {
+			if err := failPendingModel3DGLB(tx, &modelsPending[index], now.UTC()); err != nil {
+				return err
 			}
 			recovered++
 		}

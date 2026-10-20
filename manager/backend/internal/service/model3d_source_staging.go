@@ -21,9 +21,9 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-// This is an input I/O primitive, not an authorization boundary. It deliberately
-// has no Engine lookup, FTP client, catalog enumeration or production caller.
-// Wiring requires the current execution's authorized, exact source composition.
+// This is an input I/O primitive, not an authorization boundary. It performs no
+// Engine lookup, FTP protocol handling or catalog enumeration. The source adapter
+// must supply the current execution's authorized, exact source composition.
 type model3DStagingFile struct {
 	RelativePath string
 	SizeBytes    int64

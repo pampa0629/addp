@@ -84,7 +84,7 @@ func (c *Catalog) Sources(
 			continue
 		}
 		source := Source{EngineName: descriptor.Name, EngineID: descriptor.ID, EngineType: descriptor.EngineType}
-		tree, treeErr := c.meta.WithTenantID(tenantID).GetMetadataTree(descriptor.ID)
+		tree, treeErr := c.meta.WithTenantID(tenantID).GetMetadataTree(ctx, descriptor.ID)
 		if treeErr != nil {
 			c.logger.WarnContext(ctx, "获取源引擎元数据树失败", "engine_id", descriptor.ID, "error", treeErr)
 			continue

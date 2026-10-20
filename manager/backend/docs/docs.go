@@ -2162,6 +2162,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "409": {
+                        "description": "FTP GLB 存在活动执行或清理归属未闭合 | FTP GLB has an active execution or unresolved cleanup ownership",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2177,7 +2184,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 model 3D GLB id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.",
+                "description": "按 model 3D GLB id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.\nFTP IFC／3DS 结果仅接受当前普通用户 Bearer；System 同一次读取裁决必须核验生成时 Engine 版本与完整文件组成，资源票据与终态执行授权不能代替。NFS／MinIO 维持既有入口。 | FTP IFC/3DS results require the current ordinary User Bearer and one System read decision bound to the generated Engine version and complete file composition; resource tickets and terminal execution authorizations cannot replace it. Existing NFS/MinIO entry behavior is unchanged.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -2208,6 +2215,20 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current User credential rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "源组成未获授权 | Source composition denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "GLB 不存在或未就绪 | GLB not found or not ready",
                         "schema": {
@@ -2224,6 +2245,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权服务不可用 | Authorization service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2907,7 +2935,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.",
+                "description": "前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.\n真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2943,6 +2971,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current User credential rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
                         "description": "无权访问 | Access denied",
                         "schema": {
@@ -2970,9 +3005,19 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "来源引擎不可用 | Source engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "manager.data_item.read"
+                ],
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.create"
                 ]
@@ -5295,6 +5340,13 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "删除成功 | Deleted"
+                    },
+                    "409": {
+                        "description": "FTP GLB 任务存在活动执行 | FTP GLB task has an active execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5310,7 +5362,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.\nmodel_3d_glb_generation 仅接受当前 User 手工根执行，并固化认证主体来源；scheduled 请求返回 403 且不创建执行。| model_3d_glb_generation accepts current User manual roots and freezes verified actor origin; scheduled requests return 403 without creating an execution.",
+                "description": "由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.\nmodel_3d_glb_generation 仅接受当前 User 手工根执行，并固化认证主体来源；scheduled 请求返回 403 且不创建执行。| model_3d_glb_generation accepts current User manual roots and freezes verified actor origin; scheduled requests return 403 without creating an execution.\n真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5359,6 +5411,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current User credential rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
                         "description": "缺少可信发起人或执行来源不支持 | Verified actor required or unsupported execution origin",
                         "schema": {
@@ -5379,9 +5438,19 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "来源引擎不可用 | Source engine unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "manager.data_item.read"
+                ],
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.create"
                 ]

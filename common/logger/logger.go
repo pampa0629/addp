@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"context"
+	"go.opentelemetry.io/otel/trace"
 	"io"
 	"log"
 	"log/slog"
@@ -54,7 +56,51 @@ func buildLogger(opts Options, writer io.Writer) *slog.Logger {
 
 	handler := slog.NewJSONHandler(writer, handlerOpts)
 
-	return slog.New(handler)
+	return slog.New(traceHandler{Handler: handler})
+}
+
+// Preserve the caller's Context through every With/WithGroup operation. IDs are
+// correlation metadata, never authorization or a second logging destination.
+type traceHandler struct {
+	slog.Handler
+	operations []func(slog.Handler) slog.Handler
+}
+
+func (h traceHandler) Handle(ctx context.Context, r slog.Record) error {
+	base := h.Handler
+	sc := trace.SpanContextFromContext(ctx)
+	if sc.IsValid() {
+		base = base.WithAttrs([]slog.Attr{slog.String("trace_id", sc.TraceID().String()), slog.String("span_id", sc.SpanID().String())})
+	}
+	filtered := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key != "trace_id" && a.Key != "span_id" {
+			filtered.AddAttrs(a)
+		}
+		return true
+	})
+	r = filtered
+	for _, operation := range h.operations {
+		base = operation(base)
+	}
+	return base.Handle(ctx, r)
+}
+func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	copy := make([]slog.Attr, 0, len(attrs))
+	for _, a := range attrs {
+		if a.Key != "trace_id" && a.Key != "span_id" {
+			copy = append(copy, a)
+		}
+	}
+	h.operations = append(append([]func(slog.Handler) slog.Handler(nil), h.operations...), func(base slog.Handler) slog.Handler { return base.WithAttrs(copy) })
+	return h
+}
+func (h traceHandler) WithGroup(group string) slog.Handler {
+	if group == "" {
+		return h
+	}
+	h.operations = append(append([]func(slog.Handler) slog.Handler(nil), h.operations...), func(base slog.Handler) slog.Handler { return base.WithGroup(group) })
+	return h
 }
 
 // Init 初始化全局日志器，需在服务启动阶段调用
