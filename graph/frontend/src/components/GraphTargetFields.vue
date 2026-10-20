@@ -1,11 +1,11 @@
 <template>
   <el-form-item :label="t('graph.knowledgeGraph.engine')" prop="engine_id">
-    <el-select :model-value="modelValue.engine_id" :loading="loadingEngines" :placeholder="t('graph.knowledgeGraph.selectEngine')" style="width:100%" @update:model-value="selectEngine" @visible-change="visible => visible && loadEngines()">
+    <el-select :model-value="modelValue.engine_id" :loading="loadingEngines" :placeholder="t('graph.knowledgeGraph.selectEngine')" filterable style="width:100%" @update:model-value="selectEngine" @visible-change="visible => visible && loadEngines()">
       <el-option v-for="engine in engines" :key="engine.id" :label="`${engine.name} · ${engine.engine_type} · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`" :value="engine.id" :disabled="!isEngineSelectable(engine)" />
     </el-select>
   </el-form-item>
   <el-form-item :label="t('graph.knowledgeGraph.targetGraph')" prop="catalog_path">
-    <el-select :model-value="selectedPath" :loading="loadingTargets" :disabled="!available" :placeholder="t('graph.knowledgeGraph.selectGraph')" style="width:100%" @update:model-value="selectPath">
+    <el-select :model-value="selectedPath" :loading="loadingTargets" :disabled="!available" :placeholder="t('graph.knowledgeGraph.selectGraph')" filterable style="width:100%" @update:model-value="selectPath">
       <el-option v-for="target in targets" :key="pathKey(target.path)" :label="target.path.segments.slice(1).map(segment => segment.name).join(' / ')" :value="pathKey(target.path)" />
     </el-select>
   </el-form-item>

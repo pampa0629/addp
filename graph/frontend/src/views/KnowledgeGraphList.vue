@@ -8,11 +8,11 @@
     </div>
 
     <el-table v-loading="loading" :data="graphs" border style="width:100%">
-      <el-table-column prop="name" :label="t('graph.common.name')" min-width="150" />
-      <el-table-column :label="t('graph.knowledgeGraph.bindOntology')" min-width="150">
+      <el-table-column prop="name" :label="t('graph.common.name')" min-width="150" show-overflow-tooltip />
+      <el-table-column :label="t('graph.knowledgeGraph.bindOntology')" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">{{ row.ontology?.name || '-' }}</template>
       </el-table-column>
-      <el-table-column :label="t('graph.knowledgeGraph.targetGraph')" min-width="180"><template #default="{ row }">{{ row.catalog_path?.segments.slice(1).map(segment => segment.name).join(' / ') }}</template></el-table-column>
+      <el-table-column :label="t('graph.knowledgeGraph.targetGraph')" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.catalog_path?.segments.slice(1).map(segment => segment.name).join(' / ') }}</template></el-table-column>
       <el-table-column prop="status" :label="t('graph.common.status')" width="100">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>

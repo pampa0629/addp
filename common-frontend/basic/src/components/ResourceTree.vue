@@ -103,6 +103,9 @@
                       <el-icon v-else-if="data.type === 'relationship'">
                         <Connection />
                       </el-icon>
+                      <el-icon v-else-if="data.type === 'graph'">
+                        <Share />
+                      </el-icon>
                       <el-icon v-else-if="data.type === 'object'">
                         <Document />
                       </el-icon>

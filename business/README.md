@@ -634,3 +634,11 @@ MinIO Parquet 成果沿用上述同一 T2/T4 入口。T2 另有两个独占 MinI
 独立业务图实例使用固定 FalkorDB 4.20.6 镜像摘要、独立持久卷和随机凭据。先在 `business/.env` 配置 `BUSINESS_FALKORDB_PASSWORD`，然后运行 `bash scripts/start.sh -falkordb`；首选端口 `6381`，实际映射以标准启动输出为准。`stop.sh -falkordb` 停止容器并保留数据卷，`restart.sh -falkordb` 复用原数据和端口；属于 `-all`。System 以 `falkordb` 类型登记业务地址、用户 `default`、密码和 Redis DB `0`，不能登记 Ontology 私有端点。
 
 应用户明确要求，可在首次启动前将 Infra RDB 的一次性快照恢复到空业务卷，以便 Graph 浏览内部图结构。该操作不是日常初始化或持续同步，不覆盖已有业务数据，不修改或共用源卷。快照和临时凭据放仓库外私有目录并在校验后清理。Graph 从副本推导本体并绑定具体 graph key，需要全文搜索时选择“由 Graph 维护”，只在业务副本创建索引。配置验证为 `make test-business-config`；Graph / Develop 通用引擎实库门禁沿用 `make test-common-falkordb`。本机副本体验不计为隔离环境 T4。
+
+### 工作关系对照样例（本机）
+
+2026-10-20 保留 Business Neo4j 原有扩展工作关系数据，并将其业务子图一次性复制到 Business FalkorDB 的 `work_relationships`。样例包含人员 820、公司 90、项目 108、技术 67、城市 11，共 1,096 个节点、4,379 条有向关系，覆盖 `WORKS_AT`、`KNOWS`、`SKILLED_IN`、`PARTICIPATES_IN`、`INVESTED_IN`、`USES_TECH`、`LOCATED_IN`。复制保留业务节点的全部标签、属性与关系属性；Neo4j Spatial 的内部图层及 R-tree 索引节点不进入业务样例。原生核验比较完整属性值、有向端点及重复关系数量，源业务数据不变。
+
+Graph 中的“工作关系示例（Neo4j）”和“工作关系示例（FalkorDB）”共用“工作关系示例”本体，分别绑定 `neo4j / graph` 和 `work_relationships`。五类实体以 `name` 展示；人员、公司、项目、技术使用显式唯一属性 `id`，城市使用 `name`。这两张图保持私有，供本机登录用户体验，不计为普通账号 Hosted T4，也不是新环境的自动种子或持续同步。
+
+资源树沿原生目录展示：Neo4j 为 `server -> database -> graph`，FalkorDB 为 `server -> graph`；不为对齐外观增加虚构目录。此前从 Infra 复制的长名称 Ontology 图仍是独立副本，与本例无关。资源树的图叶子使用统一图图标；Graph 的图目标选择支持按名称筛选。
