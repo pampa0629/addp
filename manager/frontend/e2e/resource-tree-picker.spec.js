@@ -190,6 +190,57 @@ for (const [type, rows] of [
 const COLORED_FBX = readFileSync(new URL('./fixtures/fbx/vCube.fbx', import.meta.url))
 const COLORED_FBX_SHA256 = 'c0c2d4a07aae2060d4c623e2642a7f9d576ff8f2dc595152ddcfc2a07d214304'
 
+function selfContainedTriangleGLB() {
+  const binary = Buffer.alloc(72)
+  const values = [-1, -1, 0, 1, -1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+  values.forEach((value, index) => binary.writeFloatLE(value, index * 4))
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, COLOR_0: 1 }, material: 0 }] }],
+    materials: [{ doubleSided: true, extensions: { KHR_materials_unlit: {} } }],
+    extensionsUsed: ['KHR_materials_unlit'], buffers: [{ byteLength: binary.length }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }, { buffer: 0, byteOffset: 36, byteLength: 36 }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [-1, -1, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5126, count: 3, type: 'VEC3' }
+    ]
+  }))
+  const paddedJSON = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20)
+  json.copy(paddedJSON)
+  const header = Buffer.alloc(20)
+  header.writeUInt32LE(0x46546c67, 0)
+  header.writeUInt32LE(2, 4)
+  header.writeUInt32LE(28 + paddedJSON.length + binary.length, 8)
+  header.writeUInt32LE(paddedJSON.length, 12)
+  header.writeUInt32LE(0x4e4f534a, 16)
+  const binaryHeader = Buffer.alloc(8)
+  binaryHeader.writeUInt32LE(binary.length, 0)
+  binaryHeader.writeUInt32LE(0x004e4942, 4)
+  return Buffer.concat([header, paddedJSON, binaryHeader, binary])
+}
+
+test('reads managed GLB with the current User and clears content after denial', async ({ page }) => {
+  const locator = 'addp://engine/12/path/doc/model.ifc?type=file&item_id=1203'
+  const backend = await installMockBackend(page, { exchangeModel: { format: 'ifc', locator, bytes: selfContainedTriangleGLB(), managed: true } })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const preview = page.locator('.model-preview')
+  await expect(preview.locator('canvas')).toBeVisible()
+  await expect(preview.locator('.three-status')).toHaveCount(0)
+  await expectColoredModel(page, preview.locator('canvas'), expect)
+  await page.context().addCookies([{ name: 'addp_rat_manager', value: 'must-not-be-used-for-glb', url: page.url() }])
+  await page.reload()
+  await expect(preview.locator('.three-status')).toHaveCount(0)
+  await expectColoredModel(page, preview.locator('canvas'), expect)
+  backend.managedModelDenied = true
+  await page.reload()
+  await expect(preview.locator('.three-status.is-error')).toHaveText('denied')
+  expect(backend.modelSourceRequests).toHaveLength(3)
+  for (const request of backend.modelSourceRequests) {
+    expect(request.authorization).toBe('Bearer manager-e2e-token')
+    expect(request.cookie).toBe('')
+  }
+})
+
 test('renders the official colored FBX directly and keeps colors after orbit and reopening', async ({ page }, testInfo) => {
   expect(createHash('sha256').update(COLORED_FBX).digest('hex')).toBe(COLORED_FBX_SHA256)
   const browserErrors = []
@@ -653,6 +704,7 @@ async function installMockBackend(page, options = {}) {
     capabilityLocators: [],
     quickViewActions: [],
     modelSourceRequests: [],
+    managedModelDenied: false,
     preferredModeRequests: [],
     taskDetailRequests: [],
     taskListQueries: [],
@@ -774,6 +826,11 @@ async function installMockBackend(page, options = {}) {
         metadata: { item_id: 1204, meta_scanned: true }
       })
     }
+    if (path === '/api/v1/manager/model_3d_glb/91/content' && exchangeModel?.managed) {
+      state.modelSourceRequests.push({ authorization: request.headers().authorization, cookie: request.headers().cookie || '' })
+      if (state.managedModelDenied) return fulfillJSON(route, { error: 'denied' }, 403)
+      return route.fulfill({ contentType: 'model/gltf-binary', body: exchangeModel.bytes })
+    }
     if (path === '/api/v1/manager/storage-stream' && exchangeModel?.bytes) {
       state.modelSourceRequests.push(Object.fromEntries(url.searchParams))
       return route.fulfill({ contentType: 'application/octet-stream', body: exchangeModel.bytes })
@@ -790,8 +847,8 @@ async function installMockBackend(page, options = {}) {
             attributes: { item: { data_type: 'model_3d', format: exchangeModel.format, layout: 'single' } },
             content: exchangeModel.bytes ? {
               kind: 'model_3d', frontend_renderer: 'model_3d', preview_material: 'url',
-              url: '/api/v1/manager/storage-stream?' + new URLSearchParams({ locator: exchangeModel.locator, storage_ref: modelNode.path }),
-              metadata: { format: exchangeModel.format }
+              url: exchangeModel.managed ? '/api/v1/manager/model_3d_glb/91/content' : '/api/v1/manager/storage-stream?' + new URLSearchParams({ locator: exchangeModel.locator, storage_ref: modelNode.path }),
+              metadata: { format: exchangeModel.format, ...(exchangeModel.managed ? { render_source: 'model_3d_glb' } : {}) }
             } : { kind: 'unsupported' }
           }
         }

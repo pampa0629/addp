@@ -18,7 +18,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import { createAuthenticatedFetch, useAddpI18n } from '@common-ui'
+import { useAuthStore } from '@/store/auth'
 import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
+import { isManagedModel3DGLBURL, loadManagedModel3DGLB } from '@/utils/model3DGLBSource.js'
 
 const props = defineProps({
   data: {
@@ -36,6 +39,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['view-state-change'])
+const { locale } = useAddpI18n()
 
 const viewportRef = ref(null)
 const loading = ref(false)
@@ -49,6 +53,9 @@ let controls = null
 let animationFrame = 0
 let resizeObserver = null
 let activeObject = null
+let modelLoadGeneration = 0
+let managedModelRequest = null
+const authenticatedFetch = createAuthenticatedFetch(() => useAuthStore(), { moduleName: 'Manager' })
 let modelBoundingRadius = 1
 let modelBoundingCenter = new THREE.Vector3()
 
@@ -159,7 +166,14 @@ function resize() {
 function clearModel() {
   if (!scene || !activeObject) return
   scene.remove(activeObject)
-  activeObject.traverse?.((node) => {
+  disposeModelObject(activeObject)
+  activeObject = null
+  modelBoundingRadius = 1
+  modelBoundingCenter.set(0, 0, 0)
+}
+
+function disposeModelObject(object) {
+  object?.traverse?.((node) => {
     node.geometry?.dispose?.()
     if (Array.isArray(node.material)) {
       node.material.forEach((material) => material?.dispose?.())
@@ -167,9 +181,6 @@ function clearModel() {
       node.material?.dispose?.()
     }
   })
-  activeObject = null
-  modelBoundingRadius = 1
-  modelBoundingCenter.set(0, 0, 0)
 }
 
 function updateModelBounds(object) {
@@ -312,9 +323,13 @@ function mapMaterials(material, mapper) {
 }
 
 async function loadModel(url) {
+  const generation = ++modelLoadGeneration
+  managedModelRequest?.abort()
+  managedModelRequest = null
   loading.value = true
   errorMessage.value = ''
   await nextTick()
+  if (generation !== modelLoadGeneration) return
   ensureScene()
   clearModel()
   if (!url) {
@@ -323,25 +338,29 @@ async function loadModel(url) {
     return
   }
   if (modelLoadFormat.value === 'stl') {
-    loadSTLModel(url)
+    loadSTLModel(url, generation)
     return
   }
   if (modelLoadFormat.value === 'obj') {
-    loadOBJModel(url)
+    loadOBJModel(url, generation)
     return
   }
   if (modelLoadFormat.value === 'fbx') {
-    loadFBXModel(url)
+    loadFBXModel(url, generation)
     return
   }
   if (modelLoadFormat.value === 'ply') {
-    loadPLYModel(url)
+    loadPLYModel(url, generation)
     return
   }
-  loadGLTFModel(url)
+  loadGLTFModel(url, generation)
 }
 
-function applyLoadedObject(object) {
+function applyLoadedObject(object, generation) {
+  if (generation !== modelLoadGeneration || !scene) {
+    disposeModelObject(object)
+    return
+  }
   clearModel()
   activeObject = object
   if (!activeObject) {
@@ -357,24 +376,45 @@ function applyLoadedObject(object) {
   loading.value = false
 }
 
-function handleModelLoadError(error) {
+function handleModelLoadError(error, generation) {
+  if (generation !== modelLoadGeneration) return
   errorMessage.value = error?.message || '三维模型加载失败'
   loading.value = false
 }
 
-function loadGLTFModel(url) {
+async function loadGLTFModel(url, generation) {
   const loader = new GLTFLoader()
+  if (isManagedModel3DGLBURL(url, window.location.origin)) {
+    const controller = new AbortController()
+    managedModelRequest = controller
+    try {
+      const gltf = await loadManagedModel3DGLB(loader, url, authenticatedFetch, {
+        origin: window.location.origin, signal: controller.signal, language: locale.value
+      })
+      const object = gltf.scene || gltf.scenes?.[0]
+      if (generation !== modelLoadGeneration || !scene) {
+        disposeModelObject(object)
+        return
+      }
+      applyLoadedObject(object, generation)
+    } catch (error) {
+      if (generation === modelLoadGeneration && !controller.signal.aborted) handleModelLoadError(error, generation)
+    } finally {
+      if (managedModelRequest === controller) managedModelRequest = null
+    }
+    return
+  }
   loader.load(
     url,
     (gltf) => {
-      applyLoadedObject(gltf.scene || gltf.scenes?.[0])
+      applyLoadedObject(gltf.scene || gltf.scenes?.[0], generation)
     },
     undefined,
-    handleModelLoadError
+    (error) => handleModelLoadError(error, generation)
   )
 }
 
-function loadSTLModel(url) {
+function loadSTLModel(url, generation) {
   const loader = new STLLoader()
   loader.load(
     url,
@@ -385,14 +425,14 @@ function loadSTLModel(url) {
         metalness: 0.06,
         roughness: 0.58
       })
-      applyLoadedObject(new THREE.Mesh(geometry, material))
+      applyLoadedObject(new THREE.Mesh(geometry, material), generation)
     },
     undefined,
-    handleModelLoadError
+    (error) => handleModelLoadError(error, generation)
   )
 }
 
-function loadPLYModel(url) {
+function loadPLYModel(url, generation) {
   const loader = new PLYLoader()
   loader.load(
     url,
@@ -403,36 +443,36 @@ function loadPLYModel(url) {
         metalness: 0.04,
         roughness: 0.62
       })
-      applyLoadedObject(new THREE.Mesh(geometry, material))
+      applyLoadedObject(new THREE.Mesh(geometry, material), generation)
     },
     undefined,
-    handleModelLoadError
+    (error) => handleModelLoadError(error, generation)
   )
 }
 
-function loadOBJModel(url) {
+function loadOBJModel(url, generation) {
   const loader = new OBJLoader()
   loader.load(
     url,
     (object) => {
       applyFallbackMaterial(object)
-      applyLoadedObject(object)
+      applyLoadedObject(object, generation)
     },
     undefined,
-    handleModelLoadError
+    (error) => handleModelLoadError(error, generation)
   )
 }
 
-function loadFBXModel(url) {
+function loadFBXModel(url, generation) {
   const loader = new FBXLoader()
   loader.load(
     url,
     (object) => {
       applyFallbackMaterial(object)
-      applyLoadedObject(object)
+      applyLoadedObject(object, generation)
     },
     undefined,
-    handleModelLoadError
+    (error) => handleModelLoadError(error, generation)
   )
 }
 
@@ -448,6 +488,9 @@ function applyFallbackMaterial(object) {
 }
 
 function disposeScene() {
+  modelLoadGeneration++
+  managedModelRequest?.abort()
+  managedModelRequest = null
   window.cancelAnimationFrame(animationFrame)
   resizeObserver?.disconnect()
   resizeObserver = null
