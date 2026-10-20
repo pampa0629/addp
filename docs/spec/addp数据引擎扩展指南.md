@@ -4,6 +4,16 @@
 
 ---
 
+## FTP／显式 FTPS 接入范围（2026-10-20 已确认，先准入）
+
+采用独立 `engine_type=ftp`，目录为 `root -> directory -> file`，复用现有数据类型、文件格式和共享解析器。首版仅用户名／密码、被动模式、目录、扫描、预览、下载及 REST+RETR 原生范围读取；普通 FTP 与显式 FTPS 使用明确配置区分，默认 FTPS，证书和主机名校验必需，可配置 CA，失败不降级。SFTP、隐式 FTPS、主动模式、写删和 Spark 专用适配不在本轮范围。
+
+已否决候选客户端 `github.com/jlaffaye/ftp v0.2.4`：严格反例证明它把 MLST 的未知／缺失类型当作普通文件，且没有公开原始命令接口。2026-10-20 用户确认采用 Common 内部窄范围纯 Go 协议适配层，删除候选依赖；只实现已确认的只读命令，不保留旧客户端或第二条读取路线。先用真实服务验证 TLS、EPSV／PASV 控制对端地址约束、NLST+逐项 MLST 的严格目录、REST 偏移、取消、超时及提前关闭后的连接隔离；准入通过前不注册生产插件。禁止使用会跳过解析错误的 LIST 路线，禁止信任 PASV 任意公布地址，禁止全量下载或从零丢弃模拟范围读取。每次操作／读取独占会话；根目录约束、路径穿越、符号链接、非法 UTF-8、CR／LF／NUL 必须明确拒绝，保留中文、空格和百分号原名。不虚构 ETag、快照或稳定分页保证。
+
+Business 使用固定官方 `drakkan/sftpgo:v2.7.6@sha256:1edd28d80de2a008863fbfc58c8ff7db47b1b410bae48d4e6076192337809b11`，独立 `-ftp` profile，不加入 `-all`。控制端口 2121、被动端口 50000–50009 仅绑定回环，冲突失败，内外数据端口一致；独立持久卷、只读账号与增量示范数据，Business 不调用 System API。镜像 manifest 提供 Linux ARM64／amd64 不等于两种架构已获实测认证。
+
+标准入口 `make test-common-ftp-unit` 负责确定性验证，`make test-common-ftp` 拥有临时真实服务并验证协议及后续 Provider，退出核对零残留；同一入口登记 Linux ARM64／amd64 T2。正式插件之后另验收普通 User 的登记、Meta 扫描、Manager 预览和下载。协议、Provider、运行中个人环境和 Hosted T4 分别认定，不互相代替。
+
 ## StarRocks 接入范围（2026-10-20 验收）
 
 当前独立 `engine_type=starrocks` 只读插件已实现。源码 `22fce34b3b774ef32b148268df09c8a37cbda66c` 的 [Linux ARM64／amd64 原生协议、Provider 与 Business 持久化门禁39270948341](https://github.com/pampa0629/addp/actions/runs/39270948341) 及 [Hosted 普通 User 页面验收39271441409](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 均有完整通过报告和零残留证明；覆盖登记、扫描、预览、属性及参数化只读 SQL，精确数值和原生空值语义通过核验。本机 Engine32 也已完成管理员交互验收。各层证据及后续前端修复的独立复验状态见[验收场景](testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)；以下保留准入决策与失败根因，不能将历史待验收描述当作当前状态。

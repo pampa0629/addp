@@ -7,6 +7,9 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
+| FTP Engine | FTP 文件引擎 | 以 `engine_type=ftp` 表达的远程文件系统连接，使用 `root -> directory -> file` 目录模型。 | FTP 是访问协议，不是 data type 或 format；首版仅用户名／密码、被动模式和只读内容，文件路径相对连接根目录。 |
+| Explicit FTPS | 显式 FTPS | 在 FTP 控制连接上通过 AUTH TLS 建立加密会话，并保护数据连接的传输方式。 | 与普通 FTP 共用 `ftp` 引擎，以明确的传输安全配置区分；加密失败不降级为明文。 |
+| SFTP | SSH 文件传输协议 | 基于 SSH 的文件传输协议。 | 不属于 FTP 或 FTPS；不随 FTP 引擎接入自动获得支持。 |
 | HDFS Engine | HDFS 引擎 | 以 `engine_type=hdfs` 标识的 Hadoop 分布式文件系统存储引擎，目录模型为 `root -> directory -> file`。 | Simple 只读插件和 Spark 分布式读取已通过 T2，正式平台消费链路仍待 T4 验收；HDFS 不是新的 data type，也不代表已支持 Hadoop 的 YARN 或 MapReduce。 |
 | WebHDFS | WebHDFS 接口 | Hadoop 提供的 HDFS HTTP 内容与目录访问协议。 | ADDP 目录扫描和内容预览的接入协议；Spark 使用同一 HDFS 的原生 Hadoop 客户端，HTTP 端点与 RPC 端点分别由连接事实提供，不互相推算端口。 |
 | key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 不是 data type；目录、事实与读取能力必须由对应 Provider 声明。Redis 首期支持单端点、ACL 账号、一个逻辑数据库以及有预算的 key 扫描和只读预览。 |

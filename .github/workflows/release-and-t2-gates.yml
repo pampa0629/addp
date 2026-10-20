@@ -17,6 +17,7 @@ on:
           - all
           - gaussdb-official-media
           - starrocks-admission
+          - ftp-admission
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ permissions:
 jobs:
   selection:
     name: Release and T2 gate selection
-    if: github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission')
+    if: github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission' && inputs.release_suite != 'ftp-admission')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -797,6 +798,53 @@ jobs:
         with:
           name: gaussdb-provider-t2-${{ matrix.arch }}-${{ github.run_id }}
           path: ${{ runner.temp }}/addp-gaussdb-t2/
+          if-no-files-found: warn
+          retention-days: 14
+
+  common-ftp:
+    name: FTP protocol admission (${{ matrix.arch }})
+    needs: selection
+    if: always() && ((github.event_name == 'workflow_dispatch' && inputs.release_suite == 'ftp-admission') || needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common FTP gate
+        env:
+          ADDP_FTP_ARTIFACT_DIR: ${{ runner.temp }}/addp-ftp-t2
+        run: make test-common-ftp
+
+      - name: Summarize Common FTP gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: FTP protocol admission (${{ matrix.arch }})
+          status: ${{ job.status }}
+
+      - name: Upload FTP admission evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ftp-admission-t2-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-ftp-t2/
           if-no-files-found: warn
           retention-days: 14
 
@@ -1774,7 +1822,7 @@ jobs:
     needs:
       - selection
       - cli-product-macos-verification
-    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission'))
+    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission' && inputs.release_suite != 'ftp-admission'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -1800,7 +1848,7 @@ jobs:
     needs:
       - selection
       - system-iam-postgres-verification
-    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission'))
+    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission' && inputs.release_suite != 'ftp-admission'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

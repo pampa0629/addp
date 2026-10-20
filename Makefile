@@ -244,6 +244,7 @@ test-deployment-discovery: ## 校验 Infra/Business 只读部署发现与原子�
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
 	@$(MAKE) test-deployment-discovery
+	@$(MAKE) test-common-ftp-unit
 	@$(MAKE) test-common-starrocks-unit
 	@bash -n business/starrocks/entrypoint.sh business/scripts/starrocks.sh
 	@python3 -m unittest scripts/test/business-starrocks_test.py
@@ -392,6 +393,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
 	@$(MAKE) test-common-gaussdb
+	@$(MAKE) test-common-ftp
 	@$(MAKE) test-common-starrocks
 
 test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
@@ -421,6 +423,16 @@ test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provi
 
 test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
+
+.PHONY: test-common-ftp test-common-ftp-unit
+test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证
+	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
+	@bash -n scripts/test/common-ftp-gate.sh
+	@python3 -m unittest scripts/test/ftp-admission_test.py
+	@cd common && GOWORK=off go test ./engine/internal/ftpclient ./engine/certification/ftp
+
+test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与零残留清理
+	@bash scripts/test/common-ftp-gate.sh
 
 .PHONY: test-common-starrocks test-common-starrocks-unit
 test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及共享只读拒绝边界

@@ -11,6 +11,10 @@
 | 基础设施与数据引擎 | [Business Redis 门禁](#business-redis-门禁)、[Elasticsearch 门禁](#elasticsearch-门禁)、[Redis 键值数据集门禁](#redis-键值数据集门禁)、[平台指标设施独占门禁](#平台指标设施独占门禁)、[Spark 数据发布门禁](#spark-数据发布门禁)、[关系型写入与安全诊断门禁](#关系型写入与安全诊断门禁)、[Oracle 原生类型与空间门禁](#oracle-原生类型与空间门禁) |
 | Owner 数据、安全与界面 | [Meta 扫描与结果归属门禁](#meta-扫描与结果归属门禁)、[Security 治理与识别门禁](#security-治理与识别门禁)、[业务图双引擎领域验收](#业务图双引擎领域验收)、[Manager 预览浏览器门禁](#manager-预览浏览器门禁)、[Manager 快显回归与基准验证](#manager-快显回归与基准验证)、[租户执行过程事件门禁](#租户执行过程事件门禁)、[保护投影与执行诊断门禁](#保护投影与执行诊断门禁) |
 
+## FTP／显式 FTPS 准入门禁
+
+`make test-common-ftp-unit` 验证连接事实、规范路径、TLS 选择、取消与临时资源归属，同时核对 T2 的 Make／CI 登记。`make test-common-ftp` 使用 Business 唯一固定 SFTPGo 镜像、独占容器与卷、随机密码、私有 CA 和内外一致的回环被动端口，实际验证 FTP／显式 FTPS、只读账号、NLST+MLST 完整目录、原始中文／空格／百分号名称、REST 范围、PASV 地址约束和读取会话隔离，退出必须零残留。Linux ARM64／amd64 执行同一标准入口；镜像 manifest、协议准入和生产 Provider／普通用户 Hosted T4 分别认定。准入通过前不注册生产插件，未实际运行的层级不得记为通过。
+
 ## Business Redis 门禁
 
 `make test-business-config` 覆盖脚本语法、固定官方镜像、回环绑定及实际端口首次避让与重启复用。`make test-business-redis` 属于 Business owner 的独占 Compose T2：随机密码、随机回环端口、私有数据卷，实际验证 ACL、string/hash/list/set/zset/stream、TTL、二进制 key/value、大整数文本、幂等初始化、类型冲突拒绝和 AOF 重启持久化，退出核对容器、卷、网络零残留。新 owner 从 `ADDP_T2_OWNED_SERVICES` 声明自动发现，不要求为了测试创建新的服务模块或维护第二份 owner 清单。该门禁已登记 `make test-integration` 和 `release-and-t2-gates.yml`；它不证明 Redis Engine Plugin、Meta/Manager/Develop 或 T4 业务链路已经实现。
