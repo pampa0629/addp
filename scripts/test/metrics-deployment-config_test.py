@@ -38,6 +38,9 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         script = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
         for path in ('common/processmetrics/sample_darwin.go',
+                     'scripts/infra/postgres-observation/000001_init.sql',
+                     'scripts/infra/postgres-observation/000002_future.sql',
+                     'scripts/test/postgres-observation-probe.py',
                      'scripts/dev/process-metrics-launch.py',
                      'scripts/test/dev-process-metrics-plan_test.py',
                      'common/processmetrics/sample_linux.go',

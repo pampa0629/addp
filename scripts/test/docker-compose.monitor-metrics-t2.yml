@@ -5,6 +5,7 @@ services:
       POSTGRES_DB: addp_test
       POSTGRES_USER: addp
       POSTGRES_PASSWORD_FILE: /run/secrets/metrics-postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     secrets: [metrics-postgres-password]
     ports: ["127.0.0.1::5432"]
     security_opt: [no-new-privileges:true]

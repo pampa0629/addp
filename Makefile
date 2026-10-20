@@ -1069,7 +1069,7 @@ test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键�
 
 .PHONY: test-monitor-metrics
 test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、故障恢复和持久化
-	@bash scripts/test/monitor-metrics-gate.sh
+	@bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期

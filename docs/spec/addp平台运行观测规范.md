@@ -119,6 +119,18 @@ System `GET /platform/engine_deployments/discovery` 仅接受非委托 Platform 
 
 该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 4.4；专业指标尚待实施，不以候选读取或来源自动发布代替产品接入验收。
 
+### 4.6 PostgreSQL 数据库侧汇总读取边界
+
+Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 安装版本化的 `scripts/infra/postgres-observation/000001_init.sql`，不进入 System IAM 迁移。当前仅实现数据库侧 PostgreSQL 15 读取边界；来源部署、认证发现、Monitor 专业查询与页面尚未开放，不能因安装或 T2 通过宣称采集已生效。
+
+各实例分别使用 `addp_infra_observer` 或 `addp_business_observer`，密码独立；非登录的 `addp_observation_owner` 仅继承 `pg_read_all_stats`，Login 无任何角色成员资格，不获该统计角色、业务对象或服务管理权限。安装在单事务中校验作用域、SCRAM 校验值、身份标记、成员资格、schema／函数归属与 ACL；陌生对象、额外权限、PUBLIC 业务读权或不安全默认授权均拒绝并回滚，不接管或全局撤销其他用户权限。Login 只授当前连接库 CONNECT、私有 schema USAGE 和唯一无参数 `addp_observation.snapshot()` EXECUTE。密码校验值通过部署侧私有 stdin 的 psql 变量注入，不进入参数、普通配置、发现快照、System API 或日志；原始密码不参与 SQL 文本。
+
+固定函数返回一行、16 个有类型字段：采样时间、服务启动时间、统计代际、统计开关；当前客户端连接、活跃、空闲、事务内空闲、活跃等待、活跃锁等待、活跃 IO 等待及最大连接数；非模板数据库的事务提交／回滚／死锁累计值及容量字节。排除本次采集会话，不输出数据库／表／用户名称、PID、客户端地址或 SQL。等待仅计 active，空闲 ClientRead 不作为压力；事务保留 PostgreSQL 原累计口径，包含采集自身带来的事务，不冒充业务吞吐或租户用量。统计关闭时三项累计值为 NULL；容量不完整不能填零，超过 256 个非模板数据库拒绝而非截断。统计代际覆盖数据库集合与各库统计重置，配合服务启动时间裁决后续速率窗口。
+
+函数采用固定 `pg_catalog, pg_temp` 搜索路径、全限定目录和固定 SQL，Login 不可更改函数；只读默认值和三秒语句超时是附加约束，不能替代对象权限或来源侧期限。PostgreSQL 的 PUBLIC 授权可叠加，单个角色 REVOKE 不能覆盖它；当前安装核查只覆盖所连数据库。正式部署须选择无业务对象的维护连接库，并以认证／网络策略限制其他数据库连接；未完成该部署准入不启用采集，不声称已经隔离整个实例的所有业务库。安全依据见 [PostgreSQL 函数权限](https://www.postgresql.org/docs/15/sql-createfunction.html)、[统计角色](https://www.postgresql.org/docs/15/predefined-roles.html)及[统计字段](https://www.postgresql.org/docs/15/monitoring-stats.html)。
+
+验证复用独占 `make test-monitor-metrics`；精确数据库专项为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`。私有 PostgreSQL 强制 TCP SCRAM，覆盖真实密码、固定数值与独立目录对照、等待／锁等待、统计关闭／重置、越权拒绝、临时关系遮蔽、重入／密码轮换、陌生身份、默认权限漂移和失败回滚；只用 `addp_test`，退出按原门禁核验物理零残留。默认完整门禁仍执行全部指标链路及该专项，现有 Monitor metrics CI 按声明自动发现新增 SQL 与探针；不新建 Job、不修改生产权限、不修改个人库。
+
 ## 五、技术路线与故障隔离
 
 ### 5.1 唯一数据路径

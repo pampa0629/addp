@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/utils/deployment-inventory.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
+# ADDP_T2_INPUT_FILES=scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
+[[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
+case "${1:-}" in
+  ''|--case=all) metrics_case=all ;;
+  --case=postgres-observation) metrics_case=postgres-observation ;;
+  *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
+esac
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
 # Test-owned transport starts dynamically, then the probe pins its assigned port.
@@ -50,6 +56,12 @@ trap 'exit 143' TERM
 # the shared source transport (Hosted T4) does not need a database credential.
 printf '%s' "$METRICS_T2_POSTGRES_PASSWORD" >"$WORK_DIR/postgres-password"
 chmod 644 "$WORK_DIR/postgres-password"
+export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
+if [[ "$metrics_case" == postgres-observation ]]; then
+  compose up -d --wait --wait-timeout 90 postgres
+  python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
+  exit 0
+fi
 mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control"
 # A one-run CA and deployer client; never install these in a personal environment.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
@@ -202,6 +214,7 @@ compose exec -T metrics-source nginx -s reload
 compose run --rm --no-deps --entrypoint nginx metrics-control -t
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
+python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')
