@@ -129,7 +129,7 @@ def start():
         raise ValueError('fixture already owns resources')
     name = 'addp-ftp-' + secrets.token_hex(6)
     state = {'name': name, 'label': 'org.addp.ftp.owner=' + name,
-             'volumes': [name + '-data', name + '-state']}
+             'volumes': [name + '-state']}
     write(root / 'state.json', state)
     port = allocate()
     password = secrets.token_urlsafe(24)
@@ -147,7 +147,9 @@ def start():
     # The bind mount exposes only this private fixture's directory. Unprivileged
     # image UID 1000 must be able to read its TLS files.
     (config / 'server.key').chmod(0o644)
-    write_samples(root / 'seed')
+    data = root / 'data'
+    data.mkdir(mode=0o755)
+    data.chmod(0o755)
     pinned = image()
     run('docker', 'pull', pinned)
     for volume in state['volumes']:
@@ -156,29 +158,32 @@ def start():
             '--memory', '512m', '-p', f'127.0.0.1:{port}:2121',
             '-p', f'127.0.0.1:{port+1}-{port+10}:{port+1}-{port+10}',
             '-v', f'{config}:/addp/config:ro',
-            '-v', f'{ROOT / "business/ftp"}:/addp/ftp:ro',
-            '-v', f'{root / "seed"}:/addp/samples:ro',
+            '-v', f'{ROOT / "business/ftp/entrypoint.sh"}:/addp/ftp/entrypoint.sh:ro',
+            '-v', f'{data}:/srv/sftpgo/data:ro',
             '--entrypoint', 'sh',
-            '-v', f'{state["volumes"][0]}:/srv/sftpgo',
-            '-v', f'{state["volumes"][1]}:/var/lib/sftpgo', pinned, '/addp/ftp/entrypoint.sh']
+            '-v', f'{state["volumes"][0]}:/var/lib/sftpgo', pinned, '/addp/ftp/entrypoint.sh']
     state['args'] = args
     write(root / 'state.json', state)
     run(*args)
-    run('docker', 'exec', '-u', '0', name, 'sh', '-ec',
-        'mkdir -p /srv/sftpgo/data/examples; chown -R 1000:1000 /srv/sftpgo/data')
-    run('docker', 'exec', '-u', '0', name, 'sh', '-ec',
-        'mkdir -p /srv/sftpgo/data/unsupported; ln -s ../examples/demo.json /srv/sftpgo/data/unsupported/link')
-    samples = root / 'samples'
-    samples.mkdir()
+    connection = {'host': '127.0.0.1', 'port': port, 'user': 'fixture_reader',
+                  'password': password, 'ca': str(config / 'server.crt')}
+    write(root / 'connection.json', connection)
+    wait_for_greeting(root, state, connection, 'initial')
+    # Publish a new host directory only after the FTP server is actually ready.
+    # The subsequent native FTP/Provider/Meta checks must see it without restart.
+    write_samples(data)
+    samples = data / 'examples'
     (samples / '中文 空格%样例.csv').write_text('id,name,amount\n1,长沙,100.25\n2,株洲,200.50\n')
     (samples / 'demo.json').write_text('[{"id":1,"name":"长沙"},{"id":2,"name":"株洲"}]')
     (samples / 'range.bin').write_bytes(bytes(range(256)) * 32768)
     (samples / '.hidden.txt').write_text('hidden sample')
-    run('docker', 'cp', str(samples) + '/.', name + ':/srv/sftpgo/data/examples')
-    run('docker', 'exec', '-u', '0', name, 'chown', '-R', '1000:1000', '/srv/sftpgo/data')
-    connection = {'host': '127.0.0.1', 'port': port, 'user': 'fixture_reader',
-                  'password': password, 'ca': str(config / 'server.crt')}
-    write(root / 'connection.json', connection)
+    for sample in samples.iterdir():
+        sample.chmod(0o644)
+    unsupported = data / 'unsupported'
+    unsupported.mkdir(mode=0o755)
+    unsupported.chmod(0o755)
+    (unsupported / 'link').symlink_to('../examples/demo.json')
+    (root / 'outside-root.txt').write_text('not part of the FTP account root')
     write(root / 'ftp-engine.json', {'name': 'Hosted FTP', 'engine_type': 'ftp', 'engine_origin': 'general',
           'connection_info': {'host': connection['host'], 'port': connection['port'],
           'user': connection['user'], 'password': connection['password'],
@@ -186,10 +191,9 @@ def start():
           'description': 'Disposable FTP file consumer acceptance'})
     write(root / 'ftp-samples.json', [
         {'format': kind, 'full_name': 'examples/' + filename,
-         'size': (root / 'seed' / filename).stat().st_size,
-         'sha256': hashlib.sha256((root / 'seed' / filename).read_bytes()).hexdigest()}
+         'size': (samples / filename).stat().st_size,
+         'sha256': hashlib.sha256((samples / filename).read_bytes()).hexdigest()}
         for kind, filename in [('csv', '客户 中文%.csv'), ('json', '订单 示例.json'), ('parquet', '客户 示例.parquet')]])
-    wait_for_greeting(root, state, connection, 'initial')
     tls = ssl.create_default_context(cafile=str(config / 'server.crt'))
     with ftplib.FTP_TLS(context=tls, timeout=5) as probe:
         probe.connect('127.0.0.1', port)
@@ -197,6 +201,8 @@ def start():
         probe.prot_p()
         link_facts = probe.sendcmd("MLST /unsupported/link")
         root_facts = probe.sendcmd("MLST /")
+        if any(Path(item).name == 'outside-root.txt' for item in probe.nlst('/')):
+            raise RuntimeError('FTP unexpectedly exposed a sibling of the host data root')
         for expected, operation in ((553, lambda: probe.storbinary('STOR /forbidden.txt', io.BytesIO(b'no'))),
                                     (550, lambda: probe.delete('/examples/demo.json'))):
             try:
@@ -210,7 +216,9 @@ def start():
           'docker_arch': run('docker', 'info', '-f', '{{.Architecture}}'),
           'image_id': run('docker', 'inspect', '-f', '{{.Image}}', name),
           'control_port': port, 'passive_start': port+1, 'passive_end': port+10,
-          'tls_mode': 'explicit and plain admission', 'native_read_only': True, 'native_link_mlst': link_facts, 'native_root_mlst': root_facts, 'advertised_pasv_ip': '203.0.113.123'})
+          'tls_mode': 'explicit and plain admission', 'native_read_only': True,
+          'host_directory_added_after_ready': True, 'host_root_sibling_not_exposed': True,
+          'native_link_mlst': link_facts, 'native_root_mlst': root_facts, 'advertised_pasv_ip': '203.0.113.123'})
     print('Owned FTP fixture ready; credentials remain private')
 
 
@@ -221,13 +229,35 @@ def persistence():
     actual = run('docker', 'inspect', '-f', '{{index .Config.Labels "org.addp.ftp.owner"}}', name)
     if actual != name:
         raise RuntimeError('FTP lifecycle ownership mismatch')
-    csv_path = '/srv/sftpgo/data/examples/客户 中文%.csv'
-    missing = '/srv/sftpgo/data/examples/订单 示例.json'
-    run('docker', 'exec', '-u', '1000', name, 'sh', '-ec',
-        'printf "%s\\n" "custom-preserved" >> "$1"; rm "$2"', 'sh', csv_path, missing)
-    run('docker', 'rm', '-f', name)
-    run(*state['args'])
+    data = root / 'data'
+    csv_path = data / 'examples/客户 中文%.csv'
+    missing = data / 'examples/订单 示例.json'
+    original_json = missing.read_bytes()
+    with csv_path.open('a') as stream:
+        stream.write('custom-preserved\n')
+    missing.unlink()
+    added = data / '新增 目录%/嵌套'
+    added.mkdir(parents=True)
+    for directory in (added, added.parent):
+        directory.chmod(0o755)
+    added_file = added / 'host-added.csv'
+    added_file.write_bytes(b'id,name\n11,host-added\n')
+    added_file.chmod(0o644)
     connection = json.loads((root / 'connection.json').read_text())
+    context = ssl.create_default_context(cafile=connection['ca'])
+    with ftplib.FTP_TLS(context=context, timeout=2) as client:
+        client.connect(connection['host'], connection['port'])
+        client.login(connection['user'], connection['password'])
+        client.prot_p()
+        contents = io.BytesIO()
+        client.retrbinary('RETR /新增 目录%/嵌套/host-added.csv', contents.write)
+        if contents.getvalue() != added_file.read_bytes():
+            raise RuntimeError('FTP did not expose the live host directory')
+    run('docker', 'rm', '-f', name)
+    # The same host initialization used by standard startup restores only missing
+    # examples. The container never copies or writes files in the read-only root.
+    write_samples(data)
+    run(*state['args'])
     wait_for_greeting(root, state, connection, 'recreated', timeout=60)
     context = ssl.create_default_context(cafile=connection['ca'])
     with ftplib.FTP_TLS(context=context, timeout=2) as client:
@@ -235,12 +265,25 @@ def persistence():
         client.login(connection['user'], connection['password'])
         client.prot_p()
         client.nlst('/examples')
-    if not run('docker', 'exec', name, 'cat', csv_path).endswith('custom-preserved'):
+        contents = io.BytesIO()
+        client.retrbinary('RETR /examples/客户 中文%.csv', contents.write)
+        if not contents.getvalue().endswith(b'custom-preserved\n'):
+            raise RuntimeError('FTP sample overwritten on recreation')
+        contents = io.BytesIO()
+        client.retrbinary('RETR /examples/订单 示例.json', contents.write)
+        if contents.getvalue() != original_json:
+            raise RuntimeError('FTP missing sample was not restored')
+        contents = io.BytesIO()
+        client.retrbinary('RETR /新增 目录%/嵌套/host-added.csv', contents.write)
+        if contents.getvalue() != added_file.read_bytes():
+            raise RuntimeError('FTP user directory lost on recreation')
+    if not csv_path.read_text().endswith('custom-preserved\n'):
         raise RuntimeError('FTP sample overwritten on recreation')
-    if run('docker', 'exec', name, 'cat', missing) != (root / 'seed/订单 示例.json').read_text().strip():
+    if missing.read_bytes() != original_json:
         raise RuntimeError('FTP missing sample was not restored')
     write(root / 'business-lifecycle.json', {'recreated': True, 'user_changes_preserved': True,
-          'missing_sample_restored': True, 'credentials_and_volumes_preserved': True})
+          'missing_sample_restored': True, 'credentials_and_state_preserved': True,
+          'live_host_directory_visible': True, 'host_directory_preserved': True})
 
 
 def stop():

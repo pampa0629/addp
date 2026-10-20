@@ -36,9 +36,8 @@ services:
       - "127.0.0.1:50000-50009:50000-50009"
     volumes:
       - ./.business-state/ftp/config:/addp/config:ro
-      - ./ftp:/addp/ftp:ro
-      - ./ftp/data:/addp/samples:ro
-      - ftp_data:/srv/sftpgo
+      - ./ftp/entrypoint.sh:/addp/ftp/entrypoint.sh:ro
+      - ./ftp/data:/srv/sftpgo/data:ro
       - ftp_state:/var/lib/sftpgo
     networks: [business-network]
     mem_limit: 512m
@@ -816,7 +815,6 @@ services:
           memory: 2G
 
 volumes:
-  ftp_data:
   ftp_state:
   falkordb_data:
   hdfs_name:

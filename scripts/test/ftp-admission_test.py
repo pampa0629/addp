@@ -44,10 +44,15 @@ class FTPAdmissionTests(unittest.TestCase):
         value = json.loads(result.stdout)['services']['ftp']
         self.assertEqual(value['profiles'], ['ftp'])
         self.assertEqual(value['entrypoint'], ['sh', '/addp/ftp/entrypoint.sh'])
-        self.assertTrue(any(p['target'] == '/addp/samples' and p.get('read_only') for p in value['volumes']))
+        bindings = [p for p in value['volumes'] if p['target'] == '/srv/sftpgo/data']
+        self.assertEqual(len(bindings), 1)
+        self.assertEqual(bindings[0]['type'], 'bind')
+        self.assertEqual(Path(bindings[0]['source']), ROOT / 'business/ftp/data')
+        self.assertTrue(bindings[0]['read_only'])
+        self.assertFalse(any(p['target'] in ('/addp/samples', '/srv/sftpgo') for p in value['volumes']))
         ports = {(p['host_ip'], int(p['published']), p['target']) for p in value['ports']}
         self.assertEqual(ports, {('127.0.0.1', p, p) for p in [2121, *range(50000, 50010)]})
-        self.assertEqual({p['source'] for p in value['volumes'] if p['type'] == 'volume'}, {'ftp_data', 'ftp_state'})
+        self.assertEqual({p['source'] for p in value['volumes'] if p['type'] == 'volume'}, {'ftp_state'})
         for script in ('start.sh', 'stop.sh'):
             result = subprocess.run(['bash', str(ROOT / 'business/scripts' / script), '-ftp', '-postgres'],
                                     capture_output=True, text=True)
@@ -74,21 +79,45 @@ class FTPAdmissionTests(unittest.TestCase):
             finally:
                 os.umask(old_umask)
             self.assertEqual(root.stat().st_mode & 0o777, 0o755)
-            self.assertTrue(all(p.stat().st_mode & 0o777 == 0o644 for p in root.iterdir()))
-            self.assertEqual(len(list(root.iterdir())), 3)
-            self.assertEqual(json.loads((root / '订单 示例.json').read_text()), seed.ROWS)
-            self.assertEqual((root / '客户 示例.parquet').read_bytes()[:4], b'PAR1')
-            csv_file = root / '客户 中文%.csv'
+            examples = root / 'examples'
+            self.assertEqual(examples.stat().st_mode & 0o777, 0o755)
+            self.assertTrue(all(p.stat().st_mode & 0o777 == 0o644 for p in examples.iterdir()))
+            self.assertEqual(len(list(examples.iterdir())), 3)
+            self.assertEqual(json.loads((examples / '订单 示例.json').read_text()), seed.ROWS)
+            self.assertEqual((examples / '客户 示例.parquet').read_bytes()[:4], b'PAR1')
+            user_directory = root / 'user-created'
+            user_directory.mkdir(mode=0o700)
+            user_file = user_directory / 'private.txt'
+            user_file.write_text('owned by host user')
+            csv_file = examples / '客户 中文%.csv'
             csv_file.write_text('user modified')
             seed.write_samples(root)
             self.assertEqual(csv_file.read_text(), 'user modified')
+            self.assertEqual(user_file.read_text(), 'owned by host user')
+            self.assertEqual(user_directory.stat().st_mode & 0o777, 0o700)
             csv_file.unlink()
-            csv_file.symlink_to(root / '订单 示例.json')
+            csv_file.symlink_to(examples / '订单 示例.json')
             with self.assertRaisesRegex(ValueError, 'ordinary file'):
                 seed.write_samples(root)
         for relative in ('business/ftp/data/nested/example.json', 'business/ftp/samples/example.parquet'):
             result = subprocess.run(['git', 'check-ignore', '--no-index', '-q', relative], cwd=ROOT)
             self.assertEqual(result.returncode, 0, relative)
+
+    def test_host_root_and_examples_cannot_redirect_initialization(self):
+        for component in ('root', 'examples'):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                target = parent / 'outside'
+                target.mkdir()
+                root = parent / 'data'
+                if component == 'root':
+                    root.symlink_to(target, target_is_directory=True)
+                else:
+                    root.mkdir()
+                    (root / 'examples').symlink_to(target, target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, 'symbolic link'):
+                    seed.write_samples(root)
+                self.assertEqual(list(target.iterdir()), [])
 
     def test_greeting_wait_retries_only_before_the_ftp_server_is_ready(self):
         # Reproduce a published TCP port accepting before an FTP server is ready:
@@ -146,6 +175,7 @@ class FTPAdmissionTests(unittest.TestCase):
                 root = Path(directory)
                 admission.write(root / 'state.json', {'name': 'owned', 'args': ['docker', 'run', 'fixture']})
                 admission.write(root / 'connection.json', {'host': '127.0.0.1', 'port': 2121, 'user': 'reader', 'password': 'private', 'ca': 'private.crt'})
+                seed.write_samples(root / 'data')
                 with patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory), patch.object(admission, 'run', return_value='owned'), patch.object(admission, 'wait_for_greeting'), patch.object(admission.ssl, 'create_default_context') as tls, patch.object(admission.ftplib, 'FTP_TLS') as ftp:
                     if category == 'tls':
                         tls.side_effect = admission.ssl.SSLCertVerificationError('invalid certificate')

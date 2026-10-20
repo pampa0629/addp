@@ -12,6 +12,8 @@
 
 Business 使用固定官方 `drakkan/sftpgo:v2.7.6@sha256:1edd28d80de2a008863fbfc58c8ff7db47b1b410bae48d4e6076192337809b11`，独立 `-ftp` profile，不加入 `-all`。控制端口 2121、被动端口 50000–50009 仅绑定回环，冲突失败，内外数据端口一致；独立持久卷、只读账号与增量示范数据，Business 不调用 System API。镜像 manifest 提供 Linux ARM64／amd64 不等于两种架构已获实测认证。
 
+2026-10-20 用户确认将本机文件部署收敛为直接 bind mount：宿主机 `business/ftp/data/` 只读挂载到 FTP 服务的 `/srv/sftpgo/data/`，对应账号虚拟 `/`；`data/examples/` 与 Manager 的 `/examples/` 同层级对应。宿主机在 data 内新增目录／文件，无需重启 FTP 即可通过协议枚举读取；Meta 扫描后再进入已发现目录与数据项。data 外的同级目录不自动公开。样例由宿主机初始化器只补缺失到 `data/examples/`，不覆盖用户文件，不保留“种子目录复制到文件卷”的第二条路径；容器只保留账号状态卷。已有文件卷先一次性核对并备份迁移，原卷保留，标准启动不猜测或自动合并旧目录。Linux 宿主机须确保运行 UID 可遍历目录并读取文件，脚本不递归改写用户权限。该部署调整沿用现有 FTP T1、双架构真实 T2 和 Hosted T4 登记；原有通过记录不自动作为新部署布局验收。
+
 2026-10-20 真实 SFTPGo 反例确认：原生软链接 `/unsupported/link` 的 MLST 返回 `Type=file`，即服务器已解引用，客户端不能从协议事实推断原生文件类型。因此，严格 MLST 类型校验只能拒绝服务器明确公布的链接、未知或缺失类型；不能证明原生软链接不存在。用户已确认采用“FTP 账号根对齐 NFS 导出根”：FTP 协议根固定为账号看到的 `/`，不提供客户端 `root_path`，不以 CWD 或路径前缀声称实现安全隔离。需要限定子目录时，服务端必须为独立只读账号设置对应主目录／chroot；Catalog 根的 full_name 为空，业务路径不包含服务端物理主目录。客户端拒绝协议明确公布的链接、未知或缺失类型，不承诺识别服务端已解引用的原生链接。NFS 的现有软链接过滤缺口只记录待核验，本轮不修改其实现。
 
 标准入口 `make test-common-ftp-unit` 负责确定性验证，`make test-common-ftp` 拥有临时真实服务并验证协议及后续 Provider，退出核对零残留；同一入口登记 Linux ARM64／amd64 T2。正式插件之后另验收普通 User 的登记、Meta 扫描、Manager 预览和下载。协议、Provider、运行中个人环境和 Hosted T4 分别认定，不互相代替。

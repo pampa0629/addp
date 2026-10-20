@@ -39,9 +39,9 @@ case "$action" in
                 exit 0
             fi
             [ "$(docker inspect --format '{{.State.Running}}' business-ftp)" = true ] || {
-                echo 'FTP exited; persistent data and state volumes were retained.' >&2; exit 1;
+                echo 'FTP exited; host files and account state were retained.' >&2; exit 1;
             }
             sleep 1
         done
-        echo 'FTP readiness timed out; persistent volumes were retained.' >&2; exit 1 ;;
+        echo 'FTP readiness timed out; host files and account state were retained.' >&2; exit 1 ;;
 esac

@@ -32,7 +32,12 @@ PARQUET_TEMPLATE = (
 def write_samples(directory):
     directory = Path(directory)
     if directory.is_symlink():
-        raise ValueError('FTP seed directory must not be a symbolic link')
+        raise ValueError('FTP data root must not be a symbolic link')
+    directory.mkdir(parents=True, exist_ok=True, mode=0o755)
+    directory.chmod(0o755)
+    directory = directory / 'examples'
+    if directory.is_symlink():
+        raise ValueError('FTP examples directory must not be a symbolic link')
     directory.mkdir(parents=True, exist_ok=True, mode=0o755)
     directory.chmod(0o755)
     output = io.StringIO(newline='')

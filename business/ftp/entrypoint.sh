@@ -2,9 +2,13 @@
 set -eu
 umask 077
 state=/var/lib/sftpgo
-data=/srv/sftpgo/data/examples
+data=/srv/sftpgo/data
 identity=/addp/config/identity.sha256
 test -r "$identity"
+test -d "$data" && test -r "$data" && test -x "$data" || {
+    echo 'FTP account root must be an existing readable directory.' >&2
+    exit 1
+}
 if [ -f "$state/configuration.identity" ]; then
     cmp -s "$identity" "$state/configuration.identity" || {
         echo 'FTP account configuration differs from its persistent state; refusing implicit replacement.' >&2
@@ -17,18 +21,5 @@ else
     cp "$identity" "$state/configuration.identity.tmp"
     mv "$state/configuration.identity.tmp" "$state/configuration.identity"
 fi
-mkdir -p "$data"
-for source in /addp/samples/*; do
-    target="$data/${source##*/}"
-    if [ -e "$target" ] || [ -L "$target" ]; then
-        test -f "$target" && test ! -L "$target" || {
-            echo 'FTP sample target is not an ordinary file; refusing replacement.' >&2
-            exit 1
-        }
-    else
-        # Noclobber prevents replacement even if the target appears mid-start.
-        (set -C; cat "$source" > "$target")
-    fi
-done
 exec sftpgo serve --config-dir /addp/config --log-file-path '' \
     --loaddata-from /addp/config/users.json --loaddata-mode 1
