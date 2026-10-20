@@ -228,6 +228,9 @@ test('reads managed GLB with the current User and clears content after denial', 
   await expect(preview.locator('.three-status')).toHaveCount(0)
   await expectColoredModel(page, preview.locator('canvas'), expect)
   await page.context().addCookies([{ name: 'addp_rat_manager', value: 'must-not-be-used-for-glb', url: page.url() }])
+  const cookieProbeStatus = await page.evaluate(async () => (await fetch('/api/v1/manager/model_3d_glb/91/content?cookie_probe=1', { credentials: 'include' })).status)
+  expect(cookieProbeStatus).toBe(401)
+  expect(backend.modelCookieProbe?.cookie).toContain('addp_rat_manager=must-not-be-used-for-glb')
   await page.reload()
   await expect(preview.locator('.three-status')).toHaveCount(0)
   await expectColoredModel(page, preview.locator('canvas'), expect)
@@ -827,7 +830,12 @@ async function installMockBackend(page, options = {}) {
       })
     }
     if (path === '/api/v1/manager/model_3d_glb/91/content' && exchangeModel?.managed) {
-      state.modelSourceRequests.push({ authorization: request.headers().authorization, cookie: request.headers().cookie || '' })
+      const headers = await request.allHeaders()
+      if (url.searchParams.get('cookie_probe') === '1') {
+        state.modelCookieProbe = { cookie: headers.cookie || '' }
+        return fulfillJSON(route, { error: 'current User required' }, 401)
+      }
+      state.modelSourceRequests.push({ authorization: headers.authorization, cookie: headers.cookie || '' })
       if (state.managedModelDenied) return fulfillJSON(route, { error: 'denied' }, 403)
       return route.fulfill({ contentType: 'model/gltf-binary', body: exchangeModel.bytes })
     }
