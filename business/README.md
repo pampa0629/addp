@@ -641,7 +641,11 @@ MinIO Parquet 成果沿用上述同一 T2/T4 入口。T2 另有两个独占 MinI
 
 Graph 中的“工作关系示例（Neo4j）”和“工作关系示例（FalkorDB）”共用“工作关系示例”本体，分别绑定 `neo4j / graph` 和 `work_relationships`。五类实体以 `name` 展示；人员、公司、项目、技术使用显式唯一属性 `id`，城市使用 `name`。这两张图保持私有，供本机登录用户体验，不计为普通账号 Hosted T4，也不是新环境的自动种子或持续同步。
 
-资源树沿原生目录展示：Neo4j 为 `server -> database -> graph`，FalkorDB 为 `server -> graph`；不为对齐外观增加虚构目录。此前从 Infra 复制的长名称 Ontology 图仍是独立副本，与本例无关。资源树的图叶子使用统一图图标；Graph 的图目标选择支持按名称筛选。
+资源树沿原生目录展示：Neo4j 为 `server -> database -> graph`，FalkorDB 为 `server -> graph`；不为对齐外观增加虚构目录。资源树的图叶子使用统一图图标；Graph 的图目标选择支持按名称筛选。
+
+2026-10-20 经任务、服务、授权、资产及目录治理引用核对，清理了 66 张未使用的 Ontology 历史副本（5,213 个节点、7,046 条关系），保留 Graph 已绑定的两张 r27 副本及 `work_relationships`。Business FalkorDB 与 Meta 资源树均从 69 张图收敛为 3 张，保留项的 DataItem ID／指纹稳定；Catalog Owner 将 66 项来源标记为 missing，保留历史记录。Infra 源图及 Neo4j 工作关系数据未由此次清理操作改写。
+
+清理前在仓库外私有目录 `~/addp-backups/business-falkordb-cleanup-20261020T034913Z` 保存完整 RDB、69 份逐图备份、引用清单及 SHA-256。RDB 完整性检查通过；通过既有 `make test-common-falkordb` 的独占服务，临时附加本机备份恢复核验，69 份逐图备份均恢复成功，保留的 3 张图与恢复结果的完整节点、关系、属性和索引定义一致，随后清理隔离实例。备份文件摘要用于完整性检查，保留内容以完整逻辑图比对验证；本次未新增产品代码、长期脚本、CI 路线或普通账号 Hosted T4 结论。
 
 
 ## FTP／显式 FTPS Business 部署
