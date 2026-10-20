@@ -18,6 +18,8 @@ Business 使用固定官方 `drakkan/sftpgo:v2.7.6@sha256:1edd28d80de2a008863fbf
 
 2026-10-20 固定账号根实现已通过本机 `make test-common-ftp`：真实 FTP／显式 FTPS 的根与子目录、文件事实、全量下载、REST 范围、共享 CSV／JSON／Parquet 解析与 Parquet 原生范围预览、保留用户修改及补齐缺失样例的卷重建均通过，临时容器与卷零残留。根请求的 MLST 展示名称不进入 Catalog 身份。示范文件由 `business/ftp/seed.py` 生成到 Git 忽略的数据目录；不跟踪生成产物。该证据为 macOS 原生 Go 客户端与 Linux ARM64 容器，不代替待执行的双架构 Linux 原生 T2；插件尚未注册，平台页面 T4 尚未验收。
 
+Linux ARM64 原生门禁 [39369356088](https://github.com/pampa0629/addp/actions/runs/39369356088/job/118453469043) 后续实际执行失败：协议和 Provider 子例通过，但同卷重建后的欢迎响应阶段抛出 EOF，持久化核验未完成，不能将本机通过或子例通过视为该原生门禁通过。生命周期等待实现已统一初次创建与重建的真实 `220` 判据，严格 TLS／认证／目录失败不重试；已增加真实 TCP 的无欢迎响应关闭反例、拒绝／退出／截止时间及 TLS／认证失败边界回归。修复后的双架构 Linux 整套结果另行认定，正式注册仍未开放。
+
 ## StarRocks 接入范围（2026-10-20 验收）
 
 当前独立 `engine_type=starrocks` 只读插件已实现。源码 `22fce34b3b774ef32b148268df09c8a37cbda66c` 的 [Linux ARM64／amd64 原生协议、Provider 与 Business 持久化门禁39270948341](https://github.com/pampa0629/addp/actions/runs/39270948341) 及 [Hosted 普通 User 页面验收39271441409](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 均有完整通过报告和零残留证明；覆盖登记、扫描、预览、属性及参数化只读 SQL，精确数值和原生空值语义通过核验。本机 Engine32 也已完成管理员交互验收。各层证据及后续前端修复的独立复验状态见[验收场景](testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)；以下保留准入决策与失败根因，不能将历史待验收描述当作当前状态。

@@ -13,12 +13,14 @@ cleanup() {
     local status=$?
     trap - EXIT INT TERM
     python3 "$ROOT_DIR/business/ftp/admission.py" stop || status=1
-    for evidence in facts.json cleanup.json business-lifecycle.json; do
+    for evidence in facts.json cleanup.json business-lifecycle.json readiness-initial.json readiness-recreated.json command-failure.json; do
         [ ! -f "$ADDP_FTP_ADMISSION_DIR/$evidence" ] || cp "$ADDP_FTP_ADMISSION_DIR/$evidence" "$ARTIFACT_DIR/$evidence"
     done
     printf 'exit_code=%s\n' "$status" > "$ARTIFACT_DIR/result.txt"
-    if [ ! -f "$ADDP_FTP_ADMISSION_DIR/state.json" ]; then
+    if [ "$status" -eq 0 ] && [ ! -f "$ADDP_FTP_ADMISSION_DIR/state.json" ]; then
         rm -rf "$ADDP_FTP_ADMISSION_DIR"
+    else
+        printf 'FTP private diagnostic directory retained: %s\n' "$ADDP_FTP_ADMISSION_DIR" >&2
     fi
     exit "$status"
 }

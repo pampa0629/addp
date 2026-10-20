@@ -26,6 +26,15 @@ def write(path, value, mode=0o600):
     path.chmod(mode)
 
 
+def command_failure(exc, action):
+    root = owner()
+    command = exc.cmd[:2] if isinstance(exc.cmd, (list, tuple)) else ['unknown']
+    write(root / 'command-failure.json', {'action': action, 'command': command, 'exit_code': exc.returncode})
+    private = root / 'command-failure.stderr'
+    private.write_text(exc.stderr or '')
+    private.chmod(0o600)
+
+
 def owner():
     path = Path(os.environ['ADDP_FTP_ADMISSION_DIR']).resolve()
     if not path.is_dir() or path.stat().st_mode & 0o077:
@@ -51,6 +60,66 @@ def allocate():
             for sock in held:
                 sock.close()
     raise RuntimeError('no isolated matching passive range available')
+
+
+def wait_for_greeting(root, state, connection, phase, timeout=90):
+    """Wait for the FTP server, not merely Docker's running process.
+
+    Only connect/banner failures are startup conditions. Authentication, TLS and
+    data-channel checks run once after this boundary and must fail normally.
+    """
+    started = time.monotonic()
+    report = {'ready': False, 'attempts': []}
+    try:
+        while (now := time.monotonic()) < started + timeout:
+            container = json.loads(run('docker', 'inspect', '-f', '{{json .State}}', state['name']))
+            report['container'] = {key: container[key] for key in ('Running', 'Status', 'ExitCode')}
+            if not container['Running']:
+                raise RuntimeError('FTP fixture exited before its server greeting')
+            client = ftplib.FTP(timeout=min(2, started + timeout - now))
+            attempt = {'elapsed_seconds': round(now - started, 3)}
+            report['attempts'].append(attempt)
+            try:
+                welcome = client.connect(connection['host'], connection['port'])
+                if not welcome.startswith(('220 ', '220-')):
+                    raise RuntimeError('FTP fixture returned an invalid ready greeting')
+                attempt['outcome'] = '220'
+                report['ready'] = True
+                return
+            except (ConnectionRefusedError, ConnectionResetError, TimeoutError, EOFError) as exc:
+                attempt['outcome'] = type(exc).__name__
+            except Exception as exc:
+                attempt['outcome'] = type(exc).__name__
+                raise
+            finally:
+                client.close()
+            time.sleep(min(1, max(0, started + timeout - time.monotonic())))
+        raise RuntimeError('FTP server greeting readiness timed out')
+    finally:
+        # Keep raw server logs private; artifacts include only fixed sender/level
+        # counts and startup outcomes, never configuration, usernames or replies.
+        try:
+            logs = run('docker', 'logs', '--tail', '200', state['name'])
+            private_log = root / ('server-' + phase + '.log')
+            private_log.write_text(logs)
+            private_log.chmod(0o600)
+            counts = {key: 0 for key in ('service', 'dataprovider', 'ftpd', 'fatal')}
+            for line in logs.splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                sender = event.get('sender')
+                if sender in ('service', 'dataprovider', 'ftpd'):
+                    counts[sender] += 1
+                if event.get('level') == 'fatal':
+                    counts['fatal'] += 1
+            report['server_log_counts'] = counts
+        except subprocess.CalledProcessError:
+            report['diagnostics_unavailable'] = True
+        write(root / ('readiness-' + phase + '.json'), report)
 
 
 def start():
@@ -106,18 +175,10 @@ def start():
     (samples / '.hidden.txt').write_text('hidden sample')
     run('docker', 'cp', str(samples) + '/.', name + ':/srv/sftpgo/data/examples')
     run('docker', 'exec', '-u', '0', name, 'chown', '-R', '1000:1000', '/srv/sftpgo/data')
-    for _ in range(90):
-        try:
-            with socket.create_connection(('127.0.0.1', port), timeout=1) as sock:
-                if sock.recv(256).startswith(b'220'):
-                    break
-        except OSError:
-            pass
-        if run('docker', 'inspect', '-f', '{{.State.Running}}', name) != 'true':
-            raise RuntimeError('FTP fixture exited before readiness')
-        time.sleep(1)
-    else:
-        raise RuntimeError('FTP fixture readiness timed out')
+    connection = {'host': '127.0.0.1', 'port': port, 'user': 'fixture_reader',
+                  'password': password, 'ca': str(config / 'server.crt')}
+    write(root / 'connection.json', connection)
+    wait_for_greeting(root, state, connection, 'initial')
     tls = ssl.create_default_context(cafile=str(config / 'server.crt'))
     with ftplib.FTP_TLS(context=tls, timeout=5) as probe:
         probe.connect('127.0.0.1', port)
@@ -134,8 +195,6 @@ def start():
                     raise RuntimeError('FTP native permission denial has wrong status')
             else:
                 raise RuntimeError('FTP reader unexpectedly has mutation permissions')
-    write(root / 'connection.json', {'host': '127.0.0.1', 'port': port,
-          'user': 'fixture_reader', 'password': password, 'ca': str(config / 'server.crt')})
     write(root / 'facts.json', {'image': pinned, 'host_arch': platform.machine(), 'host_os': platform.system(),
           'docker_arch': run('docker', 'info', '-f', '{{.Architecture}}'),
           'image_id': run('docker', 'inspect', '-f', '{{.Image}}', name),
@@ -157,22 +216,14 @@ def persistence():
         'printf "%s\\n" "custom-preserved" >> "$1"; rm "$2"', 'sh', csv_path, missing)
     run('docker', 'rm', '-f', name)
     run(*state['args'])
-    for _ in range(60):
-        if run('docker', 'inspect', '-f', '{{.State.Running}}', name) != 'true':
-            raise RuntimeError('FTP lifecycle container exited')
-        try:
-            connection = json.loads((root / 'connection.json').read_text())
-            context = ssl.create_default_context(cafile=connection['ca'])
-            with ftplib.FTP_TLS(context=context, timeout=2) as client:
-                client.connect(connection['host'], connection['port'])
-                client.login(connection['user'], connection['password'])
-                client.prot_p()
-                client.nlst('/examples')
-            break
-        except OSError:
-            time.sleep(1)
-    else:
-        raise RuntimeError('FTP lifecycle readiness timed out')
+    connection = json.loads((root / 'connection.json').read_text())
+    wait_for_greeting(root, state, connection, 'recreated', timeout=60)
+    context = ssl.create_default_context(cafile=connection['ca'])
+    with ftplib.FTP_TLS(context=context, timeout=2) as client:
+        client.connect(connection['host'], connection['port'])
+        client.login(connection['user'], connection['password'])
+        client.prot_p()
+        client.nlst('/examples')
     if not run('docker', 'exec', name, 'cat', csv_path).endswith('custom-preserved'):
         raise RuntimeError('FTP sample overwritten on recreation')
     if run('docker', 'exec', name, 'cat', missing) != (root / 'seed/订单 示例.json').read_text().strip():
@@ -206,7 +257,8 @@ def stop():
 if __name__ == '__main__':
     try:
         {'start': start, 'stop': stop, 'persistence': persistence}[sys.argv[1]]()
-    except subprocess.CalledProcessError:
-        # Bootstrap command output can contain user records; never print it.
+    except subprocess.CalledProcessError as exc:
+        # Bootstrap command output can contain user records; never publish it.
+        command_failure(exc, sys.argv[1])
         print('FTP fixture command failed; private owner directory retained', file=sys.stderr)
         sys.exit(1)
