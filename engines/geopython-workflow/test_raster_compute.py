@@ -3099,6 +3099,9 @@ def test_raster_http_bounded_admission_direct_sharing_and_policy_failure(monkeyp
     release = threading.Event()
     started, lock = [], threading.Lock()
     class Runner:
+        def __init__(self, *, language):
+            assert language == 'zh-cn'
+
         def execute(self, workflow, input_data, **kwargs):
             with lock:
                 started.append(workflow)

@@ -7,7 +7,7 @@ import geopandas as gpd
 import pandas as pd
 from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
-from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace
+from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +66,14 @@ def _execute_workflow_operator(operator, params):
 
 
 class GeoPythonWorkflowRunner(WorkflowRunner):
-    def __init__(self):
+    def __init__(self, *, language='zh-cn'):
+        self.language = language
         super().__init__({name for name, meta in OPERATORS.items() if 'workflow' in meta['execution_modes']},
                          _execute_workflow_operator,
                          result_projector=lambda value: json.dumps(_project(value), ensure_ascii=False, allow_nan=False))
 
     def execute(self, workflow_def, input_data=None, progress=None):
-        with raster_workspace():
+        with raster_error_language(self.language), raster_workspace():
             return super().execute(workflow_def, input_data, progress)
 
 

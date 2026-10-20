@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import ast
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 import json
@@ -11,6 +11,7 @@ from numbers import Integral, Real
 import shutil
 from pathlib import Path
 import tempfile
+import threading
 import uuid
 import xml.etree.ElementTree as ET
 
@@ -31,6 +32,21 @@ from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategor
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
+_DISK_PROTECTED = ContextVar('raster_disk_protected', default=False)
+_DISK_LANGUAGE = ContextVar('raster_disk_language', default='zh-cn')
+_DISK_SAFETY_BYTES = 2 * 1024**3
+_DISK_LOCK = threading.RLock()
+_DISK_RESERVATIONS = {}
+_DISK_MESSAGES = {
+    'zh-cn': {
+        'unavailable': '无法读取栅格临时磁盘容量（阶段：{phase}）',
+        'insufficient': '栅格临时磁盘空间不足（阶段：{phase}）：',
+    },
+    'en': {
+        'unavailable': 'Raster temporary disk capacity unavailable during {phase}',
+        'insufficient': 'Insufficient raster temporary disk space during {phase}: ',
+    },
+}
 RESAMPLING = ['nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average', 'mode']
 
 
@@ -38,9 +54,11 @@ RESAMPLING = ['nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average
 def raster_workspace():
     with tempfile.TemporaryDirectory(prefix='addp-raster-') as directory:
         token = _WORKSPACE.set(Path(directory))
+        disk_token = _DISK_PROTECTED.set(False)
         try:
             yield
         finally:
+            _DISK_PROTECTED.reset(disk_token)
             _WORKSPACE.reset(token)
 
 
@@ -49,6 +67,90 @@ def _path(suffix='.tif'):
     if root is None:
         raise ValueError('Raster operators require an execution workspace')
     return root / (uuid.uuid4().hex + suffix)
+
+
+@contextmanager
+def raster_error_language(language):
+    """Bind the submitting request's language inside the execution thread."""
+    token = _DISK_LANGUAGE.set(language)
+    try:
+        yield
+    finally:
+        _DISK_LANGUAGE.reset(token)
+
+
+def _disk_message(code, phase):
+    return _DISK_MESSAGES[_DISK_LANGUAGE.get()][code].format(phase=phase)
+
+
+@contextmanager
+def _disk_budget(required_bytes, phase, *, private_paths=()):
+    """Account for pending writes on the actual temporary filesystem, in-process."""
+    root = _WORKSPACE.get()
+    if root is None:
+        raise ValueError('Raster operators require an execution workspace')
+    reservation = object()
+    with _DISK_LOCK:
+        try:
+            device = root.stat().st_dev
+            pending = 0
+            for filesystem, budget, paths in _DISK_RESERVATIONS.values():
+                if filesystem != device:
+                    continue
+                allocated = 0
+                for path in paths:
+                    try:
+                        allocated += path.stat().st_blocks * 512
+                    except FileNotFoundError:
+                        pass  # A named owned file may not have been created yet.
+                pending += max(0, budget - allocated)
+            # Private files only grow while unlocked; deletion takes this lock.
+            # Reading allocation before free space therefore errs conservatively.
+            available = shutil.disk_usage(root).free
+            if type(available) is not int or available < 0:
+                raise ValueError('Invalid filesystem capacity observation')
+        except (OSError, AttributeError, ValueError) as exc:
+            raise RuntimeError(_disk_message('unavailable', phase)) from exc
+        if available < required_bytes + pending + _DISK_SAFETY_BYTES:
+            raise RuntimeError(
+                _disk_message('insufficient', phase) +
+                f'required_bytes={required_bytes}, available_bytes={available}, '
+                f'pending_bytes={pending}, safety_bytes={_DISK_SAFETY_BYTES}')
+        _DISK_RESERVATIONS[reservation] = (device, required_bytes, tuple(private_paths))
+    try:
+        yield
+    finally:
+        with _DISK_LOCK:
+            del _DISK_RESERVATIONS[reservation]
+
+
+def _raster_disk_bytes(dataset, *, profile='geotiff', blocksize=256, numeric=False):
+    """Conservative tiled storage estimate; not a quota or compressed-size claim."""
+    width, height = dataset.RasterXSize, dataset.RasterYSize
+    if profile == 'cog':
+        if type(blocksize) is not int or not 128 <= blocksize <= 4096 or blocksize % 16:
+            raise ValueError('blocksize must be a multiple of 16 between 128 and 4096')
+    else:
+        blocksize = 256  # The existing GTiff TILED=YES encoder's default.
+    bands = [None] if numeric else [dataset.GetRasterBand(i) for i in range(1, dataset.RasterCount + 1)]
+    payload = 0
+    for band in bands:
+        levels = {(width, height)}
+        if band is not None:
+            levels.update((band.GetOverview(i).XSize, band.GetOverview(i).YSize)
+                          for i in range(band.GetOverviewCount()))
+        if profile == 'cog':
+            w, h = width, height
+            while max(w, h) > blocksize:
+                w, h = (w + 1) // 2, (h + 1) // 2
+                levels.add((w, h))
+        # A byte-per-pixel mask overestimates GTiff's packed internal masks.
+        pixel_bytes = (8 if numeric else (gdal.GetDataTypeSize(band.DataType) + 7) // 8) + 1
+        for w, h in levels:
+            tiles = ((w + blocksize - 1) // blocksize) * ((h + blocksize - 1) // blocksize)
+            payload += tiles * (blocksize**2 * pixel_bytes + 64)
+    # Allow compression expansion, TIFF metadata, and COG's temporary copy.
+    return (2 if profile == 'cog' else 1) * (2 * payload + 8 * 1024**2)
 
 
 @dataclass(frozen=True)
@@ -360,15 +462,20 @@ def _cog(dataset, compression='DEFLATE', blocksize=512, overview_resampling='nea
 
 def _encode_raster(input_raster, profile, compression, blocksize, overview_resampling):
     dataset = _open(input_raster)
-    if profile == 'cog':
-        output = _cog(dataset, compression, blocksize, overview_resampling)
-    elif profile == 'geotiff':
-        if compression not in ['DEFLATE', 'LZW', 'ZSTD', 'NONE']:
-            raise ValueError('Unsupported TIFF compression')
-        output = _translated(dataset, format='GTiff', creationOptions=['TILED=YES', f'COMPRESS={compression}', 'COPY_SRC_OVERVIEWS=YES'])
-    else:
+    if profile not in ('cog', 'geotiff'):
         raise ValueError('profile must be geotiff or cog')
-    return output
+    budget = (_disk_budget(_raster_disk_bytes(dataset, profile=profile, blocksize=blocksize), 'raster encoding')
+              if _DISK_PROTECTED.get() else nullcontext())
+    temporary = (gdal.config_option('CPL_TMPDIR', str(_WORKSPACE.get()), thread_local=True)
+                 if _DISK_PROTECTED.get() else nullcontext())
+    with budget, temporary:
+        if profile == 'cog':
+            output = _cog(dataset, compression, blocksize, overview_resampling)
+        else:
+            if compression not in ['DEFLATE', 'LZW', 'ZSTD', 'NONE']:
+                raise ValueError('Unsupported TIFF compression')
+            output = _translated(dataset, format='GTiff', creationOptions=['TILED=YES', f'COMPRESS={compression}', 'COPY_SRC_OVERVIEWS=YES'])
+        return output
 
 
 def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
@@ -1682,52 +1789,57 @@ def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False):
         raise ValueError('Raster dimensions must fit positive signed Int32')
     rows_path, columns_path = _path('.distance'), _path('.distance')
     row_sites, column_sites, nearest_sites = _path('.sites'), _path('.sites'), _path('.sites')
-    indices = np.arange(width, dtype=np.int64)
-    try:
-        donor_count = 0
-        with rows_path.open('xb') as rows, row_sites.open('xb') as sites:
-            for row in range(height):
-                donors = np.zeros(width, dtype=bool)
-                for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1)):
-                    matched = np.isin(arrays[0][0], target_values)
-                    donors[x:x + matched.size] = masks[0][0] & (~matched if non_targets else matched)
-                donor_count += int(np.count_nonzero(donors))
-                left = np.maximum.accumulate(np.where(donors, indices, -1))
-                right = np.minimum.accumulate(np.where(donors, indices, width)[::-1])[::-1]
-                choose_left = (left >= 0) & ((right >= width) | (indices - left <= right - indices))
-                owners = np.where(choose_left, left, np.where(right < width, right, -1)).astype(np.int64)
-                present = owners >= 0
-                squared = np.where(present, np.square(indices - owners).astype(np.float64), np.inf)
-                rows.write(squared.tobytes())
-                sites.write(owners.tobytes())
-        if donor_count == 0:
-            raise ValueError('Raster distance transform requires at least one valid target pixel')
-        _transpose_distance_file(rows_path, columns_path, width, height)
-        _transpose_private_file(row_sites, column_sites, width, height, np.int64)
-        rows_path.unlink()
-        row_sites.unlink()
-        with columns_path.open('r+b') as columns, column_sites.open('rb') as sites, nearest_sites.open('xb') as nearest:
-            for column in range(width):
-                columns.seek(column * height * 8)
-                stored = _read_distance_values(columns, height)
-                source_columns = _read_site_values(sites, height)
-                present = source_columns >= 0
-                if np.any(present & (source_columns >= width)):
-                    raise RuntimeError('Invalid private nearest-site coordinate')
-                costs = np.square(np.int64(column) - source_columns)
-                if np.any(stored[present] != costs[present].astype(np.float64)):
-                    raise RuntimeError('Inconsistent private distance intermediate')
-                distances, source_rows = _squared_distance_line(costs, valid=present, return_sites=True)
-                columns.seek(column * height * 8)
-                columns.write(distances.tobytes())
-                identities = np.empty((height, 2), dtype=np.int64)
-                identities[:, 0] = source_rows
-                identities[:, 1] = source_columns[source_rows]
-                nearest.write(identities.tobytes())
-        yield columns_path, nearest_sites
-    finally:
-        for path in (rows_path, columns_path, row_sites, column_sites, nearest_sites):
-            path.unlink(missing_ok=True)
+    _DISK_PROTECTED.set(True)
+    with _disk_budget(32 * width * height, 'distance transform',
+                      private_paths=(rows_path, columns_path, row_sites, column_sites, nearest_sites)):
+        indices = np.arange(width, dtype=np.int64)
+        try:
+            donor_count = 0
+            with rows_path.open('xb') as rows, row_sites.open('xb') as sites:
+                for row in range(height):
+                    donors = np.zeros(width, dtype=bool)
+                    for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1)):
+                        matched = np.isin(arrays[0][0], target_values)
+                        donors[x:x + matched.size] = masks[0][0] & (~matched if non_targets else matched)
+                    donor_count += int(np.count_nonzero(donors))
+                    left = np.maximum.accumulate(np.where(donors, indices, -1))
+                    right = np.minimum.accumulate(np.where(donors, indices, width)[::-1])[::-1]
+                    choose_left = (left >= 0) & ((right >= width) | (indices - left <= right - indices))
+                    owners = np.where(choose_left, left, np.where(right < width, right, -1)).astype(np.int64)
+                    present = owners >= 0
+                    squared = np.where(present, np.square(indices - owners).astype(np.float64), np.inf)
+                    rows.write(squared.tobytes())
+                    sites.write(owners.tobytes())
+            if donor_count == 0:
+                raise ValueError('Raster distance transform requires at least one valid target pixel')
+            _transpose_distance_file(rows_path, columns_path, width, height)
+            _transpose_private_file(row_sites, column_sites, width, height, np.int64)
+            with _DISK_LOCK:
+                rows_path.unlink()
+                row_sites.unlink()
+            with columns_path.open('r+b') as columns, column_sites.open('rb') as sites, nearest_sites.open('xb') as nearest:
+                for column in range(width):
+                    columns.seek(column * height * 8)
+                    stored = _read_distance_values(columns, height)
+                    source_columns = _read_site_values(sites, height)
+                    present = source_columns >= 0
+                    if np.any(present & (source_columns >= width)):
+                        raise RuntimeError('Invalid private nearest-site coordinate')
+                    costs = np.square(np.int64(column) - source_columns)
+                    if np.any(stored[present] != costs[present].astype(np.float64)):
+                        raise RuntimeError('Inconsistent private distance intermediate')
+                    distances, source_rows = _squared_distance_line(costs, valid=present, return_sites=True)
+                    columns.seek(column * height * 8)
+                    columns.write(distances.tobytes())
+                    identities = np.empty((height, 2), dtype=np.int64)
+                    identities[:, 0] = source_rows
+                    identities[:, 1] = source_columns[source_rows]
+                    nearest.write(identities.tobytes())
+            yield columns_path, nearest_sites
+        finally:
+            with _DISK_LOCK:
+                for path in (rows_path, columns_path, row_sites, column_sites, nearest_sites):
+                    path.unlink(missing_ok=True)
 
 
 def raster_proximity(input_raster, band, target_values):
@@ -1753,32 +1865,34 @@ def raster_proximity(input_raster, band, target_values):
     for index in range(1, dataset.RasterCount + 1):
         if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
             _band(dataset, index)
-    output = destination = None
-    try:
-        with _nearest_pixel_sites(dataset, band, target_values) as (columns_path, _):
-            output = _numeric_output(dataset, 1)
-            destination = output.GetRasterBand(1)
-            destination.SetUnitType('metre')
-            with columns_path.open('rb') as columns:
-                for x, y, arrays, masks in _blocks(dataset, [band]):
-                    rows, count = arrays[0].shape
-                    distances = np.empty((rows, count), dtype=np.float64)
-                    for column in range(count):
-                        columns.seek(((x + column) * height + y) * 8)
-                        distances[:, column] = _read_distance_values(columns, rows)
-                    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-                        distances = np.sqrt(distances) * step_metres
-                    if np.any(masks[0] & ~np.isfinite(distances)):
-                        raise ValueError('Proximity exceeds finite Float64 metre distances')
-                    distances[~masks[0]] = np.nan
-                    destination.WriteArray(distances, x, y)
-        path = output.GetDescription()
-        destination = None
-        output.FlushCache()
-        output = None
-        return _raster(path)
-    finally:
-        destination = output = None
+    _DISK_PROTECTED.set(True)
+    with _disk_budget(_raster_disk_bytes(dataset, numeric=True), 'distance output'):
+        output = destination = None
+        try:
+            with _nearest_pixel_sites(dataset, band, target_values) as (columns_path, _):
+                output = _numeric_output(dataset, 1)
+                destination = output.GetRasterBand(1)
+                destination.SetUnitType('metre')
+                with columns_path.open('rb') as columns:
+                    for x, y, arrays, masks in _blocks(dataset, [band]):
+                        rows, count = arrays[0].shape
+                        distances = np.empty((rows, count), dtype=np.float64)
+                        for column in range(count):
+                            columns.seek(((x + column) * height + y) * 8)
+                            distances[:, column] = _read_distance_values(columns, rows)
+                        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                            distances = np.sqrt(distances) * step_metres
+                        if np.any(masks[0] & ~np.isfinite(distances)):
+                            raise ValueError('Proximity exceeds finite Float64 metre distances')
+                        distances[~masks[0]] = np.nan
+                        destination.WriteArray(distances, x, y)
+            path = output.GetDescription()
+            destination = None
+            output.FlushCache()
+            output = None
+            return _raster(path)
+        finally:
+            destination = output = None
 
 
 def raster_nibble(input_raster, band, target_values):
@@ -1805,50 +1919,52 @@ def raster_nibble(input_raster, band, target_values):
         matched = masks[0] & np.isin(arrays[0], target_values)
         matches += int(np.count_nonzero(matched))
         donors += int(np.count_nonzero(masks[0] & ~matched))
-    if matches == 0:
-        output = _copy_data_bands([(dataset, [band])])
-        path = output.GetDescription()
-        output.FlushCache()
-        output = None
-        return _raster(path)
-    if donors == 0:
+    if matches and donors == 0:
         raise ValueError('Nibble requires at least one valid non-target donor pixel')
-    output = destination = None
-    try:
-        with _nearest_pixel_sites(dataset, band, target_values, non_targets=True) as (_, sites_path):
-            output = _numeric_output(dataset, 1)
-            destination = output.GetRasterBand(1)
-            with sites_path.open('rb') as sites:
-                for x, y, arrays, masks in _blocks(dataset, [band]):
-                    values, valid = arrays[0].copy(), masks[0]
-                    matched = valid & np.isin(values, target_values)
-                    identities = np.empty((*values.shape, 2), dtype=np.int64)
-                    for column in range(values.shape[1]):
-                        sites.seek(((x + column) * height + y) * 16)
-                        identities[:, column] = _read_site_values(sites, values.shape[0] * 2).reshape(-1, 2)
-                    # Group original donor reads by source tile.  Memory and
-                    # each GDAL read remain bounded independently of scene size.
-                    rows, columns = np.nonzero(matched)
-                    donor_rows, donor_columns = identities[rows, columns].T
-                    if np.any((donor_rows < 0) | (donor_rows >= dataset.RasterYSize)
-                              | (donor_columns < 0) | (donor_columns >= dataset.RasterXSize)):
-                        raise RuntimeError('Invalid private nearest-site coordinate')
-                    tile_keys = np.stack((donor_rows // 512, donor_columns // 512), axis=1)
-                    for tile_row, tile_column in np.unique(tile_keys, axis=0):
-                        within = (tile_keys[:, 0] == tile_row) & (tile_keys[:, 1] == tile_column)
-                        sx, sy = int(tile_column) * 512, int(tile_row) * 512
-                        sw, sh = min(512, dataset.RasterXSize - sx), min(512, dataset.RasterYSize - sy)
-                        source = _read_values(selected, sx, sy, sw, sh)
-                        values[rows[within], columns[within]] = source[donor_rows[within] - sy, donor_columns[within] - sx]
-                    values[~valid] = np.nan
-                    destination.WriteArray(values, x, y)
-        path = output.GetDescription()
-        destination = None
-        output.FlushCache()
-        output = None
-        return _raster(path)
-    finally:
-        destination = output = None
+    _DISK_PROTECTED.set(True)
+    with _disk_budget(_raster_disk_bytes(dataset, numeric=True), 'nibble output'):
+        output = destination = None
+        try:
+            if matches == 0:
+                output = _copy_data_bands([(dataset, [band])])
+                path = output.GetDescription()
+                output.FlushCache()
+                output = None
+                return _raster(path)
+            with _nearest_pixel_sites(dataset, band, target_values, non_targets=True) as (_, sites_path):
+                output = _numeric_output(dataset, 1)
+                destination = output.GetRasterBand(1)
+                with sites_path.open('rb') as sites:
+                    for x, y, arrays, masks in _blocks(dataset, [band]):
+                        values, valid = arrays[0].copy(), masks[0]
+                        matched = valid & np.isin(values, target_values)
+                        identities = np.empty((*values.shape, 2), dtype=np.int64)
+                        for column in range(values.shape[1]):
+                            sites.seek(((x + column) * height + y) * 16)
+                            identities[:, column] = _read_site_values(sites, values.shape[0] * 2).reshape(-1, 2)
+                        # Group original donor reads by source tile.  Memory and
+                        # each GDAL read remain bounded independently of scene size.
+                        rows, columns = np.nonzero(matched)
+                        donor_rows, donor_columns = identities[rows, columns].T
+                        if np.any((donor_rows < 0) | (donor_rows >= dataset.RasterYSize)
+                                  | (donor_columns < 0) | (donor_columns >= dataset.RasterXSize)):
+                            raise RuntimeError('Invalid private nearest-site coordinate')
+                        tile_keys = np.stack((donor_rows // 512, donor_columns // 512), axis=1)
+                        for tile_row, tile_column in np.unique(tile_keys, axis=0):
+                            within = (tile_keys[:, 0] == tile_row) & (tile_keys[:, 1] == tile_column)
+                            sx, sy = int(tile_column) * 512, int(tile_row) * 512
+                            sw, sh = min(512, dataset.RasterXSize - sx), min(512, dataset.RasterYSize - sy)
+                            source = _read_values(selected, sx, sy, sw, sh)
+                            values[rows[within], columns[within]] = source[donor_rows[within] - sy, donor_columns[within] - sx]
+                        values[~valid] = np.nan
+                        destination.WriteArray(values, x, y)
+            path = output.GetDescription()
+            destination = None
+            output.FlushCache()
+            output = None
+            return _raster(path)
+        finally:
+            destination = output = None
 
 
 def _dem_source(input_raster, elevation_unit, band, minimum_size):

@@ -107,9 +107,12 @@ _RASTER_MESSAGES = {
 }
 
 
+def _raster_language():
+    return request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
+
+
 def _raster_message(code):
-    language = request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
-    return _RASTER_MESSAGES[language][code]
+    return _RASTER_MESSAGES[_raster_language()][code]
 
 
 def _raster_busy_response(code):
@@ -223,7 +226,7 @@ def execute_workflow_api():
         metadata = {op['id']: op for op in list_operators()}
         raster = any(requires_raster(metadata[task['operator']]) for task in data['workflow_def']['tasks'])
         admission = raster_resources.refresh() if raster else None
-        snapshot = executions.submit(GeoPythonWorkflowRunner(), data['workflow_def'], data.get('input_data'),
+        snapshot = executions.submit(GeoPythonWorkflowRunner(language=_raster_language()), data['workflow_def'], data.get('input_data'),
                                      admission=admission, tenant_id=data['runtime']['tenant_id'])
         return jsonify(snapshot.to_dict()), 202
     except RasterPolicyUnavailable:

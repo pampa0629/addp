@@ -1,7 +1,10 @@
 """Independent class-allocation oracles and real workflow persistence for nibble."""
 import itertools
 import json
+from pathlib import Path
+import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,6 +15,12 @@ from operators import list_operators
 from operators.raster_compute import (
     raster_load, raster_nibble, raster_reclassify, raster_save, raster_workspace, validate_cog,
 )
+
+
+@pytest.fixture(autouse=True)
+def english_disk_diagnostics():
+    with compute.raster_error_language('en'):
+        yield
 
 
 def _source(path, values, *, crs='EPSG:3857', transform=(100, 2, 0, 200, 0, -2),
@@ -81,6 +90,399 @@ def _oracle(values, target_values, valid):
 def _assert_clean(workspace):
     assert not list(workspace.glob('*.distance'))
     assert not list(workspace.glob('*.sites'))
+
+
+def test_disk_budget_atomic_concurrent_admission_and_exception_release(monkeypatch):
+    monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=2 * 1024**3 + 200))
+    entered, release = threading.Event(), threading.Event()
+    failures = []
+    def first():
+        try:
+            with raster_workspace(), compute._disk_budget(150, 'first'):
+                entered.set()
+                assert release.wait(5)
+                raise LookupError('business failure')
+        except LookupError:
+            pass
+        except BaseException as exc:
+            failures.append(exc)
+    worker = threading.Thread(target=first)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        with raster_workspace():
+            with pytest.raises(RuntimeError, match='pending_bytes=150'):
+                with compute._disk_budget(150, 'second'):
+                    pytest.fail('The same free space cannot admit both tasks')
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive() and not failures and not compute._DISK_RESERVATIONS
+    with raster_workspace(), compute._disk_budget(200, 'recovered at exact threshold'):
+        pass
+    assert not compute._DISK_RESERVATIONS
+
+
+def test_disk_budget_actual_filesystem_identity_and_one_safety_margin(monkeypatch):
+    original_stat = Path.stat
+    devices = {}
+    def stat(path, *args, **kwargs):
+        return SimpleNamespace(st_dev=devices[path]) if path in devices else original_stat(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'stat', stat)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=2 * 1024**3 + 100))
+    with raster_workspace():
+        devices[compute._WORKSPACE.get()] = 1
+        with compute._disk_budget(100, 'device one'), raster_workspace():
+            devices[compute._WORKSPACE.get()] = 2
+            with compute._disk_budget(100, 'independent device'):
+                pass
+            devices[compute._WORKSPACE.get()] = 1
+            with pytest.raises(RuntimeError, match='pending_bytes=100'):
+                with compute._disk_budget(1, 'same device'):
+                    pytest.fail('Filesystem aliases must share pending capacity')
+    assert not compute._DISK_RESERVATIONS
+
+
+def test_disk_budget_probe_and_registration_share_the_same_lock(monkeypatch):
+    first_probe, allow_probe, second_probe, release = (threading.Event() for _ in range(4))
+    outcomes = []
+    def usage(path):
+        if threading.current_thread().name == 'disk-first':
+            first_probe.set()
+            assert allow_probe.wait(5)
+        else:
+            second_probe.set()
+        return SimpleNamespace(free=2 * 1024**3 + 150)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', usage)
+    def run():
+        try:
+            with raster_workspace(), compute._disk_budget(150, 'concurrent probe'):
+                outcomes.append('admitted')
+                assert release.wait(5)
+        except RuntimeError as exc:
+            outcomes.append(str(exc))
+        except BaseException as exc:
+            outcomes.append(repr(exc))
+    first = threading.Thread(target=run, name='disk-first')
+    second = threading.Thread(target=run, name='disk-second')
+    first.start()
+    try:
+        assert first_probe.wait(5)
+        second.start()
+        assert not second_probe.wait(.1), 'The capacity observation must hold the registration lock'
+        allow_probe.set()
+        second.join(5)
+        assert not second.is_alive()
+        assert outcomes[0] == 'admitted' and 'pending_bytes=150' in outcomes[1]
+    finally:
+        allow_probe.set()
+        release.set()
+        first.join(5)
+        if second.ident is not None:
+            second.join(5)
+    assert not first.is_alive() and not compute._DISK_RESERVATIONS
+
+
+def test_disk_budget_sparse_allocation_not_logical_length_and_probe_order(monkeypatch):
+    budget, addition = 16 * 1024**2, 4096
+    free = 2 * 1024**3 + budget
+    events = []
+    def usage(path):
+        events.append('free')
+        return SimpleNamespace(free=free)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', usage)
+    with raster_workspace():
+        private = compute._path('.distance')
+        original_stat = Path.stat
+        def stat(path, *args, **kwargs):
+            if path == private:
+                events.append('allocated')
+            return original_stat(path, *args, **kwargs)
+        monkeypatch.setattr(Path, 'stat', stat)
+        with compute._disk_budget(budget, 'owner', private_paths=(private,)):
+            with private.open('wb') as stream:
+                stream.truncate(budget)
+            assert private.stat().st_size == budget and private.stat().st_blocks * 512 < budget
+            free = 2 * 1024**3 + addition
+            with pytest.raises(RuntimeError, match='Insufficient'):
+                with compute._disk_budget(addition, 'sparse file is not allocated'):
+                    pytest.fail('Sparse logical length cannot be credited')
+            with private.open('r+b') as stream:
+                stream.write(b'x' * 1024**2)
+            allocated = private.stat().st_blocks * 512
+            assert 0 < allocated <= budget
+            free = 2 * 1024**3 + addition + budget - allocated
+            events.clear()
+            with compute._disk_budget(addition, 'allocated credit at exact threshold'):
+                assert events == ['allocated', 'free']
+            with compute._DISK_LOCK:
+                private.unlink()
+            with pytest.raises(RuntimeError, match=f'pending_bytes={budget}'):
+                with compute._disk_budget(addition, 'deleted storage is still pending'):
+                    pytest.fail('Deletion must restore pending commitment')
+    assert not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('fault', ['probe', 'negative', 'noninteger', 'private-stat'])
+def test_disk_budget_observation_failure_is_closed_and_does_not_leak(monkeypatch, fault):
+    original_usage, original_stat = compute.shutil.disk_usage, Path.stat
+    with raster_workspace():
+        private = compute._path('.sites')
+        with compute._disk_budget(10, 'owner', private_paths=(private,)):
+            def stat(path, *args, **kwargs):
+                if path == private:
+                    raise PermissionError('private host path')
+                return original_stat(path, *args, **kwargs)
+            def usage(path):
+                if fault == 'probe':
+                    raise OSError('private host path')
+                return SimpleNamespace(free=-1 if fault == 'negative' else .5)
+            monkeypatch.setattr(Path, 'stat', stat if fault == 'private-stat' else original_stat)
+            monkeypatch.setattr(compute.shutil, 'disk_usage', original_usage if fault == 'private-stat' else usage)
+            with pytest.raises(RuntimeError, match='capacity unavailable during child') as error:
+                with compute._disk_budget(10, 'child'):
+                    pytest.fail('An unavailable observation cannot admit writes')
+            assert 'private host path' not in str(error.value)
+            assert len(compute._DISK_RESERVATIONS) == 1
+    assert not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('unavailable', [False, True])
+def test_disk_diagnostics_language_scope_and_unavailable_translation(monkeypatch, language, unavailable):
+    def usage(path):
+        if unavailable:
+            raise OSError('host-private-detail')
+        return SimpleNamespace(free=0)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', usage)
+    expected = ({'zh-cn': '无法读取栅格临时磁盘容量', 'en': 'Raster temporary disk capacity unavailable'} if unavailable else
+                {'zh-cn': '栅格临时磁盘空间不足', 'en': 'Insufficient raster temporary disk space'})[language]
+    with compute.raster_error_language(language), raster_workspace():
+        with pytest.raises(RuntimeError, match=expected) as error:
+            with compute._disk_budget(128, 'distance transform'):
+                pytest.fail('No writes are allowed')
+        assert 'host-private-detail' not in str(error.value)
+    assert compute._DISK_LANGUAGE.get() == 'en' and not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('operator', ['nibble', 'proximity'])
+def test_distance_disk_failure_precedes_private_files_and_output(tmp_path, monkeypatch, operator):
+    source = _source(tmp_path / 'source.tif', [[7, 1], [7, 2]], dtype=gdal.GDT_Int16)
+    before = source.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        dataset = compute._open(loaded)
+        free = 2 * 1024**3 + compute._raster_disk_bytes(dataset, numeric=True) + 32 * 4 - 1
+        dataset = None
+        initial_files = set(loaded.workspace.iterdir())
+        monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=free))
+        monkeypatch.setattr(compute, '_numeric_output', lambda *args: pytest.fail('Output created before disk check'))
+        function = raster_nibble if operator == 'nibble' else compute.raster_proximity
+        with pytest.raises(RuntimeError, match='distance transform.*required_bytes=128'):
+            function(loaded, 1, [7])
+        assert set(loaded.workspace.iterdir()) == initial_files
+        _assert_clean(loaded.workspace)
+    assert not compute._DISK_RESERVATIONS and not loaded.workspace.exists()
+    assert source.read_bytes() == before
+
+
+def test_nibble_no_target_only_reserves_output_and_workspace_resets_protection(tmp_path, monkeypatch):
+    source = _source(tmp_path / 'source.tif', [[0, 1], [2, -9999]])
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        dataset = compute._open(loaded)
+        free = 2 * 1024**3 + compute._raster_disk_bytes(dataset, numeric=True)
+        dataset = None
+        monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=free))
+        monkeypatch.setattr(compute, '_nearest_pixel_sites', lambda *args, **kwargs: pytest.fail('No distance transform is needed'))
+        result = raster_nibble(loaded, 1, [7])
+        np.testing.assert_array_equal(_values(result.path), [[0, 1], [2, np.nan]])
+        assert compute._DISK_PROTECTED.get() and not compute._DISK_RESERVATIONS
+        with raster_workspace():
+            assert not compute._DISK_PROTECTED.get()
+        assert compute._DISK_PROTECTED.get()
+    assert not compute._DISK_PROTECTED.get() and not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('profile,blocksize', [('geotiff', 512), ('cog', 128), ('cog', 512), ('cog', 4096)])
+def test_distance_encoding_rechecks_disk_before_encoder_or_publication(tmp_path, monkeypatch, profile, blocksize):
+    source = _source(tmp_path / 'source.tif', [[7, 1], [7, 2]])
+    target = tmp_path / 'target.tif'
+    with raster_workspace():
+        result = raster_nibble(raster_load(_source_plan(source)), 1, [7])
+        before = result.path.read_bytes()
+        dataset = compute._open(result)
+        free = 2 * 1024**3 + compute._raster_disk_bytes(dataset, profile=profile, blocksize=blocksize) - 1
+        dataset = None
+        monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=free))
+        monkeypatch.setattr(compute, '_cog', lambda *args: pytest.fail('Encoding must not start'))
+        monkeypatch.setattr(compute, '_translated', lambda *args, **kwargs: pytest.fail('Encoding must not start'))
+        monkeypatch.setattr(compute, 'publish_target_file', lambda *args: pytest.fail('Publishing must not start'))
+        with pytest.raises(RuntimeError, match='Insufficient.*raster encoding'):
+            raster_save(result, _target_plan(target), profile=profile, blocksize=blocksize)
+        assert not target.exists() and result.path.read_bytes() == before
+        assert not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('profile,compression', [('geotiff', 'NONE'), ('cog', 'NONE'), ('cog', 'LZW'), ('cog', 'DEFLATE'), ('cog', 'ZSTD')])
+def test_disk_encoding_estimate_covers_real_tiled_multiband_mask_overviews(tmp_path, profile, compression):
+    values = np.random.default_rng(8871).normal(size=(2, 513, 517))
+    source = _source(tmp_path / 'source.tif', values, mask=np.where(values[0] < 0, 0, 255))
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    dataset.BuildOverviews('NEAREST', [2, 3, 4, 8])
+    dataset = None
+    with raster_workspace():
+        loaded = raster_load(_source_plan(source))
+        compute._DISK_PROTECTED.set(True)
+        dataset = compute._open(loaded)
+        estimate = compute._raster_disk_bytes(dataset, profile=profile, blocksize=128)
+        dataset = None
+        target = tmp_path / 'target.tif'
+        artifact = raster_save(loaded, _target_plan(target), profile=profile, compression=compression, blocksize=128)
+        assert 0 < artifact['size_bytes'] == target.stat().st_size < estimate
+        if profile == 'cog':
+            assert validate_cog(raster_load(_source_plan(target)))['valid']
+    assert not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_disk_cog_tempfiles_use_checked_workspace_and_restore_caller_setting(tmp_path, monkeypatch, failure):
+    values = np.arange(513 * 517).reshape(513, 517) % 3
+    source = _source(tmp_path / 'source.tif', values)
+    before = source.read_bytes()
+    external = tmp_path / 'uncreated-external-directory'
+    original_encode = compute.translate_cog
+    observed = []
+    def encode(*args, **kwargs):
+        observed.append(gdal.GetConfigOption('CPL_TMPDIR'))
+        if failure:
+            raise RuntimeError('injected encoding failure')
+        return original_encode(*args, **kwargs)
+    monkeypatch.setattr(compute, 'translate_cog', encode)
+    previous = gdal.GetConfigOption('CPL_TMPDIR')
+    with gdal.config_option('CPL_TMPDIR', str(external), thread_local=True), raster_workspace():
+        result = raster_nibble(raster_load(_source_plan(source)), 1, [7])
+        target = tmp_path / 'result.tif'
+        if failure:
+            with pytest.raises(RuntimeError, match='injected encoding failure'):
+                raster_save(result, _target_plan(target), profile='cog', blocksize=128)
+            assert not target.exists()
+        else:
+            artifact = raster_save(result, _target_plan(target), profile='cog', blocksize=128)
+            assert artifact['size_bytes'] == target.stat().st_size > 0
+            np.testing.assert_array_equal(_values(target), values)
+            assert validate_cog(raster_load(_source_plan(target)))['valid']
+        assert observed == [str(result.workspace)]
+        assert gdal.GetConfigOption('CPL_TMPDIR') == str(external)
+        assert not external.exists() and not compute._DISK_RESERVATIONS
+    assert gdal.GetConfigOption('CPL_TMPDIR') == previous
+    assert not result.workspace.exists() and source.read_bytes() == before
+
+
+@pytest.mark.parametrize('operator', ['raster_nibble', 'raster_proximity'])
+@pytest.mark.parametrize('stage', ['output', 'distance', 'encoding'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_distance_disk_real_async_failure_no_publication_cleanup_and_recovery(tmp_path, monkeypatch, operator, stage, language):
+    import api_server
+    import workflow_engine
+    source = _source(tmp_path / 'source.tif', [[7, 1], [7, 2]], dtype=gdal.GDT_Int16)
+    before = source.read_bytes()
+    prior = tmp_path / 'prior.tif'
+    prior.write_bytes(b'previous confirmed artifact')
+    target = tmp_path / 'result.tif'
+    tasks = [
+        {'id': 'source', 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': _source_plan(source)}},
+        {'id': 'calculate', 'operator': operator, 'depends_on': ['source'], 'params': {
+            'input_raster': {'$ref': 'source'}, 'band': 1, 'target_values': [7]}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['calculate'], 'params': {
+            'input_raster': {'$ref': 'calculate'}, 'access_plan': _target_plan(target), 'profile': 'cog', 'blocksize': 128}},
+    ]
+    original_execute, original_usage = workflow_engine._execute_operator, compute.shutil.disk_usage
+    original_publish = compute.publish_target_file
+    free, inject, published, workspaces = None, True, [], []
+    def usage(path):
+        return original_usage(path) if free is None else SimpleNamespace(free=free)
+    def execute(name, params):
+        nonlocal free
+        if name == operator:
+            workspaces.append(params['input_raster'].workspace)
+        if inject and ((name == operator and stage != 'encoding') or (name == 'raster_save' and stage == 'encoding')):
+            dataset = compute._open(params['input_raster'])
+            estimate = (compute._raster_disk_bytes(dataset, profile='cog', blocksize=128) if stage == 'encoding'
+                        else compute._raster_disk_bytes(dataset, numeric=True))
+            free = 2 * 1024**3 + estimate - 1 + (32 * 4 if stage == 'distance' else 0)
+            dataset = None
+        return original_execute(name, params)
+    def publish(*args):
+        published.append(args)
+        return original_publish(*args)
+    monkeypatch.setattr(workflow_engine, '_execute_operator', execute)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', usage)
+    monkeypatch.setattr(compute, 'publish_target_file', publish)
+    client = api_server.app.test_client()
+    headers = {} if language == 'zh-cn' and stage == 'output' else {'Accept-Language': language}
+    response = client.post('/api/workflow', headers=headers, json={'workflow_def': {'tasks': tasks}, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202, response.json
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        # Querying in the other language must not alter the recorded failure.
+        status = client.get('/api/executions/' + response.json['execution_id'], headers={
+            'Accept-Language': 'en' if language == 'zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success', 'failed'):
+            break
+        time.sleep(.01)
+    expected = '栅格临时磁盘空间不足' if language == 'zh-cn' else 'Insufficient raster temporary disk space'
+    assert status['status'] == 'failed' and expected in status['error'], status
+    assert not target.exists() and not published and not compute._DISK_RESERVATIONS
+    assert workspaces and all(not path.exists() for path in workspaces)
+    assert source.read_bytes() == before and prior.read_bytes() == b'previous confirmed artifact'
+
+    free, inject = None, False
+    recovered = workflow_engine.execute_workflow({'tasks': tasks})
+    assert recovered['status'] == 'success', recovered
+    assert len(published) == 1 and not compute._DISK_RESERVATIONS
+    assert all(not path.exists() for path in workspaces)
+    artifact = json.loads(recovered['final_result'])
+    assert artifact['size_bytes'] == target.stat().st_size > 0
+    np.testing.assert_array_equal(_values(target), [[1, 1], [2, 2]] if operator == 'raster_nibble' else [[0, 2], [0, 2]])
+    with raster_workspace():
+        assert validate_cog(raster_load(_source_plan(target)))['valid']
+    assert source.read_bytes() == before and prior.read_bytes() == b'previous confirmed artifact'
+
+
+def test_distance_disk_tile_encoding_failure_retains_confirmed_publication(tmp_path, monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = _source(tmp_path / 'source.tif', [[7, 1], [7, 2]])
+    before = source.read_bytes()
+    target = tmp_path / 'tiles'
+    target.mkdir()
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
+        'kind': 'directory', 'format': 'tiff', 'name': target.name, 'write_mode': 'create',
+        'access': {'method': 'mounted_path', 'path': str(target)}}}
+    original_publish, original_usage = compute.publish_target_file, compute.shutil.disk_usage
+    published = []
+    def publish(*args):
+        result = original_publish(*args)
+        published.append(result)
+        return result
+    monkeypatch.setattr(compute, 'publish_target_file', publish)
+    monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: (
+        SimpleNamespace(free=2 * 1024**3) if published else original_usage(path)))
+    with raster_workspace():
+        result = raster_nibble(raster_load(_source_plan(source)), 1, [7])
+        with pytest.raises(WorkflowExecutionError) as failure:
+            compute.raster_save_tiles(compute.raster_tile(result, [1, 1]), plan, profile='cog', blocksize=128)
+        facts = failure.value.partial_result
+        assert facts['completed_tiles'] == 1 and facts['failed_tile'] == 'r0_c1'
+        assert facts['publication'] == 'not_attempted'
+        assert list(facts['tiles']) == ['r0_c0'] and len(published) == 1
+        assert 'Insufficient raster temporary disk space' in str(failure.value.__cause__)
+        saved = target / 'r0_c0.tif'
+        assert facts['tiles']['r0_c0']['size_bytes'] == saved.stat().st_size > 0
+        np.testing.assert_array_equal(_values(saved), [[1]])
+        assert list(target.iterdir()) == [saved] and not compute._DISK_RESERVATIONS
+    assert source.read_bytes() == before and not result.workspace.exists()
 
 
 def test_nibble_integer_envelope_large_costs_near_ties_and_all_masks():

@@ -2276,7 +2276,7 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions'),
         'business/scripts/online-raster-nibble-capacity-fixture.py': (
             'NFSExport', 'SIZES = (4096, 10980)', "SPACING = {'sparse': 128, 'dense': 2}",
-            'expected_block', 'running*size**2*51', 'full_check=True',
+            'expected_block', 'running*size**2*64', 'full_check=True',
             'capacity complete pixel values differ', 'capacity complete mask differs',
             'previous capacity artifact changed', 'capacity source file changed'),
         'engines/geopython-workflow/test_online_nibble_capacity_fixture.py': (

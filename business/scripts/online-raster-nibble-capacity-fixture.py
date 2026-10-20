@@ -177,14 +177,16 @@ def verify(root, names, previous):
 
 
 def require_disk(root, size, running):
-    # 32 B private EDT + 8 B output + 11 B COG including overviews per pixel,
-    # conservatively overlapping these phases; retained files already reduce free.
-    required = running*size**2*51 + 2*1024**3
+    # This fixture's fixed grids need headroom for the product's conservative
+    # tiled Float64/mask/overview encoding estimate, not just compressed outputs.
+    # 64 B/pixel covers the larger of EDT+working TIFF and COG staging+encoding
+    # for both approved grids. Retained files already reduce actual free space.
+    required = running*size**2*64 + 2*1024**3
     info = os.statvfs(root); available = info.f_bavail*info.f_frsize
     if available < required:
         raise FixtureError('insufficient owned capacity disk space')
     return {'required_free_bytes': required, 'available_bytes': available,
-            'reserve_method': 'running*pixels*(32-private+8-output+11-cog)+2GiB'}
+            'reserve_method': 'running*pixels*64+2GiB (fixed grids, guarded encoding headroom)'}
 
 
 def worker(action, root, names):

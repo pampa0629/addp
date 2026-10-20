@@ -168,7 +168,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800'), (paths[3], 'TMPDIR='),
                 (paths[4], 'raster.strict_sizes'), (paths[4], 'capacity.validate_measurement'),
                 (paths[4], 'validate_disk'), (paths[5], 'expected_block'),
-                (paths[5], 'running*size**2*51'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce'),
+                (paths[5], 'running*size**2*64'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce'),
                 (paths[7], 'case "raster-workflow", "raster-nibble-capacity":'),
                 (paths[8], 'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions')):
             target = self.repository/relative; original = target.read_text()

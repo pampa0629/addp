@@ -81,9 +81,18 @@ class NibbleCapacityTest(unittest.TestCase):
         with patch.object(m.fixture.os, 'statvfs', return_value=SimpleNamespace(f_bavail=10**15, f_frsize=1)):
             one = m.fixture.require_disk(Path('/unused'), 10980, 1)
             two = m.fixture.require_disk(Path('/unused'), 10980, 2)
-        self.assertEqual(two['required_free_bytes']-one['required_free_bytes'], 10980**2*51)
+        self.assertEqual(two['required_free_bytes']-one['required_free_bytes'], 10980**2*64)
         with patch.object(m.fixture.os, 'statvfs', return_value=SimpleNamespace(f_bavail=1, f_frsize=1)):
             with self.assertRaises(m.fixture.FixtureError): m.fixture.require_disk(Path('/unused'), 10980, 2)
+
+    def test_disk_preflight_guards_exact_threshold_for_both_fixed_grids(self):
+        for size in (4096, 10980):
+            for running in (1, 2):
+                required = running*size**2*64+2*1024**3
+                with patch.object(m.fixture.os, 'statvfs', return_value=SimpleNamespace(f_bavail=required, f_frsize=1)):
+                    self.assertEqual(m.fixture.require_disk(Path('/unused'), size, running)['required_free_bytes'], required)
+                with patch.object(m.fixture.os, 'statvfs', return_value=SimpleNamespace(f_bavail=required-1, f_frsize=1)):
+                    with self.assertRaises(m.fixture.FixtureError): m.fixture.require_disk(Path('/unused'), size, running)
 
     def test_reuses_cgroup_limits_and_admission_validation(self):
         c = m.capacity
