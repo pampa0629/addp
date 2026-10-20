@@ -57,7 +57,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	}
 
 	for _, item := range resolveExchangeModelResourceItems(ctx, input, files) {
-		appendResolvedDetection(input, result, item)
+		appendDetectedItem(result, item)
 	}
 	for _, item := range resolveOBJResourceItems(ctx, input, files) {
 		appendResolvedDetection(input, result, item)
@@ -75,12 +75,15 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 }
 
 func appendResolvedDetection(input DirectoryResolveInput, result *DetectionResult, item dataitem.ResolvedItem) {
-	if result == nil {
+	appendDetectedItem(result, detectedItemFromResolvedItem(input.DirPath, item))
+}
+
+func appendDetectedItem(result *DetectionResult, detected *DetectedItem) {
+	if result == nil || detected == nil {
 		return
 	}
-	detected := detectedItemFromResolvedItem(input.DirPath, item)
 	result.Items = append(result.Items, detected)
-	for _, path := range item.ClaimPaths {
+	for _, path := range detected.ClaimPaths {
 		if path != "" {
 			result.Claims[path] = true
 		}
@@ -822,7 +825,7 @@ func EnrichKnownMultiTableItem(
 }
 
 // The provider owns format parsing; Meta owns resource lookup and claims.
-func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []dataitem.ResolvedItem {
+func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []*DetectedItem {
 	if input.ContentReader == nil {
 		return nil
 	}
@@ -830,7 +833,7 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 	for _, file := range files {
 		byPath[file.Path] = file
 	}
-	var items []dataitem.ResolvedItem
+	var items []*DetectedItem
 	for _, file := range files {
 		formatType := format.DetectFormat(file.Path, nil)
 		if formatType != format.FormatDAE && formatType != format.Format3DS {
@@ -850,7 +853,7 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 			continue
 		}
 		refs, ok := described.FormatInfo["texture_refs"].([]string)
-		if !ok || len(refs) == 0 {
+		if !ok || refs == nil || described.FormatInfo["scan_complete"] != true {
 			continue
 		}
 		refList := []dataitem.ItemRef{{Role: "model", Path: file.Path, Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
@@ -858,7 +861,9 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 		seen := map[string]bool{file.Path: true}
 		counts := map[string]int{}
 		total := file.Size
-		for _, ref := range refs {
+		lookupRefs := append([]string{}, refs...)
+		sort.Strings(lookupRefs)
+		for _, ref := range lookupRefs {
 			if formatType == format.FormatDAE {
 				ref, err = url.PathUnescape(ref)
 				if err != nil {
@@ -884,10 +889,13 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 			seen[resolved] = true
 			total += texture.Size
 		}
-		if len(refList) == 1 {
-			continue
-		}
-		items = append(items, dataitem.ResolvedItem{Name: file.Name, FullName: file.Path, Layout: format.LayoutSingle, DataType: datatype.Model3D, Format: string(formatType), PrimaryContentPath: file.Path, RefList: refList, ClaimPaths: claims, SizeBytes: &total, DetectionReason: "model_declared_textures"})
+		item := detectedItemFromResolvedItem(file.Path, dataitem.ResolvedItem{Name: file.Name, FullName: file.Path, Layout: format.LayoutSingle, DataType: datatype.Model3D, Format: string(formatType), PrimaryContentPath: file.Path, RefList: refList, ClaimPaths: claims, SizeBytes: &total, DetectionReason: "model_declared_textures"})
+		// Persist the declaration from this bounded composition read. Authorization
+		// fact queries must not reopen the source later to reconstruct it.
+		item.Attributes = map[string]interface{}{"format_info": map[string]interface{}{string(formatType): map[string]interface{}{
+			"texture_refs": append([]string{}, refs...), "scan_complete": true,
+		}}}
+		items = append(items, item)
 	}
 	return items
 }

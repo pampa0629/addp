@@ -44,7 +44,7 @@ func BuildAttributesFromInput(item DataItemAttributesInput) map[string]interface
 	if item.PhysicalPath != "" {
 		storageAttrs["physical_path"] = item.PhysicalPath
 	}
-	if item.Layout == "multi" && len(item.RefList) > 0 {
+	if (item.Layout == "multi" || (item.Layout == "single" && item.DataType == datatype.Model3D)) && len(item.RefList) > 0 {
 		itemAttrs["refs"] = refAttributes(item.RefList)
 		itemAttrs["file_count"] = len(item.RefList)
 	}
