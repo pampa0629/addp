@@ -22,6 +22,7 @@ from .format_operators import load_from_wkt, export_to_wkt
 from .spatial_transform_operators import crs_to_projjson, vector_reproject
 from .raster_operators import build_raster_mosaic
 from .raster_compute import OPERATORS as RASTER_COMPUTE_OPERATORS
+from .raster_band_recommendation import OPERATORS as RASTER_BAND_RECOMMENDATION_OPERATORS
 from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .data_operations import (
@@ -63,6 +64,7 @@ for ops_dict in [
     SPATIAL_TRANSFORM_OPERATORS,
     RASTER_OPERATORS,
     RASTER_COMPUTE_OPERATORS,
+    RASTER_BAND_RECOMMENDATION_OPERATORS,
     VECTOR_TILE_OPERATORS,
     GDAL_VECTOR_DATASET_OPERATORS,
     DATA_OPERATORS,

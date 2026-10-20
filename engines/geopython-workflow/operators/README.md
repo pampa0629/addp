@@ -38,6 +38,10 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_vector_zonal_statistics` 按每个有效二维面独立统计同 CRS 栅格的所选数据波段，重叠像元分别计入各面。默认像元中心覆盖，可选全部触及；保留面、属性、行序、索引和 active geometry，追加三项计数与 sum/min/max/mean/总体标准差，默认 `zonal_` 前缀可配置、列名冲突报错。空覆盖或全无效数值保留原面并输出 null 统计；沿既有矢量保存，不自动重投影、修复或面积加权。Native 与真实跨模块验收分别记账。
 
+`raster_recommend_band_combination(input_raster, bands)` 提供 OIF 三波段组合统计建议：显式选择 3–16 个候选，使用全部候选共同有效像元和原始存储值分块计算总体标准差、Pearson 相关与组合评分。输出共同域计数、逐波段统计、相关矩阵、完整组合排名及推荐集合；零方差候选排除评分，无界评分以 `score_status=unbounded, score=null` 表达。用户显式决定 RGB 通道，不自动生成影像，不保证专题识别最优。
+
+`raster_nibble(input_raster, band, target_values)` 仅替换命中的有效整数分类，采用全图最近有效非目标像元的原分类，等距时按较小源行号再列号。原无效覆盖保持，不填洞，无效区域不阻断距离。限投影北向方形网格，安全整数支持重分类 Float64，输出沿既有 COG 保存；与邻近距离共享唯一精确距离主路径，不等同众数、小斑块消除或边界清理。
+
 ## 目录结构
 
 ```
@@ -54,7 +58,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 82 个算子：通用处理 18 个、矢量处理 31 个、栅格处理 33 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 84 个算子：通用处理 18 个、矢量处理 31 个、栅格处理 35 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -75,8 +79,8 @@ operators/
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
 | 栅格处理 | 范围处理 | 8 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 像元计算 | 7 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
-| 栅格处理 | 栅格统计 | 5 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_histogram` |
+| 栅格处理 | 像元计算 | 8 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_nibble`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
+| 栅格处理 | 栅格统计 | 6 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_recommend_band_combination`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 

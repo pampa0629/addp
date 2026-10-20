@@ -1586,32 +1586,42 @@ def _projected_north_up_grid(dataset):
     return horizontal_metres
 
 
-def _squared_distance_line(cost):
-    """Lower envelope of (x-q)^2 + cost[q], excluding infinite sites."""
-    sites = np.flatnonzero(np.isfinite(cost))
+def _squared_distance_line(cost, *, valid=None, return_sites=False):
+    """Exact integer-cost envelope; ties belong to the lower source index.
+
+    Raster squared pixel distances are integers.  Intersections are represented
+    by the first integer coordinate where the later site strictly wins, using
+    Python integer arithmetic rather than rounded Float64 intersections.
+    """
+    sites = np.flatnonzero(np.isfinite(cost) if valid is None else valid)
     if not len(sites):
-        return np.full(cost.shape, np.inf)
+        distances = np.full(cost.shape, np.inf)
+        return (distances, np.full(cost.shape, -1, dtype=np.int64)) if return_sites else distances
+    if any(not np.isfinite(cost[site]) or int(cost[site]) != cost[site] for site in sites):
+        raise ValueError('Squared raster distance costs must be finite integers')
     vertices = np.empty(len(sites), dtype=np.int64)
-    boundaries = np.empty(len(sites) + 1, dtype=np.float64)
+    boundaries = [None] * (len(sites) + 1)
     vertices[0] = sites[0]
-    boundaries[0], boundaries[1] = -np.inf, np.inf
     top = 0
     for site in sites[1:]:
         while True:
             previous = vertices[top]
-            # Equivalent to subtracting parabola intercepts, without forming
-            # two large squared coordinates and then cancelling them.
-            crossing = ((cost[site] - cost[previous]) / (int(site) - int(previous))
-                        + int(site) + int(previous)) / 2
+            numerator = (int(cost[site]) - int(cost[previous])
+                         + (int(site) - int(previous)) * (int(site) + int(previous)))
+            crossing = numerator // (2 * (int(site) - int(previous))) + 1
             if top == 0 or crossing > boundaries[top]:
                 break
             top -= 1
         top += 1
         vertices[top] = site
-        boundaries[top], boundaries[top + 1] = crossing, np.inf
-    coordinates = np.arange(len(cost), dtype=np.float64)
-    owners = vertices[np.searchsorted(boundaries[1:top + 1], coordinates, side='left')]
-    return np.square(coordinates - owners) + cost[owners]
+        boundaries[top] = crossing
+    coordinates = np.arange(len(cost), dtype=np.int64)
+    # Clipping only for search storage is exact on the queried domain [0,n).
+    thresholds = np.asarray([max(-1, min(len(cost), value))
+                             for value in boundaries[1:top + 1]], dtype=np.int64)
+    owners = vertices[np.searchsorted(thresholds, coordinates, side='right')]
+    distances = (np.square(coordinates - owners) + cost[owners].astype(np.int64)).astype(np.float64)
+    return (distances, owners) if return_sites else distances
 
 
 def _read_distance_values(stream, count):
@@ -1621,21 +1631,96 @@ def _read_distance_values(stream, count):
     return values
 
 
-def _transpose_distance_file(source, target, width, height):
-    """Transpose owned raw Float64 storage with one bounded tile, no mmap."""
+def _transpose_private_file(source, target, width, height, dtype):
+    """Transpose owned fixed-width storage with one bounded tile, no mmap."""
+    dtype = np.dtype(dtype)
+    size = dtype.itemsize
     with source.open('rb') as reader, target.open('xb+') as writer:
-        writer.truncate(width * height * 8)
+        writer.truncate(width * height * size)
         for y in range(0, height, 512):
             rows = min(512, height - y)
             for x in range(0, width, 512):
                 columns = min(512, width - x)
-                tile = np.empty((rows, columns), dtype=np.float64)
+                tile = np.empty((rows, columns), dtype=dtype)
                 for row in range(rows):
-                    reader.seek(((y + row) * width + x) * 8)
-                    tile[row] = _read_distance_values(reader, columns)
+                    reader.seek(((y + row) * width + x) * size)
+                    values = np.frombuffer(reader.read(columns * size), dtype=dtype)
+                    if values.size != columns:
+                        raise RuntimeError('Incomplete private distance intermediate')
+                    tile[row] = values
                 for column in range(columns):
-                    writer.seek(((x + column) * height + y) * 8)
+                    writer.seek(((x + column) * height + y) * size)
                     writer.write(tile[:, column].tobytes())
+
+
+def _transpose_distance_file(source, target, width, height):
+    _transpose_private_file(source, target, width, height, np.float64)
+
+
+def _read_site_values(stream, count):
+    values = np.frombuffer(stream.read(count * 8), dtype=np.int64)
+    if values.size != count:
+        raise RuntimeError('Incomplete private nearest-site intermediate')
+    return values
+
+
+@contextmanager
+def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False):
+    """One separable EDT for distances and original row/column donor identities."""
+    width, height = dataset.RasterXSize, dataset.RasterYSize
+    # GDAL raster dimensions are signed Int32.  Coordinate fields remain Int64;
+    # two maximal squared offsets still fit Int64.  Never encode a flattened
+    # donor identity in Float64, which would lose precision on large grids.
+    if not (0 < width <= 2**31 - 1 and 0 < height <= 2**31 - 1):
+        raise ValueError('Raster dimensions must fit positive signed Int32')
+    rows_path, columns_path = _path('.distance'), _path('.distance')
+    row_sites, column_sites, nearest_sites = _path('.sites'), _path('.sites'), _path('.sites')
+    indices = np.arange(width, dtype=np.int64)
+    try:
+        donor_count = 0
+        with rows_path.open('xb') as rows, row_sites.open('xb') as sites:
+            for row in range(height):
+                donors = np.zeros(width, dtype=bool)
+                for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1)):
+                    matched = np.isin(arrays[0][0], target_values)
+                    donors[x:x + matched.size] = masks[0][0] & (~matched if non_targets else matched)
+                donor_count += int(np.count_nonzero(donors))
+                left = np.maximum.accumulate(np.where(donors, indices, -1))
+                right = np.minimum.accumulate(np.where(donors, indices, width)[::-1])[::-1]
+                choose_left = (left >= 0) & ((right >= width) | (indices - left <= right - indices))
+                owners = np.where(choose_left, left, np.where(right < width, right, -1)).astype(np.int64)
+                present = owners >= 0
+                squared = np.where(present, np.square(indices - owners).astype(np.float64), np.inf)
+                rows.write(squared.tobytes())
+                sites.write(owners.tobytes())
+        if donor_count == 0:
+            raise ValueError('Raster distance transform requires at least one valid target pixel')
+        _transpose_distance_file(rows_path, columns_path, width, height)
+        _transpose_private_file(row_sites, column_sites, width, height, np.int64)
+        rows_path.unlink()
+        row_sites.unlink()
+        with columns_path.open('r+b') as columns, column_sites.open('rb') as sites, nearest_sites.open('xb') as nearest:
+            for column in range(width):
+                columns.seek(column * height * 8)
+                stored = _read_distance_values(columns, height)
+                source_columns = _read_site_values(sites, height)
+                present = source_columns >= 0
+                if np.any(present & (source_columns >= width)):
+                    raise RuntimeError('Invalid private nearest-site coordinate')
+                costs = np.square(np.int64(column) - source_columns)
+                if np.any(stored[present] != costs[present].astype(np.float64)):
+                    raise RuntimeError('Inconsistent private distance intermediate')
+                distances, source_rows = _squared_distance_line(costs, valid=present, return_sites=True)
+                columns.seek(column * height * 8)
+                columns.write(distances.tobytes())
+                identities = np.empty((height, 2), dtype=np.int64)
+                identities[:, 0] = source_rows
+                identities[:, 1] = source_columns[source_rows]
+                nearest.write(identities.tobytes())
+        yield columns_path, nearest_sites
+    finally:
+        for path in (rows_path, columns_path, row_sites, column_sites, nearest_sites):
+            path.unlink(missing_ok=True)
 
 
 def raster_proximity(input_raster, band, target_values):
@@ -1661,49 +1746,25 @@ def raster_proximity(input_raster, band, target_values):
     for index in range(1, dataset.RasterCount + 1):
         if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
             _band(dataset, index)
-    indices = np.arange(width, dtype=np.int64)
-    rows_path, columns_path = _path('.distance'), _path('.distance')
     output = destination = None
     try:
-        target_count = 0
-        with rows_path.open('xb') as rows:
-            for row in range(height):
-                targets = np.zeros(width, dtype=bool)
-                for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1)):
-                    matched = masks[0][0] & np.isin(arrays[0][0], target_values)
-                    targets[x:x + matched.size] = matched
-                target_count += int(np.count_nonzero(targets))
-                left = np.maximum.accumulate(np.where(targets, indices, -1))
-                right = np.minimum.accumulate(np.where(targets, indices, width)[::-1])[::-1]
-                distances = np.minimum(np.where(left >= 0, indices - left, np.inf),
-                                       np.where(right < width, right - indices, np.inf))
-                rows.write(np.square(distances).tobytes())
-        if target_count == 0:
-            raise ValueError('Proximity requires at least one valid target pixel')
-        _transpose_distance_file(rows_path, columns_path, width, height)
-        rows_path.unlink()
-        with columns_path.open('r+b') as columns:
-            for column in range(width):
-                columns.seek(column * height * 8)
-                distances = _squared_distance_line(_read_distance_values(columns, height))
-                columns.seek(column * height * 8)
-                columns.write(distances.tobytes())
-        output = _numeric_output(dataset, 1)
-        destination = output.GetRasterBand(1)
-        destination.SetUnitType('metre')
-        with columns_path.open('rb') as columns:
-            for x, y, arrays, masks in _blocks(dataset, [band]):
-                rows, count = arrays[0].shape
-                distances = np.empty((rows, count), dtype=np.float64)
-                for column in range(count):
-                    columns.seek(((x + column) * height + y) * 8)
-                    distances[:, column] = _read_distance_values(columns, rows)
-                with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-                    distances = np.sqrt(distances) * step_metres
-                if np.any(masks[0] & ~np.isfinite(distances)):
-                    raise ValueError('Proximity exceeds finite Float64 metre distances')
-                distances[~masks[0]] = np.nan
-                destination.WriteArray(distances, x, y)
+        with _nearest_pixel_sites(dataset, band, target_values) as (columns_path, _):
+            output = _numeric_output(dataset, 1)
+            destination = output.GetRasterBand(1)
+            destination.SetUnitType('metre')
+            with columns_path.open('rb') as columns:
+                for x, y, arrays, masks in _blocks(dataset, [band]):
+                    rows, count = arrays[0].shape
+                    distances = np.empty((rows, count), dtype=np.float64)
+                    for column in range(count):
+                        columns.seek(((x + column) * height + y) * 8)
+                        distances[:, column] = _read_distance_values(columns, rows)
+                    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                        distances = np.sqrt(distances) * step_metres
+                    if np.any(masks[0] & ~np.isfinite(distances)):
+                        raise ValueError('Proximity exceeds finite Float64 metre distances')
+                    distances[~masks[0]] = np.nan
+                    destination.WriteArray(distances, x, y)
         path = output.GetDescription()
         destination = None
         output.FlushCache()
@@ -1711,8 +1772,76 @@ def raster_proximity(input_raster, band, target_values):
         return _raster(path)
     finally:
         destination = output = None
-        rows_path.unlink(missing_ok=True)
-        columns_path.unlink(missing_ok=True)
+
+
+def raster_nibble(input_raster, band, target_values):
+    """Replace selected valid classes from the nearest original non-target site."""
+    dataset = _open(input_raster)
+    _projected_north_up_grid(dataset)
+    _, height, transform = _grid(dataset)
+    if transform[1] != -transform[5]:
+        raise ValueError('Nibble requires square pixels; resample explicitly')
+    selected = _band(dataset, band)
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise ValueError('Nibble requires a classification data band, not alpha')
+    if (not isinstance(target_values, list) or not target_values
+        or any(isinstance(value, bool) or not isinstance(value, Integral)
+               or not -(2**53 - 1) <= value <= 2**53 - 1 for value in target_values)
+        or len(set(target_values)) != len(target_values)):
+        raise ValueError('target_values must be distinct exact safe integers')
+    for index in range(1, dataset.RasterCount + 1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    matches = donors = 0
+    for _, _, arrays, masks in _blocks(dataset, [band]):
+        _classification_values(arrays[0], masks[0])
+        matched = masks[0] & np.isin(arrays[0], target_values)
+        matches += int(np.count_nonzero(matched))
+        donors += int(np.count_nonzero(masks[0] & ~matched))
+    if matches == 0:
+        output = _copy_data_bands([(dataset, [band])])
+        path = output.GetDescription()
+        output.FlushCache()
+        output = None
+        return _raster(path)
+    if donors == 0:
+        raise ValueError('Nibble requires at least one valid non-target donor pixel')
+    output = destination = None
+    try:
+        with _nearest_pixel_sites(dataset, band, target_values, non_targets=True) as (_, sites_path):
+            output = _numeric_output(dataset, 1)
+            destination = output.GetRasterBand(1)
+            with sites_path.open('rb') as sites:
+                for x, y, arrays, masks in _blocks(dataset, [band]):
+                    values, valid = arrays[0].copy(), masks[0]
+                    matched = valid & np.isin(values, target_values)
+                    identities = np.empty((*values.shape, 2), dtype=np.int64)
+                    for column in range(values.shape[1]):
+                        sites.seek(((x + column) * height + y) * 16)
+                        identities[:, column] = _read_site_values(sites, values.shape[0] * 2).reshape(-1, 2)
+                    # Group original donor reads by source tile.  Memory and
+                    # each GDAL read remain bounded independently of scene size.
+                    rows, columns = np.nonzero(matched)
+                    donor_rows, donor_columns = identities[rows, columns].T
+                    if np.any((donor_rows < 0) | (donor_rows >= dataset.RasterYSize)
+                              | (donor_columns < 0) | (donor_columns >= dataset.RasterXSize)):
+                        raise RuntimeError('Invalid private nearest-site coordinate')
+                    tile_keys = np.stack((donor_rows // 512, donor_columns // 512), axis=1)
+                    for tile_row, tile_column in np.unique(tile_keys, axis=0):
+                        within = (tile_keys[:, 0] == tile_row) & (tile_keys[:, 1] == tile_column)
+                        sx, sy = int(tile_column) * 512, int(tile_row) * 512
+                        sw, sh = min(512, dataset.RasterXSize - sx), min(512, dataset.RasterYSize - sy)
+                        source = _read_values(selected, sx, sy, sw, sh)
+                        values[rows[within], columns[within]] = source[donor_rows[within] - sy, donor_columns[within] - sx]
+                    values[~valid] = np.nan
+                    destination.WriteArray(values, x, y)
+        path = output.GetDescription()
+        destination = None
+        output.FlushCache()
+        output = None
+        return _raster(path)
+    finally:
+        destination = output = None
 
 
 def _dem_source(input_raster, elevation_unit, band, minimum_size):
@@ -1869,6 +1998,7 @@ _SPECS = [
     (raster_band_math, OperatorCategory.RASTER_CELL, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CELL, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_proximity, OperatorCategory.RASTER_CELL, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
+    (raster_nibble, OperatorCategory.RASTER_CELL, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CELL, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
@@ -1900,6 +2030,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
     if name == 'raster_proximity':
         examples.update({'band': 1, 'target_values': [0, 1]})
+    if name == 'raster_nibble':
+        examples.update({'band': 1, 'target_values': [7]})
     if name == 'raster_focal_statistics':
         examples.update({'band': 1, 'window_size': 3, 'method': 'mean'})
     if name == 'raster_vector_zonal_statistics':

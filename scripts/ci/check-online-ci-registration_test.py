@@ -88,6 +88,53 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_proximity_profile(self.repository,registered)
             target.write_text(original)
 
+    def test_focal_mode_requires_manual_nfs_exact_integer_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-focal-mode-gate.sh','scripts/test/raster-focal-mode-persistence-online.py',
+            'business/scripts/online-raster-focal-mode-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_focal_mode_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-focal-mode-persistence'}
+        CHECK.validate_raster_focal_mode_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-focal-mode-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-focal-mode-online-runner'),(paths[2],'test_online_focal_mode_fixture.py'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[5],'Counter'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'exact_integer_pixels_verified'),(paths[6],'root_squash'),(paths[7],'test_focal_mode_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_focal_mode_profile(self.repository,registered)
+            target.write_text(original)
+
+    def test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'scripts/test/raster-band-recommendation-workflow-online.py', 'business/scripts/online-raster-band-recommendation-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'Makefile')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-band-recommendation-workflow'}
+        CHECK.validate_raster_band_recommendation_profile(self.repository,registered)
+        for relative,fragment in (('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-band-recommendation-workflow'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_band_recommendation_fixture.py'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-band-recommendation-gate.sh', '--mount'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.validate_identity'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-band-recommendation-workflow-online.py', 'raster.transient_result'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'NFSExport'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'owned_root'), ('business/scripts/online-raster-band-recommendation-fixture.py', 'expected_result'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_complete_sources_and_full_product_object'), ('engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'test_band_recommendation_fixture_object_comparison_is_complete_and_strict')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_band_recommendation_profile(self.repository,registered)
+            target.write_text(original)
+
+    def test_nibble_requires_manual_nfs_exact_donors_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-nibble-gate.sh', 'scripts/test/raster-nibble-persistence-online.py', 'business/scripts/online-raster-nibble-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_nibble_fixture.py', 'Makefile')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-nibble-persistence'}
+        CHECK.validate_raster_nibble_profile(self.repository,registered)
+        for relative,fragment in (('.github/workflows/online-t4-gates.yml', "inputs.suite != 'raster-nibble-persistence'"), ('.github/workflows/online-t4-gates.yml', 'nfs-kernel-server nfs-common'), ('Makefile', 'test_online_nibble_fixture.py'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'), ('scripts/test/online-hosted-raster-nibble-gate.sh', 'start_online_geopython_runtime'), ('scripts/test/online-hosted-raster-nibble-gate.sh', '--mount'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.validate_identity'), ('scripts/test/raster-nibble-persistence-online.py', 'raster.EDITOR_PERMISSIONS'), ('scripts/test/raster-nibble-persistence-online.py', 'fixture.SOURCES'), ('business/scripts/online-raster-nibble-fixture.py', 'NFSExport'), ('business/scripts/online-raster-nibble-fixture.py', 'owned_root'), ('business/scripts/online-raster-nibble-fixture.py', 'expected_pixels'), ('scripts/utils/online_nfs_fixture.py', 'root_squash'), ('scripts/utils/online_nfs_fixture.py', 'nfs_export_removed'), ('scripts/utils/online_nfs_fixture.py', 'owned_root'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_real_gdal_three_cog_chains_and_complete_pixels'), ('engines/geopython-workflow/test_online_nibble_fixture.py', 'test_nibble_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_nibble_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_focal_requires_manual_nfs_identity_strict_sizes_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',

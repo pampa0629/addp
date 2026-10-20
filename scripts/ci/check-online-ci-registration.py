@@ -2114,6 +2114,158 @@ def validate_raster_proximity_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError(f'proximity persistence contract is incomplete: {relative}')
 
 
+def validate_raster_focal_mode_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-focal-mode-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-focal-mode-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-focal-mode-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-focal-mode-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal mode requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-raster-focal-mode-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'online-raster-focal-mode-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/raster-focal-mode-persistence-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'triggered_by',
+            'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
+            'rasterize.check_physical(native,previous)', "for problem in ('band','fractional','overflow')", 'full_pixel_and_mask_verification', 'exact_integer_pixels_verified'),
+        'business/scripts/online-raster-focal-mode-fixture.py': (
+            'NFSExport', 'owned_root', 'expected_pixels', 'Counter', 'np.array_equal(actual,expected,equal_nan=True)', 'GDAL_TIFF_INTERNAL_MASK',
+            'runtime_workspaces_removed', 'source file changed', 'full_check=True'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_focal_mode_fixture.py': (
+            'test_focal_mode_persistence_real_gdal_three_cog_chains_and_complete_pixels',
+            'test_focal_mode_persistence_oracle_rejects_corruption'),
+        'Makefile': ('@$(MAKE) test-raster-focal-mode-online-runner',
+            'test_online_focal_mode_fixture.py',
+            'scripts/test/raster-focal-mode-persistence-online_test.py',
+            'scripts/test/online-raster-focal-mode-fixture_test.py',
+            'scripts/test/online-hosted-raster-focal-mode-gate_test.py',
+            'test_focal_mode_requires_manual_nfs_exact_integer_pixels_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'focal mode persistence contract is incomplete: {relative}')
+
+
+def validate_raster_band_recommendation_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-band-recommendation-workflow'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-band-recommendation-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-band-recommendation-workflow'" not in job.group('body')
+        or "&& inputs.suite != 'raster-band-recommendation-workflow'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('band-recommendation requires a manual isolated Hosted NFS job')
+    required = {'scripts/test/online-hosted-raster-band-recommendation-gate.sh': ('source '
+                                                                   '"$ROOT_DIR/scripts/utils/hosted-online.sh"',
+                                                                   'start_online_geopython_runtime',
+                                                                   '--mount',
+                                                                   '--suite raster-workflow',
+                                                                   '--wait-protection-owners develop,manager',
+                                                                   'online-raster-band-recommendation-fixture.py '
+                                                                   'stop',
+                                                                   'unset '
+                                                                   'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+                                                                   'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+ 'scripts/test/raster-band-recommendation-workflow-online.py': ('raster.validate_identity',
+                                                                'raster.EDITOR_PERMISSIONS',
+                                                                'raster.transient_result',
+                                                                'execution_snapshot',
+                                                                'no_publication',
+                                                                'actor',
+                                                                'scan_ids(client) != baseline_scans',
+                                                                'complete_object_verified'),
+ 'business/scripts/online-raster-band-recommendation-fixture.py': ('NFSExport',
+                                                                   'owned_root',
+                                                                   'expected_result',
+                                                                   'np.corrcoef',
+                                                                   'np.ascontiguousarray',
+                                                                   'no_outputs',
+                                                                   'runtime_workspaces_removed',
+                                                                   'full_pixels_and_mask_verified'),
+ 'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+ 'engines/geopython-workflow/test_online_band_recommendation_fixture.py': ('test_band_recommendation_fixture_complete_sources_and_full_product_object',
+                                                                           'test_band_recommendation_fixture_object_comparison_is_complete_and_strict'),
+ 'Makefile': ('@$(MAKE) test-raster-band-recommendation-online-runner',
+              'test_online_band_recommendation_fixture.py',
+              'scripts/test/raster-band-recommendation-workflow-online_test.py',
+              'scripts/test/online-raster-band-recommendation-fixture_test.py',
+              'scripts/test/online-hosted-raster-band-recommendation-gate_test.py',
+              'test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions')}
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'band-recommendation persistence contract is incomplete: {relative}')
+
+
+def validate_raster_nibble_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-nibble-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-nibble-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-nibble-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-nibble-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('nibble requires a manual isolated Hosted NFS job')
+    required = {'scripts/test/online-hosted-raster-nibble-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+                                                      'start_online_geopython_runtime',
+                                                      '--mount',
+                                                      '--suite raster-workflow',
+                                                      '--wait-protection-owners develop,manager',
+                                                      'online-raster-nibble-fixture.py stop',
+                                                      'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+                                                      'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+ 'scripts/test/raster-nibble-persistence-online.py': ('raster.validate_identity',
+                                                      'raster.EDITOR_PERMISSIONS',
+                                                      'fixture.SOURCES',
+                                                      'triggered_by',
+                                                      'raster.strict_sizes',
+                                                      'raster.validate_target_item',
+                                                      'raster.wait_lineage',
+                                                      'scan_ids(client)!=before_scans',
+                                                      'rasterize.check_physical(native,previous)',
+                                                      "for problem in ('band','unsafe','no-donor')",
+                                                      'full_pixel_and_mask_verification',
+                                                      'exact_integer_pixels_verified'),
+ 'business/scripts/online-raster-nibble-fixture.py': ('NFSExport',
+                                                      'owned_root',
+                                                      'expected_pixels',
+                                                      'squared<best',
+                                                      'np.array_equal(actual,expected,equal_nan=True)',
+                                                      'GDAL_TIFF_INTERNAL_MASK',
+                                                      'runtime_workspaces_removed',
+                                                      'source file changed',
+                                                      'full_check=True'),
+ 'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+ 'engines/geopython-workflow/test_online_nibble_fixture.py': ('test_nibble_persistence_real_gdal_three_cog_chains_and_complete_pixels',
+                                                              'test_nibble_persistence_oracle_rejects_corruption'),
+ 'Makefile': ('@$(MAKE) test-raster-nibble-online-runner',
+              'test_online_nibble_fixture.py',
+              'scripts/test/raster-nibble-persistence-online_test.py',
+              'scripts/test/online-raster-nibble-fixture_test.py',
+              'scripts/test/online-hosted-raster-nibble-gate_test.py',
+              'test_nibble_requires_manual_nfs_exact_donors_and_regressions')}
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'nibble persistence contract is incomplete: {relative}')
+
+
 def validate_raster_focal_statistics_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-focal-statistics-persistence'
     if suite not in registered:
@@ -2656,6 +2808,9 @@ def check_registration(repository: Path) -> None:
     validate_vector_rasterize_profile(repository, registered)
     validate_vector_zonal_statistics_profile(repository, registered)
     validate_raster_proximity_profile(repository, registered)
+    validate_raster_focal_mode_profile(repository, registered)
+    validate_raster_band_recommendation_profile(repository, registered)
+    validate_raster_nibble_profile(repository, registered)
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)

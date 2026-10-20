@@ -201,7 +201,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_nibble_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
@@ -595,6 +595,21 @@ test-raster-proximity-online-runner: ## 验证邻近距离独立 T4、完整 COG
 	@bash -n scripts/test/online-hosted-raster-proximity-gate.sh
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-proximity-persistence-online_test.py scripts/test/online-raster-proximity-fixture_test.py scripts/test/online-hosted-raster-proximity-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_proximity_requires_manual_nfs_identity_exact_distances_and_regressions
 
+.PHONY: test-raster-focal-mode-online-runner
+test-raster-focal-mode-online-runner: ## 验证分类众数滤波独立 T4、完整 COG 与隔离生命周期
+	@bash -n scripts/test/online-hosted-raster-focal-mode-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-focal-mode-persistence-online_test.py scripts/test/online-raster-focal-mode-fixture_test.py scripts/test/online-hosted-raster-focal-mode-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_focal_mode_requires_manual_nfs_exact_integer_pixels_and_regressions
+
+.PHONY: test-raster-band-recommendation-online-runner
+test-raster-band-recommendation-online-runner: ## 验证OIF 三波段推荐只读工作流及隔离生命周期
+	@bash -n scripts/test/online-hosted-raster-band-recommendation-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-band-recommendation-workflow-online_test.py scripts/test/online-raster-band-recommendation-fixture_test.py scripts/test/online-hosted-raster-band-recommendation-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions
+
+.PHONY: test-raster-nibble-online-runner
+test-raster-nibble-online-runner: ## 验证分类蚕食持久化及隔离生命周期
+	@bash -n scripts/test/online-hosted-raster-nibble-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-nibble-persistence-online_test.py scripts/test/online-raster-nibble-fixture_test.py scripts/test/online-hosted-raster-nibble-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_nibble_requires_manual_nfs_exact_donors_and_regressions
+
 .PHONY: test-raster-focal-statistics-online-runner
 test-raster-focal-statistics-online-runner: ## 验证邻域统计独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-statistics-gate.sh
@@ -613,6 +628,9 @@ test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
 	@$(MAKE) test-raster-proximity-online-runner
 	@$(MAKE) test-vector-zonal-statistics-online-runner
+	@$(MAKE) test-raster-focal-mode-online-runner
+	@$(MAKE) test-raster-band-recommendation-online-runner
+	@$(MAKE) test-raster-nibble-online-runner
 	@$(MAKE) test-raster-focal-statistics-online-runner
 	@$(MAKE) test-raster-zonal-statistics-online-runner
 	@$(MAKE) test-vector-rasterize-online-runner

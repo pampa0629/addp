@@ -104,6 +104,7 @@ class OnlineGateTest(unittest.TestCase):
                 "vector-rasterize-persistence",
                 "vector-zonal-statistics-persistence",
                 "raster-proximity-persistence",
+            "raster-focal-mode-persistence", "raster-band-recommendation-workflow", "raster-nibble-persistence",
                 "raster-focal-statistics-persistence",
                 "raster-zonal-statistics-persistence",
                 "vector-pmtiles-workflow",
