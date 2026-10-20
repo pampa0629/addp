@@ -2,8 +2,10 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,12 +65,36 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply bootstrap: %v", err)
 	}
-	initialAuthorizationVersions := make(map[string]int64, len(bootstrapRoleOrder))
-	for roleKey, principalID := range bootstrapResult.PrincipalIDs {
-		initialAuthorizationVersions[roleKey] = createRecoverySessionFacts(t, db, principalID, currentTime)
+	governance := NewAdministratorChangeService(repository)
+	secondSystem, err := NewIdentityService(repository, testDatabaseTime(now)).CreateLocalUser(ctx, CreateLocalUserInput{
+		Username: "second-system-admin", DisplayName: "Second System Administrator", Password: "Original-second-system-admin-password!",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createManagementMFACredential(t, ctx, repository, secondSystem.PrincipalID)
+	grant, err := governance.Create(ctx, CreateAdministratorChangeInput{
+		ChangeType: PrivilegedChangePlatformRoleGrant, TargetPrincipalID: secondSystem.PrincipalID,
+		TargetRoleKey: "platform.system_administrator", RequestedByPrincipalID: bootstrapResult.PrincipalIDs["platform.security_administrator"],
+		Reason: "recover every current holder of the same role",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := governance.Approve(ctx, ReviewAdministratorChangeInput{
+		RequestID: grant.ID, Version: grant.Version, ReviewerPrincipalID: bootstrapResult.PrincipalIDs["platform.audit_administrator"], Reason: "independent approval",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	principalIDs := []int64{secondSystem.PrincipalID}
+	for _, principalID := range bootstrapResult.PrincipalIDs {
+		principalIDs = append(principalIDs, principalID)
+	}
+	initialAuthorizationVersions := make(map[int64]int64, len(principalIDs))
+	for _, principalID := range principalIDs {
+		initialAuthorizationVersions[principalID] = createRecoverySessionFacts(t, db, principalID, currentTime)
 	}
 
-	governance := NewAdministratorChangeService(repository)
 	suspendedID := bootstrapResult.PrincipalIDs["platform.audit_administrator"]
 	suspension, err := governance.Create(ctx, CreateAdministratorChangeInput{ChangeType: PrivilegedChangePlatformIdentitySuspend, TargetPrincipalID: suspendedID, RequestedByPrincipalID: bootstrapResult.PrincipalIDs["platform.security_administrator"], Reason: "suspension must survive offline credential recovery"})
 	if err != nil {
@@ -81,8 +107,11 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initialAuthorizationVersions["platform.audit_administrator"] = suspendedPrincipal.AuthorizationVersion
+	initialAuthorizationVersions[suspendedID] = suspendedPrincipal.AuthorizationVersion
 
+	// Governance uses the database clock. Observe its grant before freezing
+	// recovery time so the fourth assignment is current at validation.
+	currentTime = time.Now().UTC()
 	recoveryService, err := NewRecoveryService(
 		repository, cipher, time.Hour,
 		func(prefix string) (string, error) { return prefix + "recovery-postgres-test", nil }, now,
@@ -101,7 +130,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		t.Fatal("second recovery prepare succeeded while an attempt is active")
 	}
 	targets, err := recoveryService.Validate(ctx, recoverySecret)
-	if err != nil || len(targets) != 3 {
+	if err != nil || len(targets) != len(principalIDs) {
 		t.Fatalf("validate recovery secret targets=%d error=%v", len(targets), err)
 	}
 	if _, err := recoveryService.Validate(ctx, "addp_ir_invalid"); err == nil {
@@ -116,19 +145,35 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	for i := range inputs {
 		inputs[i].PrincipalID = bootstrapResult.PrincipalIDs[inputs[i].RoleKey]
 	}
+	secondInput := recoveryAdministratorTestInput(t, "platform.system_administrator", "Recovered-password-second-system-admin!", "GEZDGNBVGY3TQOJQ", currentTime)
+	secondInput.PrincipalID = secondSystem.PrincipalID
+	inputs = append(inputs, secondInput)
 	swapped := append([]RecoveryAdministratorInput(nil), inputs...)
 	swapped[0].PrincipalID, swapped[1].PrincipalID = swapped[1].PrincipalID, swapped[0].PrincipalID
 	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: swapped}); err == nil {
 		t.Fatal("recovery used a role name instead of the bound principal identity")
 	}
-	installRecoveryCompletionAuditFailure(t, db)
-	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{
-		RecoverySecret: recoverySecret, Administrators: inputs,
-	}); err == nil {
-		t.Fatal("recovery succeeded despite forced completion-audit failure")
-	}
-	removeRecoveryCompletionAuditFailure(t, db)
-	assertRecoveryRolledBack(t, db, bootstrapResult.PrincipalIDs[bootstrapRoleOrder[0]])
+	t.Run("completion_audit_failure_rolls_back_all_four_holders", func(t *testing.T) {
+		before := snapshotRecoveryState(t, db, principalIDs)
+		installRecoveryCompletionAuditFailure(t, db)
+		defer removeRecoveryCompletionAuditFailure(t, db)
+		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: inputs})
+		if err == nil || !strings.Contains(err.Error(), "forced recovery completion audit failure") || failed != nil {
+			t.Fatal("recovery did not fail at the injected completion audit boundary")
+		}
+		after := snapshotRecoveryState(t, db, principalIDs)
+		for table, baseline := range before {
+			if after[table] != baseline {
+				// Snapshots contain password hashes and encrypted MFA material.
+				// Never render either side in a test failure or CI log.
+				t.Fatalf("failed recovery changed persisted state in %s", table)
+			}
+		}
+		if targets, err := recoveryService.Validate(ctx, recoverySecret); err != nil || len(targets) != len(principalIDs) {
+			t.Fatal("failed recovery consumed its secret or lost a current holder")
+		}
+		t.Log("all four holders and ten persisted state sets are unchanged after the final audit write fails")
+	})
 
 	result, err := recoveryService.Apply(ctx, RecoveryApplyInput{
 		RecoverySecret: recoverySecret, Administrators: inputs,
@@ -136,7 +181,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply recovery: %v", err)
 	}
-	if result.AttemptID <= 0 || len(result.Principals) != 3 || !result.CompletedAt.Equal(currentTime) {
+	if result.AttemptID <= 0 || len(result.Principals) != len(principalIDs) || !result.CompletedAt.Equal(currentTime) {
 		t.Fatalf("recovery result = %#v", result)
 	}
 	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{
@@ -145,8 +190,8 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		t.Fatal("completed recovery applied twice")
 	}
 
-	for index, roleKey := range bootstrapRoleOrder {
-		principalID := bootstrapResult.PrincipalIDs[roleKey]
+	for index, input := range inputs {
+		roleKey, principalID := input.RoleKey, input.PrincipalID
 		if result.Principals[principalID] != roleKey {
 			t.Fatal("recovered identity does not match role")
 		}
@@ -183,7 +228,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		if disabledCredentialCount != 1 ||
-			authorizationVersion != initialAuthorizationVersions[roleKey]+1 || activeFamilyCount != 0 {
+			authorizationVersion != initialAuthorizationVersions[principalID]+1 || activeFamilyCount != 0 {
 			t.Fatalf("recovery facts %s disabled_mfa=%d version=%d active_families=%d",
 				roleKey, disabledCredentialCount, authorizationVersion, activeFamilyCount)
 		}
@@ -206,7 +251,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	}
 	for eventName, want := range map[string]int64{
 		"iam.recovery.prepared":                           1,
-		"iam.recovery.administrator_credentials_replaced": 3,
+		"iam.recovery.administrator_credentials_replaced": int64(len(principalIDs)),
 		"iam.recovery.completed":                          1,
 	} {
 		var count int64
@@ -321,23 +366,32 @@ func removeRecoveryCompletionAuditFailure(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func assertRecoveryRolledBack(t *testing.T, db *gorm.DB, principalID int64) {
+func snapshotRecoveryState(t *testing.T, db *gorm.DB, principalIDs []int64) map[string]string {
 	t.Helper()
-	var account LocalAccount
-	if err := db.Where("user_id = ?", principalID).Take(&account).Error; err != nil {
-		t.Fatal(err)
+	state := make(map[string]string)
+	capture := func(table, predicate string, args ...any) {
+		t.Helper()
+		var value string
+		query := fmt.Sprintf("SELECT COALESCE(jsonb_agg(to_jsonb(recovery_row) ORDER BY recovery_row.id), '[]'::jsonb)::text FROM %s AS recovery_row WHERE %s", table, predicate)
+		if err := db.Raw(query, args...).Scan(&value).Error; err != nil {
+			t.Fatalf("snapshot recovery state in %s: %v", table, err)
+		}
+		state[table] = value
 	}
-	if !passwordutils.CheckPassword("Bootstrap-password-system-admin!", account.PasswordHash) {
-		t.Fatal("failed recovery changed the account password")
+	// Compare whole rows, not just row counts: failed recovery must restore
+	// exact hashes/ciphertexts, status/version, family revocation and ticket use.
+	for table, principalColumn := range map[string]string{
+		"system.principals": "id", "system.local_accounts": "user_id",
+		"system.mfa_credentials": "user_id", "system.role_assignments": "principal_id",
+		"system.refresh_token_families": "principal_id", "system.mfa_challenges": "principal_id",
+		"system.context_selection_tickets": "principal_id",
+	} {
+		capture(table, principalColumn+" IN ?", principalIDs)
 	}
-	var activeCredentialCount, disabledCredentialCount, activeFamilyCount int64
-	db.Model(&MFACredential{}).Where("user_id = ? AND status = 'active'", principalID).Count(&activeCredentialCount)
-	db.Model(&MFACredential{}).Where("user_id = ? AND status = 'disabled'", principalID).Count(&disabledCredentialCount)
-	db.Table("system.refresh_token_families").Where("principal_id = ? AND revoked_at IS NULL", principalID).Count(&activeFamilyCount)
-	if activeCredentialCount != 1 || disabledCredentialCount != 0 || activeFamilyCount != 1 {
-		t.Fatalf("failed recovery was not atomic: active_mfa=%d disabled_mfa=%d active_families=%d",
-			activeCredentialCount, disabledCredentialCount, activeFamilyCount)
-	}
+	capture("system.iam_recovery_attempts", "TRUE")
+	capture("system.iam_bootstrap_state", "TRUE")
+	capture("system.audit_logs", "entity_type = ?", "iam_recovery_attempt")
+	return state
 }
 
 func assertRecoveryPendingFactsConsumed(t *testing.T, db *gorm.DB, principalID int64) {

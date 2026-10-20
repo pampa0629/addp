@@ -84,6 +84,8 @@ make test-module MODULE=system
 
 前两项覆盖事务治理及真实密码、TOTP、Access Token 与 API 授权链路；浏览器门禁使用隔离页面夹具。它们不代替真实部署的跨进程运行验收。
 
+`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam"` 自动运行 `TestRecoveryServiceAgainstPostgres`。该 T2 用例以系统岗两人、安全及审计各一人的四名持有人验证正式恢复事务：强制最后的完成审计写入失败，逐表比较全部身份、账户、MFA、角色、会话、待消费认证事实、恢复凭据及审计的原始状态，移除故障后以同一 Secret 重试成功。它不替代真实 CLI 中断或数据库提交连接故障的 T4 验收。
+
 三员跨进程验收使用 `platform-administrator-governance`，只允许 GitHub Hosted 人工触发；不在本机运行生命周期。同一套件通过正式治理审批增授第二名系统管理员，按 Principal ID 和账号覆盖四名持有人；先在前三人完成凭据收集、第四人输入密码前终止私有 CLI，核验原凭据／会话／角色／授权版本未变及仅有准备审计，再使用同一 Secret 完整恢复，最后批准撤销新增岗位并核验原三员保留；通过正式 CLI 的真实伪终端和连续两个 TOTP 时间窗口验收离线恢复，核验旧凭据与会话失效、原暂停状态与角色分配保留、Secret 不可复用及完整审计；CLI 新凭据只在场景进程内存中流转。`make test-platform-administrator-online-runner` 仅验证准入、身份断言、伪终端协议、清理、浏览器语法与 CI 登记，不连接开发服务或数据库；新身份夹具的 T2 由既有 System PostgreSQL `--package online-fixture` 门禁自动发现，真实 T4 结果单独报告。
 
 ## 🐛 常见问题
