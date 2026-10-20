@@ -16,7 +16,7 @@
         <el-tab-pane :label="t('graph.review.all')" name="all" />
       </el-tabs>
       <div class="filter-actions">
-        <el-select v-model="filterStatus" @change="loadItems" placeholder="状态" style="width:120px" clearable>
+        <el-select v-model="filterStatus" @change="loadItems" :placeholder="t('graph.common.status')" style="width:120px" clearable>
           <el-option :label="t('graph.review.statusPending')" value="pending" />
           <el-option :label="t('graph.review.statusApproved')" value="approved" />
           <el-option :label="t('graph.review.statusRejected')" value="rejected" />
