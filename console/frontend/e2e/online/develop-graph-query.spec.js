@@ -219,7 +219,10 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
     expect(denied.status).toBe('failed')
     expect(denied.metadata || {}).not.toHaveProperty('result')
     expect(denied.error_details.code).toBe('develop.query.protection_required')
-    expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required' })
+    // Gate-only enrollment stays enrolling. Providers prove different read scopes.
+    const protectionReason = { falkordb: 'protection_not_ready', neo4j: 'protection_lineage_unverified' }[expected.engine_type]
+    expect(protectionReason).toBeTruthy()
+    expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: protectionReason })
     await expect(frame.locator('.execution-failure')).toContainText('develop.query.protection_required')
     await expect(resultTable).toHaveCount(0)
     await expect(frame.locator('.graph-result-view')).toHaveCount(0)
@@ -227,7 +230,8 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
     await selectGraph(1)
     if (expected.targets[1].engine_id !== expected.targets[0].engine_id) await edit(graphQuery)
     await verifyGraph(await execute(graphQuery, 1), 'control')
-    phaseEvidence = { protection_required: true, protected_result_absent: true, protection_stage: 'preparation', control_readable: true }
+    phaseEvidence = { protection_required: true, protected_result_absent: true, protection_stage: 'preparation',
+      protection_reason: denied.error_details.diagnostic.reason, control_readable: true }
   }
   expect(writes).toEqual([])
   expect(failed).toEqual([])

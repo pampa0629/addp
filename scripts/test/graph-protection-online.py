@@ -238,7 +238,11 @@ def run_develop_browser(report, engine_id, tenant_id, phase):
                         theme_editor_colors=True, theme_completion_colors=True,
                         typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
     else:
-        expected.update(protection_required=True, protected_result_absent=True, protection_stage="preparation", control_readable=True)
+        # This fixture enrolls the graph without publishing protection rules.
+        # FalkorDB proves the exact enrolling graph; Neo4j cannot prove its ReadSet.
+        reason = {"falkordb": "protection_not_ready", "neo4j": "protection_lineage_unverified"}[engine_type()]
+        expected.update(protection_required=True, protected_result_absent=True, protection_stage="preparation",
+                        protection_reason=reason, control_readable=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401", "execution_ids"} and
             all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()) and
             type(evidence["anonymous_refresh_401"]) is int and 0 <= evidence["anonymous_refresh_401"] <= 1 and

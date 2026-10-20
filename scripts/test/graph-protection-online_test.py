@@ -47,7 +47,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', kwargs['env'])
                 self.assertEqual(kwargs['env']['ADDP_ONLINE_GRAPH_DEVELOP_USERNAME'], 'developer')
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_DEVELOP_GRAPH_EXPECTATIONS'])
-                self.assertEqual(expected, dict(run_id='develop-run', tenant_id='2', principal_id='5', engine_id=13, phase=phase, engine_type='falkordb', targets=SUITE.target_paths(13)))
+                self.assertEqual(expected, dict(run_id='develop-run', tenant_id='2', principal_id='5', engine_id=13, phase=phase, engine_type=kind, targets=SUITE.target_paths(13)))
                 payload = dict(expected, schema_version='addp.develop-graph-query-browser/v1', result='passed',
                                permissions=sorted(SUITE.DEVELOP_PERMISSIONS), graph_nodes=3, graph_relationships=2, graph_rows=2,
                                graph_canvas=True, browser_errors=0, failed_business_responses=0, unexpected_writes=0,
@@ -55,25 +55,31 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 names = ('graph', 'table', *('theme-' + mode for mode in ('light', 'dark', 'blue', 'purple'))) if phase == 'unmanaged' else ('protected', 'control')
                 if phase == 'unmanaged': payload.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True,
                     theme_editor_colors=True, theme_completion_colors=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
-                else: payload.update(protection_required=True, protected_result_absent=True, protection_stage='preparation', control_readable=True)
+                else: payload.update(protection_required=True, protected_result_absent=True, protection_stage='preparation',
+                    protection_reason='protection_not_ready' if expected['engine_type'] == 'falkordb' else 'protection_lineage_unverified', control_readable=True)
                 payload.update({key: value for key, value in mutation.items() if key != '_omit'})
                 for key in mutation.get('_omit', []): payload.pop(key, None)
                 Path(kwargs['env']['ADDP_ONLINE_DEVELOP_GRAPH_REPORT']).write_text(json.dumps(payload))
                 if screenshots:
                     for name in names: (artifacts / f'develop-graph-{name}-console.png').write_bytes(b'unit-test-screenshot')
                 return type('Process', (), {'returncode': 0})()
-            for phase in ('unmanaged', 'protected'):
+            for kind, phase in (('falkordb', 'unmanaged'), ('falkordb', 'protected'), ('neo4j', 'unmanaged'), ('neo4j', 'protected')):
+                environment.update(ADDP_ONLINE_GRAPH_ENGINE=kind, ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID='14')
                 negative = {'typed_parameters': False} if phase == 'unmanaged' else {'protected_result_absent': False}
                 cases = [({}, True), ({'principal_id': '4'}, True),
                         ({'permissions': ['graph.graph.read']}, True), ({'browser_errors': 1}, True),
                         (negative, True), ({'execution_ids': ['same', 'same']}, True), ({}, False)]
+                if phase == 'protected':
+                    cases.extend([({'_omit': ['protection_reason']}, True), ({'protection_reason': 'data_protection_required'}, True),
+                                  ({'protection_reason': 'protection_lineage_unverified' if kind == 'falkordb' else 'protection_not_ready'}, True),
+                                  ({'protection_reason': 'protection_operation_unsupported'}, True)])
                 if phase == 'unmanaged':
                     for key in ('theme_editor_colors', 'theme_completion_colors'):
                         cases.extend([({'_omit': [key]}, True), ({key: False}, True), ({key: None}, True), ({key: 1}, True)])
                 for mutation, screenshots in cases:
                     report = {'identities': {'reader': {'principal_id': '4'}}}
                     for path in artifacts.glob('*.png'): path.unlink()
-                    with self.subTest(phase=phase, mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
+                    with self.subTest(engine=kind, phase=phase, mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
                          patch.object(SUITE, 'identity', return_value={'principal_id': '5', 'permissions': sorted(SUITE.DEVELOP_PERMISSIONS), 'administrator': False}) as identity, \
                          patch.object(SUITE.subprocess, 'run', side_effect=launch):
                         if mutation or not screenshots:
