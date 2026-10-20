@@ -13,16 +13,6 @@ RUNTIME_TAG=manager-raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
-start_online_model3d_runtime() (
-  RUNTIME_CONTAINER=addp-manager-model3d-runtime
-  RUNTIME_IMAGE=127.0.0.1:5001/addp-model3d-workflow-engine:online
-  RUNTIME_REPORT=model3d
-  run_logged docker run -d --name "$RUNTIME_CONTAINER" --network host \
-    --label "com.addp.online-runtime=$ONLINE_SUITE" \
-    -e "PORT=$MODEL3D_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 \
-    -e SYSTEM_URL -e MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
-  verify_online_product_runtime '["python","api_server.py"]' "http://127.0.0.1:$MODEL3D_WORKFLOW_PORT/health"
-)
 stop_online_fixture() {
   local cleanup_status=0 image
   run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
@@ -85,7 +75,7 @@ application_owned=1
 for start_target in -security -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-start_online_model3d_runtime
+start_online_model3d_runtime addp-manager-model3d-runtime 127.0.0.1:5001/addp-model3d-workflow-engine:online
 start_online_geopython_runtime "$RUNTIME_TAG"
 export ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT=raster/source.tif
 run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed

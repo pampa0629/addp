@@ -350,7 +350,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         'scripts/build/build-images.sh --verify',
         '-meta -manager -monitor -pointcloud-workflow -document-workflow',
         'start_online_model3d_runtime', 'remove_online_product_container addp-manager-model3d-runtime',
-        'verify_online_product_runtime', 'addp-model3d-workflow-engine:online',
+        'start_online_model3d_runtime addp-manager-model3d-runtime', 'addp-model3d-workflow-engine:online',
         'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',
         'bash business/scripts/online-manager-minio-fixture.sh start',
         'bash business/scripts/online-manager-minio-fixture.sh stop',

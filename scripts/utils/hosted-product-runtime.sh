@@ -19,6 +19,18 @@ launch_online_geopython_runtime() {
   verify_online_product_runtime '["sh","container_entrypoint.sh"]' "http://127.0.0.1:$GEOPYTHON_WORKFLOW_PORT/health"
 }
 
+start_online_model3d_runtime() (
+  RUNTIME_CONTAINER=$1
+  RUNTIME_IMAGE=$2
+  RUNTIME_REPORT=model3d
+  run_logged docker run -d --name "$RUNTIME_CONTAINER" --network host \
+    --label "com.addp.online-runtime=$ONLINE_SUITE" \
+    --label "com.addp.online-run-id=$ADDP_ONLINE_TEST_RUN_ID" \
+    -e "PORT=$MODEL3D_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 \
+    -e SYSTEM_URL -e MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
+  verify_online_product_runtime '["python","api_server.py"]' "http://127.0.0.1:$MODEL3D_WORKFLOW_PORT/health"
+)
+
 verify_online_product_runtime() {
   local command=$1 health_url=$2 image_id attempt default_entry
   image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")
