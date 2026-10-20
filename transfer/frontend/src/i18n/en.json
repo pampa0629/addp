@@ -334,6 +334,15 @@
       "loadSystemResourcesFailed": "Failed to load system resources"
     },
     "executionDetail": {
+	  "initialAuthorization": {
+	    "pending": "Initial read authorization pending",
+	    "issued": "Initial read authorization issued",
+	    "denied": "Initial read authorization not issued",
+	    "pendingDescription": "The output is preserved. Authorization checks will continue; do not rerun the task.",
+	    "issuedDescription": "Current access remains subject to effective permissions and security rules.",
+	    "deniedDescription": "Contact an authorization administrator to use the normal approval process. The generated output is unaffected.",
+	    "scanFailedDescription": "Basic identification failed. Check it in Metadata; the output is preserved and the task need not be rerun."
+	  },
       "recentVisitTitle": "Transfer Execution",
       "back": "Back",
       "executionDetailTitle": "Execution Detail #{id}",

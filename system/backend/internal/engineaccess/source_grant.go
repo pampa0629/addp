@@ -38,11 +38,15 @@ type sourceGrant struct {
 	OperatorAuthorizationVersion int64
 	Reason                       *string
 	InitializedApproval          bool
+	ProducerOwner                *string
+	ProductionExecutionID        *uuid.UUID `gorm:"type:uuid"`
+	IssuerPrincipalID            *int64
+	IssuerMembershipID           *int64
 }
 
 func (sourceGrant) TableName() string { return "system.engine_access_grants" }
 
-// Both approval adapters must establish their own current qualification and
+// All source adapters must establish their own current qualification and
 // exact target boundary before calling the one persistence path. The database
 // supplies issuance time and enforces immutable provenance/rule constraints.
 func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) error {

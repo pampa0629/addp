@@ -58,17 +58,23 @@ type ExecutionProgressResponse struct {
 }
 
 type ExecutionMetadata struct {
-	MetadataScan                *ExecutionMetadataScan `json:"metadata_scan,omitempty"`
-	LineageFacts                *ExecutionLineageFacts `json:"lineage_facts,omitempty"`
-	Continuous                  *ExecutionContinuous   `json:"continuous,omitempty"`
-	StopReason                  string                 `json:"stop_reason,omitempty"`
-	RecoveryReason              string                 `json:"recovery_reason,omitempty"`
-	RecoveredFromExecutionID    string                 `json:"recovered_from_execution_id,omitempty"`
-	RecoveryAttempt             *uint                  `json:"recovery_attempt,omitempty"`
-	RecoveryConsecutiveFailures *uint                  `json:"recovery_consecutive_failures,omitempty"`
-	RecoveryBackoffSeconds      *float64               `json:"recovery_backoff_seconds,omitempty"`
-	RecoveryNotBefore           *time.Time             `json:"recovery_not_before,omitempty"`
-	RecoveryCircuitState        string                 `json:"recovery_circuit_state,omitempty"`
+	InitialAuthorization        *ExecutionInitialAuthorization `json:"initial_authorization,omitempty"`
+	MetadataScan                *ExecutionMetadataScan         `json:"metadata_scan,omitempty"`
+	LineageFacts                *ExecutionLineageFacts         `json:"lineage_facts,omitempty"`
+	Continuous                  *ExecutionContinuous           `json:"continuous,omitempty"`
+	StopReason                  string                         `json:"stop_reason,omitempty"`
+	RecoveryReason              string                         `json:"recovery_reason,omitempty"`
+	RecoveredFromExecutionID    string                         `json:"recovered_from_execution_id,omitempty"`
+	RecoveryAttempt             *uint                          `json:"recovery_attempt,omitempty"`
+	RecoveryConsecutiveFailures *uint                          `json:"recovery_consecutive_failures,omitempty"`
+	RecoveryBackoffSeconds      *float64                       `json:"recovery_backoff_seconds,omitempty"`
+	RecoveryNotBefore           *time.Time                     `json:"recovery_not_before,omitempty"`
+	RecoveryCircuitState        string                         `json:"recovery_circuit_state,omitempty"`
+}
+
+type ExecutionInitialAuthorization struct {
+	Status string `json:"status"`
+	Code   string `json:"code,omitempty"`
 }
 
 type ExecutionLineageFacts struct {
@@ -257,6 +263,14 @@ func projectExecution(c *gin.Context, item *models.TaskExecution) (*ExecutionRes
 	metadata := ExecutionMetadata{}
 	if err := projectExecutionMetadata(item.Metadata, &metadata); err != nil {
 		return nil, err
+	}
+	metadata.InitialAuthorization = nil
+	if raw, exists := item.Metadata[models.ProductionAuthorizationMetadataKey]; exists {
+		state, err := models.DecodeProductionAuthorization(raw)
+		if err == nil {
+			metadata.InitialAuthorization = &ExecutionInitialAuthorization{Status: state.Status, Code: executionEnum(state.Code,
+				"system_unavailable", "authorization_pending", "scan_pending", "scan_failed", "production_ineligible", "source_access_denied", "execution_permission_denied", "target_history_exists", "engine_changed")}
+		}
 	}
 	metadata.StopReason = executionEnum(metadata.StopReason, "paused", "stopped", "cleanup", "worker_shutdown", "lease_expired", "execution_failed", "schema_change_blocked")
 	if metadata.MetadataScan != nil {

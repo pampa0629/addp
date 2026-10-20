@@ -347,7 +347,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				if err := tx.Create(&sourceGrant{RequestID: receipt.RequestID, ApprovalMode: approvalModeCatalog}).Error; err != nil {
 					return err
 				}
-				return tx.Exec("ALTER TABLE system.engine_access_grants ENABLE TRIGGER trg_source_grant_relation").Error
+				return restoreGrantRelationFixtureTrigger(tx)
 			}); err != nil {
 				t.Fatal(err)
 			}

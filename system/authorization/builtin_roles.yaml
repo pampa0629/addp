@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 133
+manifest_version: 135
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -947,6 +947,7 @@ roles:
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
+      - transfer.production_receipt.read
   - key: tenant.model3d_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.model3d_runtime.name
@@ -1221,6 +1222,7 @@ roles:
       - security.protection_projection.read
       - security.protection_projection.update
       - system.engine.read
+      - system.engine_access_initial_grant.execute
       - system.engine_catalog.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute

@@ -69,6 +69,15 @@ definitions:
       status:
         type: string
     type: object
+  client.MetaProductionBasicScan:
+    properties:
+      production_execution_id:
+        type: string
+      scan_execution_id:
+        type: string
+      status:
+        type: string
+    type: object
   dataprotection.DataItemSecurityFacts:
     properties:
       fields:
@@ -2584,6 +2593,60 @@ paths:
       security:
       - BearerAuth: []
       summary: 读取 Manager mosaic 扫描结果 | Read Manager mosaic scan result
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
+  /runtime/transfer-productions/{execution_id}/basic-scan:
+    post:
+      description: 仅 addp-transfer；无正文和 query。Meta 自行反查同租户 Transfer v3 成功回执，仅识别精确首次新建表；复用统一扫描创建和执行链。重复请求恢复原扫描，不复活失败执行，不授予数据权限
+        | Fixed addp-transfer only; no body or query. Meta resolves same-Tenant successful
+        Transfer v3 evidence and identifies only the exact newly created table through
+        the shared scan pipeline. Replay recovers the original scan, never revives
+        failed executions or grants access
+      parameters:
+      - description: 原 Transfer 执行 UUID | Original Transfer execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaProductionBasicScan'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 确保 PG 成功新成果的基础识别 | Ensure basic identification of a newly committed
+        PG production
       tags:
       - Meta Scan
       x-addp-auth-mode: permission

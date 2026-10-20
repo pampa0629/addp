@@ -31,6 +31,7 @@ func TestProductionReceiptRouteRequiresFixedSystemServiceAndPermission(t *testin
 	const permission = "transfer.production_receipt.read"
 	auth := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
 		"Bearer system":       {ClientID: "addp-system", Permissions: []string{permission}},
+		"Bearer meta":         {ClientID: "addp-meta", Permissions: []string{permission}},
 		"Bearer unprivileged": {ClientID: "addp-system", Permissions: []string{"transfer.task.read"}},
 		"Bearer transfer":     {ClientID: "addp-transfer", Permissions: []string{permission}},
 		"Bearer catalog":      {ClientID: "addp-catalog", Permissions: []string{permission}},
@@ -41,7 +42,7 @@ func TestProductionReceiptRouteRequiresFixedSystemServiceAndPermission(t *testin
 	for _, tc := range []struct {
 		token, query string
 		status       int
-	}{{"", "", 401}, {"transfer", "", 403}, {"catalog", "", 403}, {"unprivileged", "", 403}, {"system", "?tenant_id=8", 400}, {"system", "", 500}} {
+	}{{"", "", 401}, {"transfer", "", 403}, {"catalog", "", 403}, {"unprivileged", "", 403}, {"system", "?tenant_id=8", 400}, {"system", "", 500}, {"meta", "", 500}} {
 		req := httptest.NewRequest(http.MethodGet, path+tc.query, nil)
 		if tc.token != "" {
 			req.Header.Set("Authorization", "Bearer "+tc.token)

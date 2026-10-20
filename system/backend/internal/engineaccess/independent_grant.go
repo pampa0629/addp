@@ -38,24 +38,28 @@ func (s *Service) WithIndependentTargetVerifier(verifier IndependentTargetVerifi
 // SourceGrantView exposes issuance/revocation history, not an access verdict.
 // Do not expose the operator's historical authorization version as a credential.
 type SourceGrantView struct {
-	RequestID            uuid.UUID        `json:"request_id"`
-	GrantedAt            time.Time        `json:"granted_at"`
-	ApprovalMode         string           `json:"approval_mode"`
-	CatalogRequestID     *uuid.UUID       `json:"catalog_request_id"`
-	EngineID             int64            `json:"engine_id,string" swaggertype:"string"`
-	CatalogPath          json.RawMessage  `json:"catalog_path" swaggertype:"object"`
-	ItemFingerprint      string           `json:"item_fingerprint"`
-	BoundaryHash         string           `json:"boundary_hash"`
-	RecipientType        string           `json:"recipient_type"`
-	RecipientID          int64            `json:"recipient_id,string" swaggertype:"string"`
-	Action               string           `json:"action"`
-	ExpiryMode           string           `json:"expiry_mode"`
-	ExpiresAt            *time.Time       `json:"expires_at"`
-	RequirementVersion   int64            `json:"requirement_version,string" swaggertype:"string"`
-	OperatorPrincipalID  int64            `json:"operator_principal_id,string" swaggertype:"string"`
-	OperatorMembershipID int64            `json:"operator_membership_id,string" swaggertype:"string"`
-	Reason               *string          `json:"reason"`
-	Revocation           *GrantRevocation `json:"revocation"`
+	RequestID             uuid.UUID        `json:"request_id"`
+	GrantedAt             time.Time        `json:"granted_at"`
+	ApprovalMode          string           `json:"approval_mode"`
+	CatalogRequestID      *uuid.UUID       `json:"catalog_request_id"`
+	EngineID              int64            `json:"engine_id,string" swaggertype:"string"`
+	CatalogPath           json.RawMessage  `json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint       string           `json:"item_fingerprint"`
+	BoundaryHash          string           `json:"boundary_hash"`
+	RecipientType         string           `json:"recipient_type"`
+	RecipientID           int64            `json:"recipient_id,string" swaggertype:"string"`
+	Action                string           `json:"action"`
+	ExpiryMode            string           `json:"expiry_mode"`
+	ExpiresAt             *time.Time       `json:"expires_at"`
+	RequirementVersion    int64            `json:"requirement_version,string" swaggertype:"string"`
+	OperatorPrincipalID   int64            `json:"operator_principal_id,string" swaggertype:"string"`
+	OperatorMembershipID  int64            `json:"operator_membership_id,string" swaggertype:"string"`
+	Reason                *string          `json:"reason"`
+	Revocation            *GrantRevocation `json:"revocation"`
+	ProducerOwner         *string          `json:"producer_owner,omitempty"`
+	ProductionExecutionID *uuid.UUID       `json:"production_execution_id,omitempty"`
+	IssuerPrincipalID     *int64           `json:"issuer_principal_id,omitempty,string" swaggertype:"string"`
+	IssuerMembershipID    *int64           `json:"issuer_membership_id,omitempty,string" swaggertype:"string"`
 }
 
 func sourceGrantView(row *sourceGrant) SourceGrantView {
@@ -64,7 +68,9 @@ func sourceGrantView(row *sourceGrant) SourceGrantView {
 		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, RequirementVersion: row.RequirementVersion,
-		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason}
+		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
+		ProducerOwner: row.ProducerOwner, ProductionExecutionID: row.ProductionExecutionID,
+		IssuerPrincipalID: row.IssuerPrincipalID, IssuerMembershipID: row.IssuerMembershipID}
 }
 
 type CreateIndependentGrantInput struct {

@@ -334,6 +334,15 @@
       "loadSystemResourcesFailed": "加载系统资源失败"
     },
     "executionDetail": {
+	  "initialAuthorization": {
+	    "pending": "初始读取授权待处理",
+	    "issued": "初始读取授权已签发",
+	    "denied": "初始读取授权未签发",
+	    "pendingDescription": "任务成果已保留，系统正在继续核查授权，无需重新运行任务。",
+	    "issuedDescription": "当前能否读取仍以有效权限及安全规则为准。",
+	    "deniedDescription": "可联系授权管理员按正常流程办理，不影响已生成的任务成果。",
+	    "scanFailedDescription": "基础识别异常，请在元数据模块核查；任务成果已保留，无需重新运行任务。"
+	  },
       "recentVisitTitle": "传输执行",
       "back": "返回",
       "executionDetailTitle": "执行详情 #{id}",

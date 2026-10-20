@@ -28,6 +28,15 @@
         :execution-id="execution.execution_id"
         :show-monitor-link="authStore.hasPermission('monitor.execution.read')"
       />
+	  <el-alert
+	    v-if="initialAuthorizationStatus"
+	    data-testid="initial-authorization-feedback"
+	    :title="t(`transfer.executionDetail.initialAuthorization.${initialAuthorizationStatus}`)"
+	    :description="t(`transfer.executionDetail.initialAuthorization.${initialAuthorizationStatus === 'pending' && execution.metadata?.initial_authorization?.code === 'scan_failed' ? 'scanFailedDescription' : initialAuthorizationStatus + 'Description'}`)"
+	    :type="initialAuthorizationStatus === 'issued' ? 'success' : 'warning'"
+	    :closable="false"
+	    show-icon
+	  />
 
       <template v-if="isContinuousExecution">
         <el-divider>{{ t('transfer.executionDetail.continuousProgress') }}</el-divider>
@@ -238,6 +247,11 @@ const schemaChangeDescription = computed(() => {
 		incompatible: Array.isArray(change.incompatible_fields) && change.incompatible_fields.length > 0 ? change.incompatible_fields.join(', ') : '-'
 	})
 })
+const initialAuthorizationStatus = computed(() => {
+  const status = execution.value?.metadata?.initial_authorization?.status
+  return ['pending', 'issued', 'denied'].includes(status) ? status : ''
+})
+const needsRefresh = result => ['pending', 'running'].includes(result.status) || result.metadata?.initial_authorization?.status === 'pending'
 const isContinuousExecution = computed(() => {
   return Object.keys(continuousMetadata.value).length > 0 || !!execution.value?.metadata?.stop_reason || !!continuousRecovery.value
 })
@@ -285,7 +299,7 @@ const loadExecution = async () => {
     const result = await executionAPI.get(id)
     if (current !== generation) return
     execution.value = result
-    if (['pending', 'running'].includes(result.status)) autoRefreshInterval.value = setTimeout(refreshExecution, 5000)
+    if (needsRefresh(result)) autoRefreshInterval.value = setTimeout(refreshExecution, 5000)
   } catch (error) {
     if (current === generation) ElMessage.error(t('transfer.executionDetail.loadFailed', { error: error.message || error }))
   } finally {
@@ -300,7 +314,7 @@ const refreshExecution = async () => {
     const result = await executionAPI.get(executionId.value)
     if (current !== generation) return
     execution.value = result
-    if (['pending', 'running'].includes(result.status)) autoRefreshInterval.value = setTimeout(refreshExecution, 5000)
+    if (needsRefresh(result)) autoRefreshInterval.value = setTimeout(refreshExecution, 5000)
   } catch (error) {
     if (current !== generation) return
     execution.value = {}

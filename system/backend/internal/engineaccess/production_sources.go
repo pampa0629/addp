@@ -115,6 +115,21 @@ func (r *Repository) observeInitialProduction(ctx context.Context, prepared *pre
 	if r == nil || r.db == nil || prepared == nil {
 		return nil, errInitialProductionEvidence
 	}
+	var result *initialProductionObservation
+	err := r.readCommitted(ctx, func(tx *Repository) error {
+		var err error
+		result, err = tx.queryInitialProduction(ctx, prepared)
+		return err
+	})
+	return result, err
+}
+
+// The same predicates serve the read-only diagnostic and the locked signer;
+// caller owns transaction/qualification, not this query helper.
+func (r *Repository) queryInitialProduction(ctx context.Context, prepared *preparedInitialProduction) (*initialProductionObservation, error) {
+	if r == nil || r.db == nil || prepared == nil {
+		return nil, errInitialProductionEvidence
+	}
 	request, err := initialProductionSources(prepared.production)
 	if err != nil || !reflect.DeepEqual(request.Source, prepared.sources.Source) || request.TenantID != prepared.sources.TenantID ||
 		!reflect.DeepEqual(request.Targets, prepared.sources.Targets) {
@@ -137,7 +152,7 @@ func (r *Repository) observeInitialProduction(ctx context.Context, prepared *pre
 		}
 	}
 	var result *initialProductionObservation
-	err = r.readCommitted(ctx, func(tx *Repository) error {
+	err = func(tx *Repository) error {
 		if err := tx.checkProductionEngines(ctx, request.TenantID, prepared.engineVersions); err != nil {
 			return err
 		}
@@ -165,7 +180,7 @@ func (r *Repository) observeInitialProduction(ctx context.Context, prepared *pre
 			executionIAM: hasCurrentTenantPermission(permissions, request.TenantID, "system.execution_authorization.create", rules.ObservedAt) &&
 				hasCurrentTenantPermission(permissions, request.TenantID, iam.TaskAuthorizationExecutePermission("transfer", "sync"), rules.ObservedAt)}
 		return nil
-	})
+	}(r)
 	if err != nil {
 		return nil, err
 	}

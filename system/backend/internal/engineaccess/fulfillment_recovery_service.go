@@ -37,6 +37,18 @@ func recoveryRequest(actor FulfillmentRuntimeActor, id uuid.UUID, binding shared
 // Caller IAM is current; the original human, recipient and business basis are
 // deliberately historical. Recovery must work after those identities expire.
 func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentRuntimeActor, operation func(*Repository, func() error) error, humanPrincipals ...int64) error {
+	if actor.ClientID != "addp-catalog" {
+		return commonapi.ErrForbidden
+	}
+	return s.withSourceRuntime(ctx, actor.Actor, actor.ClientID, FulfillmentReconcilePermission, operation, humanPrincipals...)
+}
+
+// Fixed source adapters share current machine qualification and IAM lock order.
+// This private helper is not an endpoint selecting arbitrary Client/Permission.
+func (s *Service) withSourceRuntime(ctx context.Context, actor Actor, clientID, permission string, operation func(*Repository, func() error) error, humanPrincipals ...int64) error {
+	if !validActor(actor) || s == nil || s.repository == nil {
+		return commonapi.ErrForbidden
+	}
 	return s.repository.transaction(ctx, func(tx *Repository) error {
 		// Credential rotation locks OAuth Client before Principal. Match that
 		// order; never acquire these locks after request/target arbitration.
@@ -45,7 +57,7 @@ func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentR
 			Status             string
 		}
 		if err := tx.db.WithContext(ctx).Table("system.oauth_clients").Select("service_principal_id, status").
-			Where("client_id = ?", actor.ClientID).Clauses(clause.Locking{Strength: "SHARE"}).Take(&client).Error; err != nil {
+			Where("client_id = ?", clientID).Clauses(clause.Locking{Strength: "SHARE"}).Take(&client).Error; err != nil {
 			return err
 		}
 		// Union service and human principals before any membership/tenant lock.
@@ -81,10 +93,10 @@ func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentR
 				return err
 			}
 			p := principals[actor.PrincipalID]
-			if client.ServicePrincipalID != actor.PrincipalID || client.Status != "active" || service.Name != "addp-catalog" || service.OwnerScope != "platform" ||
+			if client.ServicePrincipalID != actor.PrincipalID || client.Status != "active" || service.Name != clientID || service.OwnerScope != "platform" ||
 				p.PrincipalType != iam.PrincipalTypeServicePrincipal || p.Status != iam.PrincipalStatusActive || p.AuthorizationVersion != actor.AuthorizationVersion ||
 				member.ID != actor.MembershipID || member.Status != iam.TenantMembershipStatusActive || (member.ExpiresAt != nil && !member.ExpiresAt.After(now)) ||
-				tenant.Status != iam.TenantStatusActive || !hasCurrentTenantPermission(rows, actor.TenantID, FulfillmentReconcilePermission, now) {
+				tenant.Status != iam.TenantStatusActive || !hasCurrentTenantPermission(rows, actor.TenantID, permission, now) {
 				return commonapi.ErrForbidden
 			}
 			if !actor.TokenExpiresAt.After(now) {

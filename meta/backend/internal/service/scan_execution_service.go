@@ -15,13 +15,14 @@ import (
 
 // ScanExecutionService 管理 meta 扫描 execution 的创建、执行、查询和取消
 type ScanExecutionService struct {
-	db                *gorm.DB
-	scanService       *ScanService
-	engineService     *EngineService
-	dedupService      *ScanDedupService
-	taskExecutionRepo *commonExecution.TaskExecutionRepository
-	log               *slog.Logger
-	activeLeases      sync.Map
+	db                 *gorm.DB
+	scanService        *ScanService
+	engineService      *EngineService
+	dedupService       *ScanDedupService
+	taskExecutionRepo  *commonExecution.TaskExecutionRepository
+	log                *slog.Logger
+	activeLeases       sync.Map
+	productionReceipts transferProductionReceiptReader
 }
 
 // NewScanExecutionService 创建扫描执行服务

@@ -423,6 +423,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 			metadata = commonModels.JSONMap{}
 		}
 		if values, ok := updates["metadata"].(map[string]interface{}); ok {
+			if _, reserved := values[models.ProductionAuthorizationMetadataKey]; reserved {
+				return fmt.Errorf("initial authorization requires its owner continuation path")
+			}
 			if _, reserved := values[models.TargetProductionMetadataKey]; reserved {
 				return fmt.Errorf("private target production requires its owner write path")
 			}
@@ -430,6 +433,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 				metadata[key] = value
 			}
 		} else if values, ok := updates["metadata"].(commonModels.JSONMap); ok {
+			if _, reserved := values[models.ProductionAuthorizationMetadataKey]; reserved {
+				return fmt.Errorf("initial authorization requires its owner continuation path")
+			}
 			if _, reserved := values[models.TargetProductionMetadataKey]; reserved {
 				return fmt.Errorf("private target production requires its owner write path")
 			}
@@ -458,6 +464,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 
 // FinishExecution 完成执行（设置结束时间和状态）
 func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
+	if _, reserved := resultMetadata[models.ProductionAuthorizationMetadataKey]; reserved {
+		return fmt.Errorf("initial authorization requires its owner continuation path")
+	}
 	if _, reserved := resultMetadata[models.TargetProductionMetadataKey]; reserved {
 		return fmt.Errorf("private target production requires its owner write path")
 	}
@@ -486,6 +495,9 @@ func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.D
 	}
 	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, execErr); changed {
 		updates["error_details"] = errorDetails
+	}
+	if status == models.ExecutionStatusSuccess {
+		setInitialProductionAuthorization(execution, updates, now)
 	}
 
 	// 计算执行时间

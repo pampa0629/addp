@@ -733,6 +733,7 @@
           "engine_access_approval_requirement": "Source Access Approval Requirement",
           "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_grant": "Source Data Grant",
+          "engine_access_initial_grant": "Initial Task Output Grant",
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
@@ -1199,7 +1200,8 @@
         "modes": {
           "independent": "Direct approval",
           "catalog": "Business approval",
-          "mixed": "Direct / business approval"
+          "task_production": "Initial task output grant",
+          "mixed": "Multiple authorization sources"
         },
         "descriptions": {
           "independent": "Approved by a person with independent approval permission and effective engine management delegation. Catalog deployment or cataloging is not required.",

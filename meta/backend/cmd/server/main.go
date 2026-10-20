@@ -113,6 +113,7 @@ func main() {
 
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
+	executionService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource))
 	lineageService := service.NewLineageService(db, engineService)
 	lineageContext, cancelLineage := context.WithCancel(runtimeContext)
 	defer cancelLineage()

@@ -16,7 +16,7 @@ Standard 平台计量目录：000212 将既有 `standard.unit.*` Permission 扩�
 
 > 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；首期 schema 普通表 single 已接入，文件布局与其他消费入口尚未覆盖；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
-PG 新成果初始授权的内部准备消费 Transfer 不可变实际 ReadSet，逐项核验来源／目标引擎版本及 Meta 完整边界；当前源规则、执行 IAM 和目标批准／办理／Grant／Deny 历史在同一只读快照观察，不签发或冻结期限，不把未知来源、已解除限制或空历史解释为首次新建证明。独立产出来源已确认，正式写入与对象连续性仍待接通。标准验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test production-sources"`；新增 exercise 也由默认 engineaccess 门禁自动发现，使用独立操作预算，不延长已有测试的资格期限。
+PG 新成果初始授权的内部准备消费 Transfer 不可变实际 ReadSet，逐项核验来源／目标引擎版本及 Meta 完整边界；当前源规则、执行 IAM 和目标批准／办理／Grant／Deny 历史在同一只读快照观察，不签发或冻结期限，不把未知来源、已解除限制或空历史解释为首次新建证明。正式签发在准备之后沿唯一 Grant 写入链执行，只以已证明的新建提交为资格，不要求跨库保持原物理对象。标准验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test production-sources"`；新增 exercise 也由默认 engineaccess 门禁自动发现，使用独立操作预算，不延长已有测试的资格期限。
 
 Manager 剖析结果的固定同步源检查 `POST /engine-access/read-checks/manager-profile-result` 只接受当前普通第一方／OAuth API User，核验固定 `manager.data_item.read` 与结果实际历史完整 ReadSet 的现行源规则；与预览共享只读快照底座，但不开放委托、Service 或 Resource Ticket。仅返回不可缓存的当次观察时刻，不授予剖析执行权限，不替代 Manager 本地 Security；缺失历史来源由 Manager 拒绝，不用当前视图依赖补造。
 
@@ -61,6 +61,8 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 引擎授权委派管理员内置角色只包含委派读取／创建／撤销、`system.engine.read` 与 `iam.tenant_membership.read`，仅允许 Tenant Scope 的 User；通过正常 IAM 角色分配显式授予，不回填已有账号、不改写其他管理员角色。角色本身不授予数据访问，也不自动生成委派。
 
 源数据授权办理员内置角色 `tenant.source_data_authorizer` 由 000197 发布，组合批准要求读取／初始化、独立只读 Grant 创建／历史读取／撤销及必要的引擎结构和 IAM 接收方候选读取。仅 Tenant Scope 的 User，通过正常角色分配显式安排；没有当前租户授权管理员资格时，仍另须目标引擎的有效管理委派，不提供委派管理、Catalog 业务确认／履约或内容读取。角色发布不改变已有账号、会话、委派或 Grant；已有角色分配权限的管理员给自己分配时沿用 MFA 增强认证，不新增自批旁路。
+
+PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，来源为 `task_production`。迁移 000225 发布仅 `tenant.transfer_runtime` 持有的不可委派、不可自定义 `system.engine_access_initial_grant.execute`，固定 Tenant Service `addp-transfer` 调用 `GET/POST /runtime/initial_production_grants/transfer/:execution_id`。无请求体或自报身份／目标；System 以自身统一 client 反查 Transfer v3 成功产出、完整实际 ReadSet 与 Meta DataItem 边界，锁内重核当前人类来源、执行功能权限、来源 Grant/Deny、期限和目标全部授权历史。成功与唯一 Grant、审计原子提交，拒绝只保存不可变终态；暂时依赖故障返回安全 503、不生成终态。相同原执行只恢复原签发或拒绝，不续期、不复活撤权，历史查询不依赖 Meta 或原人类仍有资格。人类来源与机器签发者分别留痕，不伪造人工批准要求；Transfer 后台续办与 Meta 限定基础补扫已接入，对应 T1／PostgreSQL T2 已通过，新成果自动授权的完整 PG T4 尚待验收。
 
 内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明；正式 Runtime 受理在数据库锁外通过独立 `addp-system` Tenant Service OAuth 反查 Catalog 原责任依据，事务内核验独立办理 Permission。后续签发接口只消费本域已经受理的精确请求，不提供新的独立批准入口。
 

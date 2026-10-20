@@ -30,6 +30,14 @@ func validateManualScanRequestTriggerType(triggerType string) error {
 
 // CreateManualRun 创建手动扫描执行并入队
 func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, userID uint, req *models.ScanRequest) (*commonExecution.TaskExecution, error) {
+	return s.createManualRun(ctx, tenantID, userID, req, nil)
+}
+
+// Only fixed internal adapters can supply verified completed-production
+// provenance. Public manual requests keep their running-parent checks.
+type manualScanProvenance func(*gorm.DB, *commonExecution.TaskExecution) (*commonExecution.TaskExecution, error)
+
+func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, userID uint, req *models.ScanRequest, provenance manualScanProvenance) (*commonExecution.TaskExecution, error) {
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
@@ -123,14 +131,25 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		}
 	}
 
+	var prior *commonExecution.TaskExecution
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := inheritProducedTargetActor(tx, execution, req); err != nil {
+		if provenance != nil {
+			var err error
+			prior, err = provenance(tx, execution)
+			if err != nil || prior != nil {
+				return err
+			}
+		} else if err := inheritProducedTargetActor(tx, execution, req); err != nil {
 			return err
 		}
 		return tx.Create(execution).Error
 	}); err != nil {
 		s.releaseExecutionLock(ctx, lockAcquired, lockKey, execution.ExecutionID, "创建执行失败后释放扫描范围锁失败", "execution_id", execution.ExecutionID)
 		return nil, err
+	}
+	if prior != nil {
+		s.releaseExecutionLock(ctx, lockAcquired, lockKey, execution.ExecutionID, "释放未使用扫描范围锁失败", "execution_id", execution.ExecutionID)
+		return prior, nil
 	}
 
 	return execution, nil

@@ -17,7 +17,7 @@ type ProductionReceipt = client.TransferProductionReceipt
 
 // ReadProductionReceipt godoc
 // @Summary 读取精确产出回执 | Read an exact production receipt
-// @Description 仅供当前 Tenant 的 addp-system 读取 PG Transfer 已成功执行的 v3 产出证据、实际会话来源集合与创建提交事实；false 或 null 不得补造为已证明或长期许可。不代表首次新建资格、Meta 边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system Service may read v3 PG production evidence, actual session sources and the created-and-committed fact. False or null cannot imply proven creation or unbounded permission. Not initial-Grant eligibility, a Meta boundary or data permission; no private configuration or credentials
+// @Description 仅供当前 Tenant 的 addp-system 和 addp-meta 读取 PG Transfer 已成功执行的 v3 产出证据、实际会话来源集合与创建提交事实；false 或 null 不得补造为已证明或长期许可。不代表首次新建资格、Meta 边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system and addp-meta Services may read v3 PG production evidence, actual session sources and the created-and-committed fact. False or null cannot imply proven creation or unbounded permission. Not initial-Grant eligibility, a Meta boundary or data permission; no private configuration or credentials
 // @Tags Runtime
 // @Produce json
 // @Security BearerAuth

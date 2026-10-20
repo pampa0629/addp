@@ -224,7 +224,7 @@ Meta 是数据授权的事实依赖，不是 System 登录、IAM、引擎登记�
 
 #### 5.5.8 任务产出数据与初始使用权
 
-本节为已确认的设计原则，通用初始 Grant 签发闭环尚未实现。任务实际新建业务成果后，默认向可信发起账号签发成果的初始只读 Grant，无需逐任务配置或预先审批产出规则。读取仍须等待实际签发，并按统一源数据授权链校验；任务发起、写入成功、血缘登记或 Meta 扫描成功本身不代替 Grant。
+本节为已确认的设计原则。当前 PG 的 System 初始签发与终态核清、Transfer 后台续办、成功产出限定基础补扫及独立状态反馈已实现，并通过对应 T1／PostgreSQL T2；新成果真实端到端 T4 尚待验收，不能将局部签发验证视为自动授权闭环已完成。任务实际新建业务成果后，默认向可信发起账号签发成果的初始只读 Grant，无需逐任务配置或预先审批产出规则。读取仍须等待实际签发，并按统一源数据授权链校验；任务发起、写入成功、血缘登记或 Meta 扫描成功本身不代替 Grant。
 
 | 结果形态 | 授权处理原则 |
 | --- | --- |
@@ -267,7 +267,7 @@ PG 普通 Transfer 的持久化沿现有执行记录保存私有产出事实：�
 
 上述写入均核验当前租约并串行更新同一执行；锁等待结束后仍须核验期限，迟到旧 attempt 不能补写。普通执行 metadata／终态更新不得覆盖私有产出事实；用户执行详情和 TaskProvider 稳定输出不暴露这些内部证据。不新增执行表、目标物理身份或兼容回填路径；本阶段仍不签发 Grant。
 
-System 读取生产者证据使用独立的最小机器契约，不读取 owner 私有配置、metadata 或数据库。PG Transfer 的 `GET /api/v1/transfer/runtime/executions/{execution_id}/production-receipt` 仅允许当前 Tenant 的 `addp-system` Service 与不可委托、不可租户定制的 `transfer.production_receipt.read`，该权限仅授予 `tenant.system_runtime`。共享 `TransferClient` 按精确执行 UUID 获取已成功终结且同 attempt 已提交的回执，返回实际目标、准备结果、提交时间、重试关联及可信人类来源（存在时）；缺失来源不以 `triggered_by` 或机器身份补造，未提交、失败及不一致的证据不输出成功回执。回执不是首次新建资格或 Grant，不包含凭据、连接、业务内容或来源权限期限，不改变用户执行 DTO／TaskProvider 输出。Meta 授权事实仍仅由 System／Catalog 的原入口读取，Transfer 不因此获得 Meta 授权事实查询权限。System 后续独立核对当前 Meta 边界及全部签发条件；期限只在首次正式签发时冻结。
+生产者证据使用独立的最小机器契约，不读取 owner 私有配置、metadata 或数据库。PG Transfer 的 `GET /api/v1/transfer/runtime/executions/{execution_id}/production-receipt` 仅允许当前 Tenant 的 `addp-system`、`addp-meta` Service 与不可委托、不可租户定制的 `transfer.production_receipt.read`，该权限仅授予 `tenant.system_runtime`、`tenant.meta_runtime`。共享 `TransferClient` 按精确执行 UUID 获取已成功终结且同 attempt 已提交的回执，返回实际目标、准备结果、提交时间、重试关联及可信人类来源（存在时）；缺失来源不以 `triggered_by` 或机器身份补造，未提交、失败及不一致的证据不输出成功回执。回执不是首次新建资格或 Grant，不包含凭据、连接、业务内容或来源权限期限，不改变用户执行 DTO／TaskProvider 输出。Meta 授权事实仍仅由 System／Catalog 的原入口读取，Transfer 不因此获得 Meta 授权事实查询权限。System 后续独立核对当前 Meta 边界及全部签发条件；期限只在首次正式签发时冻结。
 
 System 的内部产出边界准备只接受可信 Tenant 与精确执行 UUID，以共享 client 取得上述回执，再复用现有 Meta 边界解析器核验完整 `single` 目标。候选指纹不是归属证明，原生名称不得拆分或仅按 `full_name` 匹配；返回的类型化路径须与实际提交目标完全相同。跨 owner 调用不持有 System 数据库事务，前后核对本租户 PG 引擎的生命周期及聚合版本；不完整、待刷新或依赖不可用时拒绝准备，不在读取中补扫。准备结果仅为内部当次证据，不是 Runtime 凭证或 Grant，不缓存为许可，不冻结期限，不推导缺失的人类来源，也不因 `created` 或准备成功省略正式签发时的历史、身份、ReadSet、Deny 及边界复核。
 
@@ -282,6 +282,18 @@ System 的内部产出边界准备只接受可信 Tenant 与精确执行 UUID，
 PG Transfer 的私有 `transfer.target-production/v3` 与共享 `transfer.production-receipt/v3` 显式携带 `created_and_committed`。该字段只由同一实际写会话的 Provider 证明产生，在有效执行租约下与首次提交时间及实际 ReadSet 一并冻结；仅 `committed + created` 可以为 true。false 表示未证明，不从准备状态、行数或普通提交标记补齐。重复记录必须匹配全部冻结事实，不允许事后将 false 提升为 true。旧版事实不转换、不补造；System 的初始来源准备必须要求 true，回执本身仍不是 Grant。
 
 物理产出、基础识别和授权签发不是跨模块原子事务。状态应分别反馈；产出或扫描成功不得显示成授权成功，授权失败不得自动重跑计算或删除已产出内容，结果未知先核清原办理，不换编号重复授予。只为授权确定边界时基础识别足够，不因本节给现有业务扫描增加 deep 前置要求。
+
+**自动续办与终态（已确认）。** 物理任务成功后，Meta 基础识别尚未就绪、依赖不可用、网络断连或结果未知保留“任务成功、授权待处理”；后台以同一 Tenant、产出 owner、原执行 UUID 续办，并先核清原结果。暂时故障只重试授权续办，不重跑计算、不重发写入、不删除成果，也不更换原身份或命令。权限不足、有效 Deny、目标已有批准／授权历史、非首次新建、证据矛盾或来源期限已过等明确拒绝属于终态；后台停止，不在权限或组织关系后来改变时自行恢复这一轮初始授权。
+
+终态必须持久化并且不可改写：同一原执行只能恢复原签发或原拒绝，进程重启、回调丢失及并发续办不能把拒绝变为批准，也不能重新计算已签发的期限或恢复撤权。成功结果引用唯一 Grant，仍按该 Grant 的统一读取与撤销链管理；拒绝结果不是 Deny，不阻止管理员以后经正常显式流程批准。未获得可信结果的 HTTP 错误、缺失字段、畸形回执及未分类错误不得伪装成已签发或明确业务拒绝。系统不得因为暂时故障构造新的批准来源、第二套 ACL 或用户 Token 后台通道。
+
+Transfer 仅在本次成功完成事务中，为具备 v3 首次新建提交证明和完整人类来源的 bounded 执行初始化 `initial_authorization` 待办；不回填没有该标记的存量成功执行。该 metadata 只保存投递状态、有限退避进度、封闭原因码及原 Grant 编号引用，不保存权限规则或期限，不作为实际读取依据。现有 Worker 在自身注册有效时独立领取待办，释放数据库锁后通过统一 client 先核清原终态、再续办签发；只在收到正式 pending 响应时请求 Meta 精确补扫。暂时故障保留物理执行 success 与 pending，按 30 秒至 5 分钟有界退避；明确终态停止领取，迟到旧领取不能覆盖新结果。不得因授权待办而重新执行任务、修改目标、删除产出或回写私有产出证明。
+
+System 的最小初始授权终态以 `Tenant + producer_owner + 原 execution UUID` 唯一定位，只有 `issued / denied`，不保存任务配置或第二份 ACL。`issued` 与唯一源 Grant、审计在同一事务提交，`denied` 只保存封闭原因码和裁决时间；暂时故障不生成终态。`task_production` 来源的 Grant 使用 `requirement_version=0` 表示不消费人工批准要求，不伪造版本 1；其原执行、机器签发者及历史人类发起者分别绑定。当前仅固定 `addp-transfer` 的 Tenant Service 和专用 `system.engine_access_initial_grant.execute` 可以续办自己已成功的 PG 产出；实际目标、账号、来源和期限均由 System 反查与裁决，不允许请求自报。该机器 Permission 不授给人类或租户自定义角色，也不是通用 Grant 创建权限。
+
+**成功产出的限定补扫（已确认）。** 首次扫描提交失败而原任务已经成功时，Meta 可用自身 Tenant Service 和统一 Transfer client 反查原执行的成功产出回执，仅为回执中的精确 PG 首次新建成果补做基础识别。请求不得自报目标、主体或创建成功事实，不得扩大到 schema／目录、兄弟表或任意历史任务。扫描归属沿可信回执保留真实人类来源和直接父执行，不复制用户 Token 或执行授权；跨 owner 取证在 Meta 数据库事务外。原手动产物扫描入口仍严格要求父任务处于运行中，不因这个补扫能力放开已结束任务。补扫只建立 Meta 技术事实，不代表授权签发成功。
+
+限定补扫使用 `POST /api/v1/meta/runtime/transfer-productions/{execution_id}/basic-scan`，固定 `addp-transfer` 与现有 `meta.scan_task.execute`，只传原执行 UUID。创建复用 Meta 同一范围解析、执行入队、Worker 和读取隔离；并发／响应丢失恢复同租户原扫描，不重复创建、不复活已经失败的扫描执行。已入队扫描失败时保留其原状态，按 Meta 既有显式恢复约束处理；不能把扫描失败伪装为 System 的终态授权拒绝。该能力是运行时软依赖，不新增 Meta→Transfer 的启动／Ready 前置条件。
 
 物化成果的 Grant 独立管理：来源授权及成员关系只参与初始期限确定，成果签发后不因来源 Grant 撤销、续期或来源成员关系变化自动撤销、续期或缩短。成果仍受自身当前 Grant、Deny、功能权限及已有安全限制约束；本条不解除来源已经要求执行的安全限制，也不把血缘变成许可或第二套级联 ACL。实际读取来源的视图或实时查询继续逐项核验完整 ReadSet，不能冒充独立物化成果。
 
@@ -315,7 +327,7 @@ Service Token 仅进入显式机器契约，不因持有同名 Permission 就可
 | AuthContext | 唯一 v1 Schema；破坏性变化同步 Schema、Go／Python 类型、System 投影及所有消费者，不按客户端保留旧版本 |
 | 源数据授权 | 当前实施与端到端验收限于 PG schema 普通表 single，逐项核验直接／业务批准、Manager 读取及收权；共享协议与持久化约束对其他单项目标的表达能力不等于实际读取接入。MySQL、MongoDB、文件布局及其他消费入口仍待独立闭环，不视为已受 DataItem 授权控制 |
 | Meta 基础识别 | 清单组合识别不代表所有格式已支持必要结构读取；身份、完整性与边界契约须逐格式验证 |
-| 产出数据初始使用权 | 5.5.8 已确定实际新建成果默认向可信发起账号签发初始只读 Grant，使用独立产出来源而不伪造人工批准；资格基准为真实新建并成功提交的逻辑成果，不要求原物理表存活到签发，不引入跨库两阶段提交。期限在首次正式签发时按同源取最长、多源取最短确定，物化成果不做来源撤权级联。PG Provider 已接入创建／写入提交补证及提交前路径复核，运行期间不进行 schema 改名、迁移等结构运维；Transfer 将结果与 ReadSet 冻结到 v3 私有事实并经共享机器回执投影。System 初始来源准备要求已证明的新建提交，复用 Meta 边界、引擎版本及当前规则／历史的只读观察。Go T1、Common／Transfer PostgreSQL T2 与 System 来源观察 T2 已通过；正式签发、触发／状态反馈及新成果 PG T4 尚未接通，现有证据不是许可 |
+| 产出数据初始使用权 | 5.5.8 已确定实际新建成果默认向可信发起账号签发初始只读 Grant，使用独立产出来源而不伪造人工批准；资格基准为真实新建并成功提交的逻辑成果，不要求原物理表存活到签发，不引入跨库两阶段提交。期限在首次正式签发时按同源取最长、多源取最短确定，物化成果不做来源撤权级联。PG Provider 创建／写入提交补证及路径复核、Transfer v3 ReadSet／成功产出回执、System 唯一 Grant／不可变终态、Transfer 后台续办与状态反馈、Meta 精确成功产出基础补扫已接通。Common／System／Meta／Transfer 对应 T1 与 PostgreSQL T2、Transfer 前端门禁已通过；新成果 PG T4 尚待验收。任务成功、扫描成功或局部测试通过均不代替正式 Grant |
 | 列／行授权 | 保留同一 DataItem 上的扩展方向，具体规则和执行接入尚未确定 |
 
 每个实现切片至少验证：可信身份及 Tenant 隔离、默认拒绝／Deny 优先、撤销与到期、原命令幂等与并发、未知结果恢复、实际读取与批准范围一致。DataItem 接入另须覆盖 basic／deep 身份一致、组合不完整拒绝、whole 合法增长可读而越界拒绝、node 新项不继承、Meta 不可用不回退及无 Catalog 的直接批准。

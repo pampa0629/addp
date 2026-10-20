@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { captureIndependentGrant } from '../src/utils/independentGrant'
+import zh from '../src/i18n/zh-cn.json'
+import en from '../src/i18n/en.json'
 
 const path = { engine_id: '2', version: 'catalog.path/v1', segments: [
   { term: 'server', kind: 'server', name: '' }, { term: 'schema', kind: 'namespace', name: 'outdoor' },
@@ -10,6 +12,10 @@ const requirement = { binding, engine_id: '2', catalog_path: path, mode: 'indepe
 const candidates = [{ id: '9007199254740993', name: 'Outdoor reader' }]
 const form = { recipientType: 'user', recipientID: candidates[0].id, expiryMode: 'until_revoked', expiresAt: null, reason: ' Explicit read ' }
 describe('independent read-grant command capture', () => {
+  it('labels production as its own authorization source in both locales', () => {
+    expect(zh.system.engine.dataAuthorization.modes.task_production).toBe('任务产出初始授权')
+    expect(en.system.engine.dataAuthorization.modes.task_production).toBe('Initial task output grant')
+  })
   it('captures immutable lossless identifiers, explicit validity and one exact target', () => {
     const captured = captureIndependentGrant('2', requirement, form, candidates)
     const body = JSON.parse(captured.payload)

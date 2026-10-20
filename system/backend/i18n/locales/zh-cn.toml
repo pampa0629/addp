@@ -301,6 +301,13 @@ other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受�
 [permissions.system.engine_access_grant.revoke.name]
 other = "撤销指定源数据授权"
 
+[permissions.system.engine_access_initial_grant.execute.name]
+other = "续办任务产出初始授权"
+[system.engine_access_initial_grant.pending]
+other = "暂时无法核验初始授权，请稍后核清原结果；不要重新执行任务"
+[permissions.system.engine_access_initial_grant.execute.description]
+other = "仅供 Transfer 当前租户运行身份核验已成功 PG 产出并续办初始只读授权；不提供通用授权管理权"
+
 [permissions.system.engine_access_grant.create.name]
 other = "直接授予源数据读取权限"
 [permissions.system.engine_access_grant.create.description]

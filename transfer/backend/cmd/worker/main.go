@@ -107,8 +107,15 @@ func main() {
 		log.Fatalf("Transfer bounded worker 心跳配置无效: %v", err)
 	}
 	go reporter.Run(ctx)
+	continuation := service.NewProductionAuthorizationContinuation(executionService, systemRuntimeClient, metaClient)
+	continuationDone := make(chan struct{})
+	go func() {
+		defer close(continuationDone)
+		continuation.Run(ctx, registrationDone.IsRegistered, cfg.BoundedClaimInterval)
+	}()
 	logger.L().Info("transfer bounded worker started", "concurrency", cfg.BoundedWorkerConcurrency, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx, registrationDone.IsRegistered)
+	<-continuationDone
 	<-registrationDone.Done()
 	logger.L().Info("transfer bounded worker stopped")
 }

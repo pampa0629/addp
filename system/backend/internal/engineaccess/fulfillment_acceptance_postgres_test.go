@@ -98,6 +98,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		exerciseSourceDenies(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseDenyReleases(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseInitialProductionSources(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
+		exerciseInitialProductionGrants(t, db, service, actor, binding, roles, base.Operator.PrincipalID, newOperator)
 		exerciseCurrentSourceRules(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseIndependentGrantCommands(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		// The following acceptance checks are a new Runtime request phase. Keep

@@ -298,6 +298,13 @@ other = "Execute source-read fulfillment acceptance, issuance and settlement"
 [permissions.system.engine_access_fulfillment.execute.description]
 other = "Allow only the current Catalog tenant runtime to request acceptance, exact-bound issuance, history lookup and closure; human handling eligibility is checked independently and history is not access Allow"
 
+[permissions.system.engine_access_initial_grant.execute.name]
+other = "Continue initial production authorization"
+[system.engine_access_initial_grant.pending]
+other = "Initial authorization is temporarily unavailable; resolve the original result later without rerunning the task"
+[permissions.system.engine_access_initial_grant.execute.description]
+other = "Only the current Tenant Transfer Runtime may verify successful PG production and continue its initial read grant; not general authorization administration"
+
 [permissions.system.engine_access_grant.revoke.name]
 other = "Revoke a specific source-data Grant"
 

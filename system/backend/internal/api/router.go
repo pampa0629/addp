@@ -153,6 +153,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		metaFacts = commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
+		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
 	}
 	if err := RegisterEngineAccessAuthorizationFactsRoutes(api, runtime, &EngineAccessAuthorizationFactsHandler{service: authorizationFactsService}); err != nil {
 		panic(err)
@@ -161,6 +162,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(err)
 	}
 	if err := RegisterEngineAccessFulfillmentGrantRoutes(api, runtime, &EngineAccessFulfillmentGrantHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
+	if err := RegisterEngineAccessInitialGrantRoutes(api, runtime, &EngineAccessInitialGrantHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
 	if err := RegisterEngineAccessHandlingScopeRoutes(api, runtime, &EngineAccessHandlingScopeHandler{

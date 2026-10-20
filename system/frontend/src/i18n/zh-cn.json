@@ -733,6 +733,7 @@
           "engine_access_approval_requirement": "源授权批准要求",
           "engine_access_fulfillment": "源授权办理",
           "engine_access_grant": "源数据授权",
+          "engine_access_initial_grant": "任务产出初始授权",
           "engine_access_deny": "源读取拒绝规则",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
@@ -1199,7 +1200,8 @@
         "modes": {
           "independent": "直接批准",
           "catalog": "业务批准",
-          "mixed": "直接／业务批准"
+          "task_production": "任务产出初始授权",
+          "mixed": "多种授权来源"
         },
         "descriptions": {
           "independent": "由具备独立批准功能权限和本引擎有效管理委派的人员批准，不要求部署 Catalog 或先完成编目。",

@@ -1,15 +1,10 @@
 package client
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"time"
-	"unicode/utf8"
 
 	"github.com/addp/common/authorization"
 	plugin "github.com/addp/common/engine/plugin"
@@ -72,38 +67,13 @@ func (c *TransferClient) ReadProductionReceipt(ctx context.Context, tenantID uin
 		return nil, errors.New("invalid Transfer production receipt request")
 	}
 	path := "/api/v1/transfer/runtime/executions/" + executionID + "/production-receipt"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	token, err := c.tokenSource.Token(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if token == "" {
-		return nil, errors.New("Transfer production receipt requires a Service credential")
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	transport := *c.httpClient
-	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	response, err := transport.Do(req)
-	if err != nil {
-		return nil, &TenantTransportError{Method: req.Method, Path: path, Cause: err}
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, &TenantAPIError{Method: req.Method, Path: path, StatusCode: response.StatusCode}
-	}
-	const limit = 256 << 10
-	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
-	if err != nil || len(body) > limit || !utf8.Valid(body) {
-		return nil, errors.New("invalid Transfer production receipt response size")
-	}
 	var result TransferProductionReceipt
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF || result.Validate() != nil || result.ExecutionID != executionID || result.TenantID != int64(tenantID) {
-		return nil, fmt.Errorf("invalid Transfer production receipt response")
+	transport := newTenantHTTPClient(c.baseURL, c.tokenSource, c.httpClient).withTenantID(tenantID)
+	if err := transport.doStrictJSON(ctx, http.MethodGet, path, &result, 256<<10); err != nil {
+		return nil, err
+	}
+	if result.Validate() != nil || result.ExecutionID != executionID || result.TenantID != int64(tenantID) {
+		return nil, errors.New("invalid Transfer production receipt response")
 	}
 	return &result, nil
 }

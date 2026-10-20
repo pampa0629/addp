@@ -540,7 +540,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				if err := NewRepository(tx).insertSourceGrant(ctx, row); err != nil {
 					return err
 				}
-				return tx.Exec("ALTER TABLE system.engine_access_grants ENABLE TRIGGER trg_source_grant_relation").Error
+				return restoreGrantRelationFixtureTrigger(tx)
 			}); err != nil {
 				t.Fatal(err)
 			}

@@ -9158,6 +9158,128 @@
                 ]
             }
         },
+        "/runtime/initial_production_grants/transfer/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-transfer 当前租户机器；只读、不依赖 Meta 或原人类当前资格，不签发或撤销。found=false 仅表示尚无终态，不等于拒绝或允许 | Fixed current Tenant addp-transfer only; read-only, independent of Meta and historical human qualification; no issuance or withdrawal. found=false means no terminal result, never denial or Allow",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权办理 | Source Access Fulfillment"
+                ],
+                "summary": "核清 PG 原产出的初始授权终态 | Resolve initial authorization history for original PG production",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.InitialProductionLookup"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_initial_grant.execute"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-transfer 当前租户机器；无请求体，按原执行反查证据。返回不可变签发或拒绝终态；暂时故障不生成终态。同执行重试不续期或恢复撤权 | Fixed current Tenant addp-transfer only; no request body, evidence is resolved by original execution. Returns immutable issued or denied history; temporary failures create no terminal outcome. Replay never renews expiry or revives a revoked Grant",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权办理 | Source Access Fulfillment"
+                ],
+                "summary": "续办 PG 产出初始只读授权 | Continue initial read authorization for PG production",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.InitialProductionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_initial_grant.execute"
+                ]
+            }
+        },
         "/runtime/module-log-source-observations": {
             "post": {
                 "security": [
@@ -14086,6 +14208,64 @@
                 }
             }
         },
+        "authorization.InitialProductionGrant": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string"
+                },
+                "granted_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.InitialProductionLookup": {
+            "type": "object",
+            "properties": {
+                "found": {
+                    "type": "boolean"
+                },
+                "result": {
+                    "$ref": "#/definitions/authorization.InitialProductionResult"
+                }
+            }
+        },
+        "authorization.InitialProductionResult": {
+            "type": "object",
+            "properties": {
+                "denial_code": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "grant": {
+                    "$ref": "#/definitions/authorization.InitialProductionGrant"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "producer_owner": {
+                    "type": "string"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "authorization.OrganizationContext": {
             "type": "object",
             "properties": {
@@ -15351,6 +15531,14 @@
                 "granted_at": {
                     "type": "string"
                 },
+                "issuer_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "issuer_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
@@ -15361,6 +15549,12 @@
                 "operator_principal_id": {
                     "type": "string",
                     "example": ""
+                },
+                "producer_owner": {
+                    "type": "string"
+                },
+                "production_execution_id": {
+                    "type": "string"
                 },
                 "reason": {
                     "type": "string"

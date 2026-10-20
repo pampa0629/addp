@@ -169,3 +169,26 @@ func TestProducedScanFeedbackExposesOnlyStableFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestInitialAuthorizationFeedbackExposesNoPrivateDeliveryOrGrantFacts(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	for _, status := range []string{"pending", "denied", "issued"} {
+		item := transferResponseFixture()
+		id := "00000000-0000-4000-8000-000000000001"
+		state := models.ProductionAuthorization{SchemaVersion: "transfer.initial-authorization/v1", Status: status, Attempts: 3, NextAttemptUnix: 123, Code: "scan_pending"}
+		if status == "issued" {
+			state.GrantRequestID = id
+		}
+		item.Metadata[models.ProductionAuthorizationMetadataKey] = state
+		response, err := projectExecution(c, item)
+		if err != nil || response.Metadata.InitialAuthorization == nil || response.Metadata.InitialAuthorization.Status != status {
+			t.Fatal("lost initial authorization feedback", response, err)
+		}
+		body, _ := json.Marshal(response.Metadata.InitialAuthorization)
+		for _, private := range []string{"attempts", "next_attempt_unix", "grant_request_id", "schema_version", id} {
+			if strings.Contains(string(body), private) {
+				t.Fatalf("private continuation fact leaked: %s", body)
+			}
+		}
+	}
+}

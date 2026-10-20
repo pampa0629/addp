@@ -133,7 +133,7 @@ case "$TEST_FILTER" in
         ;;
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
-        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^initial_production_observes_actual_sources_and_persistent_target_history_without_issuing$'
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(initial_production_observes_actual_sources_and_persistent_target_history_without_issuing|initial_production_grant_terminal_lifecycle)$'
         ;;
     engine-deployments)
         case "$PACKAGE_FILTER" in
