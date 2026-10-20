@@ -9,6 +9,7 @@ import (
 
 	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/monitor/internal/resourcequery"
+	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,7 +34,9 @@ import (
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.resource_observation.read"]
 // @Router /platform/engine_resource_observations [get]
-func (h *ResourceObservationHandler) EngineInstant(c *gin.Context) { h.engineResources(c,false,false) }
+func (h *ResourceObservationHandler) EngineInstant(c *gin.Context) {
+	h.engineResources(c, false, false)
+}
 
 // EngineSummaries godoc
 // @Summary 读取当前页 PostgreSQL 资源摘要 | Read current-page PostgreSQL summaries
@@ -55,7 +58,9 @@ func (h *ResourceObservationHandler) EngineInstant(c *gin.Context) { h.engineRes
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.resource_observation.read"]
 // @Router /platform/engine_resource_summaries [get]
-func (h *ResourceObservationHandler) EngineSummaries(c *gin.Context) { h.engineResources(c,false,true) }
+func (h *ResourceObservationHandler) EngineSummaries(c *gin.Context) {
+	h.engineResources(c, false, true)
+}
 
 // EngineTrend godoc
 // @Summary 读取当前 PostgreSQL 容器段趋势 | Read current PostgreSQL container trends
@@ -80,20 +85,53 @@ func (h *ResourceObservationHandler) EngineSummaries(c *gin.Context) { h.engineR
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.resource_observation.read"]
 // @Router /platform/engine_resource_trends [get]
-func (h *ResourceObservationHandler) EngineTrend(c *gin.Context) { h.engineResources(c,true,false) }
+func (h *ResourceObservationHandler) EngineTrend(c *gin.Context) { h.engineResources(c, true, false) }
 
-func (h *ResourceObservationHandler) engineResources(c *gin.Context,trend,summary bool) {
-	q,err:=url.ParseQuery(c.Request.URL.RawQuery)
-	valid:=err==nil && len(c.Request.URL.RawQuery)<=4096 && c.Request.ContentLength==0 && len(c.Request.TransferEncoding)==0
-	if summary { valid=valid && q.Get("deployment_ids")!="" } else { valid=valid && q.Get("deployment_id")!="" && q.Get("metrics")!="" }
-	for key,values:=range q {
-		if len(values)!=1 || values[0]=="" || (summary && key!="deployment_ids") || (!summary && key!="deployment_id" && key!="metrics" && (!trend || (key!="start" && key!="end"))) { valid=false }
+func (h *ResourceObservationHandler) engineResources(c *gin.Context, trend, summary bool) {
+	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+	valid := err == nil && len(c.Request.URL.RawQuery) <= 4096 && c.Request.ContentLength == 0 && len(c.Request.TransferEncoding) == 0
+	if summary {
+		valid = valid && q.Get("deployment_ids") != ""
+	} else {
+		valid = valid && q.Get("deployment_id") != "" && q.Get("metrics") != ""
 	}
-	var ids,keys []string; var start,end time.Time
-	if summary { ids=strings.Split(q.Get("deployment_ids"),",") } else { ids=[]string{q.Get("deployment_id")}; keys=strings.Split(q.Get("metrics"),",") }
-	if trend { start,err=time.Parse(time.RFC3339,q.Get("start")); if err!=nil { valid=false }; end,err=time.Parse(time.RFC3339,q.Get("end")); if err!=nil { valid=false } }
-	if !valid { resourceError(c,resourcequery.ErrInvalid); return }
-	principal,ok:=auth.PrincipalIDFromGin(c); if !ok { c.Status(http.StatusUnauthorized); return }
-	value,err:=h.service.EngineResources(c.Request.Context(),strconv.FormatUint(uint64(principal),10),targetToken(c),ids,keys,start,end,trend,summary)
-	if err!=nil { resourceError(c,err); return }; c.JSON(http.StatusOK,value)
+	for key, values := range q {
+		if len(values) != 1 || values[0] == "" || (summary && key != "deployment_ids") || (!summary && key != "deployment_id" && key != "metrics" && (!trend || (key != "start" && key != "end"))) {
+			valid = false
+		}
+	}
+	var ids, keys []string
+	var start, end time.Time
+	if summary {
+		ids = strings.Split(q.Get("deployment_ids"), ",")
+	} else {
+		ids = []string{q.Get("deployment_id")}
+		keys = strings.Split(q.Get("metrics"), ",")
+	}
+	if trend {
+		start, err = time.Parse(time.RFC3339, q.Get("start"))
+		if err != nil {
+			valid = false
+		}
+		end, err = time.Parse(time.RFC3339, q.Get("end"))
+		if err != nil {
+			valid = false
+		}
+	}
+	if !valid {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	principal, ok := auth.PrincipalIDFromGin(c)
+	if !ok {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	var value service.EngineResourceResponse
+	value, err = h.service.EngineResources(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids, keys, start, end, trend, summary)
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, value)
 }
