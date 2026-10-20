@@ -277,8 +277,8 @@ SUITES: Mapping[str, Suite] = {
             ("manager", "MANAGER_URL"),
         ),
     ),
-    "graph-falkordb-protection": Suite(
-        command=(sys.executable, "scripts/test/graph-falkordb-protection-online.py"),
+    "graph-protection": Suite(
+        command=(sys.executable, "scripts/test/graph-protection-online.py"),
         services=tuple((owner, owner.upper() + "_URL") for owner in (
             "gateway", "system", "meta", "security", "graph", "manager", "develop", "service", "transfer",
         )),

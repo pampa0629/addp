@@ -398,8 +398,8 @@ func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
 	if !slices.Equal(graphDevelopReaderPermissions, expectedDevelop) {
 		t.Fatalf("Develop reader must have exactly the approved five permissions: %v", graphDevelopReaderPermissions)
 	}
-	permissions, err := suitePermissions("graph-falkordb-protection")
-	if err != nil || !slices.Equal(permissions, []string{"graph.graph.read"}) || !needsEngineProvisioner("graph-falkordb-protection") {
+	permissions, err := suitePermissions("graph-protection")
+	if err != nil || !slices.Equal(permissions, []string{"graph.graph.read"}) || !needsEngineProvisioner("graph-protection") {
 		t.Fatalf("Graph reader must have only graph.graph.read: %v %v", permissions, err)
 	}
 	for _, forbidden := range []string{"system.engine.read", "system.engine_access_grant.create", "system.execution_authorization.create", "develop.data_read.execute"} {
@@ -410,7 +410,7 @@ func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
 	if slices.Contains(graphProtectionOutsiderPermissions, "graph.graph.read") || slices.Contains(permissions, "graph.graph.update") {
 		t.Fatal("Graph fixture mixed reader, outsider or public-state authority")
 	}
-	values := consumerEnvironment("graph-falkordb-protection", 2, "private-access", "private-password")
+	values := consumerEnvironment("graph-protection", 2, "private-access", "private-password")
 	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
 		t.Fatal("Graph reader credentials are not bound to the disposable User")
 	}

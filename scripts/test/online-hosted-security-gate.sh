@@ -2,7 +2,7 @@
 # Disposable Security masking and owner protection acceptance on GitHub Hosted.
 # ADDP_ONLINE_SUITES=security-mysql-owner-protection
 # ADDP_ONLINE_SUITES=security-plaintext-access
-# ADDP_ONLINE_SUITES=graph-falkordb-protection
+# ADDP_ONLINE_SUITES=graph-protection
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -11,19 +11,23 @@ ONLINE_SUITE=${ONLINE_SUITE_INPUT:-}
 case "$ONLINE_SUITE" in
   security-mysql-owner-protection) INITIALIZER_SCRIPT=security-mysql-owner-protection-online.py ;;
   security-plaintext-access) INITIALIZER_SCRIPT=security-plaintext-access-online.py ;;
-  graph-falkordb-protection) INITIALIZER_SCRIPT= ;;
+  graph-protection) INITIALIZER_SCRIPT= ;;
   *) echo 'Unsupported Hosted Security suite' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
-  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
+if [ "$ONLINE_SUITE" = graph-protection ]; then
+  case "${ADDP_ONLINE_GRAPH_ENGINE:-}" in
+    falkordb|neo4j) ;;
+    *) echo 'Graph acceptance requires ADDP_ONLINE_GRAPH_ENGINE=falkordb|neo4j' >&2; exit 1 ;;
+  esac
+  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
   HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online addp-platform)
 fi
 compose_graph() {
   docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/scripts/test/docker-compose.graph-protection-t4.yml" "$@"
 }
 stop_online_fixture() {
-  if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  if [ "$ONLINE_SUITE" = graph-protection ]; then
     local status=0 container
     for container in addp-graph-online-upstreams registry; do
       if docker container inspect "$container" >/dev/null 2>&1; then
@@ -31,14 +35,14 @@ stop_online_fixture() {
       fi
       if docker container inspect "$container" >/dev/null 2>&1; then status=1; fi
     done
-    run_logged python3 business/scripts/online-graph-falkordb-fixture.py stop || status=1
+    run_logged python3 business/scripts/online-graph-fixture.py stop || status=1
     return "$status"
   else
     run_logged bash business/scripts/online-security-owner-fixture.sh stop
   fi
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ]; then
   stop_online_application() {
     local status=0 remaining kind
     run_logged compose_graph down --remove-orphans --volumes || status=1
@@ -75,19 +79,19 @@ while IFS= read -r module; do
 done < <(git ls-files -- 'go.mod' '**/go.mod')
 [ "${#go_modules[@]}" -gt 0 ] || fail 'Security Hosted checkout has no tracked Go modules'
 run_logged go work init "${go_modules[@]}"
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ]; then
   run_logged compose_graph config --quiet
 fi
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
-  run_logged python3 business/scripts/online-graph-falkordb-fixture.py start
+if [ "$ONLINE_SUITE" = graph-protection ]; then
+  run_logged python3 business/scripts/online-graph-fixture.py start
 else
   run_logged bash business/scripts/online-security-owner-fixture.sh start
 fi
 application_owned=1
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ]; then
   export CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"
   run_logged docker run -d --name registry -p 127.0.0.1:5001:5000 registry:2
   registry_ready=0
@@ -117,17 +121,24 @@ else
   done
 fi
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ]; then
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2" --wait-protection-owners develop,graph,manager,service,transfer' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 else
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 fi
 source "$IDENTITY_ENV"
-if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ]; then
   run_logged python3 scripts/test/online-engine-registration.py \
-    --descriptor "$ADDP_ONLINE_SECRET_DIR/graph-falkordb.json" --output "$ENGINE_RESULT_ENV"
+    --descriptor "$ADDP_ONLINE_SECRET_DIR/graph-target.json" --output "$ENGINE_RESULT_ENV"
   source "$ENGINE_RESULT_ENV"
   export ADDP_ONLINE_TEST_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
+    run_logged python3 scripts/test/online-engine-registration.py \
+      --descriptor "$ADDP_ONLINE_SECRET_DIR/graph-control.json" --output "$ADDP_ONLINE_SECRET_DIR/graph-control.env"
+    source "$ADDP_ONLINE_SECRET_DIR/graph-control.env"
+    export ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+    [ "$ADDP_ONLINE_TEST_ENGINE_ID" != "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" ] || fail 'Neo4j requires independent engine instances'
+  fi
 else
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_SECRET_DIR/security-postgres.json" --output "$ENGINE_RESULT_ENV"

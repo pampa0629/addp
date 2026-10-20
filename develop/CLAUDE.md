@@ -486,7 +486,7 @@ continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限
 
 FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authorization、PreparedGraphQuery、共享图结果与保护门禁，必须显式传递目标 graph locator；无需先创建 Graph 知识图谱实例。`make test-common-falkordb` 的独占真实引擎场景调用 DevExecutor 正式 query 分支，验证执行期连接、表格／图结果、类型化参数、写语句拒绝及受保护目标零结果。该 T2 不是登录／Gateway／浏览器 Hosted T4。支持版本与本地只读语法边界以引擎插件和技术栈规范为准。
 
-普通账号查询工作台 T4 纳入既有 `graph-falkordb-protection` Hosted suite 的 v3 契约，使用独立的五 Permission Develop User；Graph 原有账号仍仅持 `graph.graph.read`。两个浏览器阶段均通过正式登录、真实 Meta 图选择、preflight、execution 创建及本人结果轮询验证，不能以 API 直接执行替代工作台操作。纳管前覆盖图/表视图与文本/整数参数，纳管后覆盖 preparation 保护拒绝、零结果与同引擎未纳管图成功；报告必须绑定同一 User、Tenant、Engine 和两次实际 execution，并保留四张截图。入口、必需证据与销毁边界见 `graph/CLAUDE.md`；最小确定性验证为 `make test-security-online-runner` 和 `make test-module MODULE=system GO_ONLY=1`，真实 T4 独立报告，不将代码落地计为通过。
+普通账号查询工作台 T4 纳入既有 `graph-protection` Hosted suite 的 v3 契约，使用独立的五 Permission Develop User；Graph 原有账号仍仅持 `graph.graph.read`。两个浏览器阶段均通过正式登录、真实 Meta 图选择、preflight、execution 创建及本人结果轮询验证，不能以 API 直接执行替代工作台操作。纳管前覆盖图/表视图与文本/整数参数，纳管后覆盖 preparation 保护拒绝、零结果与同引擎未纳管图成功；报告必须绑定同一 User、Tenant、Engine 和两次实际 execution，并保留四张截图。入口、必需证据与销毁边界见 `graph/CLAUDE.md`；最小确定性验证为 `make test-security-online-runner` 和 `make test-module MODULE=system GO_ONLY=1`，真实 T4 独立报告，不将代码落地计为通过。
 
 2026-10-17 原值查询与历史保护：develop/query 消费当前用户显式获批的原值范围。执行记录只保存默认脱敏预览；当次获权结果仅在同一 Backend 有界内存中暂存，通过独立 result 接口每次按当前用户及本地投影重判。历史详情和列表始终默认保护，原值需要重新执行查询。暂存最多五分钟，容量淘汰或重启后不恢复。旧 protected_query_history 通过 Develop 数据迁移移除。通用 Observe、Monitor、TaskProvider 与导出不暴露私有暂存；Notebook 的交互请求继续按当前 session 主体消费统一保护。工作台在暂存或授权截止时清空展示并复核。旧 Hosted v5 只代表旧历史规则，当前规范 10.2 的 T1/T2/T3/T4 须分别验证。
 

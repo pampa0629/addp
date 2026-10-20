@@ -10,10 +10,29 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-SUITE = importlib.import_module('scripts.test.graph-falkordb-protection-online')
+SUITE = importlib.import_module('scripts.test.graph-protection-online')
 
 
 class GraphProtectionOnlineTest(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_native_targets_preserve_catalog_and_reject_shared_neo4j_instance(self):
+        for kind, control_id in (("falkordb", 13), ("neo4j", 14)):
+            with self.subTest(engine=kind), patch.dict(SUITE.os.environ, {
+                'ADDP_ONLINE_GRAPH_ENGINE': kind, 'ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID': str(control_id)
+            }):
+                target, control = SUITE.target_paths(13)
+                self.assertEqual((target['engine_id'], control['engine_id']), (13, control_id))
+                self.assertEqual(target['names'], ['neo4j', 'graph'] if kind == 'neo4j' else ['graph_protection_fixture'])
+                self.assertEqual(target['catalog_path']['segments'][-1]['name'], target['names'][-1])
+        with patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j', 'ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID': '13'}):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'independent'): SUITE.target_paths(13)
+        with patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'unknown'}):
+            with self.assertRaises(SUITE.SuiteError): SUITE.target_paths(13)
+
     def test_develop_browser_requires_its_own_five_permissions_and_both_protection_phases(self):
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
@@ -23,23 +42,23 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                            'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret',
                            'ADDP_ONLINE_TEST_USER_PASSWORD': 'graph-password'}
             def launch(command, **kwargs):
-                self.assertIn('e2e/online/develop-falkordb-query.spec.js', command)
+                self.assertIn('e2e/online/develop-graph-query.spec.js', command)
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', kwargs['env'])
                 self.assertEqual(kwargs['env']['ADDP_ONLINE_GRAPH_DEVELOP_USERNAME'], 'developer')
-                expected = json.loads(kwargs['env']['ADDP_ONLINE_DEVELOP_FALKORDB_EXPECTATIONS'])
-                self.assertEqual(expected, dict(run_id='develop-run', tenant_id='2', principal_id='5', engine_id=13, phase=phase))
-                payload = dict(expected, schema_version='addp.develop-falkordb-query-browser/v1', result='passed',
+                expected = json.loads(kwargs['env']['ADDP_ONLINE_DEVELOP_GRAPH_EXPECTATIONS'])
+                self.assertEqual(expected, dict(run_id='develop-run', tenant_id='2', principal_id='5', engine_id=13, phase=phase, engine_type='falkordb', targets=SUITE.target_paths(13)))
+                payload = dict(expected, schema_version='addp.develop-graph-query-browser/v1', result='passed',
                                permissions=sorted(SUITE.DEVELOP_PERMISSIONS), graph_nodes=3, graph_relationships=2, graph_rows=2,
                                graph_canvas=True, browser_errors=0, failed_business_responses=0, unexpected_writes=0,
                                anonymous_refresh_401=1, execution_ids=['71a09155-b1ec-4ae4-af2f-6689237a62f9', 'e2429cf6-a201-4ba2-8a0b-cfeff00365ca'])
-                names = ('graph', 'table') if phase == 'unmanaged' else ('protected', 'control')
-                if phase == 'unmanaged': payload.update(typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+                names = ('graph', 'table', *('theme-' + mode for mode in ('light', 'dark', 'blue', 'purple'))) if phase == 'unmanaged' else ('protected', 'control')
+                if phase == 'unmanaged': payload.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
                 else: payload.update(protection_required=True, protected_result_absent=True, protection_stage='preparation', control_readable=True)
                 payload.update(mutation)
-                Path(kwargs['env']['ADDP_ONLINE_DEVELOP_FALKORDB_REPORT']).write_text(json.dumps(payload))
+                Path(kwargs['env']['ADDP_ONLINE_DEVELOP_GRAPH_REPORT']).write_text(json.dumps(payload))
                 if screenshots:
-                    for name in names: (artifacts / f'develop-falkordb-{name}-console.png').write_bytes(b'unit-test-screenshot')
+                    for name in names: (artifacts / f'develop-graph-{name}-console.png').write_bytes(b'unit-test-screenshot')
                 return type('Process', (), {'returncode': 0})()
             for phase in ('unmanaged', 'protected'):
                 negative = {'typed_parameters': False} if phase == 'unmanaged' else {'protected_result_absent': False}
@@ -77,12 +96,12 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                            'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret',
                            'ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN': 'outsider-secret'}
             def launch(command, **kwargs):
-                self.assertIn('e2e/online/graph-falkordb-protection.spec.js', command)
+                self.assertIn('e2e/online/graph-protection.spec.js', command)
                 self.assertEqual(kwargs['cwd'].name, 'frontend')
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
-                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17})
-                payload = dict(expected, schema_version='addp.graph-falkordb-protection-browser/v3', result='passed',
+                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb'})
+                payload = dict(expected, schema_version='addp.graph-protection-browser/v3', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
                                browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
                                public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
@@ -104,8 +123,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     ({'public_switch_disabled': False}, True), ({'browser_errors': 1}, True),
                     ({'release_assets': False}, True), ({'deep_link_reload': False}, True),
                     ({'theme_modes': ['dark']}, True), ({'theme_canvas_pixels': False}, True), ({'theme_typography': False}, True),
-                    ({'schema_version': 'addp.graph-falkordb-protection-browser/v1'}, True),
-                    ({'schema_version': 'addp.graph-falkordb-protection-browser/v2'}, True),
+                    ({'schema_version': 'addp.graph-protection-browser/v1'}, True),
+                    ({'schema_version': 'addp.graph-protection-browser/v2'}, True),
                     ({'_diagnostics': None}, True), ({'_diagnostics': {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': [{'type': 'warning'}]}}, True),
                     ({}, False), ({}, 'partial')):
                 for path in artifacts.glob('*.png'): path.unlink()
@@ -132,7 +151,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     self.assertEqual(SUITE.main(), 1 if failure else 0)
                 report = dispatcher._parse_stage_report('scenario', stdout.getvalue())
                 self.assertEqual(report['passed'], not failure)
-                self.assertEqual(report, json.loads((Path(directory) / 'graph-falkordb-protection.json').read_text()))
+                self.assertEqual(report, json.loads((Path(directory) / 'graph-protection.json').read_text()))
                 for secret in ('reader-secret', 'outsider-secret', 'preparer-secret'):
                     self.assertNotIn(secret, stdout.getvalue())
 

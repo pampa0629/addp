@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { graphCanvasHasThemePixels } from '../graph-theme.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login, selectSearchResult } from './transfer-browser-support.js'
@@ -13,8 +14,8 @@ const permissions = ['develop.task.read', 'develop.task.execute', 'develop.data_
 const graphQuery = 'MATCH (a:Person)-[r:Link]->(b:Person) RETURN a,r,b LIMIT 10'
 const textValue = "中文' RETURN 1 //"
 
-test('ordinary reader executes FalkorDB Cypher through the real Develop workbench and Security boundary', async ({ page }) => {
-  const expected = JSON.parse(required('ADDP_ONLINE_DEVELOP_FALKORDB_EXPECTATIONS'))
+test('ordinary reader executes native Cypher through the real Develop workbench and Security boundary', async ({ page }) => {
+  const expected = JSON.parse(required('ADDP_ONLINE_DEVELOP_GRAPH_EXPECTATIONS'))
   expect(['unmanaged', 'protected']).toContain(expected.phase)
   const errors = [], failed = [], writes = [], executionIDs = []
   let businessStarted = false, anonymousRefresh = 0
@@ -45,16 +46,21 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: new Set(permissions)
   })
   await api.dispose()
-  expect((await json(engines, 'Develop engine options')).some(engine => engine.id === expected.engine_id && engine.engine_type === 'falkordb')).toBe(true)
+  const options = await json(engines, 'Develop engine options')
+  for (const target of expected.targets) expect(options.some(engine => engine.id === target.engine_id && engine.engine_type === expected.engine_type)).toBe(true)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const resultTable = frame.locator('.query-result .result-table.el-table')
-  await expect(frame.locator('.engine-select')).toContainText('Hosted synthetic FalkorDB')
   await expect(frame.locator('.toolbar-primary .el-tag')).toHaveText('CYPHER')
   await expect(frame.locator('.toolbar-actions').getByRole('button', { name: /保存查询|Save Query/ })).toHaveCount(0)
-  const screenshot = name => page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `develop-falkordb-${name}-console.png`) })
+  const screenshot = name => page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `develop-graph-${name}-console.png`) })
 
-  async function selectGraph(name) {
-    await selectSearchResult(frame.locator('.catalog-panel .resource-tree-picker'), name, name)
+  async function selectGraph(index) {
+    const target = expected.targets[index]
+    const engine = options.find(engine => engine.id === target.engine_id)
+    await frame.locator('.engine-select').click()
+    await frame.getByRole('option', { name: new RegExp(engine.name) }).click()
+    await expect(frame.locator('.engine-select')).toContainText(engine.name)
+    await selectSearchResult(frame.locator('.catalog-panel .resource-tree-picker'), target.names.at(-1), target.names.at(-1))
   }
   async function edit(query) {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -63,7 +69,7 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     await page.keyboard.press('ControlOrMeta+A')
     await page.keyboard.press('ControlOrMeta+V')
   }
-  async function execute(query, graphName, parameterized = false) {
+  async function execute(query, targetIndex, parameterized = false) {
     const analyzed = page.waitForResponse(response => {
       if (new URL(response.url()).pathname !== '/api/v1/develop/query-preflight' || response.request().method() !== 'POST') return false
       const body = response.request().postDataJSON()
@@ -89,10 +95,11 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     const body = response.request().postDataJSON()
     expect(body.content.query_type).toBe('cypher')
     expect(body.content.query).toBe(query)
-    expect(body.execution_config.engine_id).toBe(expected.engine_id)
+    const target = expected.targets[targetIndex]
+    expect(body.execution_config.engine_id).toBe(target.engine_id)
     const locator = new URL(body.content.target_locator)
     expect(locator.hostname).toBe('engine')
-    expect(decodeURIComponent(locator.pathname)).toBe(`/${expected.engine_id}/path/${graphName}`)
+    expect(decodeURIComponent(locator.pathname)).toBe(`/${target.engine_id}/path/${target.names.join('/')}`)
     expect(locator.searchParams.get('type')).toBe('graph')
     if (parameterized) {
       expect(body.content.query_parameters.map(({ name, type, default: value }) => ({ name, type, value }))).toEqual([
@@ -121,11 +128,22 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     await expect(frame.locator('.graph-result-view .graph-toolbar')).toContainText('2')
     await screenshot(name)
   }
-  await selectGraph('graph_protection_fixture')
+  await selectGraph(0)
   await edit(graphQuery)
   let phaseEvidence
   if (expected.phase === 'unmanaged') {
-    await verifyGraph(await execute(graphQuery, 'graph_protection_fixture'), 'graph')
+    await verifyGraph(await execute(graphQuery, 0), 'graph')
+    const themes = ['light', 'dark', 'blue', 'purple']
+    for (const [index, label] of ['浅色模式', '深色模式', '蓝色模式', '紫色模式'].entries()) {
+      const mode = themes[index]
+      await page.getByRole('button', { name: /^当前主题:/ }).click()
+      await page.getByRole('menuitem', { name: label, exact: true }).click()
+      await expect.poll(() => frame.locator('html').evaluate(element => ({
+        dark: element.classList.contains('dark'), blue: element.classList.contains('blue'), purple: element.classList.contains('purple')
+      }))).toEqual({ dark: mode !== 'light', blue: mode === 'blue', purple: mode === 'purple' })
+      await expect.poll(() => frame.locator('.graph-result-view .graph-canvas').evaluate(graphCanvasHasThemePixels)).toBe(true)
+      await screenshot(`theme-${mode}`)
+    }
     await frame.locator('.result-actions .el-radio-button').filter({ hasText: /^(表格|Table)$/ }).click()
     await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(2)
     const tableQuery = 'RETURN $text AS text, $number AS number'
@@ -142,16 +160,16 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
       await parameter.locator('.parameter-default-scalar .el-input__inner').fill(value)
     }
     await frame.getByRole('button', { name: '关闭查询参数面板' }).click()
-    const typed = await execute(tableQuery, 'graph_protection_fixture', true)
+    const typed = await execute(tableQuery, 0, true)
     expect(typed.status).toBe('success')
     expect(typed.metadata.result.result_kind).toBe('table')
     expect(typed.metadata.result.summary.preview_rows).toEqual([{ text: textValue, number: 7 }])
     await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(1)
     await expect(resultTable).toContainText(textValue)
     await screenshot('table')
-    phaseEvidence = { typed_parameters: true, table_rows: 1, table_visible: true, graph_table_visible: true }
+    phaseEvidence = { theme_modes: themes, theme_canvas_pixels: true, typed_parameters: true, table_rows: 1, table_visible: true, graph_table_visible: true }
   } else {
-    const denied = await execute(graphQuery, 'graph_protection_fixture')
+    const denied = await execute(graphQuery, 0)
     expect(denied.status).toBe('failed')
     expect(denied.metadata || {}).not.toHaveProperty('result')
     expect(denied.error_details.code).toBe('develop.query.protection_required')
@@ -160,16 +178,16 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     await expect(resultTable).toHaveCount(0)
     await expect(frame.locator('.graph-result-view')).toHaveCount(0)
     await screenshot('protected')
-    await selectGraph('graph_protection_control')
-    await verifyGraph(await execute(graphQuery, 'graph_protection_control'), 'control')
+    await selectGraph(1)
+    await verifyGraph(await execute(graphQuery, 1), 'control')
     phaseEvidence = { protection_required: true, protected_result_absent: true, protection_stage: 'preparation', control_readable: true }
   }
   expect(writes).toEqual([])
   expect(failed).toEqual([])
   expect(errors).toEqual([])
   expect(anonymousRefresh).toBeLessThanOrEqual(1)
-  writeFileSync(required('ADDP_ONLINE_DEVELOP_FALKORDB_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.develop-falkordb-query-browser/v1', result: 'passed', permissions,
+  writeFileSync(required('ADDP_ONLINE_DEVELOP_GRAPH_REPORT'), JSON.stringify({
+    ...expected, schema_version: 'addp.develop-graph-query-browser/v1', result: 'passed', permissions,
     graph_nodes: 3, graph_relationships: 2, graph_rows: 2, graph_canvas: true, ...phaseEvidence,
     execution_ids: executionIDs, browser_errors: 0, failed_business_responses: 0, unexpected_writes: 0,
     anonymous_refresh_401: anonymousRefresh

@@ -2516,54 +2516,54 @@ def validate_local_sgm_profile(repository: Path) -> None:
             raise RegistrationError("private local SGM must not execute in GitHub Actions")
 
 
-def validate_graph_falkordb_protection_profile(repository: Path, registered: set[str]) -> None:
-    if "graph-falkordb-protection" not in registered:
+def validate_graph_protection_profile(repository: Path, registered: set[str]) -> None:
+    if "graph-protection" not in registered:
         return
     required = {
         "scripts/test/online-hosted-security-gate.sh": (
-            "# ADDP_ONLINE_SUITES=graph-falkordb-protection", "online-graph-falkordb-fixture.py start",
-            "online-graph-falkordb-fixture.py stop", "develop,graph,manager,service,transfer", "graph-falkordb.json",
+            "# ADDP_ONLINE_SUITES=graph-protection", "ADDP_ONLINE_GRAPH_ENGINE", "graph-control.json", "online-graph-fixture.py start",
+            "online-graph-fixture.py stop", "develop,graph,manager,service,transfer", "graph-target.json",
             "docker-compose.graph-protection-t4.yml", "compose_graph down --remove-orphans --volumes",
             ',console,graph-frontend,develop-frontend,nginx', 'CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"',
         ),
         "scripts/test/docker-compose.graph-protection-t4.yml": ("services:",),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
-        "scripts/test/graph-falkordb-protection-online.py": (
-            "addp.graph-falkordb-protection-online/v4", "public_unmanaged", "public_protected",
-            "same_engine_control", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
-            'report["browser"] = run_browser(', 'e2e/online/graph-falkordb-protection.spec.js',
+        "scripts/test/graph-protection-online.py": (
+            "addp.graph-protection-online/v4", "public_unmanaged", "public_protected",
+            "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
+            'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
-            'e2e/online/develop-falkordb-query.spec.js',
+            'e2e/online/develop-graph-query.spec.js',
         ),
-        "console/frontend/e2e/online/graph-falkordb-protection.spec.js": (
-            "addp.graph-falkordb-protection-browser/v3", "browserAPIFromResponse", "login(",
+        "console/frontend/e2e/online/graph-protection.spec.js": (
+            "addp.graph-protection-browser/v3", "browserAPIFromResponse", "login(",
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
             "release_assets: true", "deep_link_reload: true", "theme_canvas_pixels: true",
             "graph-browser-diagnostics.json", "graphBrowserDiagnostic(", "theme_typography: true", "graphDocumentHasThemeTypography)",
         ),
-        "console/frontend/e2e/online/develop-falkordb-query.spec.js": (
-            "addp.develop-falkordb-query-browser/v1", "browserAPIFromResponse", "login(",
+        "console/frontend/e2e/online/develop-graph-query.spec.js": (
+            "addp.develop-graph-query-browser/v1", "browserAPIFromResponse", "login(",
             "typed_parameters: true", "graph_table_visible: true", "protected_result_absent: true", "control_readable: true",
-            "develop.query.protection_required", "unexpected_writes: 0",
+            "develop.query.protection_required", "unexpected_writes: 0", "theme_canvas_pixels: true", "graphCanvasHasThemePixels)",
         ),
-        "business/scripts/online-graph-falkordb-fixture.py": (
+        "business/scripts/online-graph-fixture.py": (
             "--volumes", "owned_resources", "must not publish host ports", "0o600", "graph_protection_control",
         ),
-        "business/docker-compose.online-graph-falkordb.yml": (
-            "../scripts/infra/falkordb.yml", "name: addp-network", "tmpfs:",
+        "business/docker-compose.online-graph.yml": (
+            "../scripts/infra/falkordb.yml", "../scripts/test/docker-compose.neo4j-t2.yml", "ports: !reset []", "name: addp-network", "tmpfs:",
         ),
     }
     for path, fragments in required.items():
         file = repository / path
         if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
-            raise RegistrationError("Graph FalkorDB protection contract is incomplete: " + path)
+            raise RegistrationError("Graph native protection contract is incomplete: " + path)
     # The host preflight must reach every service declared by the suite, even
     # though normal browser traffic only enters through production Nginx.
     lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
     environment = (repository / "scripts/utils/hosted-online.sh").read_text() + "\n" + lifecycle
     overlay = (repository / "scripts/test/docker-compose.graph-protection-t4.yml").read_text()
-    suite = load_suite_registry(repository)["graph-falkordb-protection"]
+    suite = load_suite_registry(repository)["graph-protection"]
     for owner, variable in suite.services:
         ports = re.findall(rf"\b{re.escape(variable)}=http://127\.0\.0\.1:(\d+)\b", environment)
         if not ports:
@@ -2575,20 +2575,23 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
         if bindings != [f"127.0.0.1:{port}:{port}"]:
             raise RegistrationError(f"Graph preflight {variable} requires exactly one loopback diagnostic binding on {service}: {port}")
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
-    for test in ("graph-falkordb-protection-online_test.py", "online-graph-falkordb-fixture_test.py"):
+    for test in ("graph-protection-online_test.py", "online-graph-fixture_test.py"):
         if test not in commands:
             raise RegistrationError("Graph protection regression must enter test-online-runner")
-    if "console/frontend/e2e/online/graph-falkordb-protection.spec.js" not in commands:
+    if "console/frontend/e2e/online/graph-protection.spec.js" not in commands:
         raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
-    if "console/frontend/e2e/online/develop-falkordb-query.spec.js" not in commands:
-        raise RegistrationError("Develop FalkorDB browser syntax must enter test-online-runner")
-    if 'if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
+    if "console/frontend/e2e/online/develop-graph-query.spec.js" not in commands:
+        raise RegistrationError("Develop native browser syntax must enter test-online-runner")
+    if 'if [ "$ONLINE_SUITE" != graph-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
         raise RegistrationError("Graph Console requires Chromium in the same Hosted lifecycle")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
-    if job is None or "inputs.suite == 'graph-falkordb-protection'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
+    if job is None or "inputs.suite == 'graph-protection'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("Graph protection requires the standard Ubuntu Hosted Security lifecycle")
-    if "&& inputs.suite != 'graph-falkordb-protection'" not in workflow:
+    selector = re.search(r"(?ms)^      graph_engine:\n(?P<body>.*?)(?=^      [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if selector is None or not all(value in selector.group("body") for value in ("type: choice", "- falkordb", "- neo4j")) or "ADDP_ONLINE_GRAPH_ENGINE: ${{ inputs.graph_engine }}" not in job.group("body"):
+        raise RegistrationError("Graph protection must explicitly select and propagate its native engine")
+    if "&& inputs.suite != 'graph-protection'" not in workflow:
         raise RegistrationError("Graph protection must not also dispatch on self-hosted")
 
 
@@ -2672,7 +2675,7 @@ def check_registration(repository: Path) -> None:
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)
-    validate_graph_falkordb_protection_profile(repository, registered)
+    validate_graph_protection_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)

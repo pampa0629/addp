@@ -1099,11 +1099,18 @@ test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保
 .PHONY: test-security-online-runner
 test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消费者回执及已有出口验收断言
 	@$(MAKE) test-protection-deployment-runner
-	@node --check --input-type=module < console/frontend/e2e/online/graph-falkordb-protection.spec.js
-	@node --check --input-type=module < console/frontend/e2e/online/develop-falkordb-query.spec.js
-	@python3 -m unittest scripts/test/graph-falkordb-protection-online_test.py scripts/test/online-graph-falkordb-fixture_test.py
+	@$(MAKE) test-graph-online-runner
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py scripts.test.online-host-gate_test.OnlineHostGateTest.test_runs_security_transfer_suite_with_composite_fixture
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+.PHONY: test-graph-online-runner
+test-graph-online-runner: ## 验证共享图保护原生夹具、普通身份、浏览器证据与 CI 登记
+	@node --check --input-type=module < console/frontend/e2e/online/graph-protection.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/develop-graph-query.spec.js
+	@python3 -m unittest scripts/test/graph-protection-online_test.py scripts/test/online-graph-fixture_test.py
+	@bash -n scripts/test/online-hosted-security-gate.sh
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_graph_protection_requires_synthetic_lifecycle_and_regressions
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run GraphProtection -count=1
 
 .PHONY: test-protection-deployment-runner
 test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户初始化和精确清理诊断

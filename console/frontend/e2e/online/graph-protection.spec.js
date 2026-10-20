@@ -9,7 +9,7 @@ function required(name) {
   return process.env[name]
 }
 
-test('ordinary Graph reader browses private FalkorDB data and searches Knowledge Service through Console', async ({ page }) => {
+test('ordinary Graph reader browses private native graph data and searches Knowledge Service through Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], developmentRequests = []
   let stage = 'login'
@@ -130,7 +130,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-falkordb-protection-browser/v3', result: 'passed',
+    ...expected, schema_version: 'addp.graph-protection-browser/v3', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true,
     public_switch_disabled: true, graph_writes: 0, failed_business_responses: 0,

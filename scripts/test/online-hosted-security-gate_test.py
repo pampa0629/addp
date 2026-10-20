@@ -61,7 +61,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             echo "security-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
             [ "$1" != start ] || [ "${ADDP_TEST_FIXTURE_FAIL:-0}" != 1 ]
         ''')
-        self.host._write_repository_script('business/scripts/online-graph-falkordb-fixture.py', '''
+        self.host._write_repository_script('business/scripts/online-graph-fixture.py', '''
             import os, sys
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('graph-fixture:' + sys.argv[1] + '\\n')
             sys.exit(1 if sys.argv[1] == 'start' and os.environ.get('ADDP_TEST_FIXTURE_FAIL') == '1' else 0)
@@ -105,7 +105,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             p.add_argument('--descriptor'); p.add_argument('--output')
             args = p.parse_args()
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'engine-token'
-            engine = 17 if 'postgres' in args.descriptor else 29 if 'mongodb' in args.descriptor else 23
+            engine = 31 if 'graph-control' in args.descriptor else 17 if 'postgres' in args.descriptor else 29 if 'mongodb' in args.descriptor else 23
             with open(args.output, 'w') as out:
                 out.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
         ''')
@@ -138,9 +138,12 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
-            if [ "$ONLINE_SUITE_INPUT" = graph-falkordb-protection ]; then
+            if [ "$ONLINE_SUITE_INPUT" = graph-protection ]; then
               [ "$CONSOLE_URL" = http://127.0.0.1:18080 ]
               [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
+              if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
+                [ "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" = 31 ]
+              fi
               [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
               [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]
               echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -190,12 +193,12 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
 
     def test_graph_profile_uses_only_its_synthetic_fixture_and_always_cleans(self):
-        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection')
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         self.assertIn('graph-fixture:start', trace)
         self.assertIn('graph-fixture:stop', trace)
-        self.assertIn('make:test-online ONLINE_SUITE=graph-falkordb-protection', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=graph-protection', trace)
         self.assertNotIn('security-fixture:', trace)
         self.assertNotIn('initialize', trace)
         self.assertIn('chromium', trace)
@@ -210,13 +213,26 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(Path(str(self.host.trace) + '.containers').read_text(), '')
         self.assertLess(trace.index('down --remove-orphans --volumes'), trace.index('graph-fixture:stop'))
 
+    def test_graph_neo4j_lifecycle_registers_independent_control_and_cleans_up(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='neo4j')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('graph-fixture:start', trace)
+        self.assertIn('graph-fixture:stop', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=graph-protection', trace)
+
+    def test_graph_rejects_missing_engine_before_host_operations(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('requires ADDP_ONLINE_GRAPH_ENGINE', result.stderr)
+
     def test_graph_profile_failure_keeps_lifecycle_cleanup(self):
-        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_SUITE_FAIL='1')
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_SUITE_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('graph-fixture:stop', self.host.trace.read_text())
 
     def test_graph_build_failure_never_starts_app_or_browser_and_still_cleans(self):
-        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_BUILD_FAIL='1')
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_BUILD_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
         self.assertNotIn('chromium', trace)
@@ -226,17 +242,17 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('graph-fixture:stop', trace)
 
     def test_graph_refuses_preexisting_product_containers_before_mutation(self):
-        for name in ('registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
+        for name in ('addp-graph-online-neo4j', 'addp-graph-online-neo4j-control', 'registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
             with self.subTest(name=name):
                 self.host.trace.unlink(missing_ok=True)
-                result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_EXISTING_CONTAINER=name)
+                result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_EXISTING_CONTAINER=name)
                 self.assertNotEqual(result.returncode, 0)
                 trace = self.host.trace.read_text() if self.host.trace.exists() else ''
                 self.assertNotIn('infra-up', trace)
                 self.assertNotIn('up -d', trace)
 
     def test_graph_invalid_compose_stops_before_infra_and_builds(self):
-        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_CONFIG_FAIL='1')
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_CONFIG_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
         self.assertIn('config --quiet', trace)

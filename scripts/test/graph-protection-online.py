@@ -36,6 +36,29 @@ def require(condition, message):
         raise SuiteError(message)
 
 
+def engine_type():
+    value = SUPPORT.required_environment("ADDP_ONLINE_GRAPH_ENGINE")
+    require(value in {"falkordb", "neo4j"}, "Unsupported Graph acceptance engine")
+    return value
+
+
+def target_paths(engine_id):
+    kind = engine_type()
+    control_id = engine_id if kind == "falkordb" else SUPPORT.positive_int(
+        SUPPORT.required_environment("ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID"), "control engine id")
+    require(kind != "neo4j" or control_id != engine_id, "Neo4j control must be an independent engine instance")
+    paths = []
+    for name, eid in zip(GRAPHS, (engine_id, control_id)):
+        names = [name] if kind == "falkordb" else ["neo4j", "graph"]
+        segments = [{"term": "server", "kind": "server", "name": ""}]
+        if kind == "neo4j":
+            segments.append({"term": "database", "kind": "namespace", "name": "neo4j"})
+        segments.append({"term": "graph", "kind": "graph", "name": names[-1]})
+        paths.append({"engine_id": eid, "full_name": ".".join(names), "names": names,
+                      "catalog_path": {"version": "catalog.path/v1", "engine_id": eid, "segments": segments}})
+    return paths
+
+
 def identity(client, tenant_id, permissions):
     context = client.request("GET", "/api/v1/system/auth/context", (200,)).payload
     require(context["principal"]["type"] == "user", "A real User identity is required")
@@ -144,19 +167,19 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     env("ADDP_ONLINE_TEST_USER_USERNAME")
     env("ADDP_ONLINE_TEST_USER_PASSWORD")
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
-    output = artifacts / "graph-falkordb-protection-browser.json"
+    output = artifacts / "graph-protection-browser.json"
     diagnostics = artifacts / "graph-browser-diagnostics.json"
     screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png",
                    *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")))]
     for path in [output, diagnostics, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
-                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id}
+                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type()}
     # The browser authenticates the ordinary User through the formal login UI.
     # It must not inherit any API fixture's preparation or consumption tokens.
     environment = {key: value for key, value in os.environ.items() if not key.endswith("_ACCESS_TOKEN")}
     environment.update(ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS=json.dumps(expected), ADDP_ONLINE_GRAPH_BROWSER_REPORT=str(output))
-    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-falkordb-protection.spec.js",
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js",
                              "--config=playwright.online.config.js"],
                             cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
     require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
@@ -165,7 +188,7 @@ def run_browser(report, graph_id, engine_id, tenant_id):
         "schema_version": "addp.graph-browser-diagnostics/v1", "entries": []
     }, "Graph Console omitted clean browser diagnostics")
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-falkordb-protection-browser/v3", result="passed", permissions=sorted(READER_PERMISSIONS),
+    expected.update(schema_version="addp.graph-protection-browser/v3", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
                     public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
                     release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, theme_typography=True)
@@ -185,30 +208,31 @@ def run_develop_browser(report, engine_id, tenant_id, phase):
     require(report["identities"].get("develop", developer) == developer, "Develop User changed between protection phases")
     report["identities"]["develop"] = developer
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
-    output = artifacts / f"develop-falkordb-{phase}-browser.json"
-    names = ("graph", "table") if phase == "unmanaged" else ("protected", "control")
-    screenshots = [artifacts / f"develop-falkordb-{name}-console.png" for name in names]
+    output = artifacts / f"develop-graph-{phase}-browser.json"
+    names = ("graph", "table", *("theme-" + mode for mode in ("light", "dark", "blue", "purple"))) if phase == "unmanaged" else ("protected", "control")
+    screenshots = [artifacts / f"develop-graph-{name}-console.png" for name in names]
     for path in [output, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
-                "principal_id": developer["principal_id"], "engine_id": engine_id, "phase": phase}
+                "principal_id": developer["principal_id"], "engine_id": engine_id, "phase": phase, "engine_type": engine_type(),
+                "targets": target_paths(engine_id)}
     environment = {key: value for key, value in os.environ.items()
                    if not key.endswith(("_ACCESS_TOKEN", "_USERNAME", "_PASSWORD"))}
     environment.update(ADDP_ONLINE_GRAPH_DEVELOP_USERNAME=env("ADDP_ONLINE_GRAPH_DEVELOP_USERNAME"),
                        ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD=env("ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD"),
-                       ADDP_ONLINE_DEVELOP_FALKORDB_EXPECTATIONS=json.dumps(expected),
-                       ADDP_ONLINE_DEVELOP_FALKORDB_REPORT=str(output))
-    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/develop-falkordb-query.spec.js",
+                       ADDP_ONLINE_DEVELOP_GRAPH_EXPECTATIONS=json.dumps(expected),
+                       ADDP_ONLINE_DEVELOP_GRAPH_REPORT=str(output))
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/develop-graph-query.spec.js",
                              "--config=playwright.online.config.js"],
                             cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
     require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
             "Ordinary Develop Console acceptance failed or omitted evidence")
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.develop-falkordb-query-browser/v1", result="passed", permissions=sorted(DEVELOP_PERMISSIONS),
+    expected.update(schema_version="addp.develop-graph-query-browser/v1", result="passed", permissions=sorted(DEVELOP_PERMISSIONS),
                     graph_nodes=3, graph_relationships=2, graph_rows=2, graph_canvas=True,
                     browser_errors=0, failed_business_responses=0, unexpected_writes=0)
     if phase == "unmanaged":
-        expected.update(typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+        expected.update(theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
     else:
         expected.update(protection_required=True, protected_result_absent=True, protection_stage="preparation", control_readable=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401", "execution_ids"} and
@@ -232,11 +256,13 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
     try:
         ontology_id = create_ontology(preparer)
         create_schema(preparer, ontology_id)
-        for name in GRAPHS:
+        targets = target_paths(engine_id)
+        report["engine_type"] = engine_type()
+        report["targets"] = targets
+        for name, target_path in zip(GRAPHS, targets):
             graph = preparer.request("POST", "/api/v1/graph/graphs", (201,), {
-                "name": name, "ontology_id": ontology_id, "engine_id": engine_id, "index_management": "managed",
-                "catalog_path": {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
-                    {"term": "server", "kind": "server", "name": ""}, {"term": "graph", "kind": "graph", "name": name}]},
+                "name": name, "ontology_id": ontology_id, "engine_id": target_path["engine_id"], "index_management": "managed",
+                "catalog_path": target_path["catalog_path"],
             }).payload
             graph_ids.append(SUPPORT.positive_int(graph.get("id"), "graph id"))
             require(graph.get("is_public") is False, "Synthetic graphs must begin private")
@@ -253,21 +279,24 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             r.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
         report["browser"] = run_browser(report, target, engine_id, tenant_id)
         SUPPORT.wait_for_scan(preparer, engine_id, deadline)
+        if targets[1]["engine_id"] != engine_id:
+            SUPPORT.wait_for_scan(preparer, targets[1]["engine_id"], deadline)
         report["develop_unmanaged"] = run_develop_browser(report, engine_id, tenant_id, "unmanaged")
         set_public(preparer, target, True)
         report["public_unmanaged"] = {"gateway": probe(anonymous, target, ids, 200), "graph": probe(direct_anonymous, target, ids, 200)}
-        item = SUPPORT.find_item(preparer, engine_id, GRAPHS[0], "graph")
-        locator = f"addp://engine/{engine_id}/path/{urllib.parse.quote(GRAPHS[0], safe='')}?type=graph&item_id={item['id']}"
+        item = SUPPORT.find_item(preparer, engine_id, targets[0]["full_name"], "graph")
+        native_path = "/".join(urllib.parse.quote(name, safe="") for name in targets[0]["names"])
+        locator = f"addp://engine/{engine_id}/path/{native_path}?type=graph&item_id={item['id']}"
         enrollment = preparer.request("POST", "/api/v1/security/protection-enrollments", (201,), {"locator": locator, "validity_mode": "permanent"}).payload
         enrollment_id = enrollment["id"]
         require(enrollment["target"]["resource_identity"] == item["fingerprint"], "Enrollment must match the precise Meta graph identity")
-        require(enrollment["target_snapshot"]["engine_id"] == engine_id and enrollment["target_snapshot"]["full_name"] == GRAPHS[0], "Enrollment must retain the exact graph and Engine binding")
+        require(enrollment["target_snapshot"]["engine_id"] == engine_id and enrollment["target_snapshot"]["full_name"] == targets[0]["full_name"], "Enrollment must retain the exact graph and Engine binding")
         installed = wait_owners(preparer, enrollment_id, deadline)
         report["owners"] = {p["consumer_owner"]: {k: p[k] for k in ("projection_id", "revision", "published_cursor", "acknowledged")} for p in installed["owner_progress"]}
         report["public_protected"] = {"gateway": probe(anonymous, target, ids, 403, "protection"), "graph": probe(direct_anonymous, target, ids, 403, "protection")}
         report["authenticated_protected"] = {"gateway": probe(reader, target, ids, 403, "protection"), "graph": probe(direct_reader, target, ids, 403, "protection")}
         report["public_outsider_protected"] = {"gateway": probe(outsider, target, ids, 403, "protection"), "graph": probe(direct_outsider, target, ids, 403, "protection")}
-        report["same_engine_control"] = {"gateway": probe(reader, control, control_ids, 200), "graph": probe(direct_reader, control, control_ids, 200)}
+        report["same_engine_control" if engine_type() == "falkordb" else "separate_engine_control"] = {"gateway": probe(reader, control, control_ids, 200), "graph": probe(direct_reader, control, control_ids, 200)}
         report["develop_protected"] = run_develop_browser(report, engine_id, tenant_id, "protected")
         set_public(preparer, target, False)
         report["private_protected_anonymous"] = probe(anonymous, target, ids, 401)
@@ -309,8 +338,8 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
 
 
 def main():
-    report = {"schema_version": "addp.graph-falkordb-protection-online/v4", "passed": False}
-    output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-falkordb-protection.json"
+    report = {"schema_version": "addp.graph-protection-online/v4", "passed": False}
+    output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")
         env = SUPPORT.required_environment

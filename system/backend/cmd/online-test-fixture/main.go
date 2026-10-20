@@ -202,7 +202,7 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
-	case "graph-falkordb-protection":
+	case "graph-protection":
 		return graphProtectionReaderPermissions, nil
 	case "pg-source-authorization":
 		return pgAuthorizationConsumerPermissions, nil
@@ -255,7 +255,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	if suite == "graph-falkordb-protection" {
+	if suite == "graph-protection" {
 		return true
 	}
 	if suite == "pg-source-authorization" {
@@ -273,7 +273,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "graph-falkordb-protection":
+	case "graph-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
@@ -633,7 +633,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
-	if *suite == "graph-falkordb-protection" {
+	if *suite == "graph-protection" {
 		preparer, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-graph-preparer", graphProtectionPreparerPermissions)
 		if fixtureErr != nil {

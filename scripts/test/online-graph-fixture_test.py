@@ -7,11 +7,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location('graph_fixture', ROOT / 'business/scripts/online-graph-falkordb-fixture.py')
+SPEC = importlib.util.spec_from_file_location('graph_fixture', ROOT / 'business/scripts/online-graph-fixture.py')
 FIXTURE = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(FIXTURE)
 
 
 class GraphFixtureTest(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_admission_refuses_developer_machine_before_docker(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}), patch.object(FIXTURE, 'command') as docker:
             with self.assertRaises(RuntimeError): FIXTURE.admission()
@@ -21,12 +26,12 @@ class GraphFixtureTest(unittest.TestCase):
         queries = []
         def native(graph, query, readonly=True):
             queries.append((graph, query, readonly))
-            return [[], [[3 if 'count(n)' in query else 2]], []]
+            return 3 if 'count(n)' in query else 2
         with tempfile.TemporaryDirectory() as directory, patch.object(FIXTURE, 'owned_resources', return_value=[]), \
              patch.object(FIXTURE, 'compose') as compose, patch.object(FIXTURE, 'command', return_value='null'), \
              patch.object(FIXTURE, 'native', side_effect=native):
             FIXTURE.start(Path(directory))
-            path = Path(directory) / 'graph-falkordb.json'
+            path = Path(directory) / 'graph-target.json'
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             data = json.loads(path.read_text())
             self.assertEqual(data['engine_type'], 'falkordb')
@@ -39,6 +44,33 @@ class GraphFixtureTest(unittest.TestCase):
             self.assertEqual({q[0] for q in queries}, set(FIXTURE.GRAPHS))
             self.assertIn('Fixture one', queries[0][1])
             compose.assert_called_once()
+
+    def test_neo4j_uses_two_instances_private_descriptors_and_exact_counts(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j'}), \
+             patch.object(FIXTURE, 'owned_resources', return_value=[]), patch.object(FIXTURE, 'compose') as compose, \
+             patch.object(FIXTURE, 'command', return_value='null'), \
+             patch.object(FIXTURE, 'native', side_effect=lambda graph, query, readonly=True: 3 if 'count(n)' in query else 2) as native:
+            FIXTURE.start(Path(directory))
+            descriptors = [Path(directory) / ('graph-' + role + '.json') for role in ('target', 'control')]
+            data = [json.loads(path.read_text()) for path in descriptors]
+            self.assertEqual([item['connection_info']['host'] for item in data], FIXTURE.containers())
+            self.assertEqual(len({item['connection_info']['host'] for item in data}), 2)
+            for path, item in zip(descriptors, data):
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(item['engine_type'], 'neo4j')
+                self.assertEqual(item['connection_info']['database'], 'neo4j')
+                self.assertEqual(item['connection_info']['port'], 7687)
+            self.assertEqual(native.call_count, 6)
+            compose.assert_called_once()
+
+    def test_native_neo4j_counts_use_actual_shell_output_and_fail_closed(self):
+        with patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j'}):
+            with patch.object(FIXTURE, 'command', return_value='count(n)\n3') as command:
+                self.assertEqual(FIXTURE.native(FIXTURE.GRAPHS[0], 'MATCH (n) RETURN count(n)'), 3)
+                self.assertIn(FIXTURE.containers()[0], command.call_args.args[0])
+                self.assertEqual(command.call_args.kwargs['stdin'], 'MATCH (n) RETURN count(n);\n')
+            with patch.object(FIXTURE, 'command', return_value='count(n)\nunknown'):
+                with self.assertRaises(ValueError): FIXTURE.native(FIXTURE.GRAPHS[1], 'MATCH (n) RETURN count(n)')
 
     def test_existing_resources_and_wrong_binding_stop_before_seeding(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -61,9 +93,10 @@ class GraphFixtureTest(unittest.TestCase):
                 self.assertIn('--volumes', compose.call_args.args[0])
 
     def test_owned_compose_uses_central_image_and_tmpfs(self):
-        content = (ROOT / 'business/docker-compose.online-graph-falkordb.yml').read_text()
+        content = (ROOT / 'business/docker-compose.online-graph.yml').read_text()
         self.assertIn('../scripts/infra/falkordb.yml', content)
-        self.assertNotIn('ports:', content)
+        self.assertIn('ports: !reset []', content)
+        self.assertIn('../scripts/test/docker-compose.neo4j-t2.yml', content)
         self.assertIn('external: true', content)
         self.assertIn('name: addp-network', content)
         self.assertIn('tmpfs:', content)

@@ -115,7 +115,7 @@ make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"
 
 Go T1 覆盖抽取／审核入库失败、后续材料继续、失败汇总、统计保留、取消和 Unicode 分块。两类原生图 T2 复用同一领域测试，验证原生实体与关系写入失败后的任务／execution 状态、已写数据及后续材料结果。PostgreSQL 分组覆盖目标约束、迁移、执行并发及事务；本地只使用 `addp_test`，连接参数按 Infra 实际映射显式注入。
 
-`graph-falkordb-protection` Hosted suite 的 v3 已覆盖普通 Graph 读取账号和独立 Develop 五权限账号的查询／保护链路。该结果不等同于材料上传、真实模型抽取、人工审核及 Monitor 全链路的普通账号浏览器验收；本轮原生构建故障测试控制 Copilot 响应，属于 T2。
+`graph-protection` Hosted suite 的 v3 已覆盖普通 Graph 读取账号和独立 Develop 五权限账号的查询／保护链路。该结果不等同于材料上传、真实模型抽取、人工审核及 Monitor 全链路的普通账号浏览器验收；本轮原生构建故障测试控制 Copilot 响应，属于 T2。
 
 ## 七、剩余工作边界
 
