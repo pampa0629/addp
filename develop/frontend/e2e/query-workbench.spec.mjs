@@ -215,8 +215,8 @@ for (const [code, reason, explanation, action] of [
 })
 
 for (const [locale, explanation, action] of [
-  ['zh-cn', '执行已被阻止', '请核对当前账号的数据访问资格'],
-  ['en', 'Execution was blocked', "Check the current account's data access eligibility"]
+  ['zh-cn', '数据脱敏保护校验未通过', '请联系安全管理员检查脱敏保护规则'],
+  ['en', 'data masking protection checks', 'Ask a security administrator to check masking rules']
 ]) for (const stage of ['preparation', 'result']) test(`explains protection refusal in ${locale} at ${stage} without runtime values`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', locale, errorDetails: {
     category: 'execution_failed', code: 'develop.query.protection_required', message: 'private-value SELECT phone',
@@ -229,6 +229,7 @@ for (const [locale, explanation, action] of [
   await expect(diagnostic).toContainText('develop.query.protection_required')
   await expect(diagnostic).not.toContainText('private-value')
   await expect(diagnostic).not.toContainText('SELECT phone')
+  await expect(diagnostic).not.toContainText(/访问资格|access eligibility/i)
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(diagnostic).toBeVisible()
   const width = await diagnostic.evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }))

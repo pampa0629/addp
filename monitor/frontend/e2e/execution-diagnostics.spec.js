@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, targetExists = false, executionID = 'diagnostic-run' } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, errorDetails, targetExists = false, executionID = 'diagnostic-run' } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
   execution.execution_id = executionID
@@ -19,6 +19,7 @@ async function installBackend(page, { empty = false, unavailable = false, events
     error_details: { code: 'develop.workflow.target_exists', category: 'execution_failed',
       diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'result', reason: 'target_exists' } }
   })
+  if (errorDetails) execution.error_details = errorDetails
   let treeRequests = 0
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
@@ -125,6 +126,32 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await page.route('**/develop/executions/diagnostic-run', route => route.fulfill({ contentType: 'text/html', body: '<main>Owner execution destination</main>' }))
   await button.click()
   await expect(page).toHaveURL(/\/develop\/executions\/diagnostic-run$/)
+})
+
+for (const locale of ['zh-cn', 'en']) for (const [reason, stage, zh, en] of [
+  ['data_protection_required', 'preparation', '数据脱敏保护校验未通过', 'data masking protection checks'],
+  ['permission_denied', 'execution', '当前执行缺少读取或写入权限', 'lacks read or write permission'],
+  ['authorization_invalid', 'authorization', '执行授权缺失、失效或与本次执行不匹配', 'Execution authorization is missing, expired']
+]) test(`distinguishes protection from access permission and execution authorization (${locale}, ${reason})`, async ({ page }) => {
+  await installBackend(page, { locale, queryFailure: true, empty: true, errorDetails: {
+    category: reason === 'data_protection_required' ? 'permission_denied' : 'execution_failed',
+    code: reason === 'data_protection_required' ? 'develop.query.protection_required' : reason,
+    message: 'private-runtime-value SELECT phone',
+    diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason }
+  } })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const panel = page.locator('.execution-detail-content > .execution-failure')
+  await expect(panel.locator('h4')).toContainText(locale === 'zh-cn' ? zh : en)
+  await expect(panel).not.toContainText(/private-runtime-value|SELECT phone/)
+  if (reason === 'data_protection_required') {
+    await expect(panel).toContainText(locale === 'zh-cn' ? '请联系安全管理员检查脱敏保护规则' : 'Ask a security administrator to check masking rules')
+    await expect(panel).not.toContainText(/访问资格|access eligibility/i)
+  } else {
+    await expect(panel).not.toContainText(/数据脱敏保护校验|data masking protection checks/)
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(panel).toBeVisible()
+  expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
 })
 
 for (const locale of ['zh-cn', 'en']) test(`shows recorded recovery context (${locale})`, async ({ page }) => {

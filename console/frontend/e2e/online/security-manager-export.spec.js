@@ -189,8 +189,9 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   async function checkPanel(panel) {
     await expect(panel).toBeVisible()
-    await expect(panel).toContainText(/执行已被阻止|Execution was blocked/)
-    await expect(panel).toContainText(/请核对当前账号的数据访问资格|Check the current account's data access eligibility/)
+    await expect(panel).toContainText(/数据脱敏保护校验未通过|data masking protection checks/)
+    await expect(panel).toContainText(/请联系安全管理员检查脱敏保护规则|Ask a security administrator to check masking rules/)
+    await expect(panel).not.toContainText(/访问资格|access eligibility/i)
     await expect(panel).toContainText('develop.query.protection_required')
     await expect(panel).toContainText(denied.execution_id)
   }
@@ -214,8 +215,9 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 async function checkProtectionFailurePanel(panel, executionID, stage) {
   expect(['preparation', 'result']).toContain(stage)
   await expect(panel).toBeVisible()
-  await expect(panel).toContainText(/执行已被阻止|Execution was blocked/)
-  await expect(panel).toContainText(/请核对当前账号的数据访问资格|Check the current account's data access eligibility/)
+  await expect(panel).toContainText(/数据脱敏保护校验未通过|data masking protection checks/)
+  await expect(panel).toContainText(/请联系安全管理员检查脱敏保护规则|Ask a security administrator to check masking rules/)
+  await expect(panel).not.toContainText(/访问资格|access eligibility/i)
   await expect(panel).toContainText(stage === 'result' ? /保存执行结果|Save execution result/ : /准备执行|Prepare execution/)
   await expect(panel).toContainText('data_protection_required')
   await expect(panel).toContainText(executionID)

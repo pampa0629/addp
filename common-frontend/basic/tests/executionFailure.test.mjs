@@ -103,6 +103,11 @@ test('shared ExecutionFailure is the sole failure panel for Workbench, Owner and
 test('protection refusals remain distinct from data permissions without exposing runtime text', () => {
   for (const locale of ['zh-cn', 'en']) {
     const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const protectionText = messages.reasons.data_protection_required + messages.actions.data_protection_required
+    assert.match(messages.reasons.data_protection_required, locale === 'zh-cn' ? /数据脱敏保护校验/ : /data masking protection checks/)
+    assert.doesNotMatch(protectionText, /访问资格|读取权限|写入权限|access eligibility|read permission|write permission/i)
+    assert.notEqual(messages.reasons.data_protection_required, messages.reasons.permission_denied)
+    assert.notEqual(messages.reasons.data_protection_required, messages.reasons.authorization_invalid)
     assert.doesNotMatch(messages.reasons.data_protection_required, /查询|\bquery\b/i)
     for (const stage of ['preparation', 'execution']) assert.doesNotMatch(messages.stages[stage], /查询|\bquery\b/i)
     assert.doesNotMatch(messages.actions.data_protection_required, /SQL|字段别名|column aliases/i)
@@ -116,5 +121,12 @@ test('protection refusals remain distinct from data permissions without exposing
     assert.equal(presentation.reason, 'common.executionFailure.reasons.data_protection_required')
     assert.equal(presentation.action, 'common.executionFailure.actions.data_protection_required')
     assert.doesNotMatch(JSON.stringify(presentation), /private-value|SELECT/)
+  }
+  for (const reason of ['permission_denied', 'authorization_invalid']) {
+    const presentation = executionFailurePresentation({ category: 'execution_failed',
+      diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'authorization', reason }
+    }, key => key)
+    assert.equal(presentation.reason, `common.executionFailure.reasons.${reason}`)
+    assert.equal(presentation.action, `common.executionFailure.actions.${reason}`)
   }
 })
