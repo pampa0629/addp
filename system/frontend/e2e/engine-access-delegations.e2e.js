@@ -33,7 +33,7 @@ async function fixture(page, { allowed = permissions, conflict = false, language
       reads.push(path)
       return reply({ data: [row], total: 1, page: 1, page_size: 10, total_pages: 1 })
     }
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', capability_groups: ['storage'] }
+    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])

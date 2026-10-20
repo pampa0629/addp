@@ -159,7 +159,7 @@ bash scripts/dev/start.sh -system
 ./scripts/dev/restart.sh -<模块名>
 ```
 
-AI 不得自行直接或间接执行 `bash scripts/dev/keepalive.sh ...`；只有用户明确允许本次操作后，AI 才能在授权范围内执行该脚本。一般性的开发、测试、验收或提交推送授权不包含执行 `keepalive.sh` 的许可。在 Codex 等命令结束后会回收后台进程的托管执行环境中，如需通过该脚本保持服务存活，先告知用户并取得明确许可；原因和边界见 `docs/guide/addp常见故障排查.md` 的“Codex 等托管命令环境中 restart.sh 退出后服务立刻不可用”。注意 `keepalive.sh restart -<模块名>` 会先停止整套 ADDP 开发环境，再只启动指定模块及其依赖；如果用户已在外部终端运行全套服务，不要由 Codex 执行局部 restart 接管。
+AI 不得自行直接或间接执行 `bash scripts/dev/keepalive.sh ...`；只有用户明确允许本次操作后，AI 才能在授权范围内执行该脚本。一般性的开发、测试、验收或提交推送授权不包含执行 `keepalive.sh` 的许可。在 Codex 等命令结束后会回收后台进程的托管执行环境中，如需通过该脚本保持服务存活，先告知用户并取得明确许可；原因和边界见 `docs/guide/troubleshooting/开发服务与构建.md` 的“Codex 等托管命令环境中 restart.sh 退出后服务立刻不可用”。注意 `keepalive.sh restart -<模块名>` 会先停止整套 ADDP 开发环境，再只启动指定模块及其依赖；如果用户已在外部终端运行全套服务，不要由 Codex 执行局部 restart 接管。
 
 如果修改了 `common/` 且本轮需要重启进行运行验收，告知用户需要重启全部模块，由用户在自己的终端执行；AI 执行 `keepalive.sh` 仍须遵守上述明确许可要求：
 

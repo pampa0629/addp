@@ -456,7 +456,7 @@ frontend/src/
 
 ### 引擎管理（需认证）
 - `POST /api/v1/system/engines` - 创建引擎（自动关联当前用户租户）
-- `GET /api/v1/system/engines` - 获取当前 Tenant 的完整过滤后引擎数组；System 管理页面在前端分页
+- `GET /api/v1/system/engines` - 获取当前 Tenant 的完整过滤后引擎数组；System 管理页面固定读取全部生命周期的可见引擎（包含内置），在前端筛选后分页，不随勾选条件查询后台。
 - `GET /api/v1/system/engine-types` - 获取插件声明的可注册引擎类型、连接表单、能力和 Catalog Model
 - `GET /api/v1/system/engines/:id` - 获取指定引擎
 - `PUT /api/v1/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
@@ -473,6 +473,8 @@ frontend/src/
 - `POST /api/v1/system/engines/:id/access_denies/:deny_id/release` - 独立 `system.engine_access_deny.release` 与当前有效引擎管理委派共同核验，正文仅接受原因。000186 保存不可变解除事实及同事务高风险审计，不修改原 Deny 或 Grant。自然到期后首次解除返回 409、无新事实；到期前已解除的原参重试仍可恢复历史，但当前资格必须有效。停用引擎、失效接收主体及 Catalog 不可用均不阻断合格操作者解除；解除不等于自动允许访问。
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
+
+引擎管理筛选分为能力（存储／计算）、来源（通用／扩展）、注册方式（全部／注册／内置）和生命周期（启用／停用／清理中／已删除）四个独立维度。多选维度内取并集，维度间取交集，任一多选维度空选即无结果；能力以实例 `capabilities.storage/compute` 声明是否存在为准，同一实例可同时匹配两类，不按引擎名称或注册分组猜测。默认选择全部能力、全部来源、全部注册方式及除已删除以外的生命周期。首次加载、手动刷新、既有状态轮询及操作成功后的刷新均读取完整清单，保留当前筛选；筛选变更回到第一页，刷新后按筛选结果收敛页码，总数取筛选结果长度。共享 API 的后台过滤能力继续服务其他消费者，本页只使用上述固定读取范围。
 
 ### Service Runtime（Service Access Token + 精确 Permission）
 - `POST /api/v1/system/runtime/modules` - Platform Service Principal 注册自身模块；

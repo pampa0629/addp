@@ -161,7 +161,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 前端只复制依赖清单、构建配置、源码和静态资源，不把宿主机的 `node_modules` 或 `dist` 覆盖到镜像构建阶段。
 
 基础镜像预热只处理所选服务实际引用的镜像：优先复用本机同架构镜像，否则最多尝试拉取三次；拉取或推送到临时 Registry 失败仍会使构建失败。
-前端 Dockerfile 必须根据容器的 `process.arch` 选择 Rollup musl 原生包，禁止写死 arm64 或 x64；该约束由 `make test-platform` 自动检查。
+前端通过 `npm ci` 消费锁文件中的 Linux arm64-musl 与 x64-musl 可选包；Dockerfile 不追加架构专用安装命令。构建登记检查核对两类锁定包并拒绝写死架构包名，入口为 `make test-build-registration`，同时纳入 `make test-platform`。共享依赖布局、源码复制与 Nginx 路径要求见[前端镜像构建规范](../docs/前端镜像构建规范.md)。
 
 Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Backend、Console 和 Nginx 四类构建基线，再自动追加本次改动影响的模块镜像。`common/`、`common-frontend/`、`common-python/` 按实际消费者扩散，`.dockerignore` 变更扩散到全部 Hosted Runner 可构建镜像。Model3D 统一 Linux 构建支持 amd64/arm64，Model3D 或其 common-python 依赖变化会进入 Hosted amd64 镜像验证。只有 SuperMap 私有 arm64 基础镜像不在 GitHub amd64 Runner 范围内。
 
@@ -1002,7 +1002,7 @@ docker builder prune -af
 
 - [scripts/prod/README.md](../prod/README.md) - 生产部署脚本文档
 - [scripts/dev/README.md](../dev/README.md) - 开发环境脚本文档
-- [scripts/design.md](../design.md) - Scripts 架构设计文档
+- [脚本总导航](../README.md) - 目录职责与构建专题入口
 - [CLAUDE.md](../../CLAUDE.md) - 项目总体架构文档
 
 ---

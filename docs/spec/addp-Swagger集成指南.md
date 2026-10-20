@@ -1,35 +1,41 @@
 # ADDP Swagger 集成指南
 
-本文档说明如何为 ADDP 各 HTTP API 模块集成和维护 Swagger/OpenAPI 文档。该规范适用于所有带 HTTP API 的模块，不限 Go 模块：Go + Gin 模块统一使用 swaggo，FastAPI 模块使用框架内置 OpenAPI。
+本文定义 ADDP HTTP API 的 Swagger/OpenAPI 生成、注解和覆盖检查要求。Go + Gin 使用 swaggo，FastAPI 使用框架原生 OpenAPI；响应与路由契约遵循[API 设计规范](addp-API设计规范.md)。
+
+常用入口：[生成与检查](#强制同步要求)、[依赖与工具](#依赖版本)、[IAM 声明](#iam-授权扩展)、[Go 接入](#为-go-模块添加-swagger-的步骤)、[排障](#常见问题)。
 
 ## 强制同步要求
 
-API 修改必须同步 Swagger。任何新增、删除、修改公开 HTTP API 的变更，都必须同时更新：
+新增、删除或修改公开 HTTP API 时，必须同步真实路由、Handler、请求/响应 DTO、调用方及 Swagger/OpenAPI 描述；删除旧路径的同时删除旧注解。生成成功不等于覆盖完整。
 
-- 真实路由注册代码。
-- Handler 方法和请求/响应 DTO。
-- Swagger/OpenAPI 注解。
-- 生成产物：`docs/swagger.json`、`docs/swagger.yaml`、`docs/docs.go`。
+| 模块类型 | 随代码提交的生成产物 |
+| --- | --- |
+| Go | `<module>/backend/docs/docs.go`、`swagger.json`、`swagger.yaml` |
+| FastAPI | `<module>/backend/openapi.json` |
 
-不允许只修改路由或 Handler 而留下旧 Swagger path，也不允许 Swagger 生成成功但文档缺失真实公开接口。
-
-API 修改后必须执行：
+从仓库根目录使用标准脚本，例如：
 
 ```bash
-bash scripts/swagger/gen-swagger.sh <module>
-bash scripts/swagger/check-route-coverage.sh <module>
-```
+# 单模块
+bash scripts/swagger/gen-swagger.sh system
+bash scripts/swagger/check-route-coverage.sh system
 
-涉及多个模块时使用：
+# 多模块
+bash scripts/swagger/gen-swagger.sh system manager
+bash scripts/swagger/check-route-coverage.sh system manager
 
-```bash
+# 全模块
 bash scripts/swagger/gen-swagger.sh all
 bash scripts/swagger/check-route-coverage.sh all
 ```
 
-`scripts/dev/restart.sh -<module>` 和 `scripts/dev/restart.sh -all` 会参与 Swagger 生成和覆盖校验，但不能替代开发者补注解。生成失败或覆盖检查失败必须中断重启，不进入后续编译和启动。所有标准入口采用同一严格检查：已经完成的覆盖比较不一致返回 1；检查无法执行（例如 Go 模块缺少路由、入口或 Swagger 文件，FastAPI 模块环境缺失、应用导入或 OpenAPI 导出失败、文档无法读取）返回 2。两类结果均为失败，不提供告警降级或生成失败后继续启动的开关。
+模块清单由[生成脚本](../../scripts/swagger/gen-swagger.sh)与[覆盖检查脚本](../../scripts/swagger/check-route-coverage.sh)登记；两者无参数都选择全部模块。生成入口负责工作区锁、输入指纹与产物发布，不以模块目录中的裸 `swag init` 替代。
 
-FastAPI 生成和覆盖比较都使用对应模块唯一的 `backend/venv/bin/python`，不退回系统 Python。平台一致性 CI 必须在 `make test-platform` 前通过现有 `prepare-python-gate` action，按 Agent、Copilot 各自的声明依赖准备这两个独立环境。检查只导入真实应用并读取 `app.openapi()`，不进入应用 lifespan，不启动服务或连接运行中的 ADDP。根 `make test-swagger` 执行脚本回归和全模块覆盖比较，`make test-authorization` 调用同一入口。
+`restart.sh -<module>` 和 `restart.sh -all` 也会生成并检查文档，失败时不得继续编译和启动；它们不能替代开发者补全注解。覆盖检查结果：0 为通过，1 为已执行比较但不一致，2 为检查无法执行，例如缺少入口、路由或文档、Python 环境缺失、应用导入或 OpenAPI 导出失败。非零都应阻断，不提供告警降级或跳过检查的开关。
+
+FastAPI 生成与比较均使用所属模块唯一的 `backend/venv/bin/python`，不回退到系统 Python。仅导入真实应用并读取 `app.openapi()`，不进入 lifespan、不启动服务或连接运行中的 ADDP。平台 CI 先通过现有 `prepare-python-gate` action 准备 Agent、Copilot 各自的环境。
+
+根 `make test-swagger` 执行检查脚本回归和全模块覆盖比较，`make test-authorization` 调用同一入口，并验证授权契约。门禁范围按[测试与验收规范](addp测试与验收规范.md)选择，不能用 Swagger UI 可访问代替检查通过。
 
 ## 开发期增量生成
 
@@ -41,21 +47,17 @@ FastAPI 继续实时导出 OpenAPI，避免遗漏运行环境对动态 schema �
 
 ## 依赖版本
 
-所有模块统一使用以下版本（已在 `docs/spec/addp技术栈规约.md` 中记录）：
-
-```
-github.com/swaggo/swag v1.16.4
-github.com/swaggo/gin-swagger v1.6.0
-github.com/swaggo/files v1.0.1
-```
+`swag`、`gin-swagger`、`files` 的统一版本以[技术栈规约](addp技术栈规约.md)为准，模块依赖在各自 `go.mod` / `go.sum` 中维护；本指南不再维护另一张版本表。
 
 ## 工具安装
 
+需要手工准备 CLI 时，按技术栈规约固定版本安装，例如当前规定的 swag 版本：
+
 ```bash
-go install github.com/swaggo/swag/cmd/swag@latest
+go install github.com/swaggo/swag/cmd/swag@v1.16.6
 ```
 
-安装后工具路径：`~/go/bin/swag`
+生成脚本先查 PATH，再查 `~/go/bin/swag`。当前脚本在 CLI 缺失时仍自动安装 `v1.16.4`，且不会校验已有 CLI 是否符合规约；这与规约的 `v1.16.6` 尚未对齐。使用前核对实际工具版本，不把自动安装成功视为版本合规，也不使用 `@latest` 隐式改变工具链。
 
 ## 文档边界
 
@@ -72,7 +74,7 @@ go install github.com/swaggo/swag/cmd/swag@latest
 - 内部路由：`/api/v1/internal/**` 或明确标记为 internal/debug/metrics 的路由。
 - 临时调试接口。
 
-排除公开覆盖校验的路由必须有明确规则，不能用排除规则掩盖真实公开 API 缺失。
+排除公开覆盖校验的路由必须有明确规则，不能用排除规则掩盖真实公开 API 缺失。具体过滤由标准检查脚本维护；Inference 的 `/api/v1/inference/internal/` 路由明确纳入覆盖，不能仅凭路径含 `internal` 就将其排除。
 
 ## 路由注解一致性
 
@@ -138,205 +140,75 @@ go run ./authorization/cmd/manifest --coverage-report --repository-root ..
 
 ### 1. 添加依赖
 
-在模块的 `go.mod` 中添加（使用上面统一的版本号）：
-
-```bash
-cd <module>/backend
-go get github.com/swaggo/gin-swagger@v1.6.0
-go get github.com/swaggo/files@v1.0.1
-```
+在模块 `go.mod` 中登记 swaggo 相关依赖，版本按[依赖规则](#依赖版本)维护。仅初始化 Swagger 不应覆盖已有模型或引入新的响应包装格式。
 
 ### 2. 在 main.go 添加总注解
 
+声明 API 标题、版本、说明及与真实路由组一致的 `@BasePath /api/v1/<module>`；启用 Bearer 认证的接口使用 `Authorization` header，例如：
+
 ```go
-// @title           ADDP <ModuleName> API
-// @version         1.0
-// @description     全域数据平台 - <模块名称> API
-
-// @host      localhost:<port>
-// @BasePath  /api/v1/<module>
-
+// @BasePath /api/v1/<module>
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and an ADDP User Access Token.
-func main() {
+// @description Bearer 后接 ADDP User Access Token | Bearer followed by an ADDP User Access Token.
 ```
 
-各模块端口和 BasePath 对照：
-
-| 模块 | 端口 | BasePath |
-|------|------|----------|
-| system | 8180 | /api/v1/system |
-| manager | 8081 | /api/v1/manager |
-| meta | 8082 | /api/v1/meta |
-| transfer | 8083 | /api/v1/transfer |
-| orchestrator | 8084 | /api/v1/orchestrator |
-| develop | 8185 | /api/v1/develop |
-| service | 8086 | /api/v1/service |
-| monitor | 8100 | /api/v1/monitor |
-| standard | 8110 | /api/v1/standard |
-| model | 8181 | /api/v1/model |
-| quality | 8182 | /api/v1/quality |
-| portal | 8184 | /api/v1/portal |
-| graph | 8186 | /api/v1/graph |
+运行地址按部署输出和[端口规范](addp端口分配.md)确定，不在本指南重复列模块端口表。`@BasePath` 与 `@Router` 的拼接规则见[路由注解一致性](#路由注解一致性)。
 
 ### 3. 在 Handler 方法上添加端点注解
 
-基本格式：
+注解紧贴实际 Handler，至少覆盖以下内容：
 
-```go
-// MethodName godoc
-// @Summary      简短描述（一句话）
-// @Description  详细描述
-// @Tags         标签名（用于分组）
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        参数名 [query|path|body] 类型 是否必须 "描述"
-// @Success      200 {object} 响应类型
-// @Failure      400 {object} models.ErrorResponse
-// @Router       /路径 [get|post|put|delete]
-func (h *Handler) MethodName(c *gin.Context) {
-```
-
-#### 常用 @Param 示例
-
-```go
-// 路径参数
-// @Param id path int true "ID"
-
-// 查询参数
-// @Param page query int false "页码" default(1)
-// @Param page_size query int false "每页数量" default(10)
-
-// Body 参数
-// @Param request body models.CreateRequest true "创建请求"
-```
-
-#### 常用 @Success/@Failure 示例
-
-```go
-// 单个对象
-// @Success 200 {object} models.User
-
-// 列表（分页）
-// @Success 200 {object} object{data=[]models.User,total=int,page=int,page_size=int}
-
-// 创建成功
-// @Success 201 {object} models.User
-
-// 无内容
-// @Success 204
-
-// 错误响应（统一使用 models.ErrorResponse）
-// @Failure 400 {object} models.ErrorResponse
-// @Failure 401 {object} models.ErrorResponse
-// @Failure 403 {object} models.ErrorResponse
-// @Failure 404 {object} models.ErrorResponse
-// @Failure 500 {object} models.ErrorResponse
-```
+| 注解 | 要求 |
+| --- | --- |
+| `@Summary`、`@Description`、`@Tags` | 按[注解规范](#注解规范)描述实际行为并分组 |
+| `@Accept`、`@Produce` | 与实际请求及响应媒体类型一致 |
+| `@Param` | 声明 path / query / body 的名称、类型、必填性与说明；分页参数按端点实际契约声明 |
+| `@Success`、`@Failure` | 状态码、DTO 与真实 JSON 结构一致；列表声明真实分页字段，不能用统一包装示例覆盖实际响应 |
+| `@Security` | 声明实际认证方案；需要 Bearer 时使用 `BearerAuth` |
+| `@x-addp-*` | 每个公开 Operation 按[IAM 授权扩展](#iam-授权扩展)声明认证模式及适用 Permission |
+| `@Router` | 使用 BasePath 后的相对路径及真实 method；`:id` 写为 `{id}` |
 
 ### 4. 创建通用响应结构（如未继承 common）
 
-在 `internal/models/swagger.go` 中：
-
-```go
-package models
-
-// ErrorResponse 错误响应
-type ErrorResponse struct {
-    Error string `json:"error" example:"错误信息描述"`
-}
-
-// SuccessResponse 成功响应
-type SuccessResponse struct {
-    Message string `json:"message" example:"操作成功"`
-}
-```
+先复用已有的公共或模块响应类型、别名；确需模块 DTO 时放在既有 `internal/models/` 等位置。Swagger 只描述实际响应，不为了文档新增 `code/message/data` 包装，也不按本指南另造一套成功或错误格式。结构与错误策略见[响应规范](api/响应与错误.md)，共享实现见[API 实施规范](api/文档与实施.md#共享响应处理)。
 
 ### 5. 在 router.go 注册 Swagger 路由
 
-```go
-import (
-    swaggerFiles "github.com/swaggo/files"
-    ginSwagger "github.com/swaggo/gin-swagger"
-    _ "github.com/addp/<module>/docs" // 导入生成的 docs
-)
-
-func SetupRouter(...) *gin.Engine {
-    router := gin.Default()
-    // ...
-
-    // Swagger 文档（放在认证路由之前）
-    router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-    // ... 其他路由
-}
-```
+导入本模块生成的 docs 包（路径取模块 `go.mod`），使用 `gin-swagger` 和 `swaggerFiles.Handler` 注册 `/swagger/*any`。文档路由与受保护业务路由分开，不为展示文档放宽业务认证；Swagger 自身路由不计入公开 API 覆盖。
 
 ### 6. 生成文档
 
-```bash
-cd <module>/backend
-~/go/bin/swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
-```
-
-> 注意：必须使用 `--parseDependency --parseInternal` 选项，因为 ADDP 使用了 common 共享模块，Swagger 需要解析跨模块的类型定义。
-
-生成后会创建：
-- `docs/docs.go` - Go 代码（供 `_ "..."` 导入）
-- `docs/swagger.json` - OpenAPI JSON 规范
-- `docs/swagger.yaml` - OpenAPI YAML 规范
-
-这些生成产物必须随代码同步更新并提交。
+使用[标准生成入口](#强制同步要求)，不在各模块重复维护生成命令。脚本已传入 `--parseDependency --parseInternal` 以解析共享依赖；Go 三份产物均须生成并提交，不能只提交 JSON 或手工修改生成文件。
 
 ### 7. 验证
 
-重启服务后访问：`http://localhost:<port>/swagger/index.html`
+执行同节的覆盖检查，核对遗漏接口、旧路径、method、BasePath 和路径参数。检查脚本统一 Gin 与 Swagger 参数表示，并按[文档边界](#文档边界)过滤；授权声明另按 IAM 契约校验。
 
-静态覆盖校验：
-
-```bash
-bash scripts/swagger/check-route-coverage.sh <module>
-```
-
-该脚本会对比真实公开路由与 `docs/swagger.json` 中的 paths，发现：
-
-- Swagger 缺失真实公开路由。
-- Swagger 残留已删除或已迁移的旧 path。
-- `@Router` method 与真实路由不一致。
-- `@BasePath` 与真实路由组不一致。
-
-脚本会统一 Gin `:id` 与 Swagger `{id}` 的路径参数格式，并排除 health、swagger、docs、internal、debug、metrics 等不需要公开的路由。
+服务已运行且需要查看页面时，按当前实际地址访问 `/swagger/index.html`。UI 可用只证明文档页面可访问，不能代替静态覆盖或接口行为验收；无需为纯文档检查重启服务。
 
 ## Python 模块（FastAPI）
 
-FastAPI 模块（Agent、Copilot）无需额外配置，自动提供：
+FastAPI 模块（Agent、Copilot）由框架提供：
 
 - Swagger UI：`/docs`
 - ReDoc：`/redoc`
 - OpenAPI JSON：`/openapi.json`
 
-新增、删除、修改 FastAPI 路由时，同样必须确保 `/openapi.json` 能反映真实 API。Console API 文档中心接入 FastAPI 模块时，应使用该 OpenAPI JSON 作为来源。
+新增、删除、修改 FastAPI 路由时，必须同步端点描述、请求/响应模型、认证声明和 `openapi_extra`，并通过标准脚本重新导出、提交 `backend/openapi.json`；覆盖检查使用实时 `app.openapi()` 比较该投影。Console API 文档中心使用 OpenAPI JSON，不另建接口清单。
 
 ## 常见问题
 
-### 生成成功但接口缺失
-
-通常是 Handler 缺少 `@Router` 注解，或注解没有紧贴可被 swaggo 解析的函数。补齐注解后重新执行 `gen-swagger.sh` 和 `check-route-coverage.sh`。
-
-### 路径显示旧值
-
-通常是路由迁移后旧 `@Router` 没删除，或生成产物未更新。删除旧注解并重新生成 `docs/swagger.json`、`docs/swagger.yaml`、`docs/docs.go`。
-
-### BasePath 错误
-
-检查 `cmd/server/main.go` 中的 `@BasePath`，必须与模块真实 `router.Group("/api/v1/<module>")` 一致。BasePath 错误会导致 Console API 文档中心展示的接口前缀不准确。
-
-### Swagger UI 可访问但内容错误
-
-Swagger UI 可访问只说明静态文档服务正常，不代表 API 文档准确。必须同时执行 route coverage 校验。
+| 问题 | 核对与处理 |
+| --- | --- |
+| 生成成功但接口缺失 | 检查真实 Handler 是否有可解析的 `@Router`、注解是否紧贴函数，再通过标准入口生成并检查覆盖 |
+| 路径仍为旧值或 BasePath 错误 | 对照实际路由组、`@BasePath` 和相对 `@Router`；删除旧注解，重新生成全部产物 |
+| `cannot find type definition` | 核对 DTO、导入与共享依赖；标准入口已包含依赖解析参数，不另写裸 `swag init` 命令 |
+| 缺少 FastAPI 环境或无法导入应用 | 按模块声明准备其唯一 venv，保留原始错误；不换系统 Python、不跳过覆盖检查 |
+| Swagger UI 可用但内容错误 | 页面可访问不代表契约正确，继续核对生成产物和标准覆盖检查结果 |
+| 生成目录是否提交 | Go 三份 docs 产物与 FastAPI `backend/openapi.json` 均随契约变更提交，不提交缓存或虚拟环境 |
+| Swagger UI 如何调用受保护接口 | 按[登录规范](addp登录认证的统一要求.md#61-登录)完成必要 MFA 与 Context 选择，取得当前有效的短期 Access Token，再在 Authorize 中填入 `Bearer <access_token>`；Refresh Cookie 和其他票据不作为 Bearer Token |
 
 ## 注解规范
 
@@ -348,31 +220,15 @@ Swagger 注解中面向人阅读的描述应使用 `中文 | English` 格式，�
 // @Summary 获取用户列表 | Get user list
 // @Description 根据条件分页查询系统用户列表 | Query system user list with pagination
 // @Param page query int false "页码，默认1 | Page number, default 1"
-// @Success 200 {object} response.Data "返回用户列表 | Return user list"
 ```
 
 ### 标签（Tags）分组建议
 
-按功能模块分组，使用中文：
-
-```go
-// @Tags 认证
-// @Tags 用户管理
-// @Tags 引擎管理
-// @Tags 日志管理
-// @Tags 租户管理
-```
+按模块领域分组，复用已有 Tag，例如认证、用户管理、引擎管理；不要以每个 Handler 或每条路由另造分组。
 
 ### 示例值
 
-为重要字段添加 `example` 标签：
-
-```go
-type LoginRequest struct {
-    Username string `json:"username" example:"admin"`
-    Password string `json:"password" example:"123456"`
-}
-```
+重要字段可用 `example` 标签给出与类型、枚举和真实校验一致的公开样例；示例不使用真实账号密码、Token 或连接 Secret。
 
 ### 优先级
 
@@ -381,35 +237,7 @@ type LoginRequest struct {
 1. **P0**：认证相关（登录、刷新）
 2. **P0**：核心 CRUD（List、Create、GetByID）
 3. **P1**：其他常用操作（更新、删除、测试连接等）
-4. **P2**：内部 API（通常不需要 Swagger）
-
-## 常见问题
-
-### Q: 生成时报 "cannot find type definition"
-
-**原因**：模型引用了 common 模块的类型，swag 默认不解析外部依赖。
-
-**解决**：使用 `--parseDependency` 选项：
-```bash
-swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
-```
-
-### Q: docs 目录要不要提交到 git？
-
-**建议**：提交 `docs/` 目录。原因：
-- 保证 CI/CD 环境无需安装 swag 工具也能编译
-- 文档内容与代码同步提交，便于追踪变更
-
-### Q: Swagger UI 显示的 BasePath 不对？
-
-检查 `main.go` 的 `@BasePath` 注解是否与路由组的前缀一致。
-
-### Q: 如何在 Swagger UI 中测试需要认证的接口？
-
-1. 先调用登录接口（`POST /login`）获取 token
-2. 点击 Swagger UI 右上角的 **Authorize** 按钮
-3. 在 `BearerAuth (apiKey)` 输入框中填入 `Bearer <your-token>`
-4. 点击 Authorize，之后所有请求都会自动携带该 token
+4. 内部 API 是否纳入按[文档边界](#文档边界)及显式规则判定，不以优先级跳过应覆盖的接口。
 
 ## 参考
 

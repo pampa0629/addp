@@ -1,110 +1,50 @@
-# Common Frontend - 拆分架构
+# Common Frontend 共享前端架构
 
-为了避免不必要的依赖，`common-frontend` 已被拆分为两个子模块：
+`common-frontend` 按依赖与职责划分共享源码。业务模块复用规范实现，只承担领域组合和协议适配；组件唯一所有权遵循[开发原则](../../docs/spec/addp开发原则.md#8-dry-dont-repeat-yourself--不要重复自己)。
 
 ## 目录结构
 
-```
-common-frontend/
-├── basic/          # 基础 UI 组件（无地图依赖）
-│   └── src/
-│       ├── components/
-│       │   ├── StorageEngineForm.vue
-│       │   ├── ResourceTree.vue
-│       │   ├── TabularResultRenderer.vue
-│       │   └── DataPagination.vue
-│       ├── utils/
-│       │   └── formatters.js
-│       ├── types/
-│       │   └── index.js
-│       └── index.js
-│
-└── map/            # 地图相关组件（需要 ol 和 @amap/amap-jsapi-loader）
-    └── src/
-        ├── components/
-        │   ├── map/
-        │   │   ├── MapContainer.vue
-        │   │   ├── GaodeMapRenderer.vue
-        │   │   └── OpenLayersRenderer.vue
-        │   ├── GeoJsonPreview.vue
-        │   ├── TablePreview.vue
-        │   └── TilePreview.vue
-        ├── composables/
-        │   ├── useMapConfig.js
-        │   ├── useGaodeMap.js
-        │   ├── useOpenLayersMap.js
-        │   └── useResizable.js
-        ├── utils/
-        │   └── formatters.js
-        └── index.js
-```
+| 源码位置 | 职责与入口 |
+| --- | --- |
+| [basic/src](../basic/src/index.js) | 不依赖地图库的基础 UI、资源选择、认证、主题、国际化、表格与分页；也是包根入口。 |
+| [basic/src/previews.js](../basic/src/previews.js) | 文件预览的独立入口，避免基础入口直接导出带预览依赖的组件。 |
+| [map/src](../map/src/index.js) | 地图、空间预览、CRS 与底图展示，组合基础表格和分页。 |
+| [chart/src](../chart/src/index.js) | 数据服务结果图表与受控图表配置。 |
+| [dag/src](../dag/src/index.js) | DAG 查看器、编辑交互与共享 composable。 |
+| [graph/src](../graph/src/index.js) | 图结果、Schema、本体与血缘查看器。 |
+| [agent-ui/src](../agent-ui/src/index.js) | Agent A2UI 协议到受信任共享 Vue 组件的适配。 |
+
+组件与结果契约的详细说明见[共享前端 README](../README.md)，地图与 DAG 的专项边界分别见[Map 说明](../map/README.md)和[DAG 说明](../dag/README.md)。
 
 ## 使用方法
 
 ### 基础组件（System, Transfer 等不需要地图的模块）
 
-在 `vite.config.js` 中：
-
-```javascript
-resolve: {
-  alias: {
-    '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-  }
-}
-```
-
-在组件中：
+`@common-ui` 指向 `basic/src`；包名 `@addp/common-frontend` 的主入口也为 `basic/src/index.js`。例如：
 
 ```javascript
 import { StorageEngineForm, ResourceTree } from '@common-ui'
 ```
 
-**依赖要求**: 只需要 Vue 和 Element Plus
+基础入口的依赖不止 Vue 和 Element Plus；以[包依赖声明](../package.json)及消费模块的 `package.json`、锁文件为准。
 
 ### 预览组件（Manager 等需要文件预览的模块）
 
-预览组件从单独入口导入：
+从 `@common-ui/previews` 单独导入，使用方声明对应预览依赖，不把这些组件重新导出到基础主入口：
 
 ```javascript
 import { ImagePreview, MarkdownPreview, PdfPreview } from '@common-ui/previews'
 ```
 
-**依赖要求**: 使用预览入口的模块需要显式安装对应预览依赖，例如 `geotiff`、`marked`、`dompurify`、`mermaid`、`jszip`、`mammoth`。不使用预览入口的模块不应因为 `@common-ui` 主入口被迫安装这些依赖。
-
 ### 地图组件（Manager 等需要地图的模块）
 
-在 `vite.config.js` 中：
-
-```javascript
-resolve: {
-  alias: {
-    '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
-  }
-}
-```
-
-在组件中：
+`@common-ui-map` 指向 `map/src`：
 
 ```javascript
 import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 ```
 
-**依赖要求**:
-```json
-{
-  "dependencies": {
-    "ol": "^10.7.0",
-    "@amap/amap-jsapi-loader": "^1.0.1"
-  }
-}
-```
-
-## 优势
-
-✅ **按需引入**: 不需要地图功能的模块无需安装地图依赖
-✅ **减小包体积**: 基础模块的打包体积更小（约减少 2-3MB）
-✅ **清晰职责**: 组件职责更加明确，易于维护
-✅ **统一管理**: 所有共享组件都在 common-frontend 中统一维护
+地图使用方声明 `ol`、`@amap/amap-jsapi-loader` 等实际依赖；预览、图、DAG 和图表也按使用的入口维护依赖，不以模块名称推断。版本约束遵循[技术栈规约](../../docs/spec/addp技术栈规约.md)，具体别名和去重配置可核对[Manager Vite 配置](../../manager/frontend/vite.config.js)与[System Vite 配置](../../system/frontend/vite.config.js)。
 
 ## 表格预览组合边界
 
@@ -114,52 +54,8 @@ import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 - Manager 在分页变化时向后端加载对应页；Develop 对单次执行已经加载的有界结果做客户端切片。两种策略共享相同的表格与分页呈现，不建立两套组件。表格预览以响应的总数与当前页大小表达记录范围，不显示与实际分页相矛盾的固定 50 行上限。
 - Container Preview、Workbench 和 Agent UI 的协议适配器应复用同一个基础表格，不得重新实现同类单元格格式化和结构化值展示。
 
-## 迁移指南
+## 接入与验证
 
-如果您的模块只使用 `StorageEngineForm`，请：
+新模块的依赖、别名、单一 Vue 实例、主题及语言初始化统一按[新模块开发指南](../../docs/spec/addp新模块开发指南.md#创建新模块前端)接入，不在本文重复整份 Vite 配置或保留旧迁移步骤。现有模块仍须通过 `overrides`、alias 与 dedupe 保持 Vue 单一实例，`common-frontend` 不保留自己的 `node_modules`。
 
-1. 更新 `vite.config.js`，将 `@common-ui` 指向 `basic/src`
-2. 从 `package.json` 移除 `ol` 和 `@amap/amap-jsapi-loader`（如果没使用）
-3. 运行 `npm uninstall ol @amap/amap-jsapi-loader` 清理依赖
-
-如果您的模块使用地图组件，请：
-
-1. 添加别名 `@common-ui-map` 指向 `map/src`
-2. 确保 `package.json` 包含地图依赖
-3. 更新导入语句
-
-## 示例
-
-### System Frontend (无地图)
-
-```javascript
-// vite.config.js
-export default defineConfig({
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-    }
-  }
-})
-
-// Engines.vue
-import { StorageEngineForm } from '@common-ui'
-```
-
-### Manager Frontend (有地图)
-
-```javascript
-// vite.config.js
-export default defineConfig({
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
-    }
-  }
-})
-
-// DataPreview.vue
-import { TablePreview, GeoJsonPreview } from '@common-ui-map'
-```
+视觉与交互要求见[前端风格规范](addp前端风格设计规范.md)。共享组件与唯一所有权通过根 `make test-common-frontend` 验证；消费模块按实际影响选择标准门禁，确定性浏览器回归与真实运行验收分别记录，规则见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)。

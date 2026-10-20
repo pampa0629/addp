@@ -1241,13 +1241,14 @@
       "typeNfs": "NFS Filesystem",
       "addStorage": "Register General Engine",
       "addExtension": "Register Extension Engine",
-      "filter": "Filter:",
       "filterStorage": "Storage",
       "filterCompute": "Compute",
-      "filterGeneral": "General",
-      "filterExtension": "Extension",
-      "filterBuiltin": "Built-in",
-      "filterDeleted": "Deleted",
+      "filters": {
+        "capabilities": "Capabilities",
+        "origin": "Origin",
+        "registration": "Registration",
+        "lifecycle": "Lifecycle"
+      },
       "columns": {
         "id": "ID",
         "name": "Name",

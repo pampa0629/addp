@@ -1,6 +1,6 @@
 # ADDP 开发脚本
 
-本目录包含所有与 ADDP 开发模式相关的启动、停止、重启脚本。
+本目录包含所有与 ADDP 开发模式相关的启动、停止、重启脚本。日常操作选择见[启动脚本使用指南](../docs/启动脚本使用指南.md)。
 
 ## 核心原则
 
@@ -178,10 +178,7 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 同步依赖、验证驱动和真实 COPC 写入并启动。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
 - Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性和版本并启动，核对 PID、监听归属及 HTTP 健康状态。真实三页中文 PDF 转换由 `make test-document-native` 和 CI 独立验证。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
 
-**重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
-- 原因: 避免 pgvector 等扩展需要重新编译安装
-- 如需重启基础设施: `bash scripts/infra/down.sh && bash scripts/infra/up.sh`
-- `start.sh` 会自动检测基础设施运行状态,已运行则跳过
+**Infra 处理**：开发重启保留健康的核心 Infra；启动入口只在核心未就绪时调用 `scripts/infra/up.sh`。所选观测能力异常单独报告，不触发健康核心设施重建，业务继续启动但命令返回非零。设施配置应用或故障处理见[Infra 生命周期指南](../infra/docs/生命周期脚本.md)，按实际问题选择操作。
 
 ### keepalive.sh
 
@@ -229,29 +226,14 @@ bash scripts/dev/keepalive.sh restart -all
 
 ## 启动依赖关系
 
-```
-基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
-  ↓
-System Backend (8180) - IAM、模块目录与 System-owned 配置
-  ↓
-Manager Backend (8081) + Meta Backend (8082) (并行启动)
-  ↓
-Transfer Backend (8083) + Transfer bounded Worker + Transfer continuous Worker + Meta Worker
-  ↓
-Orchestrator Backend (8084) + Develop Backend 内嵌 Query Execution Supervisor
-  ↓
-Model3D / PointCloud / SuperMap / GeoPython Workflows (按模块需要启动；全量启动包含 SuperMap)
-  ↓
-Gateway (8000) - API 路由
-  ↓
-前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
-```
+模块参数按依赖并集合并启动清单。System Backend、Gateway 和 Console 构成公共入口；Meta 是否启动、后端依赖是否同时带前端，以及显式 Runtime 的选择规则统一见[模块选择启动指南](../docs/模块选择启动指南.md)。
 
-**关键依赖**:
-- 所有后端服务依赖**基础设施**
-- Manager/Meta/Transfer 通过 **System** 获取 AuthContext、Engine 和模块目录等 System-owned 事实；各模块普通运行配置不从 System 加载
-- Gateway 依赖**所有后端服务**
-- 前端服务依赖**对应后端服务**
+- 核心 Infra 就绪后启动 System；各模块 Backend 就绪后启动自己的 Worker，模块之间仍并行。
+- Manager/Meta/Transfer 通过 **System** 获取 AuthContext、Engine 和模块目录等 System-owned 事实；各模块普通运行配置不从 System 加载。
+- Gateway 在本次选择的后端启动阶段完成后启动，业务路由使用 System 的实例发现；前端按本次选择的清单启动。
+- Engine Runtime 使用显式参数选择，无参数全量启动包含默认 Runtime；不由模块名称推断应启动全部计算引擎。
+
+具体就绪、迁移和停止约束见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md)。
 
 ## IAM 首次初始化
 

@@ -2,1052 +2,112 @@
 
 ## 概述
 
-`ScheduleConfig` 是 ADDP 平台统一的定时调度配置组件，用于配置 Cron 表达式和调度规则。所有模块的定时任务配置必须使用此组件，以保证用户体验和功能一致性。
+`ScheduleConfig` 是共享 Cron 配置组件，`ScheduleDisplay` 负责只读展示。任务配置应复用这两个组件；组件不保存任务、不调用调度 API，也不决定任务是否具有调度能力。
 
-**组件位置**：`common-frontend/basic/src/components/ScheduleConfig.vue`
+实现入口：[ScheduleConfig.vue](../src/components/ScheduleConfig.vue)、[ScheduleDisplay.vue](../src/components/ScheduleDisplay.vue)、[schedule.js](../src/utils/schedule.js)。
 
-**工具函数**：`common-frontend/basic/src/utils/schedule.js`
+## 字段与数据格式
 
----
+任务定义和提交 DTO 的调度字段统一使用 `schedule`，字段与启用状态的归属遵循[调度规范](../../../docs/spec/tasks/编排与调度.md#调度规范)。组件可以绑定宿主的局部变量，再由宿主组装 owner DTO；不在组件文档中维护另一份数据库模型或字段迁移流程。
 
-## 核心特性
-
-✅ **11种快捷预设**：每分钟、每5分钟、每15分钟、每30分钟、每小时、每2小时、每天多个时段、每周、每月
-
-✅ **4种调度模式**：
-- `daily`（每天）：指定具体时刻（如 09:00）
-- `weekly`（每周）：指定星期几 + 时刻
-- `monthly`（每月）：指定日期 + 时刻
-- `cron`（自定义）：手动输入标准 Cron 表达式
-
-✅ **实时预览**：显示中文调度描述（如"每周一 09:00 执行"）
-
-✅ **在线工具**：集成 crontab.guru 链接，帮助用户理解和验证 Cron 表达式
-
-✅ **格式验证**：自动校验 Cron 表达式合法性
-
----
-
-## 字段命名规范（重要！）
-
-### 统一字段名：`schedule`
-
-所有模块必须统一使用 `schedule` 作为定时调度字段名，禁止使用其他命名：
-
-| ✅ 正确 | ❌ 错误 |
-|--------|--------|
-| `schedule` | `cron_expr` |
-| | `cronExpression` |
-| | `scheduleCron` |
-| | `cron_expression` |
-
-### 前端字段定义
-
-```javascript
-// 表单数据结构
-const form = ref({
-  name: '',
-  description: '',
-  schedule: '',  // ✅ 统一使用 schedule
-  // ... 其他字段
-})
-```
-
-### 后端字段定义
-
-```go
-// Go 结构体
-type Task struct {
-    ID          uint      `json:"id"`
-    Name        string    `json:"name"`
-    Schedule    string    `json:"schedule" gorm:"column:schedule"`  // ✅ 统一使用 schedule
-    // ... 其他字段
-}
-```
-
-```sql
--- 数据库表结构
-CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255),
-    schedule VARCHAR(255),  -- ✅ 统一使用 schedule
-    -- ... 其他字段
-);
-```
-
----
-
-## 数据格式
-
-### Cron 表达式格式
-
-使用标准 5 字段 Cron 格式（分钟级精度）：
-
-```
-分 时 日 月 周
-* * * * *
-```
-
-**字段说明**：
-- **分**：0-59
-- **时**：0-23
-- **日**：1-31
-- **月**：1-12
-- **周**：0-7（0 和 7 都表示周日）
-
-**示例**：
-```javascript
-'0 9 * * 1'        // 每周一 09:00
-'*/5 * * * *'      // 每 5 分钟
-'0 0 1 * *'        // 每月 1 号零点
-'30 14 * * 1-5'    // 每个工作日 14:30
-```
-
----
+- `v-model` 为 Cron 字符串，清空操作发出空字符串；空计划的手动触发语义、`enabled` 和 `next_run_at` 由 owner 维护。
+- 默认预设和 daily / weekly / monthly 表单生成 5 字段表达式：`分 时 日 月 周`；周值为 `0–7`，0 和 7 表示周日，表单使用字符串 `"0"` 表示周日。
+- 自定义 Cron 输入由 `allowCustomCron` 开启。当前前端粗校验接受 5 或 6 个字段，不能据此推断后端支持秒级；实际精度由 owner 的校验与调度配置决定。Transfer 已有自己的 6 字段预设，见[实际消费示例](../../../transfer/frontend/src/views/TaskWizard/Step4Configure.vue)。
+- 支持每天、每周、每月，以及启用后的自定义 Cron 模式。内置预设当前为 7 个，完整列表以 `presetOptions` 为准，不复制另一份预设清单。
 
 ## 基础用法
 
-### 1. 安装依赖（各模块 package.json）
-
-确保 `package.json` 中包含依赖：
-
-```json
-{
-  "dependencies": {
-    "element-plus": "^2.4.2",
-    "cronstrue": "^2.31.0"
-  }
-}
-```
-
-### 2. 配置别名（vite.config.js）
-
-```javascript
-import { defineConfig } from 'vite'
-import { resolve } from 'path'
-
-export default defineConfig({
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-    }
-  }
-})
-```
-
-### 3. 导入组件
-
-```javascript
-import { ScheduleConfig } from '@common-ui'
-import { describeCron } from '@common-ui'
-```
-
-### 4. 基础示例
+组件和工具函数从 `@common-ui` 导入，别名、依赖和语言初始化见[共享前端架构](../../docs/ARCHITECTURE.md)与[国际化规范](../../../docs/spec/addp国际化开发规范.md#前端规范)。下面示例假定宿主已初始化 Vue I18n 和 Element Plus：
 
 ```vue
+<script setup>
+import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { ScheduleConfig, ScheduleDisplay } from '@common-ui'
+
+const { t } = useI18n()
+const form = ref({ schedule: '' })
+</script>
+
 <template>
   <el-form :model="form">
-    <el-form-item label="定时调度">
-      <ScheduleConfig v-model="form.schedule" />
-    </el-form-item>
-  </el-form>
-</template>
-
-<script setup>
-import { ref } from 'vue'
-import { ScheduleConfig } from '@common-ui'
-
-const form = ref({
-  schedule: ''  // Cron 表达式字符串
-})
-</script>
-```
-
----
-
-## 使用模式
-
-### 模式 1：表单嵌入模式（推荐）
-
-**适用场景**：任务创建/编辑表单
-
-**示例**：Transfer、Orchestrator、Develop 模块
-
-```vue
-<template>
-  <el-dialog title="创建任务" v-model="dialogVisible" width="600px">
-    <el-form :model="form" label-width="120px">
-      <el-form-item label="任务名称" required>
-        <el-input v-model="form.name" />
-      </el-form-item>
-
-      <el-form-item label="任务描述">
-        <el-input type="textarea" v-model="form.description" />
-      </el-form-item>
-
-      <el-form-item label="定时调度">
-        <ScheduleConfig
-          v-model="form.schedule"
-          :allow-custom-cron="true"
-        />
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="handleSubmit">确定</el-button>
-    </template>
-  </el-dialog>
-</template>
-
-<script setup>
-import { ref } from 'vue'
-import { ScheduleConfig } from '@common-ui'
-
-const dialogVisible = ref(false)
-const form = ref({
-  name: '',
-  description: '',
-  schedule: ''  // ✅ 统一字段名
-})
-
-const handleSubmit = () => {
-  // 提交时 form.schedule 包含 Cron 表达式
-  console.log('提交数据：', form.value)
-}
-</script>
-```
-
----
-
-### 模式 2：独立对话框模式
-
-**适用场景**：为已存在的引擎配置定时规则
-
-**示例**：Meta 模块（引擎级别的定时扫描配置）
-
-```vue
-<template>
-  <!-- 主界面：引擎列表 -->
-  <el-table :data="engines">
-    <el-table-column label="引擎名称" prop="name" />
-    <el-table-column label="定时计划">
-      <template #default="{ row }">
-        <div v-if="row.schedule">
-          <el-tag type="success">{{ describeCron(row.schedule) }}</el-tag>
-        </div>
-        <el-tag v-else type="info">未设置</el-tag>
-      </template>
-    </el-table-column>
-    <el-table-column label="操作">
-      <template #default="{ row }">
-        <el-button size="small" @click="openScheduleDialog(row)">
-          设置定时
-        </el-button>
-      </template>
-    </el-table-column>
-  </el-table>
-
-  <!-- 定时调度配置对话框 -->
-  <el-dialog
-    title="定时扫描设置"
-    v-model="scheduleDialogVisible"
-    width="600px"
-  >
-    <el-form label-width="120px">
-      <el-form-item label="是否启用">
-        <el-switch v-model="scheduleEnabled" />
-      </el-form-item>
-
-      <el-form-item label="调度配置" v-if="scheduleEnabled">
-        <ScheduleConfig
-          v-model="currentSchedule"
-          :allow-custom-cron="true"
-        />
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <el-button @click="scheduleDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="saveSchedule">保存</el-button>
-    </template>
-  </el-dialog>
-</template>
-
-<script setup>
-import { ref } from 'vue'
-import { ScheduleConfig, describeCron } from '@common-ui'
-
-const engines = ref([])
-const scheduleDialogVisible = ref(false)
-const scheduleEnabled = ref(false)
-const currentSchedule = ref('')
-const currentEngine = ref(null)
-
-const openScheduleDialog = (engine) => {
-  currentEngine.value = engine
-  currentSchedule.value = engine.schedule || ''
-  scheduleEnabled.value = !!engine.schedule
-  scheduleDialogVisible.value = true
-}
-
-const saveSchedule = () => {
-  // 保存调度配置到引擎
-  const updateData = {
-    schedule: scheduleEnabled.value ? currentSchedule.value : null
-  }
-  // 调用 API 更新引擎配置
-  scheduleDialogVisible.value = false
-}
-</script>
-```
-
----
-
-## 组件属性（Props）
-
-### 基础属性
-
-| 属性名 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `modelValue` | `String` | `''` | Cron 表达式（v-model 绑定） |
-| `allowCustomCron` | `Boolean` | `false` | 是否允许自定义 Cron 表达式 |
-| `showPresets` | `Boolean` | `true` | 是否显示快捷预设按钮 |
-| `presetList` | `Array` | 默认11个 | 自定义预设列表 |
-| `compactMode` | `Boolean` | `false` | 紧凑模式（减少间距） |
-| `disabled` | `Boolean` | `false` | 是否禁用 |
-| `readonly` | `Boolean` | `false` | 是否只读 |
-
-### 高级属性示例
-
-```vue
-<!-- 自定义预设列表 -->
-<ScheduleConfig
-  v-model="schedule"
-  :preset-list="[
-    { label: '每小时', value: '0 * * * *' },
-    { label: '每天9点', value: '0 9 * * *' }
-  ]"
-/>
-
-<!-- 紧凑模式 -->
-<ScheduleConfig
-  v-model="schedule"
-  :compact-mode="true"
-  :show-presets="false"
-/>
-
-<!-- 只读模式（用于详情展示） -->
-<ScheduleConfig
-  v-model="schedule"
-  :readonly="true"
-/>
-```
-
----
-
-## 工具函数
-
-### 从 `@common-ui` 导入
-
-```javascript
-import {
-  describeCron,           // 生成中文描述
-  validateCron,           // 验证 Cron 格式
-  buildScheduleFromForm,  // 从表单构建 Cron
-  decodeScheduleToForm,   // 解析 Cron 到表单
-} from '@common-ui'
-```
-
-### 1. describeCron(cronExpr)
-
-生成 Cron 表达式的中文描述。
-
-```javascript
-import { describeCron } from '@common-ui'
-
-describeCron('0 9 * * 1')        // "每周一 09:00 执行"
-describeCron('*/5 * * * *')      // "每 5 分钟执行"
-describeCron('0 0 1 * *')        // "每月 1 号 00:00 执行"
-describeCron('invalid')          // "无效的 Cron 表达式"
-```
-
-**表格中显示调度描述**：
-
-```vue
-<el-table :data="tasks">
-  <el-table-column label="调度配置">
-    <template #default="{ row }">
-      <el-tag v-if="row.schedule" type="success">
-        {{ describeCron(row.schedule) }}
-      </el-tag>
-      <el-tag v-else type="info">手动触发</el-tag>
-    </template>
-  </el-table-column>
-</el-table>
-```
-
-### 2. validateCron(cronExpr)
-
-验证 Cron 表达式是否合法。
-
-```javascript
-import { validateCron } from '@common-ui'
-
-validateCron('0 9 * * 1')    // true
-validateCron('invalid')      // false
-```
-
-### 3. buildScheduleFromForm(formData)
-
-从表单数据构建 Cron 表达式（内部使用，一般无需手动调用）。
-
-```javascript
-buildScheduleFromForm({
-  mode: 'daily',
-  time: '09:00'
-})
-// 返回: '0 9 * * *'
-```
-
-### 4. decodeScheduleToForm(cronExpr)
-
-解析 Cron 表达式到表单数据（内部使用）。
-
-```javascript
-decodeScheduleToForm('0 9 * * 1')
-// 返回: { mode: 'weekly', time: '09:00', weekDays: [1] }
-```
-
----
-
-## 完整示例
-
-### Transfer 模块：数据传输任务
-
-**文件**：`transfer/frontend/src/views/TaskForm.vue`
-
-```vue
-<template>
-  <el-dialog title="创建传输任务" v-model="dialogVisible" width="800px">
-    <el-form :model="form" label-width="120px">
-      <el-form-item label="任务名称" required>
-        <el-input v-model="form.name" placeholder="请输入任务名称" />
-      </el-form-item>
-
-      <el-form-item label="源数据库">
-        <el-select v-model="form.source_engine_id" placeholder="选择源">
-          <el-option
-            v-for="engine in engines"
-            :key="engine.id"
-            :label="engine.name"
-            :value="engine.id"
-          />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item label="目标数据库">
-        <el-select v-model="form.target_engine_id" placeholder="选择目标">
-          <el-option
-            v-for="engine in engines"
-            :key="engine.id"
-            :label="engine.name"
-            :value="engine.id"
-          />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item label="定时调度">
-        <ScheduleConfig
-          v-model="form.schedule"
-          :allow-custom-cron="true"
-        />
-        <div style="color: #909399; font-size: 12px; margin-top: 5px">
-          留空表示手动触发，设置后将按计划自动执行
-        </div>
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="handleSubmit">创建任务</el-button>
-    </template>
-  </el-dialog>
-</template>
-
-<script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ScheduleConfig } from '@common-ui'
-import { createTask, listEngines } from '@/api/transfer'
-
-const dialogVisible = ref(false)
-const engines = ref([])
-
-const form = ref({
-  name: '',
-  source_engine_id: null,
-  target_engine_id: null,
-  schedule: ''  // ✅ 统一字段名
-})
-
-onMounted(async () => {
-  const res = await listEngines()
-  engines.value = res.data
-})
-
-const handleSubmit = async () => {
-  try {
-    await createTask(form.value)
-    ElMessage.success('任务创建成功')
-    dialogVisible.value = false
-  } catch (error) {
-    ElMessage.error('创建失败：' + error.message)
-  }
-}
-</script>
-```
-
----
-
-### Orchestrator 模块：编排任务
-
-**文件**：`orchestrator/frontend/src/views/OrchestrationForm.vue`
-
-```vue
-<template>
-  <el-form :model="form" label-width="120px">
-    <el-form-item label="编排名称" required>
-      <el-input v-model="form.name" />
-    </el-form-item>
-
-    <el-form-item label="定时调度">
+    <el-form-item :label="t('schedule.title')">
       <ScheduleConfig
         v-model="form.schedule"
         :allow-custom-cron="true"
       />
     </el-form-item>
-
-    <el-form-item label="DAG 配置">
-      <!-- DAG 编辑器 -->
-    </el-form-item>
   </el-form>
+  <ScheduleDisplay :cron="form.schedule" />
 </template>
-
-<script setup>
-import { ref } from 'vue'
-import { ScheduleConfig } from '@common-ui'
-
-const form = ref({
-  name: '',
-  schedule: '',  // ✅ 统一字段名
-  dag_config: {}
-})
-</script>
 ```
 
----
+组件内部已有自定义配置对话框；表单嵌入与表格只读展示共用上述入口。当前组件未通过 `defineExpose` 提供 `openDialog()`，不要通过组件 ref 调用内部方法。
 
-### Meta 模块：引擎定时扫描
+## 组件属性与事件
 
-**文件**：`meta/frontend/src/views/MetadataScan.vue`
+### ScheduleConfig
 
-```vue
-<template>
-  <el-table :data="engines">
-    <el-table-column label="引擎名称" prop="name" />
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `modelValue` | String | `''` | Cron 字符串，通过 `v-model` 更新。 |
+| `allowCustomCron` | Boolean | `false` | 显示自定义 Cron 输入模式；每天、每周、每月仍可配置。 |
+| `showPresets` | Boolean | `true` | 控制快捷按钮、配置入口及当前计划区域的显示；设为 false 不会自动打开对话框。 |
+| `presetList` | Array | `null` | null 使用内置预设，传数组则使用该列表。 |
+| `compactMode` | Boolean | `false` | 紧凑间距。 |
+| `disabled` | Boolean | `false` | 禁用交互。 |
+| `readonly` | Boolean | `false` | 只读；详情或表格优先使用 ScheduleDisplay。 |
 
-    <el-table-column label="定时计划" width="200">
-      <template #default="{ row }">
-        <div v-if="row.schedule">
-          <el-icon><Clock /></el-icon>
-          <span style="margin-left: 5px">{{ describeCron(row.schedule) }}</span>
-        </div>
-        <el-tag v-else type="info">未设置</el-tag>
-      </template>
-    </el-table-column>
+唯一事件为 `update:modelValue`，确认、选择预设和清空操作返回字符串。提交任务、请求失败、启用/停用及保存后的刷新均由宿主处理。
 
-    <el-table-column label="操作" width="150">
-      <template #default="{ row }">
-        <el-button
-          size="small"
-          type="primary"
-          @click="openScheduleDialog(row)"
-        >
-          设置定时
-        </el-button>
-      </template>
-    </el-table-column>
-  </el-table>
+### ScheduleDisplay
 
-  <!-- 定时扫描配置对话框 -->
-  <el-dialog
-    title="定时扫描设置"
-    v-model="scheduleDialogVisible"
-    width="600px"
-  >
-    <el-form label-width="120px">
-      <el-form-item label="引擎">
-        <el-input :value="currentEngine?.name" disabled />
-      </el-form-item>
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `cron` | String | `''` | 非空时显示调度描述。 |
+| `emptyText` | String | `''` | 空计划的展示文案；未提供时使用当前语言的手动触发词条。 |
 
-      <el-form-item label="启用定时扫描">
-        <el-switch v-model="scheduleEnabled" />
-      </el-form-item>
+### 自定义预设
 
-      <el-form-item label="调度配置" v-if="scheduleEnabled">
-        <ScheduleConfig
-          v-model="currentSchedule"
-          :allow-custom-cron="true"
-        />
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <el-button @click="scheduleDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="saveSchedule">保存</el-button>
-    </template>
-  </el-dialog>
-</template>
-
-<script setup>
-import { ref, onMounted } from 'vue'
-import { Clock } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { ScheduleConfig, describeCron } from '@common-ui'
-import { listEngines, updateEngineSchedule } from '@/api/meta'
-
-const engines = ref([])
-const scheduleDialogVisible = ref(false)
-const scheduleEnabled = ref(false)
-const currentSchedule = ref('')
-const currentEngine = ref(null)
-
-onMounted(async () => {
-  const res = await listEngines()
-  engines.value = res.data
-})
-
-const openScheduleDialog = (engine) => {
-  currentEngine.value = engine
-  currentSchedule.value = engine.schedule || ''
-  scheduleEnabled.value = !!engine.schedule
-  scheduleDialogVisible.value = true
-}
-
-const saveSchedule = async () => {
-  try {
-    await updateEngineSchedule(currentEngine.value.id, {
-      schedule: scheduleEnabled.value ? currentSchedule.value : null
-    })
-
-    // 更新本地数据
-    currentEngine.value.schedule = scheduleEnabled.value ? currentSchedule.value : null
-
-    ElMessage.success('定时扫描配置已保存')
-    scheduleDialogVisible.value = false
-  } catch (error) {
-    ElMessage.error('保存失败：' + error.message)
-  }
-}
-</script>
-```
-
----
-
-## 后端集成
-
-### Go 后端示例
-
-```go
-package models
-
-import "time"
-
-type Task struct {
-    ID          uint      `json:"id" gorm:"primaryKey"`
-    Name        string    `json:"name" gorm:"not null"`
-    Description string    `json:"description"`
-    Schedule    string    `json:"schedule" gorm:"column:schedule"`  // ✅ 统一字段名
-    Enabled     bool      `json:"enabled" gorm:"default:true"`
-    CreatedAt   time.Time `json:"created_at"`
-    UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// 表名
-func (Task) TableName() string {
-    return "tasks"
-}
-```
-
-### API 接口示例
-
-```go
-// POST /api/tasks - 创建任务
-type CreateTaskRequest struct {
-    Name        string `json:"name" binding:"required"`
-    Description string `json:"description"`
-    Schedule    string `json:"schedule"`  // ✅ 统一字段名，可选
-}
-
-func (h *TaskHandler) Create(c *gin.Context) {
-    var req CreateTaskRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(400, gin.H{"error": err.Error()})
-        return
-    }
-
-    // 如果提供了 schedule，验证 Cron 表达式
-    if req.Schedule != "" {
-        if !validateCronExpr(req.Schedule) {
-            c.JSON(400, gin.H{"error": "Invalid cron expression"})
-            return
-        }
-    }
-
-    task := &models.Task{
-        Name:        req.Name,
-        Description: req.Description,
-        Schedule:    req.Schedule,  // ✅ 统一字段名
-    }
-
-    if err := h.service.Create(task); err != nil {
-        c.JSON(500, gin.H{"error": err.Error()})
-        return
-    }
-
-    // 如果有调度配置，注册到调度器
-    if task.Schedule != "" {
-        h.scheduler.Schedule(task.ID, task.Schedule, func() {
-            // 执行任务
-        })
-    }
-
-    c.JSON(201, task)
-}
-```
-
-### 调度器集成（使用 common/scheduler）
-
-```go
-import (
-    commonScheduler "github.com/addp/common/scheduler"
-)
-
-type TaskService struct {
-    repo      *TaskRepository
-    scheduler *commonScheduler.Scheduler
-}
-
-func (s *TaskService) Create(task *models.Task) error {
-    // 保存到数据库
-    if err := s.repo.Create(task); err != nil {
-        return err
-    }
-
-    // 如果有调度配置，注册定时任务
-    if task.Schedule != "" && task.Enabled {
-        taskID := fmt.Sprintf("task_%d", task.ID)
-        s.scheduler.Schedule(taskID, task.Schedule, func() {
-            s.ExecuteTask(task.ID)
-        })
-    }
-
-    return nil
-}
-
-func (s *TaskService) Update(id uint, updates map[string]interface{}) error {
-    task, err := s.repo.GetByID(id)
-    if err != nil {
-        return err
-    }
-
-    // 更新数据库
-    if err := s.repo.Update(id, updates); err != nil {
-        return err
-    }
-
-    // 重新调度
-    taskID := fmt.Sprintf("task_%d", id)
-    s.scheduler.Unschedule(taskID)
-
-    if schedule, ok := updates["schedule"].(string); ok && schedule != "" {
-        s.scheduler.Schedule(taskID, schedule, func() {
-            s.ExecuteTask(id)
-        })
-    }
-
-    return nil
-}
-```
-
----
-
-## 表格展示最佳实践
-
-### 调度信息列
-
-```vue
-<el-table-column label="调度配置" width="200">
-  <template #default="{ row }">
-    <div v-if="row.schedule">
-      <el-icon><Clock /></el-icon>
-      <span style="margin-left: 5px">{{ describeCron(row.schedule) }}</span>
-    </div>
-    <el-tag v-else type="info">手动触发</el-tag>
-  </template>
-</el-table-column>
-```
-
-### 下次执行时间列
-
-```vue
-<el-table-column label="下次执行" width="180">
-  <template #default="{ row }">
-    <span v-if="row.next_run_time">
-      {{ formatDateTime(row.next_run_time) }}
-    </span>
-    <span v-else style="color: #909399">-</span>
-  </template>
-</el-table-column>
-```
-
-### 启用状态列
-
-```vue
-<el-table-column label="状态" width="100">
-  <template #default="{ row }">
-    <el-tag v-if="row.enabled && row.schedule" type="success">运行中</el-tag>
-    <el-tag v-else-if="row.schedule" type="warning">已暂停</el-tag>
-    <el-tag v-else type="info">手动</el-tag>
-  </template>
-</el-table-column>
-```
-
----
-
-## 样式定制
-
-### 自定义样式示例
-
-```vue
-<style scoped>
-/* 调整快捷按钮间距 */
-:deep(.schedule-presets) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-/* 紧凑模式 */
-:deep(.schedule-config.compact) {
-  .el-form-item {
-    margin-bottom: 12px;
-  }
-}
-
-/* 只读模式 */
-:deep(.schedule-config.readonly) {
-  .el-input__inner {
-    background-color: #f5f7fa;
-    cursor: not-allowed;
-  }
-}
-</style>
-```
-
----
-
-## 常见问题
-
-### 1. 组件不显示或报错？
-
-**检查清单**：
-- ✅ 是否配置了 `@common-ui` 别名？
-- ✅ 是否安装了 `cronstrue` 依赖？
-- ✅ 是否正确导入组件？
+`presetList` 每项使用 `key`、`label`、`cron`、`description`，不能用 `value` 替代 `cron`。key 在列表内唯一；label 和 description 由宿主按当前语言提供，内置列表则由组件根据 `i18nKey` 翻译。例如在已取得 `t()` 的宿主中定义一项：
 
 ```javascript
-// ❌ 错误
-import ScheduleConfig from '@common-ui/components/ScheduleConfig.vue'
-
-// ✅ 正确
-import { ScheduleConfig } from '@common-ui'
-```
-
-### 2. 中文描述显示为英文？
-
-确保 `cronstrue` 使用了中文语言包：
-
-```javascript
-import cronstrue from 'cronstrue/i18n'
-
-cronstrue.toString('0 9 * * 1', { locale: 'zh_CN' })
-```
-
-组件内部已处理，无需手动配置。
-
-### 3. 自定义 Cron 不生效？
-
-确保启用了 `allow-custom-cron` 属性：
-
-```vue
-<ScheduleConfig
-  v-model="form.schedule"
-  :allow-custom-cron="true"  <!-- 必须显式启用 -->
-/>
-```
-
-### 4. 后端收到的 Cron 表达式格式不对？
-
-检查前后端字段名是否统一为 `schedule`：
-
-```javascript
-// ❌ 错误
-const form = {
-  cron_expr: '0 9 * * 1'
-}
-
-// ✅ 正确
-const form = {
-  schedule: '0 9 * * 1'
+const hourlyPreset = {
+  key: 'hourly',
+  label: t('schedule.presetLabel.hourly'),
+  cron: '0 * * * *',
+  description: t('schedule.presetDesc.hourly')
 }
 ```
 
-### 5. 如何禁用某些预设选项？
+将列表绑定给 `:preset-list`；需要运行时切换语言时，由宿主使用计算属性生成当前语言的列表。定制预设不改变 owner 接受的 Cron 精度。
 
-使用 `preset-list` 属性自定义预设：
+## 工具函数
 
-```vue
-<ScheduleConfig
-  v-model="schedule"
-  :preset-list="[
-    { label: '每小时', value: '0 * * * *' },
-    { label: '每天9点', value: '0 9 * * *' }
-  ]"
-/>
-```
+以下函数由 `@common-ui` 导出，具体实现只在 `schedule.js` 维护：
 
----
+| 函数 | 返回值与边界 |
+| --- | --- |
+| `describeCron(cron, t?)` | 返回本地化描述；不传 t 时回退中文。未知表达式显示自定义调度文案，不是合法性诊断。 |
+| `validateCron(cron)` | 空值返回 false；当前仅检查是否为 5 或 6 个字段，不校验字段语法或数值范围，不能替代后端校验。 |
+| `buildScheduleFromForm(form, t?)` | 仅处理 daily / weekly / monthly，返回 `{ cron, description }` 或 null；不会直接返回字符串，不处理 cron 模式，也不能替代严格输入校验。 |
+| `decodeScheduleToForm(cron)` | 只还原可识别的 5 字段每日、每周、每月配置，返回表单对象或 null；`weekDays` 是字符串数组，不能保证任意 Cron 往返还原。 |
+| `generateScheduleDescription(form, t?)` | 生成表单预览；不完整时返回当前语言的提示。 |
 
-## 迁移指南
+清空、预设与辅助函数的展示结果不能作为后端接受表达式或任务已成功保存的证明。
 
-### 从旧字段名迁移
+## 后端与宿主边界
 
-如果你的模块使用了其他字段名，需要全局替换：
+任务 owner 必须按自己的 API 契约校验和保存 `schedule`，维护 `enabled` 与 `next_run_at`。用户任务采用 DB-driven due task claim 主路径；到期后创建 execution，由合法执行方领取，不能把保存任务时注册的内存业务回调作为正式调度主路径。完整闭环以[编排与调度规范](../../../docs/spec/tasks/编排与调度.md#调度规范)及[执行记录与租约](../../../docs/spec/tasks/执行记录与租约.md)为准。
 
-**步骤 1**：全局搜索替换
+`common/scheduler` 是后端 Cron 校验与下次执行时间计算的统一封装；接口与精度选项以[源码](../../../common/scheduler/scheduler.go)为准。本前端说明不定义通用 `/api/tasks`、错误响应或数据库建表模板。
 
-```bash
-# Manager 模块
-cd manager/frontend
-grep -r "cronExpression" src/
-# 替换为 schedule
+## 接入检查与排查
 
-# Orchestrator 模块
-cd orchestrator/frontend
-grep -r "cron_expr" src/
-# 替换为 schedule
+- 快捷项或自定义输入不出现：检查 `showPresets`、`allowCustomCron` 和自定义列表字段；默认不启用手工 Cron 输入。
+- 预览语言不一致：确认宿主已初始化共享国际化，并向直接调用的描述函数传入当前 t；自定义预设文案也由宿主更新。
+- 前端接受、后端拒绝：核对 owner 要求的字段数与完整 Cron 语法，不能通过前端粗校验推断合法性。
+- 需要详情或表格展示：使用 ScheduleDisplay；不要给每个模块复制标签、手动触发文案或内部对话框。
+- 样式调整：沿用[主题与样式规范](../../docs/frontend-style/主题接入.md)，使用共享变量和受限 scoped / `:deep()` 覆盖，不复制固定背景色。
 
-# Meta 模块
-cd meta/frontend
-grep -r "scheduleCron" src/
-# 替换为 schedule
-```
-
-**步骤 2**：更新前端代码
-
-```javascript
-// ❌ 旧代码
-const form = ref({
-  cron_expr: ''
-})
-
-// ✅ 新代码
-const form = ref({
-  schedule: ''
-})
-```
-
-**步骤 3**：更新后端代码
-
-```go
-// ❌ 旧代码
-type Task struct {
-    CronExpr string `json:"cron_expr" gorm:"column:cron_expr"`
-}
-
-// ✅ 新代码
-type Task struct {
-    Schedule string `json:"schedule" gorm:"column:schedule"`
-}
-```
-
-**步骤 4**：更新数据库字段（可选）
-
-```sql
--- 如果数据库字段名不同，可以通过 GORM 标签映射，无需修改数据库
--- 但建议统一修改数据库字段名
-
-ALTER TABLE tasks RENAME COLUMN cron_expr TO schedule;
-```
-
----
-
-## 开发规范
-
-### 必须遵守的规范
-
-1. ✅ **字段名统一**：所有模块必须使用 `schedule` 字段名
-2. ✅ **格式统一**：使用标准 5 字段 Cron 格式
-3. ✅ **导入统一**：从 `@common-ui` 导入组件和工具函数
-4. ✅ **描述统一**：使用 `describeCron()` 显示中文描述
-
-### 推荐的实践
-
-1. 📌 表单验证：在提交前验证 `schedule` 非空（如果是必填）
-2. 📌 空值处理：`schedule` 为空字符串或 `null` 表示手动触发
-3. 📌 预览功能：在表单中实时显示调度描述
-4. 📌 表格展示：使用 `describeCron()` 和图标增强可读性
-5. 📌 错误提示：后端验证失败时返回友好的错误信息
-
----
-
-## 更新日志
-
-### v1.0.0 (2025-12-16)
-
-- ✨ 初始版本发布
-- ✨ 统一字段名为 `schedule`
-- ✨ 支持 11 种快捷预设
-- ✨ 支持 4 种调度模式（daily/weekly/monthly/cron）
-- ✨ 提供完整的工具函数库
-- ✨ 增强组件功能（预设定制、紧凑模式、只读模式）
-- 📚 完善使用文档和示例代码
-
----
-
-## 相关资源
-
-- **组件源码**：`common-frontend/basic/src/components/ScheduleConfig.vue`
-- **工具函数**：`common-frontend/basic/src/utils/schedule.js`
-- **Cron 语法参考**：[crontab.guru](https://crontab.guru/)
-- **Cronstrue 文档**：[GitHub - bradymholt/cRonstrue](https://github.com/bradymholt/cRonstrue)
-- **后端调度器**：`common/scheduler/scheduler.go`
-
----
-
-## 技术支持
-
-如有问题或建议，请联系：
-- 📧 开发团队
-- 💬 项目 Issues
-- 📖 查阅 `common-frontend/README.md`
-
----
-
-**最后更新**：2025-12-16
-
-**维护者**：ADDP 平台开发团队
+共享实现验证使用 `make test-common-frontend`；实际消费页面按[测试与验收规范](../../../docs/spec/addp测试与验收规范.md)选择 owner 门禁。静态检查、组件测试、浏览器交互与真实调度执行分别记录，不互相替代。

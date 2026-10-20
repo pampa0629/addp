@@ -76,22 +76,14 @@ describe('engines API', () => {
     ])
   })
 
-  it('requests the complete filtered engine array without pagination parameters', async () => {
+  it('requests the full management snapshot, including deleted and builtin engines, without UI filters or pagination', async () => {
     client.get.mockResolvedValue([])
 
-    await enginesAPI.list({
-      capabilityGroups: ['storage', 'compute'],
-      engineOrigins: ['general'],
-      lifecycleStates: ['active', 'disabled'],
-      includeBuiltin: false
-    })
+    await enginesAPI.list()
 
     expect(client.get).toHaveBeenCalledWith('/system/engines', {
       params: {
-        capability_groups: 'storage,compute',
-        engine_origins: 'general',
-        lifecycle_states: 'active,disabled',
-        include_builtin: false
+        lifecycle_states: 'active,disabled,deleting,deleted'
       }
     })
   })

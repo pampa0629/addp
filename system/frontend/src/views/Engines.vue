@@ -14,18 +14,7 @@
         </div>
       </template>
 
-      <!-- 能力过滤栏 -->
-      <div class="filter-bar">
-        <span class="filter-label">{{ t('system.engine.filter') }}</span>
-        <el-checkbox-group v-model="selectedCategories" @change="handleFilterChange">
-          <el-checkbox value="storage">{{ t('system.engine.filterStorage') }}</el-checkbox>
-          <el-checkbox value="compute">{{ t('system.engine.filterCompute') }}</el-checkbox>
-          <el-checkbox value="general">{{ t('system.engine.filterGeneral') }}</el-checkbox>
-          <el-checkbox value="extension">{{ t('system.engine.filterExtension') }}</el-checkbox>
-          <el-checkbox value="builtin">{{ t('system.engine.filterBuiltin') }}</el-checkbox>
-          <el-checkbox value="deleted">{{ t('system.engine.filterDeleted') }}</el-checkbox>
-        </el-checkbox-group>
-      </div>
+      <EngineFilterBar v-model="engineFilters" />
 
       <el-table :data="engines" v-loading="loading" stripe :row-class-name="tableRowClassName">
         <!-- ID -->
@@ -748,7 +737,7 @@ import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge } from '@common
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
-import { getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
+import { createEngineFilters, filterEngineList, getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
 import { hasEngineAddressChanged, switchStorageEngineType } from '../utils/engineForm'
 import { compareEngineTypePopularity } from '../utils/engineTypeOrdering'
 import { useAuthStore } from '../store/auth'
@@ -756,6 +745,7 @@ import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
+import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
 
 const { t, te } = useI18n()
@@ -768,8 +758,15 @@ const loading = ref(false)
 let engineListRequestInFlight = false
 const currentPage = ref(1)
 const pageSize = ref(10)
-const total = computed(() => allEngines.value.length)
-const engines = computed(() => paginateEngines(allEngines.value, currentPage.value, pageSize.value))
+const engineFilters = ref(createEngineFilters())
+const filteredEngines = computed(() => filterEngineList(allEngines.value, engineFilters.value))
+const total = computed(() => filteredEngines.value.length)
+const engines = computed(() => paginateEngines(filteredEngines.value, currentPage.value, pageSize.value))
+watch(engineFilters, () => { currentPage.value = 1 }, { deep: true })
+watch([total, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value))
+  currentPage.value = Math.min(currentPage.value, lastPage)
+})
 const deletionDialogVisible = ref(false)
 const deletionEngine = ref(null)
 const deletionAssessment = ref(null)
@@ -780,9 +777,6 @@ const deletionConfirmation = ref('')
 const deletionAssessing = ref(false)
 const deletionSubmitting = ref(false)
 let deletionAssessmentGeneration = 0
-
-// 能力过滤
-const selectedCategories = ref(['storage', 'compute', 'general', 'extension', 'builtin']) // 默认显示全部引擎
 
 const selectedEngineCapabilityGroup = ref('')
 
@@ -1132,11 +1126,6 @@ const getCapabilitySummaryTags = (engine) => {
     : [{ id: 'none', label_key: 'system.engine.capabilities.none', status: 'unknown' }]
 }
 
-const handleFilterChange = () => {
-  currentPage.value = 1
-  loadEngines()
-}
-
 const handlePageSizeChange = () => {
   currentPage.value = 1
 }
@@ -1313,28 +1302,12 @@ const loadEngines = async ({ silent = false } = {}) => {
   engineListRequestInFlight = true
   if (!silent) loading.value = true
   try {
-    const capabilityGroups = ['storage', 'compute'].filter(value => selectedCategories.value.includes(value))
-    const engineOrigins = ['general', 'extension'].filter(value => selectedCategories.value.includes(value))
-    if (capabilityGroups.length === 0 && engineOrigins.length === 0) {
-      allEngines.value = []
-      return true
-    }
-
-    const response = await enginesAPI.list({
-      capabilityGroups,
-      engineOrigins,
-      lifecycleStates: selectedCategories.value.includes('deleted')
-		? ['active', 'disabled', 'deleting', 'deleted']
-		: ['active', 'disabled', 'deleting'],
-      includeBuiltin: selectedCategories.value.includes('builtin')
-    })
+    const response = await enginesAPI.list()
     if (!Array.isArray(response)) {
       throw new TypeError('System engine list response must be an array')
     }
     allEngines.value = response
     syncSelectedEngineProjection(response)
-    const lastPage = Math.max(1, Math.ceil(response.length / pageSize.value))
-    currentPage.value = Math.min(currentPage.value, lastPage)
     return true
   } catch (error) {
     if (!silent) ElMessage.error(t('system.engine.msg.loadFailed'))
@@ -2176,21 +2149,6 @@ onUnmounted(() => {
 .header-buttons {
   display: flex;
   gap: 10px;
-}
-
-/* 过滤栏样式 */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  padding: 16px 0;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--addp-border-color-light);
-}
-
-.filter-label {
-  font-weight: 500;
-  margin-right: 16px;
-  color: var(--addp-text-secondary);
 }
 
 /* 通用存储引擎注册双栏布局 */

@@ -1,4 +1,5 @@
 import client from './client'
+import { ENGINE_LIFECYCLE_STATES } from '../utils/engineList'
 
 export const enginesAPI = {
 	getAuthorizationFacts: (id, fingerprint) => client.get(`/system/engines/${encodeURIComponent(id)}/data-items/${encodeURIComponent(fingerprint)}/authorization-facts`),
@@ -22,15 +23,9 @@ export const enginesAPI = {
     return client.post('/system/engines', data)
   },
 
-  list: (filters = {}) => {
-    const params = {}
-    if (filters.engineType) params.engine_type = filters.engineType
-    if (filters.capabilityGroups?.length) params.capability_groups = filters.capabilityGroups.join(',')
-    if (filters.engineOrigins?.length) params.engine_origins = filters.engineOrigins.join(',')
-    if (filters.lifecycleStates?.length) params.lifecycle_states = filters.lifecycleStates.join(',')
-    if (filters.includeBuiltin === false) params.include_builtin = false
-    return client.get('/system/engines', { params })
-  },
+  list: () => client.get('/system/engines', {
+    params: { lifecycle_states: ENGINE_LIFECYCLE_STATES.join(',') }
+  }),
 
   getById: (id) => {
     return client.get(`/system/engines/${id}`)

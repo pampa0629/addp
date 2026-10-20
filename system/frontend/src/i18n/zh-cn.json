@@ -1241,13 +1241,14 @@
       "typeNfs": "NFS 文件系统",
       "addStorage": "注册通用引擎",
       "addExtension": "注册扩展引擎",
-      "filter": "过滤:",
       "filterStorage": "存储",
       "filterCompute": "计算",
-      "filterGeneral": "通用引擎",
-      "filterExtension": "扩展引擎",
-      "filterBuiltin": "内置",
-      "filterDeleted": "已删除",
+      "filters": {
+        "capabilities": "能力",
+        "origin": "来源",
+        "registration": "注册方式",
+        "lifecycle": "生命周期"
+      },
       "columns": {
         "id": "ID",
         "name": "名称",

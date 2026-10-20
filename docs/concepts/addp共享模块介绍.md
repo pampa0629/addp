@@ -107,106 +107,17 @@ Platform 机器调用不能使用 `WithTenantID` 后的客户端。Ontology 的�
 
 Manager、Service、Asset、Portal 等宿主页面可以直接嵌入同一个查看器。宿主负责权限上下文、业务路由和节点点击后的跳转目标；不要求先跳转到 Manager 的独立页面。`basic/` 不承载图谱逻辑，避免基础组件引入 G6 等图依赖。
 
-**架构**: 按依赖边界划分子模块:
+**架构与入口**：共享源码按 `basic`、`map`、`chart`、`dag`、`graph` 和 `agent-ui` 分工。基础入口不承载地图与图谱逻辑；文件预览使用 `basic/src/previews.js` 独立入口。目录、导出与依赖配置只在[共享前端架构说明](../../common-frontend/docs/ARCHITECTURE.md)维护，组件清单见[共享前端 README](../../common-frontend/README.md)。
 
-```
-common-frontend/
-├── basic/          # 基础 UI 组件 (无地图依赖)
-│   └── src/
-│       ├── components/  - StorageEngineForm, ResourceTree, TabularResultRenderer, DataPagination
-│       ├── previews.js  - ImagePreview, MarkdownPreview, PdfPreview 等按需预览入口
-│       ├── utils/       - 格式化器, 类型工具
-│       ├── types/       - FieldType, FormatType, EngineType
-│       └── index.js
-│
-├── map/            # 地图相关组件 (需要 ol 和 @amap/amap-jsapi-loader)
-│   └── src/
-│       ├── components/  - MapContainer, GeoJsonPreview, TablePreview
-│       ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
-│       └── utils/       - 地理工具, 格式化器
-│
-└── graph/          # 图和血缘查看器（使用 G6）
-    └── src/
-        ├── components/  - LineageViewer 等图组件
-        ├── composables/ - lineage API 注入与查询状态
-        ├── types/       - 血缘 DTO 和节点 / 边类型
-        └── index.js
-```
+**共享组件边界**：
 
-**使用模式**:
-
-**对于无地图功能的模块** (System, Transfer):
-
-```javascript
-// vite.config.js
-resolve: {
-  alias: {
-    '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-  }
-}
-
-// 在组件中
-import { StorageEngineForm } from '@common-ui'
-import { formatFileSize, formatDateTime } from '@common-ui'
-```
-
-预览组件从独立入口导入，并由使用方模块声明对应预览依赖：
-
-```javascript
-import { ImagePreview, MarkdownPreview } from '@common-ui/previews'
-```
-
-**对于有地图功能的模块** (Manager):
-
-```javascript
-// vite.config.js
-resolve: {
-  alias: {
-    '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
-  }
-}
-
-// package.json 依赖
-{
-  "ol": "^10.7.0",
-  "@amap/amap-jsapi-loader": "^1.0.1"
-}
-
-// 在组件中
-import { TablePreview, GeoJsonPreview } from '@common-ui-map'
-```
-
-**关键组件**:
-
-- **预览组件**: GeoJsonPreview, TablePreview, ImagePreview（`ImagePreview` 等文件预览组件从 `@common-ui/previews` 导入）
 - **表格结果组件**: `TabularResultRenderer` 是表格预览与有界查询结果的唯一基础表格实现；`DataPagination` 是预览场景的唯一受控分页实现。分页组件只表达页码、每页数量和总数，不决定客户端切片或服务端加载策略
-- **资源选择组件**: ResourceTree, ResourceTreePicker
-- **表单组件**: StorageEngineForm (PostgreSQL/MySQL/Doris/ClickHouse/MongoDB/Neo4j/MinIO/S3/NFS/Spark 配置)
-- **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
-- **工具**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
-- **类型**: FieldType, FormatType, EngineType (与后端模型对齐)
+- 资源展示与选择复用 `ResourceTree`、`ResourceTreePicker`，引擎表单复用 `StorageEngineForm`；地图与文件预览按各自独立入口消费。
+- 业务模块负责数据加载、权限上下文、路由和协议适配，不复制共享组件的基础渲染、格式化或交互，也不因模块名称不同建立第二套实现。
 
 ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封装。跨模块选择已有资源时，ResourceTreePicker 输出的主身份只能是 `selection.identity.locator`。新表、新文件等创建目标应由业务表单组合 `ResourceTreePicker mode="node"` 选择父 node，再输入名称，输出 `parent_locator + name`，不得生成尚不存在资源的虚拟 locator。
 
 资源选择的默认策略是“先过滤、后禁选”：明确不应出现的资源优先由业务侧通过 `nodeFilter` 排除；只有需要保留上下文时才使用 `selectableFilter` 让节点留在树中但不可提交。
-
-**优势**:
-
-- ✅ **模块化依赖**: 模块只安装需要的内容
-- ✅ **减小打包体积**: 基础模块通过排除地图库节省约 2-3MB
-- ✅ **类型安全**: 共享的类型定义确保前后端一致性
-- ✅ **DRY 合规**: UI 组件复用而非复制
-- ✅ **统一维护**: 所有共享组件集中在一处
-
-**模块使用**:
-
-- **System Frontend**: 使用 `basic` (引擎配置的 StorageEngineForm)
-- **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, TablePreview)
-- **Meta Frontend**: 使用 `basic` (通用资源树和基础 UI)
-- **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
-- **Console Frontend**: 使用 `basic` (通用 UI 元素)
-
-**另请参阅**: [common-frontend/README.md](../../common-frontend/README.md), [common-frontend/docs/ARCHITECTURE.md](../../common-frontend/docs/ARCHITECTURE.md)
 
 共享执行记录和后台心跳的 schema 初始化由 System Backend 独占调用，领域模型及迁移实现仍归 `common/execution`、`common/runtimehealth`。其他 Backend 和 Worker 通过 `common/schema.Require` 只读校验版本；业务 schema 版本由各模块独立声明。数据库连接本身不得隐式触发 Worker 迁移。
 

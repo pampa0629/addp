@@ -51,7 +51,7 @@ async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors, 
     if (path.endsWith('/engines/2')) return reply({ id: '2', name: 'Existing HighGo', engine_type: 'highgo', engine_origin: 'general', lifecycle_state: 'active', connection_info: {}, ...engineFacts })
     if (path.endsWith('/engines')) return reply([{ id: '2', name: 'Existing PostgreSQL',
       engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active',
-      connection_status: 'online', capability_groups: ['storage'], connection_info: { host: 'existing-host', port: 5432 } }])
+      connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} }, connection_info: { host: 'existing-host', port: 5432 } }])
     throw new Error(`Unexpected engine types fixture request: ${request.method()} ${path}`)
   })
   await page.goto('/engines')

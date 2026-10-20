@@ -191,7 +191,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       ] })
       throw new Error('Unexpected leaf browse')
     }
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', capability_groups: ['storage'] }
+    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])

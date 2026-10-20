@@ -9,9 +9,11 @@
 ```text
 common-frontend/
 ├── basic/          # 基础组件、认证 composables、资源树选择器等
+├── chart/          # 数据服务结果图表
 ├── map/            # OpenLayers/地图相关预览组件
 ├── dag/            # DAG 组件与相关工具
 ├── graph/          # 图相关共享前端能力
+├── agent-ui/       # Agent A2UI 共享协议适配
 └── docs/           # 架构、风格、资源树选择器等文档
 ```
 
