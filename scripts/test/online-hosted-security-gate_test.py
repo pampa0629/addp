@@ -105,7 +105,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             p.add_argument('--descriptor'); p.add_argument('--output')
             args = p.parse_args()
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'engine-token'
-            engine = 31 if 'graph-control' in args.descriptor else 17 if 'postgres' in args.descriptor else 29 if 'mongodb' in args.descriptor else 23
+            engine = 32 if 'graph-review' in args.descriptor else 31 if 'graph-control' in args.descriptor else 17 if 'postgres' in args.descriptor else 29 if 'mongodb' in args.descriptor else 23
             with open(args.output, 'w') as out:
                 out.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
         ''')
@@ -143,6 +143,7 @@ class HostedSecurityGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
               if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
                 [ "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" = 31 ]
+                [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" = 32 ]
               fi
               [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
               [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]
@@ -207,6 +208,7 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend,meta-worker', trace)
         self.assertIn(',console,graph-frontend,develop-frontend,nginx', trace)
         self.assertIn('npm-ci', trace)
+        self.assertIn('up -d --no-deps --wait graph-review-extractor', trace)
         self.assertIn('docker:exec graph-frontend sh -ec', trace)
         self.assertIn('docker:rm -fv addp-graph-online-upstreams', trace)
         self.assertIn('docker:rm -fv registry', trace)
@@ -242,7 +244,7 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('graph-fixture:stop', trace)
 
     def test_graph_refuses_preexisting_product_containers_before_mutation(self):
-        for name in ('addp-graph-online-neo4j', 'addp-graph-online-neo4j-control', 'registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
+        for name in ('addp-graph-online-review-extractor', 'addp-graph-online-neo4j-review', 'addp-graph-online-neo4j', 'addp-graph-online-neo4j-control', 'registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
             with self.subTest(name=name):
                 self.host.trace.unlink(missing_ok=True)
                 result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_EXISTING_CONTAINER=name)

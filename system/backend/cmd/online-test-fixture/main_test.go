@@ -353,6 +353,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, sourceInitializerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
+	allPermissions = append(allPermissions, graphReviewPermissions...)
 	allPermissions = append(allPermissions, graphProtectionReaderPermissions...)
 	allPermissions = append(allPermissions, graphDevelopReaderPermissions...)
 	allPermissions = append(allPermissions, graphProtectionPreparerPermissions...)
@@ -394,6 +395,20 @@ func contains(values []string, target string) bool {
 }
 
 func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
+	expectedReview := []string{"graph.graph.read", "graph.review.read", "graph.review.approve", "graph.review.reject", "graph.review.update"}
+	if !slices.Equal(graphReviewPermissions, expectedReview) {
+		t.Fatalf("reviewer must have exactly the approved five permissions: %v", graphReviewPermissions)
+	}
+	for _, action := range []string{"read", "create", "update", "execute", "cancel", "delete"} {
+		if !slices.Contains(graphProtectionPreparerPermissions, "graph.build_task."+action) {
+			t.Fatalf("preparer missing approved build permission: %s", action)
+		}
+	}
+	for _, permission := range graphProtectionPreparerPermissions {
+		if strings.HasPrefix(permission, "graph.review.") {
+			t.Fatalf("preparer must not gain review authority: %s", permission)
+		}
+	}
 	expectedDevelop := []string{"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create", "meta.catalog.read"}
 	if !slices.Equal(graphDevelopReaderPermissions, expectedDevelop) {
 		t.Fatalf("Develop reader must have exactly the approved five permissions: %v", graphDevelopReaderPermissions)

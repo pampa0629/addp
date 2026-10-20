@@ -20,7 +20,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
     falkordb|neo4j) ;;
     *) echo 'Graph acceptance requires ADDP_ONLINE_GRAPH_ENGINE=falkordb|neo4j' >&2; exit 1 ;;
   esac
-  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
+  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-review-extractor addp-graph-online-neo4j-review addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
   HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online addp-platform)
 fi
 compose_graph() {
@@ -103,6 +103,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   backend_images=system-backend,gateway,meta-backend,meta-worker,security-backend,security-worker,manager-backend,develop-backend,service-backend,transfer-backend,graph-backend,monitor-backend
   run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
   run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,nginx"
+  run_logged compose_graph up -d --no-deps --wait graph-review-extractor
   for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend; do
     run_logged compose_graph up -d --no-deps --wait "$service"
   done
@@ -138,6 +139,12 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
     source "$ADDP_ONLINE_SECRET_DIR/graph-control.env"
     export ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
     [ "$ADDP_ONLINE_TEST_ENGINE_ID" != "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" ] || fail 'Neo4j requires independent engine instances'
+    run_logged python3 scripts/test/online-engine-registration.py \
+      --descriptor "$ADDP_ONLINE_SECRET_DIR/graph-review.json" --output "$ADDP_ONLINE_SECRET_DIR/graph-review.env"
+    source "$ADDP_ONLINE_SECRET_DIR/graph-review.env"
+    export ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+    [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" != "$ADDP_ONLINE_TEST_ENGINE_ID" ] && [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" != "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" ] || fail 'Neo4j review requires an independent engine'
+
   fi
 else
 run_logged python3 scripts/test/online-engine-registration.py \

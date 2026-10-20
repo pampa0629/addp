@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = "addp-graph-online"
 CONTAINER = "addp-graph-online-falkordb"
-GRAPHS = ("graph_protection_fixture", "graph_protection_control")
+GRAPHS = ("graph_protection_fixture", "graph_protection_control", "graph_review_fixture")
 
 
 def command(arguments, environment=None, stdin=None):
@@ -39,7 +39,7 @@ def engine_type():
 
 
 def containers():
-    return [CONTAINER] if engine_type() == "falkordb" else ["addp-graph-online-neo4j", "addp-graph-online-neo4j-control"]
+    return [CONTAINER] if engine_type() == "falkordb" else ["addp-graph-online-neo4j", "addp-graph-online-neo4j-control", "addp-graph-online-neo4j-review"]
 
 
 def compose(arguments, password):
@@ -69,7 +69,7 @@ def owned_resources(kind):
 def start(secret_dir):
     if any(owned_resources(kind) for kind in ("container", "network", "volume")):
         raise RuntimeError("Refusing existing Graph fixture resources")
-    if any((secret_dir / name).exists() for name in ("graph-target.json", "graph-control.json")):
+    if any((secret_dir / name).exists() for name in ("graph-target.json", "graph-control.json", "graph-review.json")):
         raise RuntimeError("Refusing existing Graph fixture descriptor")
     password = secrets.token_hex(32)
     compose(["up", "-d", "--wait", "--wait-timeout", "240"], password)
@@ -78,10 +78,15 @@ def start(secret_dir):
         if bindings:
             raise RuntimeError("Graph fixture must not publish host ports")
     for graph in GRAPHS:
+        if graph == "graph_review_fixture":
+            native(graph, "CREATE (:Person {id:'p1', name:'Review endpoint one'}), (:Person {id:'p2', name:'Review endpoint two'})", False)
+            if native(graph, "MATCH (n) RETURN count(n)") != 2 or native(graph, "MATCH ()-[r]->() RETURN count(r)") != 0:
+                raise RuntimeError("Review graph must start with exactly two endpoints and no relationships")
+            continue
         native(graph, "CREATE (a:Person {id:'p1', name:'Fixture one'}), (b:Person {id:'p2', name:'Fixture two'}), (c:Person {id:'p3', name:'Fixture three'}), (a)-[:Link]->(b), (b)-[:Link]->(c)", False)
         if native(graph, "MATCH (n) RETURN count(n)") != 3 or native(graph, "MATCH ()-[r]->() RETURN count(r)") != 2:
             raise RuntimeError("Synthetic graph must contain exactly 3 nodes and 2 relationships")
-    for index, role in enumerate(("target", "control") if engine_type() == "neo4j" else ("target",)):
+    for index, role in enumerate(("target", "control", "review") if engine_type() == "neo4j" else ("target",)):
         data = {"name": "Hosted synthetic " + ("FalkorDB" if engine_type() == "falkordb" else "Neo4j " + role),
                 "engine_type": engine_type(), "engine_origin": "general",
                 "description": "Disposable Graph permission/protection fixture",
@@ -91,7 +96,7 @@ def start(secret_dir):
         descriptor = secret_dir / ("graph-" + role + ".json")
         with os.fdopen(os.open(descriptor, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
             json.dump(data, output)
-    print("Synthetic Graph fixture ready: two graphs, six nodes, four relationships")
+    print("Synthetic Graph fixture ready: three graphs, eight nodes, four relationships")
 
 
 def stop(secret_dir):
@@ -105,7 +110,7 @@ def stop(secret_dir):
     compose(["down", "--volumes", "--remove-orphans"], "cleanup-only")
     if any(owned_resources(kind) for kind in ("container", "network", "volume")):
         raise RuntimeError("Graph fixture cleanup left owned resources")
-    for role in ("target", "control"):
+    for role in ("target", "control", "review"):
         (secret_dir / ("graph-" + role + ".json")).unlink(missing_ok=True)
     print("Synthetic Graph fixture cleanup: zero containers, networks, volumes")
 

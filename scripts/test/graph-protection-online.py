@@ -25,6 +25,8 @@ DEVELOP_PERMISSIONS = {"develop.task.read", "develop.task.execute", "develop.dat
 OUTSIDER_PERMISSIONS = {"meta.catalog.read"}
 PREPARER_PERMISSIONS = {
     "graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
+    "graph.build_task.read", "graph.build_task.create", "graph.build_task.update",
+    "graph.build_task.execute", "graph.build_task.cancel", "graph.build_task.delete",
     "graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
     "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
     "security.enrollment.create", "security.enrollment.read", "security.enrollment.update",
@@ -155,7 +157,7 @@ def create_ontology(client):
 def create_schema(client, oid):
     entity = client.request("POST", f"/api/v1/graph/ontologies/{oid}/entity-types", (201,), {
         "name": "Person", "node_labels": ["Person"], "display_property": "name",
-        "properties": [{"name": p, "data_type": "string", "searchable": True} for p in ("id", "name")],
+        "properties": [{"name": p, "data_type": "string", "searchable": True, "unique": p == "id"} for p in ("id", "name")],
     }).payload
     client.request("POST", f"/api/v1/graph/ontologies/{oid}/relation-types", (201,), {
         "name": "Link", "source_type_id": entity["id"], "target_type_id": entity["id"], "directed": True,
@@ -301,6 +303,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         set_public(preparer, target, False)
         report["private_protected_anonymous"] = probe(anonymous, target, ids, 401)
         report["private_protected_reader"] = probe(reader, target, ids, 403, "protection")
+        run_review(preparer, reader, engine_id, tenant_id, ontology_id, control, report)
     except Exception as error:
         operation_failed = True
         report["failure"] = {"error_type": type(error).__name__, "message": str(error)}
@@ -337,8 +340,15 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             require(not cleanup_errors, "Synthetic Graph domain cleanup failed")
 
 
+def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, report):
+    spec = importlib.util.spec_from_file_location("graph_review_online", Path(__file__).with_name("graph-review-online.py"))
+    review = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(review)
+    review.run(sys.modules[__name__], preparer, reader, engine_id, tenant_id, ontology_id, control_id, report)
+
+
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v4", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v5", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")
@@ -349,7 +359,7 @@ def main():
             Client(gateway, reader, 30), Client(gateway, outsider, 30), Client(gateway, "", 30),
             Client(graph, reader, 30), Client(graph, outsider, 30), Client(graph, "", 30),
             SUPPORT.positive_int(env("ADDP_ONLINE_TEST_ENGINE_ID"), "engine id"),
-            SUPPORT.positive_int(env("ADDP_ONLINE_TEST_TENANT_ID"), "tenant id"), time.monotonic() + 480, report)
+            SUPPORT.positive_int(env("ADDP_ONLINE_TEST_TENANT_ID"), "tenant id"), time.monotonic() + 720, report)
         report["passed"] = True
         return 0
     except Exception as error:

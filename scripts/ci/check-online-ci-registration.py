@@ -2673,16 +2673,19 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         return
     required = {
         "scripts/test/online-hosted-security-gate.sh": (
-            "# ADDP_ONLINE_SUITES=graph-protection", "ADDP_ONLINE_GRAPH_ENGINE", "graph-control.json", "online-graph-fixture.py start",
+            "# ADDP_ONLINE_SUITES=graph-protection", "ADDP_ONLINE_GRAPH_ENGINE", "graph-control.json", "graph-review.json", "online-graph-fixture.py start",
             "online-graph-fixture.py stop", "develop,graph,manager,service,transfer", "graph-target.json",
             "docker-compose.graph-protection-t4.yml", "compose_graph down --remove-orphans --volumes",
             ',console,graph-frontend,develop-frontend,nginx', 'CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"',
         ),
-        "scripts/test/docker-compose.graph-protection-t4.yml": ("services:",),
+        "scripts/test/docker-compose.graph-protection-t4.yml": ("services:", "graph-review-extractor:", "graph-review-extractor.py:ro"),
+        "scripts/test/graph-review-online.py": ("verify_items", "reader_403=True", "cross_graph_404=True", "domain_resources_remaining", "real_model=False"),
+        "scripts/test/graph-review-extractor.py": ("ADDP_ONLINE_HOSTED", "MATERIAL", "bad-native"),
+        "console/frontend/e2e/online/graph-review.spec.js": ("addp.graph-review-browser/v1", "browserAPIFromResponse", "login(", "batch_status: 500", "selection_cleared: true"),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v4", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v5", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -2727,9 +2730,11 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         if bindings != [f"127.0.0.1:{port}:{port}"]:
             raise RegistrationError(f"Graph preflight {variable} requires exactly one loopback diagnostic binding on {service}: {port}")
     commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
-    for test in ("graph-protection-online_test.py", "online-graph-fixture_test.py"):
+    for test in ("graph-review-online_test.py", "graph-protection-online_test.py", "online-graph-fixture_test.py"):
         if test not in commands:
             raise RegistrationError("Graph protection regression must enter test-online-runner")
+    if "console/frontend/e2e/online/graph-review.spec.js" not in commands:
+        raise RegistrationError("Graph review browser syntax must enter test-online-runner")
     if "console/frontend/e2e/online/graph-protection.spec.js" not in commands:
         raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
     if "console/frontend/e2e/online/develop-graph-query.spec.js" not in commands:

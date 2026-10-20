@@ -1143,10 +1143,11 @@ test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消�
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-graph-online-runner
-test-graph-online-runner: ## 验证共享图保护原生夹具、普通身份、浏览器证据与 CI 登记
+test-graph-online-runner: ## 验证图保护和人工审核原生夹具、普通身份、浏览器证据与 CI 登记
+	@node --check --input-type=module < console/frontend/e2e/online/graph-review.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/graph-protection.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/develop-graph-query.spec.js
-	@python3 -m unittest scripts/test/graph-protection-online_test.py scripts/test/online-graph-fixture_test.py
+	@python3 -m unittest scripts/test/graph-review-online_test.py scripts/test/graph-protection-online_test.py scripts/test/online-graph-fixture_test.py
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_graph_protection_requires_synthetic_lifecycle_and_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run GraphProtection -count=1

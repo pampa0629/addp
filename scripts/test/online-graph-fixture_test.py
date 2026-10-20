@@ -22,11 +22,11 @@ class GraphFixtureTest(unittest.TestCase):
             with self.assertRaises(RuntimeError): FIXTURE.admission()
             docker.assert_not_called()
 
-    def test_creates_only_two_synthetic_graphs_and_private_descriptor(self):
+    def test_keeps_two_protection_graphs_and_independent_review_graph(self):
         queries = []
         def native(graph, query, readonly=True):
             queries.append((graph, query, readonly))
-            return 3 if 'count(n)' in query else 2
+            return (2 if graph == 'graph_review_fixture' else 3) if 'count(n)' in query else (0 if graph == 'graph_review_fixture' else 2)
         with tempfile.TemporaryDirectory() as directory, patch.object(FIXTURE, 'owned_resources', return_value=[]), \
              patch.object(FIXTURE, 'compose') as compose, patch.object(FIXTURE, 'command', return_value='null'), \
              patch.object(FIXTURE, 'native', side_effect=native):
@@ -40,27 +40,27 @@ class GraphFixtureTest(unittest.TestCase):
             self.assertIs(type(data['connection_info']['database']), int)
             self.assertEqual(data['connection_info']['database'], 0)
             self.assertEqual(len(data['connection_info']['password']), 64)
-            self.assertEqual(len([q for q in queries if not q[2]]), 2)
+            self.assertEqual(len([q for q in queries if not q[2]]), 3)
             self.assertEqual({q[0] for q in queries}, set(FIXTURE.GRAPHS))
             self.assertIn('Fixture one', queries[0][1])
             compose.assert_called_once()
 
-    def test_neo4j_uses_two_instances_private_descriptors_and_exact_counts(self):
+    def test_neo4j_uses_three_instances_private_descriptors_and_exact_counts(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j'}), \
              patch.object(FIXTURE, 'owned_resources', return_value=[]), patch.object(FIXTURE, 'compose') as compose, \
              patch.object(FIXTURE, 'command', return_value='null'), \
-             patch.object(FIXTURE, 'native', side_effect=lambda graph, query, readonly=True: 3 if 'count(n)' in query else 2) as native:
+             patch.object(FIXTURE, 'native', side_effect=lambda graph, query, readonly=True: (2 if graph == 'graph_review_fixture' else 3) if 'count(n)' in query else (0 if graph == 'graph_review_fixture' else 2)) as native:
             FIXTURE.start(Path(directory))
-            descriptors = [Path(directory) / ('graph-' + role + '.json') for role in ('target', 'control')]
+            descriptors = [Path(directory) / ('graph-' + role + '.json') for role in ('target', 'control', 'review')]
             data = [json.loads(path.read_text()) for path in descriptors]
             self.assertEqual([item['connection_info']['host'] for item in data], FIXTURE.containers())
-            self.assertEqual(len({item['connection_info']['host'] for item in data}), 2)
+            self.assertEqual(len({item['connection_info']['host'] for item in data}), 3)
             for path, item in zip(descriptors, data):
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
                 self.assertEqual(item['engine_type'], 'neo4j')
                 self.assertEqual(item['connection_info']['database'], 'neo4j')
                 self.assertEqual(item['connection_info']['port'], 7687)
-            self.assertEqual(native.call_count, 6)
+            self.assertEqual(native.call_count, 9)
             compose.assert_called_once()
 
     def test_native_neo4j_counts_use_actual_shell_output_and_fail_closed(self):

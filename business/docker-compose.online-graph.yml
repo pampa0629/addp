@@ -24,6 +24,12 @@ services:
       service: neo4j
     container_name: addp-graph-online-neo4j-control
 
+  neo4j-review:
+    profiles: [neo4j]
+    extends:
+      service: neo4j
+    container_name: addp-graph-online-neo4j-review
+
 networks:
   addp-network:
     external: true

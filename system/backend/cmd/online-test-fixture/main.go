@@ -57,12 +57,17 @@ var securityPermissions = []string{
 	"security.sensitive_data_type.create", "security.sensitive_data_type.delete", "security.sensitive_data_type.read",
 }
 
+var graphReviewPermissions = []string{
+	"graph.graph.read", "graph.review.read", "graph.review.approve", "graph.review.reject", "graph.review.update",
+}
 var graphProtectionReaderPermissions = []string{"graph.graph.read"}
 var graphDevelopReaderPermissions = []string{
 	"develop.task.read", "develop.task.execute", "develop.data_read.execute",
 	"system.execution_authorization.create", "meta.catalog.read",
 }
 var graphProtectionPreparerPermissions = []string{
+	"graph.build_task.read", "graph.build_task.create", "graph.build_task.update",
+	"graph.build_task.execute", "graph.build_task.cancel", "graph.build_task.delete",
 	"graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
 	"graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
@@ -644,6 +649,14 @@ func run(args []string, environment []string) error {
 		if fixtureErr != nil {
 			return fixtureErr
 		}
+		reviewer, _, reviewPassword, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-graph-reviewer", graphReviewPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN"] = reviewer.AccessToken
+		values["ADDP_ONLINE_GRAPH_REVIEW_USERNAME"] = "external-online-graph-reviewer"
+		values["ADDP_ONLINE_GRAPH_REVIEW_PASSWORD"] = reviewPassword
 		values["ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"] = preparer.AccessToken
 		values["ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
 		developReader, _, developPassword, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,

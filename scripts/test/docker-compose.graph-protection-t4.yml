@@ -12,7 +12,26 @@ services:
     ports: ["127.0.0.1:8081:8081"]
   develop-backend:
     ports: ["127.0.0.1:8185:8185"]
+  graph-review-extractor:
+    image: python:3.12-alpine
+    container_name: addp-graph-online-review-extractor
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      GITHUB_ACTIONS: "true"
+    command: ["python", "/fixture/graph-review-extractor.py"]
+    volumes:
+      - ./scripts/test/graph-review-extractor.py:/fixture/graph-review-extractor.py:ro
+    networks: [addp-network]
+    read_only: true
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8087/health/ready', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   graph-backend:
+    environment:
+      COPILOT_URL: http://graph-review-extractor:8087
     ports: ["127.0.0.1:8186:8186"]
   service-backend:
     ports: ["127.0.0.1:8086:8086"]
