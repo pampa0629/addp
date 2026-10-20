@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'overlaps.gpkg':
+        return m.overlap_expected_features()
     if name == 'snapped.gpkg':
         return [{'geometry': {'type': 'LineString', 'coordinates': [list(point) for point in points]},
                  'properties': {'source_name': f'snap-{index}', 'grade': 10+index}}
@@ -113,3 +115,23 @@ class TopologyFixtureTest(unittest.TestCase):
             self.assertEqual(target.read_bytes(),b'snapped.gpkg')
             target.write_bytes(b'corrupted')
             with self.assertRaises(m.FixtureError):m.archive_physical_evidence(root,base/'artifacts',result)
+
+    def test_overlap_oracle_requires_exact_pairs_holes_parts_and_tiny_area(self):
+        original=m.overlap_expected_features()
+        m.validate_overlap_features(original)
+        self.assertEqual(len(original),7)
+        self.assertEqual(original[-1]['properties']['overlap_area'],2**-40)
+        for mutate in (
+            lambda rows:rows.pop(), lambda rows:rows.reverse(),
+            lambda rows:rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows:rows[0]['properties'].update(source_id_a='共边'),
+            lambda rows:rows[0]['properties'].update(source_id_b='甲'),
+            lambda rows:rows[1]['properties'].update(overlap_area=True),
+            lambda rows:rows[-1]['properties'].update(overlap_area=0),
+            lambda rows:rows[-1]['properties'].update(overlap_area=1e-12),
+            lambda rows:rows[-2]['geometry']['coordinates'].pop(),
+            lambda rows:rows[0]['geometry']['coordinates'][0].append(m.rectangle(2.5,1,3,2)),
+            lambda rows:rows[0]['geometry']['coordinates'][0][0][0].__setitem__(0,3),
+        ):
+            rows=copy.deepcopy(original);mutate(rows)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_overlap_features(rows)

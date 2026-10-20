@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned Hosted linework/self-crossing faces and independent coordinate oracles."""
+"""Owned Hosted topology, repair, snapping and overlap physical oracles."""
 import hashlib
 import json
 import math
@@ -10,13 +10,107 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
 SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
+
+
+def rectangle(x0, y0, x1, y1):
+    return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def overlap_source_features():
+    polygons = [[rectangle(*bounds)] for bounds in ((0,0,4,4),(2,0,6,4),(1,1,2,2),(0,0,4,4),(6,0,7,4),(7,4,8,5))]
+    polygons += [[rectangle(20,0,24,4), rectangle(21,1,23,3)], [rectangle(21,1,23,3)]]
+    geometries = [{'type':'Polygon','coordinates':value} for value in polygons]
+    geometries += [{'type':'MultiPolygon','coordinates':[[rectangle(*bounds)] for bounds in group]}
+        for group in (((40,0,42,2),(44,0,45,1),(48,0,50,2)), ((41,0,43,2),(45,0,46,1),(49,0,51,2)))]
+    geometries += [{'type':'Polygon','coordinates':[rectangle(60,0,61,2**-40)]} for _ in range(2)]
+    identifiers = ['甲','乙','丙','丁','共边','共点','孔洞','孔内','多甲','多乙','微甲','微乙']
+    return [{'geometry':geometry,'properties':{'parcel_id':identifier,'note':f'source-{index}'}}
+            for index,(identifier,geometry) in enumerate(zip(identifiers,geometries))]
+
+
+def overlap_expected_features():
+    # Explicit fixture intersections, never generated with the product algorithm.
+    pairs = [('甲','乙',8,[(2,0,4,4)]),('甲','丙',1,[(1,1,2,2)]),('甲','丁',16,[(0,0,4,4)]),
+             ('乙','丁',8,[(2,0,4,4)]),('丙','丁',1,[(1,1,2,2)]),
+             ('多甲','多乙',4,[(41,0,42,2),(49,0,50,2)]),('微甲','微乙',2**-40,[(60,0,61,2**-40)])]
+    return [{'properties':{'source_id_a':a,'source_id_b':b,'overlap_area':area},
+             'geometry':{'type':'MultiPolygon','coordinates':[[rectangle(*bounds)] for bounds in parts]}}
+            for a,b,area,parts in pairs]
+
+
+def validate_overlap_features(features, source=False):
+    expected = overlap_source_features() if source else overlap_expected_features()
+    if len(features) != len(expected): raise FixtureError('overlap pair/source count differs')
+    for actual, wanted in zip(features, expected):
+        geometry, reference = actual['geometry'], wanted['geometry']
+        if not source and (type(actual['properties'].get('overlap_area')) not in (int,float)
+            or not math.isfinite(actual['properties']['overlap_area']) or actual['properties']['overlap_area']<=0):
+            raise FixtureError('overlap area must be a finite positive number')
+        if actual['properties'] != wanted['properties'] or geometry.get('type') != reference['type']:
+            raise FixtureError('overlap source IDs, attributes, order, area or type differ')
+        parts = geometry['coordinates'] if geometry['type']=='MultiPolygon' else [geometry['coordinates']]
+        wanted_parts = reference['coordinates'] if reference['type']=='MultiPolygon' else [reference['coordinates']]
+        if (len(parts) != len(wanted_parts) or sorted(tuple(canonical(ring, True) for ring in part) for part in parts)
+                != sorted(tuple(canonical(ring, True) for ring in part) for part in wanted_parts)):
+            raise FixtureError('overlap polygon parts, holes or exact coordinates differ')
+
+
+def seed_overlap(path):
+    from osgeo import ogr, osr
+    crs=osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    dataset=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=dataset.CreateLayer(path.stem,crs,ogr.wkbUnknown)
+    for name in ('parcel_id','note'): layer.CreateField(ogr.FieldDefn(name,ogr.OFTString))
+    for row in overlap_source_features():
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items(): feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0: raise FixtureError('cannot seed overlap source')
+    dataset=None
+
+
+def ogr_polygon_geometry(geometry):
+    # ExportToJson's default decimal precision can round tiny coordinates.
+    # Read native doubles directly so the independent oracle loses no bits.
+    kind=geometry.GetGeometryName()
+    if kind=='MULTIPOLYGON':
+        return {'type':'MultiPolygon','coordinates':[ogr_polygon_geometry(geometry.GetGeometryRef(i))['coordinates']
+                for i in range(geometry.GetGeometryCount())]}
+    if kind!='POLYGON': raise FixtureError('expected polygonal overlap geometry')
+    return {'type':'Polygon','coordinates':[[list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()]
+            for i in range(geometry.GetGeometryCount())]}
+
+
+def verify_overlap(path, source=False):
+    from osgeo import ogr, osr
+    dataset=ogr.Open(str(path),0)
+    if dataset is None or dataset.GetLayerCount()!=1: raise FixtureError('expected one overlap GeoPackage layer')
+    layer=dataset.GetLayer(0); crs=osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs): raise FixtureError('overlap CRS differs')
+    fields=['parcel_id','note'] if source else ['source_id_a','source_id_b','overlap_area']
+    schema=layer.GetLayerDefn()
+    if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields:
+        raise FixtureError('overlap field schema differs')
+    if not source and schema.GetFieldDefn(2).GetType()!=ogr.OFTReal: raise FixtureError('overlap area must be Float64')
+    features=[]
+    for feature in layer:
+        geometry=feature.GetGeometryRef()
+        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid(): raise FixtureError('overlap geometry invalid or non-XY')
+        props={name:feature.GetField(name) for name in fields}
+        if not source and geometry.GetArea()!=props['overlap_area']: raise FixtureError('overlap physical area differs')
+        features.append({'properties':props,'geometry':ogr_polygon_geometry(geometry)})
+    validate_overlap_features(features,source)
+    result={**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
+            'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':sorted(fields)}
+    dataset=None
+    return result
 
 
 class FixtureError(RuntimeError):
@@ -151,6 +245,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'overlaps.gpkg':
+        return validate_overlap_features(features)
     if name == 'snapped.gpkg':
         return validate_snap_features(features)
     if name == 'repaired.geojson':
@@ -178,6 +274,7 @@ def worker(action, root):
         (root / 'invalid.geojson').write_text(json.dumps(invalid_polygons(), sort_keys=True))
         seed_snap(root / 'snap-input.gpkg', SNAP_INPUT)
         seed_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
+        seed_overlap(root / 'overlap-input.gpkg')
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -191,8 +288,12 @@ def worker(action, root):
     results = {}
     verify_snap(root / 'snap-input.gpkg', SNAP_INPUT)
     verify_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
+    verify_overlap(root / 'overlap-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'overlaps.gpkg':
+            results[name] = verify_overlap(path)
+            continue
         if name == 'snapped.gpkg':
             results[name] = verify_snap(path, SNAP_EXPECTED)
             continue

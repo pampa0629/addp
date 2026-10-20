@@ -48,33 +48,23 @@ MinIO 源变更复验继续使用该 suite 的现有隔离 Business MinIO 和固
 
 固定源、报告缺失／变更拒绝、场景与生命周期沿用 `make test-manager-online-runner`、`make test-online-runner` 和既有 Hosted Job。实际历史源码与通过边界见[证据索引](../验收证据索引.md#manager-预览与私有导入历史证据)。
 
-## 拓扑构面双输出持久化（vector-topology-persistence）
+## 拓扑构面与面叠持久化（vector-topology-persistence）
 
-独立手工 Hosted Linux x86_64 T4，验收 `load → polygonize → save_faces / save_diagnostics`、独立自相交面源的 `load → check_geometry → repair_geometry → check_geometry → save_repaired` 及下述参考吸附分支，三条计算分支在同一成功 execution 中执行，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
+独立手工 Hosted Linux x86_64 T4，标准入口 `make test-online ONLINE_SUITE=vector-topology-persistence`，复用共享 Hosted 生命周期、NFS export 所有权及正式 GeoPython 产品默认入口。同一成功 execution 的四条分支分别执行线网构面双保存、单要素检查→修复→复查保存、严格参考吸附保存及单图层面叠检查保存。只使用当次 disposable 非默认 Tenant 和同一普通 User，精确 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。Engine 登记身份独立且登记后撤去基础设施 Token；不得扩大业务权限、600 秒预算或复用个人会话。
 
-System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，精确授予 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。执行使用既有 ad-hoc API，无任务定义编辑或引擎管理权限；Engine 登记身份与业务 User 分离，登记后移除基础设施 Token。入口和 Console 浏览器均核对同一 User、Tenant 与精确权限集合，拒绝管理员和多余权限。
+五份固定源为 `source.geojson`、`invalid.geojson`、`snap-input.gpkg`、`snap-reference.gpkg`、`overlap-input.gpkg`；成功成果严格为 `faces.geojson`、`diagnostics.geojson`、`repaired.geojson`、`snapped.gpkg`、`overlaps.gpkg`。所有保存均使用 `mode=fail`，五份稳定 outputs 和 lineage_facts.outputs 必须为 `write_mode=create`。五成果分别只有一次精确自动扫描，公开 tenant_id/triggered_by 必须为严格正整数且匹配当前 User/Tenant，拒绝私有字段替代、手工补扫、缺失事实或重复扫描。五份物理与 Meta 大小必须是相等的严格正整数；GPKG 核对文件与唯一子图层的边界。线源→faces/diagnostics、invalid→repaired、两个吸附源→snapped、面源→overlaps，共六条当前 execution 的 active derive，Monitor 必须一致。
 
-确定性 NFS 线网声明 EPSG:4326，包含闭合方框、两条贯穿线及重复边。默认输出引用省略 `port`，诊断显式引用 `port=diagnostics`；两个既有保存节点分别写入新 GeoJSON，使用 `mode=fail`。独立物理 oracle 按预定义坐标核对四个面、四条外围 dangle、字段和 CRS，不调用构面算子生成期望；同时核对源 SHA/大小、准确目标清单及无临时旁路文件。三个目标必须各自具备一次精确自动扫描、正式 DataItem、物理与 Meta 相等的正整数大小、同一 actor/Tenant、指向同一 Develop execution 的 derive 及一致 Monitor 事实。不得手动补扫输出伪装自动扫描成功。
+独立 GDAL oracle 按显式预定义坐标验证四面四 dangle；自交面修复后保留两行各含两三角面的 MultiPolygon、属性及修复前 false/原因与修复后 true/Valid Geometry。GeoJSON 成果保留文件原 CRS84 声明，Meta 必须为 OGC:CRS84、无虚构 EPSG SRID；地图按原经纬坐标验证 direct_renderable/not_transformed，不临时选 CRS。
 
-自动扫描身份沿 Meta `ScanExecutionResponse` 的公开 `tenant_id` 与 `triggered_by` 核对，两者必须为正整数并分别等于当前 Tenant 和 User Principal；不读取或回退到私有 `actor_principal_id`，不为验收扩展 Meta DTO 或权限。
+严格参考吸附的两份单层 GPKG 源为 EPSG:3857、米单位，五条输入线与六条固定参考线，tolerance=.75 核对原始位置上限、严格边界、等距 XY、不插点和不吸向线段内部，源/属性/行序/XY/CRS 不变。另一个 tolerance=1.25 的失败 DAG 必须以固定 `snapping produced invalid geometries` Owner 原因整批拒绝，失败 execution/Monitor 同 User 且无保存、facts、扫描或源变化；只允许有界观察当前 execution 的隔离 Owner 日志，不重试业务。浏览器之前先保存 `topology-snap-failure.json` 的最小公开观察、原因、Monitor 和未变化扫描清单，result=incomplete，不能替代最终成功。
 
-文件保存继续使用 `mode=fail`，成功后的三份稳定输出及 `lineage_facts.outputs` 必须分别包含标准 `write_mode=create`，不能将缺少该事实或原始值 `fail` 视为合格。血缘仍须匹配同一 Develop execution 的当前 active derive；不修改 Meta 对未知写入模式只保留观察的规则。
+面叠源是十二条有效 EPSG:3857 面，显式 parcel_id 唯一非空。真实 `load → check_polygon_overlap(id_field=parcel_id) → save` 必须输出七对：五对普通重叠/包含/完全重复、一对含两个面部分并排除接触线的多部件交集、一对面积 2^-40（约 9.09e-13）且二进制精确可表示的微小重叠。独立静态坐标和面积 oracle 核对双方标识、行序、每对唯一、Float64 面积和 MultiPolygon；共边、共点、孔洞内部不输出，不调用生产算法生成期望。物理层以 OGR 独立验证原几何/3857/七对及精确面积，预览层验证标准 EWKB、精确源坐标/字段/3857；GPKG 自动生成的存储 FID 按 OGR 实际列名核对，不冒充来源业务标识，不能将缺行、重复、错误来源或忽略小面积视为合格。不扩展 Quality 或自动修复。
 
-GDAL 保存成果中的显式 CRS84 声明必须进入标准空间事实 `crs_ref=OGC:CRS84`，不得补造 EPSG SRID。浏览器核对 `source_crs=OGC:CRS84`、SRID 为零或省略、`not_transformed` / `direct_renderable`，并以原经纬坐标验证四面四余线、修复后两条 MultiPolygon 及三幅真实地图；不得临时选择坐标系或改文件声明来通过验收。
+同一 User 经 Console 检查成功执行、五幅真实 Manager 地图与塌缩失败页。每次导航读取当前页面自身响应，再通过 browserAPIFromResponse 核同一 User/Tenant/11 权限；不跨导航持旧 Token，不 mock 响应或注入内部图对象。GPKG 预览使用容器唯一 child_name、标准 EWKB，真实 OpenLayers 要素和 EPSG:3857 投影像素同时核验。物理及 API 坐标与源预期精确相等；显示值按共享的独立球面墨卡托数学 oracle 计算 EPSG:3857→4326→3857 后逐值精确比较，不用舍入或容差。面叠的小面积几何仍须保留，要素数和完整坐标必须正确，像素由实际可见重叠区域核验。
 
-等待血缘前先核对三份成果的严格大小，并归档 `topology-before-lineage.json`：包含本轮身份、公开扫描主体、资源血缘事实、Monitor 响应、物理哈希及三份大小证据，标记 `result=incomplete`。即使后续超时，已验证阶段仍可复核；该文件不能替代最终成功报告、血缘、浏览器或退出清理证据。
+唯一报告版本为 addp.vector-topology-persistence/v4、addp.topology-browser/v4、addp.topology-checkpoint/v4，旧 v3 不接受。等待血缘前归档 topology-before-lineage.json，保留五份严格大小/公开扫描身份/物理哈希/稳定outputs与facts及原始 Monitor，标记 incomplete。topology-source-lineage-raw.json/v3 保留五源原 Meta、五原图和实际预览响应；topology-physical/ 保留全部五源五成果合成原文件，逐个核 SHA/大小并拒绝覆盖不同证据，支持下载后独立 GDAL 复核。浏览器前后源及成果均不变；最终 Owner/browser 完整成功、五图及退出清理均实际通过才认本轮 T4。
 
-同一普通 User 经 Console 查看专业结果与三份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
-
-新增 `invalid.geojson` 含两条带业务属性的自相交面；`repaired.geojson` 必须一源要素一行、每行精确两个三角面，保留 source_name/grade，修复前 false 和自交原因、复查后 true/Valid Geometry 均须物理和预览核对。两份源文件的内容与 Meta 事实在浏览器访问前后不变；不增加 User 权限、等待预算或手工补扫。旧双输出版本的真实 T4 证据仍只证明原范围，不外推本次增强。
-
-浏览器按本次导航的真实请求身份读取源 Meta 和当前 active derive 原始图，归档到 `topology-source-lineage-raw.json`，不跨导航持有旧 Token。当前增强版报告版本和新增参考吸附范围见下文。
-
-参考吸附扩展沿用同一 suite、原 11 项权限、独占 Hosted 生命周期和 600 秒业务预算，不增加入口或 schedule。新增 `snap-input.gpkg` 与 `snap-reference.gpkg` 两份单图层 EPSG:3857 米制源；同一成功 execution 追加双 `load → snap_geometry(tolerance=0.75) → save(mode=fail)`，生成第四份成果 `snapped.gpkg`。固定五条输入线和六条参考线，独立坐标期望核对原始位置最近匹配、0→0.5→1 链不越界、恰在容差边界不动、等距按 X/Y 决胜、不向参考线段投影且不插删点；保留 source_name/grade、行序、部件及投影 CRS。GeoPackage 保留原始投影坐标，不借转换到经纬度代替几何核验；Meta 文件须为 single/container/geopackage，图层事实保留在容器内。
-
-第四份成果须严格核对物理与 Meta 正整数大小、一次同 User/Tenant 的精确自动扫描、两个吸附源与本次 execution 的 active derive、Monitor、容器图层 EWKB 原始坐标和真实 OpenLayers 要素／像素／截图；四份源及全部既有成果在浏览器前后不变。另执行 tolerance=1.25 的失败 DAG，末条线双端吸到同一点导致塌缩，必须整批失败且保存未执行；不得出现失败成果、自动扫描或任何源／既有成果变化。失败执行状态与 Monitor 也须绑定同一用户。进入浏览器前以 `topology-snap-failure.json` 归档本次失败执行的最小公开观察（status、outputs、lineage_facts、meta_scan_runs）、固定 Owner 原因、Monitor 和未变化扫描清单，标记 `result=incomplete`；后续地图失败不能丢失已核验的塌缩阶段证据，该文件不能替代完整 T4 通过。最终报告唯一版本升为 `addp.vector-topology-persistence/v3`、`addp.topology-browser/v3` 和 `addp.topology-checkpoint/v3`，原始血缘归档覆盖四源、第四份成果的双来源及各次实际预览响应；`topology-physical/` 保留四份合成源和四份已核验成果原文件，按 SHA/大小核对且拒绝覆盖不同证据，支持下载后独立 GDAL 复核。归档不属于已清理的 NFS 业务目录；incomplete 仍不可替代最终通过。此前构面／几何修复 T4 只证明原范围，本扩展在真实 Hosted 通过前不得计入参考吸附 T4。
-
-吸附成果的物理几何及 API EWKB 必须与原始预期坐标精确相等。地图显示坐标经过 EPSG:3857 → EPSG:4326 → EPSG:3857 的预览投影链路，使用独立球面墨卡托公式计算预期显示值后逐值精确比较；不将投影浮点尾差视为源坐标变化，不使用舍入或容差掩盖差异。显示坐标系、要素数、类型、顶点顺序及真实像素断言同时保留。
+NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零残留；失败清理仍使门禁失败。归档合成字节不是业务目录残留；部署销毁不认证 Manager 业务 DELETE。旧构面/修复/吸附 T4 不外推面叠，代码与确定性回归不记为新真实 T4，不新增 schedule。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费
 

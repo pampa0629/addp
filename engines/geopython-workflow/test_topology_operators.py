@@ -192,7 +192,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_five_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -220,11 +220,16 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         {'id': 'snap', 'operator': 'snap_geometry', 'params': {'input_gdf': {'$ref': 'snap_input'}, 'reference_gdf': {'$ref': 'snap_reference'}, 'tolerance': .75}, 'depends_on': ['snap_input','snap_reference']},
         {'id': 'save_snapped', 'operator': 'save', 'params': {'input_df': {'$ref': 'snap'}, 'connection_info': connection, 'path': 'outputs/snapped.gpkg', 'mode': 'fail'}, 'depends_on': ['snap']},
     ])
+    tasks.extend([
+        {'id': 'overlap_input', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'overlap-input.gpkg'}, 'depends_on': []},
+        {'id': 'overlap', 'operator': 'check_polygon_overlap', 'params': {'input_gdf': {'$ref': 'overlap_input'}, 'id_field': 'parcel_id'}, 'depends_on': ['overlap_input']},
+        {'id': 'save_overlaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'overlap'}, 'connection_info': connection, 'path': 'outputs/overlaps.gpkg', 'mode': 'fail'}, 'depends_on': ['overlap']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -260,8 +265,28 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         dataset = None
         with pytest.raises(fixture.FixtureError): fixture.worker('verify', tmp_path)
         path.write_bytes(original)
+    path = tmp_path / 'outputs/overlaps.gpkg'; original = path.read_bytes()
+    for problem in ('source_id', 'area', 'tiny_area', 'part', 'coordinate', 'crs', 'count'):
+        dataset = ogr.Open(str(path), 1); layer = dataset.GetLayer(0)
+        if problem == 'crs':
+            dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem == 'count':
+            layer.DeleteFeature(7)
+        else:
+            feature = layer.GetFeature(7 if problem=='tiny_area' else 6 if problem=='part' else 1)
+            if problem == 'source_id': feature.SetField('source_id_a', '共边')
+            elif problem in ('area','tiny_area'): feature.SetField('overlap_area', 0)
+            else:
+                shape = json.loads(feature.GetGeometryRef().ExportToJson())
+                if problem == 'part': shape['coordinates'].pop()
+                else: shape['coordinates'][0][0][0][0] += .25
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(shape)))
+            layer.SetFeature(feature)
+        dataset = None
+        with pytest.raises(fixture.FixtureError): fixture.worker('verify', tmp_path)
+        path.write_bytes(original)
     baseline = fixture.worker('verify', tmp_path)
-    failed_tasks = tasks[-4:]
+    failed_tasks = tasks[-7:-3]
     failed_tasks[2]['params']['tolerance'] = 1.25
     failed_tasks[3]['params']['path'] = 'outputs/failed-snap.gpkg'
     failed = execute_workflow({'tasks': failed_tasks})

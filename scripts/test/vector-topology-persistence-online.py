@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ordinary User -> polygonize and geometry repair -> exact scans/lineage -> Console."""
+"""Ordinary User topology/repair/snap/overlap -> exact scans/lineage -> Console."""
 import importlib
 import json
 import os
@@ -18,7 +18,7 @@ vector = importlib.import_module('scripts.utils.online_vector_persistence')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
-def definition(source, parent, invalid_source, snap_source, snap_reference):
+def definition(source, parent, invalid_source, snap_source, snap_reference, overlap_source):
     return {'tasks': [
         {'id': 'load', 'operator': 'load', 'params': {'locator': source}, 'depends_on': []},
         {'id': 'build', 'operator': 'polygonize', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
@@ -32,6 +32,9 @@ def definition(source, parent, invalid_source, snap_source, snap_reference):
         {'id': 'recheck', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'repair'}, 'valid_field': 'after_valid', 'reason_field': 'after_reason'}, 'depends_on': ['repair']},
         {'id': 'save_repaired', 'operator': 'save', 'params': {'input_df': {'$ref': 'recheck'}, 'target_parent_locator': parent, 'target_name': 'repaired.geojson', 'mode': 'fail'}, 'depends_on': ['recheck']},
         *snap_definition(snap_source, snap_reference, parent)['tasks'],
+        {'id': 'overlap_input', 'operator': 'load', 'params': {'locator': overlap_source}, 'depends_on': []},
+        {'id': 'overlap', 'operator': 'check_polygon_overlap', 'params': {'input_gdf': {'$ref': 'overlap_input'}, 'id_field': 'parcel_id'}, 'depends_on': ['overlap_input']},
+        {'id': 'save_overlaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'overlap'}, 'target_parent_locator': parent, 'target_name': 'overlaps.gpkg', 'mode': 'fail'}, 'depends_on': ['overlap']},
     ]}
 
 
@@ -49,7 +52,7 @@ def snap_definition(source, reference, parent, *, failed=False):
 
 
 def output_sources(port):
-    return (2, 3) if port == 'snapped' else (1,) if port == 'repaired' else (0,)
+    return (4,) if port == 'overlaps' else (2, 3) if port == 'snapped' else (1,) if port == 'repaired' else (0,)
 
 
 def validate_failed_snap(execution):
@@ -88,18 +91,18 @@ def validate_success(execution, sources, targets):
     outputs = obj(execution.get('outputs'), 'stable outputs')
     expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file', 'write_mode': 'create'}} for key, target in targets.items()}
     if outputs != expected:
-        raise SuiteError('expected four exact named file outputs')
+        raise SuiteError('expected five exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
         or [entry.get('locator') for entry in array(facts.get('inputs'), 'inputs')] != sources
         or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())
         or any(entry.get('write_mode') != 'create' for entry in facts['outputs'])):
-        raise SuiteError('topology, repair and snap resource lineage differs')
+        raise SuiteError('topology, repair, snap and overlap resource lineage differs')
     scans = array(obj(metadata.get('result'), 'result').get('meta_scan_runs'), 'automatic scans')
-    if (len(scans) != 4 or {scan.get('target_locator') for scan in scans} != set(targets.values())
+    if (len(scans) != len(fixture.TARGETS) or {scan.get('target_locator') for scan in scans} != set(targets.values())
         or any(scan.get('status') != 'submitted' or not isinstance(scan.get('execution_id'), str) or not scan['execution_id'] for scan in scans)
-        or len({scan['execution_id'] for scan in scans}) != 4):
-        raise SuiteError('expected exactly four distinct automatic precise file scans')
+        or len({scan['execution_id'] for scan in scans}) != len(fixture.TARGETS)):
+        raise SuiteError('expected exactly five distinct automatic precise file scans')
     return facts, scans
 
 
@@ -112,7 +115,7 @@ def physical(repository, env):
 
 
 def validate_item(item, native, name):
-    if name == 'snapped.gpkg':
+    if name in ('snapped.gpkg', 'overlaps.gpkg'):
         return vector.validate_item(item, native, name)
     size = item.get('size_bytes')
     if type(size) is not int or size <= 0 or type(native.get('size_bytes')) is not int or size != native['size_bytes'] or not item.get('scanned_at'):
@@ -131,7 +134,7 @@ def browser(repository, env, evidence):
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    if report != {**evidence, 'schema_version': 'addp.topology-browser/v3', 'result': 'passed'}:
+    if report != {**evidence, 'schema_version': 'addp.topology-browser/v4', 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
@@ -157,7 +160,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         raise SuiteError('expected exactly one online product GeoPython Runtime')
     parent = f'addp://engine/{engine}/path/outputs?type=directory'
     targets = {key: f'addp://engine/{engine}/path/outputs/{name}?type=file' for key, name in zip(fixture.PORTS, fixture.TARGETS)}
-    identifier = raster.submit(client, positive(selected[0]['id'], 'Runtime'), definition(sources[0]["locator"], parent, sources[1]["locator"], sources[2]["locator"], sources[3]["locator"]))
+    identifier = raster.submit(client, positive(selected[0]['id'], 'Runtime'), definition(sources[0]["locator"], parent, sources[1]["locator"], sources[2]["locator"], sources[3]["locator"], sources[4]["locator"]))
     execution = raster.wait_execution(client, 'develop', identifier, timeout)
     facts, scans = validate_success(execution, [source["locator"] for source in sources], targets)
     scan_observations = []
@@ -180,13 +183,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         item = obj(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload, 'output item')
         sizes = validate_item(item, native['targets'][name], name)
         outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes,
-                        **({'layer_name': native['targets'][name]['layer_name'], 'geometry_column': native['targets'][name]['geometry_column']} if key == 'snapped' else {})})
+                        **({'fid_column': native['targets'][name]['fid_column']} if key == 'overlaps' else {}),
+                        **({'layer_name': native['targets'][name]['layer_name'], 'geometry_column': native['targets'][name]['geometry_column']} if name.endswith('.gpkg') else {})})
     # Persist the verified physical facts before any potentially long convergence
     # wait. This checkpoint cannot stand in for the final successful suite report.
-    checkpoint = {'schema_version': 'addp.topology-checkpoint/v3', 'suite': SUITE, 'result': 'incomplete',
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v4', 'suite': SUITE, 'result': 'incomplete',
         'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
         'execution_id': identifier, 'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'lineage_facts': facts,
-        'automatic_scans': scan_observations, 'outputs': outputs, 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
+        'automatic_scans': scan_observations, 'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json').write_text(json.dumps(checkpoint, indent=2)+'\n')
     for output in outputs:
         output['lineage'] = [raster.wait_lineage(client, sources[index]['id'], output['item_id'], identifier, timeout)
@@ -225,14 +229,16 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     evidence = {'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity, 'execution_id': identifier,
                 'outputs': [{key: value for key, value in output.items() if key not in ('lineage', 'size_evidence')} for output in outputs],
                 'failed_execution_id': failed_id,
+                'overlap_expected': fixture.overlap_expected_features(),
                 'sources': [{'id': source['id'], 'before': source['before']} for source in sources]}
     report = browser_runner(repository, env, evidence)
-    if physical_runner(repository, env) != native:
+    final_native = physical_runner(repository, env)
+    if final_native != native:
         raise SuiteError('browser reads changed source or saved outputs')
-    return {'schema_version': 'addp.vector-topology-persistence/v3', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.vector-topology-persistence/v4', 'suite': SUITE, 'result': 'passed',
         'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'execution_id': identifier,
         'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'source_unchanged': True, 'automatic_scans': scans, 'automatic_scan_observations': scan_observations, 'monitor': monitor,
-        'outputs': outputs, 'physical': native, 'browser': report, 'failed_snap': failure,
+        'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'post_browser_physical': final_native, 'browser': report, 'failed_snap': failure,
         'cleanup_boundary': 'owned NFS export/directory and disposable deployment; no business DELETE acceptance'}
 
 

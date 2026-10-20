@@ -15,10 +15,18 @@ function canonical(points, ring = false) {
 
 const snapCoordinates = [[[.5,0],[10,0]],[[0,10],[10,10]],[[-.5,20],[10,20]],[[5,30],[5,35]],[[50,40],[52,40]]]
 
-test('同一普通User核对构面、几何修复、严格参考吸附地图及塌缩失败', async ({ page }) => {
+function polygonParts(coordinates) {
+  return coordinates.map(part => part.map(ring => {
+    expect(ring.at(-1)).toEqual(ring[0])
+    return canonical(ring, true)
+  }).sort()).map(value => JSON.stringify(value)).sort()
+}
+
+test('同一普通User核对构面、修复、严格吸附、面叠地图及塌缩失败', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
   for (const key of ['run_id', 'principal_id', 'tenant_id', 'execution_id']) expect(evidence[key]).toBeTruthy()
-  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped'])
+  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps'])
+  expect(evidence.overlap_expected).toHaveLength(7)
   const expectedIdentity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id,
     permissions: evidence.permissions_verified }
   const executionRead = page.waitForResponse(response => response.request().method() === 'GET' &&
@@ -32,14 +40,14 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
   await expect(frame.getByText('成功', { exact: true })).toBeVisible()
   for (const output of evidence.outputs) await expect(frame.locator('.workflow-result')).toContainText(output.name)
   await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-execution.png') })
-  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v2', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
-  expect(evidence.sources).toHaveLength(4)
+  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v3', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  expect(evidence.sources).toHaveLength(5)
   for (const output of evidence.outputs) {
     const locator = `${output.locator}&item_id=${output.item_id}`
     const previewRead = page.waitForResponse(response => response.request().method() === 'GET' &&
       new URL(response.url()).pathname === '/api/v1/manager/preview' &&
       new URL(response.url()).searchParams.get('locator') === locator &&
-      (output.port !== 'snapped' || new URL(response.url()).searchParams.get('child_name') === output.layer_name))
+      (!output.layer_name || new URL(response.url()).searchParams.get('child_name') === output.layer_name))
     await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
     const previewResponse = await previewRead
     const preview = await json(previewResponse, 'topology saved preview')
@@ -53,7 +61,7 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
       }
       const graph = await json(await previewAPI.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`), 'current output lineage')
       expect(graph.truncated).not.toBe(true)
-      for (const index of output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
+      for (const index of output.port === 'overlaps' ? [4] : output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
         const sourceID = evidence.sources[index].id
         expect(graph.edges.some(edge => edge.source?.item_id === sourceID && edge.target?.item_id === output.item_id &&
           edge.evidence?.execution_id === evidence.execution_id && edge.status === 'active' && edge.relation_kind === 'derive')).toBe(true)
@@ -65,12 +73,25 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
     }
     const data = preview.data
     expect(preview.preview_type).toBe('table')
-    if (output.port === 'snapped') {
+    if (output.layer_name) {
       expect([data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint])
-        .toEqual([5, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
+        .toEqual([output.port === 'overlaps' ? 7 : 5, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
       expect(data.geometry_columns).toEqual([output.geometry_column])
-      expect(data.rows.map(row => ({ name: row.source_name, grade: row.grade, geometry: decodePreviewEWKB(row[data.geometry_column]) })))
-        .toEqual(snapCoordinates.map((coordinates,index) => ({ name:`snap-${index}`, grade:10+index, geometry:{type:'LineString',coordinates} })))
+      if (output.port === 'overlaps') {
+        expect(output.fid_column).toBeTruthy()
+        expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, 'source_id_a', 'source_id_b', 'overlap_area'].sort())
+        expect(data.rows.map(row => row[output.fid_column])).toEqual([1,2,3,4,5,6,7])
+        const actual = data.rows.map(row => {
+          const geometry = decodePreviewEWKB(row[data.geometry_column])
+          expect(geometry.type).toBe('MultiPolygon')
+          return { source_id_a: row.source_id_a, source_id_b: row.source_id_b,
+            overlap_area: row.overlap_area, parts: polygonParts(geometry.coordinates) }
+        })
+        expect(actual).toEqual(evidence.overlap_expected.map(row => ({ ...row.properties, parts: polygonParts(row.geometry.coordinates) })))
+      } else {
+        expect(data.rows.map(row => ({ name: row.source_name, grade: row.grade, geometry: decodePreviewEWKB(row[data.geometry_column]) })))
+          .toEqual(snapCoordinates.map((coordinates,index) => ({ name:`snap-${index}`, grade:10+index, geometry:{type:'LineString',coordinates} })))
+      }
     } else {
       expect([data.total, data.source_crs, data.transform_status, data.preview_hint]).toEqual([output.port === 'repaired' ? 2 : 4, 'OGC:CRS84', 'not_transformed', 'direct_renderable'])
       expect(data.source_srid === undefined || data.source_srid === 0).toBe(true)
@@ -108,7 +129,19 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
       if (!map || map.getView().getAnimating()) return []
       return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
         .map(feature => feature.getGeometry().getType()).sort()
-    })).toEqual(Array(output.port === 'snapped' ? 5 : output.port === 'repaired' ? 2 : 4).fill(output.port === 'faces' ? 'Polygon' : output.port === 'repaired' ? 'MultiPolygon' : 'LineString'))
+    })).toEqual(Array(output.port === 'overlaps' ? 7 : output.port === 'snapped' ? 5 : output.port === 'repaired' ? 2 : 4).fill(output.port === 'faces' ? 'Polygon' : ['repaired','overlaps'].includes(output.port) ? 'MultiPolygon' : 'LineString'))
+    if (output.port === 'overlaps') {
+      await expect(table.locator('thead')).toContainText('source_id_a')
+      await expect(table.locator('thead')).toContainText('source_id_b')
+      const expected = evidence.overlap_expected.map(row => polygonParts(row.geometry.coordinates.map(part => part.map(ring => ring.map(webMercatorPreviewCoordinate))))).map(value => JSON.stringify(value)).sort()
+      await expect.poll(async () => renderer.evaluate(element => {
+        const value = element.__vueParentComponent?.setupState?.mapInstance
+        const map = value?.value || value
+        if (!map || map.getView().getAnimating() || map.getView().getProjection().getCode() !== 'EPSG:3857') return []
+        return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+          .map(feature => feature.getGeometry().getCoordinates())
+      }).then(geometries => geometries.map(polygonParts).map(value => JSON.stringify(value)).sort())).toEqual(expected)
+    }
     if (output.port === 'snapped') {
       for (let index = 0; index < snapCoordinates.length; index++) {
         const row = table.getByRole('row').filter({ hasText:`snap-${index}` })
@@ -124,11 +157,21 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
       })).toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))
         .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
     }
-    await expect.poll(async () => renderer.locator('canvas').evaluateAll(canvases => canvases.reduce((count, canvas) => {
+    let greenPixels = 0
+    await expect.poll(async () => greenPixels = await renderer.locator('canvas').evaluateAll(canvases => canvases.reduce((count, canvas) => {
       const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
       for (let i = 0; i < pixels.length; i += 4) if (pixels[i+3] > 0 && pixels[i+1] > pixels[i] * 1.1 && pixels[i+1] > pixels[i+2] * 1.1) count++
       return count
     }, 0))).toBeGreaterThan(30)
+    const rendered = await renderer.evaluate(element => {
+      const value = element.__vueParentComponent.setupState.mapInstance
+      const map = value?.value || value
+      return { projection: map.getView().getProjection().getCode(), features: map.getLayers().getArray()
+        .flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+        .map(feature => ({ type: feature.getGeometry().getType(), coordinates: feature.getGeometry().getCoordinates() })) }
+    })
+    sourceLineage.observations.at(-1).rendered = { ...rendered, green_pixels: greenPixels }
+    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-source-lineage-raw.json'), JSON.stringify(sourceLineage, null, 2))
     if (output.port === 'diagnostics') expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(Array(4).fill('dangle'))
     await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `topology-${output.port}-map.png`) })
   }
@@ -148,6 +191,6 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
   await expect(frame.getByText('失败', { exact:true })).toBeVisible()
   await page.screenshot({ path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-snap-failed.png') })
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-browser.json'), JSON.stringify({
-    ...evidence, schema_version: 'addp.topology-browser/v3', result: 'passed'
+    ...evidence, schema_version: 'addp.topology-browser/v4', result: 'passed'
   }, null, 2))
 })
