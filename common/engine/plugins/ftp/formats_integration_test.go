@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -18,6 +21,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/json"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
+	_ "github.com/addp/common/format/plugins/threeds"
 )
 
 type rangeOnly struct {
@@ -86,6 +90,65 @@ func TestIntegrationProviderSharedFormats(t *testing.T) {
 				if err != nil || len(rows) != 3 || audit.calls.Load() == 0 {
 					t.Fatal("Parquet preview did not consume native FTP ranges", err)
 				}
+			}
+		})
+	}
+}
+
+// These are raw Provider/format protocol checks on an owned synthetic FTP
+// fixture. They do not exercise Manager authorization, conversion or rendering.
+func TestIntegrationProviderModelInputs(t *testing.T) {
+	info := ownedInfo(t, "explicit_tls")
+	provider := &ftppkg.FTPPlugin{}
+	for _, sample := range []struct{ target, source string }{
+		{"models/ifc/model.ifc", "addp_online_model_fixture.ifc"},
+		{"models/3ds/model.3ds", "addp_online_model_fixture.3ds"},
+		{"models/3ds/texture.png", "addp_online_exchange_texture.png"},
+	} {
+		t.Run(sample.target, func(t *testing.T) {
+			want, err := os.ReadFile("../../../../business/fixtures/manager/" + sample.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := plugin.FileRootPath(99)
+			parts := strings.Split(sample.target, "/")
+			for i, part := range parts[:len(parts)-1] {
+				target = plugin.FileDirectoryCatalogEntry(target, part, strings.Join(parts[:i+1], "/")).Path
+			}
+			target = plugin.FileLeafCatalogEntry(target, plugin.StorageObjectFacts{Name: path.Base(sample.target), Path: sample.target}).Path
+			facts, err := provider.DescribeEngineCatalogFacts(t.Context(), info, target, plugin.EngineCatalogFactsOptions{})
+			if err != nil || facts == nil || facts.Storage == nil || facts.Storage.SizeBytes == nil ||
+				facts.Storage.Path != sample.target || *facts.Storage.SizeBytes != int64(len(want)) || facts.Storage.ETag != "" {
+				t.Fatal("exact model file MLST facts differ", err)
+			}
+			stream, err := provider.OpenContent(t.Context(), info, target, plugin.ReadOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual bytes.Buffer
+			if strings.HasSuffix(sample.target, ".3ds") {
+				parser, parseErr := fileformat.GetModel3DInfoProvider(fileformat.Format3DS)
+				if parseErr != nil {
+					stream.Close()
+					t.Fatal(parseErr)
+				}
+				described, parseErr := parser.DescribeModel3D(t.Context(), io.TeeReader(stream, &actual), nil)
+				closeErr := stream.Close()
+				if parseErr != nil || closeErr != nil || described == nil || described.FormatInfo["scan_complete"] != true {
+					t.Fatal("native 3DS stream did not produce complete declarations", parseErr, closeErr)
+				}
+				refs, ok := described.FormatInfo["texture_refs"].([]string)
+				if !ok || len(refs) != 1 || refs[0] != "texture.png" {
+					t.Fatal("3DS native texture declaration changed")
+				}
+			} else {
+				_, readErr := io.Copy(&actual, stream)
+				if closeErr := stream.Close(); readErr != nil || closeErr != nil {
+					t.Fatal(readErr, closeErr)
+				}
+			}
+			if !bytes.Equal(actual.Bytes(), want) {
+				t.Fatal("FTP model input differs from its fixed repository source")
 			}
 		})
 	}

@@ -48,7 +48,7 @@ func TestIntegrationProviderCatalogFactsAndContent(t *testing.T) {
 				t.Fatal(err)
 			}
 			roots, err := p.ListChildren(t.Context(), info, root, plugin.ListOptions{})
-			if err != nil || len(roots) != 2 {
+			if err != nil || len(roots) != 3 {
 				t.Fatal("account root directories differ", err)
 			}
 			var examples plugin.EngineCatalogPath

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=ftp
-# ADDP_T2_INPUT_FILES=business/ftp/ business/docker-compose.yml common/engine/certification/ftp/ common/engine/internal/ftpclient/ common/engine/plugins/ftp/ common/engine/contentadapter/ common/format/plugins/csv/ common/format/plugins/json/ common/format/plugins/parquet/
+# ADDP_T2_INPUT_FILES=business/ftp/ business/docker-compose.yml common/engine/certification/ftp/ common/engine/internal/ftpclient/ common/engine/plugins/ftp/ common/engine/contentadapter/ common/format/plugins/csv/ common/format/plugins/json/ common/format/plugins/parquet/ common/format/plugins/threeds/ business/fixtures/manager/addp_online_model_fixture.ifc business/fixtures/manager/addp_online_model_fixture.3ds business/fixtures/manager/addp_online_exchange_texture.png
 # Business owner: disposable docker run / docker rm resources, never personal services.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -13,7 +13,7 @@ cleanup() {
     local status=$?
     trap - EXIT INT TERM
     python3 "$ROOT_DIR/business/ftp/admission.py" stop || status=1
-    for evidence in facts.json cleanup.json business-lifecycle.json readiness-initial.json readiness-recreated.json command-failure.json; do
+    for evidence in facts.json cleanup.json business-lifecycle.json readiness-initial.json readiness-recreated.json command-failure.json ftp-model-samples.json; do
         [ ! -f "$ADDP_FTP_ADMISSION_DIR/$evidence" ] || cp "$ADDP_FTP_ADMISSION_DIR/$evidence" "$ARTIFACT_DIR/$evidence"
     done
     printf 'exit_code=%s\n' "$status" > "$ARTIFACT_DIR/result.txt"
@@ -42,5 +42,6 @@ grep -q -- "--- PASS: TestStrictMLSTFacts " "$ARTIFACT_DIR/admission.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/provider.log"
 grep -q -- '--- PASS: TestIntegrationProviderCatalogFactsAndContent ' "$ARTIFACT_DIR/provider.log"
 grep -q -- '--- PASS: TestIntegrationProviderSharedFormats ' "$ARTIFACT_DIR/provider.log"
+grep -q -- '--- PASS: TestIntegrationProviderModelInputs ' "$ARTIFACT_DIR/provider.log"
 
 python3 "$ROOT_DIR/business/ftp/admission.py" persistence

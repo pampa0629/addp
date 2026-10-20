@@ -15,7 +15,7 @@ import time
 
 from config import ROOT, image, server, users
 from prepare import identity
-from seed import write_samples
+from seed import write_model_samples, write_samples
 
 
 def run(*args, **kwargs):
@@ -172,6 +172,7 @@ def start():
     # Publish a new host directory only after the FTP server is actually ready.
     # The subsequent native FTP/Provider/Meta checks must see it without restart.
     write_samples(data)
+    write(root / 'ftp-model-samples.json', write_model_samples(data))
     samples = data / 'examples'
     (samples / '中文 空格%样例.csv').write_text('id,name,amount\n1,长沙,100.25\n2,株洲,200.50\n')
     (samples / 'demo.json').write_text('[{"id":1,"name":"长沙"},{"id":2,"name":"株洲"}]')
