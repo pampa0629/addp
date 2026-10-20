@@ -3,11 +3,13 @@ from contextlib import contextmanager
 import base64
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import subprocess
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -55,6 +57,8 @@ class FakeClient:
             payload = {'principal': {'id': '8', 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'}, 'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [{'role_key': 'tenant.administrator' if self.admin else 'online.ftp', 'permissions': sorted(M.PERMISSIONS)}]}}
         elif url.path.endswith('/engine-catalog/engines'):
             payload = [{'id': 17, 'engine_type': 'ftp', 'capabilities': {'engine_family': 'file', 'storage': {'store': {'stream_read': True, 'range_read': True, 'stream_write': self.write}}}}]
+        elif url.path == '/api/v1/manager/engines':
+            payload = {'data': [{'id': 17}]}
         elif url.path.endswith('/catalog/children'):
             segments = body['path']['segments']
             if not segments:
@@ -77,7 +81,7 @@ class FakeClient:
             payload = b'corrupted' if self.bad_download else name.split('.')[-1].encode()
         else:
             raise AssertionError(path)
-        return SimpleNamespace(payload=payload)
+        return SimpleNamespace(status=200, payload=payload)
 
 
 class FakeSourceIssuer:
@@ -138,6 +142,195 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def owned_detail(self, kind='3ds'):
+        model, = [row for row in M.prepare_models(FakeClient().items, 17, model_samples()) if row['format'] == kind]
+        execution = '12345678-1234-4234-8234-123456789abc'
+        preparation = 'abcdefab-1234-4234-8234-123456789abc'
+        prefix = f'temp/model3d-input/tenant_2/{execution}/attempt_1/{preparation}/'
+        published = {'format': kind, 'task_id': 30, 'result_id': 20, 'execution_id': execution, 'size': 123, 'sha256': 'a' * 64}
+        detail = {'id': 20, 'tenant_id': 2, 'task_id': 30, 'last_execution_id': execution, 'item_id': model['item_id'],
+                  'item_fingerprint': model['fingerprint'], 'source_engine_id': 17, 'source_format': kind,
+                  'size_bytes': 123, 'status': 'ready', 'storage_ref': json.dumps({'type': 'object', 'provider': 'addp_object_storage',
+                  'bucket': 'manager', 'object': f'tenant_2/model3d-quick-view/executions/{execution}/model.glb'}),
+                  'metadata': {'model3d_output_owner': 'manager_execution', 'model3d_output_lifecycle': {
+                      'input_preparations': [{'execution_id': execution, 'attempt': 1, 'preparation_id': preparation,
+                          'released': True, 'watch': False, 'cleaned': True,
+                          'objects': [{'bucket': 'manager', 'object': prefix + name} for name in
+                                      (('model.3ds', 'texture.png') if kind == '3ds' else ('model.ifc',))]}]}}}
+        return model, published, detail
+
+    def failed_detail(self, detail, published):
+        failed = 'fedcba98-1234-4234-8234-123456789abc'
+        changed = copy.deepcopy(detail)
+        state = changed['metadata']['model3d_output_lifecycle']
+        row = copy.deepcopy(state['input_preparations'][0])
+        old_preparation = row['preparation_id']
+        row.update(execution_id=failed, preparation_id='ff' + old_preparation[2:])
+        for obj in row['objects']:
+            obj['object'] = obj['object'].replace(published['execution_id'], failed).replace(old_preparation, row['preparation_id'])
+        state['input_preparations'].append(row)
+        ref = json.loads(detail['storage_ref'])
+        ref['object'] = ref['object'].replace(published['execution_id'], failed)
+        state['garbage'] = [{'execution_id': failed, 'watch': True, 'storage_ref': json.dumps(ref)}]
+        return failed, changed
+
+    def test_exact_owner_details_and_settled_inputs_reject_foreign_or_unknown_cleanup(self):
+        model, published, detail = self.owned_detail()
+        client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=detail))
+        report = {'engine_id': 17, 'tenant_id': 2}
+        self.assertIs(M.owned_model_details(client, report, model, published), detail)
+        inputs = M.owned_input_objects(detail, published['execution_id'], model['composition'])
+        self.assertEqual(len(inputs), 2)
+        self.assertTrue(all(row['exists'] is False for row in inputs))
+        mutations = [lambda value: value.update(tenant_id=3), lambda value: value.update(task_id=31),
+                     lambda value: value.update(last_execution_id='other'), lambda value: value.update(item_fingerprint='b' * 64)]
+        for mutate in mutations:
+            changed = copy.deepcopy(detail)
+            mutate(changed)
+            with self.assertRaises(M.SuiteError):
+                M.owned_model_details(SimpleNamespace(request=lambda *args: SimpleNamespace(payload=changed)), report, model, published)
+        for key, value in (('released', False), ('watch', True), ('cleaned', False), ('attempt', True), ('objects', [])):
+            changed = copy.deepcopy(detail)
+            changed['metadata']['model3d_output_lifecycle']['input_preparations'][0][key] = value
+            with self.subTest(key=key), self.assertRaises(M.SuiteError):
+                M.owned_input_objects(changed, published['execution_id'], model['composition'])
+        changed = copy.deepcopy(detail)
+        changed['metadata']['model3d_output_lifecycle']['input_preparations'][0]['objects'][1]['object'] += '-foreign'
+        with self.assertRaises(M.SuiteError):
+            M.owned_input_objects(changed, published['execution_id'], model['composition'])
+
+    def test_physical_probe_uses_observed_port_and_private_stdin_without_object_enumeration(self):
+        objects = [{'bucket': 'manager', 'object': 'temp/exact.png', 'exists': False}]
+        invocations = []
+        def command(args, **kwargs):
+            invocations.append((args, kwargs))
+            if args[0] == 'bash':
+                return SimpleNamespace(returncode=0)
+            return SimpleNamespace(returncode=0, stdout=json.dumps(objects))
+        def value(args, **kwargs):
+            if 'port' in args:
+                return '127.0.0.1:49123\n'
+            return json.dumps({'com.docker.compose.project': 'addp-infra', 'com.docker.compose.service': 'minio'})
+        with patch.dict(os.environ, MINIO_ROOT_USER='synthetic-key', MINIO_ROOT_PASSWORD='synthetic-secret'), \
+                patch.object(M, 'model3d_product_identity', return_value={'container': 'addp-ftp-model3d-runtime'}), \
+                patch.object(M.subprocess, 'run', side_effect=command), patch.object(M.subprocess, 'check_output', side_effect=value):
+            self.assertEqual(M.verify_physical_objects(objects), objects)
+        args, kwargs = invocations[-1]
+        self.assertEqual(args[:5], ['docker', 'exec', '-i', 'addp-ftp-model3d-runtime', 'python'])
+        payload = json.loads(kwargs['input'])
+        self.assertEqual(payload['endpoint'], '127.0.0.1:49123')
+        self.assertEqual(payload['objects'], objects)
+        self.assertNotIn('synthetic-secret', ' '.join(args))
+        compile(M.OBJECT_PROBE, '<exact object probe>', 'exec')
+
+    def test_physical_probe_counts_only_exact_no_such_key_as_absent(self):
+        class S3Failure(Exception):
+            def __init__(self, code):
+                self.code = code
+        for code in ('NoSuchKey', 'AccessDenied', 'NoSuchBucket', 'transport-timeout'):
+            client = SimpleNamespace(stat_object=lambda *args: None)
+            def fail(*args):
+                if code == 'transport-timeout':
+                    raise TimeoutError('synthetic transport')
+                raise S3Failure(code)
+            client.stat_object = fail
+            modules = {'minio': SimpleNamespace(Minio=lambda *args, **kwargs: client),
+                       'minio.error': SimpleNamespace(S3Error=S3Failure),
+                       'urllib3': SimpleNamespace(PoolManager=lambda **kwargs: None, Timeout=lambda **kwargs: None)}
+            payload = {'endpoint': '127.0.0.1:49123', 'access_key': 'synthetic', 'secret_key': 'synthetic',
+                       'objects': [{'bucket': 'manager', 'object': 'exact', 'exists': False}]}
+            output, errors = io.StringIO(), io.StringIO()
+            with self.subTest(code=code), patch.dict(sys.modules, modules), \
+                    patch.object(sys, 'stdin', io.StringIO(json.dumps(payload))), \
+                    patch.object(sys, 'stdout', output), patch.object(sys, 'stderr', errors):
+                if code == 'NoSuchKey':
+                    exec(M.OBJECT_PROBE, {})
+                else:
+                    with self.assertRaises(SystemExit) as failed:
+                        exec(M.OBJECT_PROBE, {})
+                    self.assertEqual(failed.exception.code, 1)
+            if code == 'NoSuchKey':
+                self.assertEqual(json.loads(output.getvalue()), payload['objects'])
+            else:
+                self.assertEqual(output.getvalue(), '')
+                self.assertNotIn('synthetic transport', errors.getvalue())
+
+    def test_product_delete_uses_original_owned_result_after_source_withdrawal(self):
+        model, published, detail = self.owned_detail()
+        report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2}
+        calls = []
+        def request(method, path, statuses, body=None):
+            calls.append((method, path, statuses, body))
+            return SimpleNamespace(payload=detail if statuses == (200,) and method == 'GET' else {})
+        with patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows) as physical:
+            result = M.delete_owned_models(SimpleNamespace(request=request), report)
+        self.assertEqual(calls, [('GET', '/api/v1/manager/model_3d_glb/20', (200,), None),
+                                 ('DELETE', '/api/v1/manager/model_3d_glb/20', (200,), None),
+                                 ('GET', '/api/v1/manager/model_3d_glb/20', (404,), None),
+                                 ('GET', '/api/v1/manager/model_3d_glb/20/content', (404,), None)])
+        self.assertEqual(len(physical.call_args.args[0]), 3)
+        self.assertTrue(all(row['exists'] is False for row in result[0]['objects']))
+
+    def test_product_delete_keeps_failed_inputs_and_output_watch_in_exact_post_delete_probe(self):
+        model, published, detail = self.owned_detail('ifc')
+        failed, detail = self.failed_detail(detail, published)
+        report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2,
+                  'failed_generation': {'format': 'ifc', 'execution_id': failed}}
+        client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=detail))
+        with patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows) as physical:
+            M.delete_owned_models(client, report)
+        self.assertEqual(len(physical.call_args.args[0]), 4)
+        self.assertEqual(sum(failed in row['object'] for row in physical.call_args.args[0]), 2)
+
+    def test_invalid_ifc_fixture_restores_equal_size_source_on_consumer_failure(self):
+        model, _, _ = self.owned_detail('ifc')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            M.SEED.write_model_samples(root / 'data')
+            target = root / 'data/models/ifc/model.ifc'
+            original = target.read_bytes()
+            with patch.object(M, 'owned_ftp_fixture', return_value=root), self.assertRaisesRegex(RuntimeError, 'synthetic consumer'):
+                with M.invalid_ifc_fixture(model):
+                    self.assertEqual(len(target.read_bytes()), len(original))
+                    self.assertNotEqual(target.read_bytes(), original)
+                    raise RuntimeError('synthetic consumer')
+            self.assertEqual(target.read_bytes(), original)
+
+    def test_failed_rebuild_uses_formal_execute_and_preserves_old_ready_with_new_input_facts(self):
+        model, published, before = self.owned_detail('ifc')
+        failed, after = self.failed_detail(before, published)
+        report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2}
+        calls, events = [], []
+        submitted = False
+        def request(method, path, statuses, body=None):
+            nonlocal submitted
+            calls.append((method, path, statuses, body))
+            if method == 'POST':
+                submitted = True
+                return SimpleNamespace(payload={'execution_id': failed, 'status': 'pending'})
+            if '/executions/' in path:
+                return SimpleNamespace(payload={'execution_id': failed, 'status': 'failed'})
+            return SimpleNamespace(payload=after if submitted else before)
+        @contextmanager
+        def invalid(source):
+            events.append('invalid')
+            try:
+                yield
+            finally:
+                events.append('restored')
+        with patch.object(M, 'invalid_ifc_fixture', invalid), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows) as physical, \
+                patch.object(M, 'verify_cached_results', return_value=[{'status': 200}]):
+            result = M.verify_failed_generation(SimpleNamespace(request=request), report, 30)
+        self.assertEqual(events, ['invalid', 'restored'])
+        self.assertEqual([row for row in calls if row[0] == 'POST'], [
+            ('POST', '/api/v1/manager/tasks/model_3d_glb_generation/30/execute', (202,),
+             {'parameters': {'existing_result_action': 'overwrite'}})])
+        self.assertEqual(result['preserved_execution_id'], published['execution_id'])
+        self.assertEqual(result['execution_id'], failed)
+        self.assertEqual(len(physical.call_args.args[0]), 3)
+        self.assertEqual(sum(row['exists'] is True for row in result['objects']), 1)
+        self.assertEqual(sum(failed in row['object'] for row in result['objects']), 2)
+
     def product_profile(self):
         raw = GLB.fixture_glb('ifc')
         return {'platform': 'Linux-x86_64', 'binary': '/opt/addp/model3d-workflow/bin/IfcConvert',
@@ -441,6 +634,17 @@ class FTPConsumerTest(unittest.TestCase):
         with self.assertRaises(M.SuiteError):
             M.verify_cached_results(consumer, changed, {'ifc': 403, '3ds': 403})
 
+    def test_source_withdrawal_does_not_count_security_failure_or_leaked_data_as_source_denial(self):
+        consumer = FakeClient()
+        original = consumer.request
+        report = {'tenant_id': 2, 'principal_id': '8', 'browser': {'models': [{'format': 'ifc', 'result_id': 20}]}}
+        for payload in ({'error': 'protection pending', 'error_code': 'security_protection_required'},
+                        {'error': 'source denied', 'data': {'private': 'unexpected'}}):
+            def request(method, path, statuses, body=None, **kwargs):
+                return SimpleNamespace(payload=payload) if '/model_3d_glb/' in path else original(method, path, statuses, body)
+            with patch.object(consumer, 'request', side_effect=request), self.assertRaises(M.SuiteError):
+                M.verify_cached_results(consumer, report, {'ifc': 403})
+
     def test_deny_control_keeps_other_model_readable_and_release_restores_exact_bytes(self):
         consumer = FakeClient()
         binaries = {kind: GLB.fixture_glb(kind) for kind in ('ifc', '3ds')}
@@ -630,9 +834,16 @@ class FTPConsumerTest(unittest.TestCase):
         actual.update(browser_phase='withdrawn', models=[
             {'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
              'status': 403, 'error_visible': True, 'content_successes': 0, 'generation_requests': 0,
-             'unchanged_execution_id': published['execution_id']}
+             'unchanged_execution_id': published['execution_id'], 'unchanged_execution_status': 'success'}
             for source, published in zip(expected['models'], expected['browser']['models'])])
         M.validate_withdrawal_browser_report(actual, expected)
+        with_failure = copy.deepcopy(expected)
+        with_failure['failed_generation'] = {'format': 'ifc', 'execution_id': 'failed-rebuild', 'status': 'failed'}
+        failure_proof = copy.deepcopy(actual)
+        failure_proof['models'][0].update(unchanged_execution_id='failed-rebuild', unchanged_execution_status='failed')
+        M.validate_withdrawal_browser_report(failure_proof, with_failure)
+        with self.assertRaises(M.SuiteError):
+            M.validate_withdrawal_browser_report(actual, with_failure)
         for key, value in (('status', 200), ('error_visible', False), ('content_successes', 1),
                            ('generation_requests', 1), ('unchanged_execution_id', 'new-execution'), ('result_id', 99)):
             changed = copy.deepcopy(actual)

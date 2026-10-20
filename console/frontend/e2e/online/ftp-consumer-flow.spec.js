@@ -143,7 +143,7 @@ async function generateModel(page, api, model) {
   }
 }
 
-async function withdrawnModel(page, api, model, published) {
+async function withdrawnModel(page, api, model, published, latest) {
   const contentPath = `/api/v1/manager/model_3d_glb/${published.result_id}/content`
   const deniedResponses = []
   let contentSuccesses = 0
@@ -168,6 +168,8 @@ async function withdrawnModel(page, api, model, published) {
     const payload = await denied.json()
     expect(typeof payload.error).toBe('string')
     expect(payload.error.length).toBeGreaterThan(0)
+    expect(payload.error_code).not.toBe('security_protection_required')
+    expect(Object.keys(payload).every(key => ['error', 'error_code'].includes(key))).toBe(true)
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(frame.locator('[data-testid="preview-failure"], .model-preview .three-status.is-error').first()).toBeVisible()
     if (new URL(denied.url()).pathname === contentPath) {
@@ -179,12 +181,12 @@ async function withdrawnModel(page, api, model, published) {
     expect(contentSuccesses).toBe(0)
     expect(generationRequests).toBe(0)
     const task = await json(await api.get(`/api/v1/manager/tasks/model_3d_glb_generation/${published.task_id}`), 'FTP withdrawn task execution summary')
-    expect(task.last_execution_id).toBe(published.execution_id)
-    expect(task.last_execution_status).toBe('success')
+    expect(task.last_execution_id).toBe(latest.execution_id)
+    expect(task.last_execution_status).toBe(latest.status)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-withdrawn.png`) })
     return { format: model.format, item_id: model.item_id, result_id: published.result_id,
       status: 403, error_visible: true, content_successes: 0, generation_requests: 0,
-      unchanged_execution_id: published.execution_id }
+      unchanged_execution_id: latest.execution_id, unchanged_execution_status: latest.status }
   } finally {
     page.off('response', observeResponse)
     page.off('request', observeRequest)
@@ -208,7 +210,9 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       const models = []
       for (const model of expected.models) {
         const published = expected.browser.models.find(value => value.format === model.format)
-        models.push(await withdrawnModel(page, api, model, published))
+        const latest = expected.failed_generation?.format === model.format ? expected.failed_generation :
+          { execution_id: published.execution_id, status: 'success' }
+        models.push(await withdrawnModel(page, api, model, published, latest))
       }
       writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
         run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,

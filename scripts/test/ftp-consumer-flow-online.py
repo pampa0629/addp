@@ -161,10 +161,9 @@ print(json.dumps({'platform': 'Linux-x86_64', 'binary': str(binary),
 '''
 
 
-def verify_ifc_product_profile(root: Path, artifact_dir: Path) -> dict:
-    """Called only inside the admitted, already-started FTP Hosted suite."""
+def model3d_product_identity():
     require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1',
-            'IFC product profile requires the existing FTP Hosted admission')
+            'Product verification requires the existing FTP Hosted admission')
     container = 'addp-ftp-model3d-runtime'
     image = '127.0.0.1:5001/addp-model3d-workflow-engine:online'
 
@@ -182,6 +181,13 @@ def verify_ifc_product_profile(root: Path, artifact_dir: Path) -> dict:
     default_entry = json.loads(docker_value(['inspect', '-f', '{{json .Config.Cmd}}', container]))
     require(default_entry == ['python', 'api_server.py'], 'IFC product default entry differs')
     require(docker_value(['inspect', '-f', '{{.State.Running}}', container]) == 'true', 'IFC Runtime is not running')
+    return {'container': container, 'image_id': image_id, 'run_id': run_id, 'default_entry': default_entry}
+
+
+def verify_ifc_product_profile(root: Path, artifact_dir: Path) -> dict:
+    """Called only inside the admitted, already-started FTP Hosted suite."""
+    identity = model3d_product_identity()
+    container = identity['container']
     fixture_dir = root / 'business/fixtures/manager'
     ifc = (fixture_dir / 'addp_online_model_fixture.ifc').read_bytes()
     png = (fixture_dir / 'addp_online_exchange_texture.png').read_bytes()
@@ -220,13 +226,170 @@ def verify_ifc_product_profile(root: Path, artifact_dir: Path) -> dict:
         except MODEL.SuiteError as error:
             raise SuiteError(f'IFC fixed-profile physical GLB differs: {error}') from error
         (artifact_dir / f"ifc-external-{case['reference_kind']}.glb").write_bytes(raw)
-    report.update(image_id=image_id, default_entry=default_entry, run_id=run_id,
+    report.update(image_id=identity['image_id'], default_entry=identity['default_entry'], run_id=identity['run_id'],
                   git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
                   fixture_sha256=hashlib.sha256(ifc).hexdigest(),
                   converter_archive_sha256='891d1de019753220e9eff3c82e6262b4e20810974d210469e7cc7abaf3fca32c',
                   scope='Fixed geometry/basic-color IFC product profile only; not all IFC external references or FTP authorization')
     (artifact_dir / 'ifc-external-profile.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
+
+
+OBJECT_PROBE = r'''
+import hashlib, json, sys
+from minio import Minio
+from minio.error import S3Error
+import urllib3
+try:
+    payload = json.load(sys.stdin)
+    client = Minio(payload['endpoint'], access_key=payload['access_key'], secret_key=payload['secret_key'],
+                   secure=False, http_client=urllib3.PoolManager(timeout=urllib3.Timeout(connect=5, read=10), retries=False))
+    rows = []
+    assert 0 < len(payload['objects']) <= 256
+    for expected in payload['objects']:
+        row = {key: expected[key] for key in ('bucket', 'object', 'exists')}
+        try:
+            actual = client.stat_object(expected['bucket'], expected['object'])
+        except S3Error as error:
+            assert not expected['exists'] and error.code == 'NoSuchKey'
+        else:
+            assert expected['exists'] and actual.size == expected['size']
+            assert 0 < actual.size <= 32 * 1024 * 1024
+            response = client.get_object(expected['bucket'], expected['object'])
+            try:
+                raw = response.read(actual.size + 1)
+                assert len(raw) == actual.size and hashlib.sha256(raw).hexdigest() == expected['sha256']
+            finally:
+                response.close()
+                response.release_conn()
+            row.update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        rows.append(row)
+    print(json.dumps(rows))
+except Exception:
+    # Never print an S3 exception, connection object or credential-bearing input.
+    print('exact physical object verification failed', file=sys.stderr)
+    sys.exit(1)
+'''
+
+
+def verify_physical_objects(objects):
+    identity = model3d_product_identity()
+    require(isinstance(objects, list) and 0 < len(objects) <= 256 and
+            len({(row['bucket'], row['object']) for row in objects}) == len(objects),
+            'FTP physical verification requires a finite unique owner-provided object set')
+    subprocess.run(['bash', 'scripts/infra/status.sh'], check=True, capture_output=True, text=True, timeout=30)
+    labels = json.loads(subprocess.check_output(['docker', 'inspect', '-f', '{{json .Config.Labels}}', 'addp-minio'], text=True, timeout=10))
+    require(labels.get('com.docker.compose.project') == 'addp-infra' and labels.get('com.docker.compose.service') == 'minio',
+            'FTP physical verification requires this Hosted Infra MinIO')
+    port = subprocess.check_output(['docker', 'port', 'addp-minio', '9000/tcp'], text=True, timeout=10).strip()
+    require(re.fullmatch(r'127\.0\.0\.1:[1-9][0-9]{0,4}', port) and int(port.rsplit(':', 1)[1]) <= 65535,
+            'FTP physical verifier must use the actual loopback MinIO mapping')
+    payload = {'endpoint': port, 'access_key': SUPPORT.required_environment('MINIO_ROOT_USER'),
+               'secret_key': SUPPORT.required_environment('MINIO_ROOT_PASSWORD'), 'objects': objects}
+    try:
+        result = subprocess.run(['docker', 'exec', '-i', identity['container'], 'python', '-c', OBJECT_PROBE],
+                                input=json.dumps(payload), text=True, capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise SuiteError('FTP exact physical verification exceeded its bounded budget') from None
+    require(result.returncode == 0 and len(result.stdout) <= 256 * 1024,
+            'FTP exact physical object verification failed')
+    actual = json.loads(result.stdout)
+    require(actual == objects, 'FTP physical object observations differ from the exact owner facts')
+    return actual
+
+
+def object_ref(storage_ref):
+    parsed = json.loads(storage_ref)
+    require(isinstance(parsed, dict) and set(parsed) == {'type', 'provider', 'bucket', 'object'} and
+            parsed['type'] == 'object' and parsed['provider'] == 'addp_object_storage' and
+            isinstance(parsed['bucket'], str) and bool(parsed['bucket']) and
+            not any(char in parsed['bucket'] for char in '/\\\x00') and
+            isinstance(parsed['object'], str) and bool(parsed['object']) and
+            all(part and part not in {'.', '..'} for part in parsed['object'].split('/')),
+            'FTP physical verification requires the actual canonical Manager object reference')
+    return {key: parsed[key] for key in ('bucket', 'object')}
+
+
+def owned_model_details(client, report, model, published):
+    detail = client.request('GET', f"/api/v1/manager/model_3d_glb/{published['result_id']}", (200,)).payload
+    require(isinstance(detail, dict) and all(detail.get(key) == value for key, value in {
+        'id': published['result_id'], 'tenant_id': report['tenant_id'], 'task_id': published['task_id'],
+        'last_execution_id': published['execution_id'], 'item_id': model['item_id'],
+        'item_fingerprint': model['fingerprint'], 'source_engine_id': report['engine_id'],
+        'source_format': model['format'], 'size_bytes': published['size'], 'status': 'ready'}.items()) and
+        detail.get('metadata', {}).get('model3d_output_owner') == 'manager_execution',
+        'FTP result owner facts differ from the actually published model')
+    ref = object_ref(detail['storage_ref'])
+    require(ref['object'].startswith(f"tenant_{report['tenant_id']}/model3d-quick-view/executions/{published['execution_id']}/"),
+            'FTP output does not belong to the observed execution')
+    return detail
+
+
+def owned_input_objects(detail, execution_id, composition):
+    preparations = detail['metadata'].get('model3d_output_lifecycle', {}).get('input_preparations', [])
+    matched = [row for row in preparations if row.get('execution_id') == execution_id]
+    require(len(matched) == 1, 'FTP execution requires one persisted exact input preparation')
+    preparation = matched[0]
+    identifier = preparation.get('preparation_id')
+    require(isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier and
+            type(preparation.get('attempt')) is int and preparation['attempt'] > 0 and
+            preparation.get('released') is True and preparation.get('watch') is False and preparation.get('cleaned') is True,
+            'FTP temporary input preparation has not reached a settled cleanup state')
+    objects = preparation.get('objects')
+    primary, = [ref for ref in composition if ref['primary']]
+    parent = primary['path'].split('/')[:-1]
+    prefix = f"temp/model3d-input/tenant_{detail['tenant_id']}/{execution_id}/attempt_{preparation['attempt']}/{identifier}/"
+    expected_names = {'/'.join(ref['path'].split('/')[len(parent):]) for ref in composition}
+    bucket = object_ref(detail['storage_ref'])['bucket']
+    require(isinstance(objects, list) and len(objects) == len(expected_names) and
+            all(set(row) == {'bucket', 'object'} and row['bucket'] == bucket and row['object'].startswith(prefix) for row in objects) and
+            {row['object'][len(prefix):] for row in objects} == expected_names,
+            'FTP persisted input set differs from the exact model composition')
+    # Probe the returned keys themselves, never an inferred prefix listing.
+    return [{**row, 'exists': False} for row in objects]
+
+
+def verify_owned_model_storage(client, report):
+    proofs = []
+    for model, published in zip(report['models'], report['browser']['models']):
+        detail = owned_model_details(client, report, model, published)
+        output = {**object_ref(detail['storage_ref']), 'exists': True, 'size': published['size'], 'sha256': published['sha256']}
+        inputs = owned_input_objects(detail, published['execution_id'], model['composition'])
+        proofs.append({'format': model['format'], 'result_id': published['result_id'],
+                       'objects': verify_physical_objects([output, *inputs])})
+    return proofs
+
+
+def delete_owned_models(client, report):
+    deleted = []
+    for model, published in zip(report['models'], report['browser']['models']):
+        detail = owned_model_details(client, report, model, published)
+        output = {**object_ref(detail['storage_ref']), 'exists': False}
+        inputs = owned_input_objects(detail, published['execution_id'], model['composition'])
+        failed = report.get('failed_generation', {})
+        watched = []
+        known = {published['execution_id']}
+        if failed.get('format') == model['format']:
+            known.add(failed['execution_id'])
+            inputs.extend(owned_input_objects(detail, failed['execution_id'], model['composition']))
+        lifecycle = detail['metadata']['model3d_output_lifecycle']
+        require({row['execution_id'] for row in lifecycle['input_preparations']} == known,
+                'FTP result cleanup must not act on an unobserved input execution')
+        for row in lifecycle.get('garbage', []):
+            require(row.get('execution_id') in known and row.get('watch') is True,
+                    'FTP result cleanup must not act on an unobserved output execution')
+            ref = object_ref(row['storage_ref'])
+            require(ref['object'].startswith(f"tenant_{report['tenant_id']}/model3d-quick-view/executions/{row['execution_id']}/"),
+                    'FTP watched output must belong to the observed execution')
+            watched.append({**ref, 'exists': False})
+        path = f"/api/v1/manager/model_3d_glb/{published['result_id']}"
+        client.request('DELETE', path, (200,))
+        client.request('GET', path, (404,))
+        client.request('GET', path + '/content', (404,))
+        deleted.append({'format': model['format'], 'result_id': published['result_id'],
+                        'objects': verify_physical_objects([output, *inputs, *watched]),
+                        'watch_scope': 'Exact objects absent at observation; uncertain late-write watches remain owned'})
+    return deleted
 
 
 def validate_preview(payload):
@@ -399,7 +562,8 @@ def verify_cached_results(client, report, statuses):
         require(status in {200, 403}, 'FTP cache proof requires an explicit allow or deny status')
         payload = client.request('GET', f'/api/v1/manager/model_3d_glb/{result_id}/content', (status,), raw_response=status == 200).payload
         if status == 403:
-            require(isinstance(payload, dict) and bool(payload.get('error')),
+            require(isinstance(payload, dict) and set(payload) <= {'error', 'error_code'} and bool(payload.get('error')) and
+                    payload.get('error_code') != 'security_protection_required',
                     'FTP withdrawal must reject cached content with an explicit source denial')
         else:
             require(isinstance(payload, bytes) and len(payload) == model['size'] and
@@ -409,9 +573,7 @@ def verify_cached_results(client, report, statuses):
     return results
 
 
-@contextmanager
-def changed_texture_fixture(model):
-    """Change only the fixed model in this Hosted run's owned, read-only mount."""
+def owned_ftp_fixture():
     root = Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR'))
     require(not root.is_symlink() and root.resolve() == Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR')).resolve()
             and root.is_dir() and not root.stat().st_mode & 0o077,
@@ -428,6 +590,13 @@ def changed_texture_fixture(model):
                 mount.get('Destination') == '/srv/sftpgo/data' and mount.get('RW') is False
                 for mount in container.get('Mounts', [])),
             'FTP composition mutation requires the exact running read-only data mount')
+    return root.resolve()
+
+
+@contextmanager
+def changed_texture_fixture(model):
+    """Change only the fixed model in this Hosted run owned read-only mount."""
+    root = owned_ftp_fixture()
     paths = [root / relative for relative in ('data', 'data/models', 'data/models/3ds',
              'data/models/3ds/model.3ds', 'data/models/3ds/texture.png')]
     require(all(not path.is_symlink() for path in paths), 'FTP composition fixture must not traverse a link')
@@ -488,6 +657,69 @@ def replace_fixture_file(path, content):
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def invalid_ifc_fixture(model):
+    root = owned_ftp_fixture()
+    require(model['format'] == 'ifc' and model['full_name'] == 'models/ifc/model.ifc',
+            'FTP failure input must be the exact fixed IFC source')
+    paths = [root / relative for relative in ('data', 'data/models', 'data/models/ifc', 'data/models/ifc/model.ifc')]
+    require(all(not path.is_symlink() for path in paths), 'FTP failure input must not traverse a link')
+    target = paths[-1]
+    original = target.read_bytes()
+    require(original == (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.ifc').read_bytes() and
+            hashlib.sha256(original).hexdigest() == model['sha256'], 'FTP failure input source differs')
+    invalid = b'INVALID_IFC_SOURCE\n'.ljust(len(original), b' ')
+    try:
+        replace_fixture_file(target, invalid)
+        yield
+    finally:
+        require(not target.is_symlink() and target.read_bytes() in (original, invalid),
+                'FTP failure cleanup refuses to overwrite unexpected source changes')
+        if target.read_bytes() == invalid:
+            replace_fixture_file(target, original)
+
+
+def verify_failed_generation(client, report, timeout):
+    model, = [row for row in report['models'] if row['format'] == 'ifc']
+    published, = [row for row in report['browser']['models'] if row['format'] == 'ifc']
+    before = owned_model_details(client, report, model, published)
+    with invalid_ifc_fixture(model):
+        response = client.request('POST', f"/api/v1/manager/tasks/model_3d_glb_generation/{published['task_id']}/execute",
+                                  (202,), {'parameters': {'existing_result_action': 'overwrite'}}).payload
+        identifier = response.get('execution_id')
+        require(isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier and
+                identifier != published['execution_id'] and response.get('status') in {'pending', 'running'},
+                'FTP failed conversion requires a new real owner execution')
+        deadline = time.monotonic() + min(timeout, 120)
+        while time.monotonic() < deadline:
+            execution = client.request('GET', f'/api/v1/manager/executions/{identifier}', (200,)).payload
+            require(execution.get('execution_id') == identifier, 'FTP execution observation changed its identity')
+            if execution.get('status') in {'success', 'failed', 'timeout', 'cancelled'}:
+                break
+            time.sleep(1)
+        else:
+            raise SuiteError('FTP invalid IFC conversion did not settle within its budget')
+        require(execution.get('status') == 'failed', 'FTP semantic failure must reach failed, not success or timeout')
+    after = owned_model_details(client, report, model, published)
+    require(after['storage_ref'] == before['storage_ref'], 'FTP failed rebuild replaced the prior published GLB')
+    inputs = owned_input_objects(after, identifier, model['composition'])
+    garbage = [row for row in after['metadata']['model3d_output_lifecycle'].get('garbage', []) if row.get('execution_id') == identifier]
+    require(len(garbage) == 1 and garbage[0].get('watch') is True,
+            'FTP failed remote conversion must retain its exact output watch')
+    failed_output = object_ref(garbage[0]['storage_ref'])
+    require(failed_output != object_ref(after['storage_ref']) and
+            failed_output['object'].startswith(f"tenant_{report['tenant_id']}/model3d-quick-view/executions/{identifier}/"),
+            'FTP failed output watch must belong to its independent execution')
+    objects = verify_physical_objects([
+        {**object_ref(after['storage_ref']), 'exists': True, 'size': published['size'], 'sha256': published['sha256']},
+        *inputs, {**failed_output, 'exists': False}])
+    readable = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
+    return {'format': 'ifc', 'task_id': published['task_id'], 'execution_id': identifier, 'status': 'failed',
+            'preserved_result_id': published['result_id'], 'preserved_execution_id': published['execution_id'],
+            'preserved_storage_ref': after['storage_ref'], 'objects': objects, 'cached_content': readable,
+            'failed_output_watch': True, 'watch_scope': 'Observed absent now; persistent watch remains for uncertain late writes'}
 
 
 def source_read_control(client, engine_id, model, status):
@@ -602,6 +834,7 @@ def prepare_models(items, engine_id, samples):
 def run(client, tenant_id, engine_id, samples, model_samples, timeout):
     require(tenant_id > 1, 'FTP Online requires a nondefault disposable Tenant')
     API.validate_user_identity(client, tenant_id, PERMISSIONS)
+    API.wait_manager_read_boundary(client, engine_id, time.monotonic() + min(timeout, 120))
     context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
     selectors = client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload
     selected = [entry for entry in selectors if entry.get('id') == engine_id]
@@ -678,9 +911,11 @@ def validate_browser_report(actual, expected, artifact_dir):
 def validate_withdrawal_browser_report(actual, expected):
     models = []
     for source, published in zip(expected['models'], expected['browser']['models']):
+        failed = expected.get('failed_generation', {})
+        latest = failed if failed.get('format') == source['format'] else {'execution_id': published['execution_id'], 'status': 'success'}
         models.append({'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
                        'status': 403, 'error_visible': True, 'content_successes': 0, 'generation_requests': 0,
-                       'unchanged_execution_id': published['execution_id']})
+                       'unchanged_execution_id': latest['execution_id'], 'unchanged_execution_status': latest['status']})
     require(actual == {**{key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')},
                        'browser_phase': 'withdrawn', 'models': models},
             'FTP withdrawal browser must reject both original models without content or new execution')
@@ -721,6 +956,8 @@ def main():
     try:
         report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
         report['browser'] = run_browser(report)
+        report['physical_model_storage'] = verify_owned_model_storage(client, report)
+        report['failed_generation'] = verify_failed_generation(client, report, timeout)
         source = next(model for model in report['models'] if model['format'] == '3ds')
         report['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, timeout)
         report['restored_before_deny'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
@@ -733,6 +970,7 @@ def main():
         authorization.cleanup()
     report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
     report['withdrawn_browser'] = run_browser(report, withdrawn=True)
+    report['deleted_models'] = delete_owned_models(client, report)
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
