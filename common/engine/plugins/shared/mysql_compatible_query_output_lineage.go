@@ -15,12 +15,15 @@ type mysqlCompatibleLineageOrigin struct {
 }
 
 type mysqlCompatibleLineageRelation struct {
-	columns map[string]mysqlCompatibleLineageOrigin
+	columns          map[string]mysqlCompatibleLineageOrigin
+	order            []string
+	expandedWildcard bool
 }
 
 type mysqlCompatibleLineageProjection struct {
-	columns map[string]mysqlCompatibleLineageOrigin
-	order   []string
+	columns          map[string]mysqlCompatibleLineageOrigin
+	order            []string
+	expandedWildcard bool
 }
 
 type mysqlCompatibleLineageScope struct {
@@ -137,6 +140,7 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 				left.columns[name] = mysqlCompatibleLineageOrigin{sourceIndex: -1}
 			}
 		}
+		left.expandedWildcard = left.expandedWildcard || right.expandedWildcard
 		return left, nil
 	}
 	selectNode, ok := statement.(*sqlparser.Select)
@@ -152,9 +156,13 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 		_, star := expression.(*sqlparser.StarExpr)
 		hasWildcard = hasWildcard || star
 	}
+	for _, relation := range scope.relations {
+		hasWildcard = hasWildcard || relation.expandedWildcard
+	}
 	projection := &mysqlCompatibleLineageProjection{
-		columns: make(map[string]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
-		order:   make([]string, 0, len(selectNode.SelectExprs)),
+		columns:          make(map[string]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
+		order:            make([]string, 0, len(selectNode.SelectExprs)),
+		expandedWildcard: hasWildcard,
 	}
 	// Expand each wildcard in place only over one base table. Direct aliases
 	// may copy the same field; result names still must be unique.
@@ -167,35 +175,50 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 			if !ok {
 				return nil, p.outputLineageError("wildcard requires a base table")
 			}
-			name, ok := table.Expr.(sqlparser.TableName)
-			if !ok {
-				return nil, p.outputLineageError("wildcard requires a base table")
-			}
-			database := name.DbQualifier.String()
-			if database == "" {
-				database = defaultDatabase
-			}
-			index := mysqlCompatibleLineageSourceIndex(sources, database, name.Name.String())
-			if index < 0 {
-				return nil, p.outputLineageError("wildcard source missing")
-			}
-			qualifier := star.TableName
-			if qualifier.IsEmpty() {
-				qualifier = name
+			var qualifier sqlparser.TableName
+			switch relation := table.Expr.(type) {
+			case sqlparser.TableName:
+				qualifier = relation
 				if !table.As.IsEmpty() {
 					qualifier = sqlparser.TableName{Name: table.As}
 				}
+			case *sqlparser.Subquery:
+				inner, ok := relation.Select.(*sqlparser.Select)
+				if !ok || table.As.IsEmpty() || len(inner.From) != 1 || inner.With != nil {
+					return nil, p.outputLineageError("wildcard requires one direct page wrapper")
+				}
+				base, ok := inner.From[0].(*sqlparser.AliasedTableExpr)
+				if !ok {
+					return nil, p.outputLineageError("page wildcard requires one base table")
+				}
+				if _, ok := base.Expr.(sqlparser.TableName); !ok {
+					return nil, p.outputLineageError("multiple page wrappers are not supported")
+				}
+				qualifier = sqlparser.TableName{Name: table.As}
+			default:
+				return nil, p.outputLineageError("wildcard requires a base table or one page wrapper")
 			}
-			for _, field := range sources[index].Fields {
-				if field.Name == "" || hasMySQLCompatibleIdentifier(projection.columns, field.Name) {
+			if !star.TableName.IsEmpty() {
+				qualifier = star.TableName
+			}
+			qualifierName := qualifier.Name.String()
+			if !qualifier.DbQualifier.IsEmpty() {
+				qualifierName = qualifier.DbQualifier.String() + "." + qualifierName
+			}
+			relation, ok := lookupMySQLCompatibleRelation(scope.relations, qualifierName)
+			if !ok || len(relation.order) == 0 {
+				return nil, p.outputLineageError("wildcard relation fields missing")
+			}
+			for _, name := range relation.order {
+				if name == "" || hasMySQLCompatibleIdentifier(projection.columns, name) {
 					return nil, p.outputLineageError("wildcard fields must be unique")
 				}
-				origin, err := p.resolveLineageColumn(scope, &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier})
-				if err != nil {
-					return nil, err
+				origin, err := p.resolveLineageColumn(scope, &sqlparser.ColName{Name: sqlparser.NewColIdent(name), Qualifier: qualifier})
+				if err != nil || origin.sourceIndex < 0 {
+					return nil, p.outputLineageError("wildcard output must be direct")
 				}
-				projection.columns[field.Name] = origin
-				projection.order = append(projection.order, field.Name)
+				projection.columns[name] = origin
+				projection.order = append(projection.order, name)
 			}
 			continue
 		}
@@ -215,7 +238,7 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 				output = strings.TrimSpace(column.Name.String())
 			}
 		} else if hasWildcard {
-			return nil, p.outputLineageError("mixed wildcard requires direct fields")
+			return nil, p.outputLineageError("page wildcard output must contain direct fields")
 		} else if output == "" {
 			output = sqlparser.String(aliased.Expr)
 		}
@@ -309,7 +332,11 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 		if alias == "" {
 			qualifiers = []string{table, database + "." + table}
 		}
-		if err := p.addLineageRelation(scope, qualifiers, mysqlCompatibleLineageRelation{columns: columns}); err != nil {
+		order := make([]string, len(sources[index].Fields))
+		for i, field := range sources[index].Fields {
+			order[i] = field.Name
+		}
+		if err := p.addLineageRelation(scope, qualifiers, mysqlCompatibleLineageRelation{columns: columns, order: order}); err != nil {
 			return nil, err
 		}
 		return scope, nil
@@ -321,7 +348,7 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 		if err != nil {
 			return nil, err
 		}
-		if err := p.addLineageRelation(scope, []string{alias}, mysqlCompatibleLineageRelation{columns: projection.columns}); err != nil {
+		if err := p.addLineageRelation(scope, []string{alias}, mysqlCompatibleLineageRelation{columns: projection.columns, order: projection.order, expandedWildcard: projection.expandedWildcard}); err != nil {
 			return nil, err
 		}
 		return scope, nil

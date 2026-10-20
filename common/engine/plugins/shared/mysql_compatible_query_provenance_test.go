@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -276,6 +277,41 @@ func TestMySQLCompatibleMixedWildcardLineage(t *testing.T) {
 		}
 		if _, err := p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
 			t.Fatal("unproven mixed projection accepted", query)
+		}
+	}
+}
+
+func TestMySQLCompatibleSinglePageWildcardLineage(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "orders", "ID", "phone")}
+	for _, query := range []string{"SELECT w.* FROM (SELECT p.* FROM business.orders p) w", "SELECT w.* FROM (SELECT ID,phone AS contact FROM business.orders) w", "SELECT w.phone FROM (SELECT p.* FROM business.orders p) w"} {
+		stmt, err := sqlparser.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := p.resolveSelectOutputLineage("business", stmt, sources)
+		if err != nil || len(resolved) != 1 {
+			t.Fatal("page wildcard lineage unresolved", err)
+		}
+		want := "phone"
+		if strings.Contains(query, " AS contact") {
+			want = "contact"
+		}
+		found := false
+		for _, b := range resolved[0].Bindings {
+			found = found || (len(b.SourcePath) == 1 && b.SourcePath[0] == "phone" && len(b.OutputPath) == 1 && b.OutputPath[0] == want && b.Transformation == plugin.QueryOutputTransformationDirect)
+		}
+		if !found {
+			t.Fatal("page wildcard lost sensitive alias binding")
+		}
+	}
+	for _, query := range []string{"SELECT w.phone+1 AS calculated FROM (SELECT p.* FROM business.orders p) w", "SELECT w.* FROM (SELECT p.*,phone FROM business.orders p) w", "SELECT w.* FROM (SELECT p.*,ID+1 AS calculated FROM business.orders p) w", "SELECT w.* FROM (SELECT y.* FROM (SELECT p.* FROM business.orders p) y) w"} {
+		stmt, err := sqlparser.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
+			t.Fatal("unproven page lineage accepted", query)
 		}
 	}
 }

@@ -1758,6 +1758,56 @@ def assert_bank_card_mixed_rows(rows: Iterable[Mapping[str, object]], owner: str
     return {**evidence, "sensitive_copies_verified": True, "non_sensitive_copy_verified": True}
 
 
+def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str, object], locator: str) -> dict[str, object]:
+    attributes = _object(source.get("attributes"), "bank-card source attributes")
+    table = _object(_object(attributes.get("type_info"), "bank-card type info").get("table"), "bank-card table")
+    fields = _array(table.get("fields"), "bank-card source fields")
+    if not all(isinstance(field, dict) for field in fields) or [field.get("name") for field in fields] != BANK_FIELDS:
+        raise SuiteError("SQL page fixture must use the actual bank-card source fields")
+    contract = json.loads(json.dumps(table))
+    for source_name, output_name in [(BANK_FIELD, "copied_card"), ("customer_code", "copied_code")]:
+        field = next(field for field in fields if field["name"] == source_name)
+        copied = json.loads(json.dumps(field))
+        copied["name"] = output_name
+        copied.pop("path", None)
+        contract["fields"].append(copied)
+    payload = service_payload(name, engine_id, locator, BANK_FIELDS + ["copied_card", "copied_code"])
+    payload["config_type"] = "sql"
+    payload["sql_query"] = "SELECT b.*,b." + BANK_FIELD + " AS copied_card,b.customer_code AS copied_code FROM " + BANK_SOURCE + " b WHERE b.id>=1 ORDER BY b.id LIMIT 100"
+    payload["data_config"].pop("locator")
+    payload["data_config"]["stable_key"] = ["id"]
+    payload["output_contract"] = {"table": contract}
+    return payload
+
+
+def exercise_bank_card_sql_pages(client: GatewayClient, name: str) -> dict[str, object]:
+    rows = []
+    cursor = ""
+    seen = set()
+    for index, count in enumerate([2, 2, 1]):
+        page = {"limit": 2}
+        if cursor:
+            page["cursor"] = cursor
+        payload = _object(client.request("POST", "/api/query/" + urllib.parse.quote(name, safe="") + "/query", (200,),
+            {"select": BANK_FIELDS + ["copied_card", "copied_code"], "order_by": [{"field": "id", "direction": "asc"}], "page": page, "format": "json"}).payload, "SQL page result")
+        data = _array(payload.get("data"), "SQL page rows")
+        pagination = _object(payload.get("page"), "SQL page pagination")
+        more = index < 2
+        if len(data) != count or type(pagination.get("has_more")) is not bool or pagination["has_more"] != more:
+            raise SuiteError("SQL service cursor page count or continuation differs")
+        cursor = pagination.get("next_cursor", "")
+        if not isinstance(cursor, str) or (more and (not cursor or cursor in seen)):
+            raise SuiteError("SQL service cursor must advance")
+        if not more and cursor:
+            raise SuiteError("SQL service final page must not continue")
+        seen.add(cursor)
+        rows.extend(_object(row, "SQL page row") for row in data)
+    if [normalize_id(row.get("id")) for row in rows] != ["1", "2", "3", "4", "5"]:
+        raise SuiteError("SQL service cursor pages lost, duplicated or reordered rows")
+    return {**assert_bank_card_mixed_rows(rows, "Service SQL cursor pages"), "pages": 3,
+            "page_sizes": [2, 2, 1], "no_duplicate_or_missing_rows": True, "actual_source_contract_verified": True}
+
+
 def bank_card_projections(enrollment: Mapping[str, object]) -> dict[str, object]:
     progress = _array(enrollment.get("owner_progress"), "bank-card Owner progress")
     if enrollment.get("state") != "active" or {p.get("consumer_owner") for p in progress if isinstance(p, dict)} != set(PROTECTION_OWNERS) or len(progress) != len(PROTECTION_OWNERS):
@@ -1847,6 +1897,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     projections = bank_card_projections(enrollment)
     name = "addp-online-security-bank-" + run_suffix(run_id, "-")
     service_id = None
+    sql_service_id = None
     tasks: list[int] = []
     failure: BaseException | None = None
     outputs: dict[str, object] = {}
@@ -1874,10 +1925,23 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             develop_mixed_wildcard[label] = assert_bank_card_mixed_rows(
                 develop_rows(client, source_engine_id, locator, deadline, statement),
                 "Develop bank-card mixed wildcard " + label)
+        develop_page_wildcard = {}
+        for label, statement in {
+            "outer_star": "SELECT w.* FROM (SELECT b.*,b." + BANK_FIELD + " AS copied_card,b.customer_code AS copied_code FROM " + BANK_SOURCE + " b WHERE b.id>=1 ORDER BY b.id LIMIT 100) w ORDER BY w.id LIMIT 100",
+            "outer_direct": "SELECT " + ",".join("w." + field for field in BANK_FIELDS + ["copied_card", "copied_code"]) + " FROM (SELECT b.*,b." + BANK_FIELD + " AS copied_card,b.customer_code AS copied_code FROM " + BANK_SOURCE + " b) w ORDER BY w.id LIMIT 100",
+        }.items():
+            develop_page_wildcard[label] = assert_bank_card_mixed_rows(
+                develop_rows(client, source_engine_id, locator, deadline, statement), "Develop wildcard page " + label)
         service = _object(client.request("POST", "/api/v1/service/query", (201,),
             service_payload(name, source_engine_id, locator, BANK_FIELDS)).payload, "bank-card Query Service")
         service_id = positive_int(service.get("id"), "bank-card service ID")
         outputs["service"] = assert_bank_card_rows(service_rows(client, name, BANK_FIELDS), "Service bank-card query")
+        sql_name = name + "-sql-page"
+        sql_service = _object(client.request("POST", "/api/v1/service/query", (201,),
+            bank_card_sql_service_payload(sql_name, source_engine_id, source, locator)).payload, "bank-card SQL service")
+        sql_service_id = positive_int(sql_service.get("id"), "bank-card SQL service ID")
+        service_sql_page = exercise_bank_card_sql_pages(client, sql_name)
+
         task_id, execution = create_and_run_task(client,
             transfer_payload("addp_online_security_bank_" + run_suffix(run_id, "_"), locator,
                              build_schema_locator(target_engine_id, target), BANK_TARGET), deadline, tasks)
@@ -1902,7 +1966,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     except BaseException as error:
         failure = error
     cleanup_errors = []
-    for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id)):
+    for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id), lambda: cleanup_service(client, sql_service_id)):
         try:
             cleanup()
         except BaseException as error:
@@ -1918,7 +1982,8 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "algorithm": STRUCTURED_MASK_ALGORITHM, "projections": projections, "owners": outputs,
             "develop_wildcard": develop_wildcard,
             "develop_mixed_wildcard": develop_mixed_wildcard,
-            "task_deleted": True, "service_deleted": True, "temporary_execution_resources": 2,
+            "develop_page_wildcard": develop_page_wildcard, "service_sql_page": service_sql_page,
+            "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 3,
             "temporary_execution_resource_residuals": 0}
 
 
@@ -2180,7 +2245,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v20",
+            "schema_version": "addp.security-mysql-owner-protection-online/v21",
             "result": "passed",
             "identity": identity,
             "governance": governance,

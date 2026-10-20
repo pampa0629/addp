@@ -49,7 +49,7 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 			{Column: "email", Kind: "constant_text", Replacement: "[protected]"},
 			{Column: "label", Kind: "omit"},
 		}
-		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*"} {
+		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*", "page_wrapper_star", "page_wrapper_direct"} {
 			operations := append([]plugin.QueryOutputTransform(nil), operations...)
 			if strings.Contains(projection, "copied_phone") {
 				for _, op := range operations[:3] {
@@ -59,6 +59,13 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 				}
 			}
 			query := "SELECT " + projection + " FROM " + table + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1"
+			if strings.HasPrefix(projection, "page_wrapper_") {
+				outer := "w.*"
+				if projection == "page_wrapper_direct" {
+					outer = "w.id,w.phone,w.amount,w.email,w.label"
+				}
+				query = "SELECT " + outer + " FROM (SELECT p.* FROM " + table + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1) w WHERE w.id<=6 ORDER BY w.phone DESC,w.id LIMIT 3 OFFSET 1"
+			}
 			expected, err := provider.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true})
 			if err != nil {
 				t.Fatal(err)
@@ -317,6 +324,12 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 	t.Run("shared protection mixed wildcard copies", func(t *testing.T) {
 		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
 			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: "SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM " + table + " p ORDER BY copied_phone,id", Options: plugin.QueryOptions{ReadOnly: true}})
+		}, nil)
+	})
+	t.Run("shared protection through wildcard page", func(t *testing.T) {
+		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+			query := "SELECT w.* FROM (SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM " + table + " p WHERE p.id>=? ORDER BY p.phone DESC,p.id LIMIT ?) w WHERE w.id<=? ORDER BY w.copied_phone,w.id LIMIT ? OFFSET ?"
+			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: []any{1, 6, 6, 4, 1}}})
 		}, nil)
 	})
 	t.Run("shared protection through service wrapper", func(t *testing.T) {

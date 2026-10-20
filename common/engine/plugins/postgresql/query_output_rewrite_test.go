@@ -234,7 +234,7 @@ func TestPostgresOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T)
 			t.Fatal("lost bound algorithm value")
 		}
 	}
-	for _, query := range []string{"SELECT *,phone FROM public.people", "SELECT p.* FROM public.people p JOIN public.people q ON p.id=q.id", "SELECT x.* FROM (SELECT id,phone FROM public.people) x", "SELECT x.phone FROM (SELECT * FROM public.people) x", "SELECT q.* FROM public.people p", "SELECT * FROM public.other"} {
+	for _, query := range []string{"SELECT *,phone FROM public.people", "SELECT p.* FROM public.people p JOIN public.people q ON p.id=q.id", "SELECT x.* FROM (SELECT y.* FROM (SELECT id,phone FROM public.people) y) x", "SELECT q.* FROM public.people p", "SELECT * FROM public.other"} {
 		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven wildcard accepted: %s (%v)", query, err)
 		}
@@ -256,6 +256,32 @@ func TestPostgresOutputRewriteMixedWildcard(t *testing.T) {
 	for _, projection := range []string{"p.*,p.phone", "p.*,p.*", "p.*,p.id+1 AS computed", "p.*,q.phone AS copied_phone"} {
 		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput("SELECT "+projection+" FROM public.people p", nil, ops, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven mixed wildcard accepted: %s (%v)", projection, err)
+		}
+	}
+}
+
+func TestPostgreSQLOutputRewriteSinglePageWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermSchema, "public", "people"), Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "phone"}}}}}
+	for _, tc := range []struct{ query, column string }{
+		{"SELECT w.* FROM (SELECT p.* FROM public.people p ORDER BY 2 LIMIT 8) w ORDER BY 2 LIMIT 3 OFFSET 1", "phone"},
+		{"SELECT w.phone FROM (SELECT p.* FROM public.people p) w ORDER BY w.phone LIMIT 3", "phone"},
+		{"SELECT w.* FROM (SELECT id,phone AS contact FROM public.people) w ORDER BY contact LIMIT 3", "contact"},
+		{"SELECT w.contact AS phone FROM (SELECT p.*,p.phone AS contact FROM public.people p) w LIMIT 3", "phone"},
+	} {
+		compiled, err := (&PostgreSQLPlugin{}).CompileQueryOutput(tc.query, nil, []plugin.QueryOutputTransform{{Column: tc.column, Kind: "constant_text", Replacement: "protected"}}, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "*") || strings.Count(strings.ToUpper(compiled.Query), "CASE WHEN") != 1 {
+			t.Fatalf("page wildcard not protected only at final output: %s (%v)", tc.query, err)
+		}
+	}
+	for _, query := range []string{
+		"SELECT w.* FROM (SELECT DISTINCT p.* FROM public.people p) w",
+		"SELECT w.* FROM (SELECT p.*,phone FROM public.people p) w",
+		"SELECT w.* FROM (SELECT p.*,id+1 AS calculated FROM public.people p) w",
+		"SELECT w.* FROM (SELECT p.* FROM public.people p JOIN public.people q ON p.id=q.id) w",
+		"SELECT w.* FROM (SELECT y.* FROM (SELECT p.* FROM public.people p) y) w",
+	} {
+		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven page shape accepted: %s (%v)", query, err)
 		}
 	}
 }

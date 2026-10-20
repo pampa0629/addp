@@ -51,7 +51,7 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			{Column: "email", Kind: "constant_text", Replacement: "[protected]"},
 			{Column: "label", Kind: "omit"},
 		}
-		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*"} {
+		for _, projection := range []string{"*", "p.*", "p.*,p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label", "p.phone AS copied_phone,p.email AS copied_email,p.label AS copied_label,p.*", "page_wrapper_star", "page_wrapper_direct"} {
 			operations := append([]plugin.QueryOutputTransform(nil), operations...)
 			if strings.Contains(projection, "copied_phone") {
 				for _, op := range operations[:3] {
@@ -61,6 +61,13 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 				}
 			}
 			query := "SELECT " + projection + " FROM " + qualified + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1"
+			if strings.HasPrefix(projection, "page_wrapper_") {
+				outer := "w.*"
+				if projection == "page_wrapper_direct" {
+					outer = "w.id,w.phone,w.amount,w.email,w.label"
+				}
+				query = "SELECT " + outer + " FROM (SELECT p.* FROM " + qualified + " p WHERE id>=1 ORDER BY 2 DESC LIMIT 5 OFFSET 1) w WHERE w.id<=6 ORDER BY w.phone DESC,w.id LIMIT 3 OFFSET 1"
+			}
 			expected, err := pg.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true})
 			if err != nil {
 				t.Fatal(err)
@@ -407,6 +414,8 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 				`SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p ORDER BY display,id`,
 				`WITH keys AS (SELECT id FROM ` + qualified + ` WHERE id>=$1 ORDER BY id LIMIT 5 OFFSET 1) SELECT p.id,p.phone AS contact,p.email AS mail,p.label AS public_label,p.amount,pg_catalog.lower(p.display_text) AS display FROM ` + qualified + ` p JOIN keys k ON k.id=p.id ORDER BY p.id`,
 				`SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM ` + qualified + ` p ORDER BY copied_phone,id`,
+				`SELECT w.* FROM (SELECT p.phone AS copied_phone,p.*,p.email AS copied_email,p.label AS copied_label,p.id AS copied_id FROM ` + qualified + ` p WHERE p.id>=1 ORDER BY p.phone DESC,p.id LIMIT 6) w WHERE w.id<=6 ORDER BY w.copied_phone,w.id LIMIT 4 OFFSET 1`,
+				`SELECT w.id,w.phone AS contact,w.email AS mail,w.label AS public_label,w.amount FROM (SELECT p.* FROM ` + qualified + ` p WHERE p.id>=1 ORDER BY p.phone DESC,p.id LIMIT 6) w WHERE w.id<=6 ORDER BY contact,w.id LIMIT 4 OFFSET 1`,
 			}
 			for index, query := range queries {
 				// Cursor evidence intentionally retains its narrower native

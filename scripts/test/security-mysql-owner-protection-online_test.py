@@ -1994,6 +1994,10 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                  "card_id": "card-" + key, "bank_card_verified": "verified-" + key,
                  "credit_card_number": 100 + int(key)} for key in "12345"]
 
+    def source_item(self):
+        return {"id": 1, "attributes": {"type_info": {"table": {"name": ONLINE.BANK_SOURCE,
+            "fields": [{"name": name, "type": "bigint" if name in {"id", "credit_card_number"} else "string"} for name in ONLINE.BANK_FIELDS]}}}}
+
     def enrollment(self):
         return {"state": "active", "last_discovered_at": "2026-10-13T10:00:00+08:00",
                 "owner_progress": [{"consumer_owner": owner, "projection_state": "active",
@@ -2087,13 +2091,41 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.assert_bank_card_mixed_rows(rows, "Develop")
 
+    def test_sql_page_contract_and_cursor_fail_closed(self):
+        payload = ONLINE.bank_card_sql_service_payload("sql-page", 23, self.source_item(), "locator")
+        self.assertEqual(payload["config_type"], "sql")
+        self.assertNotIn("locator", payload["data_config"])
+        self.assertEqual([field["name"] for field in payload["output_contract"]["table"]["fields"]], ONLINE.BANK_FIELDS + ["copied_card", "copied_code"])
+        source = self.source_item()
+        source["attributes"]["type_info"]["table"]["fields"].pop()
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_card_sql_service_payload("sql-page", 23, source, "locator")
+        for change in [lambda pages: pages[0]["data"].pop(),
+                       lambda pages: pages[0]["page"].update(has_more=1),
+                       lambda pages: pages[1]["page"].update(next_cursor="page-1"),
+                       lambda pages: pages[2]["page"].update(next_cursor=1),
+                       lambda pages: pages[2]["data"][0].update(id="4"),
+                       lambda pages: pages[0]["data"][0].update(copied_card=ONLINE.BANK_SOURCE_VALUES["1"])]:
+            rows = self.mixed_rows()
+            pages = [{"data": rows[:2], "page": {"has_more": True, "next_cursor": "page-1"}},
+                     {"data": rows[2:4], "page": {"has_more": True, "next_cursor": "page-2"}},
+                     {"data": rows[4:], "page": {"has_more": False}}]
+            change(pages)
+            client = Mock()
+            client.request.side_effect = [ONLINE.SUPPORT.Response(200, page) for page in pages]
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.exercise_bank_card_sql_pages(client, "sql-page")
+
     def run_case(self, changes=None, cleanup_failure=False):
         client = Mock()
         def request(method, path, expected, body=None):
-            if path.endswith("/sensitive-data-types"): payload = [{"code": "bank_card", "id": "17"}]
+            if path.startswith("/api/query/"):
+                cursor = body["page"].get("cursor", "")
+                index = {"": 0, "page-1": 1, "page-2": 2}[cursor]
+                payload = {"data": self.mixed_rows()[index * 2:index * 2 + 2], "page": {"has_more": index < 2}}
+                if index < 2: payload["page"]["next_cursor"] = "page-" + str(index + 1)
+            elif path.endswith("/sensitive-data-types"): payload = [{"code": "bank_card", "id": "17"}]
             elif path.endswith("/enrollment-bank"): payload = self.enrollment()
             elif path.endswith("/assessment-bank"): payload = self.assessment()
-            elif path.startswith("/api/v1/service/query"): payload = {"id": 41, "version": 1}
+            elif path.startswith("/api/v1/service/query"): payload = {"id": 42 if body and body.get("config_type") == "sql" else 41, "version": 1}
             else: raise AssertionError((method, path))
             return ONLINE.SUPPORT.Response(expected[0], payload)
         client.request.side_effect = request
@@ -2102,7 +2134,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         def transfer(*args):
             args[3].append(51)
             return 51, execution
-        with (patch.object(ONLINE, "find_item", return_value={"id": 1}),
+        with (patch.object(ONLINE, "find_item", return_value=self.source_item()),
               patch.object(ONLINE, "build_item_locator", side_effect=lambda engine, item: "locator-" + str(engine)),
               patch.object(ONLINE, "build_schema_locator", return_value="parent-locator"),
               patch.object(ONLINE, "preview_rows", side_effect=[(["id"], []), (ONLINE.BANK_FIELDS, self.rows(False)),
@@ -2120,14 +2152,18 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                 return ONLINE.exercise_bank_card_metadata(client, 23, 17, "security_fixture", "run-42",
                                                           {"principal_id": "7"}, time.monotonic() + 30)
             finally:
-                self.assertEqual(develop.call_count, 5)
+                self.assertEqual(develop.call_count, 7)
                 self.assertEqual([call.args[4] for call in develop.call_args_list][1:], [
                     "SELECT * FROM bank_card_accounts ORDER BY id",
                     "SELECT b.* FROM bank_card_accounts b ORDER BY b.id",
                     "SELECT b.*,b.bank_card_number AS copied_card,b.customer_code AS copied_code FROM bank_card_accounts b ORDER BY b.id",
-                    "SELECT b.bank_card_number AS copied_card,b.customer_code AS copied_code,b.* FROM bank_card_accounts b ORDER BY b.id"])
+                    "SELECT b.bank_card_number AS copied_card,b.customer_code AS copied_code,b.* FROM bank_card_accounts b ORDER BY b.id",
+                    "SELECT w.* FROM (SELECT b.*,b.bank_card_number AS copied_card,b.customer_code AS copied_code FROM bank_card_accounts b WHERE b.id>=1 ORDER BY b.id LIMIT 100) w ORDER BY w.id LIMIT 100",
+                    "SELECT " + ",".join("w." + field for field in ONLINE.BANK_FIELDS + ["copied_card", "copied_code"]) + " FROM (SELECT b.*,b.bank_card_number AS copied_card,b.customer_code AS copied_code FROM bank_card_accounts b) w ORDER BY w.id LIMIT 100"])
                 cleanup.assert_called_once_with(client, [51])
                 self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/41", (404,))
+                                    for call in client.request.call_args_list))
+                self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/42", (404,))
                                     for call in client.request.call_args_list))
 
     def test_transfer_requires_new_execution_actual_counts_and_ordinary_initiator(self):
@@ -2139,6 +2175,11 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(result["develop_mixed_wildcard"]), {"copy_after_star", "copy_before_star"})
         for output in result["develop_mixed_wildcard"].values():
             self.assertTrue(output["sensitive_copies_verified"] and output["non_sensitive_copy_verified"])
+        self.assertEqual(set(result["develop_page_wildcard"]), {"outer_star", "outer_direct"})
+        self.assertEqual(result["service_sql_page"]["page_sizes"], [2, 2, 1])
+        self.assertTrue(result["service_sql_page"]["no_duplicate_or_missing_rows"])
+        self.assertTrue(result["sql_service_deleted"])
+        self.assertEqual(result["temporary_execution_resources"], 3)
         self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
         self.assertTrue(result["task_deleted"] and result["service_deleted"])
         self.assertNotIn("6222000000000000001", json.dumps(result))

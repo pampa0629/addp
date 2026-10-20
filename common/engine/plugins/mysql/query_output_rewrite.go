@@ -262,19 +262,23 @@ func parseMySQLOutputExpression(expression string) (*sqlparser.AliasedExpr, erro
 }
 
 func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.QueryOutputLineage) (func(context.Context, *sql.Tx) error, error) {
-	star := false
-	for _, expr := range statement.SelectExprs {
-		if _, ok := expr.(*sqlparser.StarExpr); ok {
-			star = true
+	base := statement
+	var outer *sqlparser.AliasedTableExpr
+	if len(statement.From) == 1 {
+		if relation, ok := statement.From[0].(*sqlparser.AliasedTableExpr); ok {
+			if subquery, ok := relation.Expr.(*sqlparser.Subquery); ok {
+				base, _ = subquery.Select.(*sqlparser.Select)
+				outer = relation
+			}
 		}
 	}
-	if !star {
+	if !mySQLOutputHasWildcard(statement) && !mySQLOutputHasWildcard(base) {
 		return nil, nil
 	}
-	if len(statement.From) != 1 || lineage == nil || len(lineage.Sources) != 1 {
+	if base == nil || len(base.From) != 1 || !mySQLOutputSelectAllowed(base) || lineage == nil || len(lineage.Sources) != 1 || (outer != nil && (outer.As.IsEmpty() || outer.AsOf != nil || outer.Lateral)) {
 		return nil, plugin.ErrQueryOutputTransformUnsupported
 	}
-	table, ok := statement.From[0].(*sqlparser.AliasedTableExpr)
+	table, ok := base.From[0].(*sqlparser.AliasedTableExpr)
 	if !ok {
 		return nil, plugin.ErrQueryOutputTransformUnsupported
 	}
@@ -293,35 +297,19 @@ func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.Quer
 	if !table.As.IsEmpty() {
 		qualifier = sqlparser.TableName{Name: table.As}
 	}
-	expanded := make(sqlparser.SelectExprs, 0, len(source.Fields)+len(statement.SelectExprs)-1)
-	for _, expression := range statement.SelectExprs {
-		if wildcard, ok := expression.(*sqlparser.StarExpr); ok {
-			if !wildcard.TableName.IsEmpty() && sqlparser.String(wildcard.TableName) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && wildcard.TableName.DbQualifier.IsEmpty() && wildcard.TableName.Name.String() == name.Name.String()) {
-				return nil, plugin.ErrQueryOutputTransformUnsupported
-			}
-			for _, field := range source.Fields {
-				expanded = append(expanded, &sqlparser.AliasedExpr{Expr: &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier}})
-			}
-			continue
-		}
-		aliased, ok := expression.(*sqlparser.AliasedExpr)
-		if !ok {
-			return nil, plugin.ErrQueryOutputTransformUnsupported
-		}
-		column, ok := aliased.Expr.(*sqlparser.ColName)
-		if !ok || (!column.Qualifier.IsEmpty() && sqlparser.String(column.Qualifier) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && column.Qualifier.DbQualifier.IsEmpty() && column.Qualifier.Name.String() == name.Name.String())) {
-			return nil, plugin.ErrQueryOutputTransformUnsupported
-		}
-		found := false
-		for _, field := range source.Fields {
-			found = found || strings.EqualFold(field.Name, column.Name.String())
-		}
-		if !found {
-			return nil, plugin.ErrQueryOutputTransformUnsupported
-		}
-		expanded = append(expanded, expression)
+	fields := make([]string, len(source.Fields))
+	for i, field := range source.Fields {
+		fields[i] = field.Name
 	}
-	statement.SelectExprs = expanded
+	outputs, err := expandMySQLDirectOutputTargets(base, fields, qualifier)
+	if err != nil {
+		return nil, err
+	}
+	if outer != nil {
+		if _, err := expandMySQLDirectOutputTargets(statement, outputs, sqlparser.TableName{Name: outer.As}); err != nil {
+			return nil, err
+		}
+	}
 	qualified := mysqlDialect().QualifiedTable(parts[1].Name, parts[2].Name)
 	return func(ctx context.Context, tx *sql.Tx) error {
 		// Even a zero-row SELECT acquires the transaction's metadata lock.
@@ -348,4 +336,74 @@ func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.Quer
 		}
 		return plugin.ValidateQueryOutputFields(source.Fields, mysqlFieldsFromColumns(fields))
 	}, nil
+}
+
+func mySQLOutputHasWildcard(statement *sqlparser.Select) bool {
+	if statement == nil {
+		return false
+	}
+	for _, expression := range statement.SelectExprs {
+		if _, ok := expression.(*sqlparser.StarExpr); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// Expand structure only. Content operations remain on the final SELECT.
+func expandMySQLDirectOutputTargets(statement *sqlparser.Select, fields []string, qualifier sqlparser.TableName) ([]string, error) {
+	allowed := map[string]bool{}
+	for _, name := range fields {
+		key := strings.ToLower(name)
+		if name == "" || allowed[key] {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		allowed[key] = true
+	}
+	sameQualifier := func(q sqlparser.TableName) bool {
+		return q.IsEmpty() || sqlparser.String(q) == sqlparser.String(qualifier) || (!qualifier.DbQualifier.IsEmpty() && q.DbQualifier.IsEmpty() && q.Name.String() == qualifier.Name.String())
+	}
+	expanded := make(sqlparser.SelectExprs, 0, len(fields)+len(statement.SelectExprs))
+	outputs := []string{}
+	seen := map[string]bool{}
+	appendColumn := func(expr *sqlparser.AliasedExpr, name string) error {
+		if name == "" || seen[strings.ToLower(name)] {
+			return plugin.ErrQueryOutputTransformUnsupported
+		}
+		seen[strings.ToLower(name)] = true
+		outputs = append(outputs, name)
+		expr.InputExpression = ""
+		expanded = append(expanded, expr)
+		return nil
+	}
+	for _, expression := range statement.SelectExprs {
+		if star, ok := expression.(*sqlparser.StarExpr); ok {
+			if !sameQualifier(star.TableName) {
+				return nil, plugin.ErrQueryOutputTransformUnsupported
+			}
+			for _, name := range fields {
+				if err := appendColumn(&sqlparser.AliasedExpr{Expr: &sqlparser.ColName{Name: sqlparser.NewColIdent(name), Qualifier: qualifier}}, name); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		aliased, ok := expression.(*sqlparser.AliasedExpr)
+		if !ok {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		column, ok := aliased.Expr.(*sqlparser.ColName)
+		if !ok || column.StoredProcVal != nil || !sameQualifier(column.Qualifier) || !allowed[strings.ToLower(column.Name.String())] {
+			return nil, plugin.ErrQueryOutputTransformUnsupported
+		}
+		name := aliased.As.String()
+		if name == "" {
+			name = column.Name.String()
+		}
+		if err := appendColumn(aliased, name); err != nil {
+			return nil, err
+		}
+	}
+	statement.SelectExprs = expanded
+	return outputs, nil
 }

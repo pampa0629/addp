@@ -110,7 +110,7 @@ func TestMySQLOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T) {
 			t.Fatal("lost bound algorithm value")
 		}
 	}
-	for _, query := range []string{"SELECT *,phone FROM business.people", "SELECT p.* FROM business.people p JOIN business.people q ON p.id=q.id", "SELECT x.* FROM (SELECT id,phone FROM business.people) x", "SELECT x.phone FROM (SELECT * FROM business.people) x", "SELECT q.* FROM business.people p", "SELECT * FROM business.other"} {
+	for _, query := range []string{"SELECT *,phone FROM business.people", "SELECT p.* FROM business.people p JOIN business.people q ON p.id=q.id", "SELECT x.* FROM (SELECT y.* FROM (SELECT id,phone FROM business.people) y) x", "SELECT q.* FROM business.people p", "SELECT * FROM business.other"} {
 		if _, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven wildcard accepted: %s (%v)", query, err)
 		}
@@ -132,6 +132,32 @@ func TestMySQLOutputRewriteMixedWildcard(t *testing.T) {
 	for _, projection := range []string{"p.*,p.phone", "p.*,p.phone AS PHONE", "p.*,p.*", "p.*,p.id+1 AS computed", "p.*,q.phone AS copied_phone"} {
 		if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT "+projection+" FROM business.people p", nil, ops, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven mixed wildcard accepted: %s (%v)", projection, err)
+		}
+	}
+}
+
+func TestMySQLOutputRewriteSinglePageWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermDatabase, "business", "people"), Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "phone"}}}}}
+	for _, tc := range []struct{ query, column string }{
+		{"SELECT w.* FROM (SELECT p.* FROM business.people p ORDER BY 2 LIMIT 8) w ORDER BY 2 LIMIT 3 OFFSET 1", "phone"},
+		{"SELECT w.phone FROM (SELECT p.* FROM business.people p) w ORDER BY w.phone LIMIT 3", "phone"},
+		{"SELECT w.* FROM (SELECT id,phone AS contact FROM business.people) w ORDER BY contact LIMIT 3", "contact"},
+		{"SELECT w.contact AS phone FROM (SELECT p.*,p.phone AS contact FROM business.people p) w LIMIT 3", "phone"},
+	} {
+		compiled, err := (&MySQLPlugin{}).CompileQueryOutput(tc.query, nil, []plugin.QueryOutputTransform{{Column: tc.column, Kind: "constant_text", Replacement: "protected"}}, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "*") || strings.Count(strings.ToUpper(compiled.Query), "CASE WHEN") != 1 {
+			t.Fatalf("page wildcard not protected only at final output: %s (%v)", tc.query, err)
+		}
+	}
+	for _, query := range []string{
+		"SELECT w.* FROM (SELECT DISTINCT p.* FROM business.people p) w",
+		"SELECT w.* FROM (SELECT p.*,phone FROM business.people p) w",
+		"SELECT w.* FROM (SELECT p.*,id+1 AS calculated FROM business.people p) w",
+		"SELECT w.* FROM (SELECT p.* FROM business.people p JOIN business.people q ON p.id=q.id) w",
+		"SELECT w.* FROM (SELECT y.* FROM (SELECT p.* FROM business.people p) y) w",
+	} {
+		if _, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven page shape accepted: %s (%v)", query, err)
 		}
 	}
 }

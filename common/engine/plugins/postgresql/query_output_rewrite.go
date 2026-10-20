@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -287,22 +288,24 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 	if stmt == nil {
 		return "", nil, plugin.ErrQueryOutputTransformUnsupported
 	}
-	star := false
-	for _, target := range stmt.GetTargetList() {
-		for _, part := range target.GetResTarget().GetVal().GetColumnRef().GetFields() {
-			star = star || part.GetAStar() != nil
+	base := stmt
+	var outer *pgquery.RangeSubselect
+	if len(stmt.GetFromClause()) == 1 {
+		outer = stmt.GetFromClause()[0].GetRangeSubselect()
+		if outer != nil {
+			base = outer.GetSubquery().GetSelectStmt()
 		}
 	}
-	if !star {
+	if !postgresOutputHasWildcard(stmt) && !postgresOutputHasWildcard(base) {
 		return query, nil, nil
 	}
 	fail := func() (string, func(context.Context, *sql.Tx) error, error) {
 		return "", nil, plugin.ErrQueryOutputTransformUnsupported
 	}
-	if len(stmt.GetFromClause()) != 1 || stmt.GetWithClause() != nil || lineage == nil || len(lineage.Sources) != 1 {
+	if !postgresWildcardSelectAllowed(stmt) || !postgresWildcardSelectAllowed(base) || lineage == nil || len(lineage.Sources) != 1 || (outer != nil && (outer.GetLateral() || outer.GetAlias().GetAliasname() == "" || len(outer.GetAlias().GetColnames()) != 0)) {
 		return fail()
 	}
-	table := stmt.GetFromClause()[0].GetRangeVar()
+	table := base.GetFromClause()[0].GetRangeVar()
 	source := lineage.Clone().Sources[0]
 	parts := source.Path.Segments
 	if table == nil || len(parts) != 3 || parts[1].Term != plugin.EngineCatalogTermSchema || parts[2].Kind != plugin.EngineCatalogKindTable || source.OpaqueOutput || len(source.Fields) == 0 || table.GetCatalogname() != "" || table.GetRelname() != parts[2].Name || (table.GetSchemaname() != "" && table.GetSchemaname() != parts[1].Name) || len(table.GetAlias().GetColnames()) != 0 {
@@ -312,43 +315,25 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 	if table.GetAlias() != nil {
 		qualifier = table.GetAlias().GetAliasname()
 	}
-	quote := func(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
-	columns := make([]string, len(source.Fields))
+	fields := make([]string, len(source.Fields))
 	for i, field := range source.Fields {
-		if field.Name == "" {
-			return fail()
-		}
-		columns[i] = quote(qualifier) + "." + quote(field.Name)
+		fields[i] = field.Name
 	}
-	expanded, err := pgquery.Parse("SELECT " + strings.Join(columns, ","))
+	outputs, err := expandPostgresDirectOutputTargets(base, fields, qualifier)
 	if err != nil {
 		return fail()
 	}
-	var targets []*pgquery.Node
-	for _, target := range stmt.GetTargetList() {
-		ref := target.GetResTarget().GetVal().GetColumnRef().GetFields()
-		if len(ref) == 0 || len(ref) > 2 || (len(ref) == 2 && ref[0].GetString_().GetSval() != qualifier) {
+	if outer != nil {
+		if _, err := expandPostgresDirectOutputTargets(stmt, outputs, outer.GetAlias().GetAliasname()); err != nil {
 			return fail()
 		}
-		if ref[len(ref)-1].GetAStar() != nil {
-			targets = append(targets, expanded.Stmts[0].Stmt.GetSelectStmt().TargetList...)
-			continue
-		}
-		found := false
-		for _, field := range source.Fields {
-			found = found || ref[len(ref)-1].GetString_().GetSval() == field.Name
-		}
-		if !found {
-			return fail()
-		}
-		targets = append(targets, target)
 	}
-	stmt.TargetList = targets
 	table.Schemaname = parts[1].Name
 	physical, err := pgquery.Deparse(parsed)
 	if err != nil {
 		return fail()
 	}
+	quote := commonquery.ForDialect("postgresql").QuoteIdentifier
 	qualified := quote(parts[1].Name) + "." + quote(parts[2].Name)
 	preflight := func(ctx context.Context, tx *sql.Tx) error {
 		// LOCK precedes the first snapshot, so a waiting cursor transaction
@@ -377,4 +362,75 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 		return plugin.ValidateSQLQueryOutputColumns(ctx, tx, "SELECT * FROM "+qualified+" LIMIT 0", source.Fields)
 	}
 	return physical, preflight, nil
+}
+
+func postgresOutputHasWildcard(statement *pgquery.SelectStmt) bool {
+	for _, target := range statement.GetTargetList() {
+		for _, field := range target.GetResTarget().GetVal().GetColumnRef().GetFields() {
+			if field.GetAStar() != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func postgresWildcardSelectAllowed(statement *pgquery.SelectStmt) bool {
+	return statement != nil && len(statement.GetFromClause()) == 1 && statement.GetWithClause() == nil && statement.GetOp() == pgquery.SetOperation_SETOP_NONE && len(statement.GetDistinctClause()) == 0 && len(statement.GetGroupClause()) == 0 && statement.GetHavingClause() == nil && len(statement.GetWindowClause()) == 0 && statement.GetIntoClause() == nil && len(statement.GetLockingClause()) == 0
+}
+
+func expandPostgresDirectOutputTargets(statement *pgquery.SelectStmt, fields []string, qualifier string) ([]string, error) {
+	fail := func() ([]string, error) { return nil, plugin.ErrQueryOutputTransformUnsupported }
+	quote := commonquery.ForDialect("postgresql").QuoteIdentifier
+	columns := make([]string, len(fields))
+	allowed := map[string]bool{}
+	for i, name := range fields {
+		if name == "" || allowed[name] {
+			return fail()
+		}
+		allowed[name] = true
+		columns[i] = quote(qualifier) + "." + quote(name)
+	}
+	parsed, err := pgquery.Parse("SELECT " + strings.Join(columns, ","))
+	if err != nil {
+		return fail()
+	}
+	var targets []*pgquery.Node
+	var outputs []string
+	seen := map[string]bool{}
+	appendTarget := func(target *pgquery.Node, name string) bool {
+		if name == "" || seen[name] {
+			return false
+		}
+		seen[name] = true
+		outputs = append(outputs, name)
+		targets = append(targets, target)
+		return true
+	}
+	for _, target := range statement.GetTargetList() {
+		ref := target.GetResTarget().GetVal().GetColumnRef().GetFields()
+		if len(ref) == 0 || len(ref) > 2 || (len(ref) == 2 && ref[0].GetString_().GetSval() != qualifier) {
+			return fail()
+		}
+		if ref[len(ref)-1].GetAStar() != nil {
+			for i, expanded := range parsed.Stmts[0].Stmt.GetSelectStmt().TargetList {
+				if !appendTarget(expanded, fields[i]) {
+					return fail()
+				}
+			}
+			continue
+		}
+		name := ref[len(ref)-1].GetString_().GetSval()
+		if !allowed[name] {
+			return fail()
+		}
+		if target.GetResTarget().GetName() != "" {
+			name = target.GetResTarget().GetName()
+		}
+		if !appendTarget(target, name) {
+			return fail()
+		}
+	}
+	statement.TargetList = targets
+	return outputs, nil
 }
