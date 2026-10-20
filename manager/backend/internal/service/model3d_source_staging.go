@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"path"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +16,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
@@ -180,4 +183,49 @@ func (r *model3DStagingContextReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	return r.reader.Read(p)
+}
+
+// buffer3DSStagingEntrypoint accepts the caller's already-authorized main-file
+// stream, not a locator or authorization proof. The shared parser bounds input.
+// Only these parsed bytes may subsequently be staged; reopening the source would
+// invalidate the reference check. No dependency is opened by this primitive.
+func buffer3DSStagingEntrypoint(ctx context.Context, main io.Reader, declaredRefs []string) ([]byte, error) {
+	if main == nil || declaredRefs == nil {
+		return nil, errors.New("3DS input requires complete frozen reference declarations")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	expected := slices.Clone(declaredRefs)
+	slices.Sort(expected)
+	for i, ref := range expected {
+		if ref == "" || (i > 0 && ref == expected[i-1]) {
+			return nil, errors.New("3DS input reference declarations are invalid")
+		}
+	}
+	provider, err := format.GetModel3DInfoProvider(format.Format3DS)
+	if err != nil {
+		return nil, fmt.Errorf("resolve 3DS input parser: %w", err)
+	}
+	var buffered bytes.Buffer
+	facts, err := provider.DescribeModel3D(ctx, io.TeeReader(&model3DStagingContextReader{ctx: ctx, reader: main}, &buffered), nil)
+	if err != nil {
+		return nil, fmt.Errorf("inspect 3DS input references: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if facts == nil || facts.FormatInfo["scan_complete"] != true {
+		return nil, errors.New("3DS input reference scan is incomplete")
+	}
+	actual, ok := facts.FormatInfo["texture_refs"].([]string)
+	if !ok || actual == nil {
+		return nil, errors.New("3DS input reference declarations are missing")
+	}
+	actual = slices.Clone(actual)
+	slices.Sort(actual)
+	if !slices.Equal(actual, expected) {
+		return nil, errors.New("3DS input references changed from the frozen composition")
+	}
+	return buffered.Bytes(), nil
 }

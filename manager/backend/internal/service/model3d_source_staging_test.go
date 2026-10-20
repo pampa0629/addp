@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
+	_ "github.com/addp/common/format/plugins/threeds"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -276,3 +279,81 @@ func TestModel3DStagingRejectsInvalidCompositionBeforeSourceRead(t *testing.T) {
 		})
 	}
 }
+
+func threeDSStagingInput(refs ...string) []byte {
+	chunk := func(id uint16, body []byte) []byte {
+		data := make([]byte, 6+len(body))
+		binary.LittleEndian.PutUint16(data, id)
+		binary.LittleEndian.PutUint32(data[2:], uint32(len(data)))
+		copy(data[6:], body)
+		return data
+	}
+	var maps []byte
+	for _, ref := range refs {
+		maps = append(maps, chunk(0xa200, chunk(0xa300, append([]byte(ref), 0)))...)
+	}
+	return chunk(0x4d4d, chunk(0x3d3d, chunk(0xafff, maps)))
+}
+
+func Test3DSStagingFreezesParsedBytesAndExactDeclarations(t *testing.T) {
+	for _, refs := range [][]string{{}, {"TEST.PNG"}, {"贴图%20.PNG", "textures/detail.png"}} {
+		input := threeDSStagingInput(refs...)
+		expected := append([]string{}, refs...)
+		if len(expected) > 1 {
+			expected[0], expected[1] = expected[1], expected[0]
+		}
+		buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(input), expected)
+		if err != nil || !bytes.Equal(input, buffered) {
+			t.Fatalf("parsed main-file bytes changed: %v", err)
+		}
+		input[len(input)-1] = 42
+		if bytes.Equal(input, buffered) {
+			t.Fatal("buffer aliases mutable caller input")
+		}
+	}
+}
+
+func Test3DSStagingRejectsChangedReferencesBeforeAnyStaging(t *testing.T) {
+	for _, changed := range [][]string{{"EVIL.PNG"}, {"test.png"}, {"TEST.PNG", "extra.png"}, {}} {
+		buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput(changed...)), []string{"TEST.PNG"})
+		if err == nil || buffered != nil {
+			t.Fatalf("changed references accepted: %v", changed)
+		}
+	}
+	// Same byte length defeats size-only checks; source mtime is intentionally
+	// not an input to this content-based declaration check.
+	if len(threeDSStagingInput("TEST.PNG")) != len(threeDSStagingInput("EVIL.PNG")) {
+		t.Fatal("reference mutation fixture changed byte length")
+	}
+	buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput("图%20.PNG")), []string{"图 .PNG"})
+	if err == nil || buffered != nil {
+		t.Fatal("URI-decoded texture reference was accepted")
+	}
+}
+
+func Test3DSStagingRejectsIncompleteOrFailedMainRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		ctx    context.Context
+		reader io.Reader
+		refs   []string
+	}{
+		{context.Background(), bytes.NewReader(threeDSStagingInput()), nil},
+		{context.Background(), nil, []string{}},
+		{context.Background(), strings.NewReader("not a model"), []string{}},
+		{context.Background(), bytes.NewReader(threeDSStagingInput("TEST.PNG")), []string{"TEST.PNG", "TEST.PNG"}},
+		{context.Background(), bytes.NewReader(threeDSStagingInput()), []string{""}},
+		{ctx, bytes.NewReader(threeDSStagingInput()), []string{}},
+		{context.Background(), failed3DSStagingReader{}, []string{}},
+	} {
+		buffered, err := buffer3DSStagingEntrypoint(tc.ctx, tc.reader, tc.refs)
+		if err == nil || buffered != nil {
+			t.Fatal("incomplete main input accepted")
+		}
+	}
+}
+
+type failed3DSStagingReader struct{}
+
+func (failed3DSStagingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
