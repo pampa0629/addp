@@ -41,19 +41,24 @@ test('ordinary reviewer uses the real queue and observes native batch partial fa
   await login(page, required('ADDP_ONLINE_GRAPH_REVIEW_USERNAME'), required('ADDP_ONLINE_GRAPH_REVIEW_PASSWORD'),
     `/graph/graphs/${expected.graph_id}/review?tab=all`)
   const response = await queueResponse
-  const api = await browserAPIFromResponse(response, required('GATEWAY_URL'), {
+  const queued = await json(response, 'real pending queue')
+  expect(queued.total).toBe(7)
+  expect(Object.fromEntries(queued.data.map(item => [item.source_text, item.id]))).toEqual(expected.items)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const row = source => frame.locator('.el-table__body tbody tr').filter({
+    has: frame.locator('.source-text').filter({ hasText: new RegExp(`^${source}$`) })
+  })
+  await expect(frame.locator('.el-table__body tbody tr')).toHaveCount(7)
+  const reloaded = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === root)
+  await page.reload()
+  const reloadedResponse = await reloaded
+  const reloadedQueue = await json(reloadedResponse, 'pending queue after reload')
+  expect(reloadedQueue.total).toBe(7)
+  expect(Object.fromEntries(reloadedQueue.data.map(item => [item.source_text, item.id]))).toEqual(expected.items)
+  const api = await browserAPIFromResponse(reloadedResponse, required('GATEWAY_URL'), {
     principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: new Set(permissions)
   })
   try {
-    const queued = await json(response, 'real pending queue')
-    expect(queued.total).toBe(7)
-    expect(Object.fromEntries(queued.data.map(item => [item.source_text, item.id]))).toEqual(expected.items)
-    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-    const row = source => frame.locator('.el-table__body tbody tr').filter({
-      has: frame.locator('.source-text').filter({ hasText: new RegExp(`^${source}$`) })
-    })
-    await expect(frame.locator('.el-table__body tbody tr')).toHaveCount(7)
-    await page.reload()
     await expect(frame.locator('#tab-all')).toHaveAttribute('aria-selected', 'true')
     await expect(frame.locator('.el-table__body tbody tr')).toHaveCount(7)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-review-pending-console.png') })
