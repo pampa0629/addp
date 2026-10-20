@@ -29,6 +29,8 @@
 bash -c 'source scripts/infra/ports.sh && addp_infra_verify_container postgres addp-postgres && addp_infra_mapped_port addp-postgres 5432'
 ```
 
+Meta 的授权资源事实可以通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS='--test authorization-facts --source-root <冻结源码目录>'` 验证同一组 PostgreSQL 用例。可选源码目录必须是本仓库提交的 Git checkout，且具有正确的 Meta Go module；Infra 身份和真实映射仍由调用入口所属工作区核验，不将临时 checkout 伪装成容器 owner，也不设置 CI 环境变量绕过检查。默认不传 `--source-root` 时行为不变。该窄入口只在 `addp_test` 的回滚事务中验证事实，不提供新 database、额外 schema 或跳过失败用例的路线。
+
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
 该门禁对每个 Go 测试包显式设置 20 分钟上限。完整 Migration 回归会反复重放历史版本，累计运行可能超过 Go 默认的 10 分钟包级超时；单个迁移阶段仍保留自身期限，CI Job 仍以 30 分钟限制整轮运行，不通过拆包、跳过场景或取消超时规避完整验收。

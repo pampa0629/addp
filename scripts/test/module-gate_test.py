@@ -265,6 +265,36 @@ class ModuleGateTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertEqual([], calls)
 
+    def test_meta_postgres_source_checkout_rejects_before_database_access(self) -> None:
+        repository = SCRIPT.parents[2]
+        environment = dict(os.environ)
+        environment.pop("META_POSTGRES_TEST_DSN", None)
+        for arguments, expected in ((["--source-root"], "requires a checkout path"),
+                                    (["--source-root", str(self.repository)], "must have a source commit"),
+                                    (["--source-root", str(repository), "--test", "authorization-facts"], "META_POSTGRES_TEST_DSN must reference")):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(["bash", str(repository / "scripts/test/meta-postgres-gate.sh"), *arguments],
+                    cwd=repository, env=environment, capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected, result.stderr)
+
+        module = self.repository / "meta/backend/go.mod"
+        module.parent.mkdir(parents=True)
+        module.write_text("module github.com/addp/meta\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture"], cwd=self.repository, check=True)
+        result = subprocess.run(["bash", str(repository / "scripts/test/meta-postgres-gate.sh"), "--source-root", str(self.repository)],
+            cwd=repository, env=environment, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("commit belongs to this repository", result.stderr)
+
+    def test_meta_postgres_source_checkout_preserves_infra_owner_and_required_facts(self) -> None:
+        source = (SCRIPT.parents[2] / "scripts/test/meta-postgres-gate.sh").read_text()
+        self.assertIn('source "$ROOT_DIR/scripts/infra/ports.sh"', source)
+        self.assertIn('cd "$SOURCE_ROOT/meta/backend"', source)
+        self.assertIn('addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"', source)
+        self.assertIn("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ", source)
+
     def test_common_postgres_graph_scope_requires_real_target_contract_and_rejects_skips(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "graph"])
         self.assertEqual(0, result.returncode, result.stderr)
