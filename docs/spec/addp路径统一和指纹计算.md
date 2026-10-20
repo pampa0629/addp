@@ -314,6 +314,8 @@ ResourceLocator{
 
 **graph URI**: `addp://engine/25/path/neo4j/graph?type=graph&item_id=578`
 
+该 locator 的 `FullName()` 必须为 `neo4j.graph`，与 Engine Catalog、Meta DataItem 和 Security 纳管指纹使用同一完整名称；URI 的层级分隔符 `/` 不改变完整名称的 `.` 规则。单层 graph key 是原生不透明名称，名称内部的点和斜杠必须保留，不拆分为额外目录层级。
+
 #### 文件系统
 
 **数据库存储**:

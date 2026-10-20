@@ -42,6 +42,13 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err := commonexecution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
 	}
+	if err := tx.SavePoint("graph_locator_identity").Error; err != nil {
+		t.Fatal(err)
+	}
+	assertGraphEnrollmentUsesCanonicalCatalogIdentity(t, tx)
+	if err := tx.RollbackTo("graph_locator_identity").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.SavePoint("released_history_regression").Error; err != nil {
 		t.Fatal(err)
 	}

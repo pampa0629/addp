@@ -59,6 +59,11 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
     const engine = options.find(engine => engine.id === target.engine_id)
     await frame.locator('.engine-select').click()
     await frame.getByRole('option', { name: new RegExp(engine.name) }).click()
+    if (index === 1 && target.engine_id !== expected.targets[0].engine_id) {
+      const dialog = frame.getByRole('dialog', { name: /切换查询引擎|Switch Query Engine/ })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: /清空并切换|Clear and Switch/ }).click()
+    }
     await expect(frame.locator('.engine-select')).toContainText(engine.name)
     await selectSearchResult(frame.locator('.catalog-panel .resource-tree-picker'), target.names.at(-1), target.names.at(-1))
   }
@@ -179,6 +184,7 @@ test('ordinary reader executes native Cypher through the real Develop workbench 
     await expect(frame.locator('.graph-result-view')).toHaveCount(0)
     await screenshot('protected')
     await selectGraph(1)
+    if (expected.targets[1].engine_id !== expected.targets[0].engine_id) await edit(graphQuery)
     await verifyGraph(await execute(graphQuery, 1), 'control')
     phaseEvidence = { protection_required: true, protected_result_absent: true, protection_stage: 'preparation', control_readable: true }
   }

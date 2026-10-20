@@ -30,6 +30,11 @@ func TestDataItemIdentityFromCatalogPathUsesMetaFingerprintRules(t *testing.T) {
 			path:     plugin.ObjectItemPath(9, "uploads", "2026/persons.csv"),
 			fullName: "uploads/2026/persons.csv", itemType: "object",
 		},
+		{
+			name: "Neo4j graph", model: plugin.GraphCatalogModel(),
+			path:     plugin.EngineCatalogBranchLeafPath(plugin.GraphCatalogModel(), 11, plugin.EngineCatalogTermDatabase, "neo4j", plugin.EngineCatalogTermGraph, plugin.EngineCatalogKindGraph, "graph"),
+			fullName: "neo4j.graph", itemType: "graph",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -40,6 +45,15 @@ func TestDataItemIdentityFromCatalogPathUsesMetaFingerprintRules(t *testing.T) {
 			if identity.FullName != test.fullName || identity.ItemType != test.itemType {
 				t.Fatalf("identity = %#v", identity)
 			}
+			locator := &ResourceLocator{EngineID: test.path.EngineID, Type: ResourceType(test.itemType)}
+			for _, segment := range test.path.Segments[1:] {
+				locator.Path = append(locator.Path, segment.Name)
+			}
+			parsed, err := ParseURI(locator.ToURI())
+			if err != nil || parsed.FullName() != identity.FullName || models.GenerateItemFingerprint(parsed.EngineID, parsed.FullName()) != identity.Fingerprint {
+				t.Fatalf("locator and catalog identity diverged: locator=%#v identity=%#v err=%v", parsed, identity, err)
+			}
+
 			if identity.Fingerprint != models.GenerateItemFingerprint(test.path.EngineID, test.fullName) {
 				t.Fatalf("fingerprint = %q", identity.Fingerprint)
 			}

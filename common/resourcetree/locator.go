@@ -264,7 +264,7 @@ func (r *ResourceLocator) PathString() string {
 
 // FullName 返回完整名称（根据类型格式化）
 // 返回:
-//   - 表/集合: schema.table 格式（如 "public.users"）
+//   - 表/集合/图: 点分完整名称（如 "public.users"、"neo4j.graph"）
 //   - 对象/目录: bucket/path 格式（如 "uploads/2024/data.shp"）
 //   - 其他: 直接返回路径字符串
 func (r *ResourceLocator) FullName() string {
@@ -275,6 +275,10 @@ func (r *ResourceLocator) FullName() string {
 			return r.Path[len(r.Path)-2] + "." + r.Path[len(r.Path)-1]
 		}
 		return r.PathString()
+	case TypeGraph:
+		// Graph business segments use the same canonical name as Meta catalog facts.
+		// A single opaque graph key retains its internal dots and slashes.
+		return strings.Join(r.Path, ".")
 	case TypeObject, TypeDirectory:
 		// 对象存储: bucket/path/to/file
 		return r.PathString()

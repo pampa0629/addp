@@ -17,6 +17,31 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestGraphEnrollmentUsesCanonicalCatalogIdentity(t *testing.T) {
+	assertGraphEnrollmentUsesCanonicalCatalogIdentity(t, openSecurityTestDB(t))
+}
+
+func assertGraphEnrollmentUsesCanonicalCatalogIdentity(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for index, test := range []struct {
+		path     []string
+		fullName string
+	}{
+		{[]string{"neo4j", "graph"}, "neo4j.graph"},
+		{[]string{"tenant.alpha/2026"}, "tenant.alpha/2026"},
+	} {
+		engineID, itemID := uint(741+index), uint(578+index)
+		locator := &resourcetree.ResourceLocator{EngineID: engineID, Path: test.path, Type: resourcetree.TypeGraph, ItemID: &itemID}
+		created, err := NewEnrollmentService(db).Create(context.Background(), 7, 11, models.CreateProtectionEnrollmentRequest{Locator: locator.ToURI()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if created.TargetSnapshot.FullName != test.fullName || created.Target.ResourceIdentity != testDataItemFingerprint(engineID, test.fullName) {
+			t.Fatalf("Graph enrollment identity must match Meta: target=%#v snapshot=%#v expected=%s", created.Target, created.TargetSnapshot, test.fullName)
+		}
+	}
+}
+
 func TestEnrollmentSearchAndProjectionValidity(t *testing.T) {
 	assertEnrollmentSearchAndProjectionValidity(t, openSecurityTestDB(t))
 }
@@ -793,12 +818,12 @@ func TestActiveValidityUpdatePreservesRulesAndBoundsPlaintext(t *testing.T) {
 	if err := db.Where("enrollment_id = ?", row.ID).First(&assessment).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},AssessmentID: assessment.ID,   RequestedExpiresAt: deadline.Add(time.Minute), Rationale: "期限之外"}); !errors.Is(err, commonapi.ErrBadRequest) {
+	if _, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}}, AssessmentID: assessment.ID, RequestedExpiresAt: deadline.Add(time.Minute), Rationale: "期限之外"}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("plaintext exceeded protection deadline: %v", err)
 	}
 
 	grantDeadline := now.Add(15 * time.Minute)
-	application, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},AssessmentID: assessment.ID,   RequestedExpiresAt: grantDeadline, Rationale: "期限内核验"})
+	application, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}}, AssessmentID: assessment.ID, RequestedExpiresAt: grantDeadline, Rationale: "期限内核验"})
 	if err != nil {
 		t.Fatal(err)
 	}

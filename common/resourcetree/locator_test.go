@@ -341,6 +341,16 @@ func TestFullName(t *testing.T) {
 			},
 			want: "users",
 		},
+		{
+			name: "Neo4j graph canonical name",
+			loc:  &ResourceLocator{Path: []string{"neo4j", "graph"}, Type: TypeGraph},
+			want: "neo4j.graph",
+		},
+		{
+			name: "opaque graph key",
+			loc:  &ResourceLocator{Path: []string{"tenant.alpha/2026"}, Type: TypeGraph},
+			want: "tenant.alpha/2026",
+		},
 	}
 
 	for _, tt := range tests {
