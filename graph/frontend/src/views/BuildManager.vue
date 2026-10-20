@@ -206,7 +206,7 @@ function goReview() {
 }
 
 function statusTagType(status) {
-  const map = { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: '' }
+  const map = { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: 'info' }
   return map[status] || 'info'
 }
 

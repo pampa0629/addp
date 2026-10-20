@@ -210,7 +210,7 @@ const createRules = {
   }]
 }
 
-const layerTagType = (layer) => ({ ods: '', dwd: 'success', dws: 'warning', ads: 'danger' }[layer] ?? 'info')
+const layerTagType = (layer) => ({ ods: 'primary', dwd: 'success', dws: 'warning', ads: 'danger' }[layer] ?? 'info')
 const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
   draft: t('model.common.status_draft'),

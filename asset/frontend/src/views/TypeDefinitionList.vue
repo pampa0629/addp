@@ -41,12 +41,12 @@ const loading = ref(false)
 const types = ref([])
 
 const typeTagMap = {
-  dataset: '',
+  dataset: 'info',
   service: 'success',
   metric: 'warning',
   report: 'info',
   algo_model: 'danger',
-  application: ''
+  application: 'info'
 }
 
 async function loadTypes() {

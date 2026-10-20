@@ -22,7 +22,7 @@
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('service.graph.colAccess')">
-            <el-tag :type="service.public_access ? '' : 'info'">
+            <el-tag :type="service.public_access ? 'primary' : 'info'">
               {{ service.public_access ? t('service.graph.publicAccess') : t('service.graph.authRequired') }}
             </el-tag>
           </el-descriptions-item>
@@ -204,7 +204,7 @@ const testPageSize = ref(20)
 const testResult = ref(null)
 const testError = ref('')
 
-const statusType = (s) => ({ active: 'success', inactive: 'info', error: 'danger' }[s] || '')
+const statusType = (s) => ({ active: 'success', inactive: 'info', error: 'danger' }[s] || 'primary')
 const statusText = (s) => ({ active: t('service.graph.statusRunning'), inactive: t('service.graph.statusInactive'), error: t('service.graph.statusError') }[s] || s)
 
 const exampleRequest = computed(() => {

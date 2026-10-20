@@ -142,7 +142,7 @@ const confirmDelete = async (svc) => {
   }
 }
 
-const statusType = (s) => ({ active: 'success', inactive: 'info', error: 'danger' }[s] || '')
+const statusType = (s) => ({ active: 'success', inactive: 'info', error: 'danger' }[s] || 'primary')
 const statusText = (s) => ({
   active: t('service.graph.statusRunning'),
   inactive: t('service.graph.statusInactive'),

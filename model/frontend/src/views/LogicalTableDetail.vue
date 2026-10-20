@@ -693,7 +693,7 @@ const fieldRoleTagType = (role) => {
     measure_semi: 'warning',
     measure_non: 'danger',
     dimension_fk: 'primary',
-    degenerate_dim: ''
+    degenerate_dim: 'primary'
   }
   return map[role] ?? 'info'
 }

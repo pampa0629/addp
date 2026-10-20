@@ -138,7 +138,7 @@ const rules = {
 }
 
 const layerTagType = (code) => {
-  const types = { ods: '', dwd: 'success', dws: 'warning', ads: 'danger' }
+  const types = { ods: 'primary', dwd: 'success', dws: 'warning', ads: 'danger' }
   return types[code?.toLowerCase()] ?? 'info'
 }
 

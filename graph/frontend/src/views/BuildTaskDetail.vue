@@ -229,7 +229,7 @@ function handleVisibilityChange() {
 }
 
 function statusTagType(s) {
-  return { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: '' }[s] || 'info'
+  return { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: 'info' }[s] || 'info'
 }
 function statusLabel(s) {
   return {
