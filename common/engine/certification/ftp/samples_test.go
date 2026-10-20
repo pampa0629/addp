@@ -1,6 +1,7 @@
 package ftp
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -19,7 +20,14 @@ func TestBusinessParquetSample(t *testing.T) {
 	if output, err := exec.Command("python3", "../../../../business/ftp/seed.py", directory).CombinedOutput(); err != nil {
 		t.Fatalf("generate Business samples: %v %s", err, output)
 	}
-	actual, err := parquet.ReadFile[row](filepath.Join(directory, "客户 示例.parquet"))
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "examples" || !entries[0].IsDir() {
+		t.Fatal("Business seed must only create the examples directory at the account root")
+	}
+	actual, err := parquet.ReadFile[row](filepath.Join(directory, "examples", "客户 示例.parquet"))
 	if err != nil {
 		t.Fatal(err)
 	}
