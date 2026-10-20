@@ -15,6 +15,7 @@ import (
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	passwordutils "github.com/addp/system/pkg/utils"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -164,19 +165,30 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "forced recovery completion audit failure") || failed != nil {
 			t.Fatal("recovery did not fail at the injected completion audit boundary")
 		}
-		after := snapshotRecoveryState(t, db, principalIDs)
-		for table, baseline := range before {
-			if after[table] != baseline {
-				// Snapshots contain password hashes and encrypted MFA material.
-				// Never render either side in a test failure or CI log.
-				t.Fatalf("failed recovery changed persisted state in %s", table)
-			}
-		}
+		assertRecoveryStateUnchanged(t, db, principalIDs, before)
 		if targets, err := recoveryService.Validate(ctx, recoverySecret); err != nil || len(targets) != len(principalIDs) {
 			t.Fatal("failed recovery consumed its secret or lost a current holder")
 		}
 		t.Log("all four holders and ten persisted state sets are unchanged after the final audit write fails")
 	})
+	if !t.Run("connection_termination_before_commit_rolls_back_all_four_holders", func(t *testing.T) {
+		before := snapshotRecoveryState(t, db, principalIDs)
+		installRecoveryCompletionDisconnect(t, db, len(principalIDs))
+		defer removeRecoveryCompletionDisconnect(t, db)
+		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: inputs})
+		var pgErr *pgconn.PgError
+		if failed != nil || !errors.As(err, &pgErr) || pgErr.Code != "57P01" || pgErr.Severity != "FATAL" {
+			t.Fatalf("recovery did not report a terminated PostgreSQL connection: %v", err)
+		}
+		assertRecoveryStateUnchanged(t, db, principalIDs, before)
+		if targets, err := recoveryService.Validate(ctx, recoverySecret); err != nil || len(targets) != len(principalIDs) {
+			t.Fatal("connection termination consumed the recovery Secret or lost a current holder")
+		}
+		t.Log("PostgreSQL FATAL/57P01 confirmed connection termination after all four holder writes and before commit")
+		t.Log("all four holders and ten persisted state sets are unchanged after PostgreSQL terminates the recovery connection before commit")
+	}) {
+		t.FailNow()
+	}
 
 	// Different credentials reveal any losing transaction that partially writes
 	// or overwrites the winner, rather than hiding it behind identical inputs.
@@ -456,6 +468,59 @@ func removeRecoveryCompletionAuditFailure(t *testing.T, db *gorm.DB) {
 		DROP FUNCTION system.reject_recovery_completion_audit();
 	`).Error; err != nil {
 		t.Fatalf("remove recovery audit failure: %v", err)
+	}
+}
+
+func installRecoveryCompletionDisconnect(t *testing.T, db *gorm.DB, administratorCount int) {
+	t.Helper()
+	query := fmt.Sprintf(`
+		CREATE FUNCTION system.disconnect_recovery_completion()
+		RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+		    IF (SELECT count(*) FROM system.audit_logs
+		        WHERE event_name = 'iam.recovery.administrator_credentials_replaced'
+		          AND entity_type = NEW.entity_type AND entity_id = NEW.entity_id) <> %d
+		       OR NOT EXISTS (SELECT 1 FROM system.iam_recovery_attempts
+		           WHERE id = NEW.entity_id::bigint AND status = 'completed' AND secret_hash IS NULL) THEN
+		        RAISE EXCEPTION 'recovery disconnect boundary did not include all holder writes';
+		    END IF;
+		    IF NOT pg_terminate_backend(pg_backend_pid()) THEN
+		        RAISE EXCEPTION 'recovery backend termination signal failed';
+		    END IF;
+		    -- Check for the termination signal while still inside this trigger.
+		    PERFORM pg_sleep(0.01);
+		    RAISE EXCEPTION 'recovery backend termination did not interrupt the transaction';
+		END;
+		$$;
+		CREATE TRIGGER trg_disconnect_recovery_completion
+		AFTER INSERT ON system.audit_logs
+		FOR EACH ROW WHEN (NEW.event_name = 'iam.recovery.completed')
+		EXECUTE FUNCTION system.disconnect_recovery_completion();
+	`, administratorCount)
+	if err := db.Exec(query).Error; err != nil {
+		t.Fatalf("install recovery connection termination: %v", err)
+	}
+}
+
+func removeRecoveryCompletionDisconnect(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		DROP TRIGGER trg_disconnect_recovery_completion ON system.audit_logs;
+		DROP FUNCTION system.disconnect_recovery_completion();
+	`).Error; err != nil {
+		t.Fatalf("remove recovery connection termination: %v", err)
+	}
+}
+
+func assertRecoveryStateUnchanged(t *testing.T, db *gorm.DB, principalIDs []int64, before map[string]string) {
+	t.Helper()
+	after := snapshotRecoveryState(t, db, principalIDs)
+	for table, baseline := range before {
+		if after[table] != baseline {
+			// Snapshots contain password hashes and encrypted MFA material.
+			// Never render either side in a test failure or CI log.
+			t.Fatalf("failed recovery changed persisted state in %s", table)
+		}
 	}
 }
 
