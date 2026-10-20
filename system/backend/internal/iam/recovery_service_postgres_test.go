@@ -2,13 +2,16 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	passwordutils "github.com/addp/system/pkg/utils"
@@ -175,11 +178,77 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		t.Log("all four holders and ten persisted state sets are unchanged after the final audit write fails")
 	})
 
-	result, err := recoveryService.Apply(ctx, RecoveryApplyInput{
-		RecoverySecret: recoverySecret, Administrators: inputs,
-	})
-	if err != nil {
-		t.Fatalf("apply recovery: %v", err)
+	// Different credentials reveal any losing transaction that partially writes
+	// or overwrites the winner, rather than hiding it behind identical inputs.
+	alternativeInputs := make([]RecoveryAdministratorInput, len(inputs))
+	for index, input := range inputs {
+		key, err := totp.Generate(totp.GenerateOpts{Issuer: "ADDP test", AccountName: fmt.Sprintf("recovery-contender-%d", index)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		alternativeInputs[index] = recoveryAdministratorTestInput(t, input.RoleKey, input.Password+"-alternative", key.Secret(), currentTime)
+		alternativeInputs[index].PrincipalID = input.PrincipalID
+	}
+	contenders := [][]RecoveryAdministratorInput{inputs, alternativeInputs}
+	var result *RecoveryResult
+	var losingInputs []RecoveryAdministratorInput
+	if !t.Run("same_secret_concurrent_consumption_has_one_winner", func(t *testing.T) {
+		raceCtx, cancelRace := context.WithTimeout(ctx, 20*time.Second)
+		blocker := db.WithContext(raceCtx).Begin()
+		if blocker.Error != nil {
+			cancelRace()
+			t.Fatal(blocker.Error)
+		}
+		var workers sync.WaitGroup
+		defer func() {
+			cancelRace()
+			_ = blocker.Rollback().Error
+			workers.Wait()
+		}()
+		if err := NewRepository(blocker).LockIAMRecoveryTable(raceCtx); err != nil {
+			t.Fatal(err)
+		}
+		type outcome struct {
+			contender int
+			result    *RecoveryResult
+			err       error
+		}
+		outcomes := make(chan outcome, len(contenders))
+		for index, contenderInputs := range contenders {
+			workers.Add(1)
+			go func(index int, contenderInputs []RecoveryAdministratorInput) {
+				defer workers.Done()
+				recovered, err := recoveryService.Apply(raceCtx, RecoveryApplyInput{
+					RecoverySecret: recoverySecret, Administrators: contenderInputs,
+				})
+				outcomes <- outcome{contender: index, result: recovered, err: err}
+			}(index, contenderInputs)
+		}
+		waitForRecoveryLockWaiters(t, raceCtx, db, int64(len(contenders)))
+		if err := blocker.Commit().Error; err != nil {
+			t.Fatal(err)
+		}
+		workers.Wait()
+		close(outcomes)
+		succeeded, rejected, winner := 0, 0, -1
+		for outcome := range outcomes {
+			switch {
+			case outcome.err == nil && outcome.result != nil:
+				succeeded++
+				winner, result = outcome.contender, outcome.result
+			case errors.Is(outcome.err, commonapi.ErrUnauthorized) && outcome.result == nil:
+				rejected++
+			default:
+				t.Fatalf("unexpected concurrent recovery outcome for contender %d: %v", outcome.contender, outcome.err)
+			}
+		}
+		if succeeded != 1 || rejected != 1 {
+			t.Fatalf("concurrent recovery succeeded=%d rejected=%d, want 1/1", succeeded, rejected)
+		}
+		inputs, losingInputs = contenders[winner], contenders[1-winner]
+		t.Log("both recovery transactions waited for the PostgreSQL table lock; exactly one succeeded and one rejected the consumed Secret")
+	}) {
+		t.FailNow()
 	}
 	if result.AttemptID <= 0 || len(result.Principals) != len(principalIDs) || !result.CompletedAt.Equal(currentTime) {
 		t.Fatalf("recovery result = %#v", result)
@@ -200,6 +269,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 			t.Fatalf("read recovered account %s: %v", roleKey, err)
 		}
 		if !passwordutils.CheckPassword(inputs[index].Password, account.PasswordHash) ||
+			passwordutils.CheckPassword(losingInputs[index].Password, account.PasswordHash) ||
 			account.Status != LocalAccountStatusActive || account.LockedUntil != nil {
 			t.Fatalf("account %s was not recovered", roleKey)
 		}
@@ -209,7 +279,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 			t.Fatalf("read active recovery MFA %s: %v", roleKey, err)
 		}
 		decryptedSecret, err := cipher.DecryptTOTPSecret(&activeCredential)
-		if err != nil || decryptedSecret != inputs[index].TOTPSecret {
+		if err != nil || decryptedSecret != inputs[index].TOTPSecret || decryptedSecret == losingInputs[index].TOTPSecret {
 			t.Fatalf("replacement MFA %s does not contain the new secret", roleKey)
 		}
 		var disabledCredentialCount, authorizationVersion, activeFamilyCount int64
@@ -271,6 +341,29 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	if leakedAuditCount != 0 {
 		t.Fatalf("recovery audit leaked secret material in %d rows", leakedAuditCount)
 	}
+	t.Log("all four holders contain only the winner's credentials; authorization versions and recovery audits advanced exactly once")
+}
+
+func waitForRecoveryLockWaiters(t *testing.T, ctx context.Context, db *gorm.DB, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var count int64
+		if err := db.WithContext(ctx).Raw(`
+			SELECT count(*) FROM pg_locks
+			WHERE locktype = 'relation'
+			  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+			  AND relation = 'system.iam_recovery_attempts'::regclass
+			  AND mode = 'ExclusiveLock' AND NOT granted
+		`).Scan(&count).Error; err != nil {
+			t.Fatalf("inspect recovery table lock waiters: %v", err)
+		}
+		if count == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("did not observe %d concurrent recovery table lock waiters", want)
 }
 
 func recoveryAdministratorTestInput(
