@@ -317,6 +317,8 @@ HTTP 事件类别为 `http_quality`、主体为模块，触发/恢复沿同一�
 
 2026-10-20 用户限定本轮只做本地验证，暂不扩展或运行 Hosted HTTP 验收；不得借既有资源观测 Hosted 身份执行本专项规则操作或受控请求，也不得将本地受控身份 T2/T3 计为正式身份 T4。
 
+本地 HTTP 专项复用标准入口 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`：使用当次专属 Prometheus、mTLS 来源和 `addp_test`，验证真实请求、历史趋势、规则评估与签名通知恢复；不执行 PostgreSQL 专业来源探针。默认完整入口继续运行原主机、进程与 PostgreSQL 来源回归；HTTP 专项通过不能替代完整入口或正式身份 T4。
+
 ## 七、平台告警与通知
 
 ### 7.1 领域、入口与权限

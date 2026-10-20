@@ -141,21 +141,31 @@ func TestIntegrationMetricsHTTPAlertLifecycle(t *testing.T) {
 	observations := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), nil, nil, nil, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}), ProcessObservationDependencies{Users: users, Identities: identities, Backend: backend})
 	rules := NewHTTPAlertRuleService(f.db, observations, identities, f.n)
 	route := "/failure"
-	trendEnd := time.Now().UTC().Truncate(time.Second).Add(-15 * time.Second)
-	trend, err := observations.HTTP(ctx, "fixture-human", "module-fixture-user", HTTPObservationRequest{IDs: []uint{uint(id)}, WindowSeconds: 60, Route: &route, Method: "GET", Trend: true, Start: trendEnd.Add(-30 * time.Second), End: trendEnd})
-	if err != nil || len(trend.Data) != 1 || trend.Data[0].Collection.State != "collecting" || len(trend.Data[0].Observations) != 1 {
-		t.Fatal("native authorized HTTP trend collection", err)
-	}
-	validTrend := false
-	for _, line := range trend.Data[0].Observations[0].Series {
-		if line.MetricKey == "http.failures.percent" {
-			for _, point := range line.Points {
-				validTrend = validTrend || (point.DataState == "valid" && point.Value != nil && *point.Value > 50)
+	// The previous (not current) evaluation also needs a complete minute of
+	// post-startup scrapes. Wait only for that natural history, never for errors.
+	historyDeadline := time.Now().Add(45 * time.Second)
+	for {
+		trendEnd := time.Now().UTC().Truncate(time.Second).Add(-15 * time.Second)
+		trend, err := observations.HTTP(ctx, "fixture-human", "module-fixture-user", HTTPObservationRequest{IDs: []uint{uint(id)}, WindowSeconds: 60, Route: &route, Method: "GET", Trend: true, Start: trendEnd.Add(-30 * time.Second), End: trendEnd})
+		if err != nil || len(trend.Data) != 1 || trend.Data[0].Collection.State != "collecting" || len(trend.Data[0].Observations) != 1 {
+			t.Fatal("native authorized HTTP trend collection", err)
+		}
+		valid := false
+		for _, line := range trend.Data[0].Observations[0].Series {
+			if line.MetricKey == "http.failures.percent" {
+				for _, point := range line.Points {
+					valid = valid || (point.DataState == "valid" && point.Value != nil && *point.Value > 50)
+				}
 			}
 		}
-	}
-	if !validTrend {
-		t.Fatal("native historical HTTP trend lost valid failure points")
+		if valid {
+			t.Log("authorized historical HTTP trend retained real failure points")
+			break
+		}
+		if time.Now().After(historyDeadline) {
+			t.Fatal("native historical HTTP trend lost valid failure points")
+		}
+		time.Sleep(time.Second)
 	}
 	off := false
 	policy := models.HTTPThresholdPolicy{TriggerValue: 50, RecoveryValue: 10, TriggerSeconds: 15, RecoverySeconds: 15}

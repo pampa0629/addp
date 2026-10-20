@@ -96,3 +96,16 @@ Owner503 场景使用正式普通 User 与真实 Monitor 响应；故障夹具�
 2026-10-20，标准 `make test-monitor-metrics` 在仓库外隔离源码快照通过；快照从当时已提交的 `main` 创建，仅叠加本会话认证目录与对应门禁改动，不包含另一会话尚未提交的 HTTP 质量实现。38 项配置校验覆盖工作区归属、私有权限、链接／硬链接、文件漂移、锁竞争、输入版本、模板更新与中断更新拒绝；实际 Compose 解析确认只读目录挂载、禁止自动创建缺失目录且无模板回退。真实专属 PostgreSQL 分别覆盖原 PGDATA 及新只读目录：容器写入拒绝、宿主原子替换可见、重载后认证／mTLS、新样本及原文件恢复；主机、进程、趋势、六来源总览及资源告警生命周期回归通过，告警事件 2、成功投递 2、HTTP 尝试 3，退出核验当次容器、网络、卷及临时文件零残留。
 
 同轮 `make test-business-config` 与 `make test-build-registration` 通过；既有 Monitor metrics CI 依目录输入声明覆盖新文件及 Business 启动／Compose／环境模板，打包入口递归包含 `scripts/infra/`，不新增 Job 或第二条部署路线。该结果不代表共享工作区的其他并行实现、个人 Business 数据卷迁移、采集角色自动安装、来源自动启停、专业发现／查询页面或 T4/T5 已通过；个人实例未改动。
+
+### 平台 HTTP 接口质量：本地一期
+
+2026-10-20，Common 统一 Router 采集基础已在 `39b132c9926f9f404287ab5aeaa8c9d94eebd9f4` 提交；Monitor 查询、页面、权限迁移 227、HTTP 规则和通知产品代码已纳入 `3ee46b77fd84fe1a915874a11e0e97b843cac8bd`。以下分别记录本地分项，不表示共享工作区整个 HEAD 已重跑。
+
+- T1：基础阶段的固定源码 `make test-go` 全部通过且无跳过；产品阶段 `make test-module MODULE=monitor GO_ONLY=1`、System 对应 T1、`make test-authorization` 及双语 Swagger 覆盖通过。后续没有将基础阶段的全 Go 结果扩大到整个最新 HEAD。
+- T2：`make test-monitor-postgres` 通过，覆盖 HTTP CRUD、并发 CAS、冻结恢复证据、缺样保护、查询期间策略变化及完成租约过期；最后一次运行输入无漂移。`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test platform-alert-management"` 通过，覆盖五项权限仅授现有平台系统管理员、刷新令牌撤销和幂等重跑。
+- T2：完整 `make test-monitor-metrics` 在仓库外固定源码（基线 `688ecb005843ecadf7240a0e5249517de3a8381d` 叠加本专项文件）通过，含既有主机、进程、PostgreSQL 来源及资源告警回归。此后历史趋势补充与最终 HTTP 文件以 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality` 独立复验通过：真实 SDK 请求、13 项原生窗口场景、有权历史趋势、HTTP 503 窗口打开事件、签名通知首次 503 后重试、成功请求恢复同一事件、停止来源清空数值；HTTP 生命周期约 195.54 秒。两份快照输入均无漂移，退出分别核验当次容器、网络、卷和临时文件零残留。专项跳过 PostgreSQL 专业来源探针与后续主机回归，不能替代完整入口。
+- T3：Monitor 78 项单元、226 项浏览器及构建通过，包含持续慢接口、筛选趋势、401/403/404 清空、迟到响应隔离和规则 CAS；Console 186 项单元、191 项浏览器及构建通过；Common 前端 241 项单元、System 前端 149 项单元及 189 项浏览器和构建通过。最后的 HTTP/权限相关文件与已验证输入相符，不扩展为其它会话后续修改的结果。
+
+前次历史趋势试验在过去完整窗口形成前断言失败，未计为通过；最终仅等待自然历史形成，查询错误、采集状态或数据形状异常立即失败，未放宽有效失败点条件。配置选择矩阵验证 HTTP 专项不调用 PG 专业探针，默认及 postgres-source 保留原探针；39 项配置测试通过。
+
+按用户决定，本轮不扩展或运行 Hosted HTTP T4，不借现有主机资源场景身份操作本专项。System 当前 User／后台最小投影在 T2 使用受控夹具，不能冒充真实密码/MFA 身份；个人部署未重启。Python HTTP 采集、Trace／日志链路关联及调用拓扑尚未实现，生产容量与 T5 未验；Tenant 发布服务质量仍由 Service 按对象权限提供。

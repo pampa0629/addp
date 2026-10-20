@@ -37,6 +37,16 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('--case=http-quality) metrics_case=http-quality ;;', gate)
         self.assertIn('export ADDP_METRICS_T2_CASE="$metrics_case"', gate)
         self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality'", probe)
+        pg_scope = re.search(r'(?ms)^if \[\[ "\$metrics_case" != http-quality \]\]; then\n  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true\n.*?^fi$', gate)
+        self.assertIsNotNone(pg_scope)
+        self.assertIn('postgres-observation-probe.py', pg_scope.group())
+        self.assertIn('postgres_directory_probe', pg_scope.group())
+        stub = 'python3(){ printf "probe\\n"; }; postgres_directory_probe(){ printf "directory\\n"; }; metrics_case="$1"\n'
+        for case in ('http-quality', 'all', 'postgres-source'):
+            completed = subprocess.run(['bash', '-c', stub + pg_scope.group(), '_', case], capture_output=True, text=True, timeout=5)
+            self.assertEqual(completed.returncode, 0)
+            expected = ['probe'] * pg_scope.group().count('\n  python3 ') + ['directory']
+            self.assertEqual(completed.stdout.splitlines(), [] if case == 'http-quality' else expected)
 
     def test_postgres_auth_directory_reuses_runtime_and_preserves_managed_policy(self):
         directory = self.directory.resolve() / 'authentication'

@@ -244,9 +244,11 @@ compose exec -T metrics-source nginx -s reload
 compose run --rm --no-deps --entrypoint nginx metrics-control -t
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
-export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
-python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
-postgres_directory_probe
+if [[ "$metrics_case" != http-quality ]]; then
+  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
+  python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
+  postgres_directory_probe
+fi
 if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
