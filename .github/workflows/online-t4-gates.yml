@@ -334,7 +334,7 @@ jobs:
     name: Online T4 (${{ inputs.suite }}, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access' || inputs.suite == 'graph-protection')
     concurrency:
-      group: online-t4-${{ inputs.suite }}
+      group: online-t4-${{ inputs.suite }}${{ inputs.suite == 'graph-protection' && format('-{0}', inputs.graph_engine) || '' }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120

@@ -280,3 +280,5 @@ Neo4j 原生 T4 复用同一 Graph／Develop 断言、正式构建与 Nginx 生�
 
 
 v5 在原有两张保护图之外增加独立人工审核合成图；FalkorDB 使用独立 graph key，Neo4j 使用第三个独占实例。准备账号仅补六项 `graph.build_task.read/create/update/execute/cancel/delete`，独立普通审核账号只持有 `graph.graph.read` 与 `graph.review.read/approve/reject/update`。通过正式任务、材料上传和执行产生待审项，抽取传输端返回受控结果；真实 Console 验证批准、拒绝、修改、关系批准及中间一项原生写入失败后的批量继续、失败提示、刷新和清空选择。随后核对审核人、原生实体/关系标识、最终属性及 404/409/403，删除当次任务/材料/队列/图配置；原生数据和身份随 Hosted 整体销毁。该结果不计真实模型抽取或 Copilot 服务鉴权验收。标准验证继续使用 `make test-graph-online-runner` 和既有 Hosted suite，不接入个人开发部署；完整边界见[数据保护场景](../docs/spec/testing/scenarios/数据保护.md#graph-protection)。Develop 类型参数的浏览器定位按当前 combobox 的 `aria-controls` 选择对应 listbox，不能全局按同名选项点击多个参数下拉框。
+
+Graph Hosted 的并发组按 `suite + graph_engine` 划分，两种引擎的独占部署不共用 pending 槽位；同一引擎仍保持不取消运行中任务的串行限制。其他 Security suite 的并发组不依赖无关的 graph_engine 输入。排队中被替换的任务不计为执行或通过，必须保留取消回执并在对应引擎组补跑。该约束由既有 `make test-graph-online-runner` 的 Graph Online 登记回归验证。

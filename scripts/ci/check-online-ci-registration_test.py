@@ -282,6 +282,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[2], 'develop,graph,manager,service,transfer'),
                                    (paths[3], 'same_engine_control'), (paths[3], 'separate_engine_control'),
                                    (paths[0], '- neo4j'), (paths[0], 'ADDP_ONLINE_GRAPH_ENGINE: ${{ inputs.graph_engine }}'),
+                                   (paths[0], "group: online-t4-${{ inputs.suite }}${{ inputs.suite == 'graph-protection' && format('-{0}', inputs.graph_engine) || '' }}"),
+                                   (paths[0], "cancel-in-progress: false"),
                                    (paths[2], 'graph-control.json'), (paths[2], 'graph-review.json'), (paths[3], 'run_review'),
                                    ('scripts/test/graph-review-online.py', 'cross_graph_404=True'),
                                    ('console/frontend/e2e/online/graph-review.spec.js', 'batch_status: 500'), (paths[5], 'ports: !reset []'), (paths[4], '--volumes'), (paths[5], 'tmpfs:'),

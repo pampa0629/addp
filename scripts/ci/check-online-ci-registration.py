@@ -2746,6 +2746,9 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
     job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
     if job is None or "inputs.suite == 'graph-protection'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("Graph protection requires the standard Ubuntu Hosted Security lifecycle")
+    expected_group = "group: online-t4-${{ inputs.suite }}${{ inputs.suite == 'graph-protection' && format('-{0}', inputs.graph_engine) || '' }}"
+    if re.findall(r"(?m)^      (group: .+)$", job.group("body")) != [expected_group] or not re.search(r"(?m)^      cancel-in-progress: false$", job.group("body")):
+        raise RegistrationError("Graph engine runs require distinct engine concurrency groups without cancelling active runs")
     selector = re.search(r"(?ms)^      graph_engine:\n(?P<body>.*?)(?=^      [a-zA-Z0-9_-]+:\n|\Z)", workflow)
     if selector is None or not all(value in selector.group("body") for value in ("type: choice", "- falkordb", "- neo4j")) or "ADDP_ONLINE_GRAPH_ENGINE: ${{ inputs.graph_engine }}" not in job.group("body"):
         raise RegistrationError("Graph protection must explicitly select and propagate its native engine")
