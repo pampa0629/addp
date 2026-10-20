@@ -372,7 +372,8 @@ func snapshotRecoveryState(t *testing.T, db *gorm.DB, principalIDs []int64) map[
 	capture := func(table, predicate string, args ...any) {
 		t.Helper()
 		var value string
-		query := fmt.Sprintf("SELECT COALESCE(jsonb_agg(to_jsonb(recovery_row) ORDER BY recovery_row.id), '[]'::jsonb)::text FROM %s AS recovery_row WHERE %s", table, predicate)
+		// Sort by the complete JSONB row: singleton state has no id column.
+		query := fmt.Sprintf("SELECT COALESCE(jsonb_agg(to_jsonb(recovery_row) ORDER BY to_jsonb(recovery_row)), '[]'::jsonb)::text FROM %s AS recovery_row WHERE %s", table, predicate)
 		if err := db.Raw(query, args...).Scan(&value).Error; err != nil {
 			t.Fatalf("snapshot recovery state in %s: %v", table, err)
 		}
