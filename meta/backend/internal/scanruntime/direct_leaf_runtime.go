@@ -106,7 +106,36 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 			DataType: datatype.Unknown,
 		}))
 		var rowCount, sizeBytes *int64
-		if factsProvider, ok := enginePlugin.(plugin.EngineCatalogFactsProvider); ok {
+		updatedAt := entry.UpdatedAt
+		if scanDepth != models.ScannedDepthDeep {
+			existing, found, err := s.repo.FindItemByFullName(tenantID, resource.ID, identity.FullName)
+			if err != nil {
+				failures.Add(entry.Name, err)
+				continue
+			}
+			if found {
+				attrs = metaattr.JSONMap(cloneJSONMap(existing.Attributes))
+				rowCount, sizeBytes = existing.RowCount, existing.SizeBytes
+				if updatedAt == nil {
+					updatedAt = existing.DataUpdatedAt
+				}
+			}
+			if entry.Table != nil {
+				if entry.Table.RowCount != nil {
+					rowCount = entry.Table.RowCount
+				}
+				if entry.Table.SizeBytes != nil {
+					sizeBytes = entry.Table.SizeBytes
+				}
+			}
+			if entry.Storage != nil && entry.Storage.SizeBytes != nil {
+				sizeBytes = entry.Storage.SizeBytes
+			}
+		}
+		if identity.ItemType == plugin.EngineCatalogTermGraph {
+			metaattr.ApplyGraphItemAttributes(attrs, nil)
+		}
+		if factsProvider, ok := enginePlugin.(plugin.EngineCatalogFactsProvider); ok && scanDepth == models.ScannedDepthDeep {
 			facts, factsErr := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), entry.Path, plugin.EngineCatalogFactsOptions{IncludeStatistics: scanDepth == models.ScannedDepthDeep})
 			if factsErr != nil {
 				failures.Add(entry.Name, fmt.Errorf("failed to describe direct catalog leaf: %w", factsErr))
@@ -134,7 +163,7 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 			attrs,
 			rowCount,
 			sizeBytes,
-			entry.UpdatedAt,
+			updatedAt,
 			scanDepth,
 		)
 		if err != nil {

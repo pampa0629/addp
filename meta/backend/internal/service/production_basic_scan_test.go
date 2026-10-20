@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/execution"
@@ -63,7 +66,7 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	}
 	capJSON := commonmodels.JSONString(capabilities)
 	engines := NewEngineService(db, nil)
-	engines.cacheEngine(tenant, &commonmodels.Engine{ID: 9, TenantID: &tenant, EngineType: "postgresql", LifecycleState: "active", Capabilities: &capJSON})
+	engines.cacheEngine(tenant, &commonmodels.Engine{ID: 9, TenantID: &tenant, EngineType: "postgresql", Version: 3, LifecycleState: "active", Capabilities: &capJSON})
 	r := client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(tenant), ExecutionID: id, Attempt: 1, CommittedAt: time.Now().UTC(), Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true,
 		Target: plugin.TabularItemPath(9, "schema", "public", "result.with.dot"), UserOrigin: &client.TransferProductionUserOrigin{PrincipalID: 31, TenantMembershipID: 51, AuthorizationVersion: 6}}
 	svc := NewScanExecutionService(db, nil, engines, nil)
@@ -146,6 +149,18 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	targets := jsonMapStringSlice(stored.ExecutionConfig, "targets")
 	if len(targets) != 1 || targets[0] != "addp://engine/9/path/public/result.with.dot?type=table" {
 		t.Fatalf("not exact target: %+v", targets)
+	}
+	encodedTarget, err := json.Marshal(stored.ExecutionConfig["initial_production_target"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frozenTarget plugin.EngineCatalogPath
+	if err := json.Unmarshal(encodedTarget, &frozenTarget); err != nil || !reflect.DeepEqual(frozenTarget, r.Target) {
+		t.Fatalf("trusted typed target changed: %+v err=%v", frozenTarget, err)
+	}
+	facts, err := svc.GetScanPlanFacts(t.Context(), tenant, stored.ExecutionID)
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.SourceScope == nil || facts.SourceScope.Mode != "exact" || !reflect.DeepEqual(facts.SourceScope.Anchors, []plugin.EngineCatalogPath{r.Target}) || facts.TaskID != nil {
+		t.Fatalf("trusted new output facts=%+v err=%v", facts, err)
 	}
 	svc.WithTransferProductionReceiptReader(productionScanReceiptReader(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) {
 		return nil, errors.New("offline")

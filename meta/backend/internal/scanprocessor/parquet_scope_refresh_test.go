@@ -88,7 +88,7 @@ func TestParquetWholeScopeDeepScanAndRefresh(t *testing.T) {
 						t.Fatal(err)
 					}
 					detected = scanflow.KnownItemDetectedItem(old, scanflow.KnownItemDescriptorFromAttributes(old.Attributes))
-					in = KnownItemInput(resource, 1, parent, *old, old.Attributes, detected, reader, nil, catalogPathFor, root, "", root, size)
+					in = KnownItemInput(resource, 1, parent, *old, old.Attributes, detected, reader, nil, catalogPathFor, root, "", root, size, "deep")
 				}
 				var before []byte
 				if old != nil {

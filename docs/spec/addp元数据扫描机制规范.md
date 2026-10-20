@@ -104,6 +104,8 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 `source_scope` 为 `exact`／`full` 和 1–200 个同 Engine 的完整 typed anchors，按 `json.Marshal(path)` 字节顺序排列，拒绝重复；名字保持原字节。complete 必须有可证明的 scope，incomplete／unsupported／needs_refresh 必须为 null。纯值校验只证明结构，实际类型、父链和归属由 Meta 持久事实或可信生产回执证明。原始路径、ref group 或不完整组成不能猜成完整范围，也不能为获得 typed path 而先访问源。当前投影支持已完整识别的单项 native 边界和已冻结引擎类型的 whole 根；其他 selector 保持非完整，后续随对应可信计划接线补齐，不以此宣称全部采集范围已获授权。
 
+首次 PG 产出 basic 补扫由唯一私有 `EnsureTransferProductionBasicScan` 适配器冻结 `execution_config.initial_production_target`，值为严格 v3 成功首次创建并提交回执的原始 typed Target。冻结发生于同一 provenance 创建事务，不增加公开 ScanRequest 字段，不保存完整回执、连接或 Grant，也不从 locator 反推。原直接父 UUID 与 metadata.initial_production_execution_id 一致，创建时 Child Actor 三元组逐项复制并核对真实 UserOrigin。事实投影在同一原执行快照中核验 ad-hoc、manual/basic/force、Transfer 来源、同一 PG 普通表叶、唯一 locator 与原 typed Target 经共享转换严格相等及其余 selector 互斥；缺失或矛盾返回 incomplete/null，不降为 whole。原始 typed 目标自然纳入 execution_plan_digest，名字不规范化。已有冻结版本、任务摘要或读取选项不可用的 409 规则保持。该投影仍不是 Allow，System 必须独立核对统一执行与 Transfer 的当前可信生产事实，包括同 Tenant、成功、首次 attempt、非 retry、实际创建提交、原目标和完整人类来源；Meta GET 不回源或补查生产服务。
+
 新执行从所用 Engine 快照冻结真实版本和类型；有任务的执行还在创建事务中冻结真实功能定义摘要，读取时与当前定义比较，变化后返回 needs_refresh／null scope，不能把旧执行和新任务定义组合成 complete。缓存快照不是许可，System 签发与 Worker 消费仍须核对当前版本。旧执行缺少真实冻结版本或任务功能摘要时返回 409 `meta_scan_plan_facts_unavailable`，要求重建计划，不取当前版本补齐。`read_options` 对象必需，encoding／has_header 可省，显式 null 拒绝，false 保留；整个响应预算为 512 KiB，未知字段、重复字段、缺失必需字段及无效 UTF-8 均拒绝。
 
 ### 对象目录归属不变量
@@ -491,7 +493,7 @@ T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区�
 Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 
 - 元数据事实通过 info provider 写入 `type_info` / `format_info` / `capabilities`。
-- 数据库 table deep 扫描应通过 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph item 即使在 basic 下如果需要建立稳定图 item 语义，也可以读取低成本 `EngineCatalogFacts.Graph`，但 deep 才允许请求样本。
+- 数据库 table deep 扫描应通过 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph basic 只使用 catalog graph 叶身份与低成本摘要，保留已有 deep 事实；不因缺少 GraphInfo 而拒绝建立身份，也不伪造空 schema 或零计数。当前 FalkorDB／Neo4j 的 Describe 包含图统计和属性观察，统一归 deep；不得用 IncludeSamples=false 把它作为 basic 的低成本例外。
 - 内容窗口、样本、原始文本、缩略图不直接塞进 `type_info`。
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。
@@ -516,7 +518,7 @@ Manager 独占全文搜索索引。所有已登记 DataItem 均应能按技术�
 
 Manager 正式 Upsert 必须允许首次创建搜索文档，不得设置会跳过新文档的 `skipCreation=true`。同一 Upsert 请求明确指定既有主键 `id`，避免索引意外丢失时从多个身份字段推断主键。索引意外丢失时，接受 Meilisearch 随本次写入创建索引；该行为只写入本次快照，不自动补录历史 DataItem，也不表示完整索引恢复。历史补录和完整恢复仍按明确范围确认后执行。保护版本、持久投递登记、任务关联和终态核查保持原有要求。
 
-历史集合补索引使用已有 `POST /api/v1/meta/scan/run/manual`：以精确 collection locator 放入 `targets`，选择 `basic + force=true`。已有集合的 basic 扫描保留已登记的深度结构，只更新 catalog 轻量事实并提交搜索投影，不扩大到所属 database，不清理兄弟 item，不改变祖先扫描状态。此操作会创建一次扫描 execution、更新目标 item 的扫描时间并在 Manager 登记投递；实施前须说明目标和影响范围并获得确认。item selector 的单项刷新仍为 deep，会调用既有动态 schema 采样，不能作为无采样补索引路线。补录后必须核对 Manager 投递终态及同租户、同引擎搜索结果，不能以 execution 成功代替索引验收。
+历史集合补索引使用已有 `POST /api/v1/meta/scan/run/manual`：以精确 collection locator 放入 `targets`，选择 `basic + force=true`。已有集合的 basic 扫描保留已登记的深度结构，只更新 catalog 轻量事实并提交搜索投影，不扩大到所属 database，不清理兄弟 item，不改变祖先扫描状态。此操作会创建一次扫描 execution、更新目标 item 的扫描时间并在 Manager 登记投递；实施前须说明目标和影响范围并获得确认。直接单项刷新 API 仍明确申请 deep；统一扫描入口的 item selector 则必须遵守本次 scan_depth。basic 原生项只精确解析当前 catalog leaf 的低成本摘要，不调用 Describe、动态 schema 采样或统计刷新，不枚举兄弟，也不将 entry 中附带的字段结构写成新的 deep 事实。已知文件项的 basic 沿用已登记组成及唯一 processor，不重新探测内容格式、不抽取正文或计算 hash；它不替代必要目录或完整 refs 的边界重识别。再次 basic 保留已登记深度结构，不能据此宣称边界已获当前授权。补录后必须核对 Manager 投递终态及同租户、同引擎搜索结果，不能以 execution 成功代替索引验收。
 
 ### 技术投影的检索消费与覆盖边界
 

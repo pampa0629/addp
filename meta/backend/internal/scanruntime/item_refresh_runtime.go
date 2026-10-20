@@ -113,7 +113,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByID(
 	tenantID uint,
 	itemID uint,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID, "", nil)
+	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID, "", nil, scanflow.ScanDepthDeep)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
@@ -124,9 +124,10 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	itemID uint,
 	encoding string,
 	hasHeader *bool,
+	scanDepth string,
 ) (scanprocessor.Result, error) {
-	if itemID == 0 {
-		return scanprocessor.Result{}, fmt.Errorf("item_id is required")
+	if resource == nil || itemID == 0 {
+		return scanprocessor.Result{}, fmt.Errorf("item refresh resource and item_id are required")
 	}
 	item, err := r.repo.GetItemByID(tenantID, itemID)
 	if err != nil {
@@ -139,7 +140,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	if err != nil {
 		return scanprocessor.Result{}, fmt.Errorf("item parent node not found: %w", err)
 	}
-	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode, encoding, hasHeader)
+	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode, encoding, hasHeader, scanDepth)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItem(
@@ -149,7 +150,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode, "", nil)
+	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode, "", nil, scanflow.ScanDepthDeep)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
@@ -161,7 +162,15 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	parentNode models.MetaNode,
 	encoding string,
 	hasHeader *bool,
+	scanDepth string,
 ) (scanprocessor.Result, error) {
+	if resource == nil || tenantID == 0 || item.TenantID != tenantID || item.EngineID != resource.ID ||
+		parentNode.ID != item.NodeID || parentNode.TenantID != tenantID || parentNode.EngineID != resource.ID {
+		return scanprocessor.Result{}, fmt.Errorf("item refresh identity does not match its engine and parent")
+	}
+	if scanDepth != scanflow.ScanDepthBasic && scanDepth != scanflow.ScanDepthDeep {
+		return scanprocessor.Result{}, fmt.Errorf("item refresh scan depth is invalid")
+	}
 	if encoding != "" || hasHeader != nil {
 		descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
 		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Table || (descriptor.Format != "csv" && descriptor.Format != "tsv") {
@@ -175,15 +184,15 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 			return scanprocessor.Result{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 	}
-	if result, handled, err := r.refreshKnownDynamicSchemaItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
+	if result, handled, err := r.refreshKnownDynamicSchemaItem(ctx, resource, tenantID, p, item, parentNode, scanDepth); handled || err != nil {
 		return result, err
 	}
-	if result, handled, err := r.refreshKnownCatalogFactsItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
+	if result, handled, err := r.refreshKnownCatalogFactsItem(ctx, resource, tenantID, p, item, parentNode, scanDepth); handled || err != nil {
 		return result, err
 	}
 
 	contentReader, ok := p.(plugin.ContentReadableProvider)
-	if !ok {
+	if !ok && scanDepth == scanflow.ScanDepthDeep {
 		return scanprocessor.Result{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
@@ -197,14 +206,20 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	physicalPath := scanflow.KnownItemPhysicalPath(descriptor, &item)
 	var detected *metaitem.DetectedItem
 	var attrs models.JSONMap
-	if redetected, ok := r.reDetectKnownWholeScopeItem(ctx, resource, p, contentReader, connInfo, descriptor, physicalPath); ok {
+	var redetected *metaitem.DetectedItem
+	if scanDepth == scanflow.ScanDepthDeep {
+		redetected, _ = r.reDetectKnownWholeScopeItem(ctx, resource, p, contentReader, connInfo, descriptor, physicalPath)
+	}
+	if redetected != nil {
 		descriptor = knownItemDescriptorFromDetected(redetected, descriptor)
 		physicalPath = scanflow.KnownItemPhysicalPath(descriptor, &item)
 		attrs = metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(redetected)))
 		restoreKnownItemStorage(attrs, descriptor, &item)
 		detected = redetected
 	} else {
-		descriptor = r.reDetectKnownSingleItemFormat(ctx, contentReader, connInfo, catalogPathFor, descriptor, physicalPath)
+		if scanDepth == scanflow.ScanDepthDeep {
+			descriptor = r.reDetectKnownSingleItemFormat(ctx, contentReader, connInfo, catalogPathFor, descriptor, physicalPath)
+		}
 		attrs = metaattr.JSONMap(cloneJSONMap(item.Attributes))
 		restoreKnownItemStorage(attrs, descriptor, &item)
 		detected = scanflow.KnownItemDetectedItem(&item, descriptor)
@@ -229,6 +244,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		descriptor.StorageBucket,
 		indexPath,
 		scanflow.KnownItemSize(descriptor, &item),
+		scanDepth,
 	)
 	input.Encoding = encoding
 	input.HasHeader = hasHeader
@@ -242,9 +258,10 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 	p plugin.EnginePlugin,
 	item models.MetaItem,
 	parentNode models.MetaNode,
+	scanDepth string,
 ) (scanprocessor.Result, bool, error) {
 	samplingProvider, ok := p.(plugin.DynamicSchemaSamplingProvider)
-	if !ok || item.ItemType != plugin.EngineCatalogTermCollection {
+	if item.ItemType != plugin.EngineCatalogTermCollection {
 		return scanprocessor.Result{}, false, nil
 	}
 	model := scanflow.EngineCatalogModelForPlugin(p)
@@ -256,12 +273,19 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 		leafLevel.Term != item.ItemType || len(leafLevel.Kinds) != 1 || strings.TrimSpace(leafLevel.Kinds[0]) == "" {
 		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target does not match catalog model")
 	}
-	branchName := strings.TrimSpace(parentNode.Name)
-	if branchName == "" || strings.TrimSpace(item.Name) == "" {
+	branchName := parentNode.Name
+	if strings.TrimSpace(branchName) == "" || strings.TrimSpace(item.Name) == "" || parentNode.NodeType != branchLevel.Term {
 		return scanprocessor.Result{}, true, fmt.Errorf("dynamic schema item refresh target is incomplete; rescan the parent node")
 	}
 
 	itemPath := plugin.EngineCatalogBranchLeafPath(*model, resource.ID, branchLevel.Term, branchName, leafLevel.Term, leafLevel.Kinds[0], item.Name)
+	if scanDepth == scanflow.ScanDepthBasic {
+		result, err := r.refreshKnownCatalogSummary(ctx, resource, tenantID, p, item, parentNode, itemPath)
+		return result, true, err
+	}
+	if !ok {
+		return scanprocessor.Result{}, true, fmt.Errorf("deep collection refresh requires DynamicSchemaSamplingProvider")
+	}
 	facts, err := samplingProvider.SampleDynamicSchema(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), itemPath, plugin.EngineCatalogFactsOptions{
 		IncludeSamples:    true,
 		IncludeStatistics: true,
@@ -451,26 +475,28 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	p plugin.EnginePlugin,
 	item models.MetaItem,
 	parentNode models.MetaNode,
+	scanDepth string,
 ) (scanprocessor.Result, bool, error) {
 	factsProvider, ok := p.(plugin.EngineCatalogFactsProvider)
-	if !ok {
+	if !ok && scanDepth == scanflow.ScanDepthDeep {
 		return scanprocessor.Result{}, false, nil
 	}
 
 	if scanflow.EngineCatalogLeafTermForPlugin(p, "") != plugin.EngineCatalogTermTable || item.ItemType != plugin.EngineCatalogTermTable {
-		return r.refreshKnownDirectCatalogLeafFactsItem(ctx, resource, tenantID, p, factsProvider, item, parentNode)
+		return r.refreshKnownDirectCatalogLeafFactsItem(ctx, resource, tenantID, p, factsProvider, item, parentNode, scanDepth)
 	}
 
-	schemaName := parentNode.FullName
-	if schemaName == "" {
-		schemaName = parentNode.Name
-	}
-	if schemaName == "" || item.Name == "" {
+	schemaName := parentNode.Name
+	if strings.TrimSpace(schemaName) == "" || strings.TrimSpace(item.Name) == "" || parentNode.NodeType != scanflow.NamespaceTermForPlugin(p) {
 		return scanprocessor.Result{}, true, fmt.Errorf("table refresh target is incomplete; rescan the parent node")
 	}
 
 	namespaceTerm := scanflow.NamespaceTermForPlugin(p)
 	path := plugin.TabularItemPath(resource.ID, namespaceTerm, schemaName, item.Name)
+	if scanDepth == scanflow.ScanDepthBasic {
+		result, err := r.refreshKnownCatalogSummary(ctx, resource, tenantID, p, item, parentNode, path)
+		return result, true, err
+	}
 	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{
 		IncludeSpatialFacts: true,
 		IncludeStatistics:   true,
@@ -541,6 +567,7 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 	factsProvider plugin.EngineCatalogFactsProvider,
 	item models.MetaItem,
 	parentNode models.MetaNode,
+	scanDepth string,
 ) (scanprocessor.Result, bool, error) {
 	model := scanflow.EngineCatalogModelForPlugin(p)
 	if model == nil || len(model.Levels) != 1 {
@@ -560,6 +587,10 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 		Kind: leaf.Kinds[0],
 		Name: item.Name,
 	})
+	if scanDepth == scanflow.ScanDepthBasic {
+		result, err := r.refreshKnownCatalogSummary(ctx, resource, tenantID, p, item, parentNode, path)
+		return result, true, err
+	}
 	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.EngineCatalogFactsOptions{
 		IncludeStatistics: true,
 	})

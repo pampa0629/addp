@@ -54,7 +54,7 @@ func TestKnownJPEGRefreshRemovesOldGPSOnlyOnSuccessfulDescription(t *testing.T) 
 				&commonModels.Engine{ID: 7}, 1, parent, *item, item.Attributes, detected,
 				staticObjectContentReader{content: data}, nil,
 				func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(7, "addp", "gps.jpg") },
-				"addp/gps.jpg", "addp", "gps.jpg", size,
+				"addp/gps.jpg", "addp", "gps.jpg", size, "deep",
 			))
 			if (err == nil) != valid {
 				t.Fatalf("refresh error = %v, valid=%v", err, valid)

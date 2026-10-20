@@ -91,6 +91,9 @@ func (s *ScanExecutionService) EnsureTransferProductionBasicScan(ctx context.Con
 			child.Metadata = map[string]interface{}{}
 		}
 		child.Metadata["initial_production_execution_id"] = id
+		target := receipt.Target
+		target.Segments = append([]plugin.EngineCatalogSegment(nil), receipt.Target.Segments...)
+		child.ExecutionConfig["initial_production_target"] = target
 		return nil, nil
 	})
 	if err != nil {

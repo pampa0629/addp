@@ -44,7 +44,9 @@ meta/
 
 普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；Worker 的 System 采集资格签发与消费另行接入。
 
-冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item 和已冻结类型的 whole 根可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
+冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item、已冻结类型的 whole 根及严格私有 PG 首次产出目标可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
+
+首次产出补扫在唯一私有 provenance 事务将严格成功回执原 typed Target 冻结为 execution_config.initial_production_target，不加公开请求字段；GET 以原行父 UUID、生产标记、人类 Actor、manual/basic/force、唯一精确目标及 PG 普通表约束作同快照投影。缺失或冲突不猜 locator、不扩大根范围；System 仍独立核验原生产与当前资格。标准 Meta Go 和 authorization-facts PostgreSQL 组复用原入口覆盖本片；本片不启 EA/claim 屏障、不派 Hosted。
 
 Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨扫描任务的执行列表、通用状态筛选与统计统一由 Monitor 展示；MetadataScan 页头使用 `common-frontend` 的 `MonitorExecutionsButton(module=meta, task_type=scan)` 进入统一监控，不保留 `/meta/tasks` 菜单、路由或独立执行列表。
 
@@ -93,6 +95,8 @@ Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内�
 Meta 只负责把正式规范中的 data type、type info 和横切事实写入落库 attributes。新增 `data_type`、`type_info.*` 字段或 `capabilities.*` 命名空间前，必须先更新平台概念和规范文档，不得只在 Meta helper 中新增自由字段。
 
 `common/datatype` 只处理自身结构和 JSON payload 的相互转换，不承载 attributes 路径语义。Meta 或其他 MetaClient 消费方需要先取出 `type_info.*`、`capabilities.*` 等标准分区，再调用 `datatype.*FromPayload`；写入 attributes 时也由 `metaattr` 决定分区路径。
+
+已知 item 刷新深度必须从统一扫描范围传到运行时和唯一 processor。普通单项刷新 API 显式申请 deep；item selector 的 basic 对原生项只精确 ResolvePath 读取 catalog 低成本摘要，不 Describe、不采样、不列兄弟。已知文件的 basic 保留已登记组成与深度事实，不进行内容格式重探测、容器解析、正文或 hash；需要改变组成时仍须显式扫描必要目录或完整 refs。graph 的 branch-leaf 与 direct-leaf basic 同样只消费 catalog 身份与低成本摘要，不 Describe、不伪造 GraphInfo 或零计数，并保留已有 deep 结构；当前 Describe 均为 deep。本修复不签发读取资格，Worker 的 System Issue/Consume 与源 I/O 守卫另行闭合。现有 Meta Go 自动发现覆盖深度与零内容读取反例，无新增门禁或 CI 路线。
 
 ### metaattr 输入边界
 

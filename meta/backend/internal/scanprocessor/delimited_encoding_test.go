@@ -98,7 +98,7 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			process := func(current *models.MetaItem, data, encoding string, header *bool, rescan bool) error {
 				detected := scanflow.KnownItemDetectedItem(current, scanflow.KnownItemDescriptorFromAttributes(current.Attributes))
 				in := KnownItemInput(&commonModels.Engine{ID: 927}, 1, parent, *current, current.Attributes, detected, staticObjectContentReader{content: data}, nil,
-					func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(927, "encoding-test", name) }, fullName, "encoding-test", name, size)
+					func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(927, "encoding-test", name) }, fullName, "encoding-test", name, size, "deep")
 				in.Encoding = encoding
 				in.HasHeader = header
 				if rescan { // Directory discovery has fresh basic facts, not the previous format section.

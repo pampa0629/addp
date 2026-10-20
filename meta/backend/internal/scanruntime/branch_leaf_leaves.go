@@ -130,7 +130,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			}
 		}
 		var graphInfo *datatype.GraphInfo
-		if itemType == "graph" {
+		if itemType == "graph" && strings.EqualFold(scanDepth, "deep") {
 			if scanCatalog.factsProvider == nil {
 				s.log.Warn("图 catalog leaf 缺少 facts provider", "branch", branchName, "leaf", itemName)
 				failures.Add(branchName+"."+itemName, fmt.Errorf("graph catalog leaf requires facts provider"))
@@ -156,7 +156,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			sizeBytes = 0
 		}
 
-		if itemType == "collection" && !strings.EqualFold(scanDepth, "deep") && existingItem != nil {
+		if !strings.EqualFold(scanDepth, "deep") && existingItem != nil {
 			// Basic scans refresh catalog summaries without discarding registered deep structure.
 			attrs = cloneJSONMap(existingItem.Attributes)
 			rowCount = existingItem.RowCount

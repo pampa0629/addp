@@ -181,6 +181,7 @@ func KnownItemInput(
 	indexRootName string,
 	indexPath string,
 	sizeBytes int64,
+	scanDepth string,
 ) input {
 	return input{
 		Resource:             resource,
@@ -202,7 +203,7 @@ func KnownItemInput(
 		IndexRelativePath:    strings.Trim(indexPath, "/"),
 		SizeBytes:            sizeBytes,
 		DataUpdatedAt:        item.DataUpdatedAt,
-		ScanDepth:            models.ScannedDepthDeep,
+		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
 		StrictDeepEnrich:     true,
 	}

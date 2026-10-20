@@ -31,6 +31,21 @@ func freezeScanEngineSnapshot(run *execution.TaskExecution, engine *commonmodels
 	run.ExecutionConfig["engine_type"] = engine.EngineType
 }
 
+// Read the original row together; provenance is never taken from request data.
+type scanPlanExecutionRow struct {
+	ExecutionID                string
+	SourceTaskID               *string
+	ExecutionConfig            string
+	TriggerType                string
+	Source                     string
+	TriggeredBy                *int
+	ActorPrincipalID           *int64
+	ActorTenantMembershipID    *int64
+	IssuedAuthorizationVersion *int64
+	ParentExecutionID          *string
+	Metadata                   string
+}
+
 // GetScanPlanFacts reads committed owner facts in one snapshot; no Provider,
 // System API, source connection, scan, or write is performed here.
 func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID uint, executionID string) (*execution.MetaScanPlanFacts, error) {
@@ -41,13 +56,9 @@ func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID ui
 	var facts *execution.MetaScanPlanFacts
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Scan the raw column directly: models.JSONMap would round JSON numbers.
-		var row struct {
-			ExecutionID     string
-			SourceTaskID    *string
-			ExecutionConfig string
-		}
+		var row scanPlanExecutionRow
 		if err := tx.Table((execution.TaskExecution{}).TableName()).
-			Select("execution_id, source_task_id, execution_config").
+			Select("execution_id, source_task_id, execution_config, trigger_type, source, triggered_by, actor_principal_id, actor_tenant_membership_id, issued_authorization_version, parent_execution_id, metadata").
 			Where("tenant_id = ? AND module = ? AND task_type = ? AND execution_id = ?", tenantID, execution.ModuleMeta, execution.TaskTypeScan, executionID).Take(&row).Error; err != nil {
 			return err
 		}
@@ -103,7 +114,7 @@ func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID ui
 				return nil
 			}
 		}
-		if err := projectScanSourceScope(ctx, tx, tenantID, config, facts); err != nil {
+		if err := projectScanSourceScope(ctx, tx, tenantID, row, config, facts); err != nil {
 			return err
 		}
 		if err := facts.Validate(); err != nil {
@@ -193,12 +204,16 @@ func freezeScanTaskDefinition(tx *gorm.DB, run *execution.TaskExecution) error {
 	return nil
 }
 
-func projectScanSourceScope(ctx context.Context, tx *gorm.DB, tenantID uint, config map[string]any, facts *execution.MetaScanPlanFacts) error {
-	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true}
+func projectScanSourceScope(ctx context.Context, tx *gorm.DB, tenantID uint, row scanPlanExecutionRow, config map[string]any, facts *execution.MetaScanPlanFacts) error {
+	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true, "initial_production_target": true}
 	for key := range config {
 		if !allowed[key] {
 			return nil
 		}
+	}
+	if _, exists := config["initial_production_target"]; exists {
+		projectInitialProductionScanScope(row, config, facts)
+		return nil
 	}
 	// These legacy selectors do not prove complete typed anchors. Do not call
 	// ResolvePath/ListChildren, guess from strings, or fall back to Engine scope.

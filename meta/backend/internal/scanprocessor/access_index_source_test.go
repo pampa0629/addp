@@ -123,7 +123,7 @@ func testDelimitedSourceVersionRefresh(t *testing.T, openDB func(*testing.T) *go
 				}
 				descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
 				detected := scanflow.KnownItemDetectedItem(item, descriptor)
-				in := KnownItemInput(&commonModels.Engine{ID: 927}, 1, parent, *item, item.Attributes, detected, content, nil, func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(927, "samples", name) }, "samples/"+name, "samples", name, size)
+				in := KnownItemInput(&commonModels.Engine{ID: 927}, 1, parent, *item, item.Attributes, detected, content, nil, func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(927, "samples", name) }, "samples/"+name, "samples", name, size, "deep")
 				in.Encoding = "utf-8"
 				_, err = New(repo, nil, nil).Process(t.Context(), in)
 				if (err == nil) != (outcome == "stable") {

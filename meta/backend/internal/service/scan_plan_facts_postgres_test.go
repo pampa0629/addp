@@ -45,4 +45,5 @@ func TestScanPlanFactsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	exerciseScanPlanFacts(t, tx)
+	exerciseProductionScanPlanFacts(t, tx)
 }

@@ -52,7 +52,7 @@ func TestKnownContainerRefreshReplacesMisclassifiedTableFacts(t *testing.T) {
 				&commonModels.Engine{ID: 7}, 1, parent, *item, item.Attributes, detected,
 				staticObjectContentReader{content: data}, nil,
 				func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(7, "addp", "sample.xlsx") },
-				"addp/sample.xlsx", "addp", "sample.xlsx", size,
+				"addp/sample.xlsx", "addp", "sample.xlsx", size, "deep",
 			))
 			if valid && err != nil {
 				t.Fatal(err)

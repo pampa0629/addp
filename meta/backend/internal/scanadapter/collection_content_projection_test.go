@@ -109,7 +109,7 @@ func testCollectionContentProjection(t *testing.T, db *gorm.DB) {
 	if len(documents) != 4 || !reflect.DeepEqual(p.calls, []string{"resolve:Outdoor/Outdoors"}) {
 		t.Fatalf("unchanged collection did not republish stored projection: documents=%d calls=%v", len(documents), p.calls)
 	}
-	if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 7, item.ID, "", nil); err != nil {
+	if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 7, item.ID, "", nil, "deep"); err != nil {
 		t.Fatal(err)
 	}
 	if len(documents) != 5 {
@@ -129,7 +129,7 @@ func testCollectionContentProjection(t *testing.T, db *gorm.DB) {
 	if _, err := d.Dispatch(req); err == nil {
 		t.Fatal("failed scan succeeded")
 	}
-	if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 7, item.ID, "", nil); err == nil {
+	if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 7, item.ID, "", nil, "deep"); err == nil {
 		t.Fatal("failed refresh succeeded")
 	}
 	if len(documents) != 5 {
