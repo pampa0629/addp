@@ -16,7 +16,9 @@ SEED = import_module('business.ftp.seed')
 MODEL = import_module('scripts.test.manager-internal-artifact-lineage-online')
 SuiteError = API.SuiteError
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute',
-               'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read'}
+               'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read',
+               'manager.derived_artifact.create', 'manager.derived_artifact.read',
+               'manager.derived_artifact.delete', 'manager.data_item.update'}
 
 
 def require(ok, message):
@@ -80,7 +82,9 @@ def prepare_models(items, engine_id, samples):
         attributes = item.get('attributes', {})
         facts = attributes.get('item', {})
         native = attributes.get('format_info', {}).get(kind, {})
-        require(type(item.get('id')) is int and item['id'] > 0 and item.get('fingerprint') and
+        require(type(item.get('id')) is int and item['id'] > 0 and
+                type(item.get('engine_id')) is int and item['engine_id'] == engine_id and
+                item.get('fingerprint') == hashlib.sha256(f"{engine_id}:{sample['full_name']}".encode()).hexdigest() and
                 item.get('item_type') == 'file' and attributes.get('schema_version') == 1 and
                 all(facts.get(key) == value for key, value in
                     {'data_type': 'model_3d', 'layout': 'single', 'format': kind}.items()) and
@@ -98,6 +102,8 @@ def prepare_models(items, engine_id, samples):
                     'FTP 3DS must retain its exact texture declaration')
             expected_refs.append({'path': by_format['png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
         require(isinstance(refs, list) and len(refs) == len(expected_refs) and
+                all(isinstance(ref, dict) and type(ref.get('required')) is bool and
+                    type(ref.get('primary', False)) is bool for ref in refs) and
                 sorted([{key: ref.get(key, False) for key in ('path', 'role', 'required', 'primary')}
                         for ref in refs], key=lambda ref: ref['path']) ==
                 sorted(expected_refs, key=lambda ref: ref['path']),
@@ -186,7 +192,9 @@ def validate_browser_report(actual, expected, artifact_dir):
 def run_browser(report):
     output = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')) / 'ftp-console.json'
     output.unlink(missing_ok=True)
-    environment = dict(os.environ, ADDP_ONLINE_FTP_EXPECTATIONS=json.dumps(report), ADDP_ONLINE_FTP_BROWSER_REPORT=str(output))
+    environment = {key: value for key, value in os.environ.items() if key not in {
+        'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
+    environment.update(ADDP_ONLINE_FTP_EXPECTATIONS=json.dumps(report), ADDP_ONLINE_FTP_BROWSER_REPORT=str(output))
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/ftp-consumer-flow.spec.js', '--config=playwright.online.config.js'],
                             cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment)
     require(result.returncode == 0 and output.is_file(), 'Real Console FTP acceptance failed or omitted evidence')

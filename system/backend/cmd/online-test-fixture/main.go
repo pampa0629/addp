@@ -81,12 +81,24 @@ var securityInitializerPermissions = []string{
 }
 
 // Source authorization is preparation-only; the owner consumer receives exact
-// table read Grants, never the ability to issue Grants or manage delegations.
+// DataItem read Grants, never the ability to issue Grants or manage delegations.
 var sourceInitializerPermissions = []string{
 	"system.engine_access_approval_requirement.initialize",
 	"system.engine_access_delegation.create",
 	"system.engine_access_grant.create",
 	"system.engine_access_grant.read",
+}
+
+func suiteSourceInitializerPermissions(suite string) []string {
+	switch suite {
+	case "ftp-consumer-flow":
+		return append(append([]string{}, sourceInitializerPermissions...),
+			"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
+	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow":
+		return append([]string{}, sourceInitializerPermissions...)
+	default:
+		return nil
+	}
 }
 
 var pgAuthorizationConsumerPermissions = []string{
@@ -236,8 +248,10 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read"), nil
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"), nil
-	case "redis-consumer-flow", "ftp-consumer-flow":
+	case "redis-consumer-flow":
 		return catalogConsumerPermissions, nil
+	case "ftp-consumer-flow":
+		return append(append([]string{}, catalogConsumerPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete", "manager.data_item.update"), nil
 	case "highgo-consumer-flow":
 		return append(append([]string{}, catalogConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create"), nil
 	case "transfer-relational-sql-etl":
@@ -688,9 +702,9 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
 	}
-	if *suite == "highgo-consumer-flow" || *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" || *suite == "hdfs-spark-consumer-flow" {
+	if sourcePermissions := suiteSourceInitializerPermissions(*suite); len(sourcePermissions) > 0 {
 		sourceInitializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerPermissions)
+			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourcePermissions)
 		if err != nil {
 			return err
 		}

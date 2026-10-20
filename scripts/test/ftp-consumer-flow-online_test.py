@@ -35,7 +35,8 @@ class FakeClient:
             if kind == '3ds':
                 refs.append({'path': 'models/3ds/texture.png', 'role': 'texture', 'required': True})
                 native['texture_refs'] = ['texture.png']
-            self.items.append({'id': 4 + i, 'item_type': 'file', 'full_name': path, 'fingerprint': 'model-fp-' + str(i),
+            self.items.append({'id': 4 + i, 'engine_id': 17, 'item_type': 'file', 'full_name': path,
+                               'fingerprint': hashlib.sha256(f'17:{path}'.encode()).hexdigest(),
                                'attributes': {'schema_version': 1,
                                               'item': {'data_type': 'model_3d', 'layout': 'single', 'format': kind, 'refs': refs},
                                               'storage': {'physical_path': path}, 'format_info': {kind: native}}})
@@ -149,7 +150,10 @@ class FTPConsumerTest(unittest.TestCase):
                      lambda item: item['attributes']['item']['refs'].append({'path': 'models/3ds/other.png', 'role': 'texture_2', 'required': True}),
                      lambda item: item['attributes']['item']['refs'][1].update(path='models/other/texture.png'),
                      lambda item: item['attributes']['item'].update(layout='multi'),
-                     lambda item: item['attributes']['storage'].update(physical_path='models/wrong.3ds')]
+                     lambda item: item['attributes']['storage'].update(physical_path='models/wrong.3ds'),
+                     lambda item: item.update(engine_id=18),
+                     lambda item: item.update(fingerprint='a' * 64),
+                     lambda item: item['attributes']['item']['refs'][1].update(required=1)]
         for mutate in mutations:
             client = FakeClient()
             mutate(client.items[-1])
@@ -163,6 +167,29 @@ class FTPConsumerTest(unittest.TestCase):
         changed[0]['sha256'] = 'a' * 64
         with self.assertRaises(M.SuiteError):
             M.prepare_models(client.items, 17, changed)
+
+    def test_browser_process_does_not_inherit_preparer_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            observations = {}
+
+            def browser_command(args, *, cwd, env):
+                observations['engine_credential'] = 'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN' in env
+                observations['source_credential'] = 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN' in env
+                observations['consumer_credential'] = env.get('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN') == 'consumer-test-token'
+                Path(env['ADDP_ONLINE_FTP_BROWSER_REPORT']).write_text('{}')
+                return SimpleNamespace(returncode=0)
+
+            with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory,
+                            ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine-test-token',
+                            ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='source-test-token',
+                            ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer-test-token'), \
+                    patch.object(M.subprocess, 'run', side_effect=browser_command), \
+                    patch.object(M, 'validate_browser_report') as validate:
+                M.run_browser({'run_id': 'owned-run'})
+            self.assertFalse(observations['engine_credential'])
+            self.assertFalse(observations['source_credential'])
+            self.assertTrue(observations['consumer_credential'])
+            validate.assert_called_once_with({}, {'run_id': 'owned-run'}, Path(directory))
 
 
 if __name__ == '__main__':

@@ -14,13 +14,22 @@ async function generateModel(page, api, model) {
   const route = `/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   let generationRequests = 0
+  const pageContents = []
   const observe = requestEvent => {
-    if (new URL(requestEvent.url()).pathname === '/api/v1/manager/quick-view/actions' && requestEvent.method() === 'POST') {
+    if (requestEvent.method() !== 'POST') return
+    const path = new URL(requestEvent.url()).pathname
+    if (path === '/api/v1/manager/quick-view/actions') {
       const body = requestEvent.postDataJSON()
       if (body.locator === model.locator && body.action === 'generate_model_3d_glb') generationRequests++
+    } else if (/^\/api\/v1\/manager\/(?:task-provider\/)?tasks\/model_3d_glb_generation(?:\/[1-9]\d*\/execute)?$/.test(path)) {
+      generationRequests++
     }
   }
+  const observeContent = async response => {
+    if (/^\/api\/v1\/manager\/model_3d_glb\/[1-9]\d*\/content$/.test(new URL(response.url()).pathname) && await response.finished() === null) pageContents.push(response)
+  }
   page.on('request', observe)
+  page.on('response', observeContent)
   try {
     await page.goto(route)
     const generated = page.waitForResponse(response => {
@@ -57,30 +66,65 @@ async function generateModel(page, api, model) {
     expect(content.headers()['content-type']).toContain('model/gltf-binary')
     const binary = await content.body()
     expect(binary.subarray(0, 4).toString()).toBe('glTF')
-    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}.glb`), binary)
+    const checksum = createHash('sha256').update(binary).digest('hex')
+    const verifyPageContent = async loaded => {
+      expect(new URL(loaded.url()).pathname).toBe(contentPath)
+      expect(new URL(loaded.url()).origin).toBe(new URL(loaded.request().frame().url()).origin)
+      expect(new URL(loaded.url()).search.length).toBe(0)
+      expect(loaded.status()).toBe(200)
+      const headers = await loaded.request().allHeaders()
+      // Failed diagnostics must never print a Bearer, Cookie or ticket value.
+      expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+      expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+      const bytes = await loaded.body()
+      expect(bytes.length).toBe(binary.length)
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(checksum)
+      return bytes
+    }
+    await expect.poll(() => pageContents.filter(value => new URL(value.url()).pathname === contentPath).length,
+      { timeout: 60_000 }).toBeGreaterThan(0)
+    const actualPageBytes = await verifyPageContent(pageContents.find(value => new URL(value.url()).pathname === contentPath))
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}.glb`), actualPageBytes)
+    const assertOnlyOriginalExecution = async () => {
+      const task = await json(await api.get(`/api/v1/manager/tasks/model_3d_glb_generation/${started.task_id}`), 'FTP model task execution summary')
+      expect(task.id).toBe(started.task_id)
+      expect(task.task_type).toBe('model_3d_glb_generation')
+      expect(task.semantic_key).toBe(model.fingerprint)
+      expect(task.last_execution_id).toBe(started.execution_id)
+      expect(task.last_execution_status).toBe('success')
+    }
     const viewer = frame.locator('.model-preview')
     const rendered = async () => {
       await expect(viewer.locator('canvas')).toBeVisible({ timeout: 60_000 })
       await expect(viewer.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+      let pixels
       if (model.format === '3ds') {
         await expect.poll(async () => {
-          const pixels = await modelPixels(page, viewer.locator('canvas'))
+          pixels = await modelPixels(page, viewer.locator('canvas'))
           return pixels.red / pixels.total
         }).toBeGreaterThan(0.001)
+        expect(pixels.red / pixels.total).toBeLessThan(0.85)
+      } else {
+        await expect.poll(async () => {
+          pixels = await modelPixels(page, viewer.locator('canvas'))
+          return pixels.neutralSolid / pixels.total
+        }).toBeGreaterThan(0.01)
+        expect(pixels.neutralSolid / pixels.total).toBeLessThan(0.85)
       }
     }
     await rendered()
     await viewer.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-rendered.png`) })
     expect(generationRequests).toBe(1)
-    const reloaded = page.waitForResponse(value => new URL(value.url()).pathname === contentPath)
+    await assertOnlyOriginalExecution()
+    const contentCount = pageContents.length
     await page.reload()
-    const reused = await reloaded
-    expect(reused.status()).toBe(200)
-    expect(reused.request().headers().authorization).toMatch(/^Bearer addp_at_/)
-    expect(reused.request().headers().cookie).toBeUndefined()
-    expect(new URL(reused.url()).search).toBe('')
+    await expect.poll(() => pageContents.slice(contentCount).filter(value => new URL(value.url()).pathname === contentPath).length,
+      { timeout: 60_000 }).toBeGreaterThan(0)
+    const reused = pageContents.slice(contentCount).find(value => new URL(value.url()).pathname === contentPath)
+    await verifyPageContent(reused)
     await rendered()
     expect(generationRequests).toBe(1)
+    await assertOnlyOriginalExecution()
     const current = await json(await api.get(capabilityPath), 'FTP model cached capability')
     expect(current.model_3d.result_id).toBe(result.result_id)
     expect(current.model_3d.last_execution_id).toBe(started.execution_id)
@@ -91,10 +135,11 @@ async function generateModel(page, api, model) {
     expect(createHash('sha256').update(original).digest('hex')).toBe(model.sha256)
     return { format: model.format, item_id: model.item_id, task_id: started.task_id,
       execution_id: started.execution_id, result_id: result.result_id,
-      size: binary.length, sha256: createHash('sha256').update(binary).digest('hex'),
+      size: actualPageBytes.length, sha256: checksum,
       source_sha256: model.sha256, rendered: true, reopened: true, cached_without_execution: true }
   } finally {
     page.off('request', observe)
+    page.off('response', observeContent)
   }
 }
 
@@ -109,7 +154,8 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     expect(auth.contextType).toBe('tenant')
     expect(auth.tenantID).toBe(String(expected.tenant_id))
     expect(auth.principalID).toBe(expected.principal_id)
-    expect([...auth.permissions].sort()).toEqual(['system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read'].sort())
+    expect([...auth.permissions].sort()).toEqual(['system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read',
+      'manager.derived_artifact.create', 'manager.derived_artifact.read', 'manager.derived_artifact.delete', 'manager.data_item.update'].sort())
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted FTP' })).toHaveCount(1)
     const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'examples' })

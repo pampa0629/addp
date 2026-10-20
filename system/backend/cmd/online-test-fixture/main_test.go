@@ -352,6 +352,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
 	allPermissions = append(allPermissions, sourceInitializerPermissions...)
+	allPermissions = append(allPermissions, suiteSourceInitializerPermissions("ftp-consumer-flow")...)
 	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
 	allPermissions = append(allPermissions, graphReviewPermissions...)
@@ -1318,15 +1319,45 @@ func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 	}
 }
 
-func TestFTPFixtureUsesOnlyFileConsumerPermissions(t *testing.T) {
+func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 	permissions, err := suitePermissions("ftp-consumer-flow")
-	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read"}
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read",
+		"manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete", "manager.data_item.update"}
 	if err != nil || !slices.Equal(permissions, expected) || !needsEngineProvisioner("ftp-consumer-flow") {
-		t.Fatal("FTP requires a separate provisioner and the six file-consumer permissions", err)
+		t.Fatal("FTP requires a separate provisioner and exactly ten model-consumer permissions", err)
 	}
 	environment := consumerEnvironment("ftp-consumer-flow", 2, "consumer-token", "private-password")
 	if environment["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || environment["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
 		t.Fatal("FTP browser must use the same ordinary User")
+	}
+	if _, exists := environment["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; exists {
+		t.Fatal("consumer environment must not manufacture an issuer credential")
+	}
+	issuer := suiteSourceInitializerPermissions("ftp-consumer-flow")
+	wantIssuer := []string{"system.engine_access_approval_requirement.initialize", "system.engine_access_delegation.create",
+		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
+		"system.engine_access_deny.create", "system.engine_access_deny.release"}
+	if !slices.Equal(issuer, wantIssuer) {
+		t.Fatal("FTP source initializer must have only its seven explicit lifecycle qualifications")
+	}
+	for _, key := range append(append([]string{}, issuer...), "system.execution_authorization.create", "manager.derived_artifact.update", "monitor.execution.read") {
+		if slices.Contains(permissions, key) {
+			t.Fatalf("FTP consumer received an unrelated or source-issuing qualification: %s", key)
+		}
+	}
+	issuer[0] = "mutated"
+	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 4 {
+		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
+	}
+	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow"} {
+		if !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
+			t.Fatalf("FTP issuer permissions leaked into %s", suite)
+		}
+	}
+	for _, suite := range []string{"redis-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow"} {
+		if len(suiteSourceInitializerPermissions(suite)) != 0 {
+			t.Fatalf("FTP unexpectedly created a source initializer for %s", suite)
+		}
 	}
 }
 
