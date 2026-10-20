@@ -40,16 +40,16 @@ func Process() *Server { return process() }
 // response interrupted after its headers were sent was not a successful request.
 func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
-        defer func() {
-            if recover() != nil {
-                c.Set(panicKey,true)
-                // Shared request logging emits only bounded transport facts.
-                // Gin's default recovery dumps raw request headers and panic text.
-                c.AbortWithStatus(http.StatusInternalServerError)
-            }
-        }()
-        c.Next()
-    }
+		defer func() {
+			if recover() != nil {
+				c.Set(panicKey, true)
+				// Shared request logging emits only bounded transport facts.
+				// Gin's default recovery dumps raw request headers and panic text.
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
 }
 
 // New uses OpenTelemetry HTTP server metric names, seconds, explicit duration

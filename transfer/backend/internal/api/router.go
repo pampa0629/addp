@@ -39,7 +39,6 @@ func SetupRouter(
 	// 全局中间件
 	router.Use(commonCors.CORS())
 	router.Use(i18nmiddleware.I18nMiddleware()) // 国际化中间件
-	router.Use(requestid.RequestIDMiddleware()) // Request ID 追踪
 
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

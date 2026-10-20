@@ -1,11 +1,11 @@
 package auth
 
 import (
-"github.com/addp/common/httptrace"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"net/url"

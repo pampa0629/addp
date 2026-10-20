@@ -328,6 +328,11 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 		if metadata == nil {
 			metadata = commonModels.JSONMap{}
 		}
+		if plan != nil {
+			// Keep the audit copy exact as well as the published result copy;
+			// JSONMap.Clone converts nested numeric identifiers to float64.
+			metadata["model3d_source_scope"] = plan.authorization.scope.Clone()
+		}
 		metadata["result_id"] = result.ID
 		metadata["storage_ref"] = buildResult.StorageRef
 		metadata["content_url"] = buildResult.ContentURL

@@ -40,7 +40,7 @@ func (d *exportDispatch) CreateExecution(ctx context.Context, request *commonCli
 	}
 	return &commonClient.CreateTransferExecutionResponse{ExecutionID: result.ExecutionID, Status: result.Status}, nil
 }
-func (*exportDispatch) GetExecution(string, uint) (*commonClient.TransferExecutionResponse, error) {
+func (*exportDispatch) GetExecution(context.Context, string, uint) (*commonClient.TransferExecutionResponse, error) {
 	return &commonClient.TransferExecutionResponse{Status: "pending"}, nil
 }
 

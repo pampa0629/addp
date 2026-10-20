@@ -3,7 +3,6 @@ package api
 import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
-	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/workbench/docs"
 	_ "github.com/addp/workbench/i18n"
@@ -16,7 +15,7 @@ import (
 
 func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, applications *service.DataApplicationService, catalogResources *service.CatalogResourceService, resourceGrants *service.ResourceGrantService) *gin.Engine {
 	router := modulelifecycle.NewRouter()
-	router.Use(requestidmiddleware.RequestIDMiddleware(), commoni18n.I18nMiddleware())
+	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())

@@ -2,13 +2,104 @@ import { expect, request, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { identity, json, login } from './transfer-browser-support.js'
+import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
+import { resolve } from 'node:path'
 
 const required = name => {
   if (!process.env[name]) throw new Error(`missing Online environment: ${name}`)
   return process.env[name]
 }
 
+async function generateModel(page, api, model) {
+  const route = `/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  let generationRequests = 0
+  const observe = requestEvent => {
+    if (new URL(requestEvent.url()).pathname === '/api/v1/manager/quick-view/actions' && requestEvent.method() === 'POST') {
+      const body = requestEvent.postDataJSON()
+      if (body.locator === model.locator && body.action === 'generate_model_3d_glb') generationRequests++
+    }
+  }
+  page.on('request', observe)
+  try {
+    await page.goto(route)
+    const generated = page.waitForResponse(response => {
+      if (new URL(response.url()).pathname !== '/api/v1/manager/quick-view/actions' || response.request().method() !== 'POST') return false
+      const body = response.request().postDataJSON()
+      return body.locator === model.locator && body.action === 'generate_model_3d_glb'
+    })
+    await frame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ }).click()
+    const response = await generated
+    expect(response.status()).toBe(202)
+    const started = await json(response, 'FTP model UI generation')
+    expect(started.task_type).toBe('model_3d_glb_generation')
+    expect(Number.isSafeInteger(started.task_id) && started.task_id > 0).toBe(true)
+    expect(started.execution_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    await expect.poll(async () => {
+      const execution = await json(await api.get(`/api/v1/manager/executions/${started.execution_id}`), 'FTP model execution')
+      expect(execution.execution_id).toBe(started.execution_id)
+      if (['failed', 'timeout', 'cancelled'].includes(execution.status)) throw new Error(`FTP ${model.format} model execution failed`)
+      return execution.status
+    }, { timeout: 120_000 }).toBe('success')
+    const capabilityPath = `/api/v1/manager/quick-view/capability?${new URLSearchParams({ locator: model.locator })}`
+    const ready = await json(await api.get(capabilityPath), 'FTP model ready capability')
+    expect(ready.can_use_quick_view).toBe(true)
+    expect(ready.render_source).toBe('model_3d_glb')
+    const result = ready.model_3d
+    expect(Number.isSafeInteger(result.result_id) && result.result_id > 0).toBe(true)
+    expect(result.task_id).toBe(started.task_id)
+    expect(result.last_execution_id).toBe(started.execution_id)
+    expect(result.format).toBe(model.format)
+    const contentPath = `/api/v1/manager/model_3d_glb/${result.result_id}/content`
+    expect(result.preview_url).toBe(contentPath)
+    const content = await api.get(contentPath)
+    expect(content.status()).toBe(200)
+    expect(content.headers()['content-type']).toContain('model/gltf-binary')
+    const binary = await content.body()
+    expect(binary.subarray(0, 4).toString()).toBe('glTF')
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}.glb`), binary)
+    const viewer = frame.locator('.model-preview')
+    const rendered = async () => {
+      await expect(viewer.locator('canvas')).toBeVisible({ timeout: 60_000 })
+      await expect(viewer.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+      if (model.format === '3ds') {
+        await expect.poll(async () => {
+          const pixels = await modelPixels(page, viewer.locator('canvas'))
+          return pixels.red / pixels.total
+        }).toBeGreaterThan(0.001)
+      }
+    }
+    await rendered()
+    await viewer.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-rendered.png`) })
+    expect(generationRequests).toBe(1)
+    const reloaded = page.waitForResponse(value => new URL(value.url()).pathname === contentPath)
+    await page.reload()
+    const reused = await reloaded
+    expect(reused.status()).toBe(200)
+    expect(reused.request().headers().authorization).toMatch(/^Bearer addp_at_/)
+    expect(reused.request().headers().cookie).toBeUndefined()
+    expect(new URL(reused.url()).search).toBe('')
+    await rendered()
+    expect(generationRequests).toBe(1)
+    const current = await json(await api.get(capabilityPath), 'FTP model cached capability')
+    expect(current.model_3d.result_id).toBe(result.result_id)
+    expect(current.model_3d.last_execution_id).toBe(started.execution_id)
+    const source = await api.get(`/api/v1/manager/downloads/file?${new URLSearchParams({ locator: model.locator })}`)
+    expect(source.status()).toBe(200)
+    const original = await source.body()
+    expect(original.length).toBe(model.size)
+    expect(createHash('sha256').update(original).digest('hex')).toBe(model.sha256)
+    return { format: model.format, item_id: model.item_id, task_id: started.task_id,
+      execution_id: started.execution_id, result_id: result.result_id,
+      size: binary.length, sha256: createHash('sha256').update(binary).digest('hex'),
+      source_sha256: model.sha256, rendered: true, reopened: true, cached_without_execution: true }
+  } finally {
+    page.off('request', observe)
+  }
+}
+
 test('FTP account root, scoped rescan, shared previews and byte-exact downloads through Console', async ({ page }) => {
+  test.setTimeout(480_000)
   const expected = JSON.parse(required('ADDP_ONLINE_FTP_EXPECTATIONS'))
   const token = await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'), required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/meta/scan?engine_id=${expected.engine_id}`)
   const api = await request.newContext({ baseURL: required('GATEWAY_URL'), extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
@@ -72,9 +163,12 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       expect(createHash('sha256').update(binary).digest('hex')).toBe(sample.sha256)
       downloads.push(Object.fromEntries(['format', 'item_id', 'size', 'sha256'].map(key => [key, sample[key]])))
     }
+    const models = []
+    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds'])
+    for (const model of expected.models) models.push(await generateModel(page, api, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
-      principal_id: auth.principalID, meta_ui_scan: true, previews: 3, downloads
+      principal_id: auth.principalID, meta_ui_scan: true, previews: 3, downloads, models
     }))
   } finally {
     await api.dispose()
