@@ -30,6 +30,8 @@ GROUP BY c.city
 ORDER BY order_total DESC;
 ```
 
+2026-10-20 新业务样例已在精确源码 `1b9b5673b1ec73e92f734c1dc1e5dfbd910d5d00` 的 [Linux amd64 Job118415804534](https://github.com/pampa0629/addp/actions/runs/39357512438/job/118415804534) 和 [Linux ARM64 Job118415804566](https://github.com/pampa0629/addp/actions/runs/39357512438/job/118415804566) 通过实库门禁：两项 Provider 测试、五项原生顶层测试无跳过，Business 实际核对5／6／10行、三表关联及金额、日期／布尔／空值、重建后 Backend ID 和用户修改保留、缺失商品样例补齐；退出码0、清理零残留。仅认定上述 StarRocks Job，不以整条工作流的其他 Job 状态代替。本机用户标准重启后，reader 只读核对四表为5／6／10／2行、关联10行且金额39179.40，已完成订单按城市汇总为岳阳5800.00、株洲5393.50、长沙2990.00、常德1299.50；开发管理员在 Engine32 的 `business` 节点完成深度扫描（2026-10-20T02:31:09Z），Manager 客户／订单／商品预览为5／10／6行，DataItem 分别为44685／44686／44687。此为本机管理员页面证明，新样例未重新运行普通 User Hosted T4；先前已通过的 T4 仍按其原精确源码计证。上轮本机 Docker 构建中断未通过，Docker 恢复后已由原夹具 owner 完成归属检查与零残留清理，不改写该历史失败。
+
 正式插件与范围内确定性测试已具备。Linux 双架构正式门禁 [39270948341 / ARM64 Job 118122783775](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783775) 与 [amd64 Job 118122783767](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783767)，源码 `22fce34b3b774ef32b148268df09c8a37cbda66c`，均通过五项原生协议测试、七组 Decimal 子例、两项 Provider 集成测试和 Business 持久化验证，无跳过、清理零残留；实库版本为 `3.5.21-85fccf8`。真实验证只读账号拒写、bigint／Decimal 精度、容器重建后 Backend ID 与用户修改保留。
 
 2026-10-20 核验 [Hosted T4 39271441409 / Job 118124504710](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 的完整报告及执行日志：同一源码下六服务通过构建身份核验，独立身份登记引擎，普通十权限 User 完成 Meta 扫描、Manager API／Console 预览及属性 JSON、Develop 全表查询和文本／整数参数查询。bigint 与 Decimal(38,18) 精确字符串、中文、尾随空格、NULL／空串及参数原值均通过断言，应用清理通过、Infra 与 Business 零残留。该范围仍不含 Transfer 写入、Spark、外部 Catalog、视图、跨批快照或分布式部署。完整证据见[验收场景](../docs/spec/testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)。
