@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "69950334194b78ac08137de9801e4f707b6ea264",
-      "sha256": "8418ca09a89bca9918ad8d7025638abe171ac137dcfcdf7902d88d0142c00fc5",
+      "commit": "543e2accd2b24976a68b44195a2893cc6ad363a3",
+      "sha256": "54937a824c18ec14b20cf70b0c262e119bceea0cef4df21fb9b738713aab5e95",
       "use": {
-        "zh-cn": "任务、执行、写入策略及只读预检权限和三态边界；replace须实例与插件删除声明及Provider，确定不支持优先于unknown；写后只扫目标表。复核CSV/TSV表头优先级与字段冲突拒绝、保留Meta类型；encoded读取未建模，停止态native创建仍不执行、调度或扫描，不增加执行保证。",
-        "en": "Task, execution, apply policy and read-only precheck permissions/tri-state limits. Replace requires registered/plugin delete support and Provider; known unsupported precedes unknown. Post-write scans target only the table. Reviewed CSV/TSV header precedence and field rejection preserving Meta types; encoded reading remains unmodeled. Native creation stays stopped without execution, schedules or scans and gives no execution guarantee."
+        "zh-cn": "任务／执行、写入策略、预检权限与三态；replace需实例、插件声明及Provider，unsupported优先于unknown，写后只扫目标表。核对表头与写前字段检查：动态reader使用同格式Describe并复用当前结果，保留Meta类型。encoded执行仍未建模；native创建保持停止态，不执行、调度或扫描。",
+        "en": "Task/execution, apply policy and read-only tri-state checks. Replace needs registered/plugin delete support and Provider; unsupported precedes unknown. Post-write scans target only. Reviewed headers and pre-write schema checks: dynamic readers use the same format Describe and reuse current-call results, preserving Meta types. Encoded execution remains unmodeled; native creation stays stopped, without execution, schedules or scans."
       }
     },
     {
