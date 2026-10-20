@@ -2114,10 +2114,56 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
             client.request.side_effect = [ONLINE.SUPPORT.Response(200, page) for page in pages]
             with self.assertRaises(ONLINE.SuiteError): ONLINE.exercise_bank_card_sql_pages(client, "sql-page")
 
+    def test_computed_outputs_require_exact_refusal_empty_history_and_live_controls(self):
+        payload = ONLINE.bank_card_computed_service_payload("computed", 23, self.source_item(), "locator")
+        self.assertEqual(payload["data_config"]["default_fields"], ["id", "computed"])
+        self.assertEqual([f["name"] for f in payload["output_contract"]["table"]["fields"]], ["id", "computed"])
+        self.assertIn("substring(bank_card_number,1,100)", payload["sql_query"])
+        histories = {}
+        queries = []
+        def execution(*args):
+            execution_id = str(uuid.uuid4())
+            row = {"execution_id": execution_id, "status": "failed", "metadata": {},
+                "error_details": {"code": "develop.query.protection_required", "category": "data_protection",
+                    "diagnostic": {"schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "data_protection_required"}}}
+            histories[execution_id] = row
+            queries.append(args[4])
+            return copy.deepcopy(row)
+        client = Mock()
+        client.request.side_effect = lambda method, path, expected: ONLINE.SUPPORT.Response(200, copy.deepcopy(histories[path.rsplit("/", 1)[1]]))
+        controls = [[{"count": "5"}], [{"next_id": i} for i in range(2, 7)]]
+        with (patch.object(ONLINE, "develop_execution", side_effect=execution),
+              patch.object(ONLINE, "develop_rows", side_effect=controls)):
+            result = ONLINE.exercise_bank_card_computed_outputs(client, 23, "locator", time.monotonic()+10)
+        self.assertEqual(set(result["cases"]), {"substring", "coalesce", "case", "cast", "subquery_alias", "union"})
+        self.assertEqual(len(queries), 6)
+        self.assertTrue(all(case["history_result_absent"] for case in result["cases"].values()))
+        self.assertEqual(result["count_star"], 5)
+        self.assertEqual(result["unprotected_calculation_rows"], 5)
+        for failure in ["success", "result", "wrong_history", "duplicate_id", "control"]:
+            client = Mock()
+            fixed = execution(None, None, None, None, "test")
+            def request(method, path, expected):
+                row = copy.deepcopy(histories[path.rsplit("/", 1)[1]])
+                if failure == "result": row["metadata"]["result"] = {"summary": {"preview_rows": []}}
+                if failure == "wrong_history": row["execution_id"] = str(uuid.uuid4())
+                return ONLINE.SUPPORT.Response(200, row)
+            client.request.side_effect = request
+            def run(*args):
+                row = copy.deepcopy(fixed) if failure == "duplicate_id" else execution(*args)
+                if failure == "success": row["status"] = "success"
+                return row
+            with (patch.object(ONLINE, "develop_execution", side_effect=run),
+                  patch.object(ONLINE, "develop_rows", side_effect=[[{"count": 4}], controls[1]] if failure == "control" else controls)):
+                with self.subTest(failure=failure), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.exercise_bank_card_computed_outputs(client, 23, "locator", time.monotonic()+10)
+
     def run_case(self, changes=None, cleanup_failure=False):
         client = Mock()
         def request(method, path, expected, body=None):
-            if path.startswith("/api/query/"):
+            if path.startswith("/api/query/") and expected == (403,):
+                payload = {"error": "protected output denied", "error_code": "data_protection_required"}
+            elif path.startswith("/api/query/"):
                 cursor = body["page"].get("cursor", "")
                 index = {"": 0, "page-1": 1, "page-2": 2}[cursor]
                 payload = {"data": self.mixed_rows()[index * 2:index * 2 + 2], "page": {"has_more": index < 2}}
@@ -2125,7 +2171,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
             elif path.endswith("/sensitive-data-types"): payload = [{"code": "bank_card", "id": "17"}]
             elif path.endswith("/enrollment-bank"): payload = self.enrollment()
             elif path.endswith("/assessment-bank"): payload = self.assessment()
-            elif path.startswith("/api/v1/service/query"): payload = {"id": 42 if body and body.get("config_type") == "sql" else 41, "version": 1}
+            elif path.startswith("/api/v1/service/query"): payload = {"id": 43 if body and body.get("sql_query", "").startswith("SELECT id,substring(") else 42 if body and body.get("config_type") == "sql" else 41, "version": 1}
             else: raise AssertionError((method, path))
             return ONLINE.SUPPORT.Response(expected[0], payload)
         client.request.side_effect = request
@@ -2143,6 +2189,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "ensure_detected_assessment", return_value=("assessment-bank", True, "finding-bank")),
               patch.object(ONLINE, "list_pages", return_value=[self.finding()]),
               patch.object(ONLINE, "wait_for_algorithm_projections"),
+              patch.object(ONLINE, "exercise_bank_card_computed_outputs", return_value={"protected_results_absent": True}),
               patch.object(ONLINE, "develop_rows", side_effect=lambda *args: self.mixed_rows() if "copied_card" in args[4] else self.rows()) as develop,
               patch.object(ONLINE, "service_rows", return_value=self.rows()),
               patch.object(ONLINE, "create_and_run_task", side_effect=transfer),
@@ -2165,6 +2212,8 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                                     for call in client.request.call_args_list))
                 self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/42", (404,))
                                     for call in client.request.call_args_list))
+                self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/43", (404,))
+                                    for call in client.request.call_args_list))
 
     def test_transfer_requires_new_execution_actual_counts_and_ordinary_initiator(self):
         result = self.run_case()
@@ -2179,7 +2228,9 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         self.assertEqual(result["service_sql_page"]["page_sizes"], [2, 2, 1])
         self.assertTrue(result["service_sql_page"]["no_duplicate_or_missing_rows"])
         self.assertTrue(result["sql_service_deleted"])
-        self.assertEqual(result["temporary_execution_resources"], 3)
+        self.assertTrue(result["computed_service_deleted"])
+        self.assertTrue(result["computed_outputs"]["service_refusal"]["result_absent"])
+        self.assertEqual(result["temporary_execution_resources"], 4)
         self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
         self.assertTrue(result["task_deleted"] and result["service_deleted"])
         self.assertNotIn("6222000000000000001", json.dumps(result))

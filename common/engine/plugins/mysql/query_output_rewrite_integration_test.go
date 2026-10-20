@@ -311,6 +311,36 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
+	t.Run("shared expression protection", func(t *testing.T) {
+		for _, test := range []struct {
+			name, sql string
+			reject    bool
+		}{
+			{"substring", "SELECT substring(phone,1,100) AS value FROM " + table, true},
+			{"coalesce", "SELECT coalesce(phone,NULL) AS value FROM " + table, true},
+			{"case", "SELECT CASE WHEN phone IS NULL THEN NULL ELSE phone END AS value FROM " + table, true},
+			{"cast", "SELECT CAST(phone AS CHAR) AS value FROM " + table, true},
+			{"arithmetic", "SELECT phone+0 AS value FROM " + table, true},
+			{"aggregate", "SELECT count(phone) AS value FROM " + table, true},
+			{"derived_alias", "SELECT w.value FROM (SELECT substring(phone,1,100) AS value FROM " + table + ") w", true},
+			{"cte_alias", "WITH w AS (SELECT coalesce(phone,NULL) AS value FROM " + table + ") SELECT value FROM w", true},
+			{"union", "SELECT phone AS value FROM " + table + " UNION ALL SELECT label AS other FROM " + table, true},
+			{"scalar_subquery", "SELECT (SELECT phone FROM " + table + " LIMIT 1) AS value FROM " + table, true},
+			{"default_expression", "SELECT DEFAULT(phone) AS value FROM " + table, true},
+			{"unprotected", "SELECT id+1 AS value FROM " + table + " ORDER BY id", false},
+			{"constant", "SELECT 1 AS value FROM " + table, false},
+			{"count_star", "SELECT count(*) AS value FROM " + table, false},
+			{"row_filter_only", "SELECT id FROM " + table + " WHERE phone IS NOT NULL ORDER BY phone,id", false},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				conformance.QueryOutputExpressionProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+					return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: test.sql, Options: plugin.QueryOptions{ReadOnly: true}})
+				}, test.reject)
+			})
+		}
+	})
+
 	t.Run("shared protection", func(t *testing.T) {
 		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
 			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: "SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM " + table + " ORDER BY id", Options: plugin.QueryOptions{ReadOnly: true}})

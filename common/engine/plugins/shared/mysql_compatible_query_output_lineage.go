@@ -12,26 +12,30 @@ import (
 type mysqlCompatibleLineageOrigin struct {
 	sourceIndex int
 	sourcePath  []string
+	derived     bool
 }
 
 type mysqlCompatibleLineageRelation struct {
-	columns          map[string]mysqlCompatibleLineageOrigin
+	columns          map[string][]mysqlCompatibleLineageOrigin
 	order            []string
 	expandedWildcard bool
+	opaque           bool
 }
 
 type mysqlCompatibleLineageProjection struct {
-	columns          map[string]mysqlCompatibleLineageOrigin
+	columns          map[string][]mysqlCompatibleLineageOrigin
 	order            []string
 	expandedWildcard bool
+	opaque           bool
 }
 
 type mysqlCompatibleLineageScope struct {
 	relations   map[string]mysqlCompatibleLineageRelation
-	unqualified map[string][]mysqlCompatibleLineageOrigin
+	unqualified map[string][][]mysqlCompatibleLineageOrigin
+	opaque      bool
 }
 
-// ResolveOutputLineage proves direct output-field lineage for a supported
+// ResolveOutputLineage proves direct and derived value origins for a supported
 // MySQL-compatible SELECT using current catalog facts from the calling plugin.
 func (p MySQLCompatibleQueryProvenance) ResolveOutputLineage(
 	ctx context.Context,
@@ -97,19 +101,25 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectOutputLineage(
 	for index, source := range sources {
 		result[index] = plugin.QueryOutputSource{Path: source.Path, Fields: source.Fields}
 	}
+	if projection.opaque {
+		for i := range result {
+			result[i].OpaqueOutput = true
+		}
+		return result, nil
+	}
 	for _, output := range projection.order {
-		origin := projection.columns[output]
-		if origin.sourceIndex < 0 {
-			continue
+		for _, origin := range projection.columns[output] {
+			if origin.sourceIndex < 0 || origin.sourceIndex >= len(result) {
+				return nil, p.outputLineageError("projection source is outside the read set")
+			}
+			transformation := plugin.QueryOutputTransformationDirect
+			if origin.derived {
+				transformation = plugin.QueryOutputTransformationDerived
+			}
+			result[origin.sourceIndex].Bindings = append(result[origin.sourceIndex].Bindings, plugin.QueryOutputBinding{
+				SourcePath: append([]string(nil), origin.sourcePath...), OutputPath: []string{output}, Transformation: transformation,
+			})
 		}
-		if origin.sourceIndex >= len(result) {
-			return nil, p.outputLineageError("projection source is outside the read set")
-		}
-		result[origin.sourceIndex].Bindings = append(result[origin.sourceIndex].Bindings, plugin.QueryOutputBinding{
-			SourcePath:     append([]string(nil), origin.sourcePath...),
-			OutputPath:     []string{output},
-			Transformation: plugin.QueryOutputTransformationDirect,
-		})
 	}
 	return result, nil
 }
@@ -135,12 +145,10 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 			return nil, p.outputLineageError("UNION column count mismatch")
 		}
 		for i, name := range left.order {
-			a, b := left.columns[name], right.columns[right.order[i]]
-			if a.sourceIndex != b.sourceIndex || strings.Join(a.sourcePath, "\x00") != strings.Join(b.sourcePath, "\x00") {
-				left.columns[name] = mysqlCompatibleLineageOrigin{sourceIndex: -1}
-			}
+			left.columns[name] = mysqlCompatibleDerivedOrigins(left.columns[name], right.columns[right.order[i]])
 		}
 		left.expandedWildcard = left.expandedWildcard || right.expandedWildcard
+		left.opaque = left.opaque || right.opaque
 		return left, nil
 	}
 	selectNode, ok := statement.(*sqlparser.Select)
@@ -160,9 +168,10 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 		hasWildcard = hasWildcard || relation.expandedWildcard
 	}
 	projection := &mysqlCompatibleLineageProjection{
-		columns:          make(map[string]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
+		columns:          make(map[string][]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
 		order:            make([]string, 0, len(selectNode.SelectExprs)),
 		expandedWildcard: hasWildcard,
+		opaque:           scope.opaque,
 	}
 	// Expand each wildcard in place only over one base table. Direct aliases
 	// may copy the same field; result names still must be unique.
@@ -213,11 +222,11 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 				if name == "" || hasMySQLCompatibleIdentifier(projection.columns, name) {
 					return nil, p.outputLineageError("wildcard fields must be unique")
 				}
-				origin, err := p.resolveLineageColumn(scope, &sqlparser.ColName{Name: sqlparser.NewColIdent(name), Qualifier: qualifier})
-				if err != nil || origin.sourceIndex < 0 {
+				origins, err := p.resolveLineageColumn(scope, &sqlparser.ColName{Name: sqlparser.NewColIdent(name), Qualifier: qualifier})
+				if err != nil || len(origins) != 1 || origins[0].derived {
 					return nil, p.outputLineageError("wildcard output must be direct")
 				}
-				projection.columns[name] = origin
+				projection.columns[name] = origins
 				projection.order = append(projection.order, name)
 			}
 			continue
@@ -226,11 +235,11 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 		if !ok {
 			return nil, p.outputLineageError("wildcard and non-column projections are not supported")
 		}
-		origin := mysqlCompatibleLineageOrigin{sourceIndex: -1}
+		var origins []mysqlCompatibleLineageOrigin
+		var err error
 		output := strings.TrimSpace(aliased.As.String())
 		if column, ok := aliased.Expr.(*sqlparser.ColName); ok {
-			var err error
-			origin, err = p.resolveLineageColumn(scope, column)
+			origins, err = p.resolveLineageColumn(scope, column)
 			if err != nil {
 				return nil, err
 			}
@@ -239,19 +248,81 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 			}
 		} else if hasWildcard {
 			return nil, p.outputLineageError("page wildcard output must contain direct fields")
-		} else if output == "" {
-			output = sqlparser.String(aliased.Expr)
+		} else {
+			var opaque bool
+			origins, opaque, err = p.expressionValueOrigins(scope, aliased.Expr)
+			projection.opaque = projection.opaque || opaque
+			if err != nil {
+				return nil, err
+			}
+			if output == "" {
+				output = sqlparser.String(aliased.Expr)
+			}
+		}
+		if hasWildcard && (len(origins) != 1 || origins[0].derived) {
+			return nil, p.outputLineageError("mixed wildcard requires direct field values")
 		}
 		if output == "" || hasMySQLCompatibleIdentifier(projection.columns, output) {
 			return nil, p.outputLineageError("output column names must be unique")
 		}
-		projection.columns[output] = origin
+		projection.columns[output] = origins
 		projection.order = append(projection.order, output)
 	}
 	if len(projection.columns) == 0 {
 		return nil, p.outputLineageError("query output projection is empty")
 	}
 	return projection, nil
+}
+
+// Every column read by an expression contributes a derived value origin.
+// No origins means a proven constant/parameter/count(*), never an unknown field.
+func (p MySQLCompatibleQueryProvenance) expressionValueOrigins(scope *mysqlCompatibleLineageScope, expression sqlparser.Expr) ([]mysqlCompatibleLineageOrigin, bool, error) {
+	var inputs [][]mysqlCompatibleLineageOrigin
+	opaque := false
+	err := sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
+		switch n := node.(type) {
+		case *sqlparser.ColName:
+			origins, err := p.resolveLineageColumn(scope, n)
+			if err != nil {
+				return false, err
+			}
+			inputs = append(inputs, origins)
+		case *sqlparser.Subquery, *sqlparser.Default, sqlparser.InjectedExpr:
+			opaque = true
+			return false, nil
+		case *sqlparser.FuncExpr:
+			if strings.EqualFold(n.Name.String(), "count") && len(n.Exprs) == 1 {
+				if star, ok := n.Exprs[0].(*sqlparser.StarExpr); ok && star.TableName.IsEmpty() {
+					return false, nil
+				}
+			}
+		case *sqlparser.StarExpr:
+			return false, p.outputLineageError("expression wildcard value origins are unsupported")
+		}
+		return true, nil
+	}, expression)
+	if err != nil {
+		return nil, false, err
+	}
+	return mysqlCompatibleDerivedOrigins(inputs...), opaque, nil
+}
+
+func mysqlCompatibleDerivedOrigins(inputs ...[]mysqlCompatibleLineageOrigin) []mysqlCompatibleLineageOrigin {
+	var result []mysqlCompatibleLineageOrigin
+	seen := map[string]bool{}
+	for _, origins := range inputs {
+		for _, origin := range origins {
+			key := fmt.Sprint(origin.sourceIndex) + ":" + strings.Join(origin.sourcePath, "\x00")
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			origin.sourcePath = append([]string(nil), origin.sourcePath...)
+			origin.derived = true
+			result = append(result, origin)
+		}
+	}
+	return result
 }
 
 func (p MySQLCompatibleQueryProvenance) buildLineageScope(
@@ -348,7 +419,7 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 		if err != nil {
 			return nil, err
 		}
-		if err := p.addLineageRelation(scope, []string{alias}, mysqlCompatibleLineageRelation{columns: projection.columns, order: projection.order, expandedWildcard: projection.expandedWildcard}); err != nil {
+		if err := p.addLineageRelation(scope, []string{alias}, mysqlCompatibleLineageRelation{columns: projection.columns, order: projection.order, expandedWildcard: projection.expandedWildcard, opaque: projection.opaque}); err != nil {
 			return nil, err
 		}
 		return scope, nil
@@ -360,7 +431,7 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 func newMySQLCompatibleLineageScope() *mysqlCompatibleLineageScope {
 	return &mysqlCompatibleLineageScope{
 		relations:   make(map[string]mysqlCompatibleLineageRelation),
-		unqualified: make(map[string][]mysqlCompatibleLineageOrigin),
+		unqualified: make(map[string][][]mysqlCompatibleLineageOrigin),
 	}
 }
 
@@ -368,6 +439,7 @@ func (p MySQLCompatibleQueryProvenance) addLineageRelation(scope *mysqlCompatibl
 	if scope == nil || len(relation.columns) == 0 {
 		return p.outputLineageError("relation fields are required")
 	}
+	scope.opaque = scope.opaque || relation.opaque
 	added := false
 	for _, qualifier := range qualifiers {
 		qualifier = strings.TrimSpace(qualifier)
@@ -394,6 +466,7 @@ func (p MySQLCompatibleQueryProvenance) mergeLineageScope(target, source *mysqlC
 	if target == nil || source == nil {
 		return p.outputLineageError("relation scope is incomplete")
 	}
+	target.opaque = target.opaque || source.opaque
 	for qualifier, relation := range source.relations {
 		if _, exists := lookupMySQLCompatibleRelation(target.relations, qualifier); exists {
 			return p.outputLineageError("relation qualifier is ambiguous")
@@ -406,13 +479,13 @@ func (p MySQLCompatibleQueryProvenance) mergeLineageScope(target, source *mysqlC
 	return nil
 }
 
-func (p MySQLCompatibleQueryProvenance) resolveLineageColumn(scope *mysqlCompatibleLineageScope, column *sqlparser.ColName) (mysqlCompatibleLineageOrigin, error) {
-	if scope == nil || column == nil {
-		return mysqlCompatibleLineageOrigin{}, p.outputLineageError("column reference is missing")
+func (p MySQLCompatibleQueryProvenance) resolveLineageColumn(scope *mysqlCompatibleLineageScope, column *sqlparser.ColName) ([]mysqlCompatibleLineageOrigin, error) {
+	if scope == nil || column == nil || column.StoredProcVal != nil {
+		return nil, p.outputLineageError("column reference is missing")
 	}
 	name := strings.TrimSpace(column.Name.String())
 	if name == "" {
-		return mysqlCompatibleLineageOrigin{}, p.outputLineageError("column name is missing")
+		return nil, p.outputLineageError("column name is missing")
 	}
 	qualifier := strings.TrimSpace(column.Qualifier.Name.String())
 	if database := strings.TrimSpace(column.Qualifier.DbQualifier.String()); database != "" {
@@ -421,23 +494,23 @@ func (p MySQLCompatibleQueryProvenance) resolveLineageColumn(scope *mysqlCompati
 	if qualifier != "" {
 		relation, exists := lookupMySQLCompatibleRelation(scope.relations, qualifier)
 		if !exists {
-			return mysqlCompatibleLineageOrigin{}, p.outputLineageError("column qualifier is unresolved")
+			return nil, p.outputLineageError("column qualifier is unresolved")
 		}
 		origin, exists := lookupMySQLCompatibleOrigin(relation.columns, name)
 		if !exists {
-			return mysqlCompatibleLineageOrigin{}, p.outputLineageError("column is absent from the qualified relation")
+			return nil, p.outputLineageError("column is absent from the qualified relation")
 		}
 		return origin, nil
 	}
 	origins := scope.unqualified[strings.ToLower(name)]
 	if len(origins) != 1 {
-		return mysqlCompatibleLineageOrigin{}, p.outputLineageError("unqualified column is unresolved or ambiguous")
+		return nil, p.outputLineageError("unqualified column is unresolved or ambiguous")
 	}
 	return origins[0], nil
 }
 
-func (p MySQLCompatibleQueryProvenance) lineageTableColumns(source plugin.QueryOutputSource, sourceIndex int) (map[string]mysqlCompatibleLineageOrigin, error) {
-	columns := make(map[string]mysqlCompatibleLineageOrigin, len(source.Fields))
+func (p MySQLCompatibleQueryProvenance) lineageTableColumns(source plugin.QueryOutputSource, sourceIndex int) (map[string][]mysqlCompatibleLineageOrigin, error) {
+	columns := make(map[string][]mysqlCompatibleLineageOrigin, len(source.Fields))
 	for _, field := range source.Fields {
 		name := strings.TrimSpace(field.Name)
 		path := field.Path
@@ -447,7 +520,7 @@ func (p MySQLCompatibleQueryProvenance) lineageTableColumns(source plugin.QueryO
 		if name == "" || hasMySQLCompatibleIdentifier(columns, name) {
 			return nil, p.outputLineageError("source fields must have unique names")
 		}
-		columns[name] = mysqlCompatibleLineageOrigin{sourceIndex: sourceIndex, sourcePath: append([]string(nil), path...)}
+		columns[name] = []mysqlCompatibleLineageOrigin{{sourceIndex: sourceIndex, sourcePath: append([]string(nil), path...)}}
 	}
 	return columns, nil
 }
@@ -500,11 +573,11 @@ func lookupMySQLCompatibleRelation(relations map[string]mysqlCompatibleLineageRe
 	return matched, matches == 1
 }
 
-func lookupMySQLCompatibleOrigin(columns map[string]mysqlCompatibleLineageOrigin, name string) (mysqlCompatibleLineageOrigin, bool) {
+func lookupMySQLCompatibleOrigin(columns map[string][]mysqlCompatibleLineageOrigin, name string) ([]mysqlCompatibleLineageOrigin, bool) {
 	if origin, exists := columns[name]; exists {
 		return origin, true
 	}
-	var matched mysqlCompatibleLineageOrigin
+	var matched []mysqlCompatibleLineageOrigin
 	matches := 0
 	for candidate, origin := range columns {
 		if strings.EqualFold(candidate, name) {

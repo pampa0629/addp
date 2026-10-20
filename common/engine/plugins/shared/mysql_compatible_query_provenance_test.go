@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -145,8 +146,8 @@ func TestMySQLCompatibleQueryProvenanceDoesNotMislabelComputedProjection(t *test
 		t.Fatal(err)
 	}
 	result, err := provenance.resolveSelectOutputLineage("business", statement, sources)
-	if err != nil || len(result) != 1 || len(result[0].Bindings) != 0 {
-		t.Fatalf("computed projection must retain source facts without direct bindings: %#v %v", result, err)
+	if err != nil || len(result) != 1 || len(result[0].Bindings) != 1 || result[0].Bindings[0].Transformation != plugin.QueryOutputTransformationDerived || result[0].Bindings[0].SourcePath[0] != "total_amount" {
+		t.Fatalf("computed projection must retain derived value origins: %#v %v", result, err)
 	}
 }
 
@@ -312,6 +313,89 @@ func TestMySQLCompatibleSinglePageWildcardLineage(t *testing.T) {
 		}
 		if _, err := p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
 			t.Fatal("unproven page lineage accepted", query)
+		}
+	}
+}
+
+func TestMySQLCompatibleExpressionValueLineage(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "people", "id", "phone", "label"), testMySQLCompatibleLineageSource(23, "business", "customers", "id", "phone")}
+	for _, test := range []struct {
+		name, query string
+		want        []string
+	}{
+		{"direct", "SELECT phone AS value FROM people", []string{"people.phone->value:direct"}},
+		{"substring", "SELECT substring(phone,1,100) AS value FROM people", []string{"people.phone->value:derived"}},
+		{"coalesce", "SELECT coalesce(phone,NULL) AS value FROM people", []string{"people.phone->value:derived"}},
+		{"cast", "SELECT CAST(phone AS CHAR) AS value FROM people", []string{"people.phone->value:derived"}},
+		{"case_condition", "SELECT CASE WHEN phone IS NULL THEN label ELSE label END AS value FROM people", []string{"people.phone->value:derived", "people.label->value:derived"}},
+		{"arithmetic", "SELECT id+1 AS value FROM people", []string{"people.id->value:derived"}},
+		{"aggregate", "SELECT sum(id) AS value FROM people", []string{"people.id->value:derived"}},
+		{"count_field", "SELECT count(phone) AS value FROM people", []string{"people.phone->value:derived"}},
+		{"repeat_origin", "SELECT coalesce(phone,phone) AS value FROM people", []string{"people.phone->value:derived"}},
+		{"subquery_alias", "SELECT w.value AS renamed FROM (SELECT substring(phone,1,100) AS value FROM people) w", []string{"people.phone->renamed:derived"}},
+		{"cte_alias", "WITH p AS (SELECT coalesce(phone,NULL) AS contact FROM people) SELECT contact AS value FROM p", []string{"people.phone->value:derived"}},
+		{"joined_expression", "SELECT coalesce(p.phone,c.phone) AS value FROM people p JOIN customers c ON p.id=c.id", []string{"people.phone->value:derived", "customers.phone->value:derived"}},
+		{"union_two_sources", "SELECT phone AS value FROM people UNION ALL SELECT phone AS other FROM customers", []string{"people.phone->value:derived", "customers.phone->value:derived"}},
+		{"union_same_source", "SELECT phone AS value FROM people UNION ALL SELECT phone AS other FROM people", []string{"people.phone->value:derived"}},
+		{"union_constant", "SELECT 1 AS value FROM people UNION ALL SELECT phone AS other FROM customers", []string{"customers.phone->value:derived"}},
+		{"constant", "SELECT 1 AS value FROM people", nil},
+		{"parameter", "SELECT ? AS value FROM people", nil},
+		{"count_star", "SELECT count(*) AS value FROM people", nil},
+		{"selection_only", "SELECT id AS value FROM people WHERE phone IS NOT NULL ORDER BY phone", []string{"people.id->value:direct"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stmt, err := parseMySQLReadQuery(test.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := p.resolveSelectOutputLineage("business", stmt, sources)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual []string
+			for _, source := range got {
+				if source.OpaqueOutput {
+					t.Fatal("proven origins became opaque")
+				}
+				for _, binding := range source.Bindings {
+					actual = append(actual, source.Path.Segments[len(source.Path.Segments)-1].Name+"."+strings.Join(binding.SourcePath, ".")+"->"+strings.Join(binding.OutputPath, ".")+":"+binding.Transformation)
+				}
+			}
+			sort.Strings(actual)
+			sort.Strings(test.want)
+			if strings.Join(actual, "\n") != strings.Join(test.want, "\n") {
+				t.Fatalf("origins=%v want %v", actual, test.want)
+			}
+		})
+	}
+	for _, query := range []string{
+		"SELECT (SELECT phone FROM people LIMIT 1) AS value FROM people",
+		"SELECT DEFAULT(phone) AS value FROM people",
+		"SELECT w.value FROM (SELECT (SELECT phone FROM people LIMIT 1) AS value FROM people) w",
+		"SELECT (SELECT phone FROM people LIMIT 1) AS value FROM people UNION ALL SELECT phone AS value FROM customers",
+	} {
+		stmt, err := parseMySQLReadQuery(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.resolveSelectOutputLineage("business", stmt, sources)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range got {
+			if !source.OpaqueOutput || source.IdentityOutput || len(source.Bindings) != 0 {
+				t.Fatal("unknown scalar source was declared value-free or partially mapped")
+			}
+		}
+	}
+	for _, query := range []string{"SELECT coalesce(missing,NULL) AS value FROM people", "SELECT coalesce(phone,NULL) AS value FROM people p JOIN customers c ON p.id=c.id"} {
+		stmt, err := parseMySQLReadQuery(query)
+		if err != nil {
+			continue
+		}
+		if _, err = p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
+			t.Fatal("unproven expression accepted", query)
 		}
 	}
 }

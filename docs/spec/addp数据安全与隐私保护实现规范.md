@@ -491,7 +491,7 @@ Owner 从当前请求解析出专业资源身份后，只允许一条本地门�
 
 当查询可能涉及已纳管 DataItem 而 Provider 无法得到完整 `QueryReadSet` 时，Owner 必须拒绝当前查询，不得只检查 `TargetPath`、默认 schema 或 SQL 顶层对象。这是当前请求的不可解析失败，不能扩大为租户级全局禁用 SQL。
 
-查询命中已纳管 DataItem 后，Owner 必须取得完整 `QueryOutputLineage`，用其中每个 source 的实时 `Fields` 校验该资源 Projection 的 `source_snapshot_hash` 和组件 `schema_fingerprint`，再按该 Owner 的稳定查询出口动作执行：Develop 使用 `query`，Service 已发布查询服务使用 `service_execute`，Transfer bounded snapshot 查询源使用 `export`。identity 输出按原组件路径处理；direct binding 按明确的结果路径处理；受保护组件命中 derived binding、opaque source、缺失当前动作、结构漂移或无法解析 lineage 时拒绝整个查询。不得把 `preview`、`query` 或其他 Owner 的规则互相复用，不得按同名结果列猜测来源。字段保护必须在原始 `QueryResult` 或批次产生后、写 execution metadata、执行 Transfer 字段变换或返回 HTTP / Notebook Kernel 前完成。
+查询命中已纳管 DataItem 后，Owner 必须取得完整 `QueryOutputLineage`，用其中每个 source 的实时 `Fields` 校验该资源 Projection 的 `source_snapshot_hash` 和组件 `schema_fingerprint`，再按该 Owner 的稳定查询出口动作执行：Develop 使用 `query`，Service 已发布查询服务使用 `service_execute`，Transfer bounded snapshot 查询源使用 `export`。identity 输出按原组件路径处理；direct binding 按明确的结果路径处理；受保护组件命中 derived binding、opaque source、缺失当前动作、结构漂移或无法解析 lineage 时拒绝整个查询。不得把 `preview`、`query` 或其他 Owner 的规则互相复用，不得按同名结果列猜测来源。字段保护必须在原始 `QueryResult` 或批次产生后、写 execution metadata、执行 Transfer 字段变换或返回 HTTP / Notebook Kernel 前完成。 MySQL 系共享 Provider 对已有可证明表达式必须保留全部字段值来源并标记 derived；不能将计算结果或多来源集合分支省略为空 bindings。只有已证明无字段值依赖的输出才能声明空映射。该修正沿用既有拒绝规则：计算结果依赖受保护组件时，无论是否存在直接字段原值授权均拒绝；仅依赖未受保护字段的计算、常量和 count(*) 不因此被拒绝。
 
 共享 `projectionstore.PrepareQueryProtection` 必须显式接收 Owner 提供的 `SubjectReference`，并将同一主体用于派生字段说明和实际结果保护。该参数只消费 Owner 已认证的当前用户事实，不接受 HTTP 自报主体，不解析凭据、不产生资源授权；没有可信当前用户的执行出口显式传入空主体，继续采用默认保护，不从历史 execution 或任务作者推断临时原值权限。匹配的临时授权也仅解除其规则的内容变换，不代替功能权限、源 Grant/Deny 或其他出口规则；实际结果保护仍按输出时刻核验临时授权有效期。
 

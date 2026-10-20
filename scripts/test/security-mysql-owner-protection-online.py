@@ -1780,6 +1780,55 @@ def bank_card_sql_service_payload(name: str, engine_id: int, source: Mapping[str
     return payload
 
 
+def bank_card_computed_service_payload(name: str, engine_id: int, source: Mapping[str, object], locator: str) -> dict[str, object]:
+    payload = bank_card_sql_service_payload(name, engine_id, source, locator)
+    fields = payload["output_contract"]["table"]["fields"]
+    identifier = next(field for field in fields if field["name"] == "id")
+    computed = dict(next(field for field in fields if field["name"] == BANK_FIELD))
+    computed["name"] = "computed"
+    computed.pop("path", None)
+    payload["sql_query"] = "SELECT id,substring(" + BANK_FIELD + ",1,100) AS computed FROM " + BANK_SOURCE
+    payload["data_config"]["default_fields"] = ["id", "computed"]
+    payload["output_contract"]["table"]["fields"] = [identifier, computed]
+    return payload
+
+
+def exercise_bank_card_computed_outputs(client: GatewayClient, engine_id: int, locator: str, deadline: float) -> dict[str, object]:
+    queries = {
+        "substring": "SELECT substring(" + BANK_FIELD + ",1,100) AS computed FROM " + BANK_SOURCE,
+        "coalesce": "SELECT coalesce(" + BANK_FIELD + ",NULL) AS computed FROM " + BANK_SOURCE,
+        "case": "SELECT CASE WHEN " + BANK_FIELD + " IS NULL THEN NULL ELSE " + BANK_FIELD + " END AS computed FROM " + BANK_SOURCE,
+        "cast": "SELECT CAST(" + BANK_FIELD + " AS CHAR) AS computed FROM " + BANK_SOURCE,
+        "subquery_alias": "SELECT w.computed FROM (SELECT substring(" + BANK_FIELD + ",1,100) AS computed FROM " + BANK_SOURCE + ") w",
+        "union": "SELECT " + BANK_FIELD + " AS computed FROM " + BANK_SOURCE + " UNION ALL SELECT customer_code AS other FROM " + BANK_SOURCE,
+    }
+    cases = {}
+    execution_ids = set()
+    for name, query in queries.items():
+        execution = develop_execution(client, engine_id, locator, deadline, query, "sql")
+        execution_id = execution.get("execution_id")
+        try:
+            valid_id = isinstance(execution_id, str) and str(uuid.UUID(execution_id)) == execution_id and uuid.UUID(execution_id).int != 0
+        except (ValueError, TypeError):
+            valid_id = False
+        if not valid_id or execution_id in execution_ids:
+            raise SuiteError("computed refusal must use distinct actual execution UUIDs")
+        execution_ids.add(execution_id)
+        evidence = validate_develop_protection_refusal(execution, "preparation")
+        history = _object(client.request("GET", "/api/v1/develop/executions/" + execution_id, (200,)).payload, "computed execution history")
+        if history.get("execution_id") != execution_id:
+            raise SuiteError("computed refusal history execution differs")
+        validate_develop_protection_refusal(history, "preparation")
+        cases[name] = {**evidence, "execution_id": execution_id, "history_result_absent": True}
+    counted = develop_rows(client, engine_id, locator, deadline, "SELECT count(*) AS count FROM " + BANK_SOURCE)
+    if len(counted) != 1 or set(counted[0]) != {"count"} or normalize_id(counted[0]["count"]) != "5":
+        raise SuiteError("value-free count control changed")
+    ordinary = develop_rows(client, engine_id, locator, deadline, "SELECT id+1 AS next_id FROM " + BANK_SOURCE + " ORDER BY id")
+    if [normalize_id(row.get("next_id")) for row in ordinary] != ["2", "3", "4", "5", "6"] or any(set(row) != {"next_id"} for row in ordinary):
+        raise SuiteError("unprotected calculation control changed")
+    return {"cases": cases, "count_star": 5, "unprotected_calculation_rows": 5, "protected_results_absent": True}
+
+
 def exercise_bank_card_sql_pages(client: GatewayClient, name: str) -> dict[str, object]:
     rows = []
     cursor = ""
@@ -1898,6 +1947,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     name = "addp-online-security-bank-" + run_suffix(run_id, "-")
     service_id = None
     sql_service_id = None
+    computed_service_id = None
     tasks: list[int] = []
     failure: BaseException | None = None
     outputs: dict[str, object] = {}
@@ -1941,6 +1991,15 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             bank_card_sql_service_payload(sql_name, source_engine_id, source, locator)).payload, "bank-card SQL service")
         sql_service_id = positive_int(sql_service.get("id"), "bank-card SQL service ID")
         service_sql_page = exercise_bank_card_sql_pages(client, sql_name)
+        computed_outputs = exercise_bank_card_computed_outputs(client, source_engine_id, locator, deadline)
+        computed_name = name + "-derived"
+        computed_service = _object(client.request("POST", "/api/v1/service/query", (201,),
+            bank_card_computed_service_payload(computed_name, source_engine_id, source, locator)).payload, "bank-card computed SQL service")
+        computed_service_id = positive_int(computed_service.get("id"), "bank-card computed SQL service ID")
+        refusal = client.request("POST", "/api/query/" + urllib.parse.quote(computed_name, safe="") + "/query", (403,),
+            {"select": ["id", "computed"], "order_by": [{"field": "id", "direction": "asc"}], "page": {"limit": 2}, "format": "json"})
+        validate_service_protection_refusal(refusal)
+        computed_outputs["service_refusal"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
 
         task_id, execution = create_and_run_task(client,
             transfer_payload("addp_online_security_bank_" + run_suffix(run_id, "_"), locator,
@@ -1966,7 +2025,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     except BaseException as error:
         failure = error
     cleanup_errors = []
-    for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id), lambda: cleanup_service(client, sql_service_id)):
+    for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id), lambda: cleanup_service(client, sql_service_id), lambda: cleanup_service(client, computed_service_id)):
         try:
             cleanup()
         except BaseException as error:
@@ -1983,7 +2042,8 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "develop_wildcard": develop_wildcard,
             "develop_mixed_wildcard": develop_mixed_wildcard,
             "develop_page_wildcard": develop_page_wildcard, "service_sql_page": service_sql_page,
-            "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 3,
+            "computed_outputs": computed_outputs, "computed_service_deleted": True,
+            "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 4,
             "temporary_execution_resource_residuals": 0}
 
 
@@ -2245,7 +2305,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v21",
+            "schema_version": "addp.security-mysql-owner-protection-online/v22",
             "result": "passed",
             "identity": identity,
             "governance": governance,

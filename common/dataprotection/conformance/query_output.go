@@ -62,22 +62,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 				continue
 			}
 			t.Run(owner+fmt.Sprint(granted), func(t *testing.T) {
-				db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:hybrid_%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
-				if err != nil {
-					t.Fatal(err)
-				}
-				sqlDB, err := db.DB()
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = sqlDB.Close() })
-				if err := db.Exec("ATTACH DATABASE ':memory:' AS hybrid").Error; err != nil {
-					t.Fatal(err)
-				}
-				store, err := projectionstore.Migrate(db, "hybrid", owner, nil)
-				if err != nil {
-					t.Fatal(err)
-				}
+				store := queryProtectionStore(t, owner)
 				target, err := dataprotection.DataItemTargetFromCatalogPath(model, source.Path)
 				if err != nil {
 					t.Fatal(err)
@@ -269,4 +254,123 @@ func sameJSON(left, right any) bool {
 	a, errA := json.Marshal(left)
 	b, errB := json.Marshal(right)
 	return errA == nil && errB == nil && string(a) == string(b)
+}
+
+func queryProtectionStore(t *testing.T, owner string) *projectionstore.Store {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:hybrid_%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err = db.Exec("ATTACH DATABASE ':memory:' AS hybrid").Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := projectionstore.Migrate(db, "hybrid", owner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+// QueryOutputExpressionProtection proves the existing four-owner gate rejects
+// protected derived values before execution, including under a direct-field
+// plaintext grant. Unprotected expressions and value-free controls still run.
+// The fixture has one ordinary source with a string phone field.
+func QueryOutputExpressionProtection(t *testing.T, model plugin.EngineCatalogModelSpec, prepare func(context.Context) (plugin.PreparedQuery, error), reject bool) {
+	t.Helper()
+	ctx := t.Context()
+	original, err := prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage, err := original.OutputLineage(ctx)
+	if err != nil || len(lineage.Sources) != 1 {
+		t.Fatal("expression lineage", err)
+	}
+	source := lineage.Sources[0]
+	protectedDerived := false
+	for _, binding := range source.Bindings {
+		if len(binding.SourcePath) == 1 && binding.SourcePath[0] == "phone" && binding.Transformation == plugin.QueryOutputTransformationDerived {
+			protectedDerived = true
+		}
+	}
+	if (protectedDerived || source.OpaqueOutput) != reject {
+		t.Fatal("expression lost or invented protected derived origins")
+	}
+	var expected *plugin.QueryResult
+	if !reject {
+		expected, err = original.Execute(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for owner, action := range map[string]string{"manager": "preview", "develop": "query", "service": "service_execute", "transfer": "export"} {
+		for _, granted := range []bool{false, true} {
+			if granted && owner != "manager" && owner != "develop" {
+				continue
+			}
+			t.Run(owner+fmt.Sprint(granted), func(t *testing.T) {
+				store := queryProtectionStore(t, owner)
+				target, err := dataprotection.DataItemTargetFromCatalogPath(model, source.Path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				hash, err := dataprotection.TableSchemaSnapshotHash(source.Fields)
+				if err != nil {
+					t.Fatal(err)
+				}
+				component := dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}
+				component.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(source.Fields, component)
+				if err != nil {
+					t.Fatal(err)
+				}
+				now := time.Now().UTC()
+				actor := dataprotection.SubjectReference{}
+				rule := dataprotection.Rule{Action: action, Component: component, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "●"}, InvalidValueEffect: dataprotection.EffectSuppress}}
+				if granted {
+					actor = dataprotection.SubjectReference{Type: "user", ID: "41"}
+					rule.Authorizations = []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}}
+				}
+				projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "expression-output", Revision: "00000000000000000001", ConsumerOwner: owner, Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute), Rules: []dataprotection.Rule{rule}}
+				if err = projection.Seal(); err != nil {
+					t.Fatal(err)
+				}
+				if err = store.ApplyBatch(ctx, 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "expression-1", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "expression-1"}, now); err != nil {
+					t.Fatal(err)
+				}
+				prepared, err := prepare(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, action, actor, now)
+				if reject {
+					if !errors.Is(err, dataprotection.ErrDenied) || protect != nil {
+						t.Fatal("protected expression was not rejected at preparation", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal("unprotected expression rejected", err)
+				}
+				result, err := prepared.Execute(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = protect.Apply(result); err != nil {
+					t.Fatal(err)
+				}
+				if !sameJSON(expected, result) {
+					t.Fatal("unprotected expression changed")
+				}
+				if err = protect.ApplyDefault(result); err != nil || !sameJSON(expected, result) {
+					t.Fatal("unprotected default preview changed", err)
+				}
+			})
+		}
+	}
 }

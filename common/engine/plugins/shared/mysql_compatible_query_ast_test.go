@@ -121,8 +121,8 @@ func TestMySQLUnionDoesNotInventDirectLineage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, source := range lineage {
-		if len(source.Bindings) != 0 {
-			t.Fatal("mixed-source UNION claimed direct lineage")
+		if len(source.Bindings) != 1 || source.Bindings[0].Transformation != plugin.QueryOutputTransformationDerived || source.Bindings[0].SourcePath[0] != "id" || source.Bindings[0].OutputPath[0] != "value" {
+			t.Fatal("mixed-source UNION lost its derived value origin")
 		}
 	}
 }
@@ -190,5 +190,10 @@ func TestMySQLContainsPreservesReadClosureAndDirectProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertMySQLCompatibleLineageBindings(t, lineage, "persons", map[string]string{"id": "id"})
+	assertMySQLCompatibleLineageBindings(t, lineage, "persons", map[string]string{"id": "id", "nickname": "matched"})
+	for _, binding := range lineage[0].Bindings {
+		if binding.SourcePath[0] == "nickname" && binding.Transformation != plugin.QueryOutputTransformationDerived {
+			t.Fatal("contains output lost derived origin")
+		}
+	}
 }
