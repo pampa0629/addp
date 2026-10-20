@@ -206,21 +206,40 @@ echo 'ADDP Infra port resolution OK'
 # The lifecycle entry must never erase local volumes from a non-interactive
 # worktree cleanup, even when --force was supplied by an automation wrapper.
 TEST_DIR=$(mktemp -d)
-trap 'rm -rf "$TEST_DIR"' EXIT
+trap 'result=$?; if [[ $result != 0 && -f "$TEST_DIR/online.log" ]]; then cat "$TEST_DIR/online.log" >&2; fi; rm -rf "$TEST_DIR"' EXIT
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
+cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
+printf 'ADDP_POSTGRES_METRICS_ENABLED=false\n' > "$TEST_DIR/online.env"
 mkdir -p "$TEST_DIR/repo/scripts/utils"
 cp "${SCRIPT_DIR}/../utils/deployment-inventory.py" "$TEST_DIR/repo/scripts/utils/deployment-inventory.py"
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="$TEST_DIR/repo/.dev-state/deployment-discovery"
+export ADDP_POSTGRES_METRICS_STATE_DIR="$TEST_DIR/postgres-state"
 cat > "$TEST_DIR/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == --context ]]; then [[ "$2" == test-local ]] || exit 2; shift 2; fi
 case "$1" in
+  context)
+    case "$2" in
+      show) echo test-local ;;
+      inspect) echo '"unix:///var/run/docker.sock"' ;;
+      *) exit 2 ;;
+    esac ;;
+  info)
+    if [[ "$(uname)" == Darwin ]]; then os='Docker Desktop'; else os='Linux'; fi
+    printf '{"id":"fixture-engine","os_type":"linux","operating_system":"%s"}\n' "$os" ;;
+  ps)
+    [[ "$*" == *label=com.docker.compose.project=addp-postgres-metrics-infra* ]] || exit 2
+    # This cleanup fixture has never deployed an optional PG metrics source.
+    ;;
   compose)
     if [[ "$2" == version ]]; then exit 0; fi
-    [[ "$2" == --profile && "$3" == observability-logs ]] || exit 2
-    [[ "${LOKI_PORT:-}" == 0 && "${ALLOY_PORT:-}" == 0 && "${PROMETHEUS_PORT:-}" == 0 ]] || exit 2
+    [[ "$2" == --profile && "$3" == observability-traces ]] || exit 2
+    [[ "${TRACE_QUERY_PORT:-}" == 0 && "${TRACE_OTLP_PORT:-}" == 0 && "${LOKI_PORT:-}" == 0 && "${ALLOY_PORT:-}" == 0 && "${PROMETHEUS_PORT:-}" == 0 ]] || exit 2
     shift 3
+    [[ "$1" == --profile && "$2" == observability-logs ]] || exit 2
+    shift 2
     [[ "$1" == --profile && "$2" == observability-metrics ]] || exit 2
     shift 2
     [[ "$1" == --profile && "$2" == observability-metrics-control ]] || exit 2
@@ -234,6 +253,7 @@ case "$1" in
     esac
     ;;
   inspect)
+    [[ "$*" != *postgres-metrics* ]] || exit 1
     printf '%s\n' "$MOCK_WORKING_DIR"
     ;;
   *) exit 2 ;;
@@ -261,7 +281,7 @@ fi
 [ ! -e "$MOCK_MARKER" ]
 
 env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
-  ADDP_ONLINE_HOSTED=1 POSTGRES_DB=addp_online \
+  ADDP_ONLINE_HOSTED=1 ADDP_ONLINE_ENV_FILE="$TEST_DIR/online.env" POSTGRES_DB=addp_online \
   PATH="$TEST_DIR/bin:$PATH" MOCK_DOWN_MARKER="$MOCK_MARKER" \
   MOCK_WORKING_DIR="$TEST_DIR/repo" \
   bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
