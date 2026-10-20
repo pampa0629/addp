@@ -8,6 +8,7 @@ import { processMetrics, validateProcessInstances, validateProcessSummaries, val
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 import { scalarResourceReceipts } from './node-resource-receipts.js'
+import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
@@ -37,7 +38,15 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const serviceBatches = []
   const serviceTrends = []
   const overviews = []
+  const engineReads = []
   page.on('response', response => {
+    if (expected.engine_resources) {
+      const url = new URL(response.url())
+      if (/^\/api\/v1\/monitor\/platform\/engine_resource_(observations|summaries|trends)$/.test(url.pathname)) {
+        pending.push(response.json().then(value => engineReads.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value, status: response.status() })))
+      }
+      return
+    }
     // Admission records its own write receipts; resource polling belongs to the resource cases.
     if (expected.admission || expected.engine_admission) return
     const url = new URL(response.url())
@@ -97,6 +106,54 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('administrator-password-mfa')
     report.identity = await login(page, 'ADDP_ONLINE_METRICS_ADMIN', expected.admin_id, 'platform.system_administrator')
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (expected.engine_resources) {
+      const owners = expected.engine_resources.owners
+      save('engine-professional-list')
+      await page.goto('/monitor/engine-resources?refresh=off')
+      await expect(monitor.getByTestId('engine-list').getByRole('button', { name: '查看监控', exact: true })).toHaveCount(2)
+      for (const owner of owners) await expect(monitor.getByTestId('engine-list')).toContainText(owner.display_name)
+      await page.screenshot({ path: resolve(artifact, 'engine-resources-list.png'), fullPage: true, animations: 'disabled' })
+      for (const owner of owners) {
+        save('engine-professional-detail')
+        const path = '/monitor/engine-resources?refresh=off&deployment_id=' + owner.deployment_id
+        await page.goto(path)
+        await expect(monitor.getByTestId('engine-metrics').locator('strong')).toHaveCount(12)
+        for (const metric of engineMetrics) await expect(monitor.getByTestId('engine-value-' + metric.name)).not.toHaveText('—')
+        await expect(monitor.getByTestId('engine-value-total')).toHaveText(/^\d[\d,]* 个$/)
+        await expect(monitor.getByTestId('engine-value-capacity')).toHaveText(/^\d[\d,.]* (?:MiB|GiB|TiB)$/)
+        // No workload fabricates this zero: the owned databases have no deadlocks.
+        await expect(monitor.getByTestId('engine-value-deadlocks')).toHaveText('0.00 次/秒')
+        await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: '每秒事务提交', exact: true })).toBeVisible()
+        await expect(monitor.getByTestId('engine-trend')).toContainText('当前数据库容器')
+        await expect(monitor.getByTestId('engine-metrics')).not.toContainText('/metrics')
+        await page.reload()
+        await expect(page).toHaveURL(new RegExp('deployment_id=' + owner.deployment_id + '$'))
+        await expect(monitor.getByTestId('engine-value-total')).not.toHaveText('—')
+        await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: '每秒事务提交', exact: true })).toBeVisible()
+      }
+      await page.screenshot({ path: resolve(artifact, 'engine-resources-detail.png'), fullPage: true, animations: 'disabled' })
+      await Promise.all(pending)
+      for (const receipt of engineReads) {
+        expect(receipt.status).toBe(200)
+        const summary = receipt.path.endsWith('_summaries'), trend = receipt.path.endsWith('_trends')
+        const subjects = summary ? owners : owners.filter(owner => owner.deployment_id === receipt.query.deployment_id)
+        validateEngineResources(receipt.value, subjects, summary ? engineSummaryMetrics : trend ? [engineMetrics[8]] : engineMetrics, trend ? receipt.query : null)
+      }
+      save('engine-professional-permission-denied')
+      const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
+      try {
+        const negative = await negativeContext.newPage()
+        let reads = 0
+        negative.on('request', request => { if (/\/api\/v1\/(system\/platform\/engine_deployments|monitor\/platform\/engine_resource_)/.test(new URL(request.url()).pathname)) reads++ })
+        report.negative_identity = await login(negative, 'ADDP_ONLINE_METRICS_SECURITY', expected.security_id, 'platform.security_administrator')
+        await negative.goto('/monitor/engine-resources?deployment_id=' + owners[0].deployment_id)
+        await expect(negative.locator('.el-result')).toBeVisible()
+        await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
+        expect(reads).toBe(0)
+      } finally { await negativeContext.close() }
+      report.engine_resources = { reads: engineReads, reloaded: true, zero_and_units: true, denied: true }
+      report.result = 'passed'; save('complete'); return
+    }
     if (expected.engine_admission) {
       save('engine-discovery-and-batch-confirmation')
       const writes = [], input = expected.engine_admission

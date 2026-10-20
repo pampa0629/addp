@@ -137,6 +137,25 @@ class MetricsFixtureTest(unittest.TestCase):
             FIXTURE.center_origin()
         self.assertEqual(command.call_count, 2)
 
+    def test_engine_profile_publishes_only_owned_ports_with_shared_source_trust(self):
+        original = FIXTURE.command
+        def command(args):
+            if args[:4] == ["docker", "network", "inspect", "bridge"]:
+                return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
+            return original(args)
+        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE="engine-admission")), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
+            FIXTURE.prepare(self.secret)
+        import shlex
+        values = {key:shlex.split(value)[0] for key,value in (line.removeprefix('export ').split('=',1) for line in (self.secret/'metrics.env').read_text().splitlines())}
+        self.assertEqual(values['MONITOR_METRICS_ALLOWED_PORTS'], '19100,19101,19102,19401,19402')
+        self.assertEqual(values['ADDP_POSTGRES_METRICS_STATE_DIR'], str(self.secret/'postgres-sources'))
+        for scope in ('infra','business'):
+            folder = self.secret/('postgres-'+scope)
+            self.assertEqual({path.name for path in folder.iterdir()}, {'ca.crt','server.crt','server.key'})
+            self.assertEqual((folder/'ca.crt').read_bytes(), (self.secret/'admission/ca.crt').read_bytes())
+            subprocess.run(['openssl','verify','-verify_ip','172.17.0.1','-purpose','sslserver','-CAfile',str(folder/'ca.crt'),str(folder/'server.crt')],check=True,capture_output=True)
+        self.assertFalse((self.secret/'postgres-sources').exists())  # TLS preparation performs no SQL or source startup.
+
     def test_cleanup_refuses_foreign_container_before_compose(self):
         with patch.object(FIXTURE, "command", side_effect=["foreign-id", '[{"Config":{"Labels":{}}}]']) as command:
             with self.assertRaises(ValueError):
@@ -252,9 +271,40 @@ class CPUPressureFixtureTest(unittest.TestCase):
 
 
 class EngineSourceFixtureTest(unittest.TestCase):
+    def test_professional_source_dispatch_uses_two_private_scopes_without_platform_passwords(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder).resolve()
+            env = {"ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin",
+                   "POSTGRES_PASSWORD":"private-sentinel", "SYSTEM_SERVICE_CLIENT_SECRET":"private-sentinel", "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1"}
+            with patch.dict(os.environ, env), patch.object(FIXTURE.subprocess, "run") as run:
+                FIXTURE.engine_metrics_action(directory, "engine-metrics-up")
+                installs = [call for call in run.call_args_list if call.args[0][1].endswith('/lifecycle.py')]
+                self.assertEqual(len(installs), 2)
+                self.assertEqual([call.args[0][-1] for call in installs], ["business", "infra"])
+                for call in installs:
+                    self.assertEqual(call.args[0][2:4], ["up", "--scope"])
+                    self.assertNotIn("private-sentinel", json.dumps(call.kwargs["env"]))
+                    scope = call.args[0][-1]
+                    self.assertEqual(call.kwargs["env"]["ADDP_POSTGRES_METRICS_LISTEN"], '172.17.0.1:'+str(FIXTURE.POSTGRES_PORTS[scope]))
+                    self.assertEqual(call.kwargs["env"]["ADDP_POSTGRES_METRICS_TLS_DIR"], str(directory/('postgres-'+scope)))
+                run.reset_mock()
+                FIXTURE.engine_metrics_action(directory, "engine-metrics-pause")
+                self.assertEqual(run.call_args_list[0].args[0][-3:], ["down", "--scope", "business"])
+            with patch.dict(os.environ, dict(env, ADDP_POSTGRES_METRICS_STATE_DIR='/foreign')), patch.object(FIXTURE.subprocess, "run") as run:
+                with self.assertRaises(ValueError): FIXTURE.engine_metrics_action(directory, "engine-metrics-up")
+                run.assert_not_called()
+
+    def test_cleanup_attempts_both_sources_and_reports_closed_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder).resolve()
+            env = {"ADDP_POSTGRES_METRICS_STATE_DIR":str(directory/"postgres-sources"), "POSTGRES_USER":"owned_admin", "ADDP_ONLINE_METRICS_NODE_IP":"172.17.0.1"}
+            with patch.dict(os.environ, env), patch.object(FIXTURE.subprocess, "run", side_effect=[subprocess.CalledProcessError(1, ['private-sentinel'], stderr='private-sentinel'), None]) as run:
+                with self.assertRaisesRegex(ValueError, '^Owned PostgreSQL source cleanup failed$'): FIXTURE.engine_metrics_action(directory, "engine-down")
+                self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['business', 'infra'])
+
     def test_business_source_is_private_owned_and_refuses_foreign_components(self):
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"GITHUB_RUN_ID":"12345","GITHUB_RUN_ATTEMPT":"1","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
-            directory=Path(folder)
+            directory=Path(folder).resolve()
             FIXTURE.engine_source_action(directory,"engine-up")
             self.assertEqual((directory/"engine-source.env").stat().st_mode&0o777,0o600)
             content=(directory/"engine-source.env").read_text();self.assertIn("POSTGRES_DB=business",content);self.assertNotIn("addp_online",content)
@@ -264,12 +314,13 @@ class EngineSourceFixtureTest(unittest.TestCase):
             with patch.object(FIXTURE,"command",side_effect=foreign):
                 with self.assertRaises(ValueError):FIXTURE.engine_source_action(directory,"engine-down")
             self.assertEqual(compose.call_count,1)
-            FIXTURE.engine_source_action(directory,"engine-down")
+            with patch.object(FIXTURE,"engine_metrics_action"):
+                FIXTURE.engine_source_action(directory,"engine-down")
             self.assertFalse((directory/"engine-source.env").exists());self.assertFalse((directory/"engine-source-owner.json").exists())
 
     def test_restart_is_limited_to_owned_postgres_and_refreshes_the_same_source(self):
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"GITHUB_RUN_ID":"12345","GITHUB_RUN_ATTEMPT":"1","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
-            directory=Path(folder);FIXTURE.engine_source_action(directory,"engine-up")
+            directory=Path(folder).resolve();FIXTURE.engine_source_action(directory,"engine-up")
             def owned(args):
                 return "owned-id" if args[:3]==["docker","ps","-aq"] else json.dumps({"com.docker.compose.project.working_dir":str(FIXTURE.ROOT/"business"),"com.docker.compose.service":"postgres"})
             with patch.object(FIXTURE,"command",side_effect=owned),patch.object(FIXTURE.subprocess,"run") as run:
@@ -315,19 +366,20 @@ class EngineSourceCommandTest(unittest.TestCase):
         self.secret.mkdir(mode=0o700)
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for folder in ("scripts/test", "scripts/utils", "business"):
+        for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation", "business/postgres"):
             (self.repo / folder).mkdir(parents=True)
-        for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py"):
+        for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py", "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py", "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql", "business/postgres/pg_hba.conf"):
             shutil.copy2(FIXTURE.ROOT / relative, self.repo / relative)
         # Only OS facts and Docker transport are fixtures. Execute the actual CLI,
         # module loader, source validation and ownership files in a fresh process.
-        for folder in ("scripts/test", "scripts/utils"):
+        for folder in ("scripts/test", "scripts/utils", "scripts/infra/postgres-observation"):
             (self.repo / folder / "platform.py").write_text('def system(): return "Linux"\ndef machine(): return "x86_64"\n')
         self.env = dict(PATH=str(self.bin), GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
                         ADDP_ONLINE_HOST="1", ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
                         ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"),
                         GITHUB_RUN_ID="12345", GITHUB_RUN_ATTEMPT="1", ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",
-                        ADDP_DEPLOYMENT_DISCOVERY_DIR=str(self.root / "discovery"))
+                        ADDP_DEPLOYMENT_DISCOVERY_DIR=str(self.root / "discovery"), POSTGRES_USER="addp",
+                        ADDP_POSTGRES_METRICS_STATE_DIR=str(self.secret/"postgres-sources"), ADDP_ONLINE_METRICS_NODE_IP="172.17.0.1")
         docker = self.bin / "docker"
         docker.write_text("#!" + sys.executable + "\n" + "ROOT = " + repr(str(self.root)) + "\n" + r'''
 import json, sys
@@ -341,7 +393,7 @@ if args[:2] == ["context", "show"]: print("default")
 elif args[:2] == ["context", "inspect"]: print(json.dumps("unix:///var/run/docker.sock"))
 elif args[0] == "info": print(json.dumps(dict(id="fixture-daemon", os_type="linux", operating_system="Linux")))
 elif args[0] == "ps":
-    if state.exists(): print("a" * 64)
+    if state.exists() and not any("addp-postgres-metrics-" in arg for arg in args): print("a" * 64)
 elif args[0] in ("network", "volume"):
     if state.exists(): print("owned-resource")
 elif args[0] == "inspect":
@@ -380,7 +432,7 @@ else: sys.exit(19)
         self.assertEqual(source["state"], "available")
         self.assertEqual(source["services"][0]["containers"][0]["restart_count"], 1)
         self.cli("engine-down")
-        self.assertEqual(list(self.secret.iterdir()), [])
+        self.assertEqual({p.name for p in self.secret.iterdir()}, {"postgres-auth"})
         self.assertFalse((self.root / "docker-state").exists())
 
     def test_real_cli_cleanup_after_partial_start_refuses_foreign_components(self):
@@ -398,7 +450,7 @@ else: sys.exit(19)
         self.assertTrue((self.root / "docker-state").exists())
         (self.root / "foreign").unlink()
         self.cli("engine-down")
-        self.assertEqual(list(self.secret.iterdir()), [])
+        self.assertEqual({p.name for p in self.secret.iterdir()}, {"postgres-auth"})
         self.assertFalse((self.root / "docker-state").exists())
 
 

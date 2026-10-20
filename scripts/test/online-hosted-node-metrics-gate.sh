@@ -15,7 +15,9 @@ HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-node-metrics addp-metrics-online)
 node_owned=0
 engine_owned=0
-if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business); fi
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ]; then
+  HOSTED_FIXTURE_COMPOSE_PROJECTS+=(business addp-postgres-metrics-infra addp-postgres-metrics-business)
+fi
 stop_online_fixture() {
   local status=0
   if [ "$engine_owned" -eq 1 ]; then

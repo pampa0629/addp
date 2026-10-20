@@ -1172,6 +1172,157 @@ def run_host_binding_case(base, directory, admin, actor, host, target, report):
 
 
 ENGINE_DEPLOYMENTS = "/api/v1/system/platform/engine_deployments"
+ENGINE_OBSERVATIONS = "/api/v1/monitor/platform/engine_resource_observations"
+ENGINE_SUMMARIES = "/api/v1/monitor/platform/engine_resource_summaries"
+ENGINE_TRENDS = "/api/v1/monitor/platform/engine_resource_trends"
+ENGINE_METRICS = {"postgresql.connections."+key: ("connections", 0) for key in
+                  ("total", "active", "idle", "idle_in_transaction", "waiting", "lock_waiting", "io_waiting", "maximum")}
+ENGINE_METRICS.update({"postgresql.transactions."+key+"_per_second": ("transactions_per_second", 60) for key in ("committed", "rolled_back")})
+ENGINE_METRICS.update({"postgresql.deadlocks.per_second": ("events_per_second", 60), "postgresql.database.total_bytes": ("bytes", 0)})
+ENGINE_SUMMARY_KEYS = {"postgresql.connections.total", "postgresql.connections.active", "postgresql.transactions.committed_per_second", "postgresql.database.total_bytes"}
+
+
+def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=False, absent=False):
+    keys = set(keys or ENGINE_METRICS)
+    require(isinstance(value, dict) and isinstance(value.get("data"), list) and len(value["data"]) == len(owners), "engine response scope differs")
+    start, end, queried = (utc_timestamp(value.get(key)) for key in ("start", "end", "queried_at"))
+    step = value.get("step_seconds")
+    require(type(step) is int and step >= 15 and step % 15 == 0 and start <= end <= queried
+            and (trend or start == end) and type(value.get("policy_version")) is int
+            and value["policy_version"] >= 1 and value.get("lookback_seconds") == 300, "engine query metadata differs")
+    count = int((end-start)//step)+1
+    require(1 <= count <= 1000 and count*len(owners)*len(keys) <= 20000, "engine query exceeds declared budget")
+    seen = set()
+    for row in value["data"]:
+        identifier = row.get("subject", {}).get("deployment_id")
+        owner = next((item for item in owners if item["deployment_id"] == identifier), None)
+        require(owner is not None and identifier not in seen, "engine response contains another deployment")
+        seen.add(identifier)
+        require(row["subject"] == {"kind":"engine_deployment", "deployment_id":identifier, "display_name":owner["display_name"], "engine_type":"postgresql"}
+                and row.get("node_id") == owner["node_id"] and set(row) == {"subject", "node_id", "collection", "series"}, "engine subject changed or private fields escaped")
+        require(isinstance(row.get("series"), list) and len(row["series"]) == len(keys)
+                and {series.get("metric_key") for series in row["series"]} == keys, "engine fixed catalog differs")
+        state = row.get("collection", {}).get("state")
+        if fresh: require(state == "collecting", "engine snapshot is not collecting")
+        if absent: require(state in {"not_active", "not_connected", "source_unavailable"}, "inactive engine remained connected")
+        container_start = utc_timestamp(owner["inventory"]["services"][0]["containers"][0]["started_at"])
+        if trend and not absent: require(start >= math.ceil(container_start) and end-start <= 7*86400, "engine trend includes a previous container run")
+        for series in row["series"]:
+            unit, window = ENGINE_METRICS[series["metric_key"]]
+            require(series.get("unit") == unit and series.get("window_seconds") == window and series.get("dimensions") == {}
+                    and isinstance(series.get("points"), list) and len(series["points"]) == count, "engine series contract differs")
+            for index, point in enumerate(series["points"]):
+                require(utc_timestamp(point.get("evaluated_at")) == start+index*step, "engine evaluation grid differs")
+                status, number, sample = (point.get(key) for key in ("data_state", "value", "sampled_at"))
+                if absent or state in {"not_active", "not_connected", "source_unavailable"}:
+                    require(status in {"not_active", "not_connected", "source_unavailable"} and number is None and sample is None, "inactive engine reused a value")
+                elif status == "valid":
+                    require(type(number) in (int, float) and math.isfinite(number) and number >= 0
+                            and (unit != "connections" or int(number) == number)
+                            and 0 <= start+index*step-utc_timestamp(sample) <= 60, "engine value or sample is invalid")
+                else:
+                    require(not fresh or trend, "engine current window is incomplete")
+                    require(status in {"no_data", "no_sample", "stale"}, "engine missing state differs")
+                    if status != "stale": require(number is None and sample is None, "engine missing value fabricated")
+                    else: require(type(number) in (int, float) and math.isfinite(number) and number >= 0 and start+index*step-utc_timestamp(sample) > 60, "stale engine point is invalid")
+            if trend and not absent: require(any(point["data_state"] == "valid" for point in series["points"]), "engine trend contains no valid sample")
+    return value
+
+
+def engine_query_path(identifier, trend=False):
+    params = {"deployment_id": identifier, "metrics": ",".join(ENGINE_METRICS)}
+    if trend:
+        end = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        params.update(metrics="postgresql.transactions.committed_per_second", start=(end-datetime.timedelta(minutes=5)).isoformat().replace("+00:00", "Z"), end=end.isoformat().replace("+00:00", "Z"))
+    return (ENGINE_TRENDS if trend else ENGINE_OBSERVATIONS)+"?"+urllib.parse.urlencode(params)
+
+
+def assert_engine_cleared(admin, owner):
+    identifier = owner["deployment_id"]
+    assert_engine_resources(admin.request("GET", engine_query_path(identifier), (200,)).payload, [owner], absent=True)
+    assert_engine_resources(admin.request("GET", ENGINE_SUMMARIES+"?deployment_ids="+identifier, (200,)).payload, [owner], keys=ENGINE_SUMMARY_KEYS, absent=True)
+    assert_engine_resources(admin.request("GET", engine_query_path(identifier, True), (200,)).payload, [owner], keys={"postgresql.transactions.committed_per_second"}, trend=True, absent=True)
+
+
+def wait_engine_samples(admin, owners):
+    # SD 30s + scrape 15s + SQL 5s + complete 60s window + margin.
+    deadline = time.monotonic()+130
+    while True:
+        values = [assert_engine_resources(admin.request("GET", engine_query_path(row["deployment_id"]), (200,)).payload, [row]) for row in owners]
+        if all(point.get("data_state") == "valid" for value in values for row in value["data"] for series in row["series"] for point in series["points"]):
+            for value, owner in zip(values, owners): assert_engine_resources(value, [owner], fresh=True)
+            return values
+        require(time.monotonic() < deadline, "PostgreSQL complete sampling window did not converge")
+        time.sleep(3)
+
+
+def run_engine_professional_case(base, directory, admin, actor, denied, owners, report):
+    report["stage"] = "engine-professional-current-container-queries"; write_evidence(report)
+    values = wait_engine_samples(admin, owners)
+    summary_path = ENGINE_SUMMARIES+"?"+urllib.parse.urlencode({"deployment_ids":",".join(row["deployment_id"] for row in owners)})
+    summary = assert_engine_resources(admin.request("GET", summary_path, (200,)).payload, owners, keys=ENGINE_SUMMARY_KEYS, fresh=True)
+    trends = [assert_engine_resources(admin.request("GET", engine_query_path(row["deployment_id"], True), (200,)).payload, [row], keys={"postgresql.transactions.committed_per_second"}, trend=True) for row in owners]
+    for client in [*denied, API.GatewayClient(base, "", 10)]:
+        for path in (engine_query_path(owners[0]["deployment_id"]), summary_path, engine_query_path(owners[0]["deployment_id"], True)):
+            client.request("GET", path, (403,) if client.token else (401,))
+    artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    security_id = denied[0].request("GET", "/api/v1/system/auth/context", (200,)).payload["principal"]["id"]
+    expected = {"run_id":os.environ["ADDP_ONLINE_TEST_RUN_ID"], "admin_id":actor["principal"]["id"], "security_id":security_id, "engine_resources":{"owners":owners}}
+    (artifacts/"node-resources-browser-input.json").write_text(json.dumps(expected))
+    report["stage"] = "engine-professional-console"; write_evidence(report)
+    browser = execute_resource_browser(artifacts)
+    validate_engine_professional_browser(browser, expected, artifacts)
+    admin = renew_admin(base, actor["principal"]["id"])
+    report["stage"] = "engine-professional-source-stop-and-recovery"; write_evidence(report)
+    business = next(row for row in owners if row["inventory"]["source"]["project"] == "business")
+    try:
+        FIXTURE.engine_source_action(directory, "engine-metrics-pause")
+        def stopped():
+            value = admin.request("GET", engine_query_path(business["deployment_id"]), (200,)).payload
+            if value.get("data", [{}])[0].get("collection", {}).get("state") not in {"not_connected", "source_unavailable"}: return False
+            assert_engine_resources(value, [business], absent=True)
+            assert_engine_cleared(admin, business)
+            return True
+        eventually(stopped, "stopped PostgreSQL source retained current values")
+    finally:
+        FIXTURE.engine_source_action(directory, "engine-metrics-resume")
+    wait_engine_samples(admin, owners)
+    report["engine_resources"] = {"result":"passed", "deployments":2, "instant_metrics":12, "summary_metrics":4,
+                                  "current_container_trends":True, "source_stop_clears":True, "source_restored":True,
+                                  "identity_denials":True, "browser":True}
+    return admin
+
+
+def validate_engine_professional_browser(value, expected, artifacts):
+    require(isinstance(value, dict) and value.get("schema_version") == "addp.node-resources-browser/v1"
+            and value.get("result") == "passed" and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "engine professional browser result differs")
+    platform_identity(value.get("identity", {}), "platform.system_administrator")
+    require(value["identity"]["principal"]["id"] == expected["admin_id"], "engine professional browser changed identity")
+    platform_identity(value.get("negative_identity", {}), "platform.security_administrator")
+    require(value["negative_identity"]["principal"]["id"] == expected["security_id"], "engine professional browser changed negative identity")
+    detail = value.get("engine_resources", {})
+    require(detail.get("reloaded") is True and detail.get("zero_and_units") is True and detail.get("denied") is True, "engine professional browser assertions missing")
+    owners = expected["engine_resources"]["owners"]
+    reads = detail.get("reads", [])
+    require(isinstance(reads, list) and len(reads) >= 5, "engine professional browser reads missing")
+    covered = set()
+    for item in reads:
+        require(item.get("status") == 200, "browser professional query failed")
+        path, query = item.get("path"), item.get("query", {})
+        if path == ENGINE_SUMMARIES:
+            require(set(query.get("deployment_ids", "").split(",")) == {row["deployment_id"] for row in owners}, "browser summary scope differs")
+            assert_engine_resources(item.get("value"), owners, keys=ENGINE_SUMMARY_KEYS, fresh=True)
+            covered.add((path, "all"))
+        else:
+            owner = next((row for row in owners if row["deployment_id"] == query.get("deployment_id")), None)
+            require(owner is not None and path in {ENGINE_OBSERVATIONS, ENGINE_TRENDS}, "browser read another engine")
+            trend = path == ENGINE_TRENDS
+            assert_engine_resources(item.get("value"), [owner], keys={"postgresql.transactions.committed_per_second"} if trend else None, trend=trend, fresh=not trend)
+            covered.add((path, owner["deployment_id"]))
+    require((ENGINE_SUMMARIES, "all") in covered and all((path, row["deployment_id"]) in covered for row in owners for path in (ENGINE_OBSERVATIONS, ENGINE_TRENDS)), "browser missed a professional endpoint or deployment")
+    for name in ("engine-resources-list.png", "engine-resources-detail.png"):
+        path = artifacts/name
+        require(path.is_file() and path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "engine professional screenshot missing")
 
 
 def engine_candidates(admin):
@@ -1245,6 +1396,7 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
         client.request("POST",ENGINE_DEPLOYMENTS,expected_status,{"items":items})
     report["stage"]="engine-real-source-change"; write_evidence(report)
     FIXTURE.engine_source_action(directory,"engine-restart")
+    FIXTURE.engine_source_action(directory,"engine-metrics-up")
     changed,new_candidates=engine_candidates(admin)
     old={row["scope"]:row["fingerprint"] for row in items}; new={row["scope"]:row["fingerprint"] for row in new_candidates}
     require(old["business"]!=new["business"] and old["infra"]==new["infra"],"actual Business restart did not change only its source facts")
@@ -1259,6 +1411,7 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
     created=validate_engine_admission_browser(browser,expected,artifacts)
     admin=renew_admin(base,actor["principal"]["id"])
     require(admin.request("GET",ENGINE_DEPLOYMENTS,(200,)).payload.get("total")==2,"engine batch did not create exactly two roots")
+    admin = run_engine_professional_case(base, directory, admin, actor, denied, created, report)
     report["stage"]="engine-owner-read-cas-and-retirement"; write_evidence(report)
     for receipt in created:
         path=ENGINE_DEPLOYMENTS+"/"+receipt["deployment_id"]
@@ -1274,6 +1427,7 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
         require(all(unchanged.get(k)==updated.get(k) for k in ("version","display_name","inventory","declared_node_id","enabled")),"rejected engine writes changed current state")
         retired=admin.request("PUT",path,(200,),dict(body,enabled=False,version=2)).payload
         require(retired.get("version")==3 and retired.get("host_binding_reason")=="deployment_disabled","engine retirement differs")
+        assert_engine_cleared(admin, retired)
     final_host=admin.request("PUT",NODES+"/"+host["node_id"],(200,),dict(node_input,enabled=False,version=1)).payload
     require(final_host.get("version")==2 and final_host.get("enabled") is False,"engine host was not retired")
     report.update(engine_admission={"result":"passed","batch_size":2,"failed_batch_no_roots":True,"source_changed":True,"duplicate_rejected":True,"browser_reload":True,"owner_reads":True,"cas":True,"retired":True},stage="complete",result="passed")

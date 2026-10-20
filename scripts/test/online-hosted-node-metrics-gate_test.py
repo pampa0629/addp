@@ -144,8 +144,10 @@ class HostedMetricsGateTest(unittest.TestCase):
             self.assertIn("metrics-fixture:engine-up",trace);self.assertIn("metrics-fixture:engine-down",trace);self.assertIn("infra-down",trace)
             if failure!="ADDP_TEST_ENGINE_UP_FAIL":self.assertIn("start:-monitor -system",trace)
             self.assertFalse(self.host.secrets.exists())
-        result=self.run_gate(check=True,ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",ADDP_TEST_OCCUPIED_PROJECT="business")
-        self.assertNotEqual(result.returncode,0)
+        for project in ("business", "addp-postgres-metrics-infra", "addp-postgres-metrics-business"):
+            with self.subTest(occupied=project):
+                result=self.run_gate(check=True,ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",ADDP_TEST_OCCUPIED_PROJECT=project)
+                self.assertNotEqual(result.returncode,0)
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):

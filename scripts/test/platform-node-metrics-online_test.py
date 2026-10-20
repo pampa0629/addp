@@ -1888,5 +1888,83 @@ class EngineAdmissionEvidenceTest(unittest.TestCase):
         admin.request.assert_not_called()
 
 
+class EngineProfessionalEvidenceTest(unittest.TestCase):
+    def setUp(self):
+        self.at = "2026-10-21T00:05:00Z"
+        self.owner = {"deployment_id":"20000000-0000-4000-8000-000000000001", "display_name":"Owned Infra PG", "node_id":"10000000-0000-4000-8000-000000000001",
+                      "inventory":{"services":[{"containers":[{"started_at":"2026-10-21T00:01:00.123Z"}]}]}}
+
+    def response(self, keys=None, *, trend=False, absent=False):
+        keys = keys or ONLINE.ENGINE_METRICS
+        points = [{"evaluated_at":self.at, "sampled_at":None if absent else self.at,
+                   "data_state":"not_connected" if absent else "valid", "value":None if absent else 0}]
+        if trend: points.insert(0, {"evaluated_at":"2026-10-21T00:04:45Z", "sampled_at":None, "data_state":"no_data", "value":None})
+        return {"data":[{"subject":{"kind":"engine_deployment", "deployment_id":self.owner["deployment_id"], "display_name":self.owner["display_name"], "engine_type":"postgresql"},
+                         "node_id":self.owner["node_id"], "collection":{"state":"not_connected" if absent else "collecting", "sampled_at":None if absent else self.at},
+                         "series":[{"metric_key":key, "unit":ONLINE.ENGINE_METRICS[key][0], "window_seconds":ONLINE.ENGINE_METRICS[key][1], "dimensions":{}, "points":copy.deepcopy(points)} for key in keys]}],
+                "queried_at":self.at, "start":"2026-10-21T00:04:45Z" if trend else self.at, "end":self.at, "step_seconds":15, "policy_version":1, "lookback_seconds":300}
+
+    def test_actual_queries_include_required_closed_metric_selection(self):
+        from urllib.parse import urlsplit, parse_qs
+        for trend in (False, True):
+            value = urlsplit(ONLINE.engine_query_path(self.owner["deployment_id"], trend))
+            self.assertEqual(value.path, ONLINE.ENGINE_TRENDS if trend else ONLINE.ENGINE_OBSERVATIONS)
+            query = parse_qs(value.query)
+            self.assertEqual(query['deployment_id'], [self.owner['deployment_id']])
+            self.assertEqual(set(query['metrics'][0].split(',')), {'postgresql.transactions.committed_per_second'} if trend else set(ONLINE.ENGINE_METRICS))
+            self.assertEqual(set(query), {'deployment_id', 'metrics', 'start', 'end'} if trend else {'deployment_id', 'metrics'})
+
+    def test_fixed_catalog_zero_is_valid_and_invalid_scope_units_or_private_fields_reject(self):
+        value = self.response()
+        self.assertEqual(ONLINE.assert_engine_resources(value, [self.owner], fresh=True), value)
+        for mutate in (lambda v:v["data"][0]["subject"].update(deployment_id="foreign"),
+                       lambda v:v["data"][0].update(endpoint="https://private/metrics"),
+                       lambda v:v["data"][0]["series"].pop(),
+                       lambda v:v["data"][0]["series"][0].update(unit="bytes"),
+                       lambda v:v["data"][0]["series"][0]["points"][0].update(value=0.5),
+                       lambda v:v["data"][0]["series"][0]["points"][0].update(value=True),
+                       lambda v:v["data"][0]["series"][0]["points"][0].update(sampled_at="2026-10-21T00:00:00Z")):
+            invalid = copy.deepcopy(value); mutate(invalid)
+            with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError): ONLINE.assert_engine_resources(invalid, [self.owner], fresh=True)
+
+    def test_trend_retains_gap_but_requires_current_container_and_some_actual_sample(self):
+        key = {"postgresql.transactions.committed_per_second"}
+        value = self.response(key, trend=True)
+        ONLINE.assert_engine_resources(value, [self.owner], keys=key, trend=True)
+        old = copy.deepcopy(self.owner); old["inventory"]["services"][0]["containers"][0]["started_at"] = "2026-10-21T00:04:50Z"
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_engine_resources(value, [old], keys=key, trend=True)
+        value["data"][0]["series"][0]["points"][1].update(data_state="no_data", value=None, sampled_at=None)
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_engine_resources(value, [self.owner], keys=key, trend=True)
+
+    def test_stopped_source_must_clear_every_value_and_sample(self):
+        value = self.response(absent=True)
+        ONLINE.assert_engine_resources(value, [self.owner], absent=True)
+        value["data"][0]["series"][0]["points"][0].update(value=0)
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_engine_resources(value, [self.owner], absent=True)
+
+    def test_browser_evidence_requires_all_endpoints_both_identities_units_and_screenshots(self):
+        actor, denied = identity(), identity("platform.security_administrator")
+        actor["principal"]["id"] = "admin"; denied["principal"]["id"] = "security"
+        wanted = {"run_id":"run", "admin_id":"admin", "security_id":"security", "engine_resources":{"owners":[self.owner]}}
+        reads = [{"path":ONLINE.ENGINE_SUMMARIES, "query":{"deployment_ids":self.owner["deployment_id"]}, "value":self.response(ONLINE.ENGINE_SUMMARY_KEYS), "status":200}]
+        for _ in range(2):
+            reads.extend([{"path":ONLINE.ENGINE_OBSERVATIONS, "query":{"deployment_id":self.owner["deployment_id"]}, "value":self.response(), "status":200},
+                          {"path":ONLINE.ENGINE_TRENDS, "query":{"deployment_id":self.owner["deployment_id"]}, "value":self.response({"postgresql.transactions.committed_per_second"}, trend=True), "status":200}])
+        value = {"schema_version":"addp.node-resources-browser/v1", "run_id":"run", "result":"passed", "stage":"complete", "identity":actor, "negative_identity":denied,
+                 "engine_resources":{"reads":reads, "reloaded":True, "zero_and_units":True, "denied":True}}
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            for name in ("engine-resources-list.png", "engine-resources-detail.png"): (directory/name).write_bytes(b"\x89PNG\r\n\x1a\n")
+            ONLINE.validate_engine_professional_browser(value, wanted, directory)
+            for mutate in (lambda v:v.update(run_id="other"), lambda v:v["negative_identity"]["principal"].update(id="other"),
+                           lambda v:v["engine_resources"].update(denied=False), lambda v:v["engine_resources"].update(zero_and_units=False),
+                           lambda v:v["engine_resources"]["reads"][0].update(status=403), lambda v:v["engine_resources"]["reads"][0]["query"].update(deployment_ids="foreign"),
+                           lambda v:v["engine_resources"].update(reads=[item for item in reads if item["path"] != ONLINE.ENGINE_TRENDS])):
+                invalid = copy.deepcopy(value); mutate(invalid)
+                with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError): ONLINE.validate_engine_professional_browser(invalid, wanted, directory)
+            (directory/"engine-resources-detail.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_engine_professional_browser(value, wanted, directory)
+
+
 if __name__ == "__main__":
     unittest.main()

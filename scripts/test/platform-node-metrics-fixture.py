@@ -24,6 +24,7 @@ sys.modules[SOURCE_SPEC.name] = SOURCE
 SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
+POSTGRES_PORTS = {"infra": 19401, "business": 19402}
 
 
 def boundary():
@@ -64,7 +65,8 @@ def prepare(directory):
     ip = ipaddress.ip_address(address)
     if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local:
         raise ValueError("Hosted metrics requires its native private Docker bridge gateway")
-    for port in (9444, 19100, *PROCESS_PORTS.values()):
+    engine_case = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "engine-admission"
+    for port in (9444, 19100, *PROCESS_PORTS.values(), *(POSTGRES_PORTS.values() if engine_case else ())):
         with socket.socket() as sock:
             sock.bind((address, port))
     for name in ("center-tls", "node-tls", "deployment", "control", "admission", "process-system", "process-monitor"):
@@ -94,6 +96,12 @@ def prepare(directory):
     for folder, issuer in (("center-tls", center), ("node-tls", source), ("process-system", source), ("process-monitor", source)):
         (directory / folder / "ca.crt").write_bytes(Path(str(issuer)+".crt").read_bytes())
         certificate(issuer, directory / folder, "server", True)
+    if engine_case:
+        for scope in POSTGRES_PORTS:
+            folder = directory / ("postgres-" + scope)
+            folder.mkdir(mode=0o755)
+            (folder / "ca.crt").write_bytes(Path(str(source)+".crt").read_bytes())
+            certificate(source, folder, "server", True)
     certificate(center, directory / "center-tls", "health")
     certificate(center, directory / "query", "client")
     (directory / "query/client.key").chmod(0o600)
@@ -129,6 +137,10 @@ def prepare(directory):
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
         "MONITOR_METRICS_CLIENT_KEY_FILE": str(directory / "admission/client.key"),
     }
+    if engine_case:
+        values["MONITOR_METRICS_ALLOWED_PORTS"] += "," + ",".join(map(str, POSTGRES_PORTS.values()))
+        values["ADDP_POSTGRES_METRICS_STATE_DIR"] = str(directory / "postgres-sources")
+        values["ADDP_POSTGRES_AUTH_STATE_DIR"] = str(directory / "postgres-auth")
     os.environ.update(values)
     command(["python3", str(ROOT / "scripts/infra/generate-metrics-config.py")])
     # The center belongs to the standard Infra lifecycle; this fixture only
@@ -361,6 +373,34 @@ def engine_compose(directory, *args):
                           env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
 
 
+def engine_metrics_action(directory, action):
+    """Use the production deployment owner; never install via SQL test hooks."""
+    require_state = str(directory / "postgres-sources")
+    if os.environ.get("ADDP_POSTGRES_METRICS_STATE_DIR") != require_state:
+        raise ValueError("PostgreSQL source state must belong to this Hosted fixture")
+    operation = "down" if action in ("engine-down", "engine-metrics-pause") else "up"
+    scopes = ("business",) if action in ("engine-metrics-pause", "engine-metrics-resume") else ("business", "infra")
+    failed = False
+    for scope in scopes:
+        env = dict(SOURCE.observer_environment(), POSTGRES_USER="business" if scope == "business" else os.environ["POSTGRES_USER"],
+                   ADDP_POSTGRES_METRICS_ENABLED="true", ADDP_POSTGRES_METRICS_STATE_DIR=require_state,
+                   ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth"),
+                   ADDP_POSTGRES_METRICS_TLS_DIR=str(directory / ("postgres-" + scope)),
+                   ADDP_POSTGRES_METRICS_LISTEN=os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(POSTGRES_PORTS[scope]))
+        try:
+            subprocess.run([sys.executable, str(ROOT / "scripts/infra/postgres-observation/lifecycle.py"), operation, "--scope", scope],
+                           env=env, check=True, capture_output=True, text=True, timeout=210)
+        except (OSError, subprocess.SubprocessError):
+            if action != "engine-down": raise ValueError("Owned PostgreSQL source lifecycle failed") from None
+            failed = True
+        if action != "engine-down":
+            subprocess.run([sys.executable, str(ROOT / "scripts/utils/deployment-inventory.py"), "refresh", "--scope", scope,
+                            "--directory", os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT / ".dev-state/deployment-discovery")],
+                           env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
+    if failed:
+        raise ValueError("Owned PostgreSQL source cleanup failed")
+
+
 def engine_source_action(directory, action):
     if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") != "engine-admission":
         raise ValueError("Business fixture requires the engine-admission case")
@@ -378,10 +418,15 @@ def engine_source_action(directory, action):
         for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
             if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():
                 raise ValueError("refusing an existing Business source")
-        owner.write_text(json.dumps(expected)); owner.chmod(0o600)
         # Normal Business engine initialization only; no application queries or sample generators.
         envfile=directory/"engine-source.env"
-        envfile.write_text("POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\n")
+        auth = subprocess.run([sys.executable, str(ROOT / "scripts/infra/postgres-observation/authentication.py"), "prepare-business"],
+                              env=dict(SOURCE.observer_environment(), ADDP_POSTGRES_AUTH_STATE_DIR=str(directory / "postgres-auth")),
+                              check=True, capture_output=True, text=True, timeout=15).stdout.strip()
+        if auth != str(directory / "postgres-auth/runtime"):
+            raise ValueError("Business authentication directory escaped the owned fixture")
+        owner.write_text(json.dumps(expected)); owner.chmod(0o600)
+        envfile.write_text("POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\nADDP_BUSINESS_POSTGRES_AUTH_DIR="+auth+"\n")
         envfile.chmod(0o600)
         print("Engine source engine-up: start owned PostgreSQL", flush=True)
         engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
@@ -400,6 +445,9 @@ def engine_source_action(directory, action):
         if (labels.get("com.docker.compose.project.working_dir")!=str(ROOT/"business")
                 or labels.get("com.docker.compose.service")!="postgres"):
             raise ValueError("refusing a foreign Business component")
+    if action in ("engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume"):
+        engine_metrics_action(directory, action)
+        return
     if action=="engine-restart":
         if len(ids)!=1: raise ValueError("Business PostgreSQL identity is not unique")
         print("Engine source engine-restart: restart owned PostgreSQL and refresh source", flush=True)
@@ -409,16 +457,23 @@ def engine_source_action(directory, action):
                        env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
         return
     print("Engine source engine-down: remove owned PostgreSQL and verify zero residuals", flush=True)
+    metrics_failed = False
+    try:
+        engine_metrics_action(directory, action)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        metrics_failed = True
     engine_compose(directory,"down","--volumes","--remove-orphans")
     for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
         if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():
             raise ValueError("Business source has residual resources")
     owner.unlink(); (directory/"engine-source.env").unlink(missing_ok=True)
+    if metrics_failed:
+        raise ValueError("PostgreSQL source cleanup failed; core Business destruction was still attempted")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down"))
+    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume"))
     args = parser.parse_args()
     directory = boundary()
     if args.action.startswith("engine-"):

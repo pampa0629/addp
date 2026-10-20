@@ -115,8 +115,10 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 
 速率使用固定一分钟完整窗口，至少四次有效采样，并验证过去和当前属于同一服务启动／统计代际、无计数回退且窗口两端新鲜；重启、统计重置或统计关闭时留空，不补零、不跨代际计算。SQL Exporter 的 HTTP 200／up=1 仍不足以证明 SQL 成功，必须验证固定快照、采样时间与字段完整性；来源不可用或 SQL 失败清空当前值，缺样形成趋势断点。
 
-接口计划为 `/platform/engine_resource_observations`（单部署、最多十二指标）、`/platform/engine_resource_summaries`（当前页部署的四项摘要）及 `/platform/engine_resource_trends`（单部署固定目录）。预算复用当前查询策略；用户 Token 每请求交 System 裁决，查询后再核对当前身份／权限／来源，不用后台权限或旧时序兜底。页面在运行监控下提供“引擎监控”，从现有 System 引擎部署列表进入；不让用户重复填写节点或端点，复用共享格式化、图表、自动刷新与 URL 恢复。
+接口为 `/platform/engine_resource_observations`（单部署、最多十二指标）、`/platform/engine_resource_summaries`（当前页部署的四项摘要）及 `/platform/engine_resource_trends`（单部署固定目录）。预算复用当前查询策略；用户 Token 每请求交 System 裁决，查询后再核对当前身份／权限／来源，不用后台权限或旧时序兜底。页面在运行监控下提供“引擎监控”，从现有 System 引擎部署列表进入；不让用户重复填写节点或端点，复用共享格式化、图表、自动刷新与 URL 恢复。
 
 **已确认的首期历史范围**：即时值与最多七天趋势只读取当前 PostgreSQL 容器运行段；采集器重启但数据库运行身份不变时可延续，数据库容器重建后不混入旧容器数据。数据库进程重启或统计重置位置的速率仍按前述代际检查留空。退出容器历史及跨运行段拼接另定保留／授权规则。
 
 验证沿既有 Monitor／System／Common T1、System 投影／Monitor PostgreSQL T2、固定指标 mTLS T2、Monitor／Console 前端门禁及 Swagger 覆盖；部署发现协议、标签和 Prometheus 配置变更同步既有 CI 登记。正式身份专业查询／页面 T4 不沿用只有部署管理用途的 Hosted 例外，具体范围明确后按测试规范确认，未执行不计通过。
+
+2026-10-21 已确认的正式身份 T4 限定用途：沿同一一次性 Hosted 的 `engine-admission` 前置，只给当次临时平台管理员增加三个 `engine_resource_*` GET 的专业观测测试用途，并操作当次两个已接入 PostgreSQL 的真实 Console 引擎监控页面。验证固定目录、单位与零值、当前容器趋势、停用／来源缺失清空和恢复，以及无权限身份拒绝；沿正式密码／MFA、既有平台读取权限和独立 Prometheus 身份，不读取租户 Engine、SQL 正文、业务表或凭据，不改生产 IAM、不加压、不触及个人环境。仍使用原 1800 秒场景及 Job 60 分钟上限，退出销毁当次部署／身份／凭据并核验零残留；必须实际执行且清理通过后才计为 T4 通过。
