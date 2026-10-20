@@ -268,7 +268,7 @@
 | content hash | 内容哈希 | 对原始内容二进制流计算得到的哈希值。 | 标准落点为 `attributes.storage.content_hash`，用于判断内容是否变化；不用于定位外部全文索引记录。 |
 | basic scan | 基础扫描 | 低成本建立资源树、data item 身份与合法组成边界的扫描。 | 使用独立且限范围的基础识别资格，不要求尚未形成的 DataItem 先有内容 Grant。必要的有限 manifest／header 读取须声明用途、上限及引用边界；不允许业务内容采样、正文提取或全量内容哈希。 |
 | deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 内容读取须经 System 当前授权裁决及适用的 Security 检查，并遵守 Provider／reader 边界和成本控制；扫描操作权限、服务连接和执行来源均不代替源数据读取资格。 |
-| metadata collection qualification | 元数据采集资格 | System 核验后台采集活动的主体、用途、精确目标或完整范围及当前有效性的依据。 | 个人交互内容扫描核验本人当前数据读取权；租户集中采集须经具备对应引擎或数据范围管理资格的主体明确批准，不永久借用任务创建人的个人权限。不授予操作人预览、下载或转授权权利，Meta 不维护第二套源 ACL。 |
+| metadata collection qualification | 元数据采集资格 | System 核验后台采集活动的主体、用途、精确目标或完整范围及当前有效性的依据。 | 个人交互内容扫描核验本人当前数据读取权及适用 Deny；租户集中采集须经具备对应引擎或数据范围管理资格的主体明确批准，按独立资格的范围、深度、期限、撤销及适用 Security 约束执行，不绑定创建人的个人 Grant／Deny。本期不新增治理专用 Deny；不授予操作人预览、下载或转授权权利，Meta 不维护第二套源 ACL。 |
 | exact-target collection | 精确目标采集 | 仅覆盖明确指定数据项及其经核验合法组成边界的采集。 | 不包含兄弟项或未来新增的独立 DataItem；有限 refs、locator 和执行来源都是范围事实，不是许可。 |
 | full-scope collection | 完整范围采集 | 租户明确批准对某个 Engine、schema 或目录等完整范围开展的集中采集。 | 包含该边界内未来新增的数据项；批准时须明确范围、用途与允许深度，Worker 重核实际成员及当前资格。跨 Engine、换根范围或外部引用不自动覆盖，也不向普通 User 签发新增数据项的内容 Grant。 |
 | scan depth | 扫描深度 | 本次扫描要达到的深度。 | 请求字段为 `scan_depth`，只允许 `basic` / `deep`。 |
