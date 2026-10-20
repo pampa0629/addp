@@ -128,14 +128,22 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await expect(page).toHaveURL(/\/develop\/executions\/diagnostic-run$/)
 })
 
-for (const locale of ['zh-cn', 'en']) for (const [reason, stage, zh, en] of [
+for (const locale of ['zh-cn', 'en']) for (const [reason, stage, zh, en, zhAction, enAction] of [
   ['data_protection_required', 'preparation', '数据脱敏保护校验未通过', 'data masking protection checks'],
   ['permission_denied', 'execution', '当前执行缺少读取或写入权限', 'lacks read or write permission'],
-  ['authorization_invalid', 'authorization', '执行授权缺失、失效或与本次执行不匹配', 'Execution authorization is missing, expired']
+  ['authorization_invalid', 'authorization', '执行授权缺失、失效或与本次执行不匹配', 'Execution authorization is missing, expired'],
+  ['protection_computed_output_unsupported', 'preparation', '当前计算或组合输出涉及受保护字段', 'computed or combined output uses protected fields', '请改为直接读取受保护字段', 'Read the protected fields directly'],
+  ['protection_lineage_unverified', 'preparation', '完整读取范围或输出字段来源', 'complete read scope or output field origins', '能验证数据来源', 'verifiable data origins'],
+  ['protection_not_ready', 'preparation', '数据保护配置尚未就绪', 'Data protection configuration is not ready', '纳管和规则同步完成', 'enrollment and rule synchronization'],
+  ['protection_expired', 'result', '保护规则已到期', 'protection rules for this data resource have expired', '续期或设置长期有效', 'renew data protection or set permanent validity'],
+  ['protection_not_yet_valid', 'preparation', '保护规则尚未生效', 'protection rules for this data resource are not yet effective', '等待保护规则的生效时间', 'Wait until the protection rules take effect'],
+  ['protection_schema_mismatch', 'preparation', '数据结构与保护规则不匹配', 'data structure does not match its protection rules', '更新元数据并重新确认保护规则', 'update metadata and reconfirm the protection rules'],
+  ['protection_operation_unsupported', 'preparation', '当前操作暂不支持所需的数据脱敏保护', 'operation does not yet support the required data masking protection', '支持该保护规则的执行方式', 'execution method that supports these protection rules']
 ]) test(`distinguishes protection from access permission and execution authorization (${locale}, ${reason})`, async ({ page }) => {
+  const protection = reason === 'data_protection_required' || reason.startsWith('protection_')
   await installBackend(page, { locale, queryFailure: true, empty: true, errorDetails: {
-    category: reason === 'data_protection_required' ? 'permission_denied' : 'execution_failed',
-    code: reason === 'data_protection_required' ? 'develop.query.protection_required' : reason,
+    category: protection ? 'permission_denied' : 'execution_failed',
+    code: protection ? 'develop.query.protection_required' : reason,
     message: 'private-runtime-value SELECT phone',
     diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason }
   } })
@@ -143,12 +151,14 @@ for (const locale of ['zh-cn', 'en']) for (const [reason, stage, zh, en] of [
   const panel = page.locator('.execution-detail-content > .execution-failure')
   await expect(panel.locator('h4')).toContainText(locale === 'zh-cn' ? zh : en)
   await expect(panel).not.toContainText(/private-runtime-value|SELECT phone/)
+  if (zhAction) await expect(panel).toContainText(locale === 'zh-cn' ? zhAction : enAction)
   if (reason === 'data_protection_required') {
     await expect(panel).toContainText(locale === 'zh-cn' ? '请联系安全管理员检查脱敏保护规则' : 'Ask a security administrator to check masking rules')
     await expect(panel).not.toContainText(/访问资格|access eligibility/i)
-  } else {
+  } else if (!protection) {
     await expect(panel).not.toContainText(/数据脱敏保护校验|data masking protection checks/)
   }
+  if (protection) await expect(panel).not.toContainText(/访问资格|access eligibility/i)
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(panel).toBeVisible()
   expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()

@@ -119,8 +119,13 @@ func (p Projection) Validate(now time.Time) error {
 	if p.ValidFrom.IsZero() || (p.ExpiresAt != nil && (p.ExpiresAt.IsZero() || !p.ExpiresAt.After(p.ValidFrom))) {
 		return errors.New("invalid protection projection validity interval")
 	}
-	if !now.IsZero() && (now.Before(p.ValidFrom) || (p.ExpiresAt != nil && !now.Before(*p.ExpiresAt))) {
-		return errors.New("protection projection is not currently valid")
+	if !now.IsZero() {
+		if now.Before(p.ValidFrom) {
+			return ErrNotYetValid
+		}
+		if p.ExpiresAt != nil && !now.Before(*p.ExpiresAt) {
+			return ErrExpired
+		}
 	}
 	if p.State == ProjectionStateEnrolling {
 		if p.SourceSnapshotHash != "" || len(p.Rules) != 0 {

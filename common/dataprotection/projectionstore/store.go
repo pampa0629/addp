@@ -213,7 +213,7 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 // processes call it once per execution before using Gate or GateAny; this
 // keeps request-time decisions local to the owner database and closes the
 // acknowledgement-to-worker cache race without a Security request.
-var ErrNotInitialized = errors.New("protection projection initial synchronization is incomplete")
+var ErrNotInitialized = fmt.Errorf("%w: protection projection initial synchronization is incomplete", dataprotection.ErrNotReady)
 
 func (s *Store) Initialized(ctx context.Context, tenantID int64) (bool, error) {
 	var row checkpointRow
@@ -317,8 +317,8 @@ func (s *Store) RequireReadPlanUnmanaged(ctx context.Context, tenantID int64, mo
 	if err != nil {
 		return err
 	}
-	if s.GateAny(tenantID, targets, now) != nil {
-		return dataprotection.ErrDenied
+	if match := s.GateAny(tenantID, targets, now); match != nil {
+		return unsupportedManagedRead(match.Gate)
 	}
 	return nil
 }
@@ -330,8 +330,8 @@ func (s *Store) RequireUnmanaged(ctx context.Context, tenantID int64, targets []
 	if err := s.EnsureCurrent(ctx, tenantID); err != nil {
 		return err
 	}
-	if s.GateAny(tenantID, targets, now) != nil {
-		return dataprotection.ErrDenied
+	if match := s.GateAny(tenantID, targets, now); match != nil {
+		return unsupportedManagedRead(match.Gate)
 	}
 	return nil
 }
@@ -391,6 +391,20 @@ func (s *Store) Gate(tenantID int64, target dataprotection.ResourceReference, no
 		}
 	}
 	return result
+}
+
+func deniedGateError(gate GateResult) error {
+	if gate.Err != nil {
+		return fmt.Errorf("%w: %w", dataprotection.ErrDenied, gate.Err)
+	}
+	return fmt.Errorf("%w: %w", dataprotection.ErrDenied, dataprotection.ErrNotReady)
+}
+
+func unsupportedManagedRead(gate GateResult) error {
+	if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
+		return deniedGateError(gate)
+	}
+	return dataprotection.ErrOperationUnsupported
 }
 
 // GateAny returns the first managed target in caller-provided canonical order.

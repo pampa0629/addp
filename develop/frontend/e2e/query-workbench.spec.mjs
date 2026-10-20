@@ -215,12 +215,12 @@ for (const [code, reason, explanation, action] of [
 })
 
 for (const [locale, explanation, action] of [
-  ['zh-cn', '数据脱敏保护校验未通过', '请联系安全管理员检查脱敏保护规则'],
-  ['en', 'data masking protection checks', 'Ask a security administrator to check masking rules']
+  ['zh-cn', '当前计算或组合输出涉及受保护字段', '请改为直接读取受保护字段'],
+  ['en', 'computed or combined output uses protected fields', 'Read the protected fields directly']
 ]) for (const stage of ['preparation', 'result']) test(`explains protection refusal in ${locale} at ${stage} without runtime values`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', locale, errorDetails: {
     category: 'execution_failed', code: 'develop.query.protection_required', message: 'private-value SELECT phone',
-    diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason: 'data_protection_required' }
+    diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason: 'protection_computed_output_unsupported' }
   } })
   await page.goto(`/executions/${EXECUTION_ID}`)
   const diagnostic = page.locator('.execution-failure')

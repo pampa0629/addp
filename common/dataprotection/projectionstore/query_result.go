@@ -116,8 +116,11 @@ func (s *Store) readAuthorizedQueryResultAt(ctx context.Context, tenantID int64,
 	var deadline *time.Time
 	for _, source := range snapshot.Sources {
 		gate := s.Gate(tenantID, source.Target, now)
-		if !gate.Managed || gate.Err != nil || gate.State != dataprotection.ProjectionStateActive {
+		if !gate.Managed {
 			return nil, dataprotection.ErrDenied
+		}
+		if gate.Err != nil || gate.State != dataprotection.ProjectionStateActive {
+			return nil, deniedGateError(gate)
 		}
 		rules := []dataprotection.Rule{}
 		for _, projection := range gate.Projections {

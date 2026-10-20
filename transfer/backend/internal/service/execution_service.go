@@ -591,7 +591,7 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 			if !errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
 				next["code"] = "data_protection_required"
 			}
-			next["diagnostic"] = commonExecution.NewFailureDiagnostic(stage, "data_protection_required")
+			next["diagnostic"] = commonExecution.NewFailureDiagnostic(stage, commonExecution.ProtectionFailureReason(execErr))
 		}
 		var writeError *commonPlugin.TableWriteError
 		if errors.As(execErr, &writeError) && writeError != nil && writeError.Code.Valid() {

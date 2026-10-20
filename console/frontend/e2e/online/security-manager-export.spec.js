@@ -174,13 +174,13 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
     expect(row).not.toHaveProperty('contact_email')
     expect(row.customer_code).toBe(`CUST-1000${row.id}`)
   }
-  const denied = await execute("SELECT CONCAT(email, '') AS contact_email FROM customers ORDER BY id")
+  const denied = await execute("SELECT SUBSTRING(email, 1, 100) AS contact_email FROM customers ORDER BY id")
   expect(denied.status).toBe('failed')
   expect(denied.metadata || {}).not.toHaveProperty('result')
   expect(Object.keys(denied.error_details).sort()).toEqual(['category', 'code', 'diagnostic'])
   expect(denied.error_details.code).toBe('develop.query.protection_required')
   expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3',
-    stage: 'preparation', reason: 'data_protection_required' })
+    stage: 'preparation', reason: 'protection_computed_output_unsupported' })
   const executionPath = `/api/v1/develop/executions/${denied.execution_id}`
   const currentAPI = await navigate(`/develop/executions/${denied.execution_id}`, executionPath)
   const rebound = await json(await currentAPI.get(executionPath), 'same-user protection refusal')
@@ -189,8 +189,8 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   async function checkPanel(panel) {
     await expect(panel).toBeVisible()
-    await expect(panel).toContainText(/数据脱敏保护校验未通过|data masking protection checks/)
-    await expect(panel).toContainText(/请联系安全管理员检查脱敏保护规则|Ask a security administrator to check masking rules/)
+    await expect(panel).toContainText(/计算或组合输出涉及受保护字段|computed or combined output uses protected fields/)
+    await expect(panel).toContainText(/请改为直接读取受保护字段|Read the protected fields directly/)
     await expect(panel).not.toContainText(/访问资格|access eligibility/i)
     await expect(panel).toContainText('develop.query.protection_required')
     await expect(panel).toContainText(denied.execution_id)
@@ -212,11 +212,17 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 }
 
 
-async function checkProtectionFailurePanel(panel, executionID, stage) {
+async function checkProtectionFailurePanel(panel, executionID, stage, reason) {
   expect(['preparation', 'result']).toContain(stage)
   await expect(panel).toBeVisible()
-  await expect(panel).toContainText(/数据脱敏保护校验未通过|data masking protection checks/)
-  await expect(panel).toContainText(/请联系安全管理员检查脱敏保护规则|Ask a security administrator to check masking rules/)
+  expect(['data_protection_required', 'protection_expired']).toContain(reason)
+  if (reason === 'protection_expired') {
+    await expect(panel).toContainText(/保护规则已到期|protection rules for this data resource have expired/)
+    await expect(panel).toContainText(/续期或设置长期有效|renew data protection or set permanent validity/)
+  } else {
+    await expect(panel).toContainText(/数据脱敏保护校验未通过|data masking protection checks/)
+    await expect(panel).toContainText(/请联系安全管理员检查脱敏保护规则|Ask a security administrator to check masking rules/)
+  }
   await expect(panel).not.toContainText(/访问资格|access eligibility/i)
   await expect(panel).toContainText(stage === 'result' ? /保存执行结果|Save execution result/ : /准备执行|Prepare execution/)
   await expect(panel).toContainText('data_protection_required')
@@ -305,14 +311,14 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
     expect(await synchronized()).toEqual(installed)
     expect(await readResultTarget()).toEqual(before)
     await navigate(`/transfer/executions/${denied.execution_id}`, `/api/v1/transfer/executions/${denied.execution_id}`)
-    await checkProtectionFailurePanel(frame.locator('.execution-failure'), denied.execution_id, 'result')
+    await checkProtectionFailurePanel(frame.locator('.execution-failure'), denied.execution_id, 'result', 'data_protection_required')
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-result-refusal.png') })
     const link = new URL(await frame.locator('.execution-failure').getByRole('link', { name: /查看监控错误详情|View error details in Monitor/ }).getAttribute('href'), page.url())
     expect(link.origin).toBe(new URL(page.url()).origin)
     expect(link.pathname).toBe('/monitor/executions')
     expect([...link.searchParams]).toEqual([['execution_id', denied.execution_id]])
     await navigate(link.pathname + link.search, `/api/v1/monitor/executions/by-execution-id/${denied.execution_id}/tree`)
-    await checkProtectionFailurePanel(frame.locator('.execution-detail-content > .execution-failure'), denied.execution_id, 'result')
+    await checkProtectionFailurePanel(frame.locator('.execution-detail-content > .execution-failure'), denied.execution_id, 'result', 'data_protection_required')
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-result-monitor.png') })
     await setInvalidValueEffect(original.invalid_value_effect)
     baselineChanged = false
@@ -451,7 +457,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const details = denied.error_details
     expect(Object.keys(details).every(key => ['category', 'code', 'diagnostic'].includes(key))).toBe(true)
     expect(details.code).toBe('data_protection_required')
-    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required' })
+    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'protection_expired' })
     expect(Number(denied.records_written || 0)).toBe(0)
     expect(Number(denied.bytes_written || 0)).toBe(0)
     expect(await targetRows()).toEqual(before)
@@ -460,7 +466,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const rebound = await json(await getAPI().get(executionPath), 'browser same Transfer refusal')
     expect(rebound.error_details).toEqual(details)
     async function checkPanel(panel) {
-      await checkProtectionFailurePanel(panel, denied.execution_id, 'preparation')
+      await checkProtectionFailurePanel(panel, denied.execution_id, 'preparation', 'protection_expired')
     }
     const panel = frame.locator('.execution-failure')
     await checkPanel(panel)

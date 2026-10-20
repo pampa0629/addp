@@ -61,7 +61,7 @@ func (s *Store) PrepareQueryProtection(
 			continue
 		}
 		if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
-			return nil, dataprotection.ErrDenied
+			return nil, deniedGateError(gate)
 		}
 		managed[target.ResourceIdentity] = gate
 		projections = append(projections, gate.Projections...)
@@ -100,7 +100,7 @@ func (s *Store) PrepareQueryProtection(
 		matched[target.ResourceIdentity] = struct{}{}
 	}
 	if len(matched) != len(managed) {
-		return nil, errors.New("protected query lineage is incomplete")
+		return nil, dataprotection.ErrLineageUnverified
 	}
 	// Freeze the exact actor's preparation-time eligibility. A grant that
 	// starts during execution cannot reclassify an already masked value as raw.
@@ -176,7 +176,7 @@ func (s *Store) PrepareTableProtection(
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
-		return nil, dataprotection.ErrDenied
+		return nil, deniedGateError(gate)
 	}
 	rules := make([]dataprotection.Rule, 0, len(gate.Projections))
 	for _, projection := range gate.Projections {

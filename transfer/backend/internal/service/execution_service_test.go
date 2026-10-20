@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -751,16 +752,19 @@ func TestTargetRiskDoesNotInventWriteColumnOrEraseProtectionBoundary(t *testing.
 
 func TestBoundedProtectionFailureRetainsBoundaryWithoutPrivateText(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		cause       error
-		code, stage string
+		name                string
+		cause               error
+		code, stage, reason string
 	}{
-		{"preparation", fmt.Errorf("%w: private-sentinel: %w", executor.ErrProtectionPreparation, errors.New("projection expired")), "data_protection_required", "preparation"},
-		{"result", fmt.Errorf("%w: private-sentinel", executor.ErrProtectionResult), "data_protection_required", "result"},
-		{"lineage", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.ErrQueryOutputLineageUnresolved), "query_output_lineage_unresolved", "preparation"},
-		{"unrelated", errors.New(executor.ErrProtectionPreparation.Error()), "", ""},
-		{"provider table error", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.NewQueryError(commonPlugin.QueryErrorCodeTableNotFound, errors.New("private-sentinel"))), "", ""},
-		{"provider SQLSTATE", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, &pgconn.PgError{Code: "42P01", Message: "private-sentinel"}), "", ""},
+		{"preparation", fmt.Errorf("%w: private-sentinel: %w", executor.ErrProtectionPreparation, errors.New("projection expired")), "data_protection_required", "preparation", "data_protection_required"},
+		{"result", fmt.Errorf("%w: private-sentinel", executor.ErrProtectionResult), "data_protection_required", "result", "data_protection_required"},
+		{"lineage", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.ErrQueryOutputLineageUnresolved), "query_output_lineage_unresolved", "preparation", "protection_lineage_unverified"},
+		{"computed", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, dataprotection.ErrComputedOutputUnsupported), "data_protection_required", "preparation", "protection_computed_output_unsupported"},
+		{"expired", fmt.Errorf("%w: %w", executor.ErrProtectionResult, dataprotection.ErrExpired), "data_protection_required", "result", "protection_expired"},
+		{"schema", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, dataprotection.ErrSchemaMismatch), "data_protection_required", "preparation", "protection_schema_mismatch"},
+		{"unrelated", errors.New(executor.ErrProtectionPreparation.Error()), "", "", ""},
+		{"provider table error", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.NewQueryError(commonPlugin.QueryErrorCodeTableNotFound, errors.New("private-sentinel"))), "", "", ""},
+		{"provider SQLSTATE", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, &pgconn.PgError{Code: "42P01", Message: "private-sentinel"}), "", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newExecutionServiceTestDB(t)
@@ -797,7 +801,7 @@ func TestBoundedProtectionFailureRetainsBoundaryWithoutPrivateText(t *testing.T)
 			if err := json.Unmarshal(payload, &details); err != nil {
 				t.Fatal(err)
 			}
-			if details.Diagnostic.Stage != tc.stage || details.Diagnostic.Reason != "data_protection_required" || details.Diagnostic.SchemaVersion != commonExecution.FailureDiagnosticSchemaVersion {
+			if details.Diagnostic.Stage != tc.stage || details.Diagnostic.Reason != tc.reason || details.Diagnostic.SchemaVersion != commonExecution.FailureDiagnosticSchemaVersion {
 				t.Fatalf("diagnostic=%+v", details.Diagnostic)
 			}
 			if strings.Contains(string(payload), "private-sentinel") || strings.Contains(string(payload), "projection expired") {

@@ -109,7 +109,7 @@ func ValidateTableProjection(projection Projection, action string, fields []data
 		return nil, err
 	}
 	if projection.SourceSnapshotHash != snapshotHash {
-		return nil, errors.New("protection projection source snapshot does not match")
+		return nil, fmt.Errorf("%w: protection source snapshot differs", ErrSchemaMismatch)
 	}
 	action = strings.TrimSpace(action)
 	rules := make([]Rule, 0, len(projection.Rules))
@@ -122,10 +122,10 @@ func ValidateTableProjection(projection Projection, action string, fields []data
 		}
 		fingerprint, err := ComponentSchemaFingerprint(fields, rule.Component)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrSchemaMismatch, err)
 		}
 		if fingerprint != rule.Component.SchemaFingerprint {
-			return nil, errors.New("protection rule component schema does not match")
+			return nil, fmt.Errorf("%w: protection component fingerprint differs", ErrSchemaMismatch)
 		}
 		rules = append(rules, rule)
 	}

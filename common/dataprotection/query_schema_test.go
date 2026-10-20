@@ -1,11 +1,32 @@
 package dataprotection
 
 import (
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
+
+func TestProtectedComputedAndOpaqueOutputsHaveDifferentReasons(t *testing.T) {
+	rules := testProjection(time.Now().UTC()).Rules
+	for _, item := range []struct {
+		source plugin.QueryOutputSource
+		want   error
+	}{
+		{plugin.QueryOutputSource{OpaqueOutput: true}, ErrLineageUnverified},
+		{plugin.QueryOutputSource{Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"userInfo", "phone"}, OutputPath: []string{"computed"}, Transformation: plugin.QueryOutputTransformationDerived}}}, ErrComputedOutputUnsupported},
+	} {
+		result := &plugin.QueryResult{Columns: []string{"computed"}, Rows: []map[string]any{{"computed": "private-sentinel"}}}
+		if err := ProtectQueryResultSource(result, item.source, "preview", rules, SubjectReference{}); !errors.Is(err, item.want) || !errors.Is(err, ErrDenied) {
+			t.Fatalf("wrong output refusal: %v", err)
+		}
+		if _, err := QueryOutputTransformsAt(item.source, "preview", rules, SubjectReference{}, time.Now().UTC()); !errors.Is(err, item.want) || !errors.Is(err, ErrDenied) {
+			t.Fatalf("wrong transform refusal: %v", err)
+		}
+	}
+}
 
 func TestSuppressedOutputRemovesResultFieldMetadata(t *testing.T) {
 	for _, withRows := range []bool{false, true} {

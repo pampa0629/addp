@@ -11,6 +11,18 @@ import (
 
 var ErrDenied = errors.New("protected data action denied")
 
+// These errors carry only proven protection facts. Owners preserve the error
+// chain and never recover a diagnostic reason from runtime text.
+var (
+	ErrComputedOutputUnsupported = fmt.Errorf("%w: protected computed output is unsupported", ErrDenied)
+	ErrLineageUnverified         = fmt.Errorf("%w: protected output dependencies are unverified", ErrDenied)
+	ErrOperationUnsupported      = fmt.Errorf("%w: operation cannot apply required protection", ErrDenied)
+	ErrNotReady                  = errors.New("data protection state is not ready")
+	ErrExpired                   = errors.New("data protection rules have expired")
+	ErrNotYetValid               = errors.New("data protection rules are not yet effective")
+	ErrSchemaMismatch            = errors.New("data structure does not match protection rules")
+)
+
 type valueResult struct {
 	value    any
 	suppress bool

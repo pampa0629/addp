@@ -3,7 +3,9 @@ package execution
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
@@ -39,9 +41,37 @@ var failureReasons = map[string]bool{
 	"timeout": true, "cancelled": true, "resource_exhausted": true,
 	"query_failed": true, "result_invalid": true,
 	"local_read_unsupported": true, "database_required": true, "data_protection_required": true,
+	"protection_computed_output_unsupported": true, "protection_lineage_unverified": true,
+	"protection_not_ready": true, "protection_expired": true, "protection_not_yet_valid": true,
+	"protection_schema_mismatch": true, "protection_operation_unsupported": true,
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
 	"target_exists": true,
+}
+
+// ProtectionFailureReason is called only at a known protection boundary.
+// Generic denial and untyped errors retain the generic protection reason.
+func ProtectionFailureReason(cause error) string {
+	for _, item := range []struct {
+		cause  error
+		reason string
+	}{
+		{dataprotection.ErrComputedOutputUnsupported, "protection_computed_output_unsupported"},
+		{dataprotection.ErrExpired, "protection_expired"},
+		{dataprotection.ErrNotYetValid, "protection_not_yet_valid"},
+		{dataprotection.ErrNotReady, "protection_not_ready"},
+		{dataprotection.ErrSchemaMismatch, "protection_schema_mismatch"},
+		{dataprotection.ErrLineageUnverified, "protection_lineage_unverified"},
+		{plugin.ErrQueryReadSetUnresolved, "protection_lineage_unverified"},
+		{plugin.ErrQueryOutputLineageUnresolved, "protection_lineage_unverified"},
+		{dataprotection.ErrOperationUnsupported, "protection_operation_unsupported"},
+		{plugin.ErrQueryOutputTransformUnsupported, "protection_operation_unsupported"},
+	} {
+		if errors.Is(cause, item.cause) {
+			return item.reason
+		}
+	}
+	return "data_protection_required"
 }
 
 func NewFailureDiagnostic(stage, reason string) *FailureDiagnostic {

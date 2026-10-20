@@ -1365,26 +1365,26 @@ def verify_unprotected_mongodb_derived_query(client: GatewayClient, engine_id: i
     return {"rows": 7, "source_values_verified": True}
 
 
-def validate_develop_protection_refusal(execution: Mapping[str, object], stage: str) -> dict[str, object]:
+def validate_develop_protection_refusal(execution: Mapping[str, object], stage: str, reason: str) -> dict[str, object]:
     metadata = _object(execution.get("metadata") or {}, "denied Develop metadata")
     details = _object(execution.get("error_details"), "Develop protection diagnostics")
     diagnostic = _object(details.get("diagnostic"), "Develop protection diagnostic")
-    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": "data_protection_required"}
+    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": reason}
     if (execution.get("status") != "failed" or "result" in metadata
             or details.get("code") != "develop.query.protection_required"
             or set(details) - {"category", "code", "diagnostic"} or diagnostic != expected):
         raise SuiteError("Develop protection refusal must have the precise safe diagnostic and no result")
     return {"diagnostic_code": "develop.query.protection_required", "diagnostic_stage": stage,
-            "diagnostic_reason": "data_protection_required", "denied_result_absent": True}
+            "diagnostic_reason": reason, "denied_result_absent": True}
 
 
-def validate_transfer_protection_refusal(execution: Mapping[str, object], stage: str, code: str) -> dict[str, object]:
+def validate_transfer_protection_refusal(execution: Mapping[str, object], stage: str, code: str, reason: str) -> dict[str, object]:
     details = _object(execution.get("error_details"), "Transfer protection diagnostics")
-    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": "data_protection_required"}
+    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": reason}
     if (execution.get("status") != "failed" or details.get("code") != code
             or set(details) - {"category", "code", "diagnostic"} or details.get("diagnostic") != expected):
         raise SuiteError("Transfer protection refusal must have the precise safe diagnostic")
-    return {"diagnostic_code": code, "diagnostic_stage": stage, "diagnostic_reason": "data_protection_required"}
+    return {"diagnostic_code": code, "diagnostic_stage": stage, "diagnostic_reason": reason}
 
 
 def validate_service_protection_refusal(response: SUPPORT.Response) -> None:
@@ -1401,7 +1401,7 @@ def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
     if rows != [{"count": 7}]:
         raise SuiteError("MongoDB count must return seven without field values")
     execution = develop_execution(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
-    evidence = validate_develop_protection_refusal(execution, "preparation")
+    evidence = validate_develop_protection_refusal(execution, "preparation", "protection_lineage_unverified")
     return {"count": 7, "derived_output_denied": True, **evidence}
 
 
@@ -1558,7 +1558,7 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             raise SuiteError("MongoDB query execution identity or terminal status differs")
         written = nonnegative_int(execution.get("records_written"), "query records written")
         if denied:
-            protection_diagnostic = validate_transfer_protection_refusal(execution, "preparation", "query_output_lineage_unresolved")
+            protection_diagnostic = validate_transfer_protection_refusal(execution, "preparation", "query_output_lineage_unresolved", "protection_lineage_unverified")
             diagnostics = _object(execution.get("error_details"), "query failure diagnostics")
             if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
                     or diagnostics.get("category") != "execution_failed"
@@ -1814,11 +1814,11 @@ def exercise_bank_card_computed_outputs(client: GatewayClient, engine_id: int, l
         if not valid_id or execution_id in execution_ids:
             raise SuiteError("computed refusal must use distinct actual execution UUIDs")
         execution_ids.add(execution_id)
-        evidence = validate_develop_protection_refusal(execution, "preparation")
+        evidence = validate_develop_protection_refusal(execution, "preparation", "protection_computed_output_unsupported")
         history = _object(client.request("GET", "/api/v1/develop/executions/" + execution_id, (200,)).payload, "computed execution history")
         if history.get("execution_id") != execution_id:
             raise SuiteError("computed refusal history execution differs")
-        validate_develop_protection_refusal(history, "preparation")
+        validate_develop_protection_refusal(history, "preparation", "protection_computed_output_unsupported")
         cases[name] = {**evidence, "execution_id": execution_id, "history_result_absent": True}
     counted = develop_rows(client, engine_id, locator, deadline, "SELECT count(*) AS count FROM " + BANK_SOURCE)
     if len(counted) != 1 or set(counted[0]) != {"count"} or normalize_id(counted[0]["count"]) != "5":
@@ -2153,6 +2153,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
             "SELECT id, customer_code, email FROM customers ORDER BY id", "sql")
         if develop.get("status") != "failed" or "result" in (develop.get("metadata") or {}):
             raise SuiteError("expired Develop query returned a result")
+        validate_develop_protection_refusal(develop, "preparation", "protection_expired")
         service = client.request("POST", "/api/query/" + urllib.parse.quote(service_name, safe="") + "/query", (403,), {
             "select": ["id", "customer_code", "email"], "order_by": [{"field": "id", "direction": "asc"}],
             "page": {"limit": 100}, "format": "json",
@@ -2161,7 +2162,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
         columns_before, rows_before = preview_rows(client, target_locator)
         _, transfer = create_and_run_task(client, transfer_payload(task_name + "_validity_expired", locator, parent_locator),
                                           deadline, tasks, expected_status="failed")
-        transfer_diagnostic = validate_transfer_protection_refusal(transfer, "preparation", "data_protection_required")
+        transfer_diagnostic = validate_transfer_protection_refusal(transfer, "preparation", "data_protection_required", "protection_expired")
         if (nonnegative_int(transfer.get("records_written"), "expired Transfer writes") != 0
                 or nonnegative_int(transfer.get("bytes_written"), "expired Transfer bytes") != 0
                 or positive_int(transfer.get("trigger_by"), "expired Transfer initiator") != positive_int(identity["principal_id"], "ordinary User")):
@@ -2305,7 +2306,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v22",
+            "schema_version": "addp.security-mysql-owner-protection-online/v23",
             "result": "passed",
             "identity": identity,
             "governance": governance,

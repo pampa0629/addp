@@ -32,6 +32,65 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 	}
 }
 
+func TestProtectionGateReasonsUseCurrentFacts(t *testing.T) {
+	for _, name := range []string{"initial_sync", "enrolling", "future", "schema", "unsupported_operation"} {
+		t.Run(name, func(t *testing.T) {
+			store, err := Migrate(openProjectionStoreDB(t), "develop", "develop", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := plugin.DynamicSchemaCatalogModel()
+			path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+			fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+			now := time.Now().UTC()
+			if name == "initial_sync" {
+				_, err := store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", now)
+				if !errors.Is(err, ErrNotInitialized) || !errors.Is(err, dataprotection.ErrNotReady) {
+					t.Fatalf("lost initial sync: %v", err)
+				}
+				return
+			}
+			projection := activeTableProjection(t, "develop", "query", model, path, fields)
+			want := dataprotection.ErrNotReady
+			switch name {
+			case "enrolling":
+				projection.State, projection.SourceSnapshotHash, projection.Rules = dataprotection.ProjectionStateEnrolling, "", nil
+			case "future":
+				projection.ValidFrom, projection.ExpiresAt = now.Add(time.Hour), nil
+				want = dataprotection.ErrNotYetValid
+			case "schema":
+				want = dataprotection.ErrSchemaMismatch
+			case "unsupported_operation":
+				want = dataprotection.ErrOperationUnsupported
+			}
+			if err := projection.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			installedAt := now
+			if name == "future" {
+				installedAt = projection.ValidFrom
+			}
+			if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{
+				SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+				Changes:       []dataprotection.ProjectionChange{{ChangeID: name, Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: name,
+			}, installedAt); err != nil {
+				t.Fatal(err)
+			}
+			if name == "schema" {
+				fields[0].Type = datatype.FieldTypeInt
+			}
+			if name == "unsupported_operation" {
+				err = store.RequireCatalogPathUnmanaged(t.Context(), 7, model, path, now)
+			} else {
+				_, err = store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", now)
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("wrong protection reason: %v", err)
+			}
+		})
+	}
+}
+
 func TestPreparedOutputRejectsExpiredProjection(t *testing.T) {
 	for owner, action := range map[string]string{"manager": "preview", "develop": "query", "service": "service_execute", "transfer": "export"} {
 		t.Run(owner, func(t *testing.T) {
@@ -95,7 +154,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 			t.Fatalf("prepare query=%t before expiry: %v", query, err)
 		}
 		staleProtectors = append(staleProtectors, protect)
-		if _, err := prepare(*projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) {
+		if _, err := prepare(*projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, dataprotection.ErrExpired) {
 			t.Fatalf("prepare query=%t at expiry: %v", query, err)
 		}
 		for _, empty := range []bool{false, true} {
@@ -103,7 +162,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 			if !empty {
 				result.Rows = []map[string]interface{}{{"phone": "13661384499"}}
 			}
-			if err := protect.Apply(result); !errors.Is(err, dataprotection.ErrDenied) {
+			if err := protect.Apply(result); !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, dataprotection.ErrExpired) {
 				t.Fatalf("output query=%t empty=%t after expiry: %v", query, empty, err)
 			}
 			if len(result.Columns) != 1 || result.Columns[0] != "phone" || !empty && result.Rows[0]["phone"] != "13661384499" {

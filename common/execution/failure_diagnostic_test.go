@@ -2,9 +2,12 @@ package execution_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
@@ -61,6 +64,54 @@ func TestFailureDiagnosticSurvivesPersistenceWithoutRuntimeText(t *testing.T) {
 	item.Status = "success"
 	if len(execution.Observe(item).ErrorDetails) != 0 {
 		t.Fatal("success retained a failure diagnostic")
+	}
+}
+
+func TestProtectionFailureReasonsSurviveObservation(t *testing.T) {
+	for _, reason := range []string{
+		"protection_computed_output_unsupported", "protection_lineage_unverified", "protection_not_ready",
+		"protection_expired", "protection_not_yet_valid", "protection_schema_mismatch", "protection_operation_unsupported",
+	} {
+		for _, stage := range []string{"preparation", "result"} {
+			diagnostic := execution.NewFailureDiagnostic(stage, reason)
+			if diagnostic == nil {
+				t.Fatalf("missing controlled protection reason %s", reason)
+			}
+			observed := execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{
+				"code": "develop.query.protection_required", "diagnostic": diagnostic, "message": "private-runtime-value",
+			}})
+			payload, _ := json.Marshal(observed.ErrorDetails)
+			if !strings.Contains(string(payload), `"reason":"`+reason+`"`) || strings.Contains(string(payload), "private-runtime-value") {
+				t.Fatalf("invalid protected diagnostic: %s", payload)
+			}
+		}
+	}
+}
+
+func TestProtectionFailureReasonRequiresTypedEvidence(t *testing.T) {
+	for _, item := range []struct {
+		cause  error
+		reason string
+	}{
+		{dataprotection.ErrComputedOutputUnsupported, "protection_computed_output_unsupported"},
+		{dataprotection.ErrLineageUnverified, "protection_lineage_unverified"},
+		{plugin.ErrQueryReadSetUnresolved, "protection_lineage_unverified"},
+		{plugin.ErrQueryOutputLineageUnresolved, "protection_lineage_unverified"},
+		{dataprotection.ErrExpired, "protection_expired"},
+		{dataprotection.ErrNotYetValid, "protection_not_yet_valid"},
+		{dataprotection.ErrNotReady, "protection_not_ready"},
+		{dataprotection.ErrSchemaMismatch, "protection_schema_mismatch"},
+		{dataprotection.ErrOperationUnsupported, "protection_operation_unsupported"},
+		{plugin.ErrQueryOutputTransformUnsupported, "protection_operation_unsupported"},
+		{dataprotection.ErrDenied, "data_protection_required"},
+		{errors.New("protection expired, computed output unsupported: private value"), "data_protection_required"},
+		{nil, "data_protection_required"},
+	} {
+		for _, cause := range []error{item.cause, fmt.Errorf("private wrapper: %w", item.cause), errors.Join(errors.New("private"), item.cause)} {
+			if got := execution.ProtectionFailureReason(cause); got != item.reason {
+				t.Fatalf("got %s want %s", got, item.reason)
+			}
+		}
 	}
 }
 

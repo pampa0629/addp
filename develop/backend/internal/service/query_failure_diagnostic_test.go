@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/develop/backend/internal/protection"
@@ -112,6 +113,34 @@ func TestQueryProtectionFailureUsesTypedBoundary(t *testing.T) {
 	fake := errors.New("develop data protection gate is required")
 	if code := queryErrorCode(fake); code == "develop.query.protection_required" {
 		t.Fatal("inferred protection from free text")
+	}
+}
+
+func TestQueryProtectionDetailsKeepStageAndStableCode(t *testing.T) {
+	for _, item := range []struct {
+		cause  error
+		reason string
+	}{
+		{dataprotection.ErrComputedOutputUnsupported, "protection_computed_output_unsupported"},
+		{dataprotection.ErrExpired, "protection_expired"},
+		{dataprotection.ErrNotYetValid, "protection_not_yet_valid"},
+		{dataprotection.ErrNotReady, "protection_not_ready"},
+		{dataprotection.ErrSchemaMismatch, "protection_schema_mismatch"},
+		{dataprotection.ErrOperationUnsupported, "protection_operation_unsupported"},
+		{plugin.ErrQueryOutputLineageUnresolved, "protection_lineage_unverified"},
+	} {
+		for _, boundary := range []error{protection.ErrRequired, protection.ErrResultRequired} {
+			cause := fmt.Errorf("%w: private runtime value: %w", boundary, item.cause)
+			code := queryErrorCode(cause)
+			diagnostic := queryFailureDiagnostic(code, cause.Error(), cause)
+			stage := "preparation"
+			if boundary == protection.ErrResultRequired {
+				stage = "result"
+			}
+			if code != "develop.query.protection_required" || diagnostic == nil || diagnostic.Reason != item.reason || diagnostic.Stage != stage {
+				t.Fatalf("wrong protection fact: %s %+v", code, diagnostic)
+			}
+		}
 	}
 }
 

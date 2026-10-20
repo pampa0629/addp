@@ -126,7 +126,7 @@ func QueryOutputDerivedFields(source plugin.QueryOutputSource, action string, ru
 
 func queryOutputRules(source plugin.QueryOutputSource, action string, rules []Rule) ([]Rule, error) {
 	if source.OpaqueOutput {
-		return nil, ErrDenied
+		return nil, ErrLineageUnverified
 	}
 	result := []Rule{}
 	for _, rule := range rules {
@@ -142,7 +142,7 @@ func queryOutputRules(source plugin.QueryOutputSource, action string, rules []Ru
 				continue
 			}
 			if binding.Transformation != plugin.QueryOutputTransformationDirect {
-				return nil, ErrDenied
+				return nil, ErrComputedOutputUnsupported
 			}
 			mappedRule := rule
 			mappedRule.Component.Path = queryOutputPath(binding.OutputPath)
