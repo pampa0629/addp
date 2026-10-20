@@ -1,11 +1,13 @@
 from importlib import import_module
 from contextlib import contextmanager
+import base64
 import copy
 import hashlib
 import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -109,6 +111,9 @@ class FakeSourceIssuer:
         if path.endswith('/access_grants'):
             if self.unknown_write:
                 raise M.SuiteError('unknown synthetic write outcome')
+            if any(all(existing[key] == body[key] for key in ('item_fingerprint', 'recipient_type', 'recipient_id', 'action'))
+                   for existing in self.grants.values()):
+                raise M.SuiteError('engine_access_grant_relation_exists')
             model = next(model for model in self.report['models'] if model['fingerprint'] == body['item_fingerprint'])
             composition = {'format': model['format'], 'refs': [
                 {'target': M.file_target(17, ref['path']), 'role': ref['role'], 'required': ref['required'], 'primary': ref['primary']}
@@ -120,7 +125,8 @@ class FakeSourceIssuer:
         if path.endswith('/revoke'):
             command = path.split('/')[-2]
             self.revoke_statuses = expected
-            return SimpleNamespace(status=200 if command in self.grants else 404, payload={'request_id': command})
+            status = 200 if self.grants.pop(command, None) is not None else 404
+            return SimpleNamespace(status=status, payload={'request_id': command})
         if path.endswith('/access_denies'):
             self.denies.add(body['deny_id'])
             return SimpleNamespace(payload={**body, 'engine_id': '17', 'established_by_principal_id': self.principal})
@@ -132,6 +138,83 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def product_profile(self):
+        raw = GLB.fixture_glb('ifc')
+        return {'platform': 'Linux-x86_64', 'binary': '/opt/addp/model3d-workflow/bin/IfcConvert',
+                'binary_version': 'IfcConvert 0.8.4-e8eb5e4', 'binary_sha256': 'a' * 64,
+                'operator_sha256': hashlib.sha256((M.Path(__file__).resolve().parents[2] / 'engines/model3d-workflow/operators.py').read_bytes()).hexdigest(),
+                'temporary_root_removed': True, 'sentinel_thread_stopped': True,
+                'cases': [{'reference_kind': kind, 'center_model': True, 'http_connections': 0, 'http_methods': [],
+                           'images': 0, 'textures': 0, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                           'glb_b64': base64.b64encode(raw).decode()} for kind in ('http', 'fifo')]}
+
+    def product_identity(self, args, **kwargs):
+        expression = args[-2]
+        return {'{{index .Config.Labels "com.addp.online-runtime"}}': 'ftp-consumer-flow',
+                '{{index .Config.Labels "com.addp.online-run-id"}}': 'owned-run', '{{.Image}}': 'sha256:owned',
+                '{{.Id}}': 'sha256:owned', '{{.Os}}/{{.Architecture}}': 'linux/amd64',
+                '{{json .Config.Cmd}}': '["python","api_server.py"]', '{{.State.Running}}': 'true',
+                'rev-parse': 'synthetic-commit'}[expression]
+
+    def test_linux_product_profile_uses_exact_owned_runtime_and_physical_glb_oracle(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, ADDP_ONLINE_TEST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST_RUN_ID='owned-run'), \
+                patch.object(M.subprocess, 'check_output', side_effect=self.product_identity), \
+                patch.object(M.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(self.product_profile()))) as invoke:
+            report = M.verify_ifc_product_profile(Path(__file__).resolve().parents[2], Path(directory))
+            call = invoke.call_args
+            self.assertEqual(call.args[0][:7], ['docker', 'exec', '-i', '--workdir', '/app', 'addp-ftp-model3d-runtime', 'python'])
+            self.assertEqual(call.args[0][-1], M.IFC_PRODUCT_PROFILE_PROBE)
+            self.assertEqual(set(json.loads(call.kwargs['input'])), {'ifc_b64', 'png_b64'})
+            self.assertEqual(call.kwargs['timeout'], 60)
+            self.assertNotEqual(report['binary_sha256'], report['converter_archive_sha256'])
+            self.assertEqual([case['physical_glb']['vertex_count'] for case in report['cases']], [24, 24])
+            self.assertTrue(all('glb_b64' not in case for case in report['cases']))
+            self.assertEqual(len(list(Path(directory).glob('*.glb'))), 2)
+            compile(M.IFC_PRODUCT_PROFILE_PROBE, '<IFC product probe>', 'exec')
+
+    def test_linux_product_profile_rejects_wrong_owner_platform_image_entry_before_exec(self):
+        expressions = ['{{index .Config.Labels "com.addp.online-runtime"}}',
+                       '{{index .Config.Labels "com.addp.online-run-id"}}', '{{.Image}}',
+                       '{{.Os}}/{{.Architecture}}', '{{json .Config.Cmd}}', '{{.State.Running}}']
+        for expression in expressions:
+            def identity(args, **kwargs):
+                return ('["wrong"]' if expression == '{{json .Config.Cmd}}' else 'wrong') if args[-2] == expression else self.product_identity(args, **kwargs)
+            with self.subTest(expression=expression), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, ADDP_ONLINE_TEST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST_RUN_ID='owned-run'), \
+                    patch.object(M.subprocess, 'check_output', side_effect=identity), patch.object(M.subprocess, 'run') as invoke, \
+                    self.assertRaises(M.SuiteError):
+                M.verify_ifc_product_profile(Path(__file__).resolve().parents[2], Path(directory))
+            invoke.assert_not_called()
+
+    def test_linux_product_profile_fails_native_timeout_and_wrong_external_or_physical_report(self):
+        mutations = [lambda report: report['cases'][0].update(http_connections=1),
+                     lambda report: report['cases'][0].update(http_methods=['HEAD']),
+                     lambda report: report['cases'][0].update(images=1),
+                     lambda report: report['cases'][0].update(textures=1),
+                     lambda report: report.update(temporary_root_removed=False),
+                     lambda report: report.update(sentinel_thread_stopped=False),
+                     lambda report: report.update(operator_sha256='b' * 64),
+                     lambda report: report['cases'].pop(),
+                     lambda report: report['cases'][0].update(sha256='b' * 64)]
+        for mutate in mutations:
+            report = self.product_profile()
+            mutate(report)
+            with tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, ADDP_ONLINE_TEST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST_RUN_ID='owned-run'), \
+                    patch.object(M.subprocess, 'check_output', side_effect=self.product_identity), \
+                    patch.object(M.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(report))), \
+                    self.assertRaises(M.SuiteError):
+                M.verify_ifc_product_profile(Path(__file__).resolve().parents[2], Path(directory))
+        for fault in ('timeout', 'nonzero'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, ADDP_ONLINE_TEST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST_RUN_ID='owned-run'), \
+                    patch.object(M.subprocess, 'check_output', side_effect=self.product_identity), \
+                    patch.object(M.subprocess, 'run', side_effect=subprocess.TimeoutExpired('docker exec', 60) if fault == 'timeout' else None,
+                                 return_value=SimpleNamespace(returncode=1, stderr='bounded synthetic failure')), \
+                    self.assertRaises(M.SuiteError):
+                M.verify_ifc_product_profile(Path(__file__).resolve().parents[2], Path(directory))
+
     def test_exact_catalog_scan_preview_and_download(self):
         client = FakeClient()
         with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='owned-run'), patch.object(M.SUPPORT, 'wait_for_scan', return_value='scan-owned'):
@@ -272,6 +355,7 @@ class FTPConsumerTest(unittest.TestCase):
             authorization.release('unowned-deny')
         authorization.release(deny)
         self.assertEqual(issuer.release_statuses, (200,))
+        authorization.revoke(receipts[1]['request_id'])
         receipts.append(authorization.grant(report['models'][1], initialize=False))
         self.assertIs([body for _, path, body in issuer.calls if path.endswith('/access_grants')][-1]['initialize_approval'], False)
         authorization.cleanup()
@@ -300,6 +384,22 @@ class FTPConsumerTest(unittest.TestCase):
         issuer.principal = '8'
         with self.assertRaises(M.SuiteError):
             M.ModelSourceAuthorization(issuer, consumer, report)
+
+    def test_grant_preparation_respects_one_active_stable_relation(self):
+        consumer = FakeClient()
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                  'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+        issuer = FakeSourceIssuer(report)
+        authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+        first = authorization.grant(report['models'][1])
+        with self.assertRaisesRegex(M.SuiteError, 'engine_access_grant_relation_exists'):
+            authorization.grant(report['models'][1], initialize=False)
+        authorization.revoke(first['request_id'])
+        second = authorization.grant(report['models'][1], initialize=False)
+        self.assertNotEqual(first['request_id'], second['request_id'])
+        self.assertEqual(len(issuer.grants), 1)
+        authorization.cleanup()
+        self.assertEqual(issuer.grants, {})
 
     def test_unknown_model_grant_write_is_tracked_and_cleaned_by_its_original_command(self):
         consumer = FakeClient()
@@ -429,10 +529,56 @@ class FTPConsumerTest(unittest.TestCase):
                 if fault == 'preexisting':
                     self.assertEqual(replacement.read_bytes(), b'foreign')
 
+    def test_composition_fixture_cleans_owned_preparation_failures_before_yield(self):
+        client = FakeClient()
+        model = M.prepare_models(client.items, 17, client.model_samples)[1]
+        for fault in ('texture-write', 'texture-chmod', 'main-chmod', 'replace'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                M.SEED.write_model_samples(root / 'data')
+                name = 'addp-ftp-123456abcdef'
+                (root / 'state.json').write_text(json.dumps({'name': name, 'label': 'org.addp.ftp.owner=' + name}))
+                container = {'State': {'Running': True}, 'Config': {'Labels': {'org.addp.ftp.owner': name}},
+                             'Mounts': [{'Source': str(root / 'data'), 'Destination': '/srv/sftpgo/data', 'RW': False}]}
+                main = root / 'data/models/3ds/model.3ds'
+                original = main.read_bytes()
+                fdopen, chmod, replace = M.os.fdopen, M.os.fchmod, M.os.replace
+                counts = []
+
+                def fchmod(*args):
+                    counts.append(True)
+                    if fault == 'texture-chmod' or (fault == 'main-chmod' and len(counts) == 2):
+                        raise OSError('synthetic chmod failure')
+                    return chmod(*args)
+
+                @contextmanager
+                def broken_stream(*args):
+                    with fdopen(*args) as stream:
+                        class Writer:
+                            def write(self, content):
+                                stream.write(content[:3])
+                                stream.flush()
+                                raise OSError('synthetic partial texture write')
+                            def fileno(self):
+                                return stream.fileno()
+                        yield Writer()
+
+                with patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory), \
+                        patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([container]))), \
+                        patch.object(M.os, 'fdopen', broken_stream if fault == 'texture-write' else fdopen), \
+                        patch.object(M.os, 'fchmod', side_effect=fchmod), \
+                        patch.object(M.os, 'replace', side_effect=OSError('synthetic replace failure') if fault == 'replace' else replace), \
+                        self.assertRaises(OSError):
+                    with M.changed_texture_fixture(model):
+                        self.fail('failed preparation must not yield')
+                self.assertEqual(main.read_bytes(), original)
+                self.assertEqual(sorted(path.name for path in main.parent.iterdir()), ['model.3ds', 'texture.png'])
+
     def test_composition_rule_matrix_rechecks_old_deny_then_old_grant_and_stale_cache(self):
         client = FakeClient()
         report = {'engine_id': 17, 'models': M.prepare_models(client.items, 17, client.model_samples)}
         source = report['models'][1]
+        report['source_authorizations'] = [{'item_fingerprint': source['fingerprint'], 'request_id': 'grant-A'}]
         changed = copy.deepcopy(source)
         changed['composition'][1]['path'] = 'models/3ds/newname.png'
         events = []
@@ -443,8 +589,9 @@ class FTPConsumerTest(unittest.TestCase):
             def grant(self, model, *, initialize):
                 if initialize is not False:
                     raise AssertionError('composition approval must not initialize the existing requirement')
-                events.append('grant-B')
-                return {'request_id': 'grant-B-' + str(len(events))}
+                name = 'B' if model is changed else 'A-new'
+                events.append('grant-' + name)
+                return {'request_id': 'grant-' + name}
             def revoke(self, command):
                 events.append('revoke-' + command)
             def release(self, command):
@@ -470,8 +617,8 @@ class FTPConsumerTest(unittest.TestCase):
                 patch.object(M, 'source_read_control', side_effect=check), \
                 patch.object(M, 'verify_cached_results', return_value=[{'status': 403}]) as cache:
             result = M.verify_composition_rules(client, Authorization(), report, 'deny-A', 30)
-        self.assertEqual(events, ['scan', 'grant-B', 'check-403', 'revoke-grant-B-2', 'release-deny-A',
-                                  'check-403', 'grant-B', 'check-200', 'restore-physical', 'scan'])
+        self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
+                                  'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
         cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 

@@ -2,6 +2,7 @@
 """Ordinary User FTP catalog, scan, native previews and authorized model GLB."""
 from importlib import import_module
 from contextlib import contextmanager
+import base64
 import copy
 import hashlib
 import json
@@ -11,6 +12,7 @@ import re
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 from urllib.parse import quote, urlencode
 
@@ -31,6 +33,200 @@ ISSUER_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
 def require(ok, message):
     if not ok:
         raise SuiteError(message)
+
+
+IFC_PRODUCT_PROFILE_PROBE = r'''
+import base64, hashlib, http.server, json, os, platform, stat, struct
+import subprocess, sys, tempfile, threading, time
+from pathlib import Path
+import operators
+
+assert platform.system() == 'Linux' and platform.machine() == 'x86_64'
+assert Path.cwd() == Path('/app')
+binary = Path('/opt/addp/model3d-workflow/bin/IfcConvert')
+assert os.environ.get('MODEL3D_IFC_CONVERTER_BIN') == str(binary)
+assert binary.is_file() and os.access(binary, os.X_OK)
+with binary.open('rb') as source:
+    binary_sha = hashlib.file_digest(source, 'sha256').hexdigest()
+version_result = subprocess.run([str(binary), '--version'], capture_output=True,
+                                text=True, check=True, timeout=10)
+version = (version_result.stdout + version_result.stderr).strip()
+assert len(version) < 2048 and '0.8.4-e8eb5e4' in version
+payload = sys.stdin.buffer.read(16385)
+assert len(payload) <= 16384
+payload = json.loads(payload)
+assert set(payload) == {'ifc_b64', 'png_b64'}
+original = base64.b64decode(payload['ifc_b64'], validate=True)
+png = base64.b64decode(payload['png_b64'], validate=True)
+assert len(original) == 908
+assert hashlib.sha256(original).hexdigest() == '9bc22669f1fed05c7a10af1e9f76469f37dc4d204a048df04844d1c096ef7433'
+assert len(png) == 73
+assert hashlib.sha256(png).hexdigest() == 'ce3936f332de7b019594fd8792f3960cb10f2c665284db0fb08f798d2973875d'
+marker = 'ENDSEC;\nEND-ISO-10303-21;'
+assert original.decode('ascii').count(marker) == 1
+connections, methods = [], []
+
+class Server(http.server.ThreadingHTTPServer):
+    def get_request(self):
+        connection, address = super().get_request()
+        connection.settimeout(2)
+        connections.append(True)
+        return connection, address
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def parse_request(self):
+        valid = super().parse_request()
+        if valid:
+            methods.append(self.command)
+        return valid
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Length', str(len(png)))
+        self.end_headers()
+        self.wfile.write(png)
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Length', str(len(png)))
+        self.end_headers()
+    def log_message(self, *args):
+        pass
+
+server = Server(('127.0.0.1', 0), Handler)
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+cases = []
+try:
+    thread.start()
+    with tempfile.TemporaryDirectory(prefix='addp-ifc-profile-') as temporary:
+        temporary_path = Path(temporary)
+        for reference_kind in ('http', 'fifo'):
+            if reference_kind == 'http':
+                reference = f'http://127.0.0.1:{server.server_port}/not-authorized.png'
+            else:
+                fifo = temporary_path / 'not-authorized.png'
+                os.mkfifo(fifo)
+                assert stat.S_ISFIFO(fifo.stat().st_mode)
+                reference = str(fifo)
+            # Attach the external texture style to the actual solid #12, not
+            # to an unused IFC entity. The geometry remains the pinned box.
+            resources = (f"#17=IFCIMAGETEXTURE(.T.,.T.,$,$,$,'{reference}');\n"
+                         "#18=IFCSURFACESTYLEWITHTEXTURES((#17));\n"
+                         "#19=IFCSURFACESTYLE('External texture',.BOTH.,(#18));\n"
+                         "#20=IFCSTYLEDITEM(#12,(#19),$);\n")
+            source = temporary_path / f'{reference_kind}.ifc'
+            source.write_text(original.decode('ascii').replace(marker, resources + marker), encoding='ascii')
+            source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+            target = temporary_path / f'{reference_kind}.glb'
+            plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                    'source': {'kind': 'file', 'format': 'ifc',
+                               'access': {'method': 'mounted_path', 'path': str(source)}},
+                    'target': {'kind': 'file', 'format': 'glb', 'name': target.name,
+                               'write_mode': 'create',
+                               'access': {'method': 'mounted_path', 'path': str(target)}}}
+            started = time.monotonic()
+            # No runner, converter env or options override: use the product
+            # binding and the real operator's default --center-model profile.
+            result = operators.invoke_operator('ifc_to_glb', {'access_plan': plan}, timeout_seconds=10)
+            elapsed = time.monotonic() - started
+            assert result['converter'] == str(binary) and result['source_format'] == 'ifc'
+            assert '--center-model' in result['command']
+            raw = target.read_bytes()
+            assert 0 < len(raw) <= 2 * 1024 * 1024
+            length, kind = struct.unpack_from('<I4s', raw, 12)
+            assert kind == b'JSON'
+            document = json.loads(raw[20:20 + length].decode('utf-8').rstrip(' \0'))
+            assert document.get('meshes') and document.get('materials')
+            assert not document.get('images') and not document.get('textures')
+            assert not connections and not methods
+            assert hashlib.sha256(source.read_bytes()).hexdigest() == source_sha
+            cases.append({'reference_kind': reference_kind, 'duration_seconds': elapsed,
+                          'source_sha256': source_sha, 'center_model': True,
+                          'http_connections': len(connections), 'http_methods': list(methods),
+                          'images': 0, 'textures': 0, 'size': len(raw),
+                          'sha256': hashlib.sha256(raw).hexdigest(),
+                          'glb_b64': base64.b64encode(raw).decode('ascii')})
+    assert not temporary_path.exists()
+finally:
+    if thread.is_alive():
+        server.shutdown()
+    server.server_close()
+    if thread.ident is not None:
+        thread.join(timeout=2)
+    assert not thread.is_alive()
+print(json.dumps({'platform': 'Linux-x86_64', 'binary': str(binary),
+                  'binary_version': version, 'binary_sha256': binary_sha,
+                  'operator_sha256': hashlib.sha256(Path(operators.__file__).read_bytes()).hexdigest(),
+                  'temporary_root_removed': True, 'sentinel_thread_stopped': True, 'cases': cases}))
+'''
+
+
+def verify_ifc_product_profile(root: Path, artifact_dir: Path) -> dict:
+    """Called only inside the admitted, already-started FTP Hosted suite."""
+    require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1',
+            'IFC product profile requires the existing FTP Hosted admission')
+    container = 'addp-ftp-model3d-runtime'
+    image = '127.0.0.1:5001/addp-model3d-workflow-engine:online'
+
+    def docker_value(command):
+        return subprocess.check_output(['docker', *command], text=True, timeout=10).strip()
+
+    label = docker_value(['inspect', '-f', '{{index .Config.Labels "com.addp.online-runtime"}}', container])
+    run_id = docker_value(['inspect', '-f', '{{index .Config.Labels "com.addp.online-run-id"}}', container])
+    image_id = docker_value(['inspect', '-f', '{{.Image}}', container])
+    require(label == 'ftp-consumer-flow' and bool(run_id) and run_id == os.environ.get('ADDP_ONLINE_TEST_RUN_ID'),
+            'IFC profile must use this exact suite-owned Runtime')
+    require(image_id == docker_value(['image', 'inspect', '-f', '{{.Id}}', image]), 'IFC product image identity differs')
+    require(docker_value(['image', 'inspect', '-f', '{{.Os}}/{{.Architecture}}', image]) == 'linux/amd64',
+            'IFC profile requires the Hosted Linux amd64 product')
+    default_entry = json.loads(docker_value(['inspect', '-f', '{{json .Config.Cmd}}', container]))
+    require(default_entry == ['python', 'api_server.py'], 'IFC product default entry differs')
+    require(docker_value(['inspect', '-f', '{{.State.Running}}', container]) == 'true', 'IFC Runtime is not running')
+    fixture_dir = root / 'business/fixtures/manager'
+    ifc = (fixture_dir / 'addp_online_model_fixture.ifc').read_bytes()
+    png = (fixture_dir / 'addp_online_exchange_texture.png').read_bytes()
+    payload = json.dumps({'ifc_b64': base64.b64encode(ifc).decode('ascii'),
+                          'png_b64': base64.b64encode(png).decode('ascii')})
+    try:
+        completed = subprocess.run(['docker', 'exec', '-i', '--workdir', '/app', container,
+                                    'python', '-c', IFC_PRODUCT_PROFILE_PROBE],
+                                   input=payload, text=True, capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired as error:
+        raise SuiteError('IFC product profile exceeded its outer 60-second budget') from error
+    if completed.returncode != 0:
+        # This probe only contains synthetic mounted inputs and never prints
+        # Runtime environment/credentials. Keep its bounded diagnostic, too.
+        (artifact_dir / 'ifc-external-profile-error.log').write_text(completed.stderr[-16384:])
+    require(completed.returncode == 0, 'IFC fixed Linux profile failed; do not downgrade the native timeout or skip it')
+    require(len(completed.stdout) <= 6 * 1024 * 1024, 'IFC synthetic profile report exceeds its bounded payload')
+    report = json.loads(completed.stdout)
+    require(report.get('platform') == 'Linux-x86_64' and
+            report.get('binary') == '/opt/addp/model3d-workflow/bin/IfcConvert' and
+            isinstance(report.get('binary_version'), str) and len(report['binary_version']) < 2048 and
+            '0.8.4-e8eb5e4' in report['binary_version'] and
+            isinstance(report.get('binary_sha256'), str) and re.fullmatch('[0-9a-f]{64}', report['binary_sha256']) and
+            report.get('temporary_root_removed') is True and report.get('sentinel_thread_stopped') is True,
+            'IFC native platform or temporary cleanup proof differs')
+    require(report.get('operator_sha256') == hashlib.sha256((root / 'engines/model3d-workflow/operators.py').read_bytes()).hexdigest(),
+            'IFC Runtime operator source differs from this checkout')
+    require([case['reference_kind'] for case in report['cases']] == ['http', 'fifo'], 'IFC profile cases are incomplete')
+    for case in report['cases']:
+        require(case['center_model'] is True and case['http_connections'] == 0 and case['http_methods'] == [] and
+                case['images'] == 0 and case['textures'] == 0, 'IFC fixed-profile external-resource assertion differs')
+        raw = base64.b64decode(case.pop('glb_b64'), validate=True)
+        require(len(raw) == case['size'] and hashlib.sha256(raw).hexdigest() == case['sha256'], 'IFC profile GLB bytes differ')
+        try:
+            case['physical_glb'] = MODEL.validate_model_glb(raw, 'ifc')
+        except MODEL.SuiteError as error:
+            raise SuiteError(f'IFC fixed-profile physical GLB differs: {error}') from error
+        (artifact_dir / f"ifc-external-{case['reference_kind']}.glb").write_bytes(raw)
+    report.update(image_id=image_id, default_entry=default_entry, run_id=run_id,
+                  git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
+                  fixture_sha256=hashlib.sha256(ifc).hexdigest(),
+                  converter_archive_sha256='891d1de019753220e9eff3c82e6262b4e20810974d210469e7cc7abaf3fca32c',
+                  scope='Fixed geometry/basic-color IFC product profile only; not all IFC external references or FTP authorization')
+    (artifact_dir / 'ifc-external-profile.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
 
 
 def validate_preview(payload):
@@ -245,12 +441,17 @@ def changed_texture_fixture(model):
             'FTP composition mutation only accepts the fixed physical model and texture')
     changed = original.replace(b'texture.png', b'newname.png')
     replacement = texture.with_name('newname.png')
-    descriptor = os.open(replacement, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    with os.fdopen(descriptor, 'wb') as stream:
-        stream.write(png)
-        os.fchmod(stream.fileno(), 0o644)
+    created = None
+    published = False
     try:
-        main.write_bytes(changed)
+        descriptor = os.open(replacement, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        identity = os.fstat(descriptor)
+        created = (identity.st_dev, identity.st_ino)
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(png)
+            os.fchmod(stream.fileno(), 0o644)
+        published = True
+        replace_fixture_file(main, changed)
         projected = copy.deepcopy(model)
         projected.update(sha256=hashlib.sha256(changed).hexdigest(), size=len(changed))
         for ref in projected['composition']:
@@ -258,12 +459,35 @@ def changed_texture_fixture(model):
                 ref['path'] = 'models/3ds/newname.png'
         yield projected
     finally:
-        require(not main.is_symlink() and main.read_bytes() == changed,
-                'FTP composition cleanup refuses to overwrite unexpected main-file changes')
-        main.write_bytes(original)
-        require(not replacement.is_symlink() and replacement.read_bytes() == png,
-                'FTP composition cleanup refuses to remove unexpected texture changes')
-        replacement.unlink()
+        try:
+            require(not main.is_symlink() and main.read_bytes() in (original, changed),
+                    'FTP composition cleanup refuses to overwrite unexpected main-file changes')
+            if main.read_bytes() == changed:
+                replace_fixture_file(main, original)
+        finally:
+            if created is not None:
+                identity = replacement.lstat()
+                require(not replacement.is_symlink() and replacement.is_file() and
+                        (identity.st_dev, identity.st_ino) == created,
+                        'FTP composition cleanup refuses to remove a replaced texture')
+                content = replacement.read_bytes()
+                require(content == png if published else png.startswith(content),
+                        'FTP composition cleanup refuses to remove unexpected texture changes')
+                replacement.unlink()
+
+
+def replace_fixture_file(path, content):
+    # A failed write or chmod must leave the original main file intact.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.addp-model-', delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            os.fchmod(stream.fileno(), 0o644)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def source_read_control(client, engine_id, model, status):
@@ -274,8 +498,26 @@ def source_read_control(client, engine_id, model, status):
     return status
 
 
+def verify_old_grant_composition(client, authorization, report, timeout):
+    source = next(model for model in report['models'] if model['format'] == '3ds')
+    original_hash = authorization.facts(source)['boundary_hash']
+    try:
+        with changed_texture_fixture(source) as changed:
+            scan = SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+            facts = authorization.facts(changed)
+            require(facts['boundary_hash'] != original_hash, 'FTP composition boundary did not change')
+            denied = source_read_control(client, report['engine_id'], changed, 403)
+            stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
+            return {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
+                    'changed_boundary_hash': facts['boundary_hash'],
+                    'old_grant_without_deny': denied, 'old_cached_content': stale}
+    finally:
+        SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+
+
 def verify_composition_rules(client, authorization, report, deny, timeout):
     source = next(model for model in report['models'] if model['format'] == '3ds')
+    prior, = [grant for grant in report['source_authorizations'] if grant['item_fingerprint'] == source['fingerprint']]
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
@@ -283,24 +525,22 @@ def verify_composition_rules(client, authorization, report, deny, timeout):
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash,
                     'FTP changed texture reference must change the complete approval boundary')
+            # The production relation admits one active Grant per item/subject.
+            authorization.revoke(prior['request_id'])
             new_grant = authorization.grant(changed, initialize=False)
-            # A new composition Grant cannot override the Deny established on A.
             denied = source_read_control(client, report['engine_id'], changed, 403)
-            authorization.revoke(new_grant['request_id'])
             authorization.release(deny)
-            # With no Deny and no B Grant, A's Grant must still not cover B.
-            old_grant_denied = source_read_control(client, report['engine_id'], changed, 403)
-            approved = authorization.grant(changed, initialize=False)
             allowed = source_read_control(client, report['engine_id'], changed, 200)
             stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
-            return {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
-                    'changed_boundary_hash': facts['boundary_hash'], 'changed_grant': approved,
-                    'old_deny_after_new_grant': denied, 'old_grant_without_deny': old_grant_denied,
-                    'new_grant_after_release': allowed, 'old_cached_content': stale}
+            result = {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
+                      'changed_boundary_hash': facts['boundary_hash'], 'changed_grant': new_grant,
+                      'old_deny_after_new_grant': denied, 'new_grant_after_release': allowed,
+                      'old_cached_content': stale}
     finally:
-        # Directory discovery, rather than single-item refresh, restores Meta's
-        # dependency facts before checking the original cache again.
         SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+    authorization.revoke(new_grant['request_id'])
+    result['restored_grant'] = authorization.grant(source, initialize=False)
+    return result
 
 
 def prepare_models(items, engine_id, samples):
@@ -473,6 +713,8 @@ def main():
     model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
     client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
     report = run(client, tenant, engine, samples, model_samples, timeout)
+    report['ifc_product_profile'] = verify_ifc_product_profile(Path(__file__).resolve().parents[2],
+        Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')))
     issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
                                    SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), min(timeout, 30))
     authorization = ModelSourceAuthorization(issuer, client, report)
@@ -480,6 +722,8 @@ def main():
         report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
         report['browser'] = run_browser(report)
         source = next(model for model in report['models'] if model['format'] == '3ds')
+        report['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, timeout)
+        report['restored_before_deny'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
         deny = authorization.deny(source)
         report['source_deny_id'] = deny
         report['deny_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
