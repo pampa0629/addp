@@ -45,6 +45,10 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "workflow-runtime-health-recovery": Suite(
+        command=("engines/pointcloud-workflow/venv/bin/python", "scripts/test/workflow-runtime-health-recovery-online.py"),
+        services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL")),
+    ),
     "pg-source-authorization": Suite(
         command=(sys.executable, "-m", "scripts.test.pg-source-authorization-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

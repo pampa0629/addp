@@ -128,6 +128,33 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
     return profiles
 
 
+def validate_workflow_runtime_health_profile(repository: Path, registered: set[str]) -> None:
+    if "workflow-runtime-health-recovery" not in registered:
+        return
+    host = (repository / "scripts/test/online-host-gate.sh").read_text()
+    for fragment in (
+        "for target in -system -gateway -pointcloud-workflow -model3d-workflow -document-workflow",
+        'scripts/dev/start.sh --exact-process "$target"',
+        "workflow-runtime-health-recovery-online.py --restore-only",
+        "DEVELOP_SERVICE_CLIENT_SECRET", "POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET",
+        "MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET",
+    ):
+        if fragment not in host:
+            raise RegistrationError(f"workflow-runtime-health-recovery lifecycle is missing {fragment}")
+    for filename in ("workflow-runtime-health-recovery-online.py", "workflow-runtime-health-recovery-online_test.py"):
+        if not (repository / "scripts/test" / filename).is_file():
+            raise RegistrationError(f"workflow-runtime-health-recovery requires {filename}")
+    makefile = (repository / "Makefile").read_text()
+    if "$(MAKE) test-workflow-runtime-health-online-runner" not in make_target_commands(makefile, "test-online-runner"):
+        raise RegistrationError("Runtime health regression must belong to test-online-runner")
+    if "workflow-runtime-health-recovery-online_test.py" not in make_target_commands(makefile, "test-workflow-runtime-health-online-runner"):
+        raise RegistrationError("Runtime health owner regression is missing")
+    start = (repository / "scripts/dev/start.sh").read_text()
+    for name, flag in (("pointcloud", "POINTCLOUD"), ("model3d", "MODEL3D"), ("document", "DOCUMENT")):
+        if f"      {name}-workflow)\n        START_{flag}_WORKFLOW=true" not in start:
+            raise RegistrationError(f"Runtime health exact-process selection missing {name}")
+
+
 def validate_module_registry_process_profile(repository: Path, registered: set[str]) -> None:
     if "module-registry-recovery" not in registered:
         return
@@ -2885,6 +2912,7 @@ def check_registration(repository: Path) -> None:
     validate_platform_node_metrics_profile(repository, registered)
     validate_administrator_governance_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
+    validate_workflow_runtime_health_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)
     validate_workbench_service_consumption_profile(repository, registered)

@@ -20,6 +20,7 @@ on:
           - manager-hybrid-search
           - metric-service-revision-lifecycle
           - module-registry-recovery
+          - workflow-runtime-health-recovery
           - oceanbase-consumer-flow
           - ontology-revision-lifecycle
           - orchestrator-execution

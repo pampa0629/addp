@@ -712,6 +712,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-workflow-runtime-health-online-runner
 	@$(MAKE) test-starrocks-online-runner
 	@$(MAKE) test-ftp-online-runner
 	@$(MAKE) test-common-gaussdb-unit
@@ -736,6 +737,13 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-quality-online-runner
 	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+.PHONY: test-workflow-runtime-health-online-runner
+test-workflow-runtime-health-online-runner: ## 验证三组原生 Runtime 健康故障的隔离、恢复与标准登记
+	@bash -n scripts/dev/start.sh scripts/test/online-host-gate.sh
+	@python3 -m unittest scripts/test/workflow-runtime-health-recovery-online_test.py scripts.test.online-host-gate_test.WorkflowRuntimeHealthHostGateTest scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 scripts/ci/check-engine-startup-isolation.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
 	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"

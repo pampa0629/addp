@@ -17,6 +17,30 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_workflow_runtime_health_requires_exact_lifecycle_and_owner_regressions(self):
+        source = SCRIPT.parents[2]
+        paths = ("Makefile", "scripts/test/online-host-gate.sh", "scripts/dev/start.sh",
+                 "scripts/test/workflow-runtime-health-recovery-online.py",
+                 "scripts/test/workflow-runtime-health-recovery-online_test.py")
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        registered = {"workflow-runtime-health-recovery"}
+        CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "$(MAKE) test-workflow-runtime-health-online-runner"),
+                                   (paths[0], "workflow-runtime-health-recovery-online_test.py"),
+                                   (paths[1], "workflow-runtime-health-recovery-online.py --restore-only"),
+                                   (paths[1], 'scripts/dev/start.sh --exact-process "$target"'),
+                                   (paths[1], "DEVELOP_SERVICE_CLIENT_SECRET"),
+                                   (paths[2], "      pointcloud-workflow)\n        START_POINTCLOUD_WORKFLOW=true")):
+            target = self.repository / relative
+            original = target.read_text()
+            target.write_text(original.replace(fragment, "omitted"))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_workflow_runtime_health_profile(self.repository, registered)
+            target.write_text(original)
+
     def test_administrator_governance_requires_manual_isolated_profile(self):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',

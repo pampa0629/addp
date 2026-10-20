@@ -16,7 +16,7 @@ EXACT_STOP_SCRIPT = Path(__file__).parents[1] / "dev" / "stop-exact-process.sh"
 LIFECYCLE_LOCK_SCRIPT = Path(__file__).parents[1] / "dev" / "lifecycle-lock.sh"
 
 
-class OnlineHostGateTest(unittest.TestCase):
+class OnlineHostGateFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="addp-online-host-gate-")
         self.root = Path(self.temporary.name)
@@ -75,6 +75,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 """\
                 #!/bin/bash
                 printf "make:%s:%s\n" "$1" "$2" >> "$ADDP_TEST_COMMAND_LOG"
+                [ "${ADDP_TEST_MAKE_FAIL:-0}" != "1" ] || exit 1
                 printf '{"schema_version":"addp.online-suite/v1"}\n'
                 """
             ),
@@ -150,6 +151,12 @@ class OnlineHostGateTest(unittest.TestCase):
                 print('{"schema_version":"addp.consumer-process-stability/v1"}')
                 """
             ),
+        )
+        self._write_executable(
+            "scripts/test/workflow-runtime-health-recovery-online.py",
+            '#!/usr/bin/env python3\nimport os\n'
+            'with open(os.environ["ADDP_TEST_COMMAND_LOG"], "a") as log: log.write("restore-runtime-tools\\n")\n'
+            'raise SystemExit(int(os.environ.get("ADDP_TEST_RUNTIME_RESTORE_FAIL", "0")))\n',
         )
         self._write_executable(
             "scripts/test/module-lifecycle-process-online.py",
@@ -334,6 +341,7 @@ class OnlineHostGateTest(unittest.TestCase):
             )
             raise
 
+class OnlineHostGateTest(OnlineHostGateFixture):
     def test_dispatches_registered_suite_and_always_stops_application(self) -> None:
         result = self._run("module-registry-recovery")
 
@@ -769,6 +777,48 @@ class OnlineHostGateTest(unittest.TestCase):
         summary = (self.artifacts / "summary.txt").read_text(encoding="utf-8")
         self.assertIn("result=failed", summary)
         self.assertIn("cleanup=failed", summary)
+
+
+class WorkflowRuntimeHealthHostGateTest(OnlineHostGateFixture):
+    def runtime_health_environment(self):
+        with self.env_file.open("a") as stream:
+            for key in ("DEVELOP_SERVICE_CLIENT_SECRET", "POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET",
+                        "MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET"):
+                stream.write(f"\n{key}=isolated-test-secret\n")
+
+    def test_runtime_health_starts_only_five_exact_processes_and_restores_before_stop(self):
+        self.runtime_health_environment()
+        result = self._run("workflow-runtime-health-recovery")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.command_log.read_text().splitlines()
+        self.assertEqual([line for line in commands if line.startswith("start:")],
+                         [f"start:--exact-process -{name}" for name in
+                          ("system", "gateway", "pointcloud-workflow", "model3d-workflow", "document-workflow")])
+        self.assertEqual(commands.count("restore-runtime-tools"), 2)
+        self.assertEqual(commands[-2:], ["restore-runtime-tools", "stop"])
+        self.assertNotIn("start:-all", commands)
+
+    def test_runtime_health_failed_scenario_still_restores_before_stop(self):
+        self.runtime_health_environment()
+        result = self._run("workflow-runtime-health-recovery", ADDP_TEST_MAKE_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.command_log.read_text().splitlines()[-2:], ["restore-runtime-tools", "stop"])
+
+    def test_runtime_health_restore_failure_fails_gate_before_launch(self):
+        self.runtime_health_environment()
+        result = self._run("workflow-runtime-health-recovery", ADDP_TEST_RUNTIME_RESTORE_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("start:", self.command_log.read_text())
+        self.assertIn("cleanup=failed", (self.artifacts / "summary.txt").read_text())
+
+    def test_runtime_health_missing_service_secret_and_check_only_do_not_start_services(self):
+        result = self._run("workflow-runtime-health-recovery")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.command_log.exists())
+        self.runtime_health_environment()
+        result = self._run("workflow-runtime-health-recovery", "--check-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.command_log.exists())
 
 
 class ExactProcessControlTest(unittest.TestCase):

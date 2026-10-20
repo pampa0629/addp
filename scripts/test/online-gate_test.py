@@ -96,6 +96,7 @@ class OnlineGateTest(unittest.TestCase):
                 "platform-node-metrics",
                 "pg-source-authorization",
                 "module-registry-recovery",
+                "workflow-runtime-health-recovery",
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",
                 "quality-dynamic-binding",

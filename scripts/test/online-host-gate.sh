@@ -91,6 +91,12 @@ ADDP_ONLINE_ARTIFACT_DIR=$REQUESTED_ARTIFACT_DIR
 export ONLINE_SUITE ADDP_ONLINE_ARTIFACT_DIR
 
 case "$ONLINE_SUITE" in
+  workflow-runtime-health-recovery)
+    START_TARGET=-system
+    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL DEVELOP_SERVICE_CLIENT_SECRET
+      POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET
+      DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET)
+    ;;
   consumer-engine-recovery)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
@@ -327,6 +333,13 @@ finish() {
   local cleanup=not-required
   trap - EXIT INT TERM
 
+  if [ "$ONLINE_SUITE" = "workflow-runtime-health-recovery" ]; then
+    if ! run_logged python3 scripts/test/workflow-runtime-health-recovery-online.py --restore-only; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
   if [ "$engine_fixture_cleanup_required" -eq 1 ]; then
     if [ "$engine_restore_required" -eq 1 ]; then
       if ! run_logged bash business/scripts/online-engine-fixture.sh start; then
@@ -418,7 +431,14 @@ cleanup_required=1
 run_logged bash scripts/dev/stop.sh
 run_logged bash scripts/infra/up.sh
 
-if [ "$ONLINE_SUITE" = "module-registry-recovery" ]; then
+if [ "$ONLINE_SUITE" = "workflow-runtime-health-recovery" ]; then
+  # Recover a fault retained in this run's artifact directory before native
+  # preparation. All launches still use the single production dev path.
+  run_logged python3 scripts/test/workflow-runtime-health-recovery-online.py --restore-only
+  for target in -system -gateway -pointcloud-workflow -model3d-workflow -document-workflow; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process "$target"
+  done
+elif [ "$ONLINE_SUITE" = "module-registry-recovery" ]; then
   process_lifecycle=not-run
   process_timeout=${ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS:-60}
   lease_timeout=${ADDP_ONLINE_LEASE_TIMEOUT_SECONDS:-60}
