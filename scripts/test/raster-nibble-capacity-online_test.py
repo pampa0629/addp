@@ -3,12 +3,53 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 m = importlib.import_module('scripts.test.raster-nibble-capacity-online')
 
 
 class NibbleCapacityTest(unittest.TestCase):
+    def test_policy_restoration_preserves_primary_failure_and_remains_strict(self):
+        original = {key: 2 for key in m.POLICY_FIELDS}
+        platform = Mock()
+        platform.request.side_effect = [SimpleNamespace(payload={'policy': {'version': 7}}),
+                                        SimpleNamespace(payload={'policy': original})]
+        report = {}
+        m.restore_policy(platform, '/policy', original, report, None)
+        self.assertTrue(report['policy_restored'])
+        self.assertEqual(platform.request.call_args.args[-1], {**original, 'version': 7})
+        primary = m.raster.SuiteError('GET /develop/executions/id returned HTTP 401 (authentication_required)')
+        restoration = m.raster.SuiteError('GET /policy returned HTTP 401 (authentication_required)')
+        platform.request.side_effect = restoration
+        report = {}
+        with self.assertRaises(m.raster.SuiteError) as caught:
+            m.restore_policy(platform, '/policy', original, report, primary)
+        self.assertIn(str(primary), str(caught.exception))
+        self.assertIn('policy restoration failed: '+str(restoration), str(caught.exception))
+        self.assertIs(caught.exception.__cause__, primary)
+        self.assertNotIn('policy_restored', report)
+        with self.assertRaisesRegex(m.raster.SuiteError, 'authentication_required'):
+            m.restore_policy(platform, '/policy', original, report, None)
+        platform.request.side_effect = [SimpleNamespace(payload={'policy': {'version': 7}}),
+                                        SimpleNamespace(payload={'policy': {**original, 'running': 3}})]
+        with self.assertRaisesRegex(m.raster.SuiteError, 'capacity policy restoration failed'):
+            m.restore_policy(platform, '/policy', original, report, None)
+
+    def test_sampler_shutdown_retains_polling_failure_and_redacts_unexpected_errors(self):
+        sampler = m.Sampler(Path('/unused-cgroup'), None, '/policy', Path('/tmp/owned/runtime-tmp'))
+        primary = m.raster.SuiteError('execution poll failed')
+        secondary = m.raster.SuiteError('resource observation failed')
+        with patch.object(m.capacity.Sampler, 'finish', side_effect=secondary):
+            with self.assertRaises(m.raster.SuiteError) as caught:
+                sampler.finish(primary)
+            self.assertEqual(str(caught.exception), 'execution poll failed; capacity sampler shutdown failed: resource observation failed')
+            self.assertIs(caught.exception.__cause__, primary)
+            with self.assertRaises(m.raster.SuiteError) as caught:
+                sampler.finish()
+            self.assertIs(caught.exception, secondary)
+        combined = m.combined_failure(ValueError('private credential'), RuntimeError('another secret'), 'cleanup')
+        self.assertEqual(str(combined), 'ValueError; cleanup failed: RuntimeError')
+
     def test_matrix_has_sixteen_canonical_save_chains_and_original_identity(self):
         groups = list(m.fixture.groups()); self.assertEqual(len(groups), 8)
         names = [n for s, d, r in groups for n in m.fixture.target_names(s, d, r)]

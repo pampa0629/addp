@@ -2225,7 +2225,7 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
         raise RegistrationError('nibble capacity requires an independent manual Hosted NFS job')
     required = {
         'scripts/test/online-hosted-raster-nibble-capacity-gate.sh': (
-            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow',
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-nibble-capacity',
             '--wait-protection-owners develop,manager', '--cpus 4 --memory 2g --memory-swap 2g',
             'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800', 'TMPDIR=', '--start-runtime',
             'online-raster-nibble-capacity-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
@@ -2234,6 +2234,12 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             'fixture.require_disk', 'validate_disk', 'raster.strict_sizes', 'raster.wait_lineage',
             'triggered_by', 'scan_ids(client)', 'policy_restored', 'previous_artifacts_unchanged',
             'private_allocated_peak_bytes', 'runtime_container_id'),
+        'system/backend/cmd/online-test-fixture/main.go': (
+            'case "raster-workflow", "raster-nibble-capacity":',
+            'suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity"'),
+        'system/backend/cmd/online-test-fixture/main_test.go': (
+            'TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget',
+            'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions'),
         'business/scripts/online-raster-nibble-capacity-fixture.py': (
             'NFSExport', 'SIZES = (4096, 10980)', "SPACING = {'sparse': 128, 'dense': 2}",
             'expected_block', 'running*size**2*51', 'full_check=True',

@@ -80,8 +80,8 @@ start_online_geopython_runtime "$RUNTIME_TAG" --cpus 4 --memory 2g --memory-swap
   --mount "type=bind,source=$NIBBLE_CAPACITY_ROOT,target=$NIBBLE_CAPACITY_ROOT" \
   -e "TMPDIR=$NIBBLE_CAPACITY_ROOT/runtime-tmp"
 run_logged python3 business/scripts/online-raster-nibble-capacity-fixture.py seed
-# Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+# The independent capacity identity keeps the ordinary raster's twelve permissions.
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-nibble-capacity --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/nibble-capacity-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

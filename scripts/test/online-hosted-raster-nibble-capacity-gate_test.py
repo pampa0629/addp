@@ -29,7 +29,7 @@ class HostedNibbleCapacityGateTest(base.HostedContourGateTest):
         result = self.run_gate(); self.assertEqual(result.returncode, 0, result.stderr+result.stdout)
         trace = self.host.trace.read_text()
         for part in ('--cpus 4 --memory 2g --memory-swap 2g', 'TMPDIR=/tmp/owned-nibble-capacity/runtime-tmp',
-                     '--suite raster-workflow --wait-protection-owners develop,manager',
+                     '--suite raster-nibble-capacity --wait-protection-owners develop,manager',
                      'nibble-capacity:seed', 'make:test-online ONLINE_SUITE=raster-nibble-capacity',
                      'nibble-capacity:stop', 'infra-down'):
             self.assertIn(part, trace)

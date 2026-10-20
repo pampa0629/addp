@@ -219,7 +219,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read"), nil
 	case "vector-pmtiles-workflow":
 		return vectorPMTilesPermissions, nil
-	case "raster-workflow":
+	case "raster-workflow", "raster-nibble-capacity":
 		return append(append([]string{}, rasterWorkflowPermissions...), "develop.task.create", "develop.task.delete"), nil
 	case "raster-workflow-capacity":
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read"), nil
@@ -271,7 +271,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
-	return suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -283,7 +283,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 	case "graph-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
-	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
+	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}
@@ -298,7 +298,7 @@ func fixtureSessionConfig(suite string) iam.BrowserSessionConfig {
 	}
 	// Full-scene capacity can outlast the ordinary 1740-second raster suite.
 	// These identities exist only in the disposable Hosted platform database.
-	if suite == "raster-workflow-capacity" {
+	if suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" {
 		config.AccessTokenTTL = 4 * time.Hour
 		config.RefreshTokenFamilyTTL = 4 * time.Hour
 	}
@@ -533,7 +533,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
 	}
-	if *suite == "raster-workflow" || *suite == "raster-workflow-capacity" {
+	if *suite == "raster-workflow" || *suite == "raster-workflow-capacity" || *suite == "raster-nibble-capacity" {
 		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
 		if err != nil {
 			return err

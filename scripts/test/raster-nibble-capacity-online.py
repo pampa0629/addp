@@ -17,6 +17,12 @@ SUITE = fixture.SUITE
 POLICY_FIELDS = ('running', 'waiting', 'cache_mib', 'default_tenant_running', 'default_tenant_waiting')
 
 
+def combined_failure(failure, error, cleanup):
+    # Only SuiteError is safe to print; unexpected exceptions may contain credentials.
+    describe = lambda value: str(value) if isinstance(value, raster.SuiteError) else type(value).__name__
+    return raster.SuiteError(describe(failure)+'; '+cleanup+' failed: '+describe(error))
+
+
 def definition(locator, parent, name):
     if name not in fixture.targets():
         raise raster.SuiteError('unknown exact nibble capacity target')
@@ -70,6 +76,14 @@ class Sampler(capacity.Sampler):
         except subprocess.CalledProcessError as error:
             raise raster.SuiteError('capacity disk sampler failed: '+error.stderr[-1000:]) from error
         self.samples[-1]['disk'] = json.loads(payload)
+
+    def finish(self, failure=None):
+        try:
+            return super().finish()
+        except Exception as error:
+            if failure is None:
+                raise
+            raise combined_failure(failure, error, 'capacity sampler shutdown') from failure
 
 
 def owned_runtime(env, image):
@@ -136,6 +150,20 @@ def validate_scan(scanned, scan_id, parent_id, tenant_id, principal_id, engine_i
             'scan_context': {'engine_id': engine_id}}
 
 
+def restore_policy(platform, path, original, report, failure):
+    try:
+        current = platform.request('GET', path, (200,)).payload['policy']
+        restored = platform.request('PUT', path, (200,), {
+            **{key: original[key] for key in POLICY_FIELDS}, 'version': current['version']}).payload['policy']
+        if any(restored[key] != original[key] for key in POLICY_FIELDS):
+            raise raster.SuiteError('capacity policy restoration failed')
+        report['policy_restored'] = True
+    except Exception as error:
+        if failure is None:
+            raise
+        raise combined_failure(failure, error, 'policy restoration') from failure
+
+
 def run(env):
     tenant_id = raster.positive(int(env['ADDP_ONLINE_TEST_TENANT_ID']), 'tenant')
     if tenant_id <= 1:
@@ -192,7 +220,7 @@ def run(env):
                 elapsed = time.monotonic()-started
             finally:
                 try:
-                    samples = sampler.finish()
+                    samples = sampler.finish(sys.exc_info()[1])
                 finally:
                     (evidence/(group_names[0]+'-measurements.json')).write_text(json.dumps({
                         'before': sampler.before, 'after': getattr(sampler, 'after', None), 'samples': sampler.samples,
@@ -248,11 +276,7 @@ def run(env):
                 raise raster.SuiteError('capacity source metadata changed')
         report.update(result='passed', automatic_scans=16, source_unchanged=True, previous_artifacts_unchanged=True, physical=native)
     finally:
-        current = platform.request('GET', path, (200,)).payload['policy']
-        restored = platform.request('PUT', path, (200,), {**{key: original[key] for key in POLICY_FIELDS}, 'version': current['version']}).payload['policy']
-        if any(restored[key] != original[key] for key in POLICY_FIELDS):
-            raise raster.SuiteError('capacity policy restoration failed')
-        report['policy_restored'] = True
+        restore_policy(platform, path, original, report, sys.exc_info()[1])
     return report
 
 

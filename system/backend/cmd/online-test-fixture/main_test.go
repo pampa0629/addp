@@ -1024,7 +1024,7 @@ func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T
 }
 
 func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
-	for _, suite := range []string{"raster-workflow", "raster-workflow-capacity"} {
+	for _, suite := range []string{"raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity"} {
 		t.Run(suite, func(t *testing.T) {
 			permissions, err := suitePermissions(suite)
 			if err != nil || !needsEngineProvisioner(suite) {
@@ -1045,10 +1045,36 @@ func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
 }
 
 func TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget(t *testing.T) {
-	capacity := fixtureSessionConfig("raster-workflow-capacity")
 	ordinary := fixtureSessionConfig("raster-workflow")
-	if capacity.AccessTokenTTL != 4*time.Hour || capacity.RefreshTokenFamilyTTL != 4*time.Hour || ordinary.AccessTokenTTL != 30*time.Minute || ordinary.RefreshTokenFamilyTTL != 45*time.Minute {
-		t.Fatal("fixture session TTL does not match its isolated suite budget")
+	for _, suite := range []string{"raster-workflow-capacity", "raster-nibble-capacity"} {
+		capacity := fixtureSessionConfig(suite)
+		if capacity.AccessTokenTTL != 4*time.Hour || capacity.RefreshTokenFamilyTTL != 4*time.Hour || ordinary.AccessTokenTTL != 30*time.Minute || ordinary.RefreshTokenFamilyTTL != 45*time.Minute {
+			t.Fatalf("%s: fixture session TTL does not match its isolated suite budget", suite)
+		}
+	}
+}
+
+func TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions(t *testing.T) {
+	ordinary, err := suitePermissions("raster-workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nibble, err := suitePermissions("raster-nibble-capacity")
+	if err != nil || len(nibble) != 12 || len(nibble) != len(ordinary) {
+		t.Fatal("unexpected nibble capacity permissions", nibble, err)
+	}
+	for i, permission := range ordinary {
+		if nibble[i] != permission {
+			t.Fatalf("nibble capacity changed permission %s", permission)
+		}
+	}
+	values := consumerEnvironment("raster-nibble-capacity", 2, "private-token", "private-password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
+		t.Fatal("nibble capacity identity preparation is incomplete")
+	}
+	nibble[0] = "mutated"
+	if ordinary[0] == "mutated" || rasterWorkflowPermissions[0] == "mutated" {
+		t.Fatal("nibble capacity aliases the ordinary permissions")
 	}
 }
 

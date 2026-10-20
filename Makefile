@@ -630,6 +630,7 @@ test-raster-nibble-capacity-online-runner: ## 验证分类蚕食容量矩阵、�
 	@bash -n scripts/test/online-hosted-raster-nibble-capacity-gate.sh
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-nibble-capacity-online_test.py scripts/test/online-raster-nibble-capacity-fixture_test.py scripts/test/online-hosted-raster-nibble-capacity-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_nibble_capacity_requires_manual_limits_disk_and_full_oracle
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-raster-nibble-online-runner
 test-raster-nibble-online-runner: ## 验证分类蚕食持久化及隔离生命周期
