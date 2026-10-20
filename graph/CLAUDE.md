@@ -285,4 +285,6 @@ v5 在原有两张保护图之外增加独立人工审核合成图；FalkorDB �
 
 审核浏览器验收在深链重载后等待真实队列响应，再由该请求创建 API 客户端并核对 User、Tenant 和精确权限集；不保留重载前捕获的会话凭据用于最终结果核对。共享 `browserAPIFromResponse` 的既有回归通过真实 HTTP 测试服务验证旧凭据失效、新请求凭据有效及身份不符时拒绝，纳入 `make test-console-frontend`；不注入准备账号 Token，不放宽 401 断言。
 
+审核列表省略 `status` 时只返回 `pending`。验收的待审读取显式使用该状态；最终审核结果由普通审核账号分别查询既有 `approved/rejected/modified/pending` 状态，逐页核对数量和状态后合并，严格核对七条记录、审核人、原生标识和最终属性。不新增 `status=all` 或改变接口默认值；浏览器与 Python 核验使用相同过滤语义。既有完整流程回归模拟真实的默认 pending 行为，另验证缺页、错误计数和混入其他状态均失败，由 `make test-graph-online-runner` 覆盖。
+
 Graph Hosted 的并发组按 `suite + graph_engine` 划分，两种引擎的独占部署不共用 pending 槽位；同一引擎仍保持不取消运行中任务的串行限制。其他 Security suite 的并发组不依赖无关的 graph_engine 输入。排队中被替换的任务不计为执行或通过，必须保留取消回执并在对应引擎组补跑。该约束由既有 `make test-graph-online-runner` 的 Graph Online 登记回归验证。

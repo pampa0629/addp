@@ -98,10 +98,19 @@ test('ordinary reviewer uses the real queue and observes native batch partial fa
     await expect(frame.locator('.el-table__body input[type="checkbox"]:checked')).toHaveCount(0)
     await expect(frame.locator('.el-message--error')).toBeVisible()
     await expect(frame.locator('.el-message--success').filter({ hasText: /已批量通过/ })).toHaveCount(0)
-    const all = await json(await api.get(root + '?page_size=100'), 'persisted review result')
-    const status = Object.fromEntries(all.data.map(item => [item.source_text, item.status]))
-    expect(status).toEqual({ approve: 'approved', reject: 'rejected', modify: 'modified', 'batch-before': 'approved',
-      'bad-native': 'pending', 'batch-after': 'approved', 'review-link': 'approved' })
+    const expectedStatus = { approve: 'approved', reject: 'rejected', modify: 'modified', 'batch-before': 'approved',
+      'bad-native': 'pending', 'batch-after': 'approved', 'review-link': 'approved' }
+    const all = []
+    for (const state of new Set(Object.values(expectedStatus))) {
+      const filtered = await json(await api.get(root, { params: { status: state, page_size: 100 } }), `persisted ${state} review result`)
+      expect(filtered.total).toBe(Object.values(expectedStatus).filter(status => status === state).length)
+      expect(filtered.data).toHaveLength(filtered.total)
+      expect(filtered.data.every(item => item.status === state)).toBe(true)
+      all.push(...filtered.data)
+    }
+    expect(all).toHaveLength(7)
+    expect(Object.fromEntries(all.map(item => [item.source_text, item.id]))).toEqual(expected.items)
+    expect(Object.fromEntries(all.map(item => [item.source_text, item.status]))).toEqual(expectedStatus)
     expect(commands.map(command => [command.method, command.path])).toEqual([
       ['POST', `${root}/${expected.items.approve}/approve`], ['POST', `${root}/${expected.items.reject}/reject`],
       ['PUT', `${root}/${expected.items.modify}`], ['POST', `${root}/${expected.items['review-link']}/approve`], ['POST', root + '/batch/approve']

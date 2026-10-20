@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 REVIEW = importlib.import_module('scripts.test.graph-review-online')
 EXTRACTOR = importlib.import_module('scripts.test.graph-review-extractor')
@@ -43,6 +44,30 @@ class GraphReviewOnlineTest(unittest.TestCase):
             changed = copy.deepcopy(items)
             mutate(changed)
             with self.subTest(mutation=mutate), self.assertRaises(SUITE.SuiteError): REVIEW.verify_items(SUITE, changed, '17')
+
+    def test_all_review_states_are_explicit_complete_and_not_the_default_pending_queue(self):
+        rows = reviewed_items()
+        calls = []
+        class Client:
+            def request(self, method, path, expected):
+                calls.append((method, path, expected))
+                status = parse_qs(urlsplit(path).query).get('status', ['pending'])[0]
+                selected = [item for item in rows if item['status'] == status]
+                page = {'data': copy.deepcopy(selected), 'total': len(selected)}
+                if mutation == 'missing': page['data'].pop()
+                elif mutation == 'wrong-status': page['data'][0]['status'] = 'unknown'
+                elif mutation == 'wrong-total': page['total'] += 1
+                return SUITE.SUPPORT.Response(200, page)
+        for mutation in ('none', 'missing', 'wrong-status', 'wrong-total'):
+            calls.clear()
+            with self.subTest(mutation=mutation):
+                if mutation == 'none':
+                    all_items = REVIEW.read_all_review_items(SUITE, Client(), '/review')
+                    self.assertEqual(len(REVIEW.verify_items(SUITE, all_items, '17')), 7)
+                    self.assertEqual([path for _, path, _ in calls], [f'/review?status={status}&page_size=100'
+                                     for status in ('approved', 'rejected', 'modified', 'pending')])
+                else:
+                    with self.assertRaises(SUITE.SuiteError): REVIEW.read_all_review_items(SUITE, Client(), '/review')
 
     def test_review_native_target_is_always_separate(self):
         with patch.dict(REVIEW.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'}):
@@ -98,8 +123,11 @@ class GraphReviewOnlineTest(unittest.TestCase):
                     data = {'status': 'success', 'execution_id': 'execution', 'stats': {'auto_written': 2, 'pending_review': 7}}
                 elif path.endswith('/materials') and method == 'GET':
                     data = [{'id': 29, 'status': 'completed', 'total_chunks': 1, 'processed_chunks': 1}]
-                elif path.endswith('/review?page_size=100'):
-                    data = {'total': 7, 'data': rows if finished[0] else [dict(row, status='pending', content={}) for row in rows]}
+                elif '/review?' in path:
+                    status = parse_qs(urlsplit(path).query).get('status', ['pending'])[0]
+                    queue = rows if finished[0] else [dict(row, status='pending', content={}) for row in rows]
+                    selected = [item for item in queue if item['status'] == status]
+                    data = {'total': len(selected), 'data': selected}
                 elif path.endswith('/review') and method == 'GET': data = {'total': 0}
                 elif path.endswith('/entities/Person'):
                     data = {'total': 6, 'data': [{'id': 'native-' + key, 'properties': {'id': key, 'name': 'Modified fixture' if key == 'modify' else key}}
@@ -118,6 +146,7 @@ class GraphReviewOnlineTest(unittest.TestCase):
              patch.object(REVIEW, 'upload', return_value=29), patch.object(REVIEW, 'browser', side_effect=browser):
             REVIEW.run(SUITE, Client(), Client(), 13, 2, 9, 11, report)
         self.assertTrue(report['review']['passed'])
+        self.assertTrue(all('?status=' in path for method, path, _ in calls if method == 'GET' and '/review?' in path))
         self.assertEqual(report['review']['cleanup'], {'errors': [], 'domain_resources_remaining': 0})
         self.assertIn(('PUT', '/api/v1/graph/graphs/11/review/3', {'final_content': {}}), calls)
         self.assertIn(('DELETE', '/api/v1/graph/graphs/19/build/tasks/23/materials/29', None), calls)

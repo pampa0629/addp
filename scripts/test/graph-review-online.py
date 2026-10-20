@@ -85,6 +85,19 @@ def verify_items(suite, items, principal_id):
     return by_source
 
 
+def read_all_review_items(suite, client, review_path):
+    items = []
+    for status in dict.fromkeys(EXPECTED_STATUS.values()):
+        page = client.request("GET", f"{review_path}?status={status}&page_size=100", (200,)).payload
+        rows = page.get("data")
+        expected_count = list(EXPECTED_STATUS.values()).count(status)
+        suite.require(type(page.get("total")) is int and page["total"] == expected_count and
+                      isinstance(rows, list) and len(rows) == expected_count and
+                      all(item.get("status") == status for item in rows), "Filtered review page is incomplete or has another status: " + status)
+        items.extend(rows)
+    return items
+
+
 def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, report):
     env = suite.SUPPORT.required_environment
     reviewer = suite.Client(env("GATEWAY_URL"), env("ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN"), 30)
@@ -119,7 +132,7 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
         materials = preparer.request("GET", task_path + "/materials", (200,)).payload
         suite.require(len(materials) == 1 and materials[0]["id"] == mid and materials[0]["status"] == "completed" and
                       materials[0]["processed_chunks"] == materials[0]["total_chunks"] == 1, "Stored material was not processed exactly once")
-        queued = reviewer.request("GET", root + "/review?page_size=100", (200,)).payload
+        queued = reviewer.request("GET", root + "/review?status=pending&page_size=100", (200,)).payload
         suite.require(queued["total"] == 7 and all(i["status"] == "pending" for i in queued["data"]), "Expected seven pending items")
         ids = {i["source_text"]: i["id"] for i in queued["data"]}
         suite.require(set(ids) == set(EXPECTED_STATUS), "Controlled queue contents differ")
@@ -130,10 +143,10 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
             reviewer.request("POST", wrong_root + suffix, (404,))
         reviewer.request("PUT", wrong_root + f"/{ids['modify']}", (404,), {"final_content": queued["data"][0]["content"]})
         reviewer.request("POST", wrong_root + "/batch/approve", (404,), {"ids": [ids["approve"], ids["batch-after"]]})
-        suite.require(all(i["status"] == "pending" for i in reviewer.request("GET", root + "/review?page_size=100", (200,)).payload["data"]), "Cross-graph commands changed review state")
+        suite.require(all(i["status"] == "pending" for i in reviewer.request("GET", root + "/review?status=pending&page_size=100", (200,)).payload["data"]), "Cross-graph commands changed review state")
         evidence["browser"] = browser(suite, {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
             "principal_id": identity["principal_id"], "engine_type": suite.engine_type(), "graph_id": gid, "items": ids})
-        items = reviewer.request("GET", root + "/review?page_size=100", (200,)).payload["data"]
+        items = read_all_review_items(suite, reviewer, root + "/review")
         by_source = verify_items(suite, items, identity["principal_id"])
         reviewer.request("POST", root + f"/review/{ids['approve']}/approve", (409,))
         nodes = reviewer.request("GET", f"/api/v1/graph/kg/{gid}/entities/Person", (200,)).payload
