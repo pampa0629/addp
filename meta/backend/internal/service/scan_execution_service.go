@@ -8,7 +8,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	"github.com/addp/meta/internal/scantask"
+	commonModels "github.com/addp/common/models"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -75,14 +75,14 @@ func (s *ScanExecutionService) BoundedExecutionAttemptIsTerminal(ctx context.Con
 	return commonExecution.AttemptIsTerminal(ctx, s.db, lease)
 }
 
-func (s *ScanExecutionService) lookupStorageType(engineID, tenantID uint) string {
+func (s *ScanExecutionService) lookupScanEngine(engineID, tenantID uint) *commonModels.Engine {
 	if s.engineService == nil {
-		return "unknown"
+		return nil
 	}
 	resource, err := s.engineService.GetResourceByID(engineID, tenantID)
 	if err != nil {
 		s.log.Warn("获取资源存储类型失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
-		return "unknown"
+		return nil
 	}
-	return scantask.NormalizeStorageType(resource.EngineType)
+	return resource
 }

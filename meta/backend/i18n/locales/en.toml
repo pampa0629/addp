@@ -69,3 +69,8 @@ other = "Read authorization resource facts"
 
 [permissions.meta.authorization_facts.read.description]
 other = "Allow System and Catalog to read current DataItem identity and boundary without source content"
+[meta.scan.plan_facts_unavailable]
+other = "Frozen scan plan facts are unavailable; rebuild the scan plan"
+
+[meta.scan.plan_facts_read_failed]
+other = "Unable to read frozen scan plan facts"

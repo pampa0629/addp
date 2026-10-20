@@ -96,6 +96,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.GET("/runtime/data-items/:fingerprint/security-facts", auth.MustNewServiceClientGuard("addp-security"), permission(metaauthorization.PermissionMetaSecurityFactsRead), handler.GetDataItemSecurityFacts)
 		api.GET("/runtime/data-items/:fingerprint/security-sample", auth.MustNewServiceClientGuard("addp-security"), permission(metaauthorization.PermissionMetaSecurityFactsRead), handler.GetDataItemSecuritySample)
 		registerDataItemAuthorizationFactsRoute(api, handler)
+		registerScanPlanFactsRoute(api, handler)
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetMetadataTree)

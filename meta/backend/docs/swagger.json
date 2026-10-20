@@ -1937,6 +1937,93 @@
                 ]
             }
         },
+        "/runtime/scan-executions/{execution_id}/authorization-facts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-system Tenant Service 可读；200 仅表示计划事实，不是采集许可。不扫描、不读取源、不返回 Actor、连接、配置或 Grant。缺少真实冻结引擎版本时返回 409，不用当前版本补齐 | Restricted to addp-system Tenant Service. HTTP 200 contains facts, never an Allow. No scan, source I/O, Actor, connection, raw configuration or Grant. Returns 409 when the frozen engine version is missing; never substitutes the current version",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "查询冻结扫描计划事实 | Read frozen scan plan facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 UUID | Execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "冻结计划的最小事实 | Minimal frozen plan facts",
+                        "schema": {
+                            "$ref": "#/definitions/execution.MetaScanPlanFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.task_provider.read"
+                ]
+            }
+        },
         "/runtime/transfer-productions/{execution_id}/basic-scan": {
             "post": {
                 "security": [
@@ -3351,6 +3438,88 @@
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "execution.MetaScanPlanFacts": {
+            "type": "object",
+            "properties": {
+                "basis_state": {
+                    "enum": [
+                        "complete",
+                        "incomplete",
+                        "needs_refresh",
+                        "unsupported"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationBasisState"
+                        }
+                    ]
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "engine_version": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_plan_digest": {
+                    "type": "string"
+                },
+                "read_options": {
+                    "$ref": "#/definitions/execution.MetaScanReadOptions"
+                },
+                "scan_depth": {
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "deep"
+                    ]
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "source_scope": {
+                    "$ref": "#/definitions/execution.MetaScanSourceScope"
+                },
+                "task_definition_digest": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.MetaScanReadOptions": {
+            "type": "object",
+            "properties": {
+                "encoding": {
+                    "type": "string"
+                },
+                "has_header": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "execution.MetaScanSourceScope": {
+            "type": "object",
+            "properties": {
+                "anchors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "exact",
+                        "full"
+                    ]
                 }
             }
         },

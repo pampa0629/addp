@@ -235,6 +235,60 @@ definitions:
       status:
         type: string
     type: object
+  execution.MetaScanPlanFacts:
+    properties:
+      basis_state:
+        allOf:
+        - $ref: '#/definitions/authorizationfacts.AuthorizationBasisState'
+        enum:
+        - complete
+        - incomplete
+        - needs_refresh
+        - unsupported
+      engine_id:
+        example: ""
+        type: string
+      engine_version:
+        type: string
+      execution_id:
+        type: string
+      execution_plan_digest:
+        type: string
+      read_options:
+        $ref: '#/definitions/execution.MetaScanReadOptions'
+      scan_depth:
+        enum:
+        - basic
+        - deep
+        type: string
+      schema_version:
+        type: string
+      source_scope:
+        $ref: '#/definitions/execution.MetaScanSourceScope'
+      task_definition_digest:
+        type: string
+      task_id:
+        type: string
+    type: object
+  execution.MetaScanReadOptions:
+    properties:
+      encoding:
+        type: string
+      has_header:
+        type: boolean
+    type: object
+  execution.MetaScanSourceScope:
+    properties:
+      anchors:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
+      mode:
+        enum:
+        - exact
+        - full
+        type: string
+    type: object
   execution.ReadGrant:
     properties:
       own_ad_hoc:
@@ -2636,6 +2690,69 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.scan_task.execute
+  /runtime/scan-executions/{execution_id}/authorization-facts:
+    get:
+      description: 仅 addp-system Tenant Service 可读；200 仅表示计划事实，不是采集许可。不扫描、不读取源、不返回
+        Actor、连接、配置或 Grant。缺少真实冻结引擎版本时返回 409，不用当前版本补齐 | Restricted to addp-system
+        Tenant Service. HTTP 200 contains facts, never an Allow. No scan, source I/O,
+        Actor, connection, raw configuration or Grant. Returns 409 when the frozen
+        engine version is missing; never substitutes the current version
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 冻结计划的最小事实 | Minimal frozen plan facts
+          schema:
+            $ref: '#/definitions/execution.MetaScanPlanFacts'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询冻结扫描计划事实 | Read frozen scan plan facts
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.task_provider.read
   /runtime/transfer-productions/{execution_id}/basic-scan:
     post:
       description: 仅 addp-transfer；无正文和 query。Meta 自行反查同租户 Transfer v3 成功回执，仅识别精确首次新建表；复用统一扫描创建和执行链。重复请求恢复原扫描，不复活失败执行，不授予数据权限

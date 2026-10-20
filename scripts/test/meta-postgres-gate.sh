@@ -51,13 +51,26 @@ case "$database" in *test*|*disposable*) ;; *) echo "META_POSTGRES_TEST_DSN must
 source "$ROOT_DIR/scripts/infra/ports.sh"
 addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"
 
+# Meta fixtures share one database across checkouts. Hold the same open file
+# description through the entire gate; never unlink this persistent lock file.
+exec 9>>/tmp/addp-meta-postgres-gate.lock
+python3 - <<'PY'
+import fcntl
+import sys
+
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit("Meta PostgreSQL gate is already running; run gates serially")
+PY
+
 cd "$SOURCE_ROOT/meta/backend"
 if [ "$test_group" = all ]; then
     go test ./internal/repository -run '^(TestClaimedComponentsAgainstPostgres|TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 fi
-service_tests='^TestDataItemAuthorizationFactsAgainstPostgres$'
+service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 if [ "$test_group" = all ]; then
-    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
+    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
 fi
 go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 if [ "$test_group" = all ]; then
@@ -72,5 +85,9 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
 fi
 grep -q -- '--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ' "$WORK_DIR/meta.log" || {
     echo 'Meta PostgreSQL gate requires the real authorization facts test' >&2
+    exit 1
+}
+grep -q -- '--- PASS: TestScanPlanFactsAgainstPostgres ' "$WORK_DIR/meta.log" || {
+    echo 'Meta PostgreSQL gate requires the real scan plan facts test' >&2
     exit 1
 }

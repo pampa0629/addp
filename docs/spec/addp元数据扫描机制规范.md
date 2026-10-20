@@ -96,6 +96,16 @@ System 负责当前采集资格及源读取裁决；Meta 不以服务连接、�
 
 上述资格接入尚未形成完整实现，不把当前范围解析当作已完成授权。实现验证至少覆盖：精确项不读取兄弟／未来项；完整范围合法新项可采集而越界／外部依赖拒绝；basic 不触发内容采样或哈希；deep 缺权、撤权、过期、错 Tenant／attempt 拒绝且不打开源；核验后计划变化拒绝；集中采集不增授操作人预览／下载权限；新产物身份、授权与 deep 状态分别反馈。复用受影响 owner 的 Go T1、PostgreSQL T2 及真实 Online 标准入口，不以规范落地宣称这些门禁已通过。
 
+### 冻结扫描计划事实契约
+
+System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的采集资格批准、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
+
+共享 wire 为 `execution.MetaScanPlanFacts`，`schema_version=meta.scan_plan_facts/v1`，包含 execution UUID、可空 task ID／功能定义摘要、完整原始执行配置摘要、字符串 Engine ID／冻结版本、basic／deep、source scope、read options 和 basis state。任务功能定义显式包含 Engine、扫描 selector 和读取参数，排除名称、创建人及最近执行摘要；它是内容标识，不冒充任务资源 Version。执行摘要覆盖完整原始 JSON，保留数字精度，拒绝重复键，不能经宽松 JSONMap 重新序列化后求值。事实不返回原始配置、Actor、Grant 或连接；System 独立读取统一执行事实并核对当前引擎与资格。
+
+`source_scope` 为 `exact`／`full` 和 1–200 个同 Engine 的完整 typed anchors，按 `json.Marshal(path)` 字节顺序排列，拒绝重复；名字保持原字节。complete 必须有可证明的 scope，incomplete／unsupported／needs_refresh 必须为 null。纯值校验只证明结构，实际类型、父链和归属由 Meta 持久事实或可信生产回执证明。原始路径、ref group 或不完整组成不能猜成完整范围，也不能为获得 typed path 而先访问源。当前投影支持已完整识别的单项 native 边界和已冻结引擎类型的 whole 根；其他 selector 保持非完整，后续随对应可信计划接线补齐，不以此宣称全部采集范围已获授权。
+
+新执行从所用 Engine 快照冻结真实版本和类型；有任务的执行还在创建事务中冻结真实功能定义摘要，读取时与当前定义比较，变化后返回 needs_refresh／null scope，不能把旧执行和新任务定义组合成 complete。缓存快照不是许可，System 签发与 Worker 消费仍须核对当前版本。旧执行缺少真实冻结版本或任务功能摘要时返回 409 `meta_scan_plan_facts_unavailable`，要求重建计划，不取当前版本补齐。`read_options` 对象必需，encoding／has_header 可省，显式 null 拒绝，false 保留；整个响应预算为 512 KiB，未知字段、重复字段、缺失必需字段及无效 UTF-8 均拒绝。
+
 ### 对象目录归属不变量
 
 对象 item 的父 node 只能由其规范 bucket 内路径决定，与 selector、扫描起点及扫描深度无关。`full_name = 父 node.full_name + "/" + item.name` 必须成立；whole 布局使用逻辑 item 路径的父目录，不能使用内部主文件的父目录。

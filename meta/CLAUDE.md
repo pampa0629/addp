@@ -44,6 +44,8 @@ meta/
 
 普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；Worker 的 System 采集资格签发与消费另行接入。
 
+冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item 和已冻结类型的 whole 根可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
+
 Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨扫描任务的执行列表、通用状态筛选与统计统一由 Monitor 展示；MetadataScan 页头使用 `common-frontend` 的 `MonitorExecutionsButton(module=meta, task_type=scan)` 进入统一监控，不保留 `/meta/tasks` 菜单、路由或独立执行列表。
 
 专业扫描执行读取按 Tenant + meta/scan 限定；当前 `meta.scan_task.read` 可读有定义的历史（含已删除定义），一次性执行只允许发起 User 读取。专业入口保留既有合法 User 凭据与 Client Scope 守卫，不套用 Monitor 的第一方令牌限制；TaskProvider 继续独立使用专用机器认证和权限。用户读取响应复用 Common Observation，仅增加固定 `scan_context.engine_id/scan_depth`，不得序列化完整 TaskExecution。详见平台任务体系规范；直接 Meta 入口已在提交 `60faf18da` 的 [Hosted T4 37166379368](https://github.com/pampa0629/addp/actions/runs/37166379368) 通过，完整证据见任务体系规范。
@@ -267,7 +269,7 @@ Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服
 
 `GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。
 
-单项授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
+授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标及冻结扫描计划事实。原入口以跨 checkout 的持久文件描述符锁拒绝同一 Meta 门禁并发，锁覆盖测试子进程，结束自动释放且不删除锁文件。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
 
 后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
 

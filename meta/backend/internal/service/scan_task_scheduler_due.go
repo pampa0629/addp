@@ -121,8 +121,16 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 				Updates(scantask.ScheduledTaskTriggerFields(now, next, time.Now())).Error
 		}
 
-		storageType := s.executionService.lookupStorageType(task.EngineID, task.TenantID)
+		resource := s.executionService.lookupScanEngine(task.EngineID, task.TenantID)
+		storageType := "unknown"
+		if resource != nil {
+			storageType = scantask.NormalizeStorageType(resource.EngineType)
+		}
 		execution := scantask.NewScheduledExecution(&task, storageType, targets, plannedRunAt, now)
+		freezeScanEngineSnapshot(execution, resource)
+		if err := freezeScanTaskDefinition(tx, execution); err != nil {
+			return err
+		}
 
 		if s.executionService.dedupService != nil {
 			lockKey = s.executionService.dedupService.GenerateExecutionLockKey(task.TenantID, task.EngineID, 0, targets.CatalogPaths, targets.RefGroups, nil)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import fcntl
 import os
 import subprocess
 import sys
@@ -295,6 +296,54 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn('cd "$SOURCE_ROOT/meta/backend"', source)
         self.assertIn('addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"', source)
         self.assertIn("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ", source)
+        self.assertIn("--- PASS: TestScanPlanFactsAgainstPostgres ", source)
+
+    def test_meta_postgres_cross_checkout_lock_and_child_lifetime(self) -> None:
+        lock = self.repository / "meta.lock"
+        marker = self.repository / "go-started"
+        source = (SCRIPT.parents[2] / "scripts/test/meta-postgres-gate.sh").read_text()
+        script = self.repository / "scripts/test/meta-postgres-gate.sh"
+        script.write_text(source.replace("/tmp/addp-meta-postgres-gate.lock", str(lock)))
+        module = self.repository / "meta/backend/go.mod"
+        module.parent.mkdir(parents=True)
+        module.write_text("module github.com/addp/meta\n")
+        utility = self.repository / "scripts/infra/ports.sh"
+        utility.parent.mkdir(parents=True)
+        utility.write_text("addp_infra_verify_test_postgres_dsn() { return 0; }\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture"], cwd=self.repository, check=True)
+        other = self.repository / "other-checkout"
+        subprocess.run(["git", "clone", "-q", str(self.repository), str(other)], check=True)
+        binaries = self.repository / "bin"
+        binaries.mkdir()
+        go = binaries / "go"
+        go.write_text(f'''#!/usr/bin/env python3
+import fcntl, sys
+from pathlib import Path
+with open({str(lock)!r}, "a") as held:
+    try:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        sys.exit("gate failed to retain lock in test child")
+Path({str(marker)!r}).touch()
+print("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres (0.01s)")
+print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
+''')
+        go.chmod(0o755)
+        env = dict(os.environ, PATH=f"{binaries}:{os.environ['PATH']}", META_POSTGRES_TEST_DSN="postgres://fixture/addp_test")
+        with lock.open("a") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            denied = subprocess.run(["bash", str(other / "scripts/test/meta-postgres-gate.sh"), "--test", "authorization-facts"], env=env, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(0, denied.returncode)
+            self.assertIn("Meta PostgreSQL gate is already running", denied.stderr)
+            self.assertFalse(marker.exists(), "conflicting gate reached database command")
+            fcntl.flock(held.fileno(), fcntl.LOCK_UN)
+            accepted = subprocess.run(["bash", str(script), "--test", "authorization-facts"], env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            self.assertTrue(marker.exists())
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
     def test_manager_postgres_source_checkout_rejects_before_database_access(self) -> None:
         repository = SCRIPT.parents[2]

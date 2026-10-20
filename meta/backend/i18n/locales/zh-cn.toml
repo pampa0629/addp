@@ -69,3 +69,8 @@ other = "读取授权资源事实"
 
 [permissions.meta.authorization_facts.read.description]
 other = "仅供 System 与 Catalog 读取当前数据项身份与授权边界，不读取源内容"
+[meta.scan.plan_facts_unavailable]
+other = "冻结的扫描计划事实不可用，请重新建立扫描计划"
+
+[meta.scan.plan_facts_read_failed]
+other = "无法读取冻结的扫描计划事实"

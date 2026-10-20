@@ -129,6 +129,7 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 	if req.HasHeader != nil {
 		execution.ExecutionConfig["has_header"] = *req.HasHeader
 	}
+	freezeScanEngineSnapshot(execution, resource)
 
 	lockKey := ""
 	lockAcquired := false
@@ -250,7 +251,11 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			return nil, err
 		}
 	}
-	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
+	resource := s.lookupScanEngine(task.EngineID, task.TenantID)
+	storageType := "unknown"
+	if resource != nil {
+		storageType = scantask.NormalizeStorageType(resource.EngineType)
+	}
 	var execution *commonExecution.TaskExecution
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -268,6 +273,10 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			return fmt.Errorf("%w: meta scan task %d already has an active execution", commonAPI.ErrConflict, current.ID)
 		}
 		execution = scantask.NewTaskExecution(&current, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
+		freezeScanEngineSnapshot(execution, resource)
+		if err := freezeScanTaskDefinition(tx, execution); err != nil {
+			return err
+		}
 		if userOrigin != nil {
 			if err := commonExecution.CopyActorOrigin(execution, userOrigin); err != nil {
 				return err
