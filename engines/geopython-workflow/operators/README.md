@@ -54,7 +54,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 81 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 33 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 82 个算子：通用处理 18 个、矢量处理 31 个、栅格处理 33 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -63,7 +63,7 @@ operators/
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 13 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry` |
+| 矢量处理 | 几何处理 | 14 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -95,6 +95,12 @@ operators/
 `repair_geometry(input_gdf)` 固定使用 `make_valid(method="linework", keep_collapsed=True)`，仅修复无效几何，保留合法、空及缺失几何。要求有限二维 XY；不丢弃修复产生的线点或 GeometryCollection、不拆行，保留源属性、索引、active geometry 名和 CRS。缺失几何不会被凭空补造，可接现有过滤算子；纯面目标须显式处理混合类型。复查请设置新的结果字段名，保留修复前诊断。
 
 两者均在“矢量处理 / 几何处理”中，仅支持 workflow/read，输出接既有 `save`。不检查或修复跨要素重叠、缝隙，不吸附或补缝；单要素有效性与完整拓扑质量不同。详细边界见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md#几何检查与修复契约)。
+
+## 面叠检查
+
+`check_polygon_overlap(input_gdf, id_field)` 在单个有效二维面图层内，逐对提取正面积交集；来源标识字段必须显式指定、非空且唯一。输出 `source_id_a`、`source_id_b`、`overlap_area` 和 MultiPolygon，每对按原始行位置只输出一次，包含和完全重复同样报告，共边共点不报告。标识类型和源 CRS 保留，源属性、行及几何不改写。
+
+要求已知投影 CRS 和一致的水平线性单位，面积采用该单位的平方，不自动换算平方米或忽略微小重叠。空面不产生重叠；拒绝缺失、无效、非面、Z/M 和非有限坐标，不隐式修复。仅支持 workflow/read，接既有 `save` 保存；不判断覆盖缺口、不自动修复或扩展 Quality。包围盒索引和结果驻内存，不承诺固定容量；[完整契约](../../../docs/spec/addp工作流计算引擎接口规范.md#面叠检查契约)。
 
 ## 参考吸附
 

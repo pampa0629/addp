@@ -966,6 +966,18 @@ GeoPython `snap_geometry(input_gdf, reference_gdf, tolerance)`（参考吸附）
 
 纯计算不产生持久输出；保存、扫描、血缘及权限沿用既有节点主线。确定性验证沿用 `make test-geopython-workflow` 的 `test_topology_operators.py`、元数据及协议回归，覆盖固定参考顶点、容差边界、米／英尺单位、CRS 拒绝、空缺失处理、原属性与两源不变、无效输出拒绝、工作流发现和双输入→吸附→保存重载；既有 Platform CI GeoPython Job 的 engines 路径选择和根入口文件列表已覆盖，不新增依赖、HTTP API、CI Job 或保存旁路。已有构面和单要素修复 T4 不作为本算子的真实 T4 证据。
 
+### 面叠检查契约
+
+GeoPython `check_polygon_overlap(input_gdf, id_field)`（面叠检查）位于“矢量处理 / 几何处理”，仅支持 workflow/read。输入为单个有效、有限二维 XY Polygon / MultiPolygon 图层，使用实际 active geometry；拒绝缺失、无效、非面、Z/M 和非有限坐标，不自动修复。空面不产生重叠，空批保留结果 Schema。CRS 必须是已知投影坐标系，两个水平轴具有相同、有限且为正的线性单位换算因子；不隐式重投影，不把度当面积单位。
+
+`id_field` 必填，显式引用现有非几何标量列，值必须非空且唯一，字符串不能全为空白；不推断主键、不使用 DataFrame 索引冒充来源标识。结果固定为 `source_id_a`、`source_id_b`、Float64 `overlap_area` 和 active `geometry` 列，双方标识保留来源列类型。按输入行位置确定 A/B，同一无序要素对只输出一次，顺序按 A、B 的原始行位置递增；不按标识值排序，不复制其他业务属性，不修改源图层。
+
+唯一计算主线为空间包围盒索引筛选候选，再计算真实交集并只保留面部分。每对的所有面部分合在一行 MultiPolygon 中，线点接触不输出。包含和完全重复同样报告；三个面共同重叠分别输出实际要素对，不融合为一个问题区。所有正面积重叠均报告，无忽略阈值或精度网格；面积是交集面的平面面积，单位为源 CRS 水平单位的平方（米或英尺等），不转换为平方米、不做测地面积。不能表示为有限正 Float64 的面面积明确失败，不伪装无重叠。
+
+结果使用默认 `result` geodataframe 端口并保留源 CRS，保存接既有 `save`；纯计算不发布成果、扫描或产生持久血缘。不检查覆盖缺口、图层间拓扑、不自动决定重叠归属或修改公共边界，也不扩展 Quality 规则、评分和工单。索引和结果驻内存，候选及输出可能随相交要素对增长，不承诺固定内存或大规模容量。
+
+验证沿用 `make test-geopython-workflow`，覆盖普通重叠、包含、重复、孔洞、多部件及混合维度交集、仅线点接触、微小正面积、稳定去重、来源标识与 CRS 拒绝、空批、两源标识类型、源不变、工作流发现及保存重载。现有 Platform CI GeoPython Job 和 engines 影响选择覆盖本次变更，无新依赖、API、权限、测试入口或 CI Job；旧构面、修复、吸附 T4 不作为本算子的真实 T4 证据。
+
 ### 4.6 栅格计算契约
 
 GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 ResourceLocator，`raster_load` 派生 source-only 访问计划，`raster_save` 派生 target-only 访问计划，`raster_to_cog` 使用 source/target 计划；访问协议固定 `addp.workflow.access-plan/v1`。源、目标分别授权，凭据只在执行期传递。输出文件限定 `.tif/.tiff`，COG 是 TIFF 的 profile，不是另一种格式身份。

@@ -223,6 +223,64 @@ def repair_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
+def _require_projected_xy_crs(crs) -> None:
+    if crs is None or not crs.is_projected:
+        raise ValueError("input requires a known projected CRS; reproject explicitly")
+    units = [axis.unit_conversion_factor for axis in crs.axis_info[:2]]
+    if len(units) != 2 or not all(np.isfinite(unit) and unit > 0 for unit in units) or units[0] != units[1]:
+        raise ValueError("projected CRS requires matching known horizontal coordinate units")
+
+
+def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report each positive-area polygon pair once, retaining explicit source IDs."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    if (not isinstance(id_field, str) or not id_field or not input_gdf.columns.is_unique
+            or id_field not in input_gdf.columns or isinstance(input_gdf[id_field].dtype, gpd.array.GeometryDtype)):
+        raise ValueError("id_field must explicitly name one existing non-geometry scalar column")
+    ids = input_gdf[id_field]
+    if not ids.map(pd.api.types.is_scalar).all():
+        raise ValueError("id_field requires non-empty unique scalar identifiers")
+    if ids.isna().any() or ids.map(lambda value: isinstance(value, str) and not value.strip()).any() or ids.duplicated().any():
+        raise ValueError("id_field requires non-empty unique scalar identifiers")
+    if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
+        raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
+    if not shapely.is_valid(geometry.array).all():
+        raise ValueError("input_gdf requires valid polygons; repair explicitly before checking overlaps")
+
+    left, right, areas, overlaps = [], [], [], []
+    tree = shapely.STRtree(geometry.array)
+    for a, shape in enumerate(geometry.array):
+        candidates = tree.query(shape)
+        # Position-based ordering works for arbitrary unique identifiers and
+        # duplicate DataFrame indices, independently of STRtree traversal order.
+        for b in np.sort(candidates[candidates > a]):
+            intersection = shapely.intersection(shape, geometry.array[b])
+            polygons, pending = [], [intersection]
+            while pending:
+                part = pending.pop()
+                if part.geom_type == "Polygon" and not part.is_empty:
+                    polygons.append(part)
+                elif part.geom_type in {"MultiPolygon", "GeometryCollection"}:
+                    pending.extend(part.geoms)
+            if not polygons:
+                continue
+            overlap_geometry = shapely.multipolygons(polygons)
+            area = shapely.area(overlap_geometry)
+            if not np.isfinite(area) or area <= 0:
+                raise ValueError("overlap requires a finite positive Float64 area")
+            left.append(a)
+            right.append(b)
+            areas.append(area)
+            overlaps.append(overlap_geometry)
+    return gpd.GeoDataFrame(
+        {"source_id_a": ids.iloc[left].reset_index(drop=True),
+         "source_id_b": ids.iloc[right].reset_index(drop=True),
+         "overlap_area": pd.Series(areas, dtype="float64")},
+        geometry=gpd.GeoSeries(overlaps, crs=geometry.crs),
+    )
+
+
 def snap_geometry(
     input_gdf: gpd.GeoDataFrame,
     reference_gdf: gpd.GeoDataFrame,
@@ -242,9 +300,7 @@ def snap_geometry(
     crs = geometry.crs
     if crs is None or reference.crs is None or not crs.is_projected or not crs.equals(reference.crs):
         raise ValueError("both inputs require the same known projected CRS; reproject explicitly")
-    units = [axis.unit_conversion_factor for axis in crs.axis_info[:2]]
-    if len(units) != 2 or not all(np.isfinite(unit) and unit > 0 for unit in units) or units[0] != units[1]:
-        raise ValueError("projected CRS requires matching known horizontal coordinate units")
+    _require_projected_xy_crs(crs)
     for name, values in [("input_gdf", geometry.array), ("reference_gdf", reference.array)]:
         if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
             raise ValueError(f"{name} requires valid geometries; repair explicitly before snapping")
@@ -322,6 +378,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
+    name="check_polygon_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="面叠检查", brief_description="逐对提取面图层正面积重叠，保留双方来源标识",
+    execution_modes=["workflow"], effects=["read"],
+    overview="检查单图层内有效二维面的重叠，每对要素输出一行重叠面、双方来源标识及面积。"
+             "包含和完全重复同样报告，共边共点不报告，不修改源图层或自动修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个面图层", notes="有效有限二维 Polygon/MultiPolygon，已知投影 CRS，空面不产生重叠"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="必须是现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id_a/source_id_b/overlap_area/MultiPolygon，源 CRS", is_default=True)],
+    use_cases=["查找地块重叠并定位双方来源", "识别完全重复或被其他面包含的图斑"],
+    notes=["每对按原始行位置只报告一次，多处重叠保留在同一 MultiPolygon", "面积采用源投影水平单位的平方，不自动换算平方米或忽略微小重叠", "保留来源标识类型和源 CRS，不复制其他业务属性、不修改源", "不检查缺口、不决定重叠归属或生成 Quality 质量结论；保存另接 save", "索引及结果驻内存，不承诺固定容量"],
+    workflow_example={"id": "check_overlaps", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
+)
 
 CHECK_GEOMETRY_METADATA = OperatorMetadata(
     name="check_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -900,4 +972,5 @@ OPERATORS = dict([
     register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
+    register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
 ])

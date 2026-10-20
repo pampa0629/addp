@@ -620,3 +620,207 @@ def test_reference_snap_runtime_discovery_and_two_input_workflow_save_reload(tmp
             time.sleep(.01)
         assert state['status']=='success',state
         assert json.loads(state['result'])['features'][0]['geometry']['coordinates']==[[0.,0.],[5.,0.]]
+
+
+def overlap_frame(geometries, ids=None, crs="EPSG:3857"):
+    return gpd.GeoDataFrame(
+        {"parcel_id": ids if ids is not None else list(range(len(geometries))),
+         "business_value": ["unchanged"] * len(geometries)},
+        geometry=geometries, crs=crs,
+    ).rename_geometry("footprint")
+
+
+def overlap(frame, id_field="parcel_id"):
+    return get_operator("check_polygon_overlap")(input_gdf=frame, id_field=id_field)
+
+
+def test_polygon_overlap_reports_partial_contained_and_duplicate_pairs_without_changing_source():
+    frame = overlap_frame([box(0, 0, 4, 4), box(2, 0, 6, 4), box(1, 1, 2, 2), box(0, 0, 4, 4)], [90, 10, 30, 40])
+    frame.index = [7, 7, 1, 9]
+    original = frame.copy(deep=True)
+    result = overlap(frame)
+    assert result.columns.tolist() == ["source_id_a", "source_id_b", "overlap_area", "geometry"]
+    assert list(zip(result.source_id_a, result.source_id_b, result.overlap_area)) == [
+        (90, 10, 8), (90, 30, 1), (90, 40, 16), (10, 40, 8), (30, 40, 1),
+    ]
+    assert result.geom_type.tolist() == ["MultiPolygon"] * 5
+    assert result.is_valid.all() and result.crs == frame.crs
+    assert result.geometry.iloc[0].equals(box(2, 0, 4, 4))
+    assert_geodataframe_equal(frame, original)
+
+
+def test_polygon_overlap_ignores_line_point_contacts_and_respects_holes():
+    ring = Polygon(box(0, 0, 4, 4).exterior.coords, [box(1, 1, 3, 3).exterior.coords])
+    result = overlap(overlap_frame([ring, box(1, 1, 3, 3), box(4, 0, 5, 4), box(4, 4, 5, 5), box(10, 10, 11, 11)]))
+    assert result.empty
+    assert result.columns.tolist() == ["source_id_a", "source_id_b", "overlap_area", "geometry"]
+    assert result.overlap_area.dtype == np.dtype("float64")
+
+
+def test_polygon_overlap_keeps_all_polygon_parts_in_one_pair_and_drops_contact_lines():
+    a = shapely.MultiPolygon([box(0, 0, 2, 2), box(4, 0, 5, 1), box(8, 0, 10, 2)])
+    b = shapely.MultiPolygon([box(1, 0, 3, 2), box(5, 0, 6, 1), box(9, 0, 11, 2)])
+    assert a.intersection(b).geom_type == "GeometryCollection"
+    result = overlap(overlap_frame([a, b], ["地块甲", "地块乙"]))
+    assert len(result) == 1 and result.overlap_area.tolist() == [4]
+    assert len(result.geometry.iloc[0].geoms) == 2
+    assert result.geometry.iloc[0].equals(shapely.MultiPolygon([box(1, 0, 2, 2), box(9, 0, 10, 2)]))
+
+
+@pytest.mark.parametrize("crs,area", [("EPSG:3857", 1e-12), ("EPSG:2263", 1e-12)])
+def test_polygon_overlap_has_no_small_area_threshold_and_does_not_convert_square_units(crs, area):
+    result = overlap(overlap_frame([box(0, 0, 1, area), box(0, 0, 1, area)], crs=crs))
+    assert result.overlap_area.tolist() == [area]
+    assert result.crs == overlap_frame([], crs=crs).crs
+
+
+@pytest.mark.parametrize("ids", [pd.Series([2**63+1, 2**63+2], dtype="UInt64"), pd.Series(["地块/甲", "地块%乙"], dtype="string")])
+def test_polygon_overlap_preserves_identifier_dtype_without_float_or_string_coercion(ids):
+    result = overlap(overlap_frame([box(0, 0, 2, 2)] * 2, ids))
+    for name, position in [("source_id_a", 0), ("source_id_b", 1)]:
+        assert result[name].dtype == ids.dtype
+        assert result[name].iloc[0] == ids.iloc[position]
+
+
+@pytest.mark.parametrize("geometries", [[], [Polygon()], [box(0, 0, 1, 1)], [Polygon(), box(0, 0, 1, 1)]])
+def test_polygon_overlap_empty_and_single_feature_results_keep_typed_schema(geometries):
+    frame = overlap_frame(geometries, pd.Series(range(len(geometries)), dtype="Int64"))
+    result = overlap(frame)
+    assert result.empty and result.crs == frame.crs
+    assert result.source_id_a.dtype == result.source_id_b.dtype == frame.parcel_id.dtype
+    assert result.overlap_area.dtype == np.dtype("float64")
+
+
+@pytest.mark.parametrize("ids", [[None, "b"], ["a", "a"], ["", "b"], ["  ", "b"], [["a"], ["b"]]])
+def test_polygon_overlap_rejects_missing_duplicate_blank_or_nonscalar_ids(ids):
+    with pytest.raises(ValueError, match="scalar|non-empty|unique"):
+        overlap(overlap_frame([box(0, 0, 1, 1)] * 2, ids))
+
+
+@pytest.mark.parametrize("id_field", [None, "", "absent", "footprint"])
+def test_polygon_overlap_requires_an_explicit_existing_nongeometry_id_field(id_field):
+    with pytest.raises(ValueError, match="id_field"):
+        overlap(overlap_frame([box(0, 0, 1, 1)]), id_field)
+
+
+@pytest.mark.parametrize("crs", [None, "EPSG:4326", "OGC:CRS84"])
+def test_polygon_overlap_rejects_unknown_or_geographic_crs_even_for_empty_input(crs):
+    with pytest.raises(ValueError, match="projected CRS"):
+        overlap(overlap_frame([], crs=crs))
+
+
+@pytest.mark.parametrize("geometry,message", [
+    (None, "non-null"), (Point(0, 0), "Polygon"),
+    (LineString([(0, 0), (1, 1)]), "Polygon"),
+    (Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]), "valid"),
+    (shapely.from_wkt("POLYGON Z ((0 0 1, 1 0 1, 1 1 1, 0 0 1))"), "two-dimensional"),
+    (shapely.from_wkt("POLYGON M ((0 0 1, 1 0 1, 1 1 1, 0 0 1))"), "two-dimensional"),
+    (shapely.from_wkt("POLYGON ((0 0, Infinity 0, 1 1, 0 0))"), "finite"),
+])
+def test_polygon_overlap_rejects_unsupported_geometries_without_implicit_repair(geometry, message):
+    with pytest.raises(ValueError, match=message):
+        overlap(overlap_frame([geometry]))
+
+
+def test_polygon_overlap_rejects_nonfinite_or_underflowed_result_area():
+    for size in [1e160, 1e-170]:
+        frame = overlap_frame([box(0, 0, size, size)] * 2)
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            with pytest.raises(ValueError, match="finite positive.*area"):
+                overlap(frame)
+
+
+def test_polygon_overlap_requires_an_active_geodataframe():
+    for frame in [pd.DataFrame({"parcel_id": [1]}), gpd.GeoDataFrame({"parcel_id": [1]})]:
+        with pytest.raises(ValueError, match="GeoDataFrame|active geometry"):
+            overlap(frame)
+
+
+def test_polygon_overlap_rejects_geometry_id_columns_and_ambiguous_column_names():
+    frame = overlap_frame([box(0, 0, 1, 1)])
+    frame["secondary_geometry"] = frame.geometry.copy()
+    with pytest.raises(ValueError, match="id_field"):
+        overlap(frame, "secondary_geometry")
+    frame["another_id"] = frame.parcel_id
+    frame = frame.rename(columns={"another_id": "parcel_id"})
+    with pytest.raises(ValueError, match="id_field"):
+        overlap(frame)
+
+
+def test_polygon_overlap_invalid_id_fails_workflow_before_publishing_a_file(tmp_path):
+    source = overlap_frame([box(0, 0, 2, 2), box(1, 1, 3, 3)], ["duplicate", "duplicate"])
+    source.to_file(tmp_path / "invalid-ids.gpkg", driver="GPKG")
+    before = (tmp_path / "invalid-ids.gpkg").read_bytes()
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    result = execute_workflow({"tasks": [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "invalid-ids.gpkg"}, "depends_on": []},
+        {"id": "check", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "must-not-exist.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+    ]})
+    assert result["status"] == "failed" and "unique scalar identifiers" in str(result)
+    assert not (tmp_path / "must-not-exist.gpkg").exists()
+    assert (tmp_path / "invalid-ids.gpkg").read_bytes() == before
+
+
+def test_polygon_overlap_matches_independent_integer_grid_pair_oracle():
+    # Exact rectangle occupancy supplies an area oracle independent of GEOS
+    # intersection; dense and disjoint envelopes exercise pair de-duplication.
+    bounds = [(0, 0, 4, 4), (1, 2, 6, 5), (2, 1, 3, 6), (8, 8, 9, 9), (0, 0, 4, 4)]
+    frame = overlap_frame([box(*bound) for bound in bounds])
+    cells = [{(x, y) for x in range(a, c) for y in range(b, d)} for a, b, c, d in bounds]
+    expected = [(a, b, len(cells[a] & cells[b])) for a in range(len(cells)) for b in range(a+1, len(cells)) if cells[a] & cells[b]]
+    result = overlap(frame)
+    assert list(zip(result.source_id_a, result.source_id_b, result.overlap_area)) == expected
+
+
+def test_polygon_overlap_runtime_discovery_workflow_save_reload_and_source_bytes(tmp_path, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    source = overlap_frame([box(0, 0, 4, 4), box(2, 0, 6, 4), box(1, 1, 2, 2)], ["甲", "乙", "丙"])
+    source.to_file(tmp_path / "parcels.gpkg", layer="parcels", driver="GPKG")
+    before = (tmp_path / "parcels.gpkg").read_bytes()
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "parcels.gpkg"}, "depends_on": []},
+        {"id": "check", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "overlaps.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+    ]
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "success", execution.get("error")
+    saved = gpd.read_file(tmp_path / "overlaps.gpkg")
+    assert list(zip(saved.source_id_a, saved.source_id_b, saved.overlap_area)) == [("甲", "乙", 8), ("甲", "丙", 1)]
+    assert saved.crs == source.crs and saved.geom_type.tolist() == ["MultiPolygon"] * 2
+    assert saved.geometry.iloc[0].equals(box(2, 0, 4, 4))
+    assert (tmp_path / "parcels.gpkg").read_bytes() == before
+    from osgeo import ogr
+    dataset = ogr.Open(str(tmp_path / "overlaps.gpkg"))
+    layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == 2
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    records = []
+    for feature in layer:
+        geometry = feature.GetGeometryRef()
+        assert geometry.GetGeometryName() == "MULTIPOLYGON" and geometry.IsValid()
+        records.append((feature.GetField("source_id_a"), feature.GetField("source_id_b"), feature.GetField("overlap_area"), geometry.GetArea()))
+    assert records == [("甲", "乙", 8, 8), ("甲", "丙", 1, 1)]
+    dataset = None
+    monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_polygon_overlap")
+        assert op["display_name"] == "面叠检查" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+        assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("id_field", "param", True)]
+        assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
+        assert client.post("/api/operators/check_polygon_overlap/invoke", json={"params": {}}).status_code == 403
+        workflow = {"tasks": tasks[:-1]}
+        assert client.post("/api/workflow", json={"workflow_def": workflow}).status_code == 400
+        response = client.post("/api/workflow", json={"workflow_def": workflow, "runtime": {"tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}})
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
+            if state["status"] in {"success", "failed"}:
+                break
+            time.sleep(.01)
+        assert state["status"] == "success", state
+        assert len(json.loads(state["result"])["features"]) == 2
