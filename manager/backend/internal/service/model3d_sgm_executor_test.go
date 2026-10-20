@@ -251,7 +251,7 @@ func TestSGMTemporaryExpirationMinIOContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			executor := &ManagerModel3DGLBExecutor{objectStore: client}
-			err = executor.verifySGMTemporaryExpiration(context.Background(), "manager-private")
+			err = executor.verifyTemporaryModelExpiration(context.Background(), "manager-private")
 			wantValid := scenario == "valid" || scenario == "other_rules"
 			if (err == nil) != wantValid {
 				t.Fatalf("policy verification err=%v wantValid=%v reads=%v", err, wantValid, reads)

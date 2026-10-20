@@ -1,0 +1,278 @@
+package service
+
+import (
+	"context"
+	"encoding/xml"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/addp/common/engine/workflowaccess"
+	commonExecution "github.com/addp/common/execution"
+	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
+)
+
+type stagingModelStore struct {
+	sgmObjectStore
+	objects     map[string]string
+	puts        int
+	putErr      error
+	cancelOnPut context.CancelFunc
+}
+
+func (s *stagingModelStore) PutObject(ctx context.Context, bucket, name string, r io.Reader, size int64, _ minio.PutObjectOptions) (minio.UploadInfo, error) {
+	s.puts++
+	if size < 0 {
+		return minio.UploadInfo{}, errors.New("input size must be known")
+	}
+	data, err := io.ReadAll(io.LimitReader(r, size))
+	if s.objects == nil {
+		s.objects = map[string]string{}
+	}
+	s.objects[bucket+"/"+name] = string(data)
+	if s.cancelOnPut != nil {
+		s.cancelOnPut()
+	}
+	return minio.UploadInfo{Size: int64(len(data))}, errors.Join(err, s.putErr)
+}
+
+func (s *stagingModelStore) RemoveObject(ctx context.Context, bucket, name string, options minio.RemoveObjectOptions) error {
+	if err := s.sgmObjectStore.RemoveObject(ctx, bucket, name, options); err != nil {
+		return err
+	}
+	delete(s.objects, bucket+"/"+name)
+	return nil
+}
+
+func stagingModelExecutor(store *stagingModelStore) *ManagerModel3DGLBExecutor {
+	return &ManagerModel3DGLBExecutor{objectStore: store, defaultBucket: "manager", minioEndpoint: "127.0.0.1:19000", minioAccessKey: "infra-test-key", minioSecretKey: "infra-test-secret"}
+}
+
+func stagingModelFile(name, text string) model3DStagingFile {
+	return model3DStagingFile{RelativePath: name, SizeBytes: int64(len(text)), Open: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(text)), nil }}
+}
+
+func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
+	store := &stagingModelStore{}
+	executor := stagingModelExecutor(store)
+	lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}
+	var prefixes []string
+	for _, attempt := range []int{1, 1, 2} {
+		lease.Attempt = attempt
+		files := []model3DStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture")}
+		err := executor.withStagedModel3DSource(context.Background(), lease, "3ds", workflowaccess.KindDirectory, "模型.3DS", files,
+			func(_ context.Context, source workflowaccess.Source) error {
+				if source.Access.Method != workflowaccess.MethodObjectStore || source.Entrypoint != "模型.3DS" || source.Access.Path != "" {
+					t.Fatalf("not an object store source: %+v", source)
+				}
+				prefix := source.Access.Prefix
+				if !strings.HasPrefix(prefix, "temp/model3d-input/tenant_7/"+lease.ExecutionID+"/") || !strings.Contains(prefix, "/attempt_") {
+					t.Fatal("temporary input is not execution scoped")
+				}
+				if len(store.objects) != 2 || store.objects["manager/"+prefix+"/模型.3DS"] != "model" || store.objects["manager/"+prefix+"/textures/TEST.PNG"] != "texture" {
+					t.Fatal("model dependencies or relative paths changed")
+				}
+				prefixes = append(prefixes, prefix)
+				return nil
+			})
+		if err != nil || len(store.objects) != 0 {
+			t.Fatalf("err=%v residual objects=%d", err, len(store.objects))
+		}
+	}
+	if prefixes[0] == prefixes[1] || prefixes[0] == prefixes[2] || prefixes[1] == prefixes[2] {
+		t.Fatal("overlapping preparations or attempts reused an input scope")
+	}
+}
+
+func TestModel3DStagingFailureAndCancellationCleanup(t *testing.T) {
+	for _, scenario := range []string{"conversion", "upload", "short", "long", "open-second", "close", "cancel", "cleanup", "lifecycle", "versioning"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			store := &stagingModelStore{}
+			files := []model3DStagingFile{stagingModelFile("wall.ifc", "model")}
+			failure := errors.New("controlled failure")
+			switch scenario {
+			case "upload":
+				store.putErr = failure
+			case "short":
+				files[0].SizeBytes++
+			case "long":
+				files[0].SizeBytes--
+			case "open-second":
+				files = append(files, model3DStagingFile{RelativePath: "texture.png", SizeBytes: 3, Open: func(context.Context) (io.ReadCloser, error) { return nil, failure }})
+			case "close":
+				files[0].Open = func(context.Context) (io.ReadCloser, error) {
+					return stagingModelCloseError{Reader: strings.NewReader("model"), err: failure}, nil
+				}
+			case "cancel":
+				store.cancelOnPut = cancel
+			case "cleanup":
+				store.cleanupErr = failure
+			case "lifecycle":
+				store.expirationErr = failure
+			case "versioning":
+				store.versioningStatus = "Enabled"
+			}
+			consumed := false
+			kind := workflowaccess.KindFile
+			if scenario == "open-second" {
+				kind = workflowaccess.KindDirectory
+			}
+			err := stagingModelExecutor(store).withStagedModel3DSource(ctx, commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", kind, "wall.ifc", files,
+				func(_ context.Context, source workflowaccess.Source) error {
+					consumed = true
+					if source.Access.Object == "" || source.Access.Prefix != "" {
+						t.Fatal("IFC must use one exact object")
+					}
+					if scenario == "conversion" {
+						return failure
+					}
+					return nil
+				})
+			if err == nil {
+				t.Fatal("failure was reported as success")
+			}
+			if scenario != "conversion" && scenario != "cleanup" && consumed {
+				t.Fatal("unprepared input reached the converter")
+			}
+			if scenario == "cleanup" {
+				if len(store.objects) != 1 || !errors.Is(err, failure) {
+					t.Fatal("cleanup failure lost its evidence")
+				}
+			} else if len(store.objects) != 0 {
+				t.Fatal("failed input left temporary objects")
+			}
+			if store.cleanupCancelled {
+				t.Fatal("cleanup used a cancelled execution context")
+			}
+			if (scenario == "lifecycle" || scenario == "versioning") && store.puts != 0 {
+				t.Fatal("source was read before expiration policy preflight")
+			}
+			if scenario == "cancel" && !errors.Is(err, context.Canceled) {
+				t.Fatal("cancellation cause was lost")
+			}
+		})
+	}
+}
+
+func TestModel3DStagingFreezesCompositionBeforeOpening(t *testing.T) {
+	store := &stagingModelStore{}
+	files := []model3DStagingFile{stagingModelFile("model.obj", "model"), stagingModelFile("model.mtl", "material")}
+	files[0].Open = func(context.Context) (io.ReadCloser, error) {
+		files[1].RelativePath = "../unrelated"
+		return io.NopCloser(strings.NewReader("model")), nil
+	}
+	err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "obj", workflowaccess.KindDirectory, "model.obj", files,
+		func(_ context.Context, source workflowaccess.Source) error {
+			if store.objects["manager/"+source.Access.Prefix+"/model.mtl"] != "material" {
+				t.Fatal("validated input composition was mutated")
+			}
+			return nil
+		})
+	if err != nil || len(store.objects) != 0 {
+		t.Fatalf("err=%v residual=%d", err, len(store.objects))
+	}
+}
+
+// T1 adapter check against an in-process S3 HTTP fixture; not a real MinIO T2.
+func TestModel3DStagingWithMinioClient(t *testing.T) {
+	var reads, writes, removes int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Query().Has("versioning"):
+			_, _ = io.WriteString(w, `<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`)
+		case r.Method == http.MethodGet && r.URL.Query().Has("lifecycle"):
+			_ = xml.NewEncoder(w).Encode(lifecycle.Configuration{Rules: []lifecycle.Rule{{Status: "Enabled", RuleFilter: lifecycle.Filter{Prefix: "temp/"}, Expiration: lifecycle.Expiration{Days: 7}}}})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/manager/temp/model3d-input/tenant_7/"):
+			writes++
+			if _, err := io.Copy(io.Discard, r.Body); err != nil {
+				t.Error(err)
+			}
+			w.Header().Set("ETag", `"test-etag"`)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/manager/temp/model3d-input/tenant_7/"):
+			removes++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected storage operation: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	client, err := minio.New(strings.TrimPrefix(server.URL, "http://"), &minio.Options{Creds: credentials.NewStaticV4("test-key", "test-secret", ""), Region: "us-east-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &ManagerModel3DGLBExecutor{objectStore: client, defaultBucket: "manager", minioEndpoint: strings.TrimPrefix(server.URL, "http://"), minioAccessKey: "test-key", minioSecretKey: "test-secret"}
+	file := model3DStagingFile{RelativePath: "wall.ifc", SizeBytes: 5, Open: func(context.Context) (io.ReadCloser, error) {
+		reads++
+		return io.NopCloser(strings.NewReader("model")), nil
+	}}
+	err = executor.withStagedModel3DSource(context.Background(), commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}, "ifc", workflowaccess.KindFile, "wall.ifc", []model3DStagingFile{file},
+		func(context.Context, workflowaccess.Source) error { return nil })
+	if err != nil || reads != 1 || writes != 1 || removes != 1 {
+		t.Fatalf("err=%v reads=%d writes=%d removes=%d", err, reads, writes, removes)
+	}
+}
+
+type stagingModelCloseError struct {
+	io.Reader
+	err error
+}
+
+func (r stagingModelCloseError) Close() error { return r.err }
+
+func TestModel3DStagingRejectsInvalidCompositionBeforeSourceRead(t *testing.T) {
+	for _, scenario := range []string{"traversal", "absolute", "backslash", "duplicate", "ancestor", "missing", "single-sidecar", "size", "execution", "attempt"} {
+		t.Run(scenario, func(t *testing.T) {
+			store := &stagingModelStore{}
+			files := []model3DStagingFile{stagingModelFile("model.obj", "model")}
+			lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}
+			kind := workflowaccess.KindDirectory
+			switch scenario {
+			case "traversal":
+				files = append(files, stagingModelFile("../secret", "x"))
+			case "absolute":
+				files = append(files, stagingModelFile("/secret", "x"))
+			case "backslash":
+				files = append(files, stagingModelFile("..\\secret", "x"))
+			case "duplicate":
+				files = append(files, files[0])
+			case "ancestor":
+				files = append(files, stagingModelFile("model.obj/secret", "x"))
+			case "missing":
+				files[0].RelativePath = "other.obj"
+			case "single-sidecar":
+				kind = workflowaccess.KindFile
+				files = append(files, stagingModelFile("model.mtl", "x"))
+			case "size":
+				files[0].SizeBytes = -1
+			case "execution":
+				lease.ExecutionID = "../other-execution"
+			case "attempt":
+				lease.Attempt = 0
+			}
+			reads := 0
+			for i := range files {
+				files[i].Open = func(context.Context) (io.ReadCloser, error) {
+					reads++
+					return io.NopCloser(strings.NewReader("model")), nil
+				}
+			}
+			err := stagingModelExecutor(store).withStagedModel3DSource(context.Background(), lease, "obj", kind, "model.obj", files,
+				func(context.Context, workflowaccess.Source) error {
+					t.Fatal("invalid composition reached the converter")
+					return nil
+				})
+			if err == nil || reads != 0 || store.puts != 0 || len(store.removed) != 0 {
+				t.Fatalf("err=%v reads=%d puts=%d", err, reads, store.puts)
+			}
+		})
+	}
+}

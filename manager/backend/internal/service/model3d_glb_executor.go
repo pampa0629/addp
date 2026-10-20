@@ -111,7 +111,7 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 		if err != nil {
 			return nil, err
 		}
-		if err := e.verifySGMTemporaryExpiration(ctx, bucket); err != nil {
+		if err := e.verifyTemporaryModelExpiration(ctx, bucket); err != nil {
 			return nil, err
 		}
 		intermediateObject := fmt.Sprintf("temp/model3d-sgm/tenant_%d/%s/model.osgb", req.Task.TenantID, executionID.String())
@@ -303,20 +303,20 @@ func (e *ManagerModel3DGLBExecutor) ensureTargetBucket(ctx context.Context, buck
 	return nil
 }
 
-// Infra owns lifecycle configuration. Verify it on every SGM invocation without
+// Infra owns lifecycle configuration. Verify it on every temporary-model use without
 // read-modify-writing the bucket's rules. Immediate cleanup cannot cover a late
 // remote upload after HTTP cancellation or a Manager process exit.
-func (e *ManagerModel3DGLBExecutor) verifySGMTemporaryExpiration(ctx context.Context, bucket string) error {
+func (e *ManagerModel3DGLBExecutor) verifyTemporaryModelExpiration(ctx context.Context, bucket string) error {
 	versioning, err := e.objectStore.GetBucketVersioning(ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("check SGM temporary bucket versioning: %w", err)
+		return fmt.Errorf("check model temporary bucket versioning: %w", err)
 	}
 	if versioning.Status != "" {
-		return errors.New("SGM temporary bucket must be unversioned for permanent object expiration")
+		return errors.New("model temporary bucket must be unversioned for permanent object expiration")
 	}
 	config, err := e.objectStore.GetBucketLifecycle(ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("check SGM temporary object expiration: %w", err)
+		return fmt.Errorf("check model temporary object expiration: %w", err)
 	}
 	if config != nil {
 		for _, rule := range config.Rules {
@@ -329,7 +329,7 @@ func (e *ManagerModel3DGLBExecutor) verifySGMTemporaryExpiration(ctx context.Con
 			}
 		}
 	}
-	return errors.New("SGM temporary objects require the Infra temp/ 7-day expiration rule on the target bucket")
+	return errors.New("model temporary objects require the Infra temp/ 7-day expiration rule on the target bucket")
 }
 
 func (e *ManagerModel3DGLBExecutor) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {
