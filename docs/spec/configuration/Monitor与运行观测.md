@@ -72,6 +72,12 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 通知目标由平台管理员在 Monitor 唯一“平台告警”页面配置，System 日志链路页仅提供诊断和上下文跳转，Webhook 签名凭据与目标字段分开写入、加密保存；企业微信 `wecom` 目标的完整机器人地址仅通过凭据接口写入，key 使用现有 ENCRYPTION_KEY 加密，普通目标和投递读取不回显 key。邮件复用 Monitor-owned SMTP Relay。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，通用 Webhook 接收方可按投递 ID 去重；企业微信群消息保留投递 ID，但可能重复或乱序，不提供接收方自动去重保证。失败达到尝试上限后保留最终失败记录。
 
 
+## PostgreSQL 独立来源部署选择
+
+Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=false` 选择 PostgreSQL 采集账号和来源；只接受 `true/false`，独立于指标中心。启用需要 `ADDP_POSTGRES_METRICS_TLS_DIR`（仓库外、仅 CA／服务器证书／私钥）与 `ADDP_POSTGRES_METRICS_LISTEN`（显式本机私网或回环 IP:端口，无默认与避让）；可选 `ADDP_POSTGRES_METRICS_STATE_DIR` 为仓库外私有状态根，不设置时按当前用户与工作区隔离。密码首次随机生成并保存在私有文件，不进入环境变量、参数或发现结果。
+
+由各自标准启动入口在 PostgreSQL 就绪后安装固定函数、验证并重载认证规则，成功后启用 Login 并部署来源；标准停止或关闭选择则先停来源并关闭本方 Login，保留历史与数据卷。可选失败不阻止核心运行，未知会话及凭据丢失拒绝自动修复，不重启数据库。Business 首次认证目录切换另由部署方安排标准重建。配置随下一次相应生命周期生效，不承诺热更新；来源启动不表示正式发现、专业查询或页面已就绪。完整操作见[PostgreSQL 采集账号与指标来源启停](../../../scripts/infra/docs/指标中心与来源.md#postgresql-采集账号与指标来源启停)。
+
 ## 指标中心部署选择
 
 `ADDP_OBSERVABILITY_METRICS_ENABLED` 缺省 `false`，只接受 `true/false`，不根据端口探测或证书是否存在推断部署意图。中心采用 `observability-metrics` Profile，与 `observability-logs` 独立；共享生命周期准备只由 `scripts/utils/observability-env.sh` 组织。选择、证书和启动配置随下一次标准 Infra 生命周期生效，不承诺热更新。缺失或故障只影响指标设施，不加入业务 Ready。

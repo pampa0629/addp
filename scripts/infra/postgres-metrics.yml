@@ -1,5 +1,5 @@
-# Fixed source pair. Standard source lifecycle/identity admission is not yet
-# wired into Infra up; do not treat this template as automatic product admission.
+# Fixed source pair shared by the deployment lifecycle and disposable T2.
+# Successful deployment does not replace System identity or Monitor admission.
 services:
   postgres-metrics:
     image: burningalchemist/sql_exporter:0.24.11@sha256:92f8210824dd94184f93b3a462b165f531eff60f38fc00eaf583a50e5612b471

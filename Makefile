@@ -758,7 +758,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 
 .PHONY: test-infra-runtime-log-lifecycle
 test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
-	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py
+	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁

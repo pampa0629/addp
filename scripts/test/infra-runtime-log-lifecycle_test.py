@@ -79,6 +79,10 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
 
     def fixture_environment(self):
         env = dict(os.environ)
+        for key in ('ADDP_POSTGRES_METRICS_ENABLED', 'ADDP_POSTGRES_METRICS_TLS_DIR', 'ADDP_POSTGRES_METRICS_LISTEN',
+                    'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'):
+            env.pop(key, None)
+        env['ADDP_POSTGRES_METRICS_STATE_DIR'] = str((self.root / 'postgres-metrics').resolve())
         env.pop('ADDP_DEPLOYMENT_DISCOVERY_DIR', None)
         for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
             env.pop(key, None)
@@ -107,6 +111,19 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         # fixture measures lifecycle behavior rather than Python startup cost.
         docker.write_text(r'''#!/bin/bash
 set -eu
+# Lifecycle Python children deliberately inherit no test/ADDP secrets. These
+# fixed read-only context/source-list facts do not depend on MOCK_* variables.
+if [[ "${1-}" == context ]]; then
+    case "${2-}" in show) printf 'fixture\n' ;; inspect) printf '"unix:///fixture/docker.sock"\n' ;; esac
+    exit 0
+fi
+if [[ "${1-}" == --context ]]; then shift 2; fi
+if [[ "${1-}" == info ]]; then
+    if [[ "$(uname -s)" == Darwin ]]; then operating_system='Docker Desktop'; else operating_system=Linux; fi
+    printf '{"id":"fixture","os_type":"linux","operating_system":"%s"}\n' "$operating_system"
+    exit 0
+fi
+if [[ "${1-}" == ps && "$*" == *com.docker.compose.project=addp-postgres-metrics-* ]]; then exit 0; fi
 args=("$@")
 printf '%s\0' "$#" "$@" >> "$MOCK_COMMANDS"
 has_arg() {
@@ -427,6 +444,14 @@ exit 0
         self.assertIn('core services remain running', result.stderr)
         self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
         self.assertFalse(any('up' in a and 'prometheus' in a for a in self.calls()))
+
+    def test_selected_postgresql_source_failure_preserves_core_services(self):
+        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             ADDP_POSTGRES_METRICS_ENABLED='true')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('PostgreSQL metrics unavailable:', result.stderr)
+        self.assertTrue(any('up' in call and 'postgres' in call for call in self.calls()))
+        self.assertFalse(any('down' in call or 'stop' in call for call in self.calls()))
 
     def test_metrics_start_failure_keeps_core_running(self):
         result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',

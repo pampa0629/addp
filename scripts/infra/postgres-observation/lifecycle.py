@@ -87,7 +87,11 @@ class Docker:
         return result.stdout if check else result
 
     def fact(self, identity):
-        return json.loads(self.run(['inspect', '--format', FACT, identity]))
+        value = json.loads(self.run(['inspect', '--format', FACT, identity]))
+        # Docker does not promise mount-array ordering between inspections.
+        # Preserve every mount property while comparing the unordered facts.
+        value['mounts'] = sorted(value['mounts'], key=lambda item: json.dumps(item, sort_keys=True))
+        return value
 
 
 class Database:
@@ -99,7 +103,7 @@ class Database:
         self.docker, self.scope, self.admin, self.maintenance = docker, scope, admin, maintenance
         self.project, self.working_dir = project, str(Path(working_dir).resolve())
         self.authentication = authentication
-        identities = docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+project,
+        identities = docker.run(['ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project='+project,
                                  '--filter', 'label=com.docker.compose.service=postgres']).split()
         if len(identities) != 1 or not re.fullmatch('[0-9a-f]{64}', identities[0]):
             raise LifecycleError('Owned PostgreSQL is not uniquely available')
@@ -135,10 +139,10 @@ class Database:
             if self.settings['hba'] != data + '/pg_hba.conf':
                 raise LifecycleError('PostgreSQL authentication path is not deployment-owned')
         else:
-            expected = str(Path(authentication).resolve() / 'runtime')
+            expected = Path(authentication).resolve() / 'runtime'
             if (self.settings['hba'] != '/etc/addp-postgres-auth/pg_hba.conf'
                     or not any(item['Type'] == 'bind' and item['Destination'] == '/etc/addp-postgres-auth'
-                               and item['Source'] == expected and item['RW'] is False for item in self.facts['mounts'])):
+                               and Path(item['Source']).resolve() == expected and item['RW'] is False for item in self.facts['mounts'])):
                 raise LifecycleError('Business authentication directory mount requires standard deployment')
 
     def sql(self, value):
@@ -287,7 +291,7 @@ class SourceLifecycle:
         self.docker, self.scope, self.state, self.database_factory = docker, scope, Path(state), database_factory
         self.project = project or 'addp-postgres-metrics-' + scope
 
-    def stop_sources(self):
+    def source_containers(self):
         identities = self.docker.run(['ps', '-aq', '--filter', 'label=com.docker.compose.project='+self.project]).split()
         selected = []
         for identity in identities:
@@ -300,15 +304,25 @@ class SourceLifecycle:
                     or labels.get('com.docker.compose.oneoff', '').lower() != 'false'):
                 raise LifecycleError('Refusing foreign PostgreSQL source containers')
             selected.append((labels['com.docker.compose.service'], identity))
-        for _, identity in sorted(selected, reverse=True):
+        return sorted(selected, reverse=True)
+
+    def stop_sources(self):
+        selected = self.source_containers()
+        for _, identity in selected:
             self.docker.run(['rm', '-f', identity], timeout=20)
         return bool(selected)
 
     def down(self):
-        existed = self.stop_sources()
-        if existed or (self.state / 'owner.json').exists():
-            database = self.database_factory()
+        if not self.source_containers() and not (self.state / 'owner.json').exists():
+            return
+        with auth.locked(self.state):
+            try:
+                database = self.database_factory()
+            except Exception:
+                self.stop_sources()
+                raise
             with database.locked():
+                self.stop_sources()
                 database.disable()
                 database.no_sessions()
 

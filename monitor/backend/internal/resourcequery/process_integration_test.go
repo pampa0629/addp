@@ -51,6 +51,11 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 	}
 	stopped := os.Getenv("ADDP_PROCESS_T2_STOPPED") == "1"
 	deadline := time.Now().Add(100 * time.Second)
+	if stopped {
+		// Leave time to report the last observation inside the runner's
+		// existing 30-second deadline instead of losing diagnostics to kill.
+		deadline = time.Now().Add(20 * time.Second)
+	}
 	for {
 		values, err := c.ProcessSummaries(context.Background(), scopes, time.Now().UTC().Truncate(time.Second), DefaultBudget())
 		ready := err == nil && len(values) == 2
@@ -120,7 +125,8 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("native process observation not ready: %+v %v", values, err)
+			diagnostic, _ := json.Marshal(values)
+			t.Fatalf("native process observation not ready: %s %v", diagnostic, err)
 		}
 		time.Sleep(time.Second)
 	}

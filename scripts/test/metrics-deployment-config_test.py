@@ -275,7 +275,11 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
         for path in ('common/processmetrics/sample_darwin.go',
                      'scripts/infra/postgres-observation/000001_init.sql',
-                     'scripts/infra/postgres-observation/000002_future.sql',
+                     'scripts/infra/postgres-observation/000002_lifecycle.sql',
+                     'scripts/infra/postgres-observation/lifecycle.py',
+                     'scripts/test/postgres-metrics-lifecycle_test.py',
+                     'scripts/test/postgres-lifecycle-probe.py',
+                     'business/scripts/stop.sh',
                      'scripts/test/postgres-observation-probe.py',
                      'scripts/infra/postgres-metrics.yml',
                      'scripts/infra/postgres-observation/source.py',

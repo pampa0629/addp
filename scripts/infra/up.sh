@@ -290,6 +290,7 @@ if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
   echo -e "${GREEN}✓ 基础设施长期服务已在运行，将幂等校验一次性初始化服务${NC}"
 fi
 echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
+python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" down --scope infra || echo 'Previous PostgreSQL metrics shutdown incomplete; core startup continues' >&2
 compose up -d "${CORE_SERVICES[@]}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 echo ""

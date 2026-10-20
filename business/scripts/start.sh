@@ -330,6 +330,8 @@ if [ ! -f .env ]; then
 fi
 
 # 2. 加载环境变量
+# Root Infra selection must never activate Business observation implicitly.
+unset ADDP_POSTGRES_METRICS_ENABLED ADDP_POSTGRES_METRICS_TLS_DIR ADDP_POSTGRES_METRICS_LISTEN ADDP_POSTGRES_METRICS_STATE_DIR
 if [ -f .env ]; then
     set -a
     source .env
