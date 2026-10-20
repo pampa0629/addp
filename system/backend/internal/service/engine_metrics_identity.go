@@ -28,7 +28,8 @@ func (s *ModuleRegistryService) enrichEngineMetrics(ctx context.Context, snapsho
 	for index := range snapshot.EngineDeployments {
 		engine := &snapshot.EngineDeployments[index]
 		engine.Metrics = &commonmodels.PostgreSQLMetricsSource{State: "unavailable"}
-		if engine.SourceKey == byScope[engine.Scope] && metrics[engine.Scope] != nil {
+		if engine.SourceKey == byScope[engine.Scope] && metrics[engine.Scope] != nil &&
+			(metrics[engine.Scope].StartedAt == nil || !metrics[engine.Scope].StartedAt.After(snapshot.ObservedAt)) {
 			engine.Metrics = metrics[engine.Scope]
 		}
 	}

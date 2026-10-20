@@ -48,12 +48,18 @@ func TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser(t *testin
 		t.Fatal("source configuration changed admission fingerprint")
 	}
 	key := commonmodels.ObservabilityEngineSourceKey{DockerEngineID: base.Source.DockerEngineID, Project: base.Source.Project, Service: "postgres"}
-	snapshot := &commonmodels.ObservabilityIdentitySnapshot{EngineDeployments: []commonmodels.ObservabilityEngineIdentity{{Scope: "infra", SourceKey: key}}}
+	snapshot := &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: now, EngineDeployments: []commonmodels.ObservabilityEngineIdentity{{Scope: "infra", SourceKey: key}}}
 	s := &ModuleRegistryService{deploymentDiscovery: reader}
 	s.enrichEngineMetrics(context.Background(), snapshot)
 	if got := snapshot.EngineDeployments[0].Metrics; got == nil || got.State != "available" || got.Endpoint != metrics.Endpoint {
 		t.Fatalf("private source missing: %#v", got)
 	}
+	snapshot.ObservedAt = started.Add(-time.Second)
+	s.enrichEngineMetrics(context.Background(), snapshot)
+	if snapshot.EngineDeployments[0].Metrics.State != "unavailable" {
+		t.Fatal("source newer than the identity snapshot was admitted")
+	}
+	snapshot.ObservedAt = now
 	snapshot.EngineDeployments[0].SourceKey.DockerEngineID = "foreign"
 	s.enrichEngineMetrics(context.Background(), snapshot)
 	if snapshot.EngineDeployments[0].Metrics.State != "unavailable" {

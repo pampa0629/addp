@@ -91,6 +91,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
 | Monitor | 平台告警与通知管理 | `/monitor/platform-alerts`；`category/status/subject_id/page/delivery_page/tab`，默认活动事件、第 1 页与事件页签省略；`status=all` 表示页面不过滤状态，API 请求省略该参数；非默认通知页签为 `tab=notifications`，更新筛选/分页/页签使用 replace；System 仅以日志类别和观察器身份跳转 |
 | Monitor | 服务监控列表 | `/monitor/service-resources`；`module_name/role/status/process_metrics_declared/page`；默认在线 `status=up`、已启用采集 `process_metrics_declared=true`、第 1 页省略；`all` 表示页面不限制对应状态或采集声明，调用 System API 时省略该条件；其他值为 `status=down`、`process_metrics_declared=false`；切换范围重置分页，模块及角色保留 |
+| Monitor | 引擎监控范围与趋势 | `/monitor/engine-resources`；`search/page/refresh` 恢复列表上下文，`deployment_id` 选择观测的部署，`metric/range` 选择其固定指标与时间窗；默认第 1 页、每秒提交、近 5 分钟、15 秒刷新省略；列表切换观测部署使用 push，筛选、趋势及刷新使用 replace，返回列表保留筛选／分页／刷新；不在 URL 存储采集端点或凭据 |
 | Orchestrator | 编排列表任务引用筛选 | `module`、`task_type`、`task_id` 同时提供，三者精确匹配步骤；编辑与执行历史返回保留筛选 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
 | Graph | 本体/审核稳定 Tab、知识服务当前图谱 | `tab`、`graph_id` |

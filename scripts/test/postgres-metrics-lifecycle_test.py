@@ -17,6 +17,21 @@ spec.loader.exec_module(module)
 
 
 class LifecycleTest(unittest.TestCase):
+    def test_authentication_read_diagnostics_never_echo_private_output(self):
+        database = module.Database.__new__(module.Database)
+        database.identity = 'a' * 64
+        database.settings = {'hba': '/fixed/pg_hba.conf'}
+        database.docker = mock.Mock()
+        for code, reason in [(41, 'symbolic link'), (42, 'not a regular file'), (43, 'size read failed'),
+                             (44, 'size budget exceeded'), (45, 'content read failed'), (1, 'container command failed')]:
+            database.docker.run.return_value = subprocess.CompletedProcess([], code, 'private-hba-sentinel', 'private-error-sentinel')
+            with self.assertRaises(module.LifecycleError) as error:
+                database.read_hba()
+            self.assertIn(reason, str(error.exception))
+            self.assertNotIn('sentinel', str(error.exception))
+        database.docker.run.return_value = subprocess.CompletedProcess([], 0, 'local all all trust\n', '')
+        self.assertEqual(database.read_hba(), 'local all all trust\n')
+
     def test_business_selection_does_not_inherit_infra_inputs(self):
         keys = ['ADDP_POSTGRES_METRICS_'+suffix for suffix in ('ENABLED', 'TLS_DIR', 'LISTEN', 'STATE_DIR')]
         parent = dict(os.environ, **dict(zip(keys, ['true', '/infra-tls', '127.0.0.1:9999', '/infra-state'])))

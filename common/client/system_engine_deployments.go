@@ -53,7 +53,7 @@ func (c *SystemServiceClient) GetEngineDeploymentsForUser(ctx context.Context, i
 			if err != nil || parsed == uuid.Nil || parsed.String() != ref.NodeID {
 				return nil, invalid
 			}
-		case "unbound", "rejected":
+		case "rejected":
 			if ref.NodeID != "" {
 				return nil, invalid
 			}

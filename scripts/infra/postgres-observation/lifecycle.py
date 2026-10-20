@@ -186,9 +186,17 @@ class Database:
                 'observation-unlock', lock, token])
 
     def read_hba(self):
-        return self.docker.run(['exec', self.identity, 'sh', '-c',
-                'set -eu; test ! -L "$1"; test -f "$1"; test "$(wc -c < "$1")" -le 262144; cat "$1"',
-                'observation-hba', self.settings['hba']])
+        result = self.docker.run(['exec', self.identity, 'sh', '-c', '''set -eu
+test ! -L "$1" || exit 41
+test -f "$1" || exit 42
+size=$(wc -c < "$1") || exit 43
+test "$size" -le 262144 || exit 44
+cat "$1" || exit 45''', 'observation-hba', self.settings['hba']], check=False)
+        if result.returncode:
+            reason = {41: 'symbolic link', 42: 'not a regular file', 43: 'size read failed',
+                      44: 'size budget exceeded', 45: 'content read failed'}.get(result.returncode, 'container command failed')
+            raise LifecycleError('PostgreSQL authentication read rejected: ' + reason)
+        return result.stdout
 
     def write_hba(self, expected, value):
         if self.authentication is not None:

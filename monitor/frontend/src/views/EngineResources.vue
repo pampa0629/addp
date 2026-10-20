@@ -5,7 +5,7 @@
       <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="engine-refresh" @update:model-value="refresh => navigate({ ...state.query, refresh })" />
       <el-button :disabled="!canRead || loading" @click="reload()">{{ t('common.refresh') }}</el-button>
     </header>
-    <el-alert v-if="!canRead" :title="t('monitor.engines.denied')" type="warning" :closable="false" />
+    <el-alert v-if="!canRead" :title="t('monitor.engines.denied')" type="warning" :closable="false" data-testid="engine-denied" />
     <template v-else>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
@@ -20,7 +20,7 @@
             <template #header>{{ t(`monitor.engines.metrics.${metric.name}`) }}</template>
             <template #default="{ row }">{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</template>
           </el-table-column>
-          <el-table-column :label="t('monitor.engines.details')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, deployment_id: row.deployment_id })">{{ t('monitor.engines.details') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('monitor.engines.details')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-if="!loading && !errorKey" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
       </template>
@@ -94,7 +94,7 @@ const chart = computed(() => {
   const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
   return { rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.engines.metrics.${metric.name}`), unit: scale?.unit || t(`monitor.engines.units.${metric.unit}`), precision: metric.windowSeconds ? 2 : 0 }] } }
 })
-const navigate = query => navigateMonitorRoute(router, { path: '/engine-resources', query: resolveEngineRoute(query).query }, { history: 'replace' })
+const navigate = (query, history = 'replace') => navigateMonitorRoute(router, { path: '/engine-resources', query: resolveEngineRoute(query).query }, { history })
 function back() { const { deployment_id, metric, range, ...query } = state.value.query; return navigate(query) }
 function invalidChart() { history.value = null; trendError.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null }, visibilityChanged: value => { visible.value = value } })

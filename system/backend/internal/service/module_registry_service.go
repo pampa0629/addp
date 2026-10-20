@@ -42,6 +42,13 @@ func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*c
 	result, err := s.repo.ObservabilityIdentities(ctx)
 	if err == nil {
 		s.enrichEngineMetrics(ctx, result)
+		encoded, encodeErr := json.Marshal(result)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		if int64(len(encoded)) > commonmodels.ObservabilityIdentityResponseLimit {
+			return nil, repository.ErrObservabilityIdentityBudget
+		}
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

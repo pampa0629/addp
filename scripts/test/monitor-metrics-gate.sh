@@ -123,7 +123,7 @@ for identity in source-server collector admission; do
   if [[ "$identity" != source-server ]]; then
     printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/source-extensions"
   else
-    printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:host.docker.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/source-extensions"
+    printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:postgres-metrics,DNS:host.docker.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/source-extensions"
   fi
   openssl x509 -req -in "$WORK_DIR/$identity.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/$identity.crt" >/dev/null 2>&1
 done

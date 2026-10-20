@@ -17,6 +17,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / 'scripts/infra/postgres-observation/000002_lifecycle.sql'
@@ -467,10 +468,79 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         assert not any(re.search(r'^' + name + r'(?:\{| )', disabled, re.M) for name in expected if name.endswith('_total')), 'disabled statistics must not become valid zero counters'
         self.sql(f'ALTER ROLE {user} RESET track_counts;')
         assert re.search(r'^addp_postgresql_track_counts_enabled 1$', get(), re.M)
+        if scope == 'infra' and self.auth_directory is None:
+            self.professional_queries(work, user)
         logs = subprocess.run(self.compose + ['logs', '--no-color', 'postgres-metrics', 'postgres-metrics-web'],
                               capture_output=True, text=True, check=True, timeout=10).stdout
         assert password not in logs, 'source logs exposed credentials'
         print('PostgreSQL source T2: ' + scope + ' fixed metrics, mTLS, restricted HTTP, failure and fresh recovery passed', flush=True)
+
+    def professional_queries(self, work, user):
+        """Actual PG -> exporter -> sole Prometheus SD -> Monitor query formulas."""
+        cid = subprocess.check_output(self.compose + ['ps', '-q', 'postgres'], text=True).strip()
+        facts = json.loads(subprocess.check_output(['docker', 'inspect', '--format',
+            '{"container_id":{{json .Id}},"started_at":{{json .State.StartedAt}}}', cid], text=True))
+        if '.' in facts['started_at']:
+            seconds, fraction = facts['started_at'][:-1].split('.')
+            fraction = fraction.rstrip('0')
+            facts['started_at'] = seconds + ('.' + fraction if fraction else '') + 'Z'
+        deployment = str(uuid.uuid4())
+        record = {'deployment_id': deployment, 'instance': 'postgres-metrics:9443', 'source': {
+            'state': 'available', 'endpoint': 'https://postgres-metrics:9443/metrics', **facts}}
+        record_file = work / 'postgres-query-record.json'
+        record_file.write_text(json.dumps(record))
+        discovery = work / 'source/discovery.json'
+        original = discovery.read_text()
+
+        def publish(text):
+            temporary = discovery.with_suffix('.pending')
+            temporary.write_text(text)
+            temporary.chmod(0o644)
+            temporary.replace(discovery)
+
+        port = subprocess.check_output(self.compose + ['port', 'prometheus', '9090'], text=True).strip().rsplit(':', 1)[1]
+        base = 'https://localhost:' + port
+        environment = dict(os.environ, GOWORK='off', GOMAXPROCS='2', ADDP_POSTGRES_QUERY_INTEGRATION='1',
+            MONITOR_PROMETHEUS_URL=base, MONITOR_PROMETHEUS_CA_FILE=str(work / 'tls/ca.crt'),
+            MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(work / 'query-tls/client.crt'),
+            MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(work / 'query-tls/client.key'),
+            ADDP_POSTGRES_QUERY_RECORD=str(record_file))
+
+        def check(mode):
+            subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsPostgreSQLSource$',
+                            '-count=1', '-timeout=180s', '-v'], cwd=ROOT / 'monitor/backend',
+                           env=dict(environment, ADDP_POSTGRES_QUERY_EXPECT=mode), check=True, timeout=210)
+
+        center_tls = ssl.create_default_context(cafile=str(work / 'tls/ca.crt'))
+        center_tls.load_cert_chain(str(work / 'tls/health.crt'), str(work / 'tls/health.key'))
+        try:
+            publish(json.dumps([{'targets': ['postgres-metrics:9443'], 'labels': {
+                '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'engine_resources',
+                'addp_source': 'postgresql', 'addp_deployment_id': deployment,
+                'addp_database_container_id': facts['container_id'],
+                'addp_database_container_started_at': facts['started_at']}}]))
+            check('healthy')
+            self.sql('SELECT pg_catalog.pg_stat_reset();')
+            check('reset')
+            self.sql(f'REVOKE EXECUTE ON FUNCTION addp_observation.snapshot() FROM {user};')
+            try:
+                check('sql-failed')
+            finally:
+                self.sql(f'GRANT EXECUTE ON FUNCTION addp_observation.snapshot() TO {user};')
+            check('recovered')
+            print('PostgreSQL query T2: twelve native metrics, current-container trends, summary, reset gaps and SQL failure/recovery passed', flush=True)
+        finally:
+            publish(original)
+            deadline = time.monotonic() + 45
+            while True:
+                with urllib.request.urlopen(base + '/api/v1/targets', context=center_tls, timeout=5) as response:
+                    data = json.load(response)
+                if not any(target['labels'].get('addp_deployment_id') == deployment for target in data['data']['activeTargets']):
+                    break
+                if time.monotonic() >= deadline:
+                    raise AssertionError('owned PostgreSQL target did not leave discovery')
+                time.sleep(1)
+            record_file.unlink(missing_ok=True)
 
     def run(self):
         self.absent()
