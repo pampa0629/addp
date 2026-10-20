@@ -15,7 +15,7 @@
 | --- | --- |
 | CSV / TSV | 有／无表头声明、首条记录保留、普通刷新继承、重开、分页、模式恢复与原文件下载已有 Hosted T4 证据，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。剩余边界：源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖。既有 Meta 全量 PostgreSQL 入口的 Transfer schema-change 来源拒绝子例失败原记录保持，不由本轮 T4 改记通过 |
 | JSON / GeoJSON | 空/混合 geometry 的扫描与跨批字段可空声明、JSON 空值同名列归并已有 Common Go T1；四份 NFS 样例的本机页面已验证可空字段、20＋5 分页、全空集合与 WKB 临时 CRS 地图，两类原文件下载哈希不变，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。仍缺该组合的正式 Hosted T4、S3／Transfer 集成及大文件、复杂嵌套数组和更多 WKB/EWKB 变体；静态轨迹三源的完成不代替这些组合 |
-| Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
+| Parquet | whole scope 描述、分页和连续读取已共用 Range 打开路径；可用 Range／大小时不先下载完整文件，未提供可用大小的流输入仍需完整读取。后续包括单文件流输入成本、footer／单页预算、schema 不兼容诊断及复杂结构读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |
 | Excel | 大文件与复杂工作簿；公式计算、宏和原样图表不属于现有工作表预览 |
 | SQLite / GeoPackage | GeoPackage 登记几何列的样本／连续读取已统一标准编码，默认 EWKB、保留 SRID／坐标／null，普通 BLOB 不作几何猜测；归档 snapped.gpkg 精确复现及 Manager 实际容器 child 编码回归、Common／Manager／Meta／Transfer Go T1 通过。原 Hosted 39269000076 的整体失败保留，第四地图／失败页／最终 v3 仍待拓扑负责会话按原 suite 复验。真实多表/layer 切换、只读失败与大库成本仍需扩展；child 字段不得误用父容器摘要 |

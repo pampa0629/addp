@@ -1031,8 +1031,8 @@ func TestParquetPluginSampleScopeUsesRowCountHintsToSkipFiles(t *testing.T) {
 	if openCounts["dataset/part-000.parquet"] != 0 || openCounts["dataset/part-001.parquet"] != 0 {
 		t.Fatalf("open counts = %#v, want skipped files not opened", openCounts)
 	}
-	if openCounts["dataset/part-002.parquet"] != 1 {
-		t.Fatalf("part-002 open count = %d, want 1", openCounts["dataset/part-002.parquet"])
+	if openCounts["dataset/part-002.parquet"] != 0 {
+		t.Fatalf("part-002 open count = %d, want range access", openCounts["dataset/part-002.parquet"])
 	}
 }
 

@@ -304,6 +304,14 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	if input == nil {
 		return nil, fmt.Errorf("parquet table reader requires input")
 	}
+	file, err := openParquetStream(input)
+	if err != nil {
+		return nil, err
+	}
+	return p.openTableReaderFromFile(ctx, file, options)
+}
+
+func openParquetStream(input io.Reader) (*parquetgo.File, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -312,10 +320,23 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	if err != nil {
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
-	return p.openTableReaderFromFile(ctx, file, options)
+	return file, nil
 }
 
 func (p *Plugin) openTableReaderFromContent(ctx context.Context, reader contentio.Reader, ref contentio.Ref, options *format.ParseOptions) (format.TableReader, io.Closer, error) {
+	file, closer, err := openParquetContent(ctx, reader, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	tableReader, err := p.openTableReaderFromFile(ctx, file, options)
+	if err != nil && closer != nil {
+		_ = closer.Close()
+		return nil, nil, err
+	}
+	return tableReader, closer, err
+}
+
+func openParquetContent(ctx context.Context, reader contentio.Reader, ref contentio.Ref) (*parquetgo.File, io.Closer, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -326,20 +347,57 @@ func (p *Plugin) openTableReaderFromContent(ctx context.Context, reader contenti
 			if openErr != nil {
 				return nil, nil, fmt.Errorf("failed to open parquet file with range reader: %w", openErr)
 			}
-			tableReader, tableErr := p.openTableReaderFromFile(ctx, file, options)
-			return tableReader, nil, tableErr
+			return file, nil, nil
 		}
 	}
 	input, err := reader.Open(ctx, ref)
 	if err != nil {
 		return nil, nil, err
 	}
-	tableReader, err := p.OpenTableReader(ctx, input, options)
+	file, err := openParquetStream(input)
 	if err != nil {
 		_ = input.Close()
 		return nil, nil, err
 	}
-	return tableReader, input, nil
+	return file, input, nil
+}
+
+func describeParquetContent(ctx context.Context, reader contentio.Reader, ref contentio.Ref, options *format.ParseOptions) (*format.TableDescribeResult, error) {
+	file, closer, err := openParquetContent(ctx, reader, ref)
+	if err != nil {
+		return nil, err
+	}
+	result, describeErr := describeParquetFile(file, options)
+	var closeErr error
+	if closer != nil {
+		closeErr = closer.Close()
+	}
+	if describeErr != nil {
+		return nil, describeErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return result, nil
+}
+
+func sampleParquetContent(ctx context.Context, reader contentio.Reader, ref contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	file, closer, err := openParquetContent(ctx, reader, ref)
+	if err != nil {
+		return nil, err
+	}
+	rows, sampleErr := sampleParquetFile(ctx, file, offset, limit, options)
+	var closeErr error
+	if closer != nil {
+		closeErr = closer.Close()
+	}
+	if sampleErr != nil {
+		return nil, sampleErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return rows, nil
 }
 
 func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.File, options *format.ParseOptions) (format.TableReader, error) {
@@ -398,16 +456,14 @@ func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.Fi
 
 // DescribeTable 从 Parquet 文件中提取 TableInfo 和行数。
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
-	data, err := io.ReadAll(input)
+	file, err := openParquetStream(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read parquet data: %w", err)
+		return nil, err
 	}
+	return describeParquetFile(file, options)
+}
 
-	file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open parquet file: %w", err)
-	}
-
+func describeParquetFile(file *parquetgo.File, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	fields := extractFields(file.Schema())
 	geoInfo, err := parseGeoParquetFile(file, fields)
 	if err != nil {
@@ -433,16 +489,14 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 // SampleTable 读取 Parquet 表格样本。
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	data, err := io.ReadAll(input)
+	file, err := openParquetStream(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read parquet data: %w", err)
+		return nil, err
 	}
+	return sampleParquetFile(ctx, file, offset, limit, options)
+}
 
-	file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open parquet file: %w", err)
-	}
-
+func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	fields := extractFields(file.Schema())
 	geoInfo, err := parseGeoParquetFile(file, fields)
 	if err != nil {
@@ -1076,17 +1130,9 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 			return nil, err
 		}
 		ref := scopedRef.Ref
-		input, err := reader.Open(ctx, ref)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
-		}
-		result, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
-		closeErr := input.Close()
+		result, describeErr := describeParquetContent(ctx, reader, ref, parseOptionsWithoutFieldSelection(options))
 		if describeErr != nil {
 			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
 		info := result.Table
 		if merged == nil {
@@ -1166,17 +1212,9 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 		if rowCount, ok := fileRowCounts[normalizeParquetPath(ref.Path)]; ok {
 			fileRows = rowCount
 		} else {
-			input, err := reader.Open(ctx, ref)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
-			}
-			result, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
-			closeErr := input.Close()
+			result, describeErr := describeParquetContent(ctx, reader, ref, parseOptionsWithoutFieldSelection(options))
 			if describeErr != nil {
 				return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
-			}
-			if closeErr != nil {
-				return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 			}
 			info := result.Table
 			if info.RowCount != nil {
@@ -1187,18 +1225,10 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 			remainingOffset -= fileRows
 			continue
 		}
-		input, err := reader.Open(ctx, ref)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
-		}
 		limitForFile := limit - int64(len(rows))
-		partRows, sampleErr := p.SampleTable(ctx, input, remainingOffset, limitForFile, parseOptionsWithoutFieldSelection(options))
-		closeErr := input.Close()
+		partRows, sampleErr := sampleParquetContent(ctx, reader, ref, remainingOffset, limitForFile, parseOptionsWithoutFieldSelection(options))
 		if sampleErr != nil {
 			return nil, fmt.Errorf("failed to sample parquet file %s: %w", ref.Path, sampleErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
 		rows = append(rows, format.ApplyFieldSelectionToRows(withPartitionValues(partRows, scopedRef.Partitions), fieldSelectionFromOptions(options))...)
 		remainingOffset = 0
