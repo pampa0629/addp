@@ -12,9 +12,10 @@ base = importlib.import_module('scripts.test.raster-contour-persistence-online_t
 
 
 def execution():
-    source = 'addp://engine/3/path/source.geojson?type=file&item_id=10'
     outputs = {key: f'addp://engine/3/path/outputs/{name}?type=file' for key, name in zip(m.fixture.PORTS, m.fixture.TARGETS)}
-    facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}, *[{'locator': f'addp://engine/3/path/{name}?type=file&item_id={identifier}'} for identifier, name in enumerate(m.fixture.SOURCES[1:],11)]], 'outputs': [{'locator': uri, 'write_mode': 'create'} for uri in outputs.values()]}
+    inputs = [{'port': 'input.'+node, 'locator': f'addp://engine/3/path/{name}?type=file&item_id={identifier}'}
+              for identifier, (node, name) in enumerate(zip(('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input'), m.fixture.SOURCES), 10)]
+    facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': sorted(inputs, key=lambda entry: entry['port']), 'outputs': [{'locator': uri, 'write_mode': 'create'} for uri in outputs.values()]}
     return {'status': 'success', 'outputs': {'save_'+key: {'resource': {'locator': uri, 'type': 'file', 'write_mode': 'create'}} for key, uri in outputs.items()},
         'metadata': {'lineage_facts': facts, 'result': {'meta_scan_runs': [{'status': 'submitted', 'target_locator': uri, 'execution_id': 'scan-'+key} for key, uri in outputs.items()]}}}
 
@@ -90,7 +91,7 @@ class TopologyOnlineTest(unittest.TestCase):
     def test_exact_five_outputs_and_scans_are_mandatory(self):
         value = execution()
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
-        sources = [entry['locator'] for entry in value['metadata']['lineage_facts']['inputs']]
+        sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
         m.validate_success(value, sources, targets)
         for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['outputs'].pop('save_repaired'), lambda v: v['outputs'].pop('save_overlaps'),
             lambda v: v['metadata']['lineage_facts']['inputs'].pop(),
@@ -103,6 +104,30 @@ class TopologyOnlineTest(unittest.TestCase):
             lambda v: v['metadata']['lineage_facts']['outputs'].pop()):
             changed = copy.deepcopy(value); mutate(changed)
             with self.subTest(mutate=mutate), self.assertRaises(m.SuiteError): m.validate_success(changed, sources, targets)
+
+    def test_lineage_inputs_bind_exact_read_ports_independently_of_array_order(self):
+        value = execution()
+        sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
+        targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
+        self.assertEqual([entry['port'] for entry in value['metadata']['lineage_facts']['inputs']],
+                         ['input.load', 'input.load_invalid', 'input.overlap_input', 'input.snap_input', 'input.snap_reference'])
+        m.validate_success(value, sources, targets)
+        value['metadata']['lineage_facts']['inputs'].reverse()
+        m.validate_success(value, sources, targets)
+        def swap_locators(inputs):
+            inputs[0]['locator'], inputs[1]['locator'] = inputs[1]['locator'], inputs[0]['locator']
+        for mutate in (
+            lambda inputs: inputs[0].pop('port'),
+            lambda inputs: inputs[0].update(port='input.foreign'),
+            lambda inputs: inputs[0].update(port=inputs[1]['port']),
+            lambda inputs: inputs.append(copy.deepcopy(inputs[0])),
+            lambda inputs: inputs.extend([{'port':'input.unused','locator':'unrelated'}]),
+            swap_locators,
+        ):
+            changed = copy.deepcopy(value)
+            mutate(changed['metadata']['lineage_facts']['inputs'])
+            with self.subTest(mutate=mutate), self.assertRaises(m.SuiteError):
+                m.validate_success(changed, sources, targets)
 
     def test_complete_chain_preserves_same_user_and_does_not_manually_scan_outputs(self):
         client = Client()

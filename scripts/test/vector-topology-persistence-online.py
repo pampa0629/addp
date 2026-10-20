@@ -93,8 +93,12 @@ def validate_success(execution, sources, targets):
     if outputs != expected:
         raise SuiteError('expected five exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
+    expected_inputs = [('input.'+node, source) for node, source in zip(
+        ('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input'), sources)]
+    actual_inputs = [(entry.get('port'), entry.get('locator')) for entry in array(facts.get('inputs'), 'inputs')]
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
-        or [entry.get('locator') for entry in array(facts.get('inputs'), 'inputs')] != sources
+        or len(sources) != len(fixture.SOURCES) or len(actual_inputs) != len(expected_inputs)
+        or any(actual_inputs.count(binding) != 1 for binding in expected_inputs)
         or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())
         or any(entry.get('write_mode') != 'create' for entry in facts['outputs'])):
         raise SuiteError('topology, repair, snap and overlap resource lineage differs')
