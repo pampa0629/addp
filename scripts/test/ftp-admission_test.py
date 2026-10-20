@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / 'business/ftp'))
 import config
 import admission
 import prepare
+import seed
 
 
 class FTPAdmissionTests(unittest.TestCase):
@@ -39,6 +40,7 @@ class FTPAdmissionTests(unittest.TestCase):
         value = json.loads(result.stdout)['services']['ftp']
         self.assertEqual(value['profiles'], ['ftp'])
         self.assertEqual(value['entrypoint'], ['sh', '/addp/ftp/entrypoint.sh'])
+        self.assertTrue(any(p['target'] == '/addp/samples' and p.get('read_only') for p in value['volumes']))
         ports = {(p['host_ip'], int(p['published']), p['target']) for p in value['ports']}
         self.assertEqual(ports, {('127.0.0.1', p, p) for p in [2121, *range(50000, 50010)]})
         self.assertEqual({p['source'] for p in value['volumes'] if p['type'] == 'volume'}, {'ftp_data', 'ftp_state'})
@@ -57,6 +59,32 @@ class FTPAdmissionTests(unittest.TestCase):
         for protocol in ('sftpd', 'httpd', 'webdavd'):
             self.assertEqual(facts[protocol]['bindings'][0]['port'], 0)
         self.assertEqual(config.users('reader', 'secret')['users'][0]['permissions'], {'/': ['list', 'download']})
+
+    def test_generated_data_is_ignored_and_preserves_existing_files(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'data'
+            old_umask = os.umask(0o077)
+            try:
+                seed.write_samples(root)
+            finally:
+                os.umask(old_umask)
+            self.assertEqual(root.stat().st_mode & 0o777, 0o755)
+            self.assertTrue(all(p.stat().st_mode & 0o777 == 0o644 for p in root.iterdir()))
+            self.assertEqual(len(list(root.iterdir())), 3)
+            self.assertEqual(json.loads((root / '订单 示例.json').read_text()), seed.ROWS)
+            self.assertEqual((root / '客户 示例.parquet').read_bytes()[:4], b'PAR1')
+            csv_file = root / '客户 中文%.csv'
+            csv_file.write_text('user modified')
+            seed.write_samples(root)
+            self.assertEqual(csv_file.read_text(), 'user modified')
+            csv_file.unlink()
+            csv_file.symlink_to(root / '订单 示例.json')
+            with self.assertRaisesRegex(ValueError, 'ordinary file'):
+                seed.write_samples(root)
+        for relative in ('business/ftp/data/nested/example.json', 'business/ftp/samples/example.parquet'):
+            result = subprocess.run(['git', 'check-ignore', '--no-index', '-q', relative], cwd=ROOT)
+            self.assertEqual(result.returncode, 0, relative)
 
     def test_cleanup_only_uses_owned_labels(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory):

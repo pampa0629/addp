@@ -13,7 +13,7 @@
 
 ## FTP／显式 FTPS 准入门禁
 
-`make test-common-ftp-unit` 验证连接事实、规范路径、TLS 选择、取消与临时资源归属，同时核对 T2 的 Make／CI 登记。`make test-common-ftp` 使用 Business 唯一固定 SFTPGo 镜像、独占容器与卷、随机密码、私有 CA 和内外一致的回环被动端口，实际验证 FTP／显式 FTPS、只读账号、NLST+MLST 完整目录、原始中文／空格／百分号名称、REST 范围、PASV 地址约束和读取会话隔离，退出必须零残留。Linux ARM64／amd64 执行同一标准入口；镜像 manifest、协议准入和生产 Provider／普通用户 Hosted T4 分别认定。准入通过前不注册生产插件，未实际运行的层级不得记为通过。
+`make test-common-ftp-unit` 验证严格连接事实、固定账号根、规范路径、TLS 选择、取消、种子生成与数据目录忽略、临时资源归属，同时核对 T2 的 Make／CI 登记。`make test-common-ftp` 使用 Business 唯一固定 SFTPGo 镜像、独占容器与卷、随机密码、私有 CA 和内外一致的回环被动端口，实际验证 FTP／显式 FTPS、只读账号、NLST+MLST 完整目录、原始中文／空格／百分号名称、REST 范围、PASV 地址约束和读取会话隔离，退出必须零残留。Linux ARM64／amd64 执行同一标准入口；镜像 manifest、协议准入和生产 Provider／普通用户 Hosted T4 分别认定。准入通过前不注册生产插件，未实际运行的层级不得记为通过。
 
 ## Business Redis 门禁
 

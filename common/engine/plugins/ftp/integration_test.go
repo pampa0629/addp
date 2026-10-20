@@ -27,7 +27,7 @@ func ownedInfo(t *testing.T, security string) plugin.ConnectionInfo {
 	if json.Unmarshal(b, &c) != nil {
 		t.Fatal("invalid private connection")
 	}
-	info := plugin.ConnectionInfo{"host": c.Host, "port": c.Port, "user": c.User, "password": c.Password, "root_path": "/examples", "security": security}
+	info := plugin.ConnectionInfo{"host": c.Host, "port": c.Port, "user": c.User, "password": c.Password, "security": security}
 	if security == "explicit_tls" {
 		ca, err := os.ReadFile(c.CA)
 		if err != nil {
@@ -46,13 +46,26 @@ func TestIntegrationProviderCatalogFactsAndContent(t *testing.T) {
 			if err := p.TestConnection(t.Context(), info); err != nil {
 				t.Fatal(err)
 			}
-			entries, err := p.ListChildren(t.Context(), info, root, plugin.ListOptions{})
+			roots, err := p.ListChildren(t.Context(), info, root, plugin.ListOptions{})
+			if err != nil || len(roots) != 2 {
+				t.Fatal("account root directories differ", err)
+			}
+			var examples plugin.EngineCatalogPath
+			for _, entry := range roots {
+				if entry.Role != plugin.EngineCatalogRoleBranch || entry.Storage.Path != entry.Name {
+					t.Fatal("invalid root child")
+				}
+				if entry.Name == "examples" {
+					examples = entry.Path
+				}
+			}
+			entries, err := p.ListChildren(t.Context(), info, examples, plugin.ListOptions{})
 			if err != nil || len(entries) != 7 {
 				t.Fatal("incomplete provider directory", err)
 			}
 			for _, entry := range entries {
-				if entry.Path.StringPath() != entry.Name || entry.Storage.Path != entry.Name {
-					t.Fatal("physical management root leaked or name normalized")
+				if entry.Path.StringPath() != "examples/"+entry.Name || entry.Storage.Path != "examples/"+entry.Name {
+					t.Fatal("account-relative path lost or name normalized")
 				}
 				facts, err := p.DescribeEngineCatalogFacts(t.Context(), info, entry.Path, plugin.EngineCatalogFactsOptions{})
 				if err != nil || facts.Storage.SizeBytes == nil || facts.Storage.ETag != "" {
@@ -87,7 +100,7 @@ func TestIntegrationProviderCatalogFactsAndContent(t *testing.T) {
 					}
 				}
 			}
-			page, err := p.ListChildren(t.Context(), info, root, plugin.ListOptions{Offset: 1, Limit: 2})
+			page, err := p.ListChildren(t.Context(), info, examples, plugin.ListOptions{Offset: 1, Limit: 2})
 			if err != nil || len(page) != 2 || page[0].Name != entries[1].Name {
 				t.Fatal("provider listing window failed", err)
 			}

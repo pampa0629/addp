@@ -18,7 +18,7 @@ else
     mv "$state/configuration.identity.tmp" "$state/configuration.identity"
 fi
 mkdir -p "$data"
-for source in /addp/ftp/samples/*; do
+for source in /addp/samples/*; do
     target="$data/${source##*/}"
     if [ -e "$target" ] || [ -L "$target" ]; then
         test -f "$target" && test ! -L "$target" || {

@@ -47,7 +47,7 @@ func TestStrictMLSTFacts(t *testing.T) {
 					}
 				}
 			}()
-			c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "reader", Password: "secret", Root: "/", Security: "plain", Timeout: time.Second}
+			c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "reader", Password: "secret", Security: "plain", Timeout: time.Second}
 			s, err := Dial(t.Context(), c)
 			if err != nil {
 				t.Fatal(err)

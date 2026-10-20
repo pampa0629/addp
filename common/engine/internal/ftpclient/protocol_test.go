@@ -32,6 +32,23 @@ func TestStrictMLSTParser(t *testing.T) {
 	}
 }
 
+func TestStrictMLSTAccountRootDisplayName(t *testing.T) {
+	for _, name := range []string{"/", "data", "中文 主目录%"} {
+		e, err := parseMLST("Details\n type=dir;modify=20261020010101; "+name+"\nEnd", "/")
+		if err != nil || e.Name != "/" || e.Type != "dir" {
+			t.Fatal("account root rejected or physical display name leaked", err)
+		}
+	}
+	for _, name := range []string{"../data", "/foreign/root", "", "data\x00"} {
+		if _, err := parseMLST("Details\n type=dir;modify=20261020010101; "+name+"\nEnd", "/"); err == nil {
+			t.Fatal("invalid root display name accepted")
+		}
+	}
+	if _, err := parseMLST("Details\n type=file;size=0;modify=20261020010101; data\nEnd", "/"); err == nil {
+		t.Fatal("account root reported as file")
+	}
+}
+
 func TestStrictPassiveReplies(t *testing.T) {
 	for _, row := range []struct {
 		text string
@@ -77,7 +94,7 @@ func TestTLSFailureNeverSendsCredentials(t *testing.T) {
 		}
 		commands <- seen
 	}()
-	c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "private-user", Password: "private-password", Root: "/", Security: "explicit_tls", Timeout: time.Second}
+	c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "private-user", Password: "private-password", Security: "explicit_tls", Timeout: time.Second}
 	if s, err := Dial(t.Context(), c); err == nil {
 		s.Close()
 		t.Fatal("TLS failure downgraded")

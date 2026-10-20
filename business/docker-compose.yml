@@ -37,6 +37,7 @@ services:
     volumes:
       - ./.business-state/ftp/config:/addp/config:ro
       - ./ftp:/addp/ftp:ro
+      - ./ftp/data:/addp/samples:ro
       - ftp_data:/srv/sftpgo
       - ftp_state:/var/lib/sftpgo
     networks: [business-network]

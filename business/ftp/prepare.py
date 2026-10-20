@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from config import ROOT, server, users
+from seed import write_samples
 
 
 def identity(username, password):
@@ -71,6 +72,8 @@ if __name__ == '__main__':
             os.environ.get('FTP_SECURITY', 'explicit_tls'))
     try:
         {'prepare': prepare, 'probe': probe}[sys.argv[1]](*args)
+        if sys.argv[1] == 'prepare':
+            write_samples(ROOT / 'business/ftp/data')
     except Exception as exc:
         # FTP server responses and certificate details can contain private facts.
         print('FTP configuration/probe failed: ' + (str(exc) if isinstance(exc, ValueError) else type(exc).__name__), file=sys.stderr)

@@ -271,7 +271,13 @@ func parseMLST(message, physical string) (*Entry, error) {
 		factsLine = strings.TrimPrefix(line, " ")
 	}
 	factsText, name, ok := strings.Cut(factsLine, " ")
-	if !ok || !strings.HasSuffix(factsText, ";") || !validText(name) || (name != physical && name != path.Base(physical)) {
+	// MLST identifies the requested object. A virtual root may be displayed as
+	// the server home basename; it must never become a new catalog path.
+	matchingName := name == physical || name == path.Base(physical)
+	if physical == "/" {
+		matchingName = name == "/" || Name(name) == nil
+	}
+	if !ok || !strings.HasSuffix(factsText, ";") || !validText(name) || !matchingName {
 		return nil, fmt.Errorf("invalid FTP MLST resource")
 	}
 	facts := map[string]string{}
@@ -287,7 +293,7 @@ func parseMLST(message, physical string) (*Entry, error) {
 		facts[key] = value
 	}
 	kind := strings.ToLower(facts["type"])
-	if kind != "file" && kind != "dir" {
+	if (kind != "file" && kind != "dir") || (physical == "/" && kind != "dir") {
 		return nil, fmt.Errorf("unsupported or missing FTP MLST type")
 	}
 	modified, err := time.Parse("20060102150405.999999999", facts["modify"])
@@ -300,6 +306,9 @@ func parseMLST(message, physical string) (*Entry, error) {
 		if err != nil || size < 0 {
 			return nil, fmt.Errorf("invalid FTP file size")
 		}
+	}
+	if physical == "/" {
+		name = "/"
 	}
 	return &Entry{Name: name, Type: kind, Size: size, Time: modified.UTC()}, nil
 }

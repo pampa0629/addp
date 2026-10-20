@@ -654,6 +654,6 @@ Graph 中的“工作关系示例（Neo4j）”和“工作关系示例（Falkor
 
 先在本机 `business/.env` 设置 `FTP_USER=business_reader`、至少12字符的 `FTP_PASSWORD`，默认 `FTP_SECURITY=explicit_tls`。需要明文协议时必须显式设置为 `plain`；默认不会因 TLS 失败而降级。控制端口 `127.0.0.1:2121`、被动端口 `127.0.0.1:50000–50009` 内外一致，冲突直接失败。证书和私钥位于忽略版本控制的 `.business-state/ftp/config/`，外层目录0700；容器仅挂载内层只读目录。脚本保留既有证书，默认本机证书覆盖 localhost／127.0.0.1；客户端须信任 `server.crt`，不能关闭校验。
 
-`ftp_data`／`ftp_state` 两个独立持久卷保存文件和账号状态。唯一 `ftp/entrypoint.sh` 按需补齐 `/examples/` 下的客户 CSV、订单 JSON、客户 Parquet，各3行，包含中文、空格和百分号；已存在普通文件不覆盖。账号变化或未受管理的既有数据库拒绝隐式初始化；启动不会轮换密码或删除卷。后续平台登记使用独立 `engine_type=ftp`、本机回环地址与只读账号；FTP 账号根与客户端管理根的最终边界仍待确认，目前未正式登记插件。Business 不调用 System API。
+`ftp_data`／`ftp_state` 两个独立持久卷保存文件和账号状态。`ftp/seed.py` 将三个样例生成到已忽略的 `ftp/data/`；Git 不跟踪该数据目录。唯一 `ftp/entrypoint.sh` 按需补齐 `/examples/` 下的客户 CSV、订单 JSON、客户 Parquet，各3行，包含中文、空格和百分号；已存在普通文件不覆盖。账号变化或未受管理的既有数据库拒绝隐式初始化；启动不会轮换密码或删除卷。后续平台登记使用独立 `engine_type=ftp`、本机回环地址与只读账号；根固定为账号虚拟 `/`，不提供客户端 `root_path`；需要子目录隔离时由服务端配置独立账号与根目录，与 NFS 导出根的模型对齐。只拒绝 MLST 明确公布的链接／未知类型，不承诺识别服务端已解引用的链接。目前尚未正式登记插件。Business 不调用 System API。
 
 协议准入与持久化使用 `make test-common-ftp` 的独占资源，不连接个人部署；正式插件和跨模块页面支持以数据引擎扩展指南中的实际验收状态为准，不能从镜像已启动推导平台功能已经通过。

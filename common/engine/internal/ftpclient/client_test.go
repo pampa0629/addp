@@ -9,18 +9,18 @@ import (
 )
 
 func TestConfigPathsAndSecurity(t *testing.T) {
-	c := Config{Host: "localhost", Port: 21, User: "reader", Password: "secret", Root: "/data", Security: "explicit_tls", Timeout: time.Second}
+	c := Config{Host: "localhost", Port: 21, User: "reader", Password: "secret", Security: "explicit_tls", Timeout: time.Second}
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{"../x", "a/../x", "a//x", "/absolute", "a\\b", "a\x00b", "a\nb", "a\rb", "a/.", string([]byte{255})} {
-		if _, err := c.Physical(p); err == nil {
+		if _, err := Physical(p); err == nil {
 			t.Fatalf("accepted invalid path %q", p)
 		}
 	}
 	for _, p := range []string{"中文 空格%样例.csv", "a/b.txt", ".hidden", ""} {
-		if _, err := c.Physical(p); err != nil {
-			t.Fatal(err)
+		if physical, err := Physical(p); err != nil || physical != "/"+p {
+			t.Fatal("account root or exact path spelling lost", physical, err)
 		}
 	}
 	c.Security = "implicit_tls"
@@ -46,7 +46,7 @@ func TestCancelAndDeadlineDuringGreeting(t *testing.T) {
 			}()
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "reader", Password: "secret", Root: "/", Security: "plain", Timeout: 150 * time.Millisecond}
+			c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "reader", Password: "secret", Security: "plain", Timeout: 150 * time.Millisecond}
 			done := make(chan error, 1)
 			go func() { _, err := Dial(ctx, c); done <- err }()
 			conn := <-accepted

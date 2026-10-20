@@ -527,6 +527,12 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。
 
+## FTP 账号根路径契约
+
+FTP／显式 FTPS 使用文件系统 `root -> directory* -> file` 模型。根固定为服务端账号看到的 `/`，对应 NFS 挂载导出目录后取得的根；`full_name=""`。业务文件 `examples/客户 中文%.csv` 的路径不包含服务端账号物理主目录，不提供客户端 `root_path`，不以 CWD 或字符串前缀模拟服务端根隔离。服务端必须为账号设置所需只读权限和主目录／chroot，需要隔离子目录时由服务端配置独立账号。
+
+原生 FTP 服务可能在返回 MLST 前解引用软链接。客户端必须拒绝协议明确公布的链接、未知／缺失类型与非法路径，不能承诺识别服务端没有公布的原生软链接。Catalog、Facts、下载与范围读取共用相同账号和相对路径；普通 FTP 和显式 FTPS 不改变目录身份或内容格式。
+
 ## HDFS 路径目标契约
 
 本节定义 HDFS Simple 只读接入契约，范围包括只读插件、Business 样例及 Spark 原生读取。跨模块消费链沿用同一普通 User 的 Meta 扫描、Manager 预览及 Develop 正式 Spark 工作流；支持范围限于本节规定的 Simple 只读接入。T2 与 Hosted T4 的接入历史见[测试与验收规范的证据索引](testing/验收证据索引.md#addp-验收证据索引)。产品容器默认入口与后续 PostgreSQL 结果发布的最终证据仍由 [Spark Runtime 验证说明](../../engines/spark-workflow/README.md#运行测试)维护，不从早期失败记录推断当前阻塞。

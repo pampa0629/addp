@@ -35,7 +35,8 @@ func (r *rangeOnly) OpenRange(ctx context.Context, info plugin.ConnectionInfo, p
 func TestIntegrationProviderSharedFormats(t *testing.T) {
 	info := ownedInfo(t, "explicit_tls")
 	p := &FTPPlugin{}
-	entries, err := p.ListChildren(t.Context(), info, plugin.FileRootPath(99), plugin.ListOptions{})
+	scope := plugin.FileDirectoryCatalogEntry(plugin.FileRootPath(99), "examples", "examples").Path
+	entries, err := p.ListChildren(t.Context(), info, scope, plugin.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +80,8 @@ func TestIntegrationProviderSharedFormats(t *testing.T) {
 			}
 			if row.kind == "parquet" {
 				audit := &rangeOnly{FTPPlugin: p}
-				content := contentadapter.NewMappedReader(audit, info, contentadapter.ScopePathMapper(plugin.FileRootPath(99)), plugin.ReadOptions{})
-				rows, err = parquetformat.NewPlugin().SampleTableScope(t.Context(), content, contentio.NewRef("", contentio.RoleScope), 0, 10, nil)
+				content := contentadapter.NewMappedReader(audit, info, contentadapter.ScopePathMapper(scope), plugin.ReadOptions{})
+				rows, err = parquetformat.NewPlugin().SampleTableScope(t.Context(), content, contentio.NewRef(scope.StringPath(), contentio.RoleScope), 0, 10, nil)
 				if err != nil || len(rows) != 3 || audit.calls.Load() == 0 {
 					t.Fatal("Parquet preview did not consume native FTP ranges", err)
 				}

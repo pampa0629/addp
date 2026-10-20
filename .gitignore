@@ -214,6 +214,6 @@ data/document-work/
 docs/books/数据治理100问/发布稿/*.pdf
 docs/books/数据治理100问/发布稿/*.mobi
 
-# Tiny, deterministic FTP admission and Business seed fixtures (under 1 KiB total).
-!business/ftp/samples/客户 中文%.csv
-!business/ftp/samples/客户 示例.parquet
+# FTP generated seed files and local data are never versioned.
+/business/ftp/data/
+/business/ftp/samples/

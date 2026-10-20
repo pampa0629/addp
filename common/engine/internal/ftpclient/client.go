@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -22,9 +21,9 @@ const MaxEntries = 10000
 const metadataBudget = 4 << 20
 
 type Config struct {
-	Host, User, Password, Root, Security, CAPEM string
-	Port                                        int
-	Timeout                                     time.Duration
+	Host, User, Password, Security, CAPEM string
+	Port                                  int
+	Timeout                               time.Duration
 }
 
 func validText(s string) bool { return utf8.ValidString(s) && !strings.ContainsAny(s, "\r\n\x00") }
@@ -58,26 +57,20 @@ func (c Config) Validate() error {
 	if c.Security == "plain" && c.CAPEM != "" {
 		return fmt.Errorf("FTP CA requires explicit TLS")
 	}
-	if c.Root == "" || !strings.HasPrefix(c.Root, "/") || path.Clean(c.Root) != c.Root {
-		return fmt.Errorf("FTP root must be an absolute canonical path")
-	}
-	if err := Relative(strings.TrimPrefix(c.Root, "/")); err != nil {
-		return err
-	}
 	if c.Timeout <= 0 || c.Timeout > 5*time.Minute {
 		return fmt.Errorf("invalid FTP operation timeout")
 	}
 	return nil
 }
 
-func (c Config) Physical(relative string) (string, error) {
+func Physical(relative string) (string, error) {
 	if err := Relative(relative); err != nil {
 		return "", err
 	}
 	if relative == "" {
-		return c.Root, nil
+		return "/", nil
 	}
-	return strings.TrimSuffix(c.Root, "/") + "/" + relative, nil
+	return "/" + relative, nil
 }
 
 // Session is never shared. Closing/cancelling it closes both control and data
@@ -180,10 +173,11 @@ func (s *Session) Stat(physical string) (*Entry, error) {
 	return e, nil
 }
 
-// Resolve verifies every ancestor as well as the final object. A link in any
-// path component is rejected; it cannot be hidden by a canonicalized leaf name.
-func (s *Session) Resolve(config Config, relative string) (*Entry, error) {
-	physical, err := config.Physical(relative)
+// Resolve verifies protocol facts for every ancestor and the final object.
+// Explicitly reported links are rejected; server-dereferenced links are not
+// distinguishable from ordinary objects. The server account owns isolation.
+func (s *Session) Resolve(relative string) (*Entry, error) {
+	physical, err := Physical(relative)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +241,7 @@ func Open(ctx context.Context, config Config, relative string, offset, length in
 	if offset < 0 || length < 0 {
 		return nil, fmt.Errorf("invalid FTP read window")
 	}
-	physical, err := config.Physical(relative)
+	physical, err := Physical(relative)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +249,7 @@ func Open(ctx context.Context, config Config, relative string, offset, length in
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.Resolve(config, relative)
+	e, err := s.Resolve(relative)
 	if err != nil {
 		s.Close()
 		return nil, err

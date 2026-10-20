@@ -24,7 +24,7 @@ func TestIntegrationPASVUsesControlPeer(t *testing.T) {
 	if json.Unmarshal(b, &c) != nil {
 		t.Fatal("invalid connection")
 	}
-	config := Config{Host: c.Host, Port: c.Port, User: c.User, Password: c.Password, Root: "/", Security: "plain", Timeout: 10 * time.Second}
+	config := Config{Host: c.Host, Port: c.Port, User: c.User, Password: c.Password, Security: "plain", Timeout: 10 * time.Second}
 	s, err := Dial(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,7 @@
 package ftp
 
 import (
-	"bytes"
-	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -16,25 +15,11 @@ func TestBusinessParquetSample(t *testing.T) {
 		Amount float64 `parquet:"amount"`
 	}
 	want := []row{{1, "长沙客户", 100.25}, {2, "株洲客户", 200.50}, {3, "湘潭客户", 300.75}}
-	file := filepath.Join(t.TempDir(), "sample.parquet")
-	if err := parquet.WriteFile(file, want); err != nil {
-		t.Fatal(err)
+	directory := t.TempDir()
+	if output, err := exec.Command("python3", "../../../../business/ftp/seed.py", directory).CombinedOutput(); err != nil {
+		t.Fatalf("generate Business samples: %v %s", err, output)
 	}
-	if export := os.Getenv("ADDP_FTP_SAMPLE_EXPORT"); export != "" {
-		// One-time fixture regeneration is restricted to OS temporary storage.
-		if !filepath.IsAbs(export) || !bytes.HasPrefix([]byte(filepath.Clean(export)), []byte(filepath.Clean(os.TempDir())+string(os.PathSeparator))) {
-			t.Fatal("sample export must be under OS temporary directory")
-		}
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = os.WriteFile(export, data, 0600); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	actual, err := parquet.ReadFile[row]("../../../../business/ftp/samples/客户 示例.parquet")
+	actual, err := parquet.ReadFile[row](filepath.Join(directory, "客户 示例.parquet"))
 	if err != nil {
 		t.Fatal(err)
 	}

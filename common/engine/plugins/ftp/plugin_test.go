@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -22,11 +23,11 @@ func TestConnectionDescriptorAndReadOnlyCapabilities(t *testing.T) {
 	if _, ok := any(p).(plugin.ContentWritableProvider); ok {
 		t.Fatal("FTP exposes write provider")
 	}
-	info := plugin.ConnectionInfo{"host": "127.0.0.1", "port": 2121, "user": "reader", "password": "private", "root_path": "/examples", "security": "explicit_tls"}
+	info := plugin.ConnectionInfo{"host": "127.0.0.1", "port": 2121, "user": "reader", "password": "private", "security": "explicit_tls"}
 	if p.ValidateConnectionInfo(info) != nil {
 		t.Fatal("valid explicit TLS facts rejected")
 	}
-	for _, field := range []string{"host", "user", "password", "root_path", "security"} {
+	for _, field := range []string{"host", "user", "password", "port", "security"} {
 		bad := plugin.ConnectionInfo{}
 		for k, v := range info {
 			bad[k] = v
@@ -35,6 +36,38 @@ func TestConnectionDescriptorAndReadOnlyCapabilities(t *testing.T) {
 		if p.ValidateConnectionInfo(bad) == nil {
 			t.Fatalf("missing %s accepted", field)
 		}
+	}
+}
+
+func TestConnectionFactsAreStrictAndAccountRootIsNotConfigurable(t *testing.T) {
+	p := &FTPPlugin{}
+	if _, exists := p.ConnectionSpec().Field("root_path"); exists {
+		t.Fatal("client management root must not be configurable")
+	}
+	valid := plugin.ConnectionInfo{"host": "localhost", "port": 2121, "user": "reader", "password": "private", "security": "explicit_tls"}
+	for _, port := range []any{2121, float64(2121), json.Number("2121")} {
+		valid["port"] = port
+		if err := p.ValidateConnectionInfo(valid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, port := range []any{nil, 0, 65536, 2121.5, "2121junk", "2121", json.Number("2121.5")} {
+		valid["port"] = port
+		if p.ValidateConnectionInfo(valid) == nil {
+			t.Fatalf("invalid port accepted: %v", port)
+		}
+	}
+	valid["port"] = 2121
+	for _, field := range []string{"root_path", "skip_verify", "unknown"} {
+		valid[field] = "/examples"
+		if p.ValidateConnectionInfo(valid) == nil {
+			t.Fatalf("undeclared field accepted: %s", field)
+		}
+		delete(valid, field)
+	}
+	valid["user"] = 123
+	if p.ValidateConnectionInfo(valid) == nil {
+		t.Fatal("non-text username accepted")
 	}
 }
 

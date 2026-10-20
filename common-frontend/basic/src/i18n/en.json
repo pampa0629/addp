@@ -594,7 +594,6 @@
     "bootstrapServersPlaceholder": "broker-1:9092,broker-2:9092",
     "clientIdOptional": "Client ID (optional)",
     "clientIdPlaceholder": "addp-system",
-    "ftpRootPath": "Management root",
     "ftpExplicitTLS": "Explicit FTPS (TLS)",
     "ftpPlain": "FTP (unencrypted)",
     "securityProtocol": "Security Protocol",

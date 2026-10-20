@@ -14,6 +14,7 @@ import time
 
 from config import ROOT, image, server, users
 from prepare import identity
+from seed import write_samples
 
 
 def run(*args, **kwargs):
@@ -76,6 +77,7 @@ def start():
     # The bind mount exposes only this private fixture's directory. Unprivileged
     # image UID 1000 must be able to read its TLS files.
     (config / 'server.key').chmod(0o644)
+    write_samples(root / 'seed')
     pinned = image()
     run('docker', 'pull', pinned)
     for volume in state['volumes']:
@@ -85,6 +87,7 @@ def start():
             '-p', f'127.0.0.1:{port+1}-{port+10}:{port+1}-{port+10}',
             '-v', f'{config}:/addp/config:ro',
             '-v', f'{ROOT / "business/ftp"}:/addp/ftp:ro',
+            '-v', f'{root / "seed"}:/addp/samples:ro',
             '--entrypoint', 'sh',
             '-v', f'{state["volumes"][0]}:/srv/sftpgo',
             '-v', f'{state["volumes"][1]}:/var/lib/sftpgo', pinned, '/addp/ftp/entrypoint.sh']
@@ -121,6 +124,7 @@ def start():
         probe.login('fixture_reader', password)
         probe.prot_p()
         link_facts = probe.sendcmd("MLST /unsupported/link")
+        root_facts = probe.sendcmd("MLST /")
         for expected, operation in ((553, lambda: probe.storbinary('STOR /forbidden.txt', io.BytesIO(b'no'))),
                                     (550, lambda: probe.delete('/examples/demo.json'))):
             try:
@@ -136,7 +140,7 @@ def start():
           'docker_arch': run('docker', 'info', '-f', '{{.Architecture}}'),
           'image_id': run('docker', 'inspect', '-f', '{{.Image}}', name),
           'control_port': port, 'passive_start': port+1, 'passive_end': port+10,
-          'tls_mode': 'explicit and plain admission', 'native_read_only': True, 'native_link_mlst': link_facts, 'advertised_pasv_ip': '203.0.113.123'})
+          'tls_mode': 'explicit and plain admission', 'native_read_only': True, 'native_link_mlst': link_facts, 'native_root_mlst': root_facts, 'advertised_pasv_ip': '203.0.113.123'})
     print('Owned FTP fixture ready; credentials remain private')
 
 
@@ -171,7 +175,7 @@ def persistence():
         raise RuntimeError('FTP lifecycle readiness timed out')
     if not run('docker', 'exec', name, 'cat', csv_path).endswith('custom-preserved'):
         raise RuntimeError('FTP sample overwritten on recreation')
-    if run('docker', 'exec', name, 'cat', missing) != (ROOT / 'business/ftp/samples/订单 示例.json').read_text().strip():
+    if run('docker', 'exec', name, 'cat', missing) != (root / 'seed/订单 示例.json').read_text().strip():
         raise RuntimeError('FTP missing sample was not restored')
     write(root / 'business-lifecycle.json', {'recreated': True, 'user_changes_preserved': True,
           'missing_sample_restored': True, 'credentials_and_volumes_preserved': True})

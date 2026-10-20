@@ -3,9 +3,12 @@ package ftp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/addp/common/engine/internal/ftpclient"
@@ -29,7 +32,6 @@ func (*FTPPlugin) ConnectionSpec() plugin.ConnectionSpec {
 		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Required: true, Identity: true, Default: 21},
 		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Identity: true},
 		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.password", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
-		plugin.ConnectionFieldSpec{Key: "root_path", LabelKey: "storageEngine.ftpRootPath", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "/"},
 		plugin.ConnectionFieldSpec{Key: "security", LabelKey: "storageEngine.securityProtocol", Input: plugin.ConnectionFieldSelect, Required: true, Default: "explicit_tls", Options: []plugin.ConnectionFieldOption{{Value: "explicit_tls", LabelKey: "storageEngine.ftpExplicitTLS"}, {Value: "plain", LabelKey: "storageEngine.ftpPlain"}}},
 		plugin.ConnectionFieldSpec{Key: "tls_ca_cert", LabelKey: "storageEngine.tlsCaCertOptional", Input: plugin.ConnectionFieldTextarea, PlaceholderKey: "storageEngine.pemPlaceholder", VisibleWhen: &plugin.ConnectionFieldCondition{Field: "security", Values: []string{"explicit_tls"}}},
 	)
@@ -49,16 +51,46 @@ func (p *FTPPlugin) StoreSemantics() plugin.StoreSemantics {
 func (*FTPPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.FileCatalogModel()
 }
-func ParseConnectionInfo(info plugin.ConnectionInfo) (ftpclient.Config, error) {
-	c := ftpclient.Config{Host: plugin.GetString(info, "host"), Port: plugin.GetInt(info, "port"), User: plugin.GetString(info, "user"), Password: plugin.GetString(info, "password"), Root: plugin.GetString(info, "root_path"), Security: plugin.GetString(info, "security"), CAPEM: plugin.GetString(info, "tls_ca_cert"), Timeout: 60 * time.Second}
+func parseConnectionInfo(info plugin.ConnectionInfo) (ftpclient.Config, error) {
+	// Only descriptor fields are accepted; credentials and paths are never inferred.
+	values := map[string]string{}
+	for key, value := range info {
+		field, exists := (&FTPPlugin{}).ConnectionSpec().Field(key)
+		if !exists {
+			return ftpclient.Config{}, fmt.Errorf("unknown FTP connection field")
+		}
+		if field.Key == "port" {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return ftpclient.Config{}, fmt.Errorf("FTP connection field requires text")
+		}
+		values[key] = text
+	}
+	port := 0
+	switch value := info["port"].(type) {
+	case int:
+		port = value
+	case float64:
+		if value >= 1 && value <= 65535 && math.Trunc(value) == value {
+			port = int(value)
+		}
+	case json.Number:
+		n, err := strconv.ParseInt(string(value), 10, 32)
+		if err == nil {
+			port = int(n)
+		}
+	}
+	c := ftpclient.Config{Host: values["host"], Port: port, User: values["user"], Password: values["password"], Security: values["security"], CAPEM: values["tls_ca_cert"], Timeout: 60 * time.Second}
 	return c, c.Validate()
 }
 func (*FTPPlugin) ValidateConnectionInfo(info plugin.ConnectionInfo) error {
-	_, err := ParseConnectionInfo(info)
+	_, err := parseConnectionInfo(info)
 	return err
 }
 func (*FTPPlugin) TestConnection(ctx context.Context, info plugin.ConnectionInfo) error {
-	c, err := ParseConnectionInfo(info)
+	c, err := parseConnectionInfo(info)
 	if err != nil {
 		return err
 	}
@@ -67,10 +99,10 @@ func (*FTPPlugin) TestConnection(ctx context.Context, info plugin.ConnectionInfo
 		return err
 	}
 	defer s.Close()
-	if _, err = s.Resolve(c, ""); err != nil {
+	if _, err = s.Resolve(""); err != nil {
 		return err
 	}
-	_, err = s.List(c.Root)
+	_, err = s.List("/")
 	return err
 }
 func validateCatalog(p plugin.EngineCatalogPath) error {
@@ -117,7 +149,7 @@ func (*FTPPlugin) ListChildren(ctx context.Context, info plugin.ConnectionInfo, 
 	if parent.Segments[len(parent.Segments)-1].Term == plugin.EngineCatalogTermFile || opts.Offset < 0 || opts.Limit < 0 {
 		return nil, fmt.Errorf("invalid FTP listing window or target")
 	}
-	c, err := ParseConnectionInfo(info)
+	c, err := parseConnectionInfo(info)
 	if err != nil {
 		return nil, err
 	}
@@ -131,10 +163,10 @@ func (*FTPPlugin) ListChildren(ctx context.Context, info plugin.ConnectionInfo, 
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		if _, err = s.Resolve(c, current.StringPath()); err != nil {
+		if _, err = s.Resolve(current.StringPath()); err != nil {
 			return nil, err
 		}
-		physical, _ := c.Physical(current.StringPath())
+		physical, _ := ftpclient.Physical(current.StringPath())
 		entries, err := s.List(physical)
 		if err != nil {
 			return nil, err
@@ -167,7 +199,7 @@ func (*FTPPlugin) ResolvePath(ctx context.Context, info plugin.ConnectionInfo, t
 	if err := validateCatalog(target); err != nil {
 		return nil, err
 	}
-	c, err := ParseConnectionInfo(info)
+	c, err := parseConnectionInfo(info)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +208,7 @@ func (*FTPPlugin) ResolvePath(ctx context.Context, info plugin.ConnectionInfo, t
 		return nil, err
 	}
 	defer s.Close()
-	e, err := s.Resolve(c, target.StringPath())
+	e, err := s.Resolve(target.StringPath())
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +250,7 @@ func (*FTPPlugin) OpenContent(ctx context.Context, info plugin.ConnectionInfo, t
 	if target.Segments[len(target.Segments)-1].Term != plugin.EngineCatalogTermFile {
 		return nil, fmt.Errorf("FTP content requires file")
 	}
-	c, err := ParseConnectionInfo(info)
+	c, err := parseConnectionInfo(info)
 	if err != nil {
 		return nil, err
 	}

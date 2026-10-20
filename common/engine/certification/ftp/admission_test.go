@@ -34,7 +34,7 @@ func config(t *testing.T, security string) ftpclient.Config {
 	if err != nil {
 		t.Fatal("private CA unavailable")
 	}
-	result := ftpclient.Config{Host: c.Host, Port: c.Port, User: c.User, Password: c.Password, Root: "/", Security: security, Timeout: 10 * time.Second}
+	result := ftpclient.Config{Host: c.Host, Port: c.Port, User: c.User, Password: c.Password, Security: security, Timeout: 10 * time.Second}
 	if security == "explicit_tls" {
 		result.CAPEM = string(ca)
 	}
@@ -50,6 +50,10 @@ func TestAdmissionCatalogTLSAndReadOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.Close()
+			root, err := s.Resolve("")
+			if err != nil || root.Type != "dir" || root.Name != "/" {
+				t.Fatal("virtual account root rejected or renamed", err)
+			}
 			entries, err := s.List("/examples")
 			if err != nil {
 				t.Fatal(err)

@@ -594,7 +594,6 @@
     "bootstrapServersPlaceholder": "broker-1:9092,broker-2:9092",
     "clientIdOptional": "客户端标识（可选）",
     "clientIdPlaceholder": "addp-system",
-    "ftpRootPath": "管理根目录",
     "ftpExplicitTLS": "显式 FTPS（TLS 加密）",
     "ftpPlain": "FTP（明文传输）",
     "securityProtocol": "安全协议",
