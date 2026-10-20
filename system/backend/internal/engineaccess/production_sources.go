@@ -16,7 +16,9 @@ import (
 var errInitialProductionEvidence = errors.Join(commonapi.ErrConflict, errors.New("initial production evidence is incomplete or ineligible"))
 
 // All fields are private owner evidence, never a credential or a grant command.
-// In particular, a successful preparation does not prove target continuity.
+// Preparation does not prove that creation and the successful write belonged to
+// the same production. The committed logical-result fact, not survival of the
+// original physical table until issuance, is the eligibility basis.
 type preparedInitialProduction struct {
 	production     *preparedTransferProduction
 	sources        sourceReadRequest

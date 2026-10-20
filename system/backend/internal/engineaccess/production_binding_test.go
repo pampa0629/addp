@@ -61,7 +61,7 @@ func productionBindingReceipt(tenant int64, engine uint) client.TransferProducti
 }
 
 func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
-	for _, scenario := range []string{"complete", "recreated", "reused", "retry", "no_human", "incomplete", "needs_refresh", "unsupported", "dotted_collision", "wrong_fingerprint", "nil_facts", "missing_facts", "offline_facts", "wrong_tenant", "wrong_execution", "invalid_receipt", "nil_receipt", "missing_receipt", "offline_receipt", "other_engine_type", "disabled_engine", "missing_engine", "engine_changed_during_meta", "engine_disabled_during_meta"} {
+	for _, scenario := range []string{"complete", "newer_logical_snapshot", "recreated", "reused", "retry", "no_human", "incomplete", "needs_refresh", "unsupported", "dotted_collision", "wrong_fingerprint", "nil_facts", "missing_facts", "offline_facts", "wrong_tenant", "wrong_execution", "invalid_receipt", "nil_receipt", "missing_receipt", "offline_receipt", "other_engine_type", "disabled_engine", "missing_engine", "engine_changed_during_meta", "engine_disabled_during_meta"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := productionBindingDB(t)
 			receipt := productionBindingReceipt(7, 2)
@@ -70,6 +70,11 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			var receiptErr, factsErr, want error
 			wantReceiptCalls, wantFactsCalls := 1, 1
 			switch scenario {
+			case "newer_logical_snapshot":
+				// A later observation of the same logical boundary must not
+				// rewrite the producer's successful commit time or demand a
+				// physical-instance identity absent from the DataItem contract.
+				receipt.CommittedAt = facts.ObservedAt.Add(-time.Hour)
 			case "recreated":
 				receipt.Preparation = plugin.TableTargetRecreated
 			case "reused":
@@ -169,7 +174,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 				}
 				return
 			}
-			if result == nil || result.binding.Validate() != nil || result.binding.ItemFingerprint != facts.ItemFingerprint || result.engineVersion != 1 || result.receipt.Preparation != receipt.Preparation || result.receipt.Attempt != receipt.Attempt || (result.receipt.UserOrigin == nil) != (receipt.UserOrigin == nil) {
+			if result == nil || result.binding.Validate() != nil || result.binding.ItemFingerprint != facts.ItemFingerprint || result.engineVersion != 1 || result.receipt.Preparation != receipt.Preparation || !result.receipt.CommittedAt.Equal(receipt.CommittedAt) || result.receipt.Attempt != receipt.Attempt || (result.receipt.UserOrigin == nil) != (receipt.UserOrigin == nil) {
 				t.Fatalf("wrong transient evidence: %+v", result)
 			}
 			// Neither reader-owned references nor later fixture mutations may
