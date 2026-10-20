@@ -1,6 +1,7 @@
 """Generate small Business examples without committing generated data directories."""
 import base64
 import csv
+import hashlib
 import io
 import json
 import os
@@ -60,6 +61,42 @@ def write_samples(directory):
         with os.fdopen(descriptor, 'wb') as stream:
             stream.write(content)
             os.fchmod(stream.fileno(), 0o644)
+
+
+def write_model_samples(directory):
+    """Publish fixed Hosted inputs through the existing FTP account root.
+
+    This is explicit test preparation, not part of the default Business seed.
+    Never replace a host file or follow a destination symbolic link.
+    """
+    root = Path(directory)
+    fixture = Path(__file__).resolve().parents[1] / 'fixtures/manager'
+    samples = (
+        ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
+        ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
+        ('png', 'models/3ds/texture.png', 'addp_online_exchange_texture.png'),
+    )
+    report = []
+    for kind, relative, source in samples:
+        target = root / relative
+        for directory_path in (root, *[root.joinpath(*Path(relative).parts[:i]) for i in range(1, len(Path(relative).parts))]):
+            if directory_path.is_symlink():
+                raise ValueError('FTP model seed directory must not be a symbolic link')
+            directory_path.mkdir(parents=True, exist_ok=True, mode=0o755)
+            directory_path.chmod(0o755)
+        content = (fixture / source).read_bytes()
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:
+            if target.is_symlink() or not target.is_file() or target.read_bytes() != content:
+                raise ValueError('FTP model seed refuses to replace a host file')
+        else:
+            with os.fdopen(descriptor, 'wb') as stream:
+                stream.write(content)
+                os.fchmod(stream.fileno(), 0o644)
+        report.append({'format': kind, 'full_name': relative, 'size': len(content),
+                       'sha256': hashlib.sha256(content).hexdigest()})
+    return report
 
 
 if __name__ == '__main__':

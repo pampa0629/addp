@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import hashlib
 import ftplib
 import socket
 import subprocess
@@ -102,6 +103,47 @@ class FTPAdmissionTests(unittest.TestCase):
         for relative in ('business/ftp/data/nested/example.json', 'business/ftp/samples/example.parquet'):
             result = subprocess.run(['git', 'check-ignore', '--no-index', '-q', relative], cwd=ROOT)
             self.assertEqual(result.returncode, 0, relative)
+
+    def test_model_seed_preserves_fixed_sources_and_texture_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'data'
+            previous = os.umask(0o077)
+            try:
+                report = seed.write_model_samples(root)
+            finally:
+                os.umask(previous)
+            self.assertEqual({x['full_name'] for x in report}, {
+                'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png'})
+            source_by_kind = {'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
+                              'png': 'addp_online_exchange_texture.png'}
+            for item in report:
+                raw = (root / item['full_name']).read_bytes()
+                source = ROOT / 'business/fixtures/manager' / source_by_kind[item['format']]
+                self.assertEqual(raw, source.read_bytes())
+                self.assertEqual(item['size'], len(raw))
+                self.assertEqual(item['sha256'], hashlib.sha256(raw).hexdigest())
+                self.assertEqual((root / item['full_name']).stat().st_mode & 0o777, 0o644)
+                self.assertEqual((root / item['full_name']).parent.stat().st_mode & 0o777, 0o755)
+            self.assertIn(b'texture.png\x00', (root / 'models/3ds/model.3ds').read_bytes())
+            self.assertEqual(seed.write_model_samples(root), report)
+            (root / 'models/ifc/model.ifc').write_text('host modified')
+            with self.assertRaisesRegex(ValueError, 'replace a host file'):
+                seed.write_model_samples(root)
+            self.assertEqual((root / 'models/ifc/model.ifc').read_text(), 'host modified')
+
+    def test_model_seed_rejects_redirected_directories_and_files(self):
+        for component in ('root', 'models', 'models/ifc', 'models/ifc/model.ifc'):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                outside = base / 'outside'
+                outside.mkdir()
+                root = base / 'data'
+                link = root if component == 'root' else root / component
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(outside, target_is_directory=True)
+                with self.assertRaises(ValueError):
+                    seed.write_model_samples(root)
+                self.assertEqual(list(outside.iterdir()), [])
 
     def test_host_root_and_examples_cannot_redirect_initialization(self):
         for component in ('root', 'examples'):
