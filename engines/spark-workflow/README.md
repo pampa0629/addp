@@ -118,6 +118,8 @@ make test-common-hdfs
 
 ## 相关文档
 
+- [Spark Workflow 与 Spark 通用引擎关系说明](docs/spark-design.md)：两类引擎的职责、调用路径与执行期资源绑定。
+- [Spark 通用引擎与 Sedona 用户手册](docs/spark-user-guide.md)：部署注册、SQL 查询示例与故障排查。
 - [ADDP 开发原则](../../docs/spec/addp开发原则.md)
 - [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)
 - [Apache Spark 文档](https://spark.apache.org/docs/latest/)

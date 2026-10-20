@@ -6,10 +6,13 @@
 
 | 阅读目的 | 文档 |
 | --- | --- |
+| Provider 与 HTTP Runtime 架构、当前引擎及目录结构 | [总体架构](../../docs/spec/workflow/总体架构.md) |
 | 五个标准接口、请求响应、执行状态与错误码 | [HTTP 协议](../../docs/spec/workflow/HTTP协议.md) |
 | 算子必填字段、效果、参数、输出端口与分类 | [算子元数据与实现](../../docs/spec/workflow/算子元数据与实现.md) |
 | 公开资源参数、执行期适配与授权 | [Develop 资源与执行](../../docs/spec/workflow/Develop资源与执行.md) |
 | Runtime 注册、能力探测、扩展步骤与接入验证 | [Runtime 注册与扩展](../../docs/spec/workflow/Runtime注册与扩展.md) |
+| 坐标转换、构面、几何检查修复、吸附与面叠检查 | [矢量算子契约](../../docs/spec/workflow/矢量算子契约.md) |
+| 栅格资源、成果、网格、统计、分类与资源准入 | [栅格算子契约](../../docs/spec/workflow/栅格算子契约.md) |
 | 验证层级、环境边界与标准门禁 | [测试与验收规范](../../docs/spec/addp测试与验收规范.md) |
 
 ## 示例索引

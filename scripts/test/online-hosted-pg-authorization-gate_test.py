@@ -172,6 +172,70 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 if receipt:
                     self.assertEqual(result.stdout.strip(), receipt)
 
+    def test_only_pg_output_suite_can_create_tables_without_write_access_to_source_tables(self):
+        source = SCRIPT.parents[2] / 'business/scripts/online-metric-postgres-fixture.sh'
+        destination = self.host.repository / 'business/scripts' / source.name
+        shutil.copy2(source, destination)
+        self.host.secrets.mkdir(exist_ok=True)
+        self.host._executable('docker', '''
+            #!/usr/bin/env python3
+            import os, pathlib, sys
+            args = sys.argv[1:]
+            if args[:2] == ['container', 'inspect']:
+                sys.exit(1)
+            if args[0] == 'run':
+                pathlib.Path(os.environ['ADDP_TEST_CREATED']).write_text('owned-container')
+                sys.exit(0)
+            if args[0] == 'exec' and 'SELECT current_database()' in args:
+                print('metric_fixture')
+                sys.exit(0)
+            if args[0] == 'exec' and 'psql' in args:
+                assert args[args.index('-d') + 1] == 'metric_fixture'
+                assert 'ON_ERROR_STOP=1' in args
+                flags = [arg for index, arg in enumerate(args) if index and args[index - 1] == '-v']
+                expected = os.environ['ADDP_TEST_CREATE_EXPECTED']
+                assert 'allow_output_create=' + expected in flags, 'missing bounded CREATE preparation'
+                sql = sys.stdin.read()
+                assert '\\n\\\\if :allow_output_create\\nGRANT CREATE ON SCHEMA public TO metric_reader;\\n\\\\endif\\n' in sql
+                grants = [line.strip() for line in sql.splitlines() if line.startswith('GRANT ')]
+                assert grants == [
+                    'GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;',
+                    'GRANT USAGE ON SCHEMA public TO metric_reader;',
+                    'GRANT SELECT ON ALL TABLES IN SCHEMA public TO metric_reader;',
+                    'GRANT CREATE ON SCHEMA public TO metric_reader;']
+                assert 'SUPERUSER' not in sql and 'GRANT ALL' not in sql
+                if os.environ.get('ADDP_TEST_SEED_FAIL') == '1':
+                    sys.exit(17)
+                pathlib.Path(os.environ['ADDP_TEST_SEEDED']).write_text(expected)
+                sys.exit(0)
+            sys.exit(3)
+        ''')
+        env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true',
+            RUNNER_OS='Linux', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST='1',
+            POSTGRES_DB='addp_online', ADDP_ONLINE_SECRET_DIR=str(self.host.secrets))
+        cases = [('pg-source-authorization', '1', {}, True),
+                 ('metric-service-revision-lifecycle', '0', {}, True),
+                 ('', '0', {}, True),
+                 ('pg-source-authorization', '1', {'POSTGRES_DB': 'personal'}, False),
+                 ('pg-source-authorization', '1', {'ADDP_ONLINE_TEST': '0'}, False),
+                 ('pg-source-authorization', '1', {'ADDP_TEST_SEED_FAIL': '1'}, False)]
+        for index, (suite, expected, overrides, success) in enumerate(cases):
+            with self.subTest(suite=suite, overrides=overrides):
+                descriptor = self.host.secrets / f'output-{index}.json'
+                seeded, created = self.host.root / f'seeded-{index}', self.host.root / f'created-{index}'
+                result = subprocess.run(['bash', str(destination), 'start'], cwd=self.host.repository,
+                    env=dict(env, ONLINE_SUITE=suite, ADDP_TEST_CREATE_EXPECTED=expected,
+                        ADDP_TEST_SEEDED=str(seeded), ADDP_TEST_CREATED=str(created),
+                        ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(descriptor), **overrides),
+                    capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+                self.assertEqual(descriptor.exists(), success)
+                self.assertEqual(seeded.exists(), success)
+                if success:
+                    self.assertEqual(seeded.read_text(), expected)
+                if 'POSTGRES_DB' in overrides or 'ADDP_ONLINE_TEST' in overrides:
+                    self.assertFalse(created.exists(), 'invalid scope started a container')
+
     def test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources(self):
         # Each call needs a new secret directory; the lifecycle removes it on exit.
         for overrides in ({}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_SOURCE_FAIL': '1'},

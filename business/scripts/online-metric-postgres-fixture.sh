@@ -50,6 +50,15 @@ SQL
   start) ;;
   *) fail "usage: online-metric-postgres-fixture.sh start|stop|content-change|content-reset" ;;
 esac
+# The PG authorization suite also produces a genuinely new table. Keep all
+# existing fixture tables read-only; CREATE only lets this disposable account
+# own its new outputs. Other consumers of this shared fixture remain read-only.
+allow_output_create=0
+if [ "${ONLINE_SUITE:-}" = pg-source-authorization ]; then
+  [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "${POSTGRES_DB:-}" = addp_online ] ||
+    fail "PG output creation requires its isolated suite"
+  allow_output_create=1
+fi
 ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
 [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
 export POSTGRES_PASSWORD
@@ -71,7 +80,7 @@ for _ in $(seq 1 60); do
 done
 [ "$ready" = 1 ] || fail "source PostgreSQL did not become ready"
 docker exec -i "$container" psql -U postgres -d metric_fixture -v ON_ERROR_STOP=1 \
-  -v reader_password="$POSTGRES_PASSWORD" >/dev/null <<'SQL'
+  -v reader_password="$POSTGRES_PASSWORD" -v allow_output_create="$allow_output_create" >/dev/null <<'SQL'
 CREATE TABLE metric_people (person_id text PRIMARY KEY);
 CREATE TABLE metric_events (event_id text PRIMARY KEY, event_date date NOT NULL);
 CREATE TABLE metric_facts (row_id bigint PRIMARY KEY, person_id text NOT NULL, event_id text NOT NULL, leader boolean NOT NULL);
@@ -84,6 +93,9 @@ CREATE ROLE metric_reader LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;
 GRANT USAGE ON SCHEMA public TO metric_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO metric_reader;
+\if :allow_output_create
+GRANT CREATE ON SCHEMA public TO metric_reader;
+\endif
 SQL
 python3 - <<'PY'
 import json, os

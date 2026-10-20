@@ -1,80 +1,42 @@
 # Spark Workflow 与 Spark 通用引擎关系说明
 
-本文档说明 ADDP 中 `spark_workflow` 扩展引擎和 `spark` 通用引擎资源之间的边界。当前单一路线是：Spark Workflow 作为工作流运行时扩展引擎存在，执行时必须绑定一个已注册的 Spark 通用引擎资源。
+Spark Workflow 是独立工作流运行时，执行时绑定 System 中登记的 Spark 通用资源。本文只说明两类引擎的职责和绑定关系；部署、存储与操作步骤见 [Runtime README](../README.md)和 [Spark 用户手册](spark-user-guide.md)。
 
-## 核心结论
+## 两类引擎的职责
 
-- `spark` 是通用引擎资源，对应 Apache Spark Thrift Server / Spark 集群连接配置，可被 SQL 工作台、资源树和其他通用能力消费。
-- `spark_workflow` 是工作流运行时扩展引擎，对外实现 `addp.workflow/v1` HTTP 协议，由 Common Engine 的 `WorkflowRuntimeProvider` 调用。
-- `spark_workflow` 自身不代表某个 Spark 集群。每次执行工作流时，请求体顶层 `engine_id` 必须指向一个真实的 `spark` 引擎实例。
-- `engine_id` 是执行期运行时资源绑定，不写入 `spark_workflow` 的 capabilities，也不由业务模块直接拼接 Spark Workflow 私有 URL。
-- Spark Workflow 执行空工作流或非法 `workflow_def.tasks` 时必须在本地校验失败，不应先连接 Spark 资源。
+| 引擎 | `engine_type` / 来源 | 平台接口 | 连接用途 |
+| --- | --- | --- | --- |
+| Spark 通用资源 | `spark` / `general` | `QueryRuntimeProvider`、Engine Catalog | Thrift 提供 SQL 与目录；Standalone Master 接收 Workflow 作业 |
+| Spark Workflow Runtime | `spark_workflow` / `extension` | `WorkflowRuntimeProvider`，协议 `addp.workflow/v1` | HTTP 提供算子发现与 DAG 执行，自身不代表某个 Spark 集群 |
+
+SQL 工作台通过 Spark SQL 插件访问 Thrift Server；工作流编辑器通过 Common 的通用 HTTP Provider 调用 Spark Workflow。是否可用 Sedona SQL 函数取决于 Thrift 会话的依赖配置，不能用 Workflow 算子可用性代替核验；Business 默认情况见[用户手册](spark-user-guide.md#使用入口与当前范围)。
 
 ## 架构关系
 
 ```mermaid
 flowchart TB
-    Develop["Develop / Orchestrator"]
-    Provider["Common Engine<br/>WorkflowRuntimeProvider"]
-    SparkWorkflow["spark_workflow<br/>addp.workflow/v1<br/>默认端口 8098"]
-    System["System<br/>system.engines"]
-    Spark["spark<br/>Apache Spark 通用引擎资源<br/>Thrift Server / Spark 集群配置"]
-
-    Develop --> Provider
-    Provider --> SparkWorkflow
-    SparkWorkflow -->|"顶层 engine_id"| System
-    System --> Spark
-    SparkWorkflow -->|"基于 spark 连接配置创建 SparkSession"| Spark
+    Query["Develop 查询工作台"] --> SQLProvider["Common QueryRuntimeProvider"]
+    SQLProvider --> Thrift["Spark Thrift Server"]
+    Workflow["Develop 工作流执行"] --> Provider["Common WorkflowRuntimeProvider"]
+    Provider --> Runtime["spark_workflow Runtime"]
+    Runtime -->|"可信租户上下文获取集群连接"| System["System Engine Instance"]
+    Runtime -->|"SparkSession 提交作业"| Master["Spark Standalone Master / Executor"]
 ```
 
-## 两类引擎的职责
+System 保存资源身份与连接事实；Spark 作业由实际集群执行，System 不转发计算任务。业务模块通过 Provider 调用 Runtime，不直接拼接 Spark Workflow 私有 URL。
 
-| 引擎 | `engine_type` | 来源 | Provider | 默认端口 | 职责 |
-| --- | --- | --- | --- | --- | --- |
-| Apache Spark 通用引擎 | `spark` | `general` | `QueryRuntimeProvider` / catalog 相关 provider | `10000` | 表达真实 Spark 资源，提供 SQL、目录、连接配置和运行时资源身份 |
-| Spark Workflow | `spark_workflow` | `extension` | `WorkflowRuntimeProvider` | `8098` | 提供工作流算子发现和 DAG 执行入口 |
+## 执行期绑定
 
-## 标准执行请求
+| 字段位置 | 指向对象 |
+| --- | --- |
+| Develop 工作流 `execution_config.engine_id` | 具体 `spark_workflow` Runtime 实例 |
+| `execution_config.engine_specific.spark_cluster_id` | 已登记、已启用的 `spark` 通用资源；Develop 校验后映射为 Runtime 请求顶层 `engine_id` |
+| 输入或输出 ResourceLocator 中的引擎 ID | 实际存储资源；不用于选择 Runtime 或 Spark 集群 |
 
-Spark Workflow 的执行请求必须包含标准工作流定义和顶层 `engine_id`。这里的 `engine_id` 只绑定 Spark 通用引擎资源；表、文件和对象存储数据源由 Develop 在执行前从 `locator` 或 `target_parent_locator + target_name` 派生为 `connection_info`、`schema/table` 或 `path` 后传入运行时：
+Spark 集群 ID 是执行期绑定，不写入 `spark_workflow` 的 capabilities，也不进入算子公开 `params`。绑定校验见 [Runtime 注册规范](../../../docs/spec/workflow/Runtime注册与扩展.md#引擎注册)。
 
-```json
-{
-  "engine_id": 34,
-  "workflow_def": {
-    "tasks": [
-      {
-        "id": "load_poi",
-        "operator": "load",
-        "params": {
-          "source_type": "table",
-          "connection_info": {
-            "engine_type": "postgresql",
-            "host": "postgres",
-            "port": 5432,
-            "database": "addp",
-            "user": "addp",
-            "password": "secret"
-          },
-          "schema": "public",
-          "table": "poi"
-        },
-        "depends_on": []
-      }
-    ]
-  },
-  "input_data": {}
-}
-```
+用户和 AI 侧使用公开 locator 参数选择数据；Develop 在执行前按授权派生 `connection_info`、`schema/table` 或 `path`，对象存储路径转换为 Spark 使用的 `s3a://bucket/key`。Runtime 不解析公开 locator；支持哪些存储类型，以当前 Runtime 的 `compute.workflow.storage_access` 为准，详见 [Develop 资源适配](../../../docs/spec/workflow/Develop资源与执行.md#算子契约分层)。
 
-这里的 `engine_id=34` 指向 `system.engines` 中的 `spark` 通用引擎实例，而不是 `spark_workflow` 自身的实例 ID。
-用户和 AI 侧公开算子参数不填写 `connection_info`、`schema`、`table` 或 `path`，应使用 `locator` 或 `target_parent_locator + target_name`，由 Develop 边界统一派生数据源连接和运行时路径。对象存储在运行时路径中转换为 Spark 可读的 `s3a://bucket/key`。
+Runtime 请求还必须包含后端注入的 `runtime.tenant_id` 与 `runtime.execution_authorization`，授权 effects 覆盖整个 DAG；公开工作流定义不能直接作为完整 Runtime 请求发送。字段来源、封装和错误响应统一见 [HTTP 执行协议](../../../docs/spec/workflow/HTTP协议.md#执行工作流)，本文不另维护请求模板。
 
-## 与 Spark SQL 的关系
-
-同一个 Spark 通用资源可被两种路径消费：
-
-- 查询工作台：选择 `spark` 引擎，按 SQL 运行查询和 Sedona 函数。
-- 工作流编辑器：选择 `spark_workflow` 运行时，并在执行配置中绑定实际 `spark` 引擎资源。
-
-两者不互相替代。SQL 工作台适合手写查询；Spark Workflow 适合通过统一算子 DAG 编排分布式计算。
+Spark Workflow 执行空工作流或非法 `workflow_def.tasks` 时必须在本地校验失败，不应先连接 Spark 资源。DAG 校验、排序与引用解析复用公共 `WorkflowRunner`，Spark 仅适配领域算子与输出端口；实现见 [workflow_engine.py](../workflow_engine.py)，验证入口见 [Runtime 运行测试](../README.md#运行测试)。

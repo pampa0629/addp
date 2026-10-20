@@ -4,6 +4,8 @@
 
 `engines/` 不是 `system.engines` 的源码镜像，也不是所有 Engine Type 的目录。数据库、对象存储等插件位于 `common/engine/plugins/`；Inference 因拥有 Provider Connection、Model Deployment、Model Profile、凭据、控制面 API 和前端，保留为根目录 `inference/` 业务模块，其数据面端点另以 `engine_type=inference_runtime` 登记到 System。只有未来将不拥有这些业务事实的独立推理执行面拆为单独服务时，才在本目录新增 `inference-runtime/`，且不得复制 Inference 控制面。
 
+协议、元数据校验和扩展要求见[工作流运行时文档入口](docs/README.md)；各 Runtime 的运行说明及专题见[参考实现](#参考实现)。
+
 ## 目录结构
 
 ```
@@ -81,86 +83,11 @@ macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`，随后使�
 
 ## 工作流运行时 HTTP 协议
 
-工作流引擎对外实现 `addp.workflow/v1` HTTP 协议，业务模块不直接拼接这些 URL，而是通过 common engine 的 `WorkflowRuntimeProvider` 调用。
+工作流引擎对外实现 `addp.workflow/v1` HTTP 协议，业务模块通过 Common Engine 的 `WorkflowRuntimeProvider` 调用，不直接拼接 Runtime 私有 URL。
 
-### 1. 算子发现
-```
-GET /api/operators
-```
+五个标准接口、请求响应、可信租户与执行授权、同步或异步状态及错误码统一见 [HTTP 协议](../docs/spec/workflow/HTTP协议.md)；算子必填字段、参数、effects 与输出端口见[算子元数据与实现规范](../docs/spec/workflow/算子元数据与实现.md)。[OpenAPI、共享示例和元数据校验入口](docs/README.md)集中维护协议材料，本页不再复制请求与响应模板。
 
-返回格式:
-```json
-{
-  "status": "success",
-  "operators": [
-    {
-      "id": "buffer",
-      "name": "buffer",
-      "display_name": "缓冲区分析",
-      "engine_type": "geopython_workflow",
-      "category": "空间分析",
-      "category_path": ["空间分析"],
-      "description": "对几何对象生成缓冲区",
-      "execution_modes": ["workflow"],
-      "parameters": [
-        {
-          "name": "distance",
-          "type": "float",
-          "required": true,
-          "description": "缓冲区距离",
-          "min": 0
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "default",
-          "type": "geodataframe",
-          "is_default": true,
-          "description": "缓冲区分析结果"
-        }
-      ]
-    }
-  ],
-  "count": 1
-}
-```
-
-### 2. 工作流执行
-```
-POST /api/workflow
-```
-
-请求格式:
-```json
-{
-  "workflow_def": {
-    "tasks": []
-  },
-  "input_data": {}
-}
-```
-
-响应格式:
-```json
-{
-  "status": "success",
-  "execution_id": "uuid",
-  "final_result": {},
-  "all_results": {}
-}
-```
-
-### 3. 单算子 direct 调用
-```
-POST /api/operators/{name}/invoke
-```
-
-该接口只允许调用 `execution_modes` 包含 `direct` 的算子，用于业务模块受控调用单个算子。它不创建 Develop/Orchestrator/Monitor 任务；凡是需要调度、重试、跨模块编排或统一监控的执行，必须走工作流。
-
-### 4. 健康检查
-```
-GET /health
-```
+单算子入口只允许调用 `execution_modes` 包含 `direct` 的算子，用于业务模块受控调用单个算子。它不创建 Develop/Orchestrator/Monitor 任务；凡是需要调度、重试、跨模块编排或统一监控的执行，必须走工作流。具体约束见 [direct 调用规范](../docs/spec/workflow/HTTP协议.md#调用单个算子)。
 
 ## 能力声明
 
@@ -170,56 +97,40 @@ GET /health
 
 工作流引擎的算子列表、参数、输出端口等动态能力不写入 `capabilities`，通过 `WorkflowRuntimeProvider.ListOperators()` 实时发现。
 
+声明结构与校验规则见[引擎能力声明规范](../docs/spec/addp引擎能力声明规范.md)，Workflow Runtime 的提交及探测要求见[注册规范](../docs/spec/workflow/Runtime注册与扩展.md#引擎注册)。
+
 ## 引擎注册
 
-工作流运行时注册到 System 资源中心后，才会成为 ADDP 可发现和可调用的引擎实例。生产内置运行时在自身监听就绪后异步自注册；System 未就绪时持续进行有上限的退避重试，注册过程不阻塞 Runtime readiness。参考实现和用户自研扩展运行时可以在 System 引擎管理中手动注册。
-
-**生产内置运行时自注册端点**: `POST http://system-backend:8180/api/v1/system/runtime/engines`
-
-Runtime 使用自身 Confidential OAuth Client 获取 Platform Service Access Token，并只发送 `Authorization: Bearer <platform_service_access_token>`。
-
-**注册数据格式**:
-```json
-{
-  "engine_type": "geopython_workflow",
-  "name": "GeoPython Workflow",
-  "description": "基于 Python 的工作流执行引擎",
-  "connection_info": {
-    "protocol": "http",
-    "host": "geopython-workflow-engine",
-    "port": 8099
-  },
-  "is_builtin": true
-}
-```
-
-容器 Runtime 必须通过 `host` 声明稳定、可从其他 ADDP 服务访问的服务名；本地 Runtime 未声明时由 System 根据请求来源规范化为 `localhost`。不得把临时容器 IP 保存为 Engine Instance 身份。
+实例身份、稳定访问地址、认证、完整能力声明、协议探测，以及生产自注册与扩展引擎手动注册的要求，统一遵循 [Runtime 注册规范](../docs/spec/workflow/Runtime注册与扩展.md#引擎注册)。注册与 Runtime 健康分别判定，本页不再维护注册端点或 payload 示例。
 
 Math Workflow 是参考实现，服务启动后仍需在 System 中手动注册。启动范围见[模块选择指南](../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)，连接填写见 [Math README](math-workflow/README.md#开发启动)。
 
 ## 新增独立 Runtime checklist
 
-创建不拥有业务配置事实的独立计算 Runtime 时，请遵循以下步骤：
+仅不拥有业务配置事实的独立计算运行时进入 `engines/`。接入步骤统一见[扩展新引擎指南](../docs/spec/workflow/Runtime注册与扩展.md#扩展新引擎指南)，实现与交付时按以下入口核对：
 
-- [ ] 在`engines/`目录下创建引擎目录
-- [ ] 实现 `addp.workflow/v1` HTTP 协议（`/health`、`/api/operators`、`/api/workflow`、`/api/operators/{name}/invoke`、`/api/executions/{id}`）
-- [ ] 在 common engine 插件中声明 `engine.capabilities/v1` 能力
-- [ ] 决定注册方式：生产运行时可配置启动自注册；参考实现可通过 System 引擎管理手动注册
-- [ ] 添加到 `scripts/dev/start.sh`
-- [ ] 如需容器化部署，添加到 `docker-compose.runtimes.yml` 和 `scripts/build/build-images.sh`；现有 `scripts/local/start.sh`、`scripts/prod/start.sh` 自动启动 Runtime project，并由平台一致性门禁核对登记
-- [ ] 编写 README 说明引擎功能和使用方法
+| 范围 | 规范或入口 |
+| --- | --- |
+| 算子元数据、公共执行核心、HTTP 与注册 | [Runtime 接入步骤](../docs/spec/workflow/Runtime注册与扩展.md#python-runtime-接入步骤) |
+| 开发启动、重启、停止、依赖准备与构建身份 | [开发服务生命周期与构建身份规范](../docs/spec/addp开发服务生命周期与构建身份规范.md) |
+| 产品容器与构建登记 | 根 [Runtime Compose](../docker-compose.runtimes.yml)、[统一镜像构建入口](../scripts/build/build-images.sh)；标准部署通过 [Local](../scripts/local/start.sh) / [Prod](../scripts/prod/start.sh) 启动 Runtime project |
+| 测试入口、CI 覆盖与运行验收 | [验证与交付](../docs/spec/workflow/Runtime注册与扩展.md#5-验证与交付)、[测试与验收规范](../docs/spec/addp测试与验收规范.md) |
 
 ## 参考实现
 
-- **Math Workflow Engine**: [math-workflow](./math-workflow/) - 最小工作流参考实现，手动注册示例。
-- **GeoPython Workflow**: [geopython-workflow](./geopython-workflow/) - Python 数据处理工作流实现。
-- **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
-- **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
-- **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 / PCD / XYZ 转 COPC 点云快显转换运行时。
-- **Document Workflow Engine**: [document-workflow](./document-workflow/) - Office 文档转 PDF 的专业转换运行时。
-- **SuperMap Workflow Engine**: [supermap-workflow](./supermap-workflow/) - 超图 iObjects C++ 空间计算工作流运行时。
+按 Runtime 查找运行说明与专题；公共协议和字段定义在上面的统一入口维护。
 
-- **DuckDB Federated Query Runtime**: [duckdb](./duckdb/) - Develop 与 Service 共用的联邦查询运行时。
+| Runtime | 运行说明 | 专题 |
+| --- | --- | --- |
+| Math Workflow | [README](math-workflow/README.md) | 协议与公共执行核心参考实现、手动注册 |
+| GeoPython Workflow | [运行说明](geopython-workflow/docs/geopython-workflow容器管理指南.md) | [矢量与栅格算子模块](geopython-workflow/operators/README.md) |
+| Spark Workflow | [README](spark-workflow/README.md) | [引擎关系与资源绑定](spark-workflow/docs/spark-design.md)、[Spark 与 Sedona 用户手册](spark-workflow/docs/spark-user-guide.md) |
+| Model3D Workflow | [README](model3d-workflow/README.md) | OSGB 与 3D Tiles 转换运行时 |
+| PointCloud Workflow | [README](pointcloud-workflow/README.md) | 点云转 COPC 运行时与 PDAL 依赖 |
+| Document Workflow | [README](document-workflow/README.md) | PPTX 转 PDF 运行时与原生依赖 |
+| SuperMap Workflow | [README](supermap-workflow/README.md) | iObjects C++ SDK、镜像和许可 |
+| DuckDB | [README](duckdb/README.md) | Develop 与 Service 共用的联邦查询运行时 |
+| Jupyter | [README](jupyter/README.md) | Notebook Runtime 与交互会话管理 |
 
 ## 相关文档
 
