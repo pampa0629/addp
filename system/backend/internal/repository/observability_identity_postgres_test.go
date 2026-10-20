@@ -2,6 +2,7 @@ package repository_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -70,6 +72,17 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatal(err)
 	}
+	engines := service.NewEngineDeploymentService(repository.NewEngineDeploymentRepository(db))
+	for _, project := range []string{"addp-infra", "business"} {
+		enabled := true
+		input := models.EngineDeploymentInput{DisplayName: "private-engine-name", Enabled: &enabled, DeclaredNodeID: node.NodeID,
+			Inventory: models.EngineDeploymentInventory{Schema: "addp.engine-deployment-inventory/v1", ObservedAt: "2026-10-19T00:00:00Z",
+				Source:   models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "projection-daemon", Project: project},
+				Services: []models.EngineDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.EngineDeploymentContainer{{ContainerID: strings.Repeat("a", 64), StartedAt: "2026-10-18T00:00:00Z", PublishedPorts: []models.EngineDeploymentPort{{Address: "127.0.0.1", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}}
+		if _, err := engines.Create(ctx, input, iam.AuditMetadata{}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
 	if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "worker-one", Role: "worker", RoutePrefix: "/manager", NodeID: node.NodeID, RegistrationClientID: "addp-manager", ProcessStartedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
@@ -118,8 +131,25 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err != nil || mutationError != nil || !mutated.Load() || isolation != "repeatable read" || readOnly != "on" || len(snapshot.Nodes) != 1 || len(snapshot.ModuleInstances) != 1 || snapshot.Nodes[0].Version != 1 {
 		t.Fatalf("snapshot=%+v err=%v writer=%v mutated=%v isolation=%q readOnly=%q", snapshot, err, mutationError, mutated.Load(), isolation, readOnly)
 	}
+	if len(snapshot.EngineDeployments) != 2 {
+		t.Fatalf("mixed engine snapshot: %+v", snapshot)
+	}
+	for _, engine := range snapshot.EngineDeployments {
+		if engine.Validate() != nil || engine.Version != 1 || engine.NodeID != node.NodeID || engine.SourceKey.DockerEngineID != "projection-daemon" {
+			t.Fatalf("invalid projection: %+v", engine)
+		}
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"private-engine-name", "127.0.0.1", "5433", "container_id", "inventory", "published_ports", "declared_node_id", "tenant_id"} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("private field leaked: %s", private)
+		}
+	}
 	current, err := registry.ObservabilityIdentities(ctx)
-	if err != nil || len(current.Nodes) != 0 || len(current.ModuleInstances) != 0 {
+	if err != nil || len(current.Nodes) != 0 || len(current.ModuleInstances) != 0 || len(current.EngineDeployments) != 0 {
 		t.Fatalf("post-update=%+v err=%v", current, err)
 	}
 	if err := registry.SendHeartbeat("manager", "worker-one"); err != nil {
@@ -216,6 +246,41 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	current, err = registry.ObservabilityIdentities(ctx)
 	if err != nil || len(current.ModuleInstances) != 0 {
 		t.Fatalf("offline process remains discoverable: %+v %v", current, err)
+	}
+	// An engine cannot outlive current host intent, and changing a Desktop host
+	// to a physical node uses exactly the same rejection as the User API.
+	for _, kind := range []string{"physical", "virtual"} {
+		if err := db.Model(&node).Updates(map[string]any{"enabled": true, "node_kind": kind}).Error; err != nil {
+			t.Fatal(err)
+		}
+		current, err = registry.ObservabilityIdentities(ctx)
+		want := 0
+		if kind == "virtual" {
+			want = 2
+		}
+		if err != nil || len(current.EngineDeployments) != want {
+			t.Fatalf("host kind %s: %+v %v", kind, current, err)
+		}
+	}
+	engine := current.EngineDeployments[0]
+	disabled := false
+	retired, err := engines.Update(ctx, engine.DeploymentID, models.EngineDeploymentUpdateRequest{DisplayName: "retired", Enabled: &disabled, DeclaredNodeID: node.NodeID, Version: engine.Version}, iam.AuditMetadata{})
+	if err != nil || retired.Version != 2 {
+		t.Fatalf("retire: %+v %v", retired, err)
+	}
+	current, err = registry.ObservabilityIdentities(ctx)
+	if err != nil || len(current.EngineDeployments) != 1 || current.EngineDeployments[0].DeploymentID == engine.DeploymentID {
+		t.Fatalf("disabled engine projected: %+v %v", current, err)
+	}
+	// A failed engine read cannot return the nodes/modules already read.
+	if err := db.Exec("ALTER TABLE system.engine_deployments RENAME TO unavailable_engines").Error; err != nil {
+		t.Fatal(err)
+	}
+	if partial, err := registry.ObservabilityIdentities(ctx); err == nil || partial != nil {
+		t.Fatalf("partial engine snapshot: %+v %v", partial, err)
+	}
+	if err := db.Exec("ALTER TABLE system.unavailable_engines RENAME TO engine_deployments").Error; err != nil {
+		t.Fatal(err)
 	}
 	// A database error returns no snapshot even if the node SELECT already succeeded.
 	if err := db.Exec("ALTER TABLE system.module_runtime_instances RENAME TO unavailable_instances").Error; err != nil {

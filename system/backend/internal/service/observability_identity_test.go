@@ -16,7 +16,7 @@ import (
 
 func TestObservabilityIdentitiesUseCurrentIntentBindingAndLease(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
-	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
@@ -101,7 +101,7 @@ func TestObservabilityIdentitiesUseCurrentIntentBindingAndLease(t *testing.T) {
 
 func TestObservabilityIdentityNodeBudgetNeverReturnsPartialSnapshot(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
-	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	nodes := make([]models.HostNode, commonmodels.ObservabilityIdentityNodeLimit+1)
@@ -124,7 +124,7 @@ func TestObservabilityIdentityNodeBudgetNeverReturnsPartialSnapshot(t *testing.T
 
 func TestObservabilityIdentityInstanceAndByteBudgetsNeverTruncate(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
-	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	node := models.HostNode{NodeID: uuid.NewString(), DisplayName: "node", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{{ClientID: "addp-manager", ModuleName: "manager"}}}
@@ -159,5 +159,43 @@ func TestObservabilityIdentityInstanceAndByteBudgetsNeverTruncate(t *testing.T) 
 	}
 	if snapshot, err := registry.ObservabilityIdentities(context.Background()); snapshot != nil || !errors.Is(err, repository.ErrObservabilityIdentityBudget) {
 		t.Fatalf("byte overflow=%+v %v", snapshot, err)
+	}
+}
+
+func TestObservabilityEngineBudgetAndInvalidIdentityNeverReturnPartialSnapshot(t *testing.T) {
+	registry, _, db := newObservationRegistry(t)
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
+		t.Fatal(err)
+	}
+	node := models.HostNode{NodeID: uuid.NewString(), DisplayName: "host", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{}}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]models.EngineDeployment, commonmodels.ObservabilityIdentityEngineLimit+1)
+	for i := range rows {
+		rows[i] = models.EngineDeployment{DeploymentID: uuid.NewString(), EngineType: "postgresql", Enabled: true, Version: 1, DeclaredNodeID: node.NodeID,
+			Inventory: models.EngineDeploymentInventory{Schema: "addp.engine-deployment-inventory/v1", Source: models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "daemon-" + strconv.Itoa(i), Project: "business"}, Services: []models.EngineDeploymentService{{Service: "postgres", EngineType: "postgresql"}}}}
+	}
+	if err := db.CreateInBatches(rows[:len(rows)-1], 100).Error; err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := registry.ObservabilityIdentities(context.Background())
+	if err != nil || len(snapshot.EngineDeployments) != commonmodels.ObservabilityIdentityEngineLimit {
+		t.Fatalf("engine boundary: %+v %v", snapshot, err)
+	}
+	if err := db.Create(&rows[len(rows)-1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := registry.ObservabilityIdentities(context.Background()); !errors.Is(err, repository.ErrObservabilityIdentityBudget) || snapshot != nil {
+		t.Fatalf("engine overflow: %+v %v", snapshot, err)
+	}
+	if err := db.Model(&models.EngineDeployment{}).Where("deployment_id = ?", rows[len(rows)-1].DeploymentID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.EngineDeployment{}).Where("deployment_id = ?", rows[0].DeploymentID).Update("engine_type", "unexpected").Error; err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := registry.ObservabilityIdentities(context.Background()); err == nil || snapshot != nil {
+		t.Fatalf("invalid identity: %+v %v", snapshot, err)
 	}
 }

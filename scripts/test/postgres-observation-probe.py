@@ -6,13 +6,17 @@ are used. Passwords/verifiers travel only via private stdin and a private pgpass
 import base64
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import ssl
 import subprocess
 import time
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / 'scripts/infra/postgres-observation/000001_init.sql'
@@ -230,6 +234,8 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         self.sql('SELECT 1;', user, 'password authentication failed')
         self.password(user, replacement)
         self.snapshot(user)
+        if os.environ.get('METRICS_T2_POSTGRES_SOURCE_ENABLED') == 'true':
+            self.source_transport(scope, user, replacement)
         self.install('business' if scope == 'infra' else 'infra', secrets.token_hex(32), 'P0001')
         assert self.sql("SELECT count(*) FROM pg_roles WHERE rolname='addp_" + ('business' if scope == 'infra' else 'infra') + "_observer';") == '0'
         self.sql(f'GRANT pg_read_all_stats TO {user};')
@@ -242,6 +248,110 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         self.sql(f'DROP SCHEMA addp_observation CASCADE; REVOKE CONNECT ON DATABASE addp_test FROM {user}; DROP ROLE {user}; DROP ROLE addp_observation_owner;')
         self.absent()
         print('PostgreSQL observation T2: ' + scope + ' password, aggregates, privilege denials, idempotence, rotation and ownership passed', flush=True)
+
+    def source_transport(self, scope, user, password):
+        spec = importlib.util.spec_from_file_location('addp_postgresql_source', SQL.with_name('source.py'))
+        source = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(source)
+        work = Path(os.environ['METRICS_T2_WORK']).resolve()
+        directory = Path(os.environ['ADDP_POSTGRES_METRICS_SOURCE_DIR'])
+        web = Path(os.environ['ADDP_POSTGRES_METRICS_WEB_DIR'])
+        assert directory.resolve() == work / 'postgres-source' and web.resolve() == work / 'postgres-web'
+        for path in [directory, web]:
+            path.mkdir(mode=0o700, exist_ok=True)
+        config = source.configuration(scope, 'postgres', 5432, password, database='addp_test')
+        config_file = directory / 'sql-exporter.yml'
+        config_file.write_text(json.dumps(config))
+        config_file.chmod(0o600)
+        for name, original in [('server.crt', work / 'source-server.crt'), ('server.key', work / 'source-server.key'),
+                               ('ca.crt', work / 'deployment/source-ca.crt')]:
+            path = web / name
+            path.write_bytes(original.read_bytes())
+            path.chmod(0o600)
+        if os.getuid() == 0:
+            for path in [directory, *directory.iterdir(), web, *web.iterdir()]:
+                os.chown(path, 65534, 65534)
+        deployed = subprocess.run(self.compose + ['up', '-d', '--force-recreate', 'postgres-metrics', 'postgres-metrics-web'],
+                                  capture_output=True, text=True, timeout=180)
+        if deployed.returncode:
+            raise AssertionError('owned PostgreSQL source deployment failed')
+        port = subprocess.run(self.compose + ['port', 'postgres-metrics', '9443'], capture_output=True,
+                              check=True, text=True, timeout=10).stdout.strip().rsplit(':', 1)[1]
+        origin = 'https://localhost:' + port
+        context = ssl.create_default_context(cafile=str(web / 'ca.crt'))
+        context.load_cert_chain(str(work / 'deployment/collector.crt'), str(work / 'deployment/collector.key'))
+
+        def get(path='/metrics', *, tls=context, method='GET', expected=200):
+            request = urllib.request.Request(origin + path, method=method)
+            try:
+                with urllib.request.urlopen(request, context=tls, timeout=6) as response:
+                    status, body = response.status, response.read(65537).decode('utf-8')
+            except urllib.error.HTTPError as error:
+                status, body = error.code, error.read(65537).decode('utf-8')
+            assert status == expected and len(body.encode()) <= 65536, f'unexpected source HTTP status {status}, expected {expected}, or size'
+            assert password not in body and 'postgresql://' not in body, 'source response exposed credentials'
+            return body
+
+        deadline = time.monotonic() + 25
+        while True:
+            try:
+                body = get()
+                break
+            except (urllib.error.URLError, AssertionError):
+                if time.monotonic() >= deadline:
+                    raise AssertionError('owned PostgreSQL mTLS source did not become ready') from None
+                time.sleep(.2)
+        expected = {item['metric_name'] for item in config['collectors'][0]['metrics']}
+        rows = {}
+        for line in body.splitlines():
+            if line and not line.startswith('#'):
+                match = re.fullmatch(r'(\w+)(?:\{([^}]*)\})? (\S+)', line)
+                assert match and match[1] in expected, 'source emitted an unregistered metric'
+                assert match[1] not in rows, 'source emitted duplicate metric series'
+                rows[match[1]] = (match[2], float(match[3]))
+        assert set(rows) == expected
+        observed = rows['addp_postgresql_sample_time_seconds'][1]
+        assert 0 <= time.time() - observed < 10
+        assert rows['addp_postgresql_connections'][1] == 0
+        assert rows['addp_postgresql_database_bytes'][1] > 0
+        for name in expected:
+            if name.endswith('_total'):
+                assert re.fullmatch(r'counter_epoch="[0-9a-f]{32}"', rows[name][0])
+        get('/config', expected=404)
+        get('/sql_exporter_metrics', expected=404)
+        get('/reload', method='POST', expected=404)
+        get('/metrics?target=forbidden', expected=400)
+        get(method='POST', expected=405)
+        get(tls=ssl.create_default_context(cafile=str(web / 'ca.crt')), expected=400)
+        try:
+            urllib.request.urlopen(origin.replace('https://', 'http://') + '/metrics', timeout=3)
+        except urllib.error.HTTPError as error:
+            assert error.code == 400 and b'addp_postgresql_' not in error.read(65537)
+        else:
+            raise AssertionError('plaintext source request was accepted')
+        self.sql(f'REVOKE EXECUTE ON FUNCTION addp_observation.snapshot() FROM {user};')
+        failed = get()
+        assert not any(re.search(r'^' + name + r'(?:\{| )', failed, re.M) for name in expected), 'failed query returned old samples'
+        errors = re.findall(r'^scrape_errors_total(?:\{[^}]*\})? ([\d.e+]+)$', failed, re.M)
+        assert errors and sum(map(float, errors)) >= 1, 'failed SQL query must expose an explicit error counter'
+        failed_again = get()
+        assert not any(re.search(r'^' + name + r'(?:\{| )', failed_again, re.M) for name in expected), 'repeat failure returned old samples'
+        next_errors = re.findall(r'^scrape_errors_total(?:\{[^}]*\})? ([\d.e+]+)$', failed_again, re.M)
+        assert sum(map(float, next_errors)) > sum(map(float, errors)), 'repeat SQL failure must not be cached or hidden'
+        self.sql(f'GRANT EXECUTE ON FUNCTION addp_observation.snapshot() TO {user};')
+        recovered = get()
+        match = re.search(r'^addp_postgresql_sample_time_seconds ([\d.e+]+)$', recovered, re.M)
+        assert match and float(match[1]) > observed, 'source recovery must produce a new observation'
+        self.sql(f'ALTER ROLE {user} SET track_counts = off;')
+        disabled = get()
+        assert re.search(r'^addp_postgresql_track_counts_enabled 0$', disabled, re.M)
+        assert not any(re.search(r'^' + name + r'(?:\{| )', disabled, re.M) for name in expected if name.endswith('_total')), 'disabled statistics must not become valid zero counters'
+        self.sql(f'ALTER ROLE {user} RESET track_counts;')
+        assert re.search(r'^addp_postgresql_track_counts_enabled 1$', get(), re.M)
+        logs = subprocess.run(self.compose + ['logs', '--no-color', 'postgres-metrics', 'postgres-metrics-web'],
+                              capture_output=True, text=True, check=True, timeout=10).stdout
+        assert password not in logs, 'source logs exposed credentials'
+        print('PostgreSQL source T2: ' + scope + ' fixed metrics, mTLS, restricted HTTP, failure and fresh recovery passed', flush=True)
 
     def run(self):
         self.absent()

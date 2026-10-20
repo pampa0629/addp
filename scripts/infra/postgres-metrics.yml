@@ -1,0 +1,33 @@
+# Fixed source pair. Standard source lifecycle/identity admission is not yet
+# wired into Infra up; do not treat this template as automatic product admission.
+services:
+  postgres-metrics:
+    image: burningalchemist/sql_exporter:0.24.11@sha256:92f8210824dd94184f93b3a462b165f531eff60f38fc00eaf583a50e5612b471
+    user: "${ADDP_POSTGRES_METRICS_USER:?Explicit source UID:GID required}"
+    command:
+      - -config.file=/source/sql-exporter.yml
+      - -web.listen-address=127.0.0.1:9399
+      - -web.enable-reload=false
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.25
+    mem_limit: 256m
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - ${ADDP_POSTGRES_METRICS_SOURCE_DIR:?Private source directory required}:/source:ro
+  postgres-metrics-web:
+    image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    user: "${ADDP_POSTGRES_METRICS_USER:?Explicit source UID:GID required}"
+    entrypoint: [nginx, -g, "daemon off;"]
+    network_mode: service:postgres-metrics
+    depends_on: [postgres-metrics]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.25
+    mem_limit: 64m
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - ./postgres-observation/source-web.conf:/etc/nginx/nginx.conf:ro
+      - ${ADDP_POSTGRES_METRICS_WEB_DIR:?Source TLS directory required}:/web:ro

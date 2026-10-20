@@ -46,7 +46,7 @@ Monitor 不直接查询 System 私有表，不直接读取主机文件，不复�
 平台系统管理员承担首期主机、采集和平台告警管理职责，权限在 Owner manifest、内置角色及正式迁移中显式发布。平台安全管理员、审计管理员不因此获得资源管理或日志正文权限；平台角色也不自动取得全部租户 SQL、参数和执行结果。
 
 - 用户请求转发已验证的当前 User Token，由 System 再裁决主体；后台投影不能代替用户对象授权。
-- `addp-monitor` 使用独立 Platform Service 身份，只读取有界当前身份投影。
+- `addp-monitor` 使用独立 Platform Service 身份，只读取有界当前身份投影。同一 `/runtime/observability-identities` 返回必须为数组的字段 `engine_deployments`（真实无对象时为 `[]`），最多 1000 个启用且承载主机有效的平台部署；与节点、模块实例在同一只读可重复读事务内裁决，共用五秒和四 MiB 预算。每项仅含 `deployment_id`、`version`、`scope=infra|business`、`engine_type=postgresql`、`node_id` 与 `source_key={docker_engine_id,project,service}`；来源键沿用部署发现的 Docker 引擎／Compose 项目／服务三元组，`infra` 对应 `addp-infra`，`business` 对应 `business`，当前服务为 `postgres`。不含名称、地址、端口、连接、凭据、租户引擎或运行状态，不因登记存在就视作实时来源可用。超量、异常及控制面错误整份拒绝，不截断或保留旧身份；后台投影不授予用户查询权，专业查询仍逐请求转交当前 User Token 给 System。
 - `addp-prometheus` 使用独立最小身份和 `monitor.metrics_discovery.read`，不能访问业务 API。
 - 采集 mTLS、发现身份、日志上报及资源查询证书分别管理；不保存长期管理员 Token，不复用业务数据库凭据。
 - 资源观测、告警事件、规则管理、通知管理和日志正文分别授权。切换身份或 Context 时清除旧数据、凭据草稿，并拒绝迟到响应。
@@ -130,6 +130,18 @@ Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 安装版本
 函数采用固定 `pg_catalog, pg_temp` 搜索路径、全限定目录和固定 SQL，Login 不可更改函数；只读默认值和三秒语句超时是附加约束，不能替代对象权限或来源侧期限。PostgreSQL 的 PUBLIC 授权可叠加，单个角色 REVOKE 不能覆盖它；当前安装核查只覆盖所连数据库。正式部署须选择无业务对象的维护连接库，并以认证／网络策略限制其他数据库连接；未完成该部署准入不启用采集，不声称已经隔离整个实例的所有业务库。安全依据见 [PostgreSQL 函数权限](https://www.postgresql.org/docs/15/sql-createfunction.html)、[统计角色](https://www.postgresql.org/docs/15/predefined-roles.html)及[统计字段](https://www.postgresql.org/docs/15/monitoring-stats.html)。
 
 验证复用独占 `make test-monitor-metrics`；精确数据库专项为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`。私有 PostgreSQL 强制 TCP SCRAM，覆盖真实密码、固定数值与独立目录对照、等待／锁等待、统计关闭／重置、越权拒绝、临时关系遮蔽、重入／密码轮换、陌生身份、默认权限漂移和失败回滚；只用 `addp_test`，退出按原门禁核验物理零残留。默认完整门禁仍执行全部指标链路及该专项，现有 Monitor metrics CI 按声明自动发现新增 SQL 与探针；不新建 Job、不修改生产权限、不修改个人库。
+
+### 4.7 PostgreSQL 受保护的固定指标来源
+
+来源模板 `scripts/infra/postgres-metrics.yml` 与独占 T2 共用固定 SQL Exporter 0.24.11 多架构摘要；固定配置唯一生成实现为 `scripts/infra/postgres-observation/source.py`，只查询 4.6 的函数，关闭 ping、缓存和动态目标，不接受用户 SQL。每个作用域独立来源、单 SQL 连接、零空闲连接，查询上限四秒。数据库密码只在部署用户私有的只读来源配置内，不进入环境变量、命令参数、发现快照或平台 DTO。源侧 SQL 当前限定受控 Docker 私网；生产数据库 TLS 另须认证，不把本机 T2 计为生产验收。
+
+SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同命名空间 Nginx 在 `9443` 提供独立 mTLS。TLS 进程仅挂载自己的服务端证书／CA，不挂载含数据库密码的来源配置；两进程均使用显式非特权 UID/GID、只读文件系统、移除全部 capabilities 及资源限制。外部只允许无 query 的 GET `/metrics`，配置、重载、exporter 自身诊断、其他路径及方法均拒绝；凭据不因持有采集证书而可读取。没有默认宿主机端口，也未纳入个人 Infra／Business 的自动启动。
+
+当前固定输出 `addp_postgresql_` 前缀的 16 项指标，对应 4.6 的有类型汇总；时间输出 Unix 秒，容量为字节，连接为数量，累计量后缀 `_total`。累计量带固定计算的 `counter_epoch`，同时覆盖统计代际与服务启动时间；代际信息独立表达，不以数据库名、SQL 或租户作为标签。统计关闭时不输出三项累计值，不填有效零。
+
+所选版本在 SQL 失败时可能仍返回 HTTP 200 和累计 `scrape_errors_total`，此时不得输出旧数据库样本。HTTP `up` 只证明传输可达，累计错误计数也不是当前失败状态；专业读取必须验证固定样本及新鲜采样时间。T2 覆盖权限撤销后的两次真实失败、错误计数递增与无旧样本、恢复新样本、统计关闭／恢复，以及错误客户端证书、明文 HTTP、路径和方法拒绝。精确入口为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，默认完整门禁同样包含；业务／Infra 全退出核验由同一门禁负责。
+
+该契约交付来源模板和独占传输验证，不代表真实部署生命周期、认证发现、已登记引擎的指标读取或页面已经开放。自动关联仍须沿明确身份投影与当前 User 授权，不将来源模板直接登记成节点或租户 Engine。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
 
 ## 五、技术路线与故障隔离
 

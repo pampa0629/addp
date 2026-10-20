@@ -18,6 +18,26 @@ spec.loader.exec_module(config)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_postgres_source_configuration_is_fixed_and_bounded(self):
+        spec = importlib.util.spec_from_file_location('addp_postgres_source_config', ROOT / 'scripts/infra/postgres-observation/source.py')
+        source = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(source)
+        infra = source.configuration('infra', 'postgres', 5432, 'a' * 64)
+        business = source.configuration('business', 'business-postgres', 5432, 'b' * 64)
+        self.assertEqual(infra['collectors'], business['collectors'])
+        self.assertNotEqual(infra['target']['data_source_name'], business['target']['data_source_name'])
+        self.assertNotIn('name', infra['target'])
+        self.assertFalse(infra['target']['enable_ping'])
+        self.assertEqual(infra['global']['max_connections'], 1)
+        self.assertEqual(infra['global']['min_interval'], '0s')
+        for host, port, password in [('127.0.0.1', 5432, 'a' * 64), ('8.8.8.8', 5432, 'a' * 64),
+                                     ('postgres/path', 5432, 'a' * 64), ('postgres', True, 'a' * 64),
+                                     ('postgres', 5432, 'short')]:
+            with self.subTest(host=host, port=port), self.assertRaises(ValueError):
+                source.configuration('infra', host, port, password)
+        with self.assertRaises(ValueError):
+            source.configuration('tenant', 'postgres', 5432, 'a' * 64)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-metrics-config-')
         self.addCleanup(self.temp.cleanup)
@@ -41,6 +61,9 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'scripts/infra/postgres-observation/000001_init.sql',
                      'scripts/infra/postgres-observation/000002_future.sql',
                      'scripts/test/postgres-observation-probe.py',
+                     'scripts/infra/postgres-metrics.yml',
+                     'scripts/infra/postgres-observation/source.py',
+                     'scripts/infra/postgres-observation/source-web.conf',
                      'scripts/dev/process-metrics-launch.py',
                      'scripts/test/dev-process-metrics-plan_test.py',
                      'common/processmetrics/sample_linux.go',

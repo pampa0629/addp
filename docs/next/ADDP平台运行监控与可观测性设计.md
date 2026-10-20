@@ -87,4 +87,14 @@ macOS 原生宿主与 Docker Desktop Linux VM 分别登记，不能跨宿主绑�
 
 ### PostgreSQL 专业指标实施状态
 
-独立采集身份与固定函数的数据库侧边界已实现，契约见[正式规范 4.6](../spec/addp平台运行观测规范.md#46-postgresql-数据库侧汇总读取边界)。两个作用域均已通过真实 SCRAM、统计对照、越权拒绝、轮换和回滚的独占 T2；现有完整指标链路亦已通过。下一步接入受保护的指标来源、自动发现与 Monitor 查询页面；当前未在个人部署安装，未计为专业监控或正式身份 T4 已通过。
+独立采集身份与固定函数的数据库侧边界已实现，契约见[正式规范 4.6](../spec/addp平台运行观测规范.md#46-postgresql-数据库侧汇总读取边界)。两个作用域均已通过真实 SCRAM、统计对照、越权拒绝、轮换和回滚的独占 T2；现有完整指标链路亦已通过。受保护的指标来源已实现并通过完整独占指标 T2，覆盖双向 TLS、固定指标集合、连续 SQL 失败不带旧快照及恢复后的新采样。下一步接入自动发现与 Monitor 查询页面；当前未在个人部署安装，未计为专业监控或正式身份 T4 已通过。
+
+指标来源实施采用固定摘要的 SQL Exporter，只执行版本化配置中对 `snapshot()` 的一次固定查询，不启用目标名称、动态目标或指标缓存；当前 PostgreSQL exporter 的自定义查询路径已弃用，因此不作为第二条路线。每个作用域独立实例、单连接和期限；只读部署 Secret 供来源使用。已有 Nginx 受控 TLS 入口只开放无 query 的 GET `/metrics`，隔离 exporter 的配置、重载和自身诊断端点；SQL Exporter 仅监听同一网络命名空间的回环 HTTP。该来源先沿独占指标 T2 验证，不自动应用个人环境；数据库认证准入、来源身份投影、Prometheus 发现及 Monitor 读取分别接续。
+
+来源可用性以新鲜固定快照为证据，不能只看 HTTP 或 Prometheus `up`：所选 SQL Exporter 在查询失败时可能返回 HTTP 200 与 `scrape_errors_total`，但不能带旧数据库指标。T2 必须验证连续失败时错误计数递增、数据库快照缺失，以及恢复后新的采样时间；后续 Monitor 同样按固定样本完整性裁决，不把来源端口可用当作数据库采集成功。
+
+### 后续自动接入的最小身份投影（已确认）
+
+现有 System 私有观测投影仅含主机和模块实例。为自动关联已确认的 Infra／Business 引擎，2026-10-20 用户已确认在同一个 `/runtime/observability-identities` 投影内增加最多 1000 个当前有效平台引擎身份，仍仅固定 `addp-monitor`、非委托 Platform Service 和既有 `system.observability_identity.read` 可读；不新增角色分配，不授予后台创建／修改部署或租户 Engine 权限，不修改 IAM 内核。该投影与 Common 完整性校验已实现，并通过 Common／System／Monitor Go T1、Swagger 覆盖及 System PostgreSQL 仓储 T2。投影尚不表示专业指标已自动接入。
+
+新增字段仅含部署 UUID、版本、作用域、引擎类型、有效承载主机 UUID 与无凭据来源键；不包含名称／地址清单、SQL 端口、数据库连接、Secret、租户登记或业务内容。System 继续唯一裁决启用部署和有效主机关联；Monitor 不读 System 私表。后台投影只用于有界发现与评估，用户专业指标 API 仍逐请求转交当前 User Token 给 System 核验引擎读取权；撤权、停用和来源变化不能由旧时序或后台身份兜底。沿现有五秒／四 MiB 上限预算，超量或控制面故障整份拒绝，不截断或伪装空列表。

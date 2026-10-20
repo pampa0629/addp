@@ -133,13 +133,14 @@ def prepare(directory):
     command(["python3", str(ROOT / "scripts/infra/generate-metrics-config.py")])
     # The center belongs to the standard Infra lifecycle; this fixture only
     # supplies protected transport to the real Gateway.
-    # Use the same pinned TLS transport image and resource bounds as the T2 owner.
-    os.environ["METRICS_T2_WORK"] = str(directory)
+    # Read the production transport directly. A TLS-only fixture must not
+    # interpolate the whole T2 stack or require unrelated SQL source secrets.
     transport = json.loads(command(["docker", "compose", "--env-file", "/dev/null", "-f",
-                                   str(ROOT / "scripts/test/docker-compose.monitor-metrics-t2.yml"),
-                                   "config", "--format", "json"]))["services"]["metrics-source"]
+                                   str(ROOT / "scripts/infra/metrics-control.yml"),
+                                   "config", "--format", "json"]))["services"]["metrics-control"]
     transport.pop("ports", None)
     transport.pop("networks", None)
+    transport.pop("restart", None)
     transport["network_mode"] = "host"
     transport["volumes"] = [{"type": "bind", "source": str(directory / "control"), "target": "/control", "read_only": True},
                             {"type": "bind", "source": str(directory / "nginx.conf"), "target": "/etc/nginx/nginx.conf", "read_only": True}]

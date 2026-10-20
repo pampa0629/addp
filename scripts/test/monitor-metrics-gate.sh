@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres,postgres-metrics,postgres-metrics-web
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
+# ADDP_T2_INPUT_FILES=scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
 case "${1:-}" in
   ''|--case=all) metrics_case=all ;;
   --case=postgres-observation) metrics_case=postgres-observation ;;
+  --case=postgres-source) metrics_case=postgres-source ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -18,6 +19,11 @@ WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"
 export METRICS_T2_WORK="$WORK_DIR" ADDP_METRICS_TLS_DIR="$WORK_DIR/tls"
+export ADDP_POSTGRES_METRICS_SOURCE_DIR="$WORK_DIR/postgres-source"
+export ADDP_POSTGRES_METRICS_WEB_DIR="$WORK_DIR/postgres-web"
+export ADDP_POSTGRES_METRICS_USER="$(id -u):$(id -g)"
+if [[ "$(id -u)" == 0 ]]; then export ADDP_POSTGRES_METRICS_USER=65534:65534; fi
+export METRICS_T2_POSTGRES_SOURCE_ENABLED=false
 export ADDP_METRICS_DEPLOYMENT_DIR="$WORK_DIR/deployment"
 export ADDP_NODE_METRICS_TLS_DIR="$WORK_DIR/node-tls"
 export ADDP_NODE_METRICS_LISTEN=:9100 ADDP_NODE_METRICS_ROOTFS=/ ADDP_NODE_METRICS_PROCFS=/proc ADDP_NODE_METRICS_SYSFS=/sys ADDP_NODE_METRICS_OWNER=t2
@@ -32,7 +38,9 @@ cleanup(){
   local result=$?
   trap - EXIT INT TERM
   set +e
-  if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 >&2; fi
+  # The new SQL source's logs are checked for secret exposure in memory by its
+  # probe. Never dump those raw logs on failure before that check succeeds.
+  if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter metrics-control postgres >&2; fi
   compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || result=1
   local resource remaining
   for resource in container network volume; do
@@ -214,7 +222,9 @@ compose exec -T metrics-source nginx -s reload
 compose run --rm --no-deps --entrypoint nginx metrics-control -t
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
+export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
 python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
+if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')

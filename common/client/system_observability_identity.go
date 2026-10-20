@@ -32,8 +32,8 @@ func (c *SystemServiceClient) GetObservabilityIdentities(ctx context.Context) (*
 func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapshot, started, received time.Time) error {
 	invalid := func() error { return errors.New("System returned an invalid observability identity snapshot") }
 	if snapshot.ObservedAt.IsZero() || snapshot.ObservedAt.Before(started.Add(-models.ObservabilityIdentityTimeout)) ||
-		snapshot.ObservedAt.After(received.Add(models.ObservabilityIdentityTimeout)) || snapshot.Nodes == nil || snapshot.ModuleInstances == nil ||
-		len(snapshot.Nodes) > models.ObservabilityIdentityNodeLimit || len(snapshot.ModuleInstances) > models.ObservabilityIdentityInstanceLimit {
+		snapshot.ObservedAt.After(received.Add(models.ObservabilityIdentityTimeout)) || snapshot.Nodes == nil || snapshot.ModuleInstances == nil || snapshot.EngineDeployments == nil ||
+		len(snapshot.Nodes) > models.ObservabilityIdentityNodeLimit || len(snapshot.ModuleInstances) > models.ObservabilityIdentityInstanceLimit || len(snapshot.EngineDeployments) > models.ObservabilityIdentityEngineLimit {
 		return invalid()
 	}
 	nodes := make(map[string]bool, len(snapshot.Nodes))
@@ -65,6 +65,14 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 			return invalid()
 		}
 		instances[key] = true
+	}
+	deployments := make(map[string]bool, len(snapshot.EngineDeployments))
+	sources := make(map[models.ObservabilityEngineSourceKey]bool, len(snapshot.EngineDeployments))
+	for _, engine := range snapshot.EngineDeployments {
+		if engine.Validate() != nil || !nodes[engine.NodeID] || deployments[engine.DeploymentID] || sources[engine.SourceKey] {
+			return invalid()
+		}
+		deployments[engine.DeploymentID], sources[engine.SourceKey] = true, true
 	}
 	return nil
 }

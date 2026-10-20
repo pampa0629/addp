@@ -15,7 +15,7 @@ import (
 
 func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
-	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	request := models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC().Truncate(time.Microsecond),
@@ -70,7 +70,7 @@ func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 
 func TestProcessMetricsProjectionDoesNotRequireHostBinding(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
-	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	node := models.HostNode{NodeID: uuid.NewString(), DisplayName: "VM", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{{ClientID: "addp-monitor", ModuleName: "monitor"}}}

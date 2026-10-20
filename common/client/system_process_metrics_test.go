@@ -53,7 +53,7 @@ func TestUnboundCurrentProcessIdentityIsValidOnlyWithExplicitDeclaration(t *test
 	now := time.Now().UTC()
 	started := now.Add(-time.Minute)
 	i := models.ObservabilityModuleIdentity{ModuleName: "monitor", InstanceID: "self", Role: "worker", ProcessStartedAt: &started, LeaseExpiresAt: now.Add(time.Minute), ProcessMetrics: &models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics"}}
-	s := models.ObservabilityIdentitySnapshot{ObservedAt: now, Nodes: []models.ObservabilityNodeIdentity{}, ModuleInstances: []models.ObservabilityModuleIdentity{i}}
+	s := models.ObservabilityIdentitySnapshot{EngineDeployments: []models.ObservabilityEngineIdentity{}, ObservedAt: now, Nodes: []models.ObservabilityNodeIdentity{}, ModuleInstances: []models.ObservabilityModuleIdentity{i}}
 	if err := validateObservabilityIdentities(s, now, now); err != nil {
 		t.Fatalf("unbound current process: %v", err)
 	}

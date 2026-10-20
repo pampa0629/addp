@@ -13,6 +13,7 @@
 - **Infra Kafka**: Redpanda v24.3.18，唯一 Kafka API broker 实现
 - **指标控制面 TLS 转发**: Nginx 1.28.0 Alpine，`scripts/infra/metrics-control.yml` 锁定多架构 digest，正式可选部署与指标 T2 共用模板，仅私有网络两个固定接口。
 - **Linux 主机指标来源**: node_exporter v1.12.1，正式部署与独占 T2 共用 `scripts/infra/node-metrics.yml` 固定多架构 digest 和 exporter-toolkit 原生 mTLS；仅部署方明确选择的节点取得宿主只读资源权限，Docker Desktop T2 不计为物理宿主纳管。
+- **PostgreSQL 固定指标来源**: SQL Exporter 0.24.11，`scripts/infra/postgres-metrics.yml` 锁定 Linux ARM64/amd64 镜像摘要，固定单查询与单连接；复用 Nginx 受控 mTLS，仅开放指标读取。当前模板与独占 T2 已接入，标准来源生命周期和 Monitor 专业读取尚待实施，未默认部署。
 - **Kafka Connect / Debezium**: `quay.io/debezium/connect:3.6.0.Final`，内置 Kafka Connect 4.3.0；PostgreSQL Connector 3.6.0.Final
 - **有界执行领取**: PostgreSQL `common.task_executions` claim + lease；Cron 只用于 owner scheduler 计算到期 execution
 - **空间计算**: GeoPython Workflow (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)

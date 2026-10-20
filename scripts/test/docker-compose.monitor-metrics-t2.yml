@@ -1,4 +1,13 @@
 services:
+  postgres-metrics:
+    extends:
+      file: ../infra/postgres-metrics.yml
+      service: postgres-metrics
+    ports: ["127.0.0.1::9443"]
+  postgres-metrics-web:
+    extends:
+      file: ../infra/postgres-metrics.yml
+      service: postgres-metrics-web
   postgres:
     image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
     environment:

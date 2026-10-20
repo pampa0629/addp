@@ -14,9 +14,10 @@ import (
 
 func TestSystemObservabilityClientUsesBoundedPlatformProjection(t *testing.T) {
 	fixture := models.ObservabilityIdentitySnapshot{
-		ObservedAt:      time.Now().UTC(),
-		Nodes:           []models.ObservabilityNodeIdentity{{NodeID: "10000000-0000-4000-8000-000000000001", Version: 2}},
-		ModuleInstances: []models.ObservabilityModuleIdentity{{ModuleName: "manager", InstanceID: "worker-a", Role: "worker", NodeID: "10000000-0000-4000-8000-000000000001", LeaseExpiresAt: time.Now().Add(time.Minute).UTC()}},
+		ObservedAt:        time.Now().UTC(),
+		EngineDeployments: []models.ObservabilityEngineIdentity{},
+		Nodes:             []models.ObservabilityNodeIdentity{{NodeID: "10000000-0000-4000-8000-000000000001", Version: 2}},
+		ModuleInstances:   []models.ObservabilityModuleIdentity{{ModuleName: "manager", InstanceID: "worker-a", Role: "worker", NodeID: "10000000-0000-4000-8000-000000000001", LeaseExpiresAt: time.Now().Add(time.Minute).UTC()}},
 	}
 	encode := func(value any) string {
 		data, err := json.Marshal(value)
@@ -65,7 +66,7 @@ func TestSystemObservabilityClientRejectsDuplicateForeignExpiredAndStaleIdentiti
 	node := models.ObservabilityNodeIdentity{NodeID: "10000000-0000-4000-8000-000000000001", Version: 1}
 	instance := models.ObservabilityModuleIdentity{ModuleName: "manager", InstanceID: "worker-a", Role: "worker", NodeID: node.NodeID, LeaseExpiresAt: now.Add(time.Minute)}
 	base := func() models.ObservabilityIdentitySnapshot {
-		return models.ObservabilityIdentitySnapshot{ObservedAt: now, Nodes: []models.ObservabilityNodeIdentity{node}, ModuleInstances: []models.ObservabilityModuleIdentity{instance}}
+		return models.ObservabilityIdentitySnapshot{EngineDeployments: []models.ObservabilityEngineIdentity{}, ObservedAt: now, Nodes: []models.ObservabilityNodeIdentity{node}, ModuleInstances: []models.ObservabilityModuleIdentity{instance}}
 	}
 	for _, mutate := range []func(*models.ObservabilityIdentitySnapshot){
 		func(s *models.ObservabilityIdentitySnapshot) { s.Nodes = append(s.Nodes, node) },
@@ -89,5 +90,57 @@ func TestSystemObservabilityClientRejectsDuplicateForeignExpiredAndStaleIdentiti
 		if err := validateObservabilityIdentities(snapshot, now, now); err == nil {
 			t.Fatalf("accepted invalid snapshot=%+v", snapshot)
 		}
+	}
+}
+
+func TestSystemObservabilityClientValidatesPlatformEngineProjection(t *testing.T) {
+	now := time.Now().UTC()
+	node := models.ObservabilityNodeIdentity{NodeID: "10000000-0000-4000-8000-000000000001", Version: 1}
+	engine := models.ObservabilityEngineIdentity{DeploymentID: "20000000-0000-4000-8000-000000000001", Version: 2, Scope: "infra", EngineType: "postgresql", NodeID: node.NodeID,
+		SourceKey: models.ObservabilityEngineSourceKey{DockerEngineID: "test-daemon", Project: "addp-infra", Service: "postgres"}}
+	base := func() models.ObservabilityIdentitySnapshot {
+		return models.ObservabilityIdentitySnapshot{ObservedAt: now, Nodes: []models.ObservabilityNodeIdentity{node}, ModuleInstances: []models.ObservabilityModuleIdentity{}, EngineDeployments: []models.ObservabilityEngineIdentity{engine}}
+	}
+	valid := base()
+	business := engine
+	business.DeploymentID = "20000000-0000-4000-8000-000000000002"
+	business.Scope, business.SourceKey.Project = "business", "business"
+	valid.EngineDeployments = append(valid.EngineDeployments, business)
+	if err := validateObservabilityIdentities(valid, now, now); err != nil {
+		t.Fatal("valid two-scope engine identities", err)
+	}
+	for name, mutate := range map[string]func(*models.ObservabilityIdentitySnapshot){
+		"missing array": func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments = nil },
+		"foreign host":  func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].NodeID = business.DeploymentID },
+		"noncanonical ID": func(s *models.ObservabilityIdentitySnapshot) {
+			s.EngineDeployments[0].DeploymentID = "20000000000040008000000000000001"
+		},
+		"zero version":       func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].Version = 0 },
+		"tenant scope":       func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].Scope = "tenant" },
+		"unsupported type":   func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].EngineType = "redis" },
+		"cross scope source": func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].SourceKey.Project = "business" },
+		"unsafe source": func(s *models.ObservabilityIdentitySnapshot) {
+			s.EngineDeployments[0].SourceKey.DockerEngineID = "postgres://secret@host"
+		},
+		"unsupported service": func(s *models.ObservabilityIdentitySnapshot) { s.EngineDeployments[0].SourceKey.Service = "other" },
+		"duplicate ID": func(s *models.ObservabilityIdentitySnapshot) {
+			s.EngineDeployments = append(s.EngineDeployments, engine)
+		},
+		"duplicate source": func(s *models.ObservabilityIdentitySnapshot) {
+			other := engine
+			other.DeploymentID = business.DeploymentID
+			s.EngineDeployments = append(s.EngineDeployments, other)
+		},
+		"over budget": func(s *models.ObservabilityIdentitySnapshot) {
+			s.EngineDeployments = make([]models.ObservabilityEngineIdentity, models.ObservabilityIdentityEngineLimit+1)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := base()
+			mutate(&s)
+			if err := validateObservabilityIdentities(s, now, now); err == nil {
+				t.Fatal("invalid engine identity accepted")
+			}
+		})
 	}
 }

@@ -14,12 +14,13 @@ import (
 
 var ErrObservabilityIdentityBudget = errors.New("observability identity snapshot exceeds budget")
 
-// ObservabilityIdentities reads node intent, module intent and binding evidence
+// ObservabilityIdentities reads node, module and engine intent with binding evidence
 // from one database snapshot. A failed/oversized snapshot is never a partial success.
 func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context) (*commonmodels.ObservabilityIdentitySnapshot, error) {
 	result := &commonmodels.ObservabilityIdentitySnapshot{
-		Nodes:           []commonmodels.ObservabilityNodeIdentity{},
-		ModuleInstances: []commonmodels.ObservabilityModuleIdentity{},
+		Nodes:             []commonmodels.ObservabilityNodeIdentity{},
+		ModuleInstances:   []commonmodels.ObservabilityModuleIdentity{},
+		EngineDeployments: []commonmodels.ObservabilityEngineIdentity{},
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result.ObservedAt = time.Now().UTC()
@@ -62,6 +63,40 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context) 
 				ModuleName: candidate.ModuleName, InstanceID: candidate.InstanceID, Role: candidate.Role,
 				NodeID: candidate.NodeID, LeaseExpiresAt: candidate.LeaseExpiresAt.UTC(),
 			})
+		}
+		var deployments []models.EngineDeployment
+		if err := tx.Select("deployment_id", "engine_type", "enabled", "inventory", "declared_node_id", "version").
+			Where("enabled = ?", true).Order("deployment_id ASC").Limit(commonmodels.ObservabilityIdentityEngineLimit + 1).Find(&deployments).Error; err != nil {
+			return err
+		}
+		if len(deployments) > commonmodels.ObservabilityIdentityEngineLimit {
+			return ErrObservabilityIdentityBudget
+		}
+		// Reuse the User API's canonical host-binding decision in this snapshot.
+		if err := resolveDeploymentHosts(tx, deployments); err != nil {
+			return err
+		}
+		for _, deployment := range deployments {
+			if deployment.HostBindingState != "bound" {
+				continue
+			}
+			inventory := deployment.Inventory
+			if inventory.Schema != "addp.engine-deployment-inventory/v1" || inventory.Source.Type != "docker_compose" || len(inventory.Services) != 1 || inventory.Services[0].EngineType != deployment.EngineType {
+				return errors.New("invalid platform engine deployment identity")
+			}
+			scope := "infra"
+			if inventory.Source.Project == "business" {
+				scope = "business"
+			}
+			engine := commonmodels.ObservabilityEngineIdentity{
+				DeploymentID: deployment.DeploymentID, Version: deployment.Version,
+				Scope: scope, EngineType: deployment.EngineType, NodeID: deployment.NodeID,
+				SourceKey: commonmodels.ObservabilityEngineSourceKey{DockerEngineID: inventory.Source.DockerEngineID, Project: inventory.Source.Project, Service: inventory.Services[0].Service},
+			}
+			if err := engine.Validate(); err != nil {
+				return err
+			}
+			result.EngineDeployments = append(result.EngineDeployments, engine)
 		}
 		encoded, err := json.Marshal(result)
 		if err != nil {

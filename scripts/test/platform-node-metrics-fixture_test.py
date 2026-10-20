@@ -46,6 +46,9 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertFalse((self.secret / "postgres-password").exists())
         spec = json.loads((self.secret / "metrics-compose.json").read_text())
         self.assertEqual(set(spec["services"]), {"control-tls"})
+        templates = [args[args.index("-f") + 1] for args in calls if args[:2] == ["docker", "compose"] and "config" in args]
+        self.assertEqual(templates, [str(FIXTURE.ROOT / "scripts/infra/metrics-control.yml")])
+        self.assertNotIn("restart", spec["services"]["control-tls"])
         self.assertNotIn("volumes", spec)
         self.assertEqual(spec["services"]["control-tls"]["network_mode"], "host")
         nginx = (self.secret / "nginx.conf").read_text()

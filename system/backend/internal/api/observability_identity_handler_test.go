@@ -29,7 +29,7 @@ func TestObservabilityIdentityRouteRequiresOnlyMonitorPlatformService(t *testing
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqlDB.Close() })
-	if err := db.AutoMigrate(&models.HostNode{}, &models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
 	actor := testIAMServiceActorContext("platform", "addp-monitor")
@@ -68,7 +68,7 @@ func TestObservabilityIdentityRouteRequiresOnlyMonitorPlatformService(t *testing
 	grant()
 	w := request("", "", "addp_at_test", ctx, 200)
 	var snapshot commonmodels.ObservabilityIdentitySnapshot
-	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil || snapshot.Nodes == nil || snapshot.ModuleInstances == nil || w.Header().Get("Cache-Control") != "no-store" {
+	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil || snapshot.Nodes == nil || snapshot.ModuleInstances == nil || snapshot.EngineDeployments == nil || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("response=%s %v", w.Body.String(), err)
 	}
 	request("", "", "", ctx, 401)
