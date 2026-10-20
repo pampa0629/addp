@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Ordinary User FTP catalog, scan, native previews and authorized model GLB."""
 from importlib import import_module
+from contextlib import contextmanager
+import copy
 import hashlib
 import json
 import os
@@ -121,12 +123,12 @@ class ModelSourceAuthorization:
             'FTP approval requires matching complete System facts, never a directory or caller-supplied composition')
         return facts
 
-    def grant(self, model):
+    def grant(self, model, *, initialize=True):
         facts = self.facts(model)
         command = str(uuid.uuid4())
         body = {'request_id': command, 'catalog_path': file_target(self.engine_id, model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
-                'requirement_version': '1', 'initialize_approval': True, 'recipient_type': 'user',
+                'requirement_version': '1', 'initialize_approval': initialize, 'recipient_type': 'user',
                 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
                 'reason': 'Disposable FTP exact model composition approval'}
         # Retain our command before the write, including an unknown outcome.
@@ -209,6 +211,96 @@ def verify_cached_results(client, report, statuses):
                     'FTP source rule control must preserve the exact already-verified GLB')
         results.append({'format': model['format'], 'result_id': result_id, 'status': status})
     return results
+
+
+@contextmanager
+def changed_texture_fixture(model):
+    """Change only the fixed model in this Hosted run's owned, read-only mount."""
+    root = Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR'))
+    require(not root.is_symlink() and root.resolve() == Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR')).resolve()
+            and root.is_dir() and not root.stat().st_mode & 0o077,
+            'FTP composition mutation requires this Hosted run private fixture')
+    state = json.loads((root / 'state.json').read_text())
+    name = state.get('name', '')
+    require(re.fullmatch(r'addp-ftp-[0-9a-f]{12}', name) and state.get('label') == 'org.addp.ftp.owner=' + name,
+            'FTP composition mutation requires the exact admission owner')
+    inspected = subprocess.run(['docker', 'inspect', name], check=True, capture_output=True, text=True)
+    container, = json.loads(inspected.stdout)
+    require(container.get('State', {}).get('Running') is True and
+            container.get('Config', {}).get('Labels', {}).get('org.addp.ftp.owner') == name and
+            any(mount.get('Source') == str((root / 'data').resolve()) and
+                mount.get('Destination') == '/srv/sftpgo/data' and mount.get('RW') is False
+                for mount in container.get('Mounts', [])),
+            'FTP composition mutation requires the exact running read-only data mount')
+    paths = [root / relative for relative in ('data', 'data/models', 'data/models/3ds',
+             'data/models/3ds/model.3ds', 'data/models/3ds/texture.png')]
+    require(all(not path.is_symlink() for path in paths), 'FTP composition fixture must not traverse a link')
+    main, texture = paths[-2:]
+    original, png = main.read_bytes(), texture.read_bytes()
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    require(model['full_name'] == 'models/3ds/model.3ds' and model['format'] == '3ds' and
+            original == (fixture / 'addp_online_model_fixture.3ds').read_bytes() and
+            png == (fixture / 'addp_online_exchange_texture.png').read_bytes() and
+            hashlib.sha256(original).hexdigest() == model['sha256'] and original.count(b'texture.png') == 1,
+            'FTP composition mutation only accepts the fixed physical model and texture')
+    changed = original.replace(b'texture.png', b'newname.png')
+    replacement = texture.with_name('newname.png')
+    descriptor = os.open(replacement, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(png)
+        os.fchmod(stream.fileno(), 0o644)
+    try:
+        main.write_bytes(changed)
+        projected = copy.deepcopy(model)
+        projected.update(sha256=hashlib.sha256(changed).hexdigest(), size=len(changed))
+        for ref in projected['composition']:
+            if ref['role'] == 'texture':
+                ref['path'] = 'models/3ds/newname.png'
+        yield projected
+    finally:
+        require(not main.is_symlink() and main.read_bytes() == changed,
+                'FTP composition cleanup refuses to overwrite unexpected main-file changes')
+        main.write_bytes(original)
+        require(not replacement.is_symlink() and replacement.read_bytes() == png,
+                'FTP composition cleanup refuses to remove unexpected texture changes')
+        replacement.unlink()
+
+
+def source_read_control(client, engine_id, model, status):
+    response = client.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview', (status,),
+                              {'targets': [file_target(engine_id, model['full_name'])]}).payload
+    require(isinstance(response, dict) and bool(response.get('observed_at') if status == 200 else response.get('error')),
+            'FTP current source rule check omitted its explicit observation or denial')
+    return status
+
+
+def verify_composition_rules(client, authorization, report, deny, timeout):
+    source = next(model for model in report['models'] if model['format'] == '3ds')
+    original_hash = authorization.facts(source)['boundary_hash']
+    try:
+        with changed_texture_fixture(source) as changed:
+            scan = SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
+            facts = authorization.facts(changed)
+            require(facts['boundary_hash'] != original_hash,
+                    'FTP changed texture reference must change the complete approval boundary')
+            new_grant = authorization.grant(changed, initialize=False)
+            # A new composition Grant cannot override the Deny established on A.
+            denied = source_read_control(client, report['engine_id'], changed, 403)
+            authorization.revoke(new_grant['request_id'])
+            authorization.release(deny)
+            # With no Deny and no B Grant, A's Grant must still not cover B.
+            old_grant_denied = source_read_control(client, report['engine_id'], changed, 403)
+            approved = authorization.grant(changed, initialize=False)
+            allowed = source_read_control(client, report['engine_id'], changed, 200)
+            stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
+            return {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
+                    'changed_boundary_hash': facts['boundary_hash'], 'changed_grant': approved,
+                    'old_deny_after_new_grant': denied, 'old_grant_without_deny': old_grant_denied,
+                    'new_grant_after_release': allowed, 'old_cached_content': stale}
+    finally:
+        # Directory discovery, rather than single-item refresh, restores Meta's
+        # dependency facts before checking the original cache again.
+        SUPPORT.wait_for_scan(client, report['engine_id'], time.monotonic() + timeout)
 
 
 def prepare_models(items, engine_id, samples):
@@ -343,17 +435,32 @@ def validate_browser_report(actual, expected, artifact_dir):
             raise SuiteError(f"FTP {source['format']} GLB physical verification failed: {error}") from error
 
 
-def run_browser(report):
-    output = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')) / 'ftp-console.json'
+def validate_withdrawal_browser_report(actual, expected):
+    models = []
+    for source, published in zip(expected['models'], expected['browser']['models']):
+        models.append({'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
+                       'status': 403, 'error_visible': True, 'content_successes': 0, 'generation_requests': 0,
+                       'unchanged_execution_id': published['execution_id']})
+    require(actual == {**{key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')},
+                       'browser_phase': 'withdrawn', 'models': models},
+            'FTP withdrawal browser must reject both original models without content or new execution')
+
+
+def run_browser(report, *, withdrawn=False):
+    output = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')) / ('ftp-console-withdrawn.json' if withdrawn else 'ftp-console.json')
     output.unlink(missing_ok=True)
     environment = {key: value for key, value in os.environ.items() if key not in {
         'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
-    environment.update(ADDP_ONLINE_FTP_EXPECTATIONS=json.dumps(report), ADDP_ONLINE_FTP_BROWSER_REPORT=str(output))
+    expected = {**report, 'browser_phase': 'withdrawn'} if withdrawn else report
+    environment.update(ADDP_ONLINE_FTP_EXPECTATIONS=json.dumps(expected), ADDP_ONLINE_FTP_BROWSER_REPORT=str(output))
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/ftp-consumer-flow.spec.js', '--config=playwright.online.config.js'],
                             cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment)
     require(result.returncode == 0 and output.is_file(), 'Real Console FTP acceptance failed or omitted evidence')
     actual = json.loads(output.read_text())
-    validate_browser_report(actual, report, output.parent)
+    if withdrawn:
+        validate_withdrawal_browser_report(actual, report)
+    else:
+        validate_browser_report(actual, report, output.parent)
     return actual
 
 
@@ -376,11 +483,12 @@ def main():
         deny = authorization.deny(source)
         report['source_deny_id'] = deny
         report['deny_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
-        authorization.release(deny)
+        report['composition_rules'] = verify_composition_rules(client, authorization, report, deny, timeout)
         report['released_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
     finally:
         authorization.cleanup()
     report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
+    report['withdrawn_browser'] = run_browser(report, withdrawn=True)
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 

@@ -1,6 +1,8 @@
 from importlib import import_module
+from contextlib import contextmanager
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -255,6 +257,7 @@ class FTPConsumerTest(unittest.TestCase):
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
         self.assertEqual([body['recipient_id'] for body in commands], ['8', '8'])
         for body in commands:
+            self.assertIs(body['initialize_approval'], True)
             self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
             self.assertNotIn('file_composition', body)
             self.assertNotIn('actor_principal_id', body)
@@ -269,6 +272,8 @@ class FTPConsumerTest(unittest.TestCase):
             authorization.release('unowned-deny')
         authorization.release(deny)
         self.assertEqual(issuer.release_statuses, (200,))
+        receipts.append(authorization.grant(report['models'][1], initialize=False))
+        self.assertIs([body for _, path, body in issuer.calls if path.endswith('/access_grants')][-1]['initialize_approval'], False)
         authorization.cleanup()
         self.assertEqual(authorization.grants, [])
         self.assertEqual(issuer.revoke_statuses, (200,))
@@ -356,6 +361,140 @@ class FTPConsumerTest(unittest.TestCase):
             binaries['3ds'] = b'changed'
             with self.assertRaises(M.SuiteError):
                 M.verify_cached_results(consumer, report, {'ifc': 200, '3ds': 200})
+
+    def test_composition_fixture_changes_only_owned_declared_file_and_restores_on_failure(self):
+        client = FakeClient()
+        model = M.prepare_models(client.items, 17, client.model_samples)[1]
+        class ExpectedConsumerFailure(Exception):
+            pass
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                M.SEED.write_model_samples(root / 'data')
+                name = 'addp-ftp-123456abcdef'
+                (root / 'state.json').write_text(json.dumps({'name': name, 'label': 'org.addp.ftp.owner=' + name}))
+                container = {'State': {'Running': True}, 'Config': {'Labels': {'org.addp.ftp.owner': name}},
+                             'Mounts': [{'Source': str(root / 'data'), 'Destination': '/srv/sftpgo/data', 'RW': False}]}
+                main = root / 'data/models/3ds/model.3ds'
+                original = main.read_bytes()
+                with patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory), \
+                        patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([container]))) as inspect:
+                    try:
+                        with M.changed_texture_fixture(model) as changed:
+                            self.assertEqual(main.read_bytes(), original.replace(b'texture.png', b'newname.png'))
+                            self.assertEqual(changed['fingerprint'], model['fingerprint'])
+                            self.assertEqual(changed['item_id'], model['item_id'])
+                            self.assertNotEqual(changed['sha256'], model['sha256'])
+                            self.assertEqual(changed['composition'][1]['path'], 'models/3ds/newname.png')
+                            self.assertEqual((main.parent / 'newname.png').read_bytes(), (main.parent / 'texture.png').read_bytes())
+                            if fail:
+                                raise ExpectedConsumerFailure('synthetic consumer failure')
+                    except ExpectedConsumerFailure:
+                        self.assertTrue(fail)
+                    self.assertEqual(main.read_bytes(), original)
+                    self.assertFalse((main.parent / 'newname.png').exists())
+                    inspect.assert_called_once_with(['docker', 'inspect', name], check=True, capture_output=True, text=True)
+
+    def test_composition_fixture_rejects_foreign_mount_links_and_existing_texture(self):
+        client = FakeClient()
+        model = M.prepare_models(client.items, 17, client.model_samples)[1]
+        for fault in ('foreign_label', 'writable', 'wrong_mount', 'link', 'preexisting'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                M.SEED.write_model_samples(root / 'data')
+                name = 'addp-ftp-123456abcdef'
+                (root / 'state.json').write_text(json.dumps({'name': name, 'label': 'org.addp.ftp.owner=' + name}))
+                container = {'State': {'Running': True}, 'Config': {'Labels': {'org.addp.ftp.owner': name}},
+                             'Mounts': [{'Source': str(root / 'data'), 'Destination': '/srv/sftpgo/data', 'RW': False}]}
+                main = root / 'data/models/3ds/model.3ds'
+                original = main.read_bytes()
+                replacement = main.parent / 'newname.png'
+                if fault == 'foreign_label':
+                    container['Config']['Labels']['org.addp.ftp.owner'] = 'foreign'
+                elif fault == 'writable':
+                    container['Mounts'][0]['RW'] = True
+                elif fault == 'wrong_mount':
+                    container['Mounts'][0]['Source'] = str(root / 'other')
+                elif fault == 'link':
+                    main.rename(main.with_name('other.3ds'))
+                    main.symlink_to('other.3ds')
+                else:
+                    replacement.write_bytes(b'foreign')
+                with patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory), \
+                        patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([container]))), \
+                        self.assertRaises((M.SuiteError, FileExistsError)):
+                    with M.changed_texture_fixture(model):
+                        self.fail('unsafe fixture must not yield')
+                self.assertEqual(main.read_bytes(), original)
+                if fault == 'preexisting':
+                    self.assertEqual(replacement.read_bytes(), b'foreign')
+
+    def test_composition_rule_matrix_rechecks_old_deny_then_old_grant_and_stale_cache(self):
+        client = FakeClient()
+        report = {'engine_id': 17, 'models': M.prepare_models(client.items, 17, client.model_samples)}
+        source = report['models'][1]
+        changed = copy.deepcopy(source)
+        changed['composition'][1]['path'] = 'models/3ds/newname.png'
+        events = []
+
+        class Authorization:
+            def facts(self, model):
+                return {'boundary_hash': 'b' * 64 if model is changed else 'a' * 64}
+            def grant(self, model, *, initialize):
+                if initialize is not False:
+                    raise AssertionError('composition approval must not initialize the existing requirement')
+                events.append('grant-B')
+                return {'request_id': 'grant-B-' + str(len(events))}
+            def revoke(self, command):
+                events.append('revoke-' + command)
+            def release(self, command):
+                events.append('release-' + command)
+
+        @contextmanager
+        def fixture(model):
+            self.assertIs(model, source)
+            try:
+                yield changed
+            finally:
+                events.append('restore-physical')
+
+        def scan(*args):
+            events.append('scan')
+            return 'scan-B'
+        def check(client, engine, model, status):
+            self.assertEqual(engine, 17)
+            self.assertIs(model, changed)
+            events.append('check-' + str(status))
+            return status
+        with patch.object(M, 'changed_texture_fixture', fixture), patch.object(M.SUPPORT, 'wait_for_scan', side_effect=scan), \
+                patch.object(M, 'source_read_control', side_effect=check), \
+                patch.object(M, 'verify_cached_results', return_value=[{'status': 403}]) as cache:
+            result = M.verify_composition_rules(client, Authorization(), report, 'deny-A', 30)
+        self.assertEqual(events, ['scan', 'grant-B', 'check-403', 'revoke-grant-B-2', 'release-deny-A',
+                                  'check-403', 'grant-B', 'check-200', 'restore-physical', 'scan'])
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403})
+        self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
+
+    def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):
+        expected = {'run_id': 'owned', 'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                    'models': [{'format': kind, 'item_id': i + 1} for i, kind in enumerate(('ifc', '3ds'))],
+                    'browser': {'models': [{'result_id': i + 20, 'execution_id': 'execution-' + str(i)} for i in range(2)]}}
+        actual = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
+        actual.update(browser_phase='withdrawn', models=[
+            {'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
+             'status': 403, 'error_visible': True, 'content_successes': 0, 'generation_requests': 0,
+             'unchanged_execution_id': published['execution_id']}
+            for source, published in zip(expected['models'], expected['browser']['models'])])
+        M.validate_withdrawal_browser_report(actual, expected)
+        for key, value in (('status', 200), ('error_visible', False), ('content_successes', 1),
+                           ('generation_requests', 1), ('unchanged_execution_id', 'new-execution'), ('result_id', 99)):
+            changed = copy.deepcopy(actual)
+            changed['models'][1][key] = value
+            with self.subTest(key=key), self.assertRaises(M.SuiteError):
+                M.validate_withdrawal_browser_report(changed, expected)
+        actual['models'].pop()
+        with self.assertRaises(M.SuiteError):
+            M.validate_withdrawal_browser_report(actual, expected)
 
 
 if __name__ == '__main__':

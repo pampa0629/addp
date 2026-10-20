@@ -143,6 +143,54 @@ async function generateModel(page, api, model) {
   }
 }
 
+async function withdrawnModel(page, api, model, published) {
+  const contentPath = `/api/v1/manager/model_3d_glb/${published.result_id}/content`
+  const deniedResponses = []
+  let contentSuccesses = 0
+  let generationRequests = 0
+  const isPreview = url => url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === model.locator
+  const observeResponse = response => {
+    const url = new URL(response.url())
+    if (url.pathname === contentPath && response.status() === 200) contentSuccesses++
+    if ((url.pathname === contentPath || isPreview(url)) && response.status() === 403) deniedResponses.push(response)
+  }
+  const observeRequest = event => {
+    if (event.method() !== 'POST') return
+    const path = new URL(event.url()).pathname
+    if (path === '/api/v1/manager/quick-view/actions' || /^\/api\/v1\/manager\/(?:task-provider\/)?tasks\/model_3d_glb_generation(?:\/[1-9]\d*\/execute)?$/.test(path)) generationRequests++
+  }
+  page.on('response', observeResponse)
+  page.on('request', observeRequest)
+  try {
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
+    await expect.poll(() => deniedResponses.length, { timeout: 60_000 }).toBeGreaterThan(0)
+    const denied = deniedResponses[0]
+    const payload = await denied.json()
+    expect(typeof payload.error).toBe('string')
+    expect(payload.error.length).toBeGreaterThan(0)
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.locator('[data-testid="preview-failure"], .model-preview .three-status.is-error').first()).toBeVisible()
+    if (new URL(denied.url()).pathname === contentPath) {
+      const headers = await denied.request().allHeaders()
+      expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+      expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+      expect(new URL(denied.url()).search).toBe('')
+    }
+    expect(contentSuccesses).toBe(0)
+    expect(generationRequests).toBe(0)
+    const task = await json(await api.get(`/api/v1/manager/tasks/model_3d_glb_generation/${published.task_id}`), 'FTP withdrawn task execution summary')
+    expect(task.last_execution_id).toBe(published.execution_id)
+    expect(task.last_execution_status).toBe('success')
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-withdrawn.png`) })
+    return { format: model.format, item_id: model.item_id, result_id: published.result_id,
+      status: 403, error_visible: true, content_successes: 0, generation_requests: 0,
+      unchanged_execution_id: published.execution_id }
+  } finally {
+    page.off('response', observeResponse)
+    page.off('request', observeRequest)
+  }
+}
+
 test('FTP account root, scoped rescan, shared previews and byte-exact downloads through Console', async ({ page }) => {
   test.setTimeout(480_000)
   const expected = JSON.parse(required('ADDP_ONLINE_FTP_EXPECTATIONS'))
@@ -156,6 +204,18 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     expect(auth.principalID).toBe(expected.principal_id)
     expect([...auth.permissions].sort()).toEqual(['system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read',
       'manager.derived_artifact.create', 'manager.derived_artifact.read', 'manager.derived_artifact.delete', 'manager.data_item.update'].sort())
+    if (expected.browser_phase === 'withdrawn') {
+      const models = []
+      for (const model of expected.models) {
+        const published = expected.browser.models.find(value => value.format === model.format)
+        models.push(await withdrawnModel(page, api, model, published))
+      }
+      writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
+        run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
+        principal_id: auth.principalID, browser_phase: 'withdrawn', models
+      }))
+      return
+    }
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted FTP' })).toHaveCount(1)
     const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'examples' })
