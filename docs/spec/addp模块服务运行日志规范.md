@@ -50,6 +50,7 @@ Python HTTPX 的成功例行请求仅在 DEBUG 输出：范围限于 POST 模块
 | `channel` | stdout 或 stderr；stderr 不自动等于 ERROR |
 | `message`、`stack` | 文本正文及堆栈，不执行 HTML |
 | `request_id` | 可选关联字段，不作为索引标签 |
+| `trace_id`、`span_id` | Go HTTP Context 的规范关联字段，32/16 位小写十六进制且非零；作为结构化元数据，不作索引标签、不派生授权 |
 
 正文同名字段不能覆盖可信身份；超长事件带明确截断标记。解析和截断由接收器计数，发送重试与丢弃由 Alloy 指标观测。TSDB Schema 支持结构化元数据；实例、事件、请求 ID 及分段路径不得成为 Loki 高基数索引标签。
 
@@ -119,7 +120,7 @@ GET  /api/v1/system/platform/module-log-sources
 GET /api/v1/system/platform/modules/{module_name}/instances/{instance_id}/logs
 ```
 
-首批接受 `from/to/level/keyword/limit`，续批在同一路由携带服务端 `cursor`。范围采用 UTC `[from,to)`，关键字为最多 128 字符的字面量，自定义窗口最长 7 天；不得提交正则、任意 LogQL、文件路径、远端 URL 或自报节点。
+接受 `from/to/level/keyword/limit/trace_id`，续批在同一路由携带服务端 `cursor`。trace_id 是可选的规范 32 位非零小写十六进制精确过滤，绑定游标指纹，不提供跨实例全局日志搜索。范围采用 UTC `[from,to)`，关键字为最多 128 字符的字面量，自定义窗口最长 7 天；不得提交正则、任意 LogQL、文件路径、远端 URL 或自报节点。
 
 System 先校验 Platform Context 与 `platform.module_log.read`，再核验模块、实例和可信节点，最后生成受限 LogQL；离线登记仍可作为身份依据。新权限默认仅授予平台系统管理员，安全/审计/租户管理员、Runtime Service 与仅有模块读取权的用户不自动取得正文权限。
 
