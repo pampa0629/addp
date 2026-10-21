@@ -102,13 +102,13 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         self.assertEqual(recovered['1']['role_key'], recovered['4']['role_key'])
         self.assertNotEqual(recovered['1']['totp'], recovered['4']['totp'])
 
-    def resolution_dialog(self, state, *, mutate=None, exit_code=None):
+    def resolution_dialog(self, state, *, mutate=None, exit_code=None, completed_at='2026-10-21T01:00:00Z'):
         holders = self.recovery_holders()
         winner = '00000000-0000-4000-8000-000000000007'
         versions = {'1': 11, '2': 11, '3': 12, '4': 11}
         outputs = ['Attempt ID: 7\n', f'state={state}\n']
         if state.startswith('completed_'):
-            outputs += [f'Submission ID: {winner}\n', 'completed_at=2026-10-21T01:00:00Z\n']
+            outputs += [f'Submission ID: {winner}\n', f'completed_at={completed_at}\n']
             outputs += [f'{holders[pid]["role_key"]} -> Principal {pid}; authorization_version={versions[pid]}\n'
                         for pid in sorted(holders, key=int)]
         if mutate: mutate(outputs)
@@ -145,6 +145,37 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
             with self.assertRaises(API.SuiteError): self.resolution_dialog('completed_this_submission', mutate=mutate)
         with self.assertRaises(API.SuiteError): self.resolution_dialog('unknown', exit_code=0)
         with self.assertRaises(API.SuiteError): self.resolution_dialog('completed_this_submission', exit_code=1)
+
+    def test_resolution_accepts_rfc3339_completion_offsets_from_the_real_cli(self):
+        # printRecoveryResolution uses time.RFC3339; a PostgreSQL timestamp
+        # scanned in the CLI's Asia/Shanghai location is printed with +08:00.
+        expected = self.resolution_dialog('completed_this_submission')
+        for timestamp in ('2026-10-21T09:00:00+08:00', '2026-10-20T20:00:00-05:00'):
+            self.assertEqual(self.resolution_dialog('completed_this_submission', completed_at=timestamp), expected)
+
+    def test_resolution_rejects_invalid_completion_dates_and_missing_offsets(self):
+        for timestamp in ('2026-02-30T01:00:00Z', '2026-10-21T25:00:00Z',
+                          '2026-10-21T01:00:00', '2026-10-21T01:00:00+25:00',
+                          '2026-10-21T01:00:00+08:60'):
+            with self.assertRaises(API.SuiteError):
+                self.resolution_dialog('completed_this_submission', completed_at=timestamp)
+
+    def test_resolution_reads_offset_completion_from_a_private_pty_without_input(self):
+        holders = self.recovery_holders()
+        versions = {'1': 11, '2': 11, '3': 12, '4': 11}
+        winner = '00000000-0000-4000-8000-000000000007'
+        lines = ['Attempt ID: 7', 'state=completed_this_submission', f'Submission ID: {winner}',
+                 'completed_at=2026-10-21T09:00:00+08:00', '该次提交已完成。']
+        lines += [f'{holders[pid]["role_key"]} -> Principal {pid}; authorization_version={versions[pid]}'
+                  for pid in sorted(holders, key=int)]
+        child = 'import sys; sys.stdout.write(' + repr('\n'.join(lines)+'\n') + '); sys.stdout.flush()'
+        terminal = SCENE.RecoveryTerminal([sys.executable, '-c', child], dict(os.environ))
+        with terminal, patch.object(terminal, 'send_line', side_effect=AssertionError('lookup must not request credentials')):
+            receipt = SCENE.read_recovery_resolution(terminal, '7', 'completed_this_submission',
+                    winner=winner, holders=holders, versions=versions)
+        self.assertEqual(receipt['completed_at'], '2026-10-21T01:00:00+00:00')
+        self.assertEqual(terminal.process.returncode, 0)
+        self.assertEqual(terminal.pending, '')
 
     def test_interrupted_dialog_stops_after_three_validated_holders_before_fourth_password(self):
         terminal, (partial, counters, attempt, submission), _ = self.collect_dialog(self.recovery_holders(), interrupt_before_last=True)

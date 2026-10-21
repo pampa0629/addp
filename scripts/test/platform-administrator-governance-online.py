@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import codecs
+import datetime
 import errno
 import hashlib
 import hmac
@@ -194,7 +195,12 @@ def read_recovery_resolution(terminal, attempt_id, expected_state, *, winner=Non
     if expected_state.startswith('completed_'):
         terminal.expect(re.escape(f'Submission ID: {winner}') + r'\r?\n')
         receipt['submission_id'] = winner
-        receipt['completed_at'] = terminal.expect(r'completed_at=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z)\r?\n')[1]
+        timestamp = terminal.expect(r'completed_at=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[+-][0-9]{2}:[0-5][0-9]))\r?\n')[1]
+        try:
+            completed_at = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        except ValueError:
+            raise GovernanceAssertion('offline resolution completion time is not a valid RFC3339 timestamp') from None
+        receipt['completed_at'] = completed_at.astimezone(datetime.timezone.utc).isoformat()
         for pid in sorted(holders, key=int):
             terminal.expect(re.escape(f'{holders[pid]["role_key"]} -> Principal {pid}; authorization_version={versions[pid]}') + r'\r?\n')
         receipt['principals'] = {pid: (holders[pid]['role_key'], versions[pid]) for pid in holders}
