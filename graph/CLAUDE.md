@@ -283,6 +283,8 @@ v5 在原有两张保护图之外增加独立人工审核合成图；FalkorDB �
 
 审核表格的批量勾选通过可见的 Element Plus `.el-checkbox` 点击，再断言原生 checkbox 已选中；不能直接对隐藏的原生 input 执行 `check()`，也不能强制点击跳过可操作性检查。批量按钮只向既有翻译模板传入选中数量，不再额外拼接计数。`make test-console-frontend` 自动发现 `e2e/graph-review-selection.spec.js`，使用真实 ReviewQueue 和组件样式、HTTP 合成响应验证批量批准和拒绝的勾选顺序、准确计数、失败后的刷新、清空选择及失败提示；该 T3 回归不代替 Hosted 原生写图验收。
 
+稳定视觉补验复用同一 Console T3 隔离入口：`e2e/graph-search-visibility.spec.js` 分别替换保留身份和全新身份的合成搜索结果，检查真实 G6 节点边界、视口、连续稳定帧及逐节点鼠标命中；审核用例同时检查表头和剩余行的原生 checked/indeterminate、组件状态类、背景和勾号样式，等待实际 CSS 过渡结束并跨帧稳定后截图。观察函数仅位于 E2E 夹具中，不增加产品测试接口；这些证据属于真实组件与合成 HTTP 的 T3，不冒充原生引擎搜索的 T4。定向执行使用 `console/frontend` 下的 `node ../../scripts/test/frontend-browser-gate.mjs e2e/graph-search-visibility.spec.js e2e/graph-review-selection.spec.js`；既有 Console 门禁和 CI 自动发现覆盖，无需新增入口或基础设施。
+
 审核浏览器验收在深链重载后等待真实队列响应，再由该请求创建 API 客户端并核对 User、Tenant 和精确权限集；不保留重载前捕获的会话凭据用于最终结果核对。共享 `browserAPIFromResponse` 的既有回归通过真实 HTTP 测试服务验证旧凭据失效、新请求凭据有效及身份不符时拒绝，纳入 `make test-console-frontend`；不注入准备账号 Token，不放宽 401 断言。
 
 审核列表省略 `status` 时只返回 `pending`。验收的待审读取显式使用该状态；最终审核结果由普通审核账号分别查询既有 `approved/rejected/modified/pending` 状态，逐页核对数量和状态后合并，严格核对七条记录、审核人、原生标识和最终属性。不新增 `status=all` 或改变接口默认值；浏览器与 Python 核验使用相同过滤语义。既有完整流程回归模拟真实的默认 pending 行为，另验证缺页、错误计数和混入其他状态均失败，由 `make test-graph-online-runner` 覆盖。

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
+import { stableEmptyReviewSelection } from './graph-visual.fixture.js'
 
 for (const [action, label] of [['approve', '批量通过'], ['reject', '批量拒绝']]) {
-  test(`Graph review ${action} selects styled table checkboxes in order and clears selection after batch failure`, async ({ page }) => {
+  test(`Graph review ${action} selects styled table checkboxes in order and clears selection after batch failure`, async ({ page }, testInfo) => {
     const root = '/api/v1/graph/graphs/1/review'
     const sources = ['batch-before', 'bad-native', 'batch-after']
     let pending = sources.map((source_text, index) => ({
@@ -48,6 +49,10 @@ for (const [action, label] of [['approve', '批量通过'], ['reject', '批量�
     await expect(graph.getByRole('button', { name: new RegExp(label) })).toHaveCount(0)
     await expect(graph.locator('.el-message--error')).toHaveText('隔离夹具批量写入失败')
     await expect(graph.locator('.el-message--success')).toHaveCount(0)
+    const stable = await graph.locator('.el-table').evaluate(stableEmptyReviewSelection)
+    expect(stable).toHaveLength(2) // Header and the remaining failed row.
+    await testInfo.attach('stable-empty-selection.json', { body: JSON.stringify(stable, null, 2), contentType: 'application/json' })
+    await testInfo.attach('stable-empty-selection.png', { body: await page.screenshot(), contentType: 'image/png' })
     expect(unexpected).toEqual([])
     expect(errors).toEqual([])
   })
