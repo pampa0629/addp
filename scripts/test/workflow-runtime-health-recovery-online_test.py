@@ -165,6 +165,82 @@ class RuntimeHealthRecoveryTest(unittest.TestCase):
             self.assertEqual(AGENT.file_identity(self.tool),private)
         self.assertFalse(list(self.root.glob('*.addp-health-*')))
 
+    def test_first_start_missing_image_adopts_container_inode_and_restores(self):
+        original = AGENT.file_identity(self.tool)
+        self.fault.image_missing()
+        self.assertFalse(self.tool.exists())
+        baseline = self.fault.prepare_startup()
+        self.assertNotEqual(baseline['inode'], original['inode'])
+        self.assertEqual(baseline['sha256'], original['sha256'])
+        self.assertEqual(baseline['mode'], original['mode'])
+        self.assertEqual(self.fault.prepare_startup(), baseline)
+        self.assertEqual(self.fault.restore()['identity'], baseline)
+        self.assertEqual(AGENT.file_identity(self.tool), baseline)
+
+    def test_first_start_early_failure_restores_without_observer_adoption(self):
+        original = AGENT.file_identity(self.tool)
+        self.fault.image_missing()
+        result = self.fault.restore()
+        self.assertEqual(result['result'], 'restored')
+        self.assertEqual(AGENT.file_identity(self.tool)['sha256'], original['sha256'])
+        self.assertFalse(self.journal.exists())
+        self.assertEqual(self.fault.restore(), {'result': 'no_fault'})
+
+    def test_first_start_modified_backup_or_concurrent_tool_is_rejected(self):
+        self.fault.image_missing()
+        self.fault.backup.write_bytes(b'changed')
+        with self.assertRaisesRegex(RuntimeError, 'image backup identity'):
+            self.fault.prepare_startup()
+        self.tool.write_bytes(b'another owner')
+        with self.assertRaisesRegex(RuntimeError, 'not missing'):
+            self.fault.restore()
+        self.assertEqual(self.tool.read_bytes(), b'another owner')
+
+    def test_startup_recovery_uses_only_automatic_registration_and_periodic_observation(self):
+        from types import SimpleNamespace
+        faults, products, runtimes, events = {}, {}, {}, []
+        for number, (name, dep, _) in enumerate(SUITE.CASES, 1):
+            tool = self.root / name
+            tool.write_bytes(b'product tool'); tool.chmod(0o755)
+            fault = AGENT.ToolFault(tool, self.root / (name + '.json'))
+            fault.image_missing(); faults[name] = fault
+            def agent(action, name=name, fault=fault):
+                events.append((name, action))
+                return fault.prepare_startup() if action == 'prepare-startup' else fault.restore()
+            products[name] = SimpleNamespace(agent=agent, logs=lambda: '"GET /health HTTP/1.1" 503 -\n')
+            runtimes[name] = {'id': number, 'dep': dep}
+        def health(name, missing=None):
+            self.assertEqual(faults[name].path.exists(), missing is None)
+            return {'dependencies': {runtimes[name]['dep']: {'required': True, 'available': missing is None}}}
+        offsets = {}
+        def log_offset(name):
+            offsets[name] = offsets.get(name, 0) + 1
+            return offsets[name]
+        def states(expected):
+            self.assertEqual(expected, {name: 'online' if fault.path.exists() else 'offline' for name, fault in faults.items()})
+            return True
+        observer = SimpleNamespace(products=products, runtimes=runtimes, health=health, states=states,
+                                   log_offset=log_offset, listening_unhealthy=lambda _: True, stable=lambda: None)
+        report = SUITE.run_startup_recovery(observer)
+        self.assertEqual([row['runtime'] for row in report], [case[0] for case in SUITE.CASES])
+        self.assertTrue(all(row['registration'] == 'automatic_first_start' and row['result'] == 'passed' for row in report))
+        self.assertEqual(events, [(name, action) for action in ('prepare-startup', 'restore') for name, _, _ in SUITE.CASES])
+        # A healthy response before restoration must never count as cold start.
+        for fault in faults.values():
+            fault.missing()
+        observer.products['pointcloud'].logs = lambda: '"GET /health HTTP/1.1" 200 -\n'
+        with self.assertRaisesRegex(SUITE.SuiteError, 'healthy before startup'):
+            SUITE.run_startup_recovery(observer)
+        for fault in faults.values():
+            fault.restore()
+
+    def test_prelaunch_existing_engine_is_not_accepted_as_first_registration(self):
+        from types import SimpleNamespace
+        observer = SimpleNamespace(descriptors=lambda: [{'id': 1}], close=lambda: None)
+        with patch.object(SUITE, 'isolation'), patch.object(SUITE, 'Observer', return_value=observer), \
+             patch.object(SUITE, 'restore_all'), patch.object(sys, 'argv', ['suite', '--assert-empty']):
+            self.assertEqual(SUITE.main(), 1)
+
     def test_personal_environment_is_rejected_before_container_commands(self):
         (self.root/'.env').touch()
         env={'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux'}

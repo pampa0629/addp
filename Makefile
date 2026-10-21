@@ -741,7 +741,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 
 .PHONY: test-workflow-runtime-health-online-runner
 test-workflow-runtime-health-online-runner: ## 验证三组原生 Runtime 健康故障的隔离、恢复与标准登记
-	@bash -n scripts/dev/start.sh scripts/test/online-hosted-workflow-health-gate.sh
+	@bash -n scripts/dev/start.sh scripts/test/online-hosted-workflow-health-gate.sh scripts/utils/hosted-product-runtime.sh
 	@python3 -m unittest scripts/test/workflow-runtime-health-recovery-online_test.py scripts/test/online-hosted-workflow-health-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-engine-startup-isolation.py --repository "$(CURDIR)"

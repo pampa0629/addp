@@ -33,7 +33,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[0], "WorkflowRuntimeHealth"),
                                    (paths[2], "inputs.suite != 'workflow-runtime-health-recovery'"),
                                    (paths[6], "workflow-runtime-health-recovery-online.py --restore-only"),
-                                   (paths[6], "--suite workflow-runtime-health-recovery")):
+                                   (paths[6], "--suite workflow-runtime-health-recovery"),
+                                   (paths[6], "workflow-runtime-health-recovery-online.py --assert-empty"),
+                                   (paths[3], '"startup_cycles": startup_cycles'),
+                                   (paths[4], "test_startup_recovery_uses_only_automatic_registration_and_periodic_observation")):
             target = self.repository / relative
             original = target.read_text()
             target.write_text(original.replace(fragment, "omitted"))

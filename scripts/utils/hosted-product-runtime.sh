@@ -31,13 +31,18 @@ start_online_model3d_runtime() (
   verify_online_product_runtime '["python","api_server.py"]' "http://127.0.0.1:$MODEL3D_WORKFLOW_PORT/health"
 )
 
-verify_online_product_runtime() {
-  local command=$1 health_url=$2 image_id attempt default_entry
+verify_online_product_identity() {
+  local command=$1 image_id default_entry
   image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")
   [ "$(docker inspect -f '{{.Image}}' "$RUNTIME_CONTAINER")" = "$image_id" ] || fail 'Runtime image identity mismatch'
   [ "$(docker inspect -f '{{json .Config.Cmd}}' "$RUNTIME_CONTAINER")" = "$command" ] || fail 'Runtime default entry mismatch'
   default_entry=$(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])))' "$command")
   printf 'image_id=%s\ngit_commit=%s\ndefault_entry=%s\n' "$image_id" "$(git rev-parse HEAD)" "$default_entry" > "$ADDP_ONLINE_ARTIFACT_DIR/${RUNTIME_REPORT}-runtime-build.txt"
+}
+
+verify_online_product_runtime() {
+  local command=$1 health_url=$2 attempt
+  verify_online_product_identity "$command"
   for attempt in $(seq 1 120); do
     if curl -fsS "$health_url" >/dev/null; then break; fi
     [ "$attempt" -lt 120 ] || fail 'Runtime readiness timed out'

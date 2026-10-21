@@ -155,9 +155,17 @@ def validate_workflow_runtime_health_profile(repository: Path, registered: set[s
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
                      'scripts/dev/start.sh --exact-process "$target"', 'for target in -system -gateway',
                      '--suite workflow-runtime-health-recovery', '--services model3d-workflow-engine,pointcloud-workflow-engine,document-workflow-engine',
-                     'workflow-runtime-health-recovery-online.py --restore-only', 'docker rm -fv', 'runtime_cleanup='):
+                     'workflow-runtime-health-recovery-online.py --restore-only', 'docker rm -fv', 'runtime_cleanup=',
+                     'workflow-runtime-health-recovery-online.py --assert-empty', 'image-missing',
+                     'verify_online_product_identity', 'startup-missing'):
         if fragment not in gate:
             raise RegistrationError(f"Runtime health Hosted lifecycle missing {fragment}")
+    scenario = (repository / "scripts/test/workflow-runtime-health-recovery-online.py").read_text()
+    tests = (repository / "scripts/test/workflow-runtime-health-recovery-online_test.py").read_text()
+    if '"startup_cycles": startup_cycles' not in scenario or "run_startup_recovery(observer)" not in scenario:
+        raise RegistrationError("Runtime health must run and report initial unhealthy registration")
+    if "test_startup_recovery_uses_only_automatic_registration_and_periodic_observation" not in tests:
+        raise RegistrationError("Runtime health startup registration regression is missing")
 
 
 def validate_module_registry_process_profile(repository: Path, registered: set[str]) -> None:

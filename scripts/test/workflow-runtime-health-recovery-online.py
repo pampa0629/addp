@@ -172,7 +172,7 @@ def process_snapshot(names):
 
 
 class Observer:
-    def __init__(self):
+    def __init__(self, started=True):
         import httpx
         from addp_common.client.service_token import SyncOAuthServiceTokenSource
         self.tenant = int(os.environ["ADDP_ONLINE_TEST_TENANT_ID"])
@@ -181,7 +181,7 @@ class Observer:
         self.source = SyncOAuthServiceTokenSource(self.system, "addp-develop", os.environ["DEVELOP_SERVICE_CLIENT_SECRET"])
         self.names = ["system", "gateway"]
         self.processes = process_snapshot(self.names)
-        self.products = {name: Runtime(name) for name, _, _ in CASES}
+        self.products = {name: Runtime(name) for name, _, _ in CASES} if started else {}
         self.runtimes = {name: {"dep": dep} for name, dep, _ in CASES}
 
     def close(self):
@@ -216,7 +216,7 @@ class Observer:
         self.initial = {item["id"]: (item["engine_type"], item.get("runtime_endpoint"), item["lifecycle_state"])
                         for item in descriptors}
 
-    def state(self, name, expected):
+    def states(self, expected):
         self.stable()
         descriptors = self.descriptors()
         require({item["id"]: (item["engine_type"], item.get("runtime_endpoint"), item["lifecycle_state"])
@@ -224,9 +224,20 @@ class Observer:
         for runtime, info in self.runtimes.items():
             item = next(item for item in descriptors if item["id"] == info["id"])
             require(item["lifecycle_state"] == "active", "Runtime lifecycle must remain active")
-            if item["connection_status"] != (expected if runtime == name else "online"):
+            if item["connection_status"] != expected[runtime]:
                 return False
         return True
+
+    def state(self, name, expected):
+        return self.states({runtime: expected if runtime == name else "online" for runtime in self.runtimes})
+
+    def listening_unhealthy(self, name):
+        import httpx
+        try:
+            self.health(name, self.runtimes[name]["dep"])
+            return True
+        except httpx.TransportError:
+            return False
 
     def health(self, name, missing=None):
         response = self.client.get(self.runtimes[name]["url"] + "/health")
@@ -301,13 +312,53 @@ def run_cycle(observer, fault, name):
             "file_restored_exactly": True, "processes_unchanged": True, "result": "passed"}
 
 
+def run_startup_recovery(observer):
+    expected = {name: "offline" for name, _, _ in CASES}
+    missing, identities = {}, {}
+    for name, dep, _ in CASES:
+        wait_for(lambda: observer.listening_unhealthy(name), "initial unhealthy listener timed out")
+        missing[name] = observer.health(name, dep)
+        logs = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", observer.products[name].logs())
+        responses = re.findall(r'"GET /health HTTP/1.1" (\d{3})', logs)
+        require(bool(responses) and set(responses) == {"503"}, "Runtime was healthy before startup recovery")
+        identities[name] = observer.products[name].agent("prepare-startup")
+    wait_for(lambda: observer.states(expected), "initial unhealthy registration did not become offline")
+    # No observer health requests during this wait: a new 503 must come from
+    # System, after startup's listener proof and successful automatic register.
+    offsets = {name: observer.log_offset(name) for name in expected}
+    wait_for(lambda: all(observer.log_offset(name) > offsets[name] for name in expected),
+             "initial System unhealthy health observation timed out")
+    report = []
+    for name, dep, _ in CASES:
+        require(observer.states(expected), "startup connection state changed before restoration")
+        result = observer.products[name].agent("restore")
+        require(result.get("identity") == identities[name], "startup tool was not restored exactly")
+        restored = observer.health(name)
+        require(set(missing[name]["dependencies"]) == set(restored["dependencies"]), "startup dependency catalog changed")
+        for key, fact in missing[name]["dependencies"].items():
+            if key != dep:
+                require(restored["dependencies"][key] == fact, "unrelated startup dependency changed")
+        expected[name] = "online"
+        online = wait_for(lambda: observer.states(expected), "startup periodic recovery timed out")
+        observer.stable()
+        report.append({"runtime": name, "engine_id": observer.runtimes[name]["id"],
+                       "missing_dependency": dep, "missing": missing[name], "restored": restored,
+                       "registration": "automatic_first_start", "initial_connection_status": "offline",
+                       "restored_connection_status": "online", "online_seconds": online,
+                       "file_identity": identities[name], "file_restored_exactly": True,
+                       "processes_unchanged": True, "result": "passed"})
+    return report
+
+
 def interrupted(_signal, _frame):
     raise SuiteError("acceptance interrupted")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--restore-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--restore-only", action="store_true")
+    mode.add_argument("--assert-empty", action="store_true")
     args = parser.parse_args()
     observer = None
     admitted = False
@@ -319,14 +370,20 @@ def main():
             return 0
         signal.signal(signal.SIGINT, interrupted)
         signal.signal(signal.SIGTERM, interrupted)
-        observer = Observer()
+        observer = Observer(started=not args.assert_empty)
+        if args.assert_empty:
+            require(observer.descriptors() == [], "initial System already has Engine instances")
+            print(json.dumps({"initial_engine_count": 0}))
+            return 0
         wait_for(lambda: all(any(item["engine_type"] == name + "_workflow" for item in observer.descriptors())
+                             and f"{name}_workflow registered to System" in observer.products[name].logs()
                              for name, _, _ in CASES), "startup auto registration timed out")
         observer.bind()
-        wait_for(lambda: observer.state("pointcloud", "online"), "initial online observation timed out")
+        startup_cycles = run_startup_recovery(observer)
         fault = ToolFault(observer.products)
         report = {"schema_version": "addp.online-suite/v1", "suite": SUITE,
-                  "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "cycles": [], "cleanup": "passed"}
+                  "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "startup_cycles": startup_cycles,
+                  "cycles": [], "cleanup": "passed"}
         for name, _, _ in CASES:
             cycle = run_cycle(observer, fault, name)
             cycle["file_identity"] = fault.baselines[name]
