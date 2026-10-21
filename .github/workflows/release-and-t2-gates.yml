@@ -80,6 +80,8 @@ jobs:
         run: |
           bash scripts/ci/select-gate-by-paths.sh "CLI product" \
             'common-python/*' \
+            'system/backend/go.mod' \
+            'system/backend/go.sum' \
             'scripts/test/common-python-cli-release-gate.sh' \
             'scripts/test/release-gate.py' \
             'scripts/ci/check-release-ci-registration.py' \

@@ -27,6 +27,8 @@ System 不再签发或解析用户 JWT；旧的“允许过期 Access Token 调 
 
 System 内嵌 ADDP 受控 Fosite 派生版本，作为 Authorization Code、PKCE、Device Flow、OAuth Refresh、Revocation，以及后续 OIDC 的唯一协议引擎。已接受的架构决策、当前 Provider 组合、Storage 映射和版本治理见 [System OAuth 与 Fosite 实现说明](../../system/docs/OAuth与Fosite实现说明.md)；OIDC 启用门见 [ADDP IAM OIDC 启用设计](../next/addp-IAM%20OIDC启用设计.md)。
 
+客户端认证查询必须区分凭据拒绝与事实存储不可用：仅 `ErrNotFound`（包括包装错误，对应未知或停用 Client）返回 `invalid_client` / HTTP 401；数据库超时、连接中断及其他查询故障返回 `temporarily_unavailable` / HTTP 503，不签发 Token，不暴露底层诊断或凭据。错误 Client Secret 与不允许的认证方式仍按认证失败拒绝。服务调用方按既有 503 可重试规则处理，不将依赖故障解释为永久凭据失效。
+
 System 仍是 ADDP 唯一 Auth Server 和 IAM 事实权威，不新增独立认证服务。Fosite 不负责账号、MFA、Tenant Context、Role Permission、owner Resource Grant、页面或外部 IdP 身份映射；这些事实由 System 计算后通过 Authentication / Consent Bridge 写入 Fosite Session。
 
 现有 `request_id` 托管授权交互继续作为浏览器安全边界，但 Client、redirect URI、Scope、PKCE、grant、Code/Device/Refresh 状态和 OAuth error 只能由同一个 Fosite Provider 处理。不得继续保留 `TokenService` 自研协议状态机，不得以正式版缺少 Device Flow 为由按 grant type 分流到自研 Handler。

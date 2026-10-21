@@ -18,6 +18,7 @@ import (
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -119,7 +120,7 @@ func TestDevelopExecutionServiceAuditPersistsAgainstPostgres(t *testing.T) {
 	systemClient := commonclient.NewSystemServiceClient(systemServer.URL, tokenSource, systemServer.Client())
 
 	tenantIDText := strconv.FormatInt(tenantID, 10)
-	requestID := "develop-execution-audit-request"
+	requestID := uuid.NewString()
 	developRouter := gin.New()
 	developRouter.Use(requestidmiddleware.RequestIDMiddleware())
 	developRouter.Use(func(c *gin.Context) {
@@ -141,6 +142,10 @@ func TestDevelopExecutionServiceAuditPersistsAgainstPostgres(t *testing.T) {
 	developRouter.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("Develop execution status = %d body=%s", response.Code, response.Body.String())
+	}
+
+	if got := response.Header().Get(requestidmiddleware.RequestIDHeader); got != requestID {
+		t.Fatalf("Develop request ID = %q, want %q", got, requestID)
 	}
 
 	deadline := time.Now().Add(10 * time.Second)

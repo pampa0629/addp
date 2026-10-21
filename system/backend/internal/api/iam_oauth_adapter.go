@@ -308,7 +308,8 @@ func (h *IAMOAuthHandler) DecideDeviceAuthorization(c *gin.Context) {
 // @Param        tenant_id formData integer false "Tenant Runtime Client Credentials 必填，用于选择有效 Tenant Membership；与 context_type 互斥 | Required for Tenant Runtime Client Credentials to select an effective Tenant Membership; mutually exclusive with context_type"
 // @Param        context_type formData string false "平台控制面 Client Credentials 固定为 platform；与 tenant_id 互斥 | Fixed to platform for control-plane Client Credentials; mutually exclusive with tenant_id" Enums(platform)
 // @Success      200 {object} IAMOAuthTokenResponse
-// @Failure      503 {object} fosite.RFC6749ErrorJson "暂时无法签发有效令牌 | Temporarily unable to issue a valid token"
+// @Failure      401 {object} fosite.RFC6749ErrorJson "客户端不存在、停用或认证失败 | Unknown, disabled or unauthenticated client"
+// @Failure      503 {object} fosite.RFC6749ErrorJson "客户端查询存储不可用或暂时无法签发有效令牌 | Client lookup storage unavailable or temporarily unable to issue a valid token"
 // @x-addp-auth-mode "public"
 // @Router       /oauth/token [post]
 func (h *IAMOAuthHandler) Token(c *gin.Context) {

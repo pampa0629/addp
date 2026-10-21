@@ -14,6 +14,8 @@ ADDP 采用 System 内嵌的受控 Fosite 派生版本作为唯一 OAuth 2.0 协
 - OAuth Access Token 始终为随机 opaque Token，业务模块不接受 ID Token 或外部 IdP Token；
 - 不保留自研 OAuth 状态机，不按 grant、Client 或配置分流到第二套实现。
 
+当前受控版本为 `v0.50.0-addp.3`，补丁来源、上游基线与许可证见受控仓库的 [ADDP_FORK.md](https://github.com/pampa0629/fosite/blob/v0.50.0-addp.3/ADDP_FORK.md)。该版将客户端不存在与 Storage 查询故障分开：前者保持认证拒绝，后者返回 503 / `temporarily_unavailable`；Provider、Strategy、Storage 接口及数据库结构均未改变，无需新增 migration。
+
 受控依赖固定在 `system/backend/go.mod`，通过 `replace` 指向 ADDP 维护、带来源和补丁清单的不可变版本。升级必须重新执行上游测试、ADDP Storage 测试、PostgreSQL 协议测试和 CLI 产品门禁。
 
 ## 二、当前协议能力
@@ -155,5 +157,7 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 并对 Tenant / Platform 两种 Context 运行。它属于现有 API PostgreSQL 套件，已由
 `test-system-iam-postgres` 与 `release-and-t2-gates.yml` 的 System IAM Job 自动覆盖，
 无需新增测试入口或 CI 路径登记。
+
+System 的 `go.mod` / `go.sum` 变更同时触发既有 macOS CLI 发布 Job；平台发布登记检查防止该依赖升级选择规则被移除。
 
 正式 CLI 发布还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 wheel 安装、RFC 8252 loopback、Device Flow、刷新、撤销和真实 OS Keychain。

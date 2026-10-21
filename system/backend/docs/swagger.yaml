@@ -8944,8 +8944,13 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_api.IAMOAuthTokenResponse'
+        "401":
+          description: 客户端不存在、停用或认证失败 | Unknown, disabled or unauthenticated client
+          schema:
+            $ref: '#/definitions/fosite.RFC6749ErrorJson'
         "503":
-          description: 暂时无法签发有效令牌 | Temporarily unable to issue a valid token
+          description: 客户端查询存储不可用或暂时无法签发有效令牌 | Client lookup storage unavailable or
+            temporarily unable to issue a valid token
           schema:
             $ref: '#/definitions/fosite.RFC6749ErrorJson'
       summary: 兑换 OAuth Token | Exchange OAuth token

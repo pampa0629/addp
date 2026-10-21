@@ -47,7 +47,8 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "jobs:\n"
             "  selection:\n"
             "    steps:\n"
-            "      - run: bash scripts/ci/select-gate-by-paths.sh scripts/test/release-gate.py\n"
+            "      - name: Select CLI product gate\n"
+            "        run: bash scripts/ci/select-gate-by-paths.sh scripts/test/release-gate.py system/backend/go.mod system/backend/go.sum\n"
             "  cli-product-macos-verification:\n"
             "    steps:\n"
             "      - run: make test-release RELEASE_SUITE=common-python-cli\n"
@@ -72,6 +73,24 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
         path = self.repository / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+
+    def test_cli_gate_covers_system_fosite_dependency_files(self) -> None:
+        workflow = self.repository / ".github/workflows/release-and-t2-gates.yml"
+        original = workflow.read_text(encoding="utf-8")
+        for dependency in ("system/backend/go.mod", "system/backend/go.sum"):
+            with self.subTest(dependency=dependency):
+                # Mentioning the path in another gate must not hide the CLI gap.
+                workflow.write_text(
+                    original.replace(" " + dependency, "")
+                    .replace("  cli-product-macos-verification:",
+                             f"      - name: Other gate\n        run: echo {dependency}\n  cli-product-macos-verification:"),
+                    encoding="utf-8",
+                )
+                self.assertIn(
+                    f"CLI T5 path selection must include {dependency}",
+                    MODULE.validate_registration(self.repository),
+                )
+        workflow.write_text(original, encoding="utf-8")
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))

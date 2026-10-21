@@ -211,8 +211,17 @@ def validate_registration(repository: Path) -> list[str]:
             )
 
     selection_job = workflow_job(workflow, "selection")
-    if "scripts/test/release-gate.py" not in selection_job:
+    cli_selection = re.search(
+        r"(?ms)^      - name: Select CLI product gate\n(?P<step>.*?)(?=^      - |\Z)",
+        selection_job,
+    )
+    cli_selection_source = cli_selection.group("step") if cli_selection else ""
+    if "scripts/test/release-gate.py" not in cli_selection_source:
         errors.append("CLI T5 path selection must include the shared release dispatcher")
+    # An immutable Fosite dependency upgrade must retain the paired CLI T5 gate.
+    for dependency in ("system/backend/go.mod", "system/backend/go.sum"):
+        if dependency not in cli_selection_source:
+            errors.append(f"CLI T5 path selection must include {dependency}")
     return errors
 
 

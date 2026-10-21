@@ -569,8 +569,8 @@ github.com/ory/jsonschema/v3 v3.0.8 h1:Ssdb3eJ4lDZ/+XnGkvQS/te0p+EkolqwTsDOCxr/F
 github.com/ory/jsonschema/v3 v3.0.8/go.mod h1:ZPzqjDkwd3QTnb2Z6PAS+OTvBE2x5i6m25wCGx54W/0=
 github.com/ory/x v0.0.677 h1:ZulzE4EBhNBXNotWmGSmGsVNbgbZpIr4snMURRkski0=
 github.com/ory/x v0.0.677/go.mod h1:zJmnDtKje2FCP4EeFvRsKk94XXiqKCSGJMZcirAfhUs=
-github.com/pampa0629/fosite v0.50.0-addp.2 h1:BC5zE/q/L/YZf4vfvgKKZQc7QXHRmkWEVLyO8yilDCk=
-github.com/pampa0629/fosite v0.50.0-addp.2/go.mod h1:IhAwHrxwNgB3smKB75jkMVQjFTHq9HveITItLGX8/GU=
+github.com/pampa0629/fosite v0.50.0-addp.3 h1:cemeKvNzWgUBoxATv/17EjhuDhONVm5kwfwXziY6xwQ=
+github.com/pampa0629/fosite v0.50.0-addp.3/go.mod h1:IhAwHrxwNgB3smKB75jkMVQjFTHq9HveITItLGX8/GU=
 github.com/parquet-go/parquet-go v0.25.1 h1:l7jJwNM0xrk0cnIIptWMtnSnuxRkwq53S+Po3KG8Xgo=
 github.com/parquet-go/parquet-go v0.25.1/go.mod h1:AXBuotO1XiBtcqJb/FKFyjBG4aqa3aQAAWF3ZPzCanY=
 github.com/paulmach/orb v0.12.0 h1:z+zOwjmG3MyEEqzv92UN49Lg1JFYx0L9GpGKNVDKk1s=
