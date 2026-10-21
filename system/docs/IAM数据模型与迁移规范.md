@@ -322,6 +322,8 @@ System 启动顺序固定为：
 
 已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
+应急会话撤销的 `000231` 已发布，保持文件与摘要不变。`000232` 只补充其申请和批准表的外键前导索引：已有按 Tenant／申请编号开头的复合索引继续服务列表和请求查询，单列外键的父记录关联检查另有有效的 B-tree 前导索引。升级不改申请、两人批准、执行回执、审计、角色、权限、授权版本或会话事实；沿同一 Runner 向前升级并验证重复运行，保留完整外键索引门禁。新增 `AgainstPostgres$` 回归由既有 `make test-system-iam-postgres` 自动发现，不增加入口或 Workflow，也不连接本地数据库。
+
 ## 十一、管理端信息架构
 
 System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：

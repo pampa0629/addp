@@ -14,8 +14,19 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 231 {
-		t.Fatalf("LatestVersion = %d, want 231", catalog.LatestVersion)
+	if catalog.LatestVersion != 232 {
+		t.Fatalf("LatestVersion = %d, want 232", catalog.LatestVersion)
+	}
+}
+
+func TestEmergencySessionMigration231RetainsAppliedChecksum(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000231_emergency_session_revocation.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const applied = "fa3909c41badb9763a94eff1f677483be50e016e2d7649ca32590d47066d8582"
+	if actual := fmt.Sprintf("%x", sha256.Sum256(data)); actual != applied {
+		t.Fatalf("already-applied migration 231 changed: got %s, want %s; use a new forward migration", actual, applied)
 	}
 }
 
