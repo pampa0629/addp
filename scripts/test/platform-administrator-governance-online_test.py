@@ -194,7 +194,8 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         class Terminal:
             def __enter__(self): return self
             def __exit__(self, *_): pass
-            def expect(self, pattern): return ('match', 'addp_ir_ephemeral')
+            def expect(self, pattern):
+                return ('match', '7' if pattern.startswith('Attempt ID:') else 'addp_ir_ephemeral')
             def send_line(self, *_, **__): pass
             def finish(self, *_): pass
         scene.public = Public()

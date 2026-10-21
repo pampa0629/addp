@@ -260,6 +260,18 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 
 恢复按明确的 Principal 身份重建当前三员持有人的密码和 TOTP，撤销旧会话并保留完整审计；不解除 Principal 暂停，不修改角色分配。Secret、密码、TOTP Secret 和验证码不得进入参数、环境变量、日志或审计详情。
 
+离线恢复的提交确认与核清遵循以下唯一协议（本轮针对已取得恢复编号的 Apply；不以查询“最新一条”猜测 prepare 确认丢失的归属）：
+
+- `prepare` 返回非敏感的 Attempt ID；`apply <attempt-id>` 必须绑定原编号和原 Secret。验证后、收集凭据前显示编号；每次正式提交生成新的随机 Submission ID，并在调用前显示，不能复用编号替换参数或自动重发写请求。
+- 完成回执复用不可变恢复 Attempt 及同事务审计：`iam.recovery.completed` 保存成功的 `submission_id` 和人数，逐人替换审计保存 Principal、岗位及提交时授权版本。完成状态、Secret 清空、全部凭据与撤销事实、回执在同一事务提交。不保存密码、验证码、TOTP Secret 或其额外指纹。
+- `status <attempt-id> <submission-id>` 只通过既有受控离线运维身份核清；编号不是权限，不开放 HTTP。核清不消费 Secret、不修改业务数据、不追加恢复审计。连接必须是可信权威写库；复制延迟、主库历史不明或分叉不作成功／失败推断。
+- 核清在有界短事务内使用 READ COMMITTED，先取得与 Apply 相同的恢复表排他锁，再读取 Attempt 与关联审计。等待原事务结束后才分类，不能把普通 MVCC 查询所见的 prepared 当作回滚证明。未能获取锁、连接错误、查无记录或完成审计不完整时保持 unknown。
+- completed 且提交编号匹配，表示该次提交的历史成功；编号不同表示其他提交成功。两者均禁止再次写入。该历史不证明凭据现在仍可使用，也不因后续正常改密、任免或版本变化而失效。
+- prepared 且未过期只表示观察时尚无已提交的恢复结果，允许操作者显式重试；不保证原调用已回滚或不会稍后竞争。重试仍绑定原 Attempt 和 Secret，重新核验人员、岗位分配、状态、授权版本及新鲜的连续两个 TOTP 证明，正式写入在同一恢复锁内再裁决。变化必须重新确认，不自动替换目标。过期只允许另行准备，不续期或恢复旧 Secret。
+- COMMIT 发出后连接错误统一按“结果可能未知、请按编号核清”处理，不将 ErrUnauthorized、超时、退出码或登录失败当作提交结果。不为重试缓存凭据文件；进程退出后重新交互收集。
+
+验收必须区分提交前断连与提交确认丢失：后者须观察 PostgreSQL 已产生 COMMIT 成功响应，再截断客户端确认，并用独立连接核对原回执、完整四人事实及再次提交拒绝；仅让驱动在成功 Commit 后返回伪造错误不计为网络确认丢失 T2。还须覆盖锁等待／超时、其他提交获胜、过期、目标变化及已完成历史不受后来身份变化影响。真实数据库验收仅使用 Hosted 独占 PostgreSQL，不触碰当前本地环境。
+
 ## 八、OAuth 协议表
 
 OAuth Client、Authorization Request、PKCE、Authorization Code、Device Authorization 和 Token Family 等协议事实由同一个 Fosite Storage Adapter 访问。具体表映射、锁顺序和 Provider 组合见 `system/docs/OAuth与Fosite实现说明.md`。

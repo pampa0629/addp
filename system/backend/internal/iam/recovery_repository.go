@@ -2,7 +2,9 @@ package iam
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -11,15 +13,22 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func (r *Repository) recoveryDatabaseTime(ctx context.Context) (time.Time, error) {
+	var now time.Time
+	err := r.db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error
+	return now.UTC(), wrapRepositoryError(err)
+}
+
 type RecoveryAdministratorTarget struct {
-	RoleKey          string             `gorm:"column:role_key"`
-	RoleAssignmentID int64              `gorm:"column:role_assignment_id"`
-	PrincipalID      int64              `gorm:"column:principal_id"`
-	PrincipalStatus  PrincipalStatus    `gorm:"column:principal_status"`
-	AccountID        int64              `gorm:"column:account_id"`
-	Username         string             `gorm:"column:username"`
-	AccountStatus    LocalAccountStatus `gorm:"column:account_status"`
-	DisplayName      string             `gorm:"column:display_name"`
+	AuthorizationVersion int64              `gorm:"column:authorization_version"`
+	RoleKey              string             `gorm:"column:role_key"`
+	RoleAssignmentID     int64              `gorm:"column:role_assignment_id"`
+	PrincipalID          int64              `gorm:"column:principal_id"`
+	PrincipalStatus      PrincipalStatus    `gorm:"column:principal_status"`
+	AccountID            int64              `gorm:"column:account_id"`
+	Username             string             `gorm:"column:username"`
+	AccountStatus        LocalAccountStatus `gorm:"column:account_status"`
+	DisplayName          string             `gorm:"column:display_name"`
 }
 
 func (r *Repository) LockIAMRecoveryTable(ctx context.Context) error {
@@ -111,6 +120,7 @@ func (r *Repository) LockRecoveryAdministratorTargets(ctx context.Context, now t
 		       assignment.id AS role_assignment_id,
 		       principal.id AS principal_id,
 		       principal.status AS principal_status,
+ principal.authorization_version,
 		       account.id AS account_id,
 		       account.username,
 		       account.status AS account_status,
@@ -150,6 +160,7 @@ func (r *Repository) LockRecoveryAdministratorTargets(ctx context.Context, now t
 		       assignment.id AS role_assignment_id,
 		       principal.id AS principal_id,
 		       principal.status AS principal_status,
+ principal.authorization_version,
 		       account.id AS account_id,
 		       account.username,
 		       account.status AS account_status,
@@ -254,4 +265,33 @@ func (r *Repository) ConsumeActiveContextSelectionTickets(
 		Where("principal_id = ? AND consumed_at IS NULL AND expires_at >= ?", principalID, consumedAt).
 		Update("consumed_at", consumedAt)
 	return result.RowsAffected, wrapRepositoryError(result.Error)
+}
+
+// Recovery resolution waits on the same boundary as Apply. READ COMMITTED is
+// explicit: a snapshot from before the lock wait cannot decide the outcome.
+func (r *Repository) resolveRecoveryTransaction(ctx context.Context, operation func(*Repository) error) error {
+	return wrapRepositoryError(r.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
+		var writable bool
+		if err := db.Raw("SELECT NOT pg_is_in_recovery() AND current_setting('transaction_read_only') = 'off'").Scan(&writable).Error; err != nil {
+			return err
+		}
+		if !writable {
+			return commonapi.ErrConflict
+		}
+		tx := NewRepository(db)
+		if err := tx.LockIAMRecoveryTable(ctx); err != nil {
+			return err
+		}
+		return operation(tx)
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted}))
+}
+
+func (r *Repository) readRecoveryReceipt(ctx context.Context, attemptID int64) (*IAMRecoveryAttempt, []AuditLog, error) {
+	var attempt IAMRecoveryAttempt
+	if err := r.db.WithContext(ctx).Where("id = ?", attemptID).Take(&attempt).Error; err != nil {
+		return nil, nil, wrapRepositoryError(err)
+	}
+	var events []AuditLog
+	err := r.db.WithContext(ctx).Where("entity_type = ? AND entity_id = ? AND event_name IN ?", "iam_recovery_attempt", strconv.FormatInt(attemptID, 10), []string{"iam.recovery.prepared", "iam.recovery.administrator_credentials_replaced", "iam.recovery.completed"}).Order("id").Find(&events).Error
+	return &attempt, events, wrapRepositoryError(err)
 }

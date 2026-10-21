@@ -478,3 +478,24 @@ other = "变更请求已失效、状态已变化或当前操作无法执行，�
 
 [system.engine_deployment.source_changed]
 other = "部署来源已变化或过期，请重新读取并核对"
+
+[system.iam.recovery_cli.usage]
+other = "用法: iam-recovery prepare | iam-recovery apply <attempt-id> | iam-recovery status <attempt-id> <submission-id>"
+
+[system.iam.recovery_cli.prepare_instructions]
+other = "不要截图、写入文件或发送该 Secret。请运行 addp-iam-recovery apply %d。"
+
+[system.iam.recovery_cli.state_unknown]
+other = "结果未知；请按恢复编号和提交编号核清，不要自动重试或重新 prepare。"
+
+[system.iam.recovery_cli.state_completed_this_submission]
+other = "本次提交已完成；这是历史回执，不保证凭据当前仍可用。禁止再次写入。"
+
+[system.iam.recovery_cli.state_completed_other_submission]
+other = "其他提交已完成；本批凭据不能按成功处理。禁止再次写入。"
+
+[system.iam.recovery_cli.state_expired]
+other = "原恢复已过期；不可重试或续期。核对原轮次后另行准备。"
+
+[system.iam.recovery_cli.state_prepared]
+other = "观察时尚无已提交的恢复结果；不是回滚证明。确认人员和岗位后使用原编号、原 Secret 显式重试，重新验证 TOTP。"

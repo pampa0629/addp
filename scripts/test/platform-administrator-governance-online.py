@@ -406,7 +406,10 @@ class Scenario:
                 'offline acceptance requires the standard CLI build artifacts')
         cli_env = recovery_cli_environment(self.env)
         def terminal(name, action):
-            return RecoveryTerminal([str(binaries[name]), action], cli_env)
+            command = [str(binaries[name]), action]
+            if name == "recovery" and action == "apply":
+                command.append(str(recovery_attempt))
+            return RecoveryTerminal(command, cli_env)
 
         self.stage = 'offline-additional-holder'
         granted = self.review('audit', self.create('security', 'platform_role_grant', 'successor',
@@ -424,13 +427,14 @@ class Scenario:
         old_sessions = {actor: self.actors[actor] for actor in holder_actors}
         self.stage = 'offline-tty-boundary'
         for action in ('prepare', 'apply'):
-            result = subprocess.run([str(binaries['recovery']), action], stdin=subprocess.DEVNULL,
+            result = subprocess.run([str(binaries['recovery']), action, *(['1'] if action == 'apply' else [])], stdin=subprocess.DEVNULL,
                         capture_output=True, text=True, env=cli_env, cwd=ROOT, timeout=20)
             require(result.returncode == 1 and '必须直接运行在交互终端' in result.stderr,
                     'offline CLI accepted nonterminal input or output')
 
         self.stage = 'offline-prepare'
         with terminal('recovery', 'prepare') as console:
+            recovery_attempt = int(console.expect(r'Attempt ID: ([1-9][0-9]*)\r?\n')[1])
             proof = console.expect(r'\r?\n(addp_ir_[A-Za-z0-9_-]+)\r?\n')[1]
             console.finish(0)
         with terminal('recovery', 'prepare') as console:
@@ -480,7 +484,7 @@ class Scenario:
             console.expect('Recovery Secret: ')
             console.send_line(proof, hidden=True)
             recovered, counters, attempt_id = collect_recovery_credentials(console, holders)
-        require(attempt_id == prepared_attempt, 'offline retry consumed a different recovery attempt')
+        require(attempt_id == prepared_attempt == str(recovery_attempt), 'offline retry consumed a different recovery attempt')
         self.stage = 'offline-single-use'
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')

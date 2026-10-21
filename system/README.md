@@ -88,6 +88,12 @@ make test-module MODULE=system
 
 同一 T2 还在完成审计的 `AFTER INSERT` 触发器中确认四人的替换审计和恢复完成状态均已写入，再用 `pg_terminate_backend(pg_backend_pid())` 终止执行该事务的测试连接。用例要求收到 PostgreSQL 的 `FATAL/57P01`，十组持久状态完整回滚，原 Secret 仍可验证，并在后续并发重试中成功消费。此项覆盖提交前的连接终止，不覆盖发出 `COMMIT` 后确认丢失时的结果不确定性，也不替代跨进程 CLI 故障验收。
 
+离线恢复唯一协议为 `iam-recovery prepare`、`iam-recovery apply <attempt-id>` 和 `iam-recovery status <attempt-id> <submission-id>`。prepare 显示非敏感恢复编号，apply 在收集前核验原编号与 Secret，并在正式提交前显示新的非敏感提交编号。人员、岗位分配、状态或授权版本在收集期间变化时拒绝写入，不能自动刷新目标。完成状态及包含成功提交编号的审计回执与凭据替换一同提交，仍清空 Secret Hash。
+
+COMMIT 确认丢失时不按错误或退出码推定回滚，不自动重试。使用记录的两个编号运行 status，经原受控运维身份连接可信权威写库；它在最多五秒的 READ COMMITTED 短事务中先等待恢复表锁，再返回 `completed_this_submission`、`completed_other_submission`、`prepared`、`expired` 或 `unknown`。核清不修改业务数据或审计，不把旧 Secret 当历史查询凭据，不开放 HTTP。completed 是历史回执，不证明当前还能登录；prepared 只是允许重新确认目标、重新验证新鲜 TOTP 后，以原编号和 Secret 显式提交。再次提交生成新编号，仍在事务内竞争一次消费；过期不续期。等锁超时、连接错误、查无或回执矛盾保持 unknown。数据库主库历史不明或分叉不在此保证范围内。
+
+`TestRecoveryServiceAgainstPostgres` 同时验证真实 PostgreSQL 返回 `CommandComplete(COMMIT)` 后，在测试专属连接截断确认，Apply 报错而独立连接核清成功；四人凭据与版本落地一次，重试不改变十组状态，其他提交不能冒认胜者，之后身份变化不改写历史回执。此协议测试由现有 `AgainstPostgres$` 自动发现；本地仅运行 `make test-module MODULE=system GO_ONLY=1` 和 `make test-platform-administrator-online-runner`，真实数据库测试由 GitHub Hosted 独占 PG15 执行，不操作本地服务。
+
 三员跨进程验收使用 `platform-administrator-governance`，只允许 GitHub Hosted 人工触发；不在本机运行生命周期。同一套件通过正式治理审批增授第二名系统管理员，按 Principal ID 和账号覆盖四名持有人；先在前三人完成凭据收集、第四人输入密码前终止私有 CLI，核验原凭据／会话／角色／授权版本未变及仅有准备审计，再使用同一 Secret 完整恢复，最后批准撤销新增岗位并核验原三员保留；通过正式 CLI 的真实伪终端和连续两个 TOTP 时间窗口验收离线恢复，核验旧凭据与会话失效、原暂停状态与角色分配保留、Secret 不可复用及完整审计；CLI 新凭据只在场景进程内存中流转。`make test-platform-administrator-online-runner` 仅验证准入、身份断言、伪终端协议、清理、浏览器语法与 CI 登记，不连接开发服务或数据库；新身份夹具的 T2 由既有 System PostgreSQL `--package online-fixture` 门禁自动发现，真实 T4 结果单独报告。
 
 ## 🐛 常见问题

@@ -10,6 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	passwordutils "github.com/addp/system/pkg/utils"
+	"github.com/google/uuid"
 )
 
 const defaultRecoverySecretTTL = time.Hour
@@ -22,15 +23,30 @@ type RecoveryAdministratorInput struct {
 	TOTPProofs  []BootstrapTOTPProof
 }
 
+type RecoveryPreparation struct {
+	AttemptID int64
+	Secret    string
+	ExpiresAt time.Time
+}
+
+type RecoveryValidation struct {
+	AttemptID int64
+	Targets   []RecoveryAdministratorTarget
+}
+
 type RecoveryApplyInput struct {
+	AttemptID      int64
+	SubmissionID   uuid.UUID
+	Targets        []RecoveryAdministratorTarget
 	RecoverySecret string
 	Administrators []RecoveryAdministratorInput
 }
 
 type RecoveryResult struct {
-	AttemptID   int64
-	CompletedAt time.Time
-	Principals  map[int64]string
+	AttemptID    int64
+	SubmissionID uuid.UUID
+	CompletedAt  time.Time
+	Principals   map[int64]string
 }
 
 type RecoveryService struct {
@@ -68,21 +84,28 @@ func NewRecoveryService(
 	}, nil
 }
 
-func (s *RecoveryService) Prepare(ctx context.Context) (string, time.Time, error) {
+func (s *RecoveryService) Prepare(ctx context.Context) (*RecoveryPreparation, error) {
 	if s == nil || s.repository == nil {
-		return "", time.Time{}, fmt.Errorf("%w: recovery service is required", commonapi.ErrBadRequest)
+		return nil, fmt.Errorf("%w: recovery service is required", commonapi.ErrBadRequest)
 	}
 	secret, err := s.generate("addp_ir_")
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("generate recovery secret: %w", err)
+		return nil, fmt.Errorf("generate recovery secret: %w", err)
 	}
 	now := s.now().UTC()
 	expiresAt := now.Add(s.secretTTL)
 	secretHash := hashOpaqueToken(secret)
+	var attemptID int64
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockIAMRecoveryTable(ctx); err != nil {
 			return err
 		}
+		var err error
+		now, err = tx.recoveryDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		expiresAt = now.Add(s.secretTTL)
 		if err := requireCompletedBootstrap(ctx, tx); err != nil {
 			return err
 		}
@@ -118,52 +141,66 @@ func (s *RecoveryService) Prepare(ctx context.Context) (string, time.Time, error
 		if err := tx.CreateIAMRecoveryAttempt(ctx, attempt); err != nil {
 			return err
 		}
+		attemptID = attempt.ID
 		return writeRecoveryAudit(ctx, tx, "iam.recovery.prepared", attempt.ID, nil, map[string]any{
 			"expires_at": expiresAt, "administrator_count": len(targets),
 		})
 	})
 	if err != nil {
-		return "", time.Time{}, err
+		return nil, err
 	}
-	return secret, expiresAt, nil
+	return &RecoveryPreparation{AttemptID: attemptID, Secret: secret, ExpiresAt: expiresAt}, nil
 }
 
 func (s *RecoveryService) Validate(
 	ctx context.Context,
+	attemptID int64,
 	recoverySecret string,
-) ([]RecoveryAdministratorTarget, error) {
+) (*RecoveryValidation, error) {
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: recovery service is required", commonapi.ErrBadRequest)
 	}
 	providedHash, valid := recoverySecretHash(recoverySecret)
-	if !valid {
+	if !valid || attemptID <= 0 {
 		return nil, commonapi.ErrUnauthorized
 	}
-	now := s.now().UTC()
 	var targets []RecoveryAdministratorTarget
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockIAMRecoveryTable(ctx); err != nil {
 			return err
 		}
-		if _, err := lockValidRecoveryAttempt(ctx, tx, providedHash, now); err != nil {
+		now, err := tx.recoveryDatabaseTime(ctx)
+		if err != nil {
 			return err
+		}
+		attempt, err := lockValidRecoveryAttempt(ctx, tx, providedHash, now)
+		if err != nil {
+			return err
+		}
+		if attempt.ID != attemptID {
+			return commonapi.ErrUnauthorized
 		}
 		if err := requireCompletedBootstrap(ctx, tx); err != nil {
 			return err
 		}
-		var err error
 		targets, err = tx.LockRecoveryAdministratorTargets(ctx, now)
 		if err != nil {
 			return err
 		}
 		return validateRecoveryTargets(targets)
 	})
-	return targets, err
+	if err != nil {
+		return nil, err
+	}
+	return &RecoveryValidation{AttemptID: attemptID, Targets: targets}, nil
 }
 
 func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (*RecoveryResult, error) {
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: recovery service is required", commonapi.ErrBadRequest)
+	}
+	if input.AttemptID <= 0 || input.SubmissionID == uuid.Nil {
+		return nil, commonapi.ErrBadRequest
 	}
 	prepared, err := s.prepareAdministratorInputs(input.Administrators)
 	if err != nil {
@@ -174,15 +211,23 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 		return nil, commonapi.ErrUnauthorized
 	}
 	now := s.now().UTC()
-	result := &RecoveryResult{CompletedAt: now, Principals: make(map[int64]string, len(prepared))}
+	result := &RecoveryResult{SubmissionID: input.SubmissionID, CompletedAt: now, Principals: make(map[int64]string, len(prepared))}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockIAMRecoveryTable(ctx); err != nil {
+			return err
+		}
+		now, err = tx.recoveryDatabaseTime(ctx)
+		if err != nil {
 			return err
 		}
 		attempt, err := lockValidRecoveryAttempt(ctx, tx, providedHash, now)
 		if err != nil {
 			return err
 		}
+		if attempt.ID != input.AttemptID {
+			return commonapi.ErrUnauthorized
+		}
+		result.CompletedAt = now
 		if err := requireCompletedBootstrap(ctx, tx); err != nil {
 			return err
 		}
@@ -193,7 +238,7 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 		if err := validateRecoveryTargets(targets); err != nil {
 			return err
 		}
-		if len(prepared) != len(targets) {
+		if !sameRecoveryTargets(input.Targets, targets) || len(prepared) != len(targets) {
 			return commonapi.ErrConflict
 		}
 		targetByPrincipal := make(map[int64]RecoveryAdministratorTarget, len(targets))
@@ -266,12 +311,36 @@ func (s *RecoveryService) Apply(ctx context.Context, input RecoveryApplyInput) (
 			}
 			result.Principals[target.PrincipalID] = target.RoleKey
 		}
+		finishedAt, err := tx.recoveryDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		if !attempt.ExpiresAt.After(finishedAt) {
+			return commonapi.ErrUnauthorized
+		}
+		for _, administrator := range input.Administrators {
+			if _, err := validateBootstrapTOTPProofs(administrator.TOTPSecret, administrator.TOTPProofs, finishedAt); err != nil {
+				return err
+			}
+		}
+		current, err := tx.LockRecoveryAdministratorTargets(ctx, finishedAt)
+		if err != nil {
+			return err
+		}
+		expected := append([]RecoveryAdministratorTarget(nil), targets...)
+		for i := range expected {
+			expected[i].AuthorizationVersion++
+			expected[i].AccountStatus = LocalAccountStatusActive
+		}
+		if !sameRecoveryTargets(expected, current) {
+			return commonapi.ErrConflict
+		}
 		if err := tx.CompleteIAMRecoveryAttempt(ctx, attempt.ID, now); err != nil {
 			return err
 		}
 		result.AttemptID = attempt.ID
 		return writeRecoveryAudit(ctx, tx, "iam.recovery.completed", attempt.ID, nil, map[string]any{
-			"administrator_count": len(prepared),
+			"administrator_count": len(prepared), "submission_id": input.SubmissionID.String(),
 		})
 	})
 	if err != nil {

@@ -478,3 +478,24 @@ other = "The request is stale, the state has changed, or the action cannot be ap
 
 [system.engine_deployment.source_changed]
 other = "Deployment source changed or expired; reload and confirm again"
+
+[system.iam.recovery_cli.usage]
+other = "Usage: iam-recovery prepare | iam-recovery apply <attempt-id> | iam-recovery status <attempt-id> <submission-id>"
+
+[system.iam.recovery_cli.prepare_instructions]
+other = "Do not capture, save or send this Secret. Run addp-iam-recovery apply %d."
+
+[system.iam.recovery_cli.state_unknown]
+other = "Outcome unknown; resolve by attempt and submission IDs. Do not automatically retry or prepare again."
+
+[system.iam.recovery_cli.state_completed_this_submission]
+other = "This submission completed. This historical receipt does not establish current credential validity. Do not apply again."
+
+[system.iam.recovery_cli.state_completed_other_submission]
+other = "Another submission completed. Do not assume these credentials won. Do not apply again."
+
+[system.iam.recovery_cli.state_expired]
+other = "The recovery expired. Do not retry or extend it. Reconcile this attempt before preparing another."
+
+[system.iam.recovery_cli.state_prepared]
+other = "No committed recovery was observed. This is not proof of rollback. Confirm holders and roles before explicitly retrying with the original ID and Secret and fresh TOTP proofs."

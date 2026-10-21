@@ -15,6 +15,7 @@ import (
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	passwordutils "github.com/addp/system/pkg/utils"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/driver/postgres"
@@ -123,21 +124,24 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoverySecret, expiresAt, err := recoveryService.Prepare(ctx)
+	preparation, err := recoveryService.Prepare(ctx)
 	if err != nil {
 		t.Fatalf("prepare recovery: %v", err)
 	}
-	if recoverySecret != "addp_ir_recovery-postgres-test" || !expiresAt.Equal(currentTime.Add(time.Hour)) {
-		t.Fatalf("prepared recovery secret=%q expires=%s", recoverySecret, expiresAt)
+	recoverySecret := preparation.Secret
+	attemptID := preparation.AttemptID
+	if recoverySecret != "addp_ir_recovery-postgres-test" || preparation.ExpiresAt.IsZero() || attemptID <= 0 {
+		t.Fatal("invalid recovery preparation")
 	}
-	if _, _, err := recoveryService.Prepare(ctx); err == nil {
+	if _, err := recoveryService.Prepare(ctx); err == nil {
 		t.Fatal("second recovery prepare succeeded while an attempt is active")
 	}
-	targets, err := recoveryService.Validate(ctx, recoverySecret)
-	if err != nil || len(targets) != len(principalIDs) {
-		t.Fatalf("validate recovery secret targets=%d error=%v", len(targets), err)
+	validation, err := recoveryService.Validate(ctx, attemptID, recoverySecret)
+	if err != nil || len(validation.Targets) != len(principalIDs) {
+		t.Fatalf("validate recovery: %v", err)
 	}
-	if _, err := recoveryService.Validate(ctx, "addp_ir_invalid"); err == nil {
+	targets := validation.Targets
+	if _, err := recoveryService.Validate(ctx, attemptID, "addp_ir_invalid"); err == nil {
 		t.Fatal("invalid recovery secret was accepted")
 	}
 
@@ -154,19 +158,39 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	inputs = append(inputs, secondInput)
 	swapped := append([]RecoveryAdministratorInput(nil), inputs...)
 	swapped[0].PrincipalID, swapped[1].PrincipalID = swapped[1].PrincipalID, swapped[0].PrincipalID
-	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: swapped}); err == nil {
+	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets, RecoverySecret: recoverySecret, Administrators: swapped}); err == nil {
 		t.Fatal("recovery used a role name instead of the bound principal identity")
+	}
+	if !t.Run("stale_targets_and_wrong_attempt_cannot_be_retried", func(t *testing.T) {
+		before := snapshotRecoveryState(t, db, principalIDs)
+		stale := append([]RecoveryAdministratorTarget(nil), targets...)
+		stale[0].AuthorizationVersion++
+		if r, e := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID, SubmissionID: uuid.New(), Targets: stale, RecoverySecret: recoverySecret, Administrators: inputs}); r != nil || !errors.Is(e, commonapi.ErrConflict) {
+			t.Fatal("changed target observation was accepted")
+		}
+		if r, e := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID + 1, SubmissionID: uuid.New(), Targets: targets, RecoverySecret: recoverySecret, Administrators: inputs}); r != nil || !errors.Is(e, commonapi.ErrUnauthorized) {
+			t.Fatal("original Secret was accepted for a different attempt")
+		}
+		staleInputs := append([]RecoveryAdministratorInput(nil), inputs...)
+		staleInputs[0].TOTPProofs = append([]BootstrapTOTPProof(nil), inputs[0].TOTPProofs...)
+		staleInputs[0].TOTPProofs[0].VerifiedAt = currentTime.Add(-10 * time.Minute)
+		if r, e := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets, RecoverySecret: recoverySecret, Administrators: staleInputs}); r != nil || e == nil {
+			t.Fatal("stale TOTP proof was replayed")
+		}
+		assertRecoveryStateUnchanged(t, db, principalIDs, before)
+	}) {
+		t.FailNow()
 	}
 	t.Run("completion_audit_failure_rolls_back_all_four_holders", func(t *testing.T) {
 		before := snapshotRecoveryState(t, db, principalIDs)
 		installRecoveryCompletionAuditFailure(t, db)
 		defer removeRecoveryCompletionAuditFailure(t, db)
-		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: inputs})
+		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets, RecoverySecret: recoverySecret, Administrators: inputs})
 		if err == nil || !strings.Contains(err.Error(), "forced recovery completion audit failure") || failed != nil {
 			t.Fatal("recovery did not fail at the injected completion audit boundary")
 		}
 		assertRecoveryStateUnchanged(t, db, principalIDs, before)
-		if targets, err := recoveryService.Validate(ctx, recoverySecret); err != nil || len(targets) != len(principalIDs) {
+		if validation, err := recoveryService.Validate(ctx, attemptID, recoverySecret); err != nil || len(validation.Targets) != len(principalIDs) {
 			t.Fatal("failed recovery consumed its secret or lost a current holder")
 		}
 		t.Log("all four holders and ten persisted state sets are unchanged after the final audit write fails")
@@ -175,13 +199,13 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		before := snapshotRecoveryState(t, db, principalIDs)
 		installRecoveryCompletionDisconnect(t, db, len(principalIDs))
 		defer removeRecoveryCompletionDisconnect(t, db)
-		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{RecoverySecret: recoverySecret, Administrators: inputs})
+		failed, err := recoveryService.Apply(ctx, RecoveryApplyInput{AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets, RecoverySecret: recoverySecret, Administrators: inputs})
 		var pgErr *pgconn.PgError
 		if failed != nil || !errors.As(err, &pgErr) || pgErr.Code != "57P01" || pgErr.Severity != "FATAL" {
 			t.Fatalf("recovery did not report a terminated PostgreSQL connection: %v", err)
 		}
 		assertRecoveryStateUnchanged(t, db, principalIDs, before)
-		if targets, err := recoveryService.Validate(ctx, recoverySecret); err != nil || len(targets) != len(principalIDs) {
+		if validation, err := recoveryService.Validate(ctx, attemptID, recoverySecret); err != nil || len(validation.Targets) != len(principalIDs) {
 			t.Fatal("connection termination consumed the recovery Secret or lost a current holder")
 		}
 		t.Log("PostgreSQL FATAL/57P01 confirmed connection termination after all four holder writes and before commit")
@@ -231,6 +255,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 			go func(index int, contenderInputs []RecoveryAdministratorInput) {
 				defer workers.Done()
 				recovered, err := recoveryService.Apply(raceCtx, RecoveryApplyInput{
+					AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets,
 					RecoverySecret: recoverySecret, Administrators: contenderInputs,
 				})
 				outcomes <- outcome{contender: index, result: recovered, err: err}
@@ -262,10 +287,11 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 	}) {
 		t.FailNow()
 	}
-	if result.AttemptID <= 0 || len(result.Principals) != len(principalIDs) || !result.CompletedAt.Equal(currentTime) {
+	if result.AttemptID <= 0 || len(result.Principals) != len(principalIDs) || result.CompletedAt.IsZero() {
 		t.Fatalf("recovery result = %#v", result)
 	}
 	if _, err := recoveryService.Apply(ctx, RecoveryApplyInput{
+		AttemptID: attemptID, SubmissionID: uuid.New(), Targets: targets,
 		RecoverySecret: recoverySecret, Administrators: inputs,
 	}); err == nil {
 		t.Fatal("completed recovery applied twice")
@@ -354,6 +380,11 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("recovery audit leaked secret material in %d rows", leakedAuditCount)
 	}
 	t.Log("all four holders contain only the winner's credentials; authorization versions and recovery audits advanced exactly once")
+	if !t.Run("commit_confirmation_loss_resolves_original_submission_without_reapply", func(t *testing.T) {
+		exerciseRecoveryCommitConfirmationLoss(t, ctx, dsn, db, recoveryService, cipher, now, inputs)
+	}) {
+		t.FailNow()
+	}
 }
 
 func waitForRecoveryLockWaiters(t *testing.T, ctx context.Context, db *gorm.DB, want int64) {
