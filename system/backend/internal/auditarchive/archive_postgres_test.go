@@ -108,6 +108,13 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if _, e = admin.Exec(ctx, insert, "iam.archive_baseline"); e != nil {
 		t.Fatal(e)
 	}
+	// Published migrations can legitimately append catalog governance audit
+	// events. Archive and preserve them; never assume a freshly migrated audit
+	// table is empty or delete those facts to make a fixture count pass.
+	var initialCount int
+	if e = admin.QueryRow(ctx, `SELECT count(*) FROM system.audit_logs`).Scan(&initialCount); e != nil {
+		t.Fatal(e)
+	}
 	if e = p.Initialize(ctx, writer); e != nil {
 		t.Fatal("consistent snapshot initialization", e)
 	}
@@ -115,9 +122,13 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal("silently replaced an existing baseline")
 	}
 	baseline, e := Load(ctx, reader, testSourceID)
-	if e != nil || baseline.Count != 1 {
+	if e != nil {
 		t.Fatal("baseline not verified", e)
 	}
+	if baseline.Count != initialCount {
+		t.Fatalf("baseline count = %d, source snapshot count = %d", baseline.Count, initialCount)
+	}
+	t.Logf("consistent baseline preserved all %d source audit records, including migration events", initialCount)
 	// REPLICATION is not SUPERUSER, and the collector must not mutate source facts.
 	collector, e := pgx.Connect(ctx, p.DSN)
 	if e != nil {
@@ -193,14 +204,14 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if e = b.Commit(ctx); e != nil {
 		t.Fatal(e)
 	}
-	wait(2)
+	wait(initialCount + 1)
 	if e = p.Collect(ctx, writer, nil); e == nil {
 		t.Fatal("a second collector acquired the active replication slot")
 	}
 	if e = a.Commit(ctx); e != nil {
 		t.Fatal(e)
 	}
-	wait(3)
+	wait(initialCount + 2)
 	rolled, e := admin.Begin(ctx)
 	if e != nil {
 		t.Fatal(e)
@@ -214,7 +225,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if _, e = admin.Exec(ctx, insert, "iam.archive_after_rollback"); e != nil {
 		t.Fatal(e)
 	}
-	c := wait(4)
+	c := wait(initialCount + 3)
 	for _, batch := range c.Batches {
 		for _, r := range batch.Rows {
 			if *r["event_name"] == "iam.archive_rolled_back" {
@@ -244,7 +255,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	}
 	stop()
 	before, e := Load(ctx, reader, testSourceID)
-	if e != nil || before.Count != 4 {
+	if e != nil || before.Count != initialCount+3 {
 		t.Fatal("failed upload advanced archive", e)
 	}
 	var confirmed string
@@ -257,7 +268,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	}
 	unavailable.Store(false)
 	start(writer)
-	wait(5)
+	wait(initialCount + 4)
 	shutdown()
 	t.Log("archive outage acknowledged no unarchived WAL; restarting the same slot recovered exactly once without resetting the source history")
 	if _, e = admin.Exec(ctx, `ALTER TABLE system.audit_logs DISABLE TRIGGER trg_audit_logs_prevent_update_delete;
