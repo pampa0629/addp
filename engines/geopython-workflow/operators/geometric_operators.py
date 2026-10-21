@@ -8,6 +8,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely
+from collections import Counter
 from numbers import Real
 from typing import List
 from .base import (
@@ -231,18 +232,57 @@ def _require_projected_xy_crs(crs) -> None:
         raise ValueError("projected CRS requires matching known horizontal coordinate units")
 
 
-def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
-    """Report each positive-area polygon pair once, retaining explicit source IDs."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
+def _source_identifiers(input_gdf: gpd.GeoDataFrame, id_field: str) -> pd.Series:
     if (not isinstance(id_field, str) or not id_field or not input_gdf.columns.is_unique
             or id_field not in input_gdf.columns or isinstance(input_gdf[id_field].dtype, gpd.array.GeometryDtype)):
         raise ValueError("id_field must explicitly name one existing non-geometry scalar column")
     ids = input_gdf[id_field]
-    if not ids.map(pd.api.types.is_scalar).all():
+    if not all(pd.api.types.is_scalar(value) for value in ids):
         raise ValueError("id_field requires non-empty unique scalar identifiers")
-    if ids.isna().any() or ids.map(lambda value: isinstance(value, str) and not value.strip()).any() or ids.duplicated().any():
+    if ids.isna().any() or any(isinstance(value, str) and not value.strip() for value in ids) or ids.duplicated().any():
         raise ValueError("id_field requires non-empty unique scalar identifiers")
+    return ids
+
+
+def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report degree-one planar network endpoints with all original source IDs."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    if geometry.isna().any() or not geometry.geom_type.isin(["LineString", "MultiLineString"]).all():
+        raise ValueError("input_gdf requires non-null LineString or MultiLineString geometries")
+    parts = shapely.get_parts(geometry.array)
+    if (shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any()
+            or not shapely.is_valid(geometry.array).all()):
+        raise ValueError("input_gdf requires non-empty valid lines; repair explicitly before checking endpoints")
+
+    # Use the same exact noding as polygonize; coincident/reversed edges count
+    # once, while the two ends of a closed edge both contribute to its degree.
+    network = shapely.node(shapely.multilinestrings(parts))
+    degrees = Counter(endpoint for edge in shapely.get_parts(network)
+                      for endpoint in (edge.coords[0], edge.coords[-1]))
+    tree = shapely.STRtree(geometry.array)
+    associations = []
+    for coordinate, degree in degrees.items():
+        if degree != 1:
+            continue
+        point = shapely.Point(coordinate)
+        sources = tree.query(point, predicate="intersects")
+        if not len(sources):
+            raise ValueError("dangling endpoint cannot be associated with an original source line")
+        associations.extend((int(source), coordinate) for source in sources)
+    associations.sort(key=lambda item: (item[0], *item[1]))
+    return gpd.GeoDataFrame(
+        {"source_id": ids.iloc[[source for source, _ in associations]].reset_index(drop=True)},
+        geometry=gpd.GeoSeries([shapely.Point(point) for _, point in associations], crs=geometry.crs),
+    )
+
+
+def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report each positive-area polygon pair once, retaining explicit source IDs."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
     if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
         raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
     if not shapely.is_valid(geometry.array).all():
@@ -411,6 +451,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
+    name="check_dangling_points", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="悬点检查", brief_description="报告平面线网中度为一的端点及原始来源，不自动改线",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按真实 XY 交点打断并去除重合段后计算节点度，将悬挂端点精确关联回原始要素。"
+             "合法道路尽头也会报告，不自动判断业务质量或立交层级。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个线图层", notes="有效有限二维 LineString/MultiLineString，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id/Point，悬点逐来源输出，保留来源类型和 CRS", is_default=True)],
+    use_cases=["定位线网断头及其原始要素", "检查孤立线端点后由业务确认是否应连接"],
+    notes=["真实交点相连，重合段不重复计度，闭环端点计两次", "同点逐来源报告，同一源只报告一次；按源行和 XY 稳定排序", "不使用距离容差，不吸附、延伸、删线、重投影或改写源", "不生成 Quality 结论；保存另接 save，线网及索引驻内存，不承诺固定容量"],
+    workflow_example={"id": "check_dangles", "operator": "check_dangling_points", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
     name="check_polygon_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1023,4 +1079,5 @@ OPERATORS = dict([
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
+    register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
 ])

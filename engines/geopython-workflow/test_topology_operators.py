@@ -1123,3 +1123,165 @@ def test_polygon_gap_discovery_two_required_input_ports_async_workflow_and_direc
         assert state["status"] == "success", state
         features = json.loads(state["result"])["features"]
         assert len(features) == 1 and features[0]["properties"]["gap_area"] == 4
+
+
+def dangles(geometries, ids=None, crs="EPSG:3857"):
+    frame = lines(geometries, crs)
+    frame["line_id"] = ids if ids is not None else list(range(len(frame)))
+    return get_operator("check_dangling_points")(input_gdf=frame, id_field="line_id")
+
+
+@pytest.mark.parametrize("geometries,expected", [
+    ([LineString([(0,0),(2,0)])], [(0,0,0),(0,2,0)]),
+    ([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])], [(0,0,0),(1,2,0)]),
+    ([LineString([(0,0),(4,0)]),LineString([(2,0),(2,2)])], [(0,0,0),(0,4,0),(1,2,2)]),
+    ([LineString([(0,0),(2,2)]),LineString([(0,2),(2,0)])], [(0,0,0),(0,2,2),(1,0,2),(1,2,0)]),
+    ([box(0,0,2,2).boundary], []),
+    ([LineString([(0,0),(2,2),(0,2),(2,0)])], [(0,0,0),(0,2,0)]),
+    ([LineString([(0,0),(4,0)]),LineString([(4,0),(0,0)])], [(0,0,0),(0,4,0),(1,0,0),(1,4,0)]),
+    ([LineString([(0,0),(4,0)]),LineString([(2,0),(6,0)])], [(0,0,0),(1,6,0)]),
+    ([LineString([(0,0),(4,0)]),LineString([(1,0),(3,0)])], [(0,0,0),(0,4,0)]),
+    ([box(0,0,2,2).boundary,LineString([(0,0),(-1,0)])], [(1,-1,0)]),
+    ([MultiLineString([[(0,0),(1,0)],[(1,0),(2,0)],[(1,0),(0,0)]])], [(0,0,0),(0,2,0)]),
+])
+def test_dangling_points_reports_geometric_degree_one_with_exact_source_binding(geometries, expected):
+    result = dangles(geometries)
+    assert result.columns.tolist() == ["source_id", "geometry"]
+    assert list(zip(result.source_id, result.geometry.x, result.geometry.y)) == expected
+    assert result.geom_type.tolist() == ["Point"]*len(expected)
+    assert result.crs.to_epsg() == 3857
+
+
+@pytest.mark.parametrize("crs", ["EPSG:3857","EPSG:2263"])
+def test_dangling_points_keeps_binary_tiny_disconnect_without_tolerance(crs):
+    tiny=2.**-40
+    result=dangles([LineString([(0,0),(1,0)]),LineString([(1+tiny,0),(2,0)])],crs=crs)
+    assert list(zip(result.source_id,result.geometry.x)) == [(0,0),(0,1),(1,1+tiny),(1,2)]
+    assert str(result.crs)==crs
+
+
+def test_dangling_points_preserves_source_ids_order_dtype_custom_geometry_and_source():
+    import pandas as pd
+    frame=lines([LineString([(0,0),(4,0)]),LineString([(2,0),(6,0)]),LineString([(10,0),(11,0)])])
+    frame["line_id"]=pd.array([2**60+7,2**60+3,2**60+1],dtype="Int64")
+    frame["source_id"]=["business"]*3
+    frame=frame.rename_geometry("route");frame.index=[9,9,1];before=frame.copy(deep=True)
+    result=get_operator("check_dangling_points")(input_gdf=frame,id_field="line_id")
+    assert result.source_id.tolist()==[2**60+7,2**60+3,2**60+1,2**60+1]
+    assert str(result.source_id.dtype)=="Int64"
+    assert list(zip(result.geometry.x,result.geometry.y))==[(0,0),(6,0),(10,0),(11,0)]
+    assert_geodataframe_equal(frame,before)
+
+
+def test_dangling_points_empty_batch_retains_source_id_schema_and_crs():
+    import pandas as pd
+    frame=lines([]);frame["identity"]=pd.Series([],dtype="string")
+    result=get_operator("check_dangling_points")(input_gdf=frame,id_field="identity")
+    assert result.empty and result.columns.tolist()==["source_id","geometry"]
+    assert str(result.source_id.dtype)=="string" and result.crs==frame.crs
+
+
+@pytest.mark.parametrize("value", [None,"", "missing", "geometry", "boundary"])
+def test_dangling_points_rejects_missing_or_geometry_id_field(value):
+    with pytest.raises(ValueError,match="id_field"):
+        get_operator("check_dangling_points")(input_gdf=lines([LineString([(0,0),(1,0)])]),id_field=value)
+
+
+@pytest.mark.parametrize("ids", [[None,1],[1,1],[" ","x"],[[1],[2]]])
+def test_dangling_points_rejects_non_scalar_missing_blank_or_duplicate_ids(ids):
+    with pytest.raises(ValueError,match="identifiers"):
+        dangles([LineString([(0,0),(1,0)]),LineString([(2,0),(3,0)])],ids)
+
+
+@pytest.mark.parametrize("geometry", [None,Point(0,0),box(0,0,1,1),LineString(),
+    LineString([(0,0),(0,0)]),LineString([(0,0,0),(1,0,0)]),
+    shapely.from_wkt("LINESTRING M (0 0 1,1 0 1)"),LineString([(0,0),(float('inf'),0)])])
+def test_dangling_points_rejects_missing_empty_invalid_non_line_or_non_xy(geometry):
+    with pytest.raises(ValueError):dangles([geometry])
+
+
+@pytest.mark.parametrize("crs", [None,"EPSG:4326","OGC:CRS84"])
+def test_dangling_points_rejects_unknown_or_geographic_crs(crs):
+    with pytest.raises(ValueError,match="projected CRS"):
+        dangles([LineString([(0,0),(1,0)])],crs=crs)
+
+
+def test_dangling_points_requires_active_geodataframe_and_unique_columns():
+    import pandas as pd
+    operator=get_operator("check_dangling_points")
+    for frame in [pd.DataFrame({"id":[1]}),gpd.GeoDataFrame({"id":[1]})]:
+        with pytest.raises(ValueError):operator(input_gdf=frame,id_field="id")
+    frame=lines([LineString([(0,0),(1,0)])]);frame["id"]=1;frame["other"]=2
+    frame.columns=["source_name","boundary","id","id"]
+    with pytest.raises(ValueError,match="id_field"):operator(input_gdf=frame,id_field="id")
+
+
+@pytest.mark.parametrize("closed", [False,True])
+def test_dangling_points_workflow_native_point_save_reload_and_source_unchanged(tmp_path,closed):
+    from osgeo import ogr
+    frame=lines([box(0,0,1,1).boundary if closed else LineString([(0,0),(1,0)])]);frame["line_id"]=[19]
+    frame.to_file(tmp_path/"source.gpkg",driver="GPKG");before=(tmp_path/"source.gpkg").read_bytes()
+    connection={"engine_type":"nfs","mount_path":str(tmp_path)}
+    result=execute_workflow({"tasks":[
+        {"id":"load","operator":"load","params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+        {"id":"check","operator":"check_dangling_points","params":{"input_gdf":{"$ref":"load"},"id_field":"line_id"},"depends_on":["load"]},
+        {"id":"save","operator":"save","params":{"input_df":{"$ref":"check"},"connection_info":connection,"path":"dangles.gpkg","mode":"fail"},"depends_on":["check"]}]})
+    assert result["status"]=="success",result.get("error")
+    dataset=ogr.Open(str(tmp_path/"dangles.gpkg"),0);layer=dataset.GetLayer(0)
+    assert layer.GetFeatureCount()==(0 if closed else 2) and layer.GetSpatialRef().GetAuthorityCode(None)=="3857"
+    rows=[(f.GetField("source_id"),f.GetGeometryRef().GetX(),f.GetGeometryRef().GetY()) for f in layer]
+    assert rows==([] if closed else [(19,0,0),(19,1,0)])
+    dataset=None
+    assert (tmp_path/"source.gpkg").read_bytes()==before
+
+
+def test_dangling_points_discovery_workflow_only_and_required_explicit_id():
+    op=next(o for o in list_operators() if o["id"]=="check_dangling_points")
+    assert op["display_name"]=="悬点检查" and op["category_path"]==["矢量处理","几何处理"]
+    assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
+    assert [(p["name"],p["param_type"],p["required"]) for p in op["parameters"]]==[("input_gdf","input",True),("id_field","param",True)]
+    assert [(p["name"],p["type"],p["is_default"]) for p in op["output_ports"]]==[("result","geodataframe",True)]
+
+
+def test_dangling_points_async_runtime_discovery_direct_denial_and_no_implicit_id(tmp_path,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame=lines([LineString([(0,0),(1,0)])]);frame["line_id"]=[17]
+    frame.to_file(tmp_path/"source.gpkg",driver="GPKG")
+    connection={"engine_type":"nfs","mount_path":str(tmp_path)}
+    tasks=[{"id":"load","operator":"load","params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+           {"id":"check","operator":"check_dangling_points","params":{"input_gdf":{"$ref":"load"},"id_field":"line_id"},"depends_on":["load"]}]
+    monkeypatch.setattr(api_server,"executions",ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        assert any(o["id"]=="check_dangling_points" for o in client.get("/api/operators").get_json()["operators"])
+        assert client.post("/api/operators/check_dangling_points/invoke",json={"params":{}}).status_code==403
+        assert client.post("/api/workflow",json={"workflow_def":{"tasks":tasks}}).status_code==400
+        response=client.post("/api/workflow",json={"workflow_def":{"tasks":tasks},"runtime":{"tenant_id":7,"execution_authorization":{"id":1,"effects":["read"]}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in ('success','failed'):break
+            time.sleep(.01)
+        assert state['status']=='success',state
+        features=json.loads(state['result'])['features']
+        assert [feature['properties']['source_id'] for feature in features]==[17,17]
+        assert [feature['geometry'] for feature in features]==[
+            {'type':'Point','coordinates':[0,0]}, {'type':'Point','coordinates':[1,0]}]
+    tasks[1]['params'].pop('id_field')
+    tasks.append({"id":"save","operator":"save","params":{"input_df":{"$ref":"check"},"connection_info":connection,"path":"must-not-exist.gpkg","mode":"fail"},"depends_on":["check"]})
+    failed=execute_workflow({'tasks':tasks})
+    assert failed['status']=='failed' and 'id_field' in str(failed)
+    assert not (tmp_path/'must-not-exist.gpkg').exists()
+
+
+def test_dangling_points_source_lookup_uses_exact_lines_not_bounding_boxes():
+    result=dangles([box(0,0,4,4).boundary,LineString([(1,1),(2,1)])],["ring","isolated"])
+    assert list(zip(result.source_id,result.geometry.x,result.geometry.y))==[("isolated",1,1),("isolated",2,1)]
+
+
+def test_polygon_overlap_empty_string_ids_use_shared_scalar_validation():
+    import pandas as pd
+    frame=overlap_frame([]);frame["parcel_id"]=pd.Series([],dtype="string")
+    result=overlap(frame)
+    assert result.empty and str(result.source_id_a.dtype)==str(result.source_id_b.dtype)=="string"
