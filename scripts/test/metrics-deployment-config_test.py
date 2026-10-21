@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import io
 import json
@@ -8,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
 from unittest import mock
 from contextlib import redirect_stdout
 
@@ -24,6 +26,36 @@ auth_spec.loader.exec_module(postgres_auth)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_stopped_process_waits_for_failure_at_the_consumers_whole_second(self):
+        tree = ast.parse((ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'query')
+        check = next(node.args[0] for node in ast.walk(tree)
+                     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'eventually'
+                     and len(node.args) > 1 and isinstance(node.args[1], ast.Constant)
+                     and node.args[1].value == 'stopped real process becomes a failed source')
+        clock = mock.Mock()
+        clock.time.return_value = 100.576
+        requests = []
+
+        def api(path):
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            requests.append(params)
+            # The failed scrape at 100.147 is visible now, but not at t=100,
+            # the evaluation time used by both stopped-source Go checks.
+            failed = 'time' not in params or float(params['time'][0]) >= 100.147
+            return {'result': [{'value': [100.576, '0']}] if failed else []}
+
+        namespace = {'api': api, 'urllib': __import__('urllib'), 'math': __import__('math'), 'time': clock}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<probe query>', 'exec'), namespace)
+        ready = eval(compile(ast.Expression(check), '<stopped source precondition>', 'eval'), namespace)
+        self.assertFalse(ready())
+        self.assertEqual(requests[-1]['time'], ['100'])
+        clock.time.return_value = 101.001
+        self.assertTrue(ready())
+        self.assertEqual(requests[-1]['time'], ['101'])
+        namespace['query']('up')
+        self.assertNotIn('time', requests[-1])
+
     def test_http_quality_uses_native_source_and_standard_lifecycle_registration(self):
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
         selected = re.findall(r"'\^TestIntegrationMetrics\(([^)]+)\)\$'", probe)

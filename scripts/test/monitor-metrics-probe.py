@@ -62,8 +62,11 @@ def api(path):
     return data['data']
 
 
-def query(expression):
-    return api('query?' + urllib.parse.urlencode({'query': expression}))['result']
+def query(expression, *, at=None):
+    params = {'query': expression}
+    if at is not None:
+        params['time'] = at
+    return api('query?' + urllib.parse.urlencode(params))['result']
 
 
 def job_is_up(job, expected):
@@ -308,7 +311,9 @@ try:
     process, log, path = processes[0]
     Path(str(path) + '.stop').touch()
     assert process.wait(timeout=10) == 0
-    eventually(lambda: bool(query('up{job="addp_nodes",addp_instance_id="native-1"} == 0')),
+    # Consumers evaluate at whole seconds. A failed scrape later in the current
+    # second must not release them to query the preceding healthy instant.
+    eventually(lambda: bool(query('up{job="addp_nodes",addp_instance_id="native-1"} == 0', at=math.floor(time.time()))),
                'stopped real process becomes a failed source')
     assert bool(query('up{job="addp_nodes",addp_instance_id="native-2"} == 1'))
     assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'
