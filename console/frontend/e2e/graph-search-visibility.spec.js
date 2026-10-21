@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableSearchPixels, searchNodeHits } from './graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts } from './graph-visual.fixture.js'
 
 for (const replace of [false, true]) {
   test(`Graph search settles to visible clickable nodes (${replace ? 'new' : 'retained'} identities)`, async ({ page }, testInfo) => {
@@ -19,6 +19,11 @@ for (const replace of [false, true]) {
       expect(route.request().method()).toBe('POST')
       return route.fulfill({ json: { nodes: found, edges: edges(found) } })
     })
+    await page.route('**/api/v1/graph/graphs/7/expand', route => {
+      expect(route.request().method()).toBe('POST')
+      const count = route.request().postDataJSON().target.id === found[0].id ? 2 : 3
+      return route.fulfill({ json: { nodes: found.slice(0, count), edges: edges(found).slice(0, count - 1) } })
+    })
     await page.goto('/graph/graphs/7/browse')
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const canvas = frame.locator('.graph-canvas')
@@ -28,13 +33,18 @@ for (const replace of [false, true]) {
     await frame.locator('.search-input input').fill('合成节点')
     await frame.locator('.search-input input').press('Enter')
     await response
-    const stable = await canvas.evaluate(stableSearchPixels, { count: found.length })
+    const color = await graphObservationColor(frame, canvas)
+    const stable = await canvas.evaluate(stableGraphPixels, { count: found.length, color })
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = 'hidden' })
-    await expect(canvas.evaluate(stableSearchPixels, { count: found.length, timeout: 200 })).rejects.toThrow('visible stable frame')
+    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, timeout: 200 })).rejects.toThrow('visible stable frame')
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = '' })
-    const hits = await searchNodeHits(frame, canvas, stable, found)
+    const hits = await graphNodeHits(frame, canvas, stable, found)
     await testInfo.attach('stable-search-frame.json', { body: JSON.stringify({ ...stable, hits }, null, 2), contentType: 'application/json' })
     await testInfo.attach('stable-search.png', { body: await page.screenshot(), contentType: 'image/png' })
+    const exploration = await exploreGraphLayouts(page, frame, canvas, '/api/v1/graph/graphs/7', found, edges(found), async phase => {
+      await testInfo.attach(`stable-${phase}.png`, { body: await page.screenshot(), contentType: 'image/png' })
+    })
+    await testInfo.attach('graph-exploration-stable-frame.json', { body: JSON.stringify(exploration, null, 2), contentType: 'application/json' })
     expect(unexpected).toEqual([])
   })
 }

@@ -169,7 +169,10 @@ def verify_search_frame(visual, expected):
     require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "frame", "hits"} and
             all(type(visual.get(key)) is type(value) and visual[key] == value for key, value in expected.items()) and
             visual.get("schema_version") == "addp.graph-search-stable-frame/v1", "Search frame identity differs")
-    frame, hits = visual.get("frame"), visual.get("hits")
+    verify_pixel_frame(visual.get("frame"), visual.get("hits"), expected["native_ids"])
+
+
+def verify_pixel_frame(frame, hits, native_ids):
     number = lambda value: type(value) in (int, float) and math.isfinite(value)
     require(type(frame) is dict and set(frame) == {"width", "height", "color", "nodes", "stableFrames"} and
             all(number(frame.get(key)) and frame[key] > 0 for key in ("width", "height")) and
@@ -177,7 +180,7 @@ def verify_search_frame(visual, expected):
             type(frame.get("color")) is list and len(frame["color"]) == 3 and
             all(type(value) is int and 0 <= value <= 255 for value in frame["color"]), "Search frame did not settle")
     nodes = frame.get("nodes")
-    require(type(nodes) is list and type(hits) is list and len(nodes) == len(hits) == 3, "Search frame needs three visible hits")
+    require(type(nodes) is list and type(hits) is list and len(nodes) == len(hits) == len(native_ids), "Graph frame needs every expected visible hit")
     for node, hit in zip(nodes, hits):
         require(type(node) is dict and set(node) == {"x", "y", "box", "pixelCount"} and
                 type(node.get("box")) is list and len(node["box"]) == 4 and all(number(v) for v in node["box"]) and
@@ -188,10 +191,48 @@ def verify_search_frame(visual, expected):
                 1 < y0 < node["y"] < y1 < frame["height"] - 1, "Search node outside visible viewport")
         require(type(hit) is dict and set(hit) == {"source_id", "native_id", "x", "y"} and
                 hit["x"] == node["x"] and hit["y"] == node["y"] and type(hit["source_id"]) is str and
-                type(hit["native_id"]) is str and hit["native_id"] == expected["native_ids"].get(hit["source_id"]),
+                type(hit["native_id"]) is str and hit["native_id"] == native_ids.get(hit["source_id"]),
                 "Search click did not bind the actual native node")
-    require(len({hit["source_id"] for hit in hits}) == 3 and
-            {hit["source_id"] for hit in hits} == set(expected["native_ids"]), "Search clicks missed native identities")
+    require(len({hit["source_id"] for hit in hits}) == len(native_ids) and
+            {hit["source_id"] for hit in hits} == set(native_ids), "Search clicks missed native identities")
+
+
+def verify_exploration(visual, expected):
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "native_edges"} and
+            all(type(visual.get(key)) is type(value) and visual[key] == value for key, value in expected.items()) and
+            visual.get("schema_version") == "addp.graph-exploration-stable-frame/v1", "Exploration identity differs")
+    ids = expected["native_ids"]
+    edges, stages = visual.get("native_edges"), visual.get("stages")
+    require(type(edges) is list and len(edges) == 2 and all(type(edge) is dict and
+            set(edge) == {"id", "source", "target", "type"} and all(type(value) is str and value for value in edge.values()) and
+            edge["type"] == "Link" for edge in edges), "Exploration needs the two original native relations")
+    require(len({edge["id"] for edge in edges}) == 2 and
+            {(edge["source"], edge["target"]) for edge in edges} == {(ids["p1"], ids["p2"]), (ids["p2"], ids["p3"])}, "Exploration native relation endpoints differ")
+    labels = [("dagre", "分层"), ("circular", "环形"), ("radial", "辐射"), ("force", "力导向")]
+    phases = ["expand-1", "expand-2", *("layout-" + key for key, _ in labels)]
+    require(type(stages) is list and len(stages) == len(phases), "Exploration omitted expansion or layout frames")
+    requests, previous_positions, color = [], None, None
+    for index, (stage, phase) in enumerate(zip(stages, phases)):
+        keys = {"phase", "native_ids", "edges", "frame", "hits"} | ({"request", "http_status"} if index < 2 else {"layout", "selected_label"})
+        require(type(stage) is dict and set(stage) == keys and stage["phase"] == phase, "Exploration stage/order differs")
+        wanted = {key: ids[key] for key in ("p1", "p2")} if index == 0 else ids
+        wanted_edges = [edge for edge in edges if edge["source"] in wanted.values() and edge["target"] in wanted.values()]
+        require(stage["native_ids"] == wanted and stage["edges"] == wanted_edges, "Expansion lost or changed native membership")
+        verify_pixel_frame(stage["frame"], stage["hits"], wanted)
+        if color is None: color = stage["frame"]["color"]
+        require(stage["frame"]["color"] == color, "Exploration fill observation color changed")
+        positions = {hit["native_id"]: (hit["x"], hit["y"]) for hit in stage["hits"]}
+        if index < 2:
+            request = stage["request"]
+            wanted_request = {"target": {"kind": "entity", "id": ids["p1" if index == 0 else "p2"]}, "depth": 1, "node_limit": 200, "relationship_limit": 400}
+            require(type(stage["http_status"]) is int and stage["http_status"] == 200 and request == wanted_request and
+                    all(type(request[key]) is int for key in ("depth", "node_limit", "relationship_limit")), "Wrong native expand command/status")
+            requests.append({"method": "POST", "path": f"/api/v1/graph/graphs/{expected['graph_id']}/expand", "body": wanted_request})
+        else:
+            require(stage["layout"] == labels[index-2][0] and stage["selected_label"] == labels[index-2][1] and
+                    positions != previous_positions, "Layout selection did not change visible node geometry")
+        previous_positions = positions
+    require(visual["requests"] == requests, "Layout change issued requests or expansion sequence differed")
 
 
 def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
@@ -202,9 +243,11 @@ def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
     output = artifacts / "graph-protection-browser.json"
     diagnostics = artifacts / "graph-browser-diagnostics.json"
     visual = artifacts / "graph-search-stable-frame.json"
+    exploration = artifacts / "graph-exploration-stable-frame.json"
     screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png",
-                   *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")))]
-    for path in [output, diagnostics, visual, *screenshots]:
+                   *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")),
+                   *(f"graph-{phase}-console.png" for phase in ("expand-1", "expand-2", "layout-dagre", "layout-circular", "layout-radial", "layout-force")))]
+    for path in [output, diagnostics, visual, exploration, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
                 "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type(), "native_ids": native_ids}
@@ -222,9 +265,12 @@ def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
     }, "Graph Console omitted clean browser diagnostics")
     require(visual.is_file(), "Search stable frame evidence missing")
     verify_search_frame(json.loads(visual.read_text()), expected)
+    require(exploration.is_file(), "Expansion/layout stable frame evidence missing")
+    verify_exploration(json.loads(exploration.read_text()), expected)
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-protection-browser/v4", result="passed", permissions=sorted(READER_PERMISSIONS),
+    expected.update(schema_version="addp.graph-protection-browser/v5", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
+                    expansion_stable_visible=True, layout_stable_visible=True, layout_modes=["dagre", "circular", "radial", "force"],
                     public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
                     release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, theme_typography=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401"} and
@@ -387,7 +433,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v6", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v7", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

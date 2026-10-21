@@ -13,6 +13,26 @@ from unittest.mock import patch
 SUITE = importlib.import_module('scripts.test.graph-protection-online')
 
 
+def exploration_fixture(expected):
+    ids = expected['native_ids']
+    edges = [dict(id='link-12', source=ids['p1'], target=ids['p2'], type='Link'),
+             dict(id='link-23', source=ids['p2'], target=ids['p3'], type='Link')]
+    stages = []
+    labels = [('dagre', '分层'), ('circular', '环形'), ('radial', '辐射'), ('force', '力导向')]
+    for index, phase in enumerate(['expand-1', 'expand-2', *['layout-'+key for key, _ in labels]]):
+        n = 2 if index == 0 else 3
+        stage = dict(phase=phase, native_ids={key: ids[key] for key in list(ids)[:n]}, edges=edges[:n-1],
+            frame={'width': 800, 'height': 600, 'color': [123, 0, 255], 'stableFrames': 10,
+                   'nodes': [{'x': i*100+index*10, 'y': 100, 'box': [i*100+index*10-10, 90, i*100+index*10+10, 110], 'pixelCount': 100} for i in range(1, n+1)]},
+            hits=[{'source_id': 'p'+str(i), 'native_id': ids['p'+str(i)], 'x': i*100+index*10, 'y': 100} for i in range(1, n+1)])
+        if index < 2:
+            stage.update(http_status=200, request={'target': {'kind': 'entity', 'id': ids['p'+str(index+1)]}, 'depth': 1, 'node_limit': 200, 'relationship_limit': 400})
+        else: stage.update(layout=labels[index-2][0], selected_label=labels[index-2][1])
+        stages.append(stage)
+    return dict(expected, schema_version='addp.graph-exploration-stable-frame/v1', stages=stages, native_edges=edges,
+        requests=[{'method': 'POST', 'path': '/api/v1/graph/graphs/'+str(expected['graph_id'])+'/expand', 'body': stage['request']} for stage in stages[:2]])
+
+
 class GraphProtectionOnlineTest(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
@@ -113,9 +133,10 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
                 self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb', 'native_ids': {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}})
-                payload = dict(expected, schema_version='addp.graph-protection-browser/v4', result='passed',
+                payload = dict(expected, schema_version='addp.graph-protection-browser/v5', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
                                browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
+                               expansion_stable_visible=True, layout_stable_visible=True, layout_modes=["dagre", "circular", "radial", "force"],
                                public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
                                browser_errors=0, anonymous_refresh_401=1, release_assets=True, deep_link_reload=True,
                                theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True, theme_typography=True)
@@ -131,6 +152,10 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 for hit in visual.get('hits', []): hit.update(mutation.get('_hit', {}))
                 if not mutation.get('_missing_visual'):
                     (artifacts / 'graph-search-stable-frame.json').write_text(json.dumps(visual))
+                exploration = exploration_fixture(expected)
+                exploration.update(mutation.get('_exploration', {}))
+                if not mutation.get('_missing_exploration'):
+                    (artifacts / 'graph-exploration-stable-frame.json').write_text(json.dumps(exploration))
                 Path(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_REPORT']).write_text(json.dumps(payload))
                 diagnostics = mutation.get('_diagnostics', {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': []})
                 if diagnostics is not None:
@@ -140,9 +165,14 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         (artifacts / name).write_bytes(b'unit-test-screenshot')
                     for mode in (('light', 'dark', 'blue') if screenshots == 'partial' else ('light', 'dark', 'blue', 'purple')):
                         (artifacts / f'graph-private-theme-{mode}.png').write_bytes(b'unit-test-screenshot')
+                    for phase in ('expand-1', 'expand-2', 'layout-dagre', 'layout-circular', 'layout-radial', 'layout-force'):
+                        if phase == 'layout-force' and mutation.get('_missing_layout_png'): continue
+                        (artifacts / f'graph-{phase}-console.png').write_bytes(b'unit-test-screenshot')
                 return type('Process', (), {'returncode': 0})()
             for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True),
-                    ({'_missing_visual': True}, True), ({'_omit': ['search_stable_visible']}, True),
+                    ({'_missing_visual': True}, True), ({'_missing_exploration': True}, True), ({'_missing_layout_png': True}, True),
+                    ({'expansion_stable_visible': 1}, True), ({'layout_stable_visible': False}, True), ({'_omit': ['expansion_stable_visible']}, True),
+                    ({'layout_modes': ['force']}, True), ({'schema_version': 'addp.graph-protection-browser/v4'}, True), ({'_exploration': {'stages': []}}, True), ({'_omit': ['search_stable_visible']}, True),
                     ({'search_stable_visible': False}, True), ({'search_stable_visible': 1}, True), ({'search_node_hits': 2}, True), ({'_visual': {'principal_id': 'other'}}, True),
                     ({'_visual': {'hits': []}}, True), ({'_frame': {'stableFrames': 1}}, True),
                     ({'_frame': {'stableFrames': True}}, True), ({'_frame': {'width': 0}}, True),
@@ -164,6 +194,25 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})
                     else:
                         self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})['principal_id'], '4')
+
+    def test_exploration_rejects_wrong_geometry_ids_requests_and_incomplete_layouts(self):
+        expected = {'run_id': 'r', 'tenant_id': '2', 'principal_id': '4', 'graph_id': 17, 'engine_id': 13, 'engine_type': 'neo4j',
+                    'native_ids': {'p1': '4:node:1', 'p2': '4:node:2', 'p3': '4:node:3'}}
+        valid = exploration_fixture(expected)
+        SUITE.verify_exploration(valid, expected)
+        mutations = [lambda v: v.update(principal_id='other'), lambda v: v.update(stages=v['stages'][:-1]),
+            lambda v: v['stages'][0]['request'].update(depth=2), lambda v: v['stages'][0].update(http_status=500),
+            lambda v: v['stages'][2].update(selected_label='环形'), lambda v: v['stages'][2].update(layout='force'),
+            lambda v: v['stages'][2]['frame'].update(stableFrames=True),
+            lambda v: v['stages'][2]['frame']['nodes'][0].update(box=[0, 90, 110, 110]),
+            lambda v: v['stages'][2]['hits'][0].update(native_id='wrong'),
+            lambda v: v['stages'][0]['native_ids'].update(p3=expected['native_ids']['p3']),
+            lambda v: v['native_edges'][0].update(target=expected['native_ids']['p3']),
+            lambda v: v['requests'].append({'method': 'GET', 'path': '/extra', 'body': None}),
+            lambda v: v['stages'][3].update(frame=copy.deepcopy(v['stages'][2]['frame']), hits=copy.deepcopy(v['stages'][2]['hits']))]
+        for mutate in mutations:
+            candidate = copy.deepcopy(valid); mutate(candidate)
+            with self.subTest(mutate=mutate), self.assertRaises(SUITE.SuiteError): SUITE.verify_exploration(candidate, expected)
 
     def test_main_emits_the_standard_dispatcher_report_without_credentials(self):
         dispatcher = importlib.import_module('scripts.test.online-gate')

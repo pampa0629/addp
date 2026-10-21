@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
-import { stableSearchPixels, searchNodeHits } from '../graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts } from '../graph-visual.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -33,7 +33,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
     if (path.startsWith('/module-ui/graph/assets/') && path.endsWith('.js')) releaseScripts.add(path)
     if (path.startsWith('/api/v1/') && request.headers().authorization) businessStarted = true
     if (path.startsWith('/api/v1/graph/') && !['GET', 'HEAD'].includes(request.method()) &&
-      !(request.method() === 'POST' && path === `/api/v1/graph/graphs/${expected.graph_id}/search`)) writes.push(path)
+      !(request.method() === 'POST' && [`/api/v1/graph/graphs/${expected.graph_id}/search`, `/api/v1/graph/graphs/${expected.graph_id}/expand`].includes(path))) writes.push(path)
   })
   page.on('response', response => {
     if (isAnonymousRefreshResponse(response, businessStarted)) { anonymousRefresh++; return }
@@ -101,12 +101,23 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   await expect(frame.locator('.graph-canvas canvas')).toBeVisible()
   await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
   const canvas = frame.locator('.graph-canvas')
-  const stableFrame = await canvas.evaluate(stableSearchPixels, { count: found.nodes.length })
-  const hits = await searchNodeHits(frame, canvas, stableFrame, found.nodes)
+  const color = await graphObservationColor(frame, canvas)
+  const stableFrame = await canvas.evaluate(stableGraphPixels, { count: found.nodes.length, color })
+  const hits = await graphNodeHits(frame, canvas, stableFrame, found.nodes)
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-search-stable-frame.json'), JSON.stringify({
     ...expected, schema_version: 'addp.graph-search-stable-frame/v1', frame: stableFrame, hits
   }, null, 2))
   await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-private-browse-console.png') })
+
+  stage = 'graph:expand-and-layout'
+  const nativeNodes = ['p1', 'p2', 'p3'].map(id => found.nodes.find(node => node.properties.id === id))
+  const exploration = await exploreGraphLayouts(page, frame, canvas, `/api/v1/graph/graphs/${expected.graph_id}`,
+    nativeNodes, snapshot.overview.edges, async phase => {
+      await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-${phase}-console.png`) })
+    })
+  writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-exploration-stable-frame.json'), JSON.stringify({
+    ...expected, schema_version: 'addp.graph-exploration-stable-frame/v1', ...exploration
+  }, null, 2))
 
   stage = 'knowledge-service:navigation'
   const ontologyResponse = page.waitForResponse(response => new URL(response.url()).pathname ===
@@ -137,9 +148,10 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-protection-browser/v4', result: 'passed',
+    ...expected, schema_version: 'addp.graph-protection-browser/v5', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true, search_stable_visible: true, search_node_hits: hits.length,
+    expansion_stable_visible: true, layout_stable_visible: true, layout_modes: ['dagre', 'circular', 'radial', 'force'],
     public_switch_disabled: true, graph_writes: 0, failed_business_responses: 0,
     browser_errors: 0, anonymous_refresh_401: anonymousRefresh,
     release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true, theme_typography: true
