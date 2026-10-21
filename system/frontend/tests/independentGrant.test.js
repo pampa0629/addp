@@ -12,6 +12,24 @@ const requirement = { binding, engine_id: '2', catalog_path: path, mode: 'indepe
 const candidates = [{ id: '9007199254740993', name: 'Outdoor reader' }]
 const form = { recipientType: 'user', recipientID: candidates[0].id, expiryMode: 'until_revoked', expiresAt: null, reason: ' Explicit read ' }
 describe('independent read-grant command capture', () => {
+  it('captures one whole file DataItem, lists its constituents and never submits caller composition', () => {
+    const file = name => ({ engine_id: '33', version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }, { term: 'directory', kind: 'directory', name: 'Models' }, { term: 'file', kind: 'file', name }] })
+    const primary = file('Model.3DS'), texture = file('TEST.PNG')
+    const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), file_composition: { format: '3ds', refs: [
+      { target: primary, role: 'model', required: true, primary: true }, { target: texture, role: 'texture', required: true, primary: false }
+    ] } }
+    const requirement = { engine_id: '33', catalog_path: primary, mode: 'independent', version: '1', initialize_approval: true, binding }
+    const captured = captureIndependentGrant('33', requirement, form, candidates)
+    expect(captured.compositionPaths).toEqual(['Models / Model.3DS', 'Models / TEST.PNG'])
+    expect(Object.isFrozen(captured.compositionPaths)).toBe(true)
+    expect(JSON.parse(captured.payload)).toMatchObject({ catalog_path: { ...primary, engine_id: 33 }, item_fingerprint: binding.item_fingerprint, expected_boundary_hash: binding.boundary_hash, initialize_approval: true })
+    expect(captured.payload).not.toContain('TEST.PNG')
+    expect(captured.payload).not.toContain('file_composition')
+    expect(() => captureIndependentGrant('33', { ...requirement, catalog_path: texture }, form, candidates)).toThrow()
+    expect(() => captureIndependentGrant('33', { ...requirement, binding: { ...binding, file_composition: undefined, native_target: primary } }, form, candidates)).toThrow()
+    expect(zh.system.engine.sourceGrants.confirmComposition).toContain('{files}')
+    expect(en.system.engine.sourceGrants.confirmComposition).toContain('{files}')
+  })
   it('labels production as its own authorization source in both locales', () => {
     expect(zh.system.engine.dataAuthorization.modes.task_production).toBe('任务产出初始授权')
     expect(en.system.engine.dataAuthorization.modes.task_production).toBe('Initial task output grant')

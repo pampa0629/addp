@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, safePickerEngineID } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, isApprovalSelection, safePickerEngineID } from '../src/utils/engineApprovalCatalog'
 
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const root = { name: '', path: rootPath, role: 'branch', term: 'server', kind: 'server' }
@@ -7,6 +7,23 @@ const namespace = { name: '户外', path: { ...rootPath, segments: [...rootPath.
 const table = { name: 'a/b', path: { ...rootPath, segments: [...namespace.path.segments, { term: 'table', kind: 'table', name: 'a/b' }] }, role: 'leaf', term: 'table', kind: 'table' }
 const engine = { id: '2', name: 'Database', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }
 describe('System live-catalog protocol adapter', () => {
+  it('selects exact FTP model candidates without authorizing directories, textures or other engines', async () => {
+    const path = { engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
+    const directory = { name: 'Models', role: 'branch', term: 'directory', kind: 'directory', path: { ...path, segments: [...path.segments, { term: 'directory', kind: 'directory', name: 'Models' }] } }
+    const model = name => ({ name, role: 'leaf', term: 'file', kind: 'file', path: { ...path, segments: [...directory.path.segments, { term: 'file', kind: 'file', name }] } })
+    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj')] }))
+    const adapter = createApprovalCatalogAdapter({ id: '33', name: 'FTP', engine_type: 'ftp' }, api)
+    const root = await adapter.getTreeRoot(), dir = root.children[0]
+    expect(isApprovalSelection(dir)).toBe(false)
+    await expect(collectApprovalTargets({ raw: { node: dir } }, '33', adapter)).rejects.toThrow()
+    const children = await adapter.getNodeChildren(dir)
+    expect(children.map(isApprovalSelection)).toEqual([true, false, true, false])
+    expect(await collectApprovalTargets({ raw: { node: children[0] } }, '33', adapter)).toEqual([{ ...model('Model.3DS').path, engine_id: '33' }])
+    const nfs = { ...children[0], metadata: { ...children[0].metadata, approval_engine_type: 'nfs' } }
+    expect(isApprovalSelection(nfs)).toBe(false)
+    expect(() => approvalTargetFromSelection({ raw: { node: nfs } }, '33')).toThrow()
+    expect((await adapter.search('33', 'model.3ds')).map(node => node.label)).toEqual(['Model.3DS'])
+  })
   it('searches current native paths with the same adapter and preserves exact resource identity', async () => {
     const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [root] : path.segments.length === 1 ? [namespace] : [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] }))
     const adapter = createApprovalCatalogAdapter(engine, api)

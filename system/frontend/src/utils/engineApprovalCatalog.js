@@ -18,7 +18,15 @@ export function isApprovalTable(node) {
 
 export function isApprovalSelection(node) {
   const entry = node?.metadata?.catalog_entry
-  return isApprovalTable(node) || (entry?.role === 'branch' && entry.path?.segments?.length > 1)
+  return isApprovalTarget(node) || (node?.metadata?.approval_engine_type !== 'ftp' && entry?.role === 'branch' && entry.path?.segments?.length > 1)
+}
+
+export const isApprovalTarget = node => isApprovalTable(node) || isApprovalModel(node)
+
+export function isApprovalModel(node) {
+  const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
+  return node?.metadata?.approval_engine_type === 'ftp' && entry?.role === 'leaf' && entry.term === 'file' && entry.kind === 'file' &&
+    entry.path?.version === 'catalog.path/v1' && leaf?.term === 'file' && leaf.kind === 'file' && /\.(ifc|3ds)$/i.test(leaf.name)
 }
 
 // A namespace is a discovery shortcut, never an authorization target.
@@ -33,7 +41,7 @@ export async function collectApprovalTargets(selection, engineID, adapter, limit
       (parent && (path.segments.length !== parent.segments.length + 1 || !parent.segments.every((part, index) =>
         ['term', 'kind', 'name'].every(field => part[field] === path.segments[index]?.[field]))))) throw new Error('invalidCatalogTarget')
     visited.add(key)
-    if (isApprovalTable(node)) {
+    if (isApprovalTarget(node)) {
       targets.push(approvalTargetFromSelection({ raw: { node } }, engineID))
       if (targets.length > limit) throw new Error('tooManyTargets')
     } else if (entry.role === 'branch') {
@@ -48,7 +56,7 @@ export async function collectApprovalTargets(selection, engineID, adapter, limit
 export function approvalTargetFromSelection(selection, engineID) {
   const entry = selection?.raw?.node?.metadata?.catalog_entry
   const id = safePickerEngineID(engineID)
-  if (!isApprovalTable(selection?.raw?.node) || entry.path?.engine_id !== id || !Array.isArray(entry.path?.segments) || entry.path.segments.length < 2) {
+  if (!isApprovalTarget(selection?.raw?.node) || entry.path?.engine_id !== id || !Array.isArray(entry.path?.segments) || entry.path.segments.length < 2) {
     throw new Error('invalidCatalogTarget')
   }
   return { version: entry.path.version, engine_id: String(id), segments: entry.path.segments.map(segment => ({ ...segment })) }
@@ -74,7 +82,7 @@ export function createApprovalCatalogAdapter(engine, listChildren) {
         !entry.path.segments.length || !['branch', 'leaf'].includes(entry.role)) throw new Error('invalidCatalogTarget')
     const locator = buildLocator({ engineId: id, path: entry.path.segments.filter(segment => segment.name !== '').map(segment => segment.name), type: entry.term })
     return { id: locator, locator, label: entry.name || engine.name, type: entry.term,
-      hasChildren: entry.role === 'branch', metadata: { catalog_entry: structuredClone(entry), has_children: entry.role === 'branch' } }
+      hasChildren: entry.role === 'branch', metadata: { catalog_entry: structuredClone(entry), has_children: entry.role === 'branch', approval_engine_type: engine.engine_type } }
   }
   async function children(path) {
     const result = await listChildren(String(id), path)

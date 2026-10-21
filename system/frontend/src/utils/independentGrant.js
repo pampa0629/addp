@@ -10,8 +10,9 @@ function decimal(value) {
 
 export function captureIndependentGrant(engineID, requirement, form, candidates, now = Date.now()) {
   const id = String(safePickerEngineID(engineID)), path = requirement?.catalog_path
+  const leaf = path?.segments?.at(-1)
   if (requirement?.mode !== 'independent' || String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
-    path?.segments?.at(-1)?.term !== 'table' || path.segments.at(-1).kind !== 'table') throw new Error('invalidGrant')
+    !((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'file' && leaf.kind === 'file'))) throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
   if (!['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||
@@ -27,5 +28,6 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   const encoded = JSON.stringify(fields)
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
     targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '), recipientLabel: candidate.name,
-    recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode })
+    recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode,
+    compositionPaths: Object.freeze((requirement.binding.file_composition?.refs || []).map(ref => ref.target.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '))) })
 }

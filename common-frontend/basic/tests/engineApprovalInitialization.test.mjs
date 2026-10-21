@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
-import { serializeEngineApprovalInitialization, serializeEngineCatalogTarget, readNativeApprovalFacts, observeNativeApprovalBinding } from '../src/utils/engineApprovalInitialization.mjs'
+import { serializeEngineApprovalInitialization, serializeEngineCatalogTarget, readNativeApprovalFacts, observeNativeApprovalBinding, approvedBoundaryFields } from '../src/utils/engineApprovalInitialization.mjs'
 
 const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b/中文' }] }
 const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: target }
@@ -70,4 +70,44 @@ test('native approval observation accepts exact numeric IDs and requires the tru
   }
   for (const basis_state of ['', 'unknown']) await assert.rejects(readNativeApprovalFacts(native, async (...args) => ({ ...await read(...args), basis_state })))
   await assert.rejects(readNativeApprovalFacts(native, async () => { throw new Error('dependency unavailable') }), /dependency unavailable/)
+})
+
+const filePath = (name = 'Model.3DS') => ({ engine_id: 33, version: 'catalog.path/v1', segments: [
+  { term: 'root', kind: 'root', name: '' }, { term: 'directory', kind: 'directory', name: 'models' }, { term: 'file', kind: 'file', name }
+] })
+const fileFacts = candidate => ({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 33, item_type: 'file',
+  item_fingerprint: candidate, basis_state: 'complete', boundary_hash: 'c'.repeat(64), boundary: { layout: 'single', file_composition: { format: '3ds', refs: [
+    { target: filePath(), role: 'model', required: true, primary: true },
+    { target: filePath('TEST.PNG'), role: 'texture', required: true, primary: false }
+  ] } } })
+test('file approval uses the exact primary fingerprint and freezes the full composition without submitting refs', async () => {
+  const target = filePath()
+  const candidate = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('33:models/Model.3DS'))).toString('hex')
+  let calls = 0
+  const binding = await observeNativeApprovalBinding(target, async (id, fp) => { calls++; assert.equal(id, '33'); assert.equal(fp, candidate); return fileFacts(fp) })
+  assert.equal(calls, 1)
+  assert.equal(binding.native_target, undefined)
+  assert.equal(binding.file_composition.refs.length, 2)
+  assert.equal(Object.isFrozen(binding.file_composition.refs[1].target.segments), true)
+  assert.equal(approvedBoundaryFields(target, binding).expected_boundary_hash, 'c'.repeat(64))
+  const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'independent', 'Explicit model', binding))
+  assert.equal(command.item_fingerprint, candidate)
+  assert.equal('file_composition' in command, false)
+  assert.throws(() => serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'catalog', 'Unsupported file business mode', binding))
+  const textureFirst = await observeNativeApprovalBinding(target, async (_, fp) => { const facts = fileFacts(fp); facts.boundary.file_composition.refs.reverse(); return facts })
+  assert.deepEqual(approvedBoundaryFields(target, textureFirst), approvedBoundaryFields(target, binding))
+})
+test('file candidates reject unrelated refs, ambiguous or incomplete composition and native-only old bindings', async () => {
+  const changes = [f => { f.boundary.native_target = filePath() }, f => { f.boundary.layout = 'multi' },
+    f => { f.engine_id = 34 }, f => { f.boundary.file_composition.format = 'obj' },
+    f => { f.boundary.file_composition.refs[0].primary = false }, f => { f.boundary.file_composition.refs[1].primary = true },
+    f => { f.boundary.file_composition.refs[0].required = false }, f => { delete f.boundary.file_composition.refs[1].primary },
+    f => { f.boundary.file_composition.refs[1].target.engine_id = 34 },
+    f => { f.boundary.file_composition.refs[1].target.segments[1].name = 'outside' },
+    f => { f.boundary.file_composition.refs[1].target.segments[2].name = '../TEST.PNG' },
+    f => { f.boundary.file_composition.refs.push(f.boundary.file_composition.refs[0]) }]
+  for (const change of changes) await assert.rejects(observeNativeApprovalBinding(filePath(), async (_, fp) => { const f = fileFacts(fp); change(f); return f }))
+  await assert.rejects(observeNativeApprovalBinding(filePath('TEST.PNG'), async (_, fp) => fileFacts(fp)))
+  assert.throws(() => approvedBoundaryFields(filePath(), { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: filePath() }))
+  for (const state of ['incomplete', 'needs_refresh', 'unsupported']) assert.deepEqual(await readNativeApprovalFacts(filePath(), async (_, fp) => ({ ...fileFacts(fp), basis_state: state, boundary: null, boundary_hash: null })), { state, binding: null })
 })

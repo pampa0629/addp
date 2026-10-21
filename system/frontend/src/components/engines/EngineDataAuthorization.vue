@@ -44,7 +44,7 @@
           <el-form-item v-if="hasNew" :label="t('system.engine.dataAuthorization.mode')" required>
             <el-select v-model="mode" data-testid="approval-mode" :disabled="busy || !canInitialize" :placeholder="t('system.engine.dataAuthorization.selectMode')">
               <el-option value="independent" :label="t('system.engine.dataAuthorization.modes.independent')" />
-              <el-option v-if="catalogAvailable" value="catalog" :label="t('system.engine.dataAuthorization.modes.catalog')" />
+              <el-option v-if="catalogAvailable && !hasFiles" value="catalog" :label="t('system.engine.dataAuthorization.modes.catalog')" />
             </el-select>
           </el-form-item>
           <p v-if="hasNew && !catalogAvailable" class="hint">{{ t('system.engine.dataAuthorization.catalogUnavailable') }}</p>
@@ -81,7 +81,7 @@
         <el-form-item :label="t('system.engine.dataAuthorization.mode')" required>
           <el-select v-model="change.mode" data-testid="approval-change-mode" :disabled="saving">
             <el-option value="independent" :disabled="!canGrant" :label="t('system.engine.dataAuthorization.modes.independent')" />
-            <el-option value="catalog" :disabled="!catalogAvailable" :label="t('system.engine.dataAuthorization.modes.catalog')" />
+            <el-option value="catalog" :disabled="!catalogAvailable || change.row.catalog_path.segments.at(-1)?.term === 'file'" :label="t('system.engine.dataAuthorization.modes.catalog')" />
           </el-select>
         </el-form-item>
         <p v-if="!canGrant" class="hint">{{ t('system.engine.dataAuthorization.successorRequired') }}</p>
@@ -141,6 +141,7 @@ const adapter = computed(() => {
 })
 const existing = path => rows.value.find(row => approvalTargetsEqual(row.catalog_path, path))
 const hasNew = computed(() => targets.value.some(path => !existing(path)))
+const hasFiles = computed(() => targets.value.some(path => path.segments.at(-1)?.term === 'file'))
 const businessTargets = computed(() => targets.value.filter(path => (existing(path)?.mode || mode.value) === 'catalog'))
 const newBusinessTargets = computed(() => businessTargets.value.filter(path => !existing(path)))
 const directRequirementCandidates = computed(() => !ready.value ? [] : targets.value.filter(path =>
@@ -204,6 +205,7 @@ async function addSelection() {
     const added = snapshot.filter(path => !targets.value.some(prior => approvalTargetsEqual(path, prior)))
     if (!snapshot.length || targets.value.length + added.length > 200) throw new Error('invalidSelection')
     targets.value = [...targets.value, ...added]
+    if (hasFiles.value && mode.value === 'catalog') mode.value = ''
     await inspectTargets(added)
   } catch (e) { if (epoch === generation.value) error.value = e?.response?.data?.error || t('system.engine.dataAuthorization.selectionFailed') }
   finally { if (epoch === generation.value) selecting.value = false }

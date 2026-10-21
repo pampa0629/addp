@@ -40,7 +40,7 @@
           </el-form-item>
           <el-form-item :label="t('system.engine.dataAuthorization.target')">
             <ResourceTreeSelect ref="tableFilterInput" v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter"
-              :adapter="catalogAdapter" :engine-id="engine.id" :selectable-filter="isApprovalTable" :tree-disabled="revoking"
+              :adapter="catalogAdapter" :engine-id="engine.id" :selectable-filter="isApprovalTarget" :tree-disabled="revoking"
               :disabled="!authorizationReady" :scope-key="`${authorizationKey}:${view}:${listMode}`" :maxlength="filterPath ? undefined : 200"
               :placeholder="t('system.engine.sourceGrants.tableSearch')" :tree-label="t('system.engine.sourceGrants.selectFromTree')"
               :title="t('system.engine.dataAuthorization.target')" :error-text="t('system.engine.sourceGrants.treeFilterFailed')"
@@ -142,7 +142,7 @@ import { ResourceTreeSelect, StatusAnnouncer, serializeEngineCatalogTarget } fro
 import { enginesAPI } from '../../api/engines'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTable } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTarget } from '../../utils/engineApprovalCatalog'
 import { captureIndependentGrant } from '../../utils/independentGrant'
 import { captureSourceDeny } from '../../utils/sourceDeny'
 import { observeNativeApprovalBinding } from '@common-ui'
@@ -308,7 +308,9 @@ async function create() {
       return captureIndependentGrant(props.engine.id, { ...requirement, binding }, form, candidates.value)
     }))
     const first = captured[0]
-    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
+    const composition = captured.filter(command => command.compositionPaths.length).map(command =>
+      t('system.engine.sourceGrants.confirmComposition', { target: command.targetLabel, files: command.compositionPaths.join('；') })).join('\n')
+    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
     if (epoch !== generation || !canCreate.value) return
     if (!recovering) outcomes.value = []
     attempt.value = captured
