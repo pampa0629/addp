@@ -373,6 +373,10 @@ def delete_owned_models(client, report):
             known.add(failed['execution_id'])
             inputs.extend(owned_input_objects(detail, failed['execution_id'], model['composition']))
         lifecycle = detail['metadata']['model3d_output_lifecycle']
+        denied = {row['execution_id'] for row in report.get('denied_generations', []) if row['format'] == model['format']}
+        require(not denied.intersection(known) and not any(row.get('execution_id') in denied
+                for row in [*lifecycle['input_preparations'], *lifecycle.get('garbage', [])]),
+                'FTP authorization-denied executions must not own staged inputs or watched outputs')
         require({row['execution_id'] for row in lifecycle['input_preparations']} == known,
                 'FTP result cleanup must not act on an unobserved input execution')
         for row in lifecycle.get('garbage', []):
@@ -573,6 +577,72 @@ def verify_cached_results(client, report, statuses):
     return results
 
 
+def latest_owner_execution(report, kind):
+    for row in reversed(report.get('denied_generations', [])):
+        if row['format'] == kind:
+            return row
+    failed = report.get('failed_generation', {})
+    if failed.get('format') == kind:
+        return failed
+    published, = [row for row in report['browser']['models'] if row['format'] == kind]
+    return {'execution_id': published['execution_id'], 'status': 'success'}
+
+
+def verify_denied_generation(client, report, kind, reason):
+    require(kind in {'ifc', '3ds'} and reason in {'composition_changed', 'source_withdrawn'},
+            'FTP denied generation requires its explicit observed source rule phase')
+    model, = [row for row in report['models'] if row['format'] == kind]
+    published, = [row for row in report['browser']['models'] if row['format'] == kind]
+    task_path = f"/api/v1/manager/tasks/model_3d_glb_generation/{published['task_id']}"
+    before_task = client.request('GET', task_path, (200,)).payload
+    previous = latest_owner_execution(report, kind)
+    require(before_task.get('id') == published['task_id'] and before_task.get('task_type') == 'model_3d_glb_generation' and
+            before_task.get('last_execution_id') == previous['execution_id'] and
+            before_task.get('last_execution_status') == previous['status'],
+            'FTP denied generation must use the observed owned task history')
+    before = owned_model_details(client, report, model, published)
+    denial = client.request('POST', task_path + '/execute', (403,),
+                            {'parameters': {'existing_result_action': 'overwrite'}}).payload
+    require(isinstance(denial, dict) and bool(denial.get('error')) and
+            denial.get('error_code') == 'source_authorization_required',
+            'FTP generation must be rejected by current source authorization')
+    task = client.request('GET', task_path, (200,)).payload
+    identifier = task.get('last_execution_id')
+    known = {row['execution_id'] for row in report['browser']['models']}
+    known.update(row['execution_id'] for row in report.get('denied_generations', []))
+    if report.get('failed_generation'):
+        known.add(report['failed_generation']['execution_id'])
+    require(task.get('id') == published['task_id'] and task.get('task_type') == 'model_3d_glb_generation' and
+            isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier and identifier not in known and
+            task.get('last_execution_status') == 'failed',
+            'FTP source denial must leave a distinct settled owner execution audit')
+    execution = client.request('GET', f'/api/v1/manager/executions/{identifier}', (200,)).payload
+    require(all(execution.get(key) == value for key, value in {
+        'execution_id': identifier, 'module': 'manager', 'source': 'manager',
+        'task_type': 'model_3d_glb_generation', 'source_task_id': str(published['task_id']),
+        'status': 'failed', 'progress': 0, 'trigger_type': 'manual',
+        'triggered_by': int(report['principal_id'])}.items()) and
+        type(execution.get('attempt')) is int and execution['attempt'] == 0 and
+        execution.get('started_at') is None and bool(execution.get('completed_at')) and
+        execution.get('error_details', {}).get('code') == 'source_authorization_required' and
+        not execution.get('metadata', {}).get('workflow_runtime') and
+        not execution.get('metadata', {}).get('glb_facts'),
+        'FTP source denial must remain an unclaimed failed attempt, not a conversion')
+    after = owned_model_details(client, report, model, published)
+    require(after['storage_ref'] == before['storage_ref'], 'FTP source denial changed the published GLB')
+    lifecycle = after['metadata']['model3d_output_lifecycle']
+    require(not any(row.get('execution_id') == identifier for row in
+                    [*lifecycle['input_preparations'], *lifecycle.get('garbage', [])]),
+            'FTP source denial must not create input preparation or output watch ownership')
+    objects = verify_physical_objects([{**object_ref(after['storage_ref']), 'exists': True,
+                                       'size': published['size'], 'sha256': published['sha256']}])
+    return {'format': kind, 'task_id': published['task_id'], 'execution_id': identifier,
+            'status': 'failed', 'reason': reason, 'attempt': 0, 'started_at': None,
+            'input_preparation_created': False, 'preserved_result_id': published['result_id'],
+            'preserved_execution_id': published['execution_id'], 'objects': objects,
+            'proof_scope': 'Public unclaimed failure and exact result ownership; private EA and lease constraints are owner T1/T2 evidence'}
+
+
 def owned_ftp_fixture():
     root = Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR'))
     require(not root.is_symlink() and root.resolve() == Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR')).resolve()
@@ -763,9 +833,10 @@ def verify_old_grant_composition(client, authorization, report, timeout):
             require(facts['boundary_hash'] != original_hash, 'FTP composition boundary did not change')
             denied = source_read_control(client, report['engine_id'], changed, 403)
             stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
+            generation = verify_denied_generation(client, report, '3ds', 'composition_changed')
             return {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
                     'changed_boundary_hash': facts['boundary_hash'],
-                    'old_grant_without_deny': denied, 'old_cached_content': stale}
+                    'old_grant_without_deny': denied, 'old_cached_content': stale, 'denied_generation': generation}
     finally:
         scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
 
@@ -935,8 +1006,7 @@ def validate_browser_report(actual, expected, artifact_dir):
 def validate_withdrawal_browser_report(actual, expected):
     models = []
     for source, published in zip(expected['models'], expected['browser']['models']):
-        failed = expected.get('failed_generation', {})
-        latest = failed if failed.get('format') == source['format'] else {'execution_id': published['execution_id'], 'status': 'success'}
+        latest = latest_owner_execution(expected, source['format'])
         models.append({'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
                        'status': 403, 'error_visible': True, 'content_successes': 0, 'generation_requests': 0,
                        'unchanged_execution_id': latest['execution_id'], 'unchanged_execution_status': latest['status']})
@@ -982,8 +1052,10 @@ def main():
         report['browser'] = run_browser(report)
         report['physical_model_storage'] = verify_owned_model_storage(client, report)
         report['failed_generation'] = verify_failed_generation(client, report, timeout)
+        report['denied_generations'] = []
         source = next(model for model in report['models'] if model['format'] == '3ds')
         report['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, timeout)
+        report['denied_generations'].append(report['old_grant_composition']['denied_generation'])
         report['restored_before_deny'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
         deny = authorization.deny(source)
         report['source_deny_id'] = deny
@@ -993,6 +1065,8 @@ def main():
     finally:
         authorization.cleanup()
     report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
+    report['denied_generations'].extend(verify_denied_generation(client, report, model['format'], 'source_withdrawn')
+                                        for model in report['models'])
     report['withdrawn_browser'] = run_browser(report, withdrawn=True)
     report['deleted_models'] = delete_owned_models(client, report)
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))

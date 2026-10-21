@@ -210,8 +210,9 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       const models = []
       for (const model of expected.models) {
         const published = expected.browser.models.find(value => value.format === model.format)
-        const latest = expected.failed_generation?.format === model.format ? expected.failed_generation :
-          { execution_id: published.execution_id, status: 'success' }
+        const latest = expected.denied_generations?.findLast(row => row.format === model.format) ??
+          (expected.failed_generation?.format === model.format ? expected.failed_generation :
+            { execution_id: published.execution_id, status: 'success' })
         models.push(await withdrawnModel(page, api, model, published, latest))
       }
       writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({

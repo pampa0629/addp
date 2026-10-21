@@ -142,6 +142,77 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def denied_generation_fixture(self, kind='3ds', mutate=None):
+        model, published, detail = self.owned_detail(kind)
+        identifier = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+        before = {'id': published['task_id'], 'task_type': 'model_3d_glb_generation',
+                  'last_execution_id': published['execution_id'], 'last_execution_status': 'success'}
+        after = {**before, 'last_execution_id': identifier, 'last_execution_status': 'failed'}
+        execution = {'execution_id': identifier, 'module': 'manager', 'source': 'manager',
+                     'task_type': 'model_3d_glb_generation', 'source_task_id': str(published['task_id']),
+                     'status': 'failed', 'attempt': 0, 'progress': 0, 'trigger_type': 'manual',
+                     'triggered_by': 8, 'completed_at': '2026-10-21T00:00:00Z',
+                     'metadata': {}, 'error_details': {'code': 'source_authorization_required'}}
+        response = {'error': 'Source permission required', 'error_code': 'source_authorization_required'}
+        changed_detail = copy.deepcopy(detail)
+        if mutate:
+            mutate(after, execution, changed_detail, response)
+        submitted = False
+        calls = []
+        def request(method, path, statuses, body=None):
+            nonlocal submitted
+            calls.append((method, path, statuses, body))
+            if method == 'POST':
+                self.assertEqual(statuses, (403,))
+                submitted = True
+                return SimpleNamespace(payload=response)
+            if '/tasks/' in path:
+                return SimpleNamespace(payload=after if submitted else before)
+            if '/executions/' in path:
+                return SimpleNamespace(payload=execution)
+            return SimpleNamespace(payload=changed_detail if submitted else detail)
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                  'models': [model], 'browser': {'models': [published]}}
+        return SimpleNamespace(request=request), report, published, identifier, calls
+
+    def test_denied_generation_records_unclaimed_failure_and_preserves_physical_output(self):
+        for kind in ('ifc', '3ds'):
+            client, report, published, identifier, calls = self.denied_generation_fixture(kind)
+            with self.subTest(kind=kind), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows):
+                observed = M.verify_denied_generation(client, report, kind, 'source_withdrawn')
+            self.assertEqual(observed['execution_id'], identifier)
+            self.assertEqual(observed['attempt'], 0)
+            self.assertIsNone(observed['started_at'])
+            self.assertFalse(observed['input_preparation_created'])
+            self.assertEqual(observed['preserved_execution_id'], published['execution_id'])
+            self.assertEqual(len(observed['objects']), 1)
+            self.assertTrue(observed['objects'][0]['exists'])
+            self.assertEqual([row for row in calls if row[0] == 'POST'], [
+                ('POST', '/api/v1/manager/tasks/model_3d_glb_generation/30/execute', (403,),
+                 {'parameters': {'existing_result_action': 'overwrite'}})])
+
+    def test_denied_generation_rejects_claimed_foreign_or_staged_attempts(self):
+        mutations = {
+            'not a source denial': lambda a,e,d,r: r.update(error_code='security_protection_required'),
+            'no new audit': lambda a,e,d,r: a.update(last_execution_id='12345678-1234-4234-8234-123456789abc'),
+            'claimed': lambda a,e,d,r: e.update(attempt=1),
+            'started': lambda a,e,d,r: e.update(started_at='2026-10-21T00:00:00Z'),
+            'wrong owner': lambda a,e,d,r: e.update(source_task_id='999'),
+            'wrong actor': lambda a,e,d,r: e.update(triggered_by=99),
+            'not settled': lambda a,e,d,r: a.update(last_execution_status='pending'),
+            'wrong failure': lambda a,e,d,r: e.update(error_details={'code': 'conversion_failed'}),
+            'runtime facts': lambda a,e,d,r: e.update(metadata={'workflow_runtime': {'engine_type': 'model3d'}}),
+            'staged input': lambda a,e,d,r: d['metadata']['model3d_output_lifecycle']['input_preparations'].append(
+                {'execution_id': e['execution_id']}),
+            'watched output': lambda a,e,d,r: d['metadata']['model3d_output_lifecycle'].update(
+                garbage=[{'execution_id': e['execution_id']}]),
+            'replaced output': lambda a,e,d,r: d.update(storage_ref=d['storage_ref'].replace('model.glb', 'other.glb')),
+        }
+        for label, mutate in mutations.items():
+            client, report, *_ = self.denied_generation_fixture(mutate=mutate)
+            with self.subTest(label=label), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows), self.assertRaises(M.SuiteError):
+                M.verify_denied_generation(client, report, '3ds', 'composition_changed')
+
     def owned_detail(self, kind='3ds'):
         model, = [row for row in M.prepare_models(FakeClient().items, 17, model_samples()) if row['format'] == kind]
         execution = '12345678-1234-4234-8234-123456789abc'
@@ -257,7 +328,9 @@ class FTPConsumerTest(unittest.TestCase):
 
     def test_product_delete_uses_original_owned_result_after_source_withdrawal(self):
         model, published, detail = self.owned_detail()
-        report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2}
+        denied = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+        report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2,
+                  'denied_generations': [{'format': model['format'], 'execution_id': denied}]}
         calls = []
         def request(method, path, statuses, body=None):
             calls.append((method, path, statuses, body))
@@ -270,6 +343,24 @@ class FTPConsumerTest(unittest.TestCase):
                                  ('GET', '/api/v1/manager/model_3d_glb/20/content', (404,), None)])
         self.assertEqual(len(physical.call_args.args[0]), 3)
         self.assertTrue(all(row['exists'] is False for row in result[0]['objects']))
+        self.assertTrue(all(denied not in row['object'] for row in result[0]['objects']))
+
+    def test_product_delete_rejects_staging_owned_by_authorization_denied_execution(self):
+        for field in ('input_preparations', 'garbage'):
+            model, published, detail = self.owned_detail()
+            denied = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+            detail['metadata']['model3d_output_lifecycle'].setdefault(field, []).append({'execution_id': denied})
+            report = {'models': [model], 'browser': {'models': [published]}, 'engine_id': 17, 'tenant_id': 2,
+                      'denied_generations': [{'format': model['format'], 'execution_id': denied}]}
+            calls = []
+            def request(method, *args):
+                calls.append(method)
+                return SimpleNamespace(payload=detail)
+            with self.subTest(field=field), patch.object(M, 'verify_physical_objects') as physical, \
+                    self.assertRaisesRegex(M.SuiteError, 'authorization-denied'):
+                M.delete_owned_models(SimpleNamespace(request=request), report)
+            self.assertEqual(calls, ['GET'])
+            physical.assert_not_called()
 
     def test_product_delete_keeps_failed_inputs_and_output_watch_in_exact_post_delete_probe(self):
         model, published, detail = self.owned_detail('ifc')
@@ -848,7 +939,8 @@ class FTPConsumerTest(unittest.TestCase):
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):
         expected = {'run_id': 'owned', 'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
                     'models': [{'format': kind, 'item_id': i + 1} for i, kind in enumerate(('ifc', '3ds'))],
-                    'browser': {'models': [{'result_id': i + 20, 'execution_id': 'execution-' + str(i)} for i in range(2)]}}
+                    'browser': {'models': [{'format': kind, 'result_id': i + 20, 'execution_id': 'execution-' + str(i)}
+                                           for i, kind in enumerate(('ifc', '3ds'))]}}
         actual = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
         actual.update(browser_phase='withdrawn', models=[
             {'format': source['format'], 'item_id': source['item_id'], 'result_id': published['result_id'],
@@ -863,6 +955,15 @@ class FTPConsumerTest(unittest.TestCase):
         M.validate_withdrawal_browser_report(failure_proof, with_failure)
         with self.assertRaises(M.SuiteError):
             M.validate_withdrawal_browser_report(actual, with_failure)
+        with_denials = copy.deepcopy(with_failure)
+        with_denials['denied_generations'] = [{'format': kind, 'execution_id': 'denied-' + kind, 'status': 'failed'}
+                                             for kind in ('ifc', '3ds')]
+        denial_proof = copy.deepcopy(actual)
+        for row in denial_proof['models']:
+            row.update(unchanged_execution_id='denied-' + row['format'], unchanged_execution_status='failed')
+        M.validate_withdrawal_browser_report(denial_proof, with_denials)
+        with self.assertRaises(M.SuiteError):
+            M.validate_withdrawal_browser_report(failure_proof, with_denials)
         for key, value in (('status', 200), ('error_visible', False), ('content_successes', 1),
                            ('generation_requests', 1), ('unchanged_execution_id', 'new-execution'), ('result_id', 99)):
             changed = copy.deepcopy(actual)
