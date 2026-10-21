@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +13,57 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+func TestSourceReadRuleSQLPreservesGORMParameterPositions(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		args  []any
+	}{
+		{"direct_read", currentSourceReadRulesSQL, []any{int64(1), int64(2), int64(3), int64(4), "[]"}},
+	}
+	for _, filtered := range []bool{false, true} {
+		filter := SourceGrantFilter{}
+		if filtered {
+			filter.TableSearch = "table ? 'literal'_%"
+		}
+		predicate, args := filter.targetPredicate()
+		parameters := append([]any{int64(1), int64(2), int64(1), int64(3)}, args...)
+		parameters = append(parameters, int64(1), int64(3))
+		parameters = append(parameters, args...)
+		parameters = append(parameters, 17, 34)
+		tests = append(tests, struct {
+			name  string
+			query string
+			args  []any
+		}{fmt.Sprintf("account_list_filtered_%t", filtered),
+			accountGrantRelationsPrefixSQL + " AND " + predicate + accountDenyCandidatesSQL + " AND " + predicate + accountGrantRelationsSuffixSQL,
+			parameters})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Exercise GORM's actual expression binder without opening a database.
+			// A JSONB '?' operator consumes a later filter/page argument just like
+			// a placeholder; standalone reads hid this while no arguments remained.
+			statement := &gorm.Statement{DB: &gorm.DB{Config: &gorm.Config{Dialector: postgres.New(postgres.Config{})}}}
+			clause.Expr{SQL: test.query, Vars: test.args}.Build(statement)
+			query := statement.SQL.String()
+			if strings.Contains(query, "?") || !reflect.DeepEqual(statement.Vars, test.args) {
+				t.Fatalf("source rule SQL changed parameter positions: query=%s vars=%#v", query, statement.Vars)
+			}
+			if strings.Contains(test.name, "account_list") {
+				paging := fmt.Sprintf("LIMIT $%d OFFSET $%d", len(test.args)-1, len(test.args))
+				if !strings.Contains(query, paging) || strings.Contains(query, "table ? 'literal'_%") {
+					t.Fatalf("source rule filters/pages were not kept parameterized: query=%s", query)
+				}
+			}
+		})
+	}
+}
 
 func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 	base := testFulfillmentRequest()

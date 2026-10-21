@@ -192,7 +192,7 @@ const sourceReadRuleCTEs = `, targets AS (
        (primary_path.path->>'engine_id')::bigint AS engine_id,
        target.value->>'item_fingerprint' AS item_fingerprint, target.value->>'boundary_hash' AS boundary_hash
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
- CROSS JOIN LATERAL (SELECT CASE WHEN target.value ? 'file_composition' THEN
+ CROSS JOIN LATERAL (SELECT CASE WHEN jsonb_exists(target.value, 'file_composition') THEN
    (SELECT ref->'target' FROM jsonb_array_elements(target.value->'file_composition'->'refs') AS ref
     WHERE ref->>'primary' = 'true') ELSE target.value->'native_target' END AS path) primary_path
 ), current_source AS (

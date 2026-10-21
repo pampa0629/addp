@@ -297,12 +297,20 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			user, _ := newUser(t, time.Hour)
 			id := grant(t, "user", user.PrincipalID, nil)
 			assert(t, user, "grant")
-			// Exercise the SQL authority directly with a later boundary digest.
-			// The current single-table DTO intentionally cannot fabricate a second
-			// valid digest for identical structure; future layouts reuse this SQL.
+			// A native DTO cannot claim a different digest for identical structure.
+			// Keep that rejection, then test the private SQL comparison separately
+			// with an opaque, unapproved digest. This is not a valid source-read DTO.
 			binding := testReadBindings(base.Path)[0]
-			binding.BoundaryHash = strings.Repeat("a", 64)
-			batch, err := json.Marshal([]any{binding})
+			unapprovedHash := strings.Repeat("a", 64)
+			invalid := binding
+			invalid.BoundaryHash = unapprovedHash
+			if _, err := json.Marshal(invalid); err == nil {
+				t.Fatal("native Binding accepted a digest not proven by its structure")
+			}
+			batch, err := json.Marshal([]map[string]any{{
+				"native_target": binding.NativeTarget, "item_fingerprint": binding.ItemFingerprint,
+				"boundary_hash": unapprovedHash,
+			}})
 			if err != nil {
 				t.Fatal(err)
 			}
