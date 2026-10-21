@@ -4,7 +4,8 @@ import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLa
 
 for (const replace of [false, true]) {
   test(`Graph search settles to visible clickable nodes (${replace ? 'new' : 'retained'} identities)`, async ({ page }, testInfo) => {
-    const nodes = ids => ids.map(id => ({ id, labels: ['Person'], display_name: `合成节点${id}`, properties: { id, name: `合成节点${id}` } }))
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const nodes = ids => ids.map((id, index) => ({ id, labels: ['Person'], display_name: ['Fixture one', 'Fixture two', 'Fixture three'][index], properties: { id, name: ['Fixture one', 'Fixture two', 'Fixture three'][index] } }))
     const initial = nodes(['a', 'b', 'c'])
     const found = nodes(replace ? ['d', 'e', 'f'] : ['a', 'b', 'c'])
     const edges = values => values.slice(1).map((node, index) => ({ id: `edge-${node.id}`, source: values[index].id, target: node.id, type: 'Link', directed: true }))
@@ -30,20 +31,24 @@ for (const replace of [false, true]) {
     const canvas = frame.locator('.graph-canvas')
     await expect(canvas.locator('canvas')).toBeVisible()
     await expect(canvas.locator('.el-loading-mask')).toHaveCount(0)
+    await page.getByRole('button', { name: /^当前主题:/ }).click()
+    await page.getByRole('menuitem', { name: '紫色模式', exact: true }).click()
+    await expect(frame.locator('html')).toHaveClass(/purple/)
     // Start from actual entity search results, independently of the aggregate overview.
+    const fillColor = await graphObservationColor(frame, canvas, true)
     const first = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/graph/graphs/7/search')
     await frame.locator('.search-input input').fill('初始合成节点')
     await frame.locator('.search-input input').press('Enter')
     await first
-    await canvas.evaluate(stableGraphPixels, { count: initial.length, color: await graphObservationColor(frame, canvas) })
+    await canvas.evaluate(stableGraphPixels, { count: initial.length, fillColor, color: await graphObservationColor(frame, canvas) })
     const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/graph/graphs/7/search')
     await frame.locator('.search-input input').fill('合成节点')
     await frame.locator('.search-input input').press('Enter')
     await response
     const color = await graphObservationColor(frame, canvas)
-    const stable = await canvas.evaluate(stableGraphPixels, { count: found.length, color })
+    const stable = await canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor })
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = 'hidden' })
-    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, timeout: 200 })).rejects.toThrow('visible stable frame')
+    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor, timeout: 200 })).rejects.toThrow('visible stable frame')
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = '' })
     const hits = await graphNodeHits(frame, canvas, stable, found)
     await testInfo.attach('stable-search-frame.json', { body: JSON.stringify({ ...stable, hits }, null, 2), contentType: 'application/json' })
@@ -52,6 +57,8 @@ for (const replace of [false, true]) {
       await testInfo.attach(`stable-${phase}.png`, { body: await page.screenshot(), contentType: 'image/png' })
     })
     await testInfo.attach('graph-exploration-stable-frame.json', { body: JSON.stringify(exploration, null, 2), contentType: 'application/json' })
+    // Clearing the query removes highlights; fill pixels alone must never satisfy search evidence.
+    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor, timeout: 1000 })).rejects.toThrow('visible stable frame')
     expect(unexpected).toEqual([])
   })
 }

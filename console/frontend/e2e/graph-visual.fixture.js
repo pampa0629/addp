@@ -2,16 +2,20 @@ import { expect } from '@playwright/test'
 
 // Shared browser observations for synthetic T3 and native Hosted production builds.
 // Uses only Canvas pixels and DOM; never Vue/G6 debug objects or product test hooks.
-export async function stableGraphPixels(element, { count, color: colorCSS, timeout = 10_000 }) {
+export async function stableGraphPixels(element, { count, color: colorCSS, fillColor: fillCSS = colorCSS, timeout = 10_000 }) {
   const canvas = element.querySelector('canvas')
   if (!canvas || !Number.isInteger(count) || count <= 0) throw new Error('Invalid search canvas/count')
   const copy = document.createElement('canvas')
   const context = copy.getContext('2d', { willReadFrequently: true })
   const colorProbe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
-  if (!colorCSS || !CSS.supports('color', colorCSS)) throw new Error('Missing Graph observation color')
-  colorProbe.fillStyle = colorCSS
-  colorProbe.fillRect(0, 0, 1, 1)
-  const color = [...colorProbe.getImageData(0, 0, 1, 1).data].slice(0, 3)
+  const resolveColor = value => {
+    if (!value || !CSS.supports('color', value)) throw new Error('Missing Graph observation color')
+    colorProbe.clearRect(0, 0, 1, 1)
+    colorProbe.fillStyle = value
+    colorProbe.fillRect(0, 0, 1, 1)
+    return [...colorProbe.getImageData(0, 0, 1, 1).data].slice(0, 3)
+  }
+  const color = resolveColor(colorCSS), fillColor = resolveColor(fillCSS)
   let previous = '', stable = 0, last = []
   const deadline = performance.now() + timeout
   while (performance.now() < deadline) {
@@ -25,12 +29,18 @@ export async function stableGraphPixels(element, { count, color: colorCSS, timeo
     context.drawImage(canvas, 0, 0)
     const width = copy.width, height = copy.height
     const pixels = context.getImageData(0, 0, width, height).data
-    const mask = new Uint8Array(width * height), queue = new Int32Array(width * height)
+    const channels = new Uint8Array(width * height), mask = new Uint8Array(width * height), queue = new Int32Array(width * height)
     for (let i = 0; i < mask.length; i++) {
       const offset = i * 4
-      mask[i] = pixels[offset + 3] > 200 && color.every((value, channel) => Math.abs(pixels[offset + channel] - value) <= 12) ? 1 : 0
+      if (pixels[offset + 3] > 200) {
+        channels[i] = (color.every((value, channel) => Math.abs(pixels[offset + channel] - value) <= 12) ? 1 : 0) |
+          (fillColor.every((value, channel) => Math.abs(pixels[offset + channel] - value) <= 12) ? 2 : 0)
+      }
+      mask[i] = channels[i] & 2 ? 1 : 0
     }
-    const nodes = []
+    // Labels can split the outline, and shadow blending can separate it from the fill.
+    // Locate fill cores first, then attribute exact-color pixels to their nearest core.
+    const cores = []
     for (let i = 0; i < mask.length; i++) {
       if (!mask[i]) continue
       let head = 0, tail = 1, minX = width, minY = height, maxX = 0, maxY = 0
@@ -43,11 +53,37 @@ export async function stableGraphPixels(element, { count, color: colorCSS, timeo
           if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[next]) { mask[next] = 0; queue[tail++] = next }
         }
       }
+      const w = (maxX - minX + 1) * rect.width / width, h = (maxY - minY + 1) * rect.height / height
+      if (tail >= 40 && w >= 10 && h >= 10 && w / h > 0.7 && w / h < 1.4) {
+        cores.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2,
+          minX, minY, maxX, maxY, stroke: [width, height, 0, 0], pixelCount: 0, fillPixelCount: tail })
+      }
+    }
+    if (cores.length !== count) { previous = ''; stable = 0; last = []; continue }
+    for (let i = 0; i < channels.length; i++) {
+      if (!channels[i]) continue
+      const x = i % width, y = Math.floor(i / width)
+      let closest = cores[0], distance = Infinity
+      for (const core of cores) {
+        const d = (x - core.x) ** 2 + (y - core.y) ** 2
+        if (d < distance) { closest = core; distance = d }
+      }
+      if (channels[i] & 1) {
+        closest.pixelCount++
+        const box = closest.stroke
+        box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y)
+        box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y)
+      }
+    }
+    const nodes = []
+    for (const core of cores) {
+      const [minX, minY, maxX, maxY] = core.stroke
       const sx = rect.width / width, sy = rect.height / height
       const w = (maxX - minX + 1) * sx, h = (maxY - minY + 1) * sy
-      if (tail >= 40 && w >= 10 && h >= 10 && w / h > 0.7 && w / h < 1.4) {
+      if (core.pixelCount >= 40 && core.fillPixelCount >= 40 && minX <= core.minX && minY <= core.minY &&
+        maxX >= core.maxX && maxY >= core.maxY && w >= 10 && h >= 10 && w / h > 0.7 && w / h < 1.4) {
         nodes.push({ x: (minX + maxX) * sx / 2, y: (minY + maxY) * sy / 2,
-          box: [minX * sx, minY * sy, maxX * sx, maxY * sy], pixelCount: tail })
+          box: [minX * sx, minY * sy, maxX * sx, maxY * sy], fillBox: [core.minX * sx, core.minY * sy, core.maxX * sx, core.maxY * sy], pixelCount: core.pixelCount, fillPixelCount: core.fillPixelCount })
       }
     }
     nodes.sort((a, b) => a.x - b.x || a.y - b.y)
@@ -56,7 +92,7 @@ export async function stableGraphPixels(element, { count, color: colorCSS, timeo
     const signature = JSON.stringify(nodes)
     stable = valid && signature === previous ? stable + 1 : 0
     previous = signature; last = nodes
-    if (stable >= 10) return { width: rect.width, height: rect.height, color, nodes, stableFrames: stable }
+    if (stable >= 10) return { width: rect.width, height: rect.height, color, fillColor, nodes, stableFrames: stable }
   }
   throw new Error(`Graph pixels did not reach a visible stable frame: ${JSON.stringify(last)}`)
 }

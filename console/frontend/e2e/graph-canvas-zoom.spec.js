@@ -62,6 +62,8 @@ for (const count of [1, 3]) {
     await page.goto('/graph/graphs/7/browse')
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const canvas = frame.locator('.graph-canvas canvas')
+    await expect(canvas).toBeVisible()
+    await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
     const painted = () => canvas.evaluate(element => window.__graphZoomFrames.get(element))
     await expect.poll(async () => (await painted())?.labels['缩放节点甲']?.size).toBeGreaterThan(0)
     expect(warnings.filter(value => /ratio out of range|zoom failed|fitview failed/.test(value))).toEqual([])

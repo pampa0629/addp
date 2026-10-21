@@ -26,14 +26,14 @@ def exploration_fixture(expected):
     for index, phase in enumerate(['expand-1', 'expand-2', *['layout-'+key for key, _ in labels]]):
         n = 2 if index == 0 else 3
         stage = dict(phase=phase, native_ids={key: ids[key] for key in list(ids)[:n]}, edges=edges[:n-1],
-            frame={'width': 800, 'height': 600, 'color': [123, 0, 255], 'stableFrames': 10,
-                   'nodes': [{'x': i*100+index*10, 'y': 100, 'box': [i*100+index*10-10, 90, i*100+index*10+10, 110], 'pixelCount': 100} for i in range(1, n+1)]},
+            frame={'width': 800, 'height': 600, 'color': [123, 0, 255], 'fillColor': [123, 0, 255], 'stableFrames': 10,
+                   'nodes': [{'x': i*100+index*10, 'y': 100, 'box': [i*100+index*10-10, 90, i*100+index*10+10, 110], 'fillBox': [i*100+index*10-8, 92, i*100+index*10+8, 108], 'pixelCount': 100, 'fillPixelCount': 100} for i in range(1, n+1)]},
             hits=[{'source_id': 'p'+str(i), 'native_id': ids['p'+str(i)], 'x': i*100+index*10, 'y': 100} for i in range(1, n+1)])
         if index < 2:
             stage.update(http_status=200, request={'target': {'kind': 'entity', 'id': ids['p'+str(index+1)]}, 'depth': 1, 'node_limit': 200, 'relationship_limit': 400})
         else: stage.update(layout=labels[index-2][0], selected_label=labels[index-2][1])
         stages.append(stage)
-    return dict(expected, schema_version='addp.graph-exploration-stable-frame/v1', stages=stages, native_edges=edges,
+    return dict(expected, schema_version='addp.graph-exploration-stable-frame/v2', stages=stages, native_edges=edges,
         requests=[{'method': 'POST', 'path': '/api/v1/graph/graphs/'+str(expected['graph_id'])+'/expand', 'body': stage['request']} for stage in stages[:2]])
 
 
@@ -137,7 +137,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
                 self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb', 'native_ids': {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}, 'native_edges': native_edges({'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})})
-                payload = dict(expected, schema_version='addp.graph-protection-browser/v6', result='passed',
+                payload = dict(expected, schema_version='addp.graph-protection-browser/v7', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
                                browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
                                expansion_stable_visible=True, layout_stable_visible=True, layout_modes=["dagre", "circular", "radial", "force"],
@@ -146,9 +146,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                                theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True, theme_typography=True)
                 payload.update({key: value for key, value in mutation.items() if not key.startswith('_')})
                 for key in mutation.get('_omit', []): payload.pop(key, None)
-                visual = dict(expected, schema_version='addp.graph-search-stable-frame/v1',
-                    frame={'width': 800, 'height': 600, 'color': [245, 108, 108], 'stableFrames': 10,
-                           'nodes': [{'x': x, 'y': 100, 'box': [x-10, 90, x+10, 110], 'pixelCount': 100} for x in (100, 200, 300)]},
+                visual = dict(expected, schema_version='addp.graph-search-stable-frame/v2',
+                    frame={'width': 800, 'height': 600, 'color': [245, 108, 108], 'fillColor': [84, 141, 255], 'stableFrames': 10,
+                           'nodes': [{'x': x, 'y': 100, 'box': [x-10, 90, x+10, 110], 'fillBox': [x-8, 92, x+8, 108], 'pixelCount': 100, 'fillPixelCount': 100} for x in (100, 200, 300)]},
                     hits=[{'source_id': 'p'+str(i), 'native_id': 'native-'+str(i), 'x': i*100, 'y': 100} for i in (1, 2, 3)])
                 visual.update(mutation.get('_visual', {}))
                 visual['frame'].update(mutation.get('_frame', {}))
@@ -176,10 +176,11 @@ class GraphProtectionOnlineTest(unittest.TestCase):
             for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True),
                     ({'_missing_visual': True}, True), ({'_missing_exploration': True}, True), ({'_missing_layout_png': True}, True),
                     ({'expansion_stable_visible': 1}, True), ({'layout_stable_visible': False}, True), ({'_omit': ['expansion_stable_visible']}, True),
-                    ({'layout_modes': ['force']}, True), ({'schema_version': 'addp.graph-protection-browser/v4'}, True), ({'schema_version': 'addp.graph-protection-browser/v5'}, True), ({'_omit': ['native_edges']}, True), ({'_visual': {'native_edges': []}}, True), ({'_exploration': {'native_edges': []}}, True), ({'_exploration': {'stages': []}}, True), ({'_omit': ['search_stable_visible']}, True),
+                    ({'layout_modes': ['force']}, True), ({'schema_version': 'addp.graph-protection-browser/v4'}, True), ({'schema_version': 'addp.graph-protection-browser/v5'}, True), ({'schema_version': 'addp.graph-protection-browser/v6'}, True), ({'_omit': ['native_edges']}, True), ({'_visual': {'native_edges': []}}, True), ({'_exploration': {'native_edges': []}}, True), ({'_exploration': {'stages': []}}, True), ({'_omit': ['search_stable_visible']}, True),
                     ({'search_stable_visible': False}, True), ({'search_stable_visible': 1}, True), ({'search_node_hits': 2}, True), ({'_visual': {'principal_id': 'other'}}, True),
                     ({'_visual': {'hits': []}}, True), ({'_frame': {'stableFrames': 1}}, True),
                     ({'_frame': {'stableFrames': True}}, True), ({'_frame': {'width': 0}}, True),
+                    ({'_node': {'fillBox': [0, 0, 1, 1]}}, True), ({'_node': {'fillBox': [95, 99, 105, 101]}}, True), ({'_node': {'fillPixelCount': 0}}, True), ({'_node': {'fillPixelCount': True}}, True), ({'_frame': {'fillColor': [245, 108, 108]}}, True), ({'_frame': {'fillColor': None}}, True), ({'_visual': {'schema_version': 'addp.graph-search-stable-frame/v1'}}, True), ({'_exploration': {'schema_version': 'addp.graph-exploration-stable-frame/v1'}}, True),
                     ({'_node': {'box': [-20, 90, 110, 110]}}, True), ({'_node': {'pixelCount': 0}}, True),
                     ({'_hit': {'native_id': 'wrong-node'}}, True), ({'_hit': {'source_id': 'p1'}}, True), ({'_visual': {'frame': {}}}, True),
                     ({'permissions': ['graph.graph.read', 'graph.graph.update']}, True),
@@ -230,6 +231,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
             lambda v: v['stages'][0]['request'].update(depth=2), lambda v: v['stages'][0].update(http_status=500),
             lambda v: v['stages'][2].update(selected_label='环形'), lambda v: v['stages'][2].update(layout='force'),
             lambda v: v['stages'][2]['frame'].update(stableFrames=True),
+            lambda v: v['stages'][2]['frame'].update(fillColor=[0, 0, 0]),
+            lambda v: v['stages'][2]['frame']['nodes'][0].update(fillPixelCount=0),
             lambda v: v['stages'][2]['frame']['nodes'][0].update(box=[0, 90, 110, 110]),
             lambda v: v['stages'][2]['hits'][0].update(native_id='wrong'),
             lambda v: v['stages'][0]['native_ids'].update(p3=expected['native_ids']['p3']),

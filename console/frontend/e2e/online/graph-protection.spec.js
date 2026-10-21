@@ -102,10 +102,11 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
   const canvas = frame.locator('.graph-canvas')
   const color = await graphObservationColor(frame, canvas)
-  const stableFrame = await canvas.evaluate(stableGraphPixels, { count: found.nodes.length, color })
+  const fillColor = await graphObservationColor(frame, canvas, true)
+  const stableFrame = await canvas.evaluate(stableGraphPixels, { count: found.nodes.length, color, fillColor })
   const hits = await graphNodeHits(frame, canvas, stableFrame, found.nodes)
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-search-stable-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-search-stable-frame/v1', frame: stableFrame, hits
+    ...expected, schema_version: 'addp.graph-search-stable-frame/v2', frame: stableFrame, hits
   }, null, 2))
   await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-private-browse-console.png') })
 
@@ -116,7 +117,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-${phase}-console.png`) })
     })
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-exploration-stable-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-exploration-stable-frame/v1', ...exploration
+    ...expected, schema_version: 'addp.graph-exploration-stable-frame/v2', ...exploration
   }, null, 2))
 
   stage = 'knowledge-service:navigation'
@@ -148,7 +149,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-protection-browser/v6', result: 'passed',
+    ...expected, schema_version: 'addp.graph-protection-browser/v7', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true, search_stable_visible: true, search_node_hits: hits.length,
     expansion_stable_visible: true, layout_stable_visible: true, layout_modes: ['dagre', 'circular', 'radial', 'force'],

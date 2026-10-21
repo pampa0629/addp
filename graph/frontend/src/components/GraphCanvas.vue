@@ -266,7 +266,10 @@ function initGraph() {
     edgeStateStyles: edgeStateStyles()
   })
 
-  graphInstance.on('beforelayout', suspendSemanticRendering)
+  graphInstance.on('beforelayout', () => {
+    layoutInProgress.value = true
+    suspendSemanticRendering()
+  })
 
   graphInstance.on('afterlayout', () => {
     const manualLayout = layoutCompletionReason === 'layout'
@@ -274,16 +277,10 @@ function initGraph() {
       syncInteractionStates({ syncZoom: false })
       applyAnalysisVisuals()
     }
-    if (pendingFocusIds?.length) {
-      const first = graphInstance?.findById(pendingFocusIds[0])
-      pendingFocusIds = null
-      if (first) graphInstance.focusItem(first, true, { duration: 300, easing: 'easeCubic' })
-    } else {
-      fitView()
-    }
+    layoutInProgress.value = false
+    if (!focusPendingNodes()) fitView()
     syncSemanticZoom()
     layoutCompletionReason = ''
-    layoutInProgress.value = false
   })
 
   graphInstance.on('viewportchange', () => syncSemanticZoom())
@@ -440,6 +437,18 @@ function syncInteractionStates({ syncZoom = true } = {}) {
   }
   restoreSemanticChannels()
   if (syncZoom) syncSemanticZoom()
+}
+
+function focusPendingNodes() {
+  if (!graphInstance || !pendingFocusIds?.length || !pendingFocusIds.every(id => graphInstance.findById(id))) return false
+  const ids = pendingFocusIds
+  pendingFocusIds = null
+  if (ids.length === 1) {
+    graphInstance.focusItem(graphInstance.findById(ids[0]), true, { duration: 300, easing: 'easeCubic' })
+  } else {
+    fitView()
+  }
+  return true
 }
 
 function fitView() {
@@ -601,14 +610,8 @@ function applyAnalysisVisuals() {
 defineExpose({
   focusNodes(nodeIds) {
     if (!graphInstance || !nodeIds?.length) return
-    const itemIds = nodeIds.map(nodeItemId)
-    const first = graphInstance.findById(itemIds[0])
-    if (first && itemIds.every(id => graphInstance.findById(id))) {
-      graphInstance.focusItem(first, true, { duration: 300, easing: 'easeCubic' })
-      pendingFocusIds = null
-    } else {
-      pendingFocusIds = itemIds
-    }
+    pendingFocusIds = nodeIds.map(nodeItemId)
+    if (!layoutInProgress.value) focusPendingNodes()
   },
   fitView,
   applyScoreColors(nodeScores, mode = 'gradient', sizeMapping = false) {

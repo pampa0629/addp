@@ -29,6 +29,7 @@ vi.mock('@antv/g6', () => ({ default: {
     setItemState(id, state) { this.states.push([id, state]) }
     getZoom() { return 1 }
     focusItem(item) { this.focused = item.getModel().id }
+    fitView = vi.fn()
     updateItem(item) { this.updated = item.getModel().id }
     destroy() {}
   },
@@ -70,6 +71,30 @@ it('keeps overlapping native node and relationship IDs distinct through renderin
   wrapper.unmount()
 })
 
+
+for (const count of [1, 3]) {
+  it(`waits for final layout before locating ${count} search results`, async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    const nodes = ['0', '1', '2'].map(id => ({ id }))
+    const wrapper = mount(GraphCanvas, { props: { nodes, edges: [] }, global: { directives: { loading: {} } } })
+    await nextTick()
+    const graph = instances[0]
+    graph.handlers.beforelayout()
+    wrapper.vm.focusNodes(nodes.slice(0, count).map(node => node.id))
+    // Existing nodes may still have temporary positions while force layout is running.
+    expect(graph.focused).toBeUndefined()
+    expect(graph.fitView).not.toHaveBeenCalled()
+    graph.handlers.afterlayout()
+    if (count === 1) {
+      expect(graph.focused).toBe(graph.model.nodes[0].id)
+      expect(graph.fitView).not.toHaveBeenCalled()
+    } else {
+      expect(graph.focused).toBeUndefined()
+      expect(graph.fitView).toHaveBeenCalledExactlyOnceWith(undefined, { onlyOutOfViewPort: true })
+    }
+    wrapper.unmount()
+  })
+}
 
 it('applies the same native ID isolation to shared query graph results', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
