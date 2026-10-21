@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	commonclient "github.com/addp/common/client"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -36,6 +38,8 @@ func TestIAMOAuthClientLookupFailureClassification(t *testing.T) {
 				{"deadline", context.DeadlineExceeded, 503, "temporarily_unavailable", true},
 				{"connection-closed", sql.ErrConnDone, 503, "temporarily_unavailable", true},
 				{"connection-lost", io.EOF, 503, "temporarily_unavailable", true},
+				{"postgres-recovery", &pgconn.PgError{Code: "57P03", Message: "private database recovery diagnostic"}, 503, "temporarily_unavailable", true},
+				{"postgres-recovery-wrapped", fmt.Errorf("connection failed: %w", &pgconn.PgError{Code: "57P03", Message: "private database recovery diagnostic"}), 503, "temporarily_unavailable", true},
 				{"internal", errors.New("private storage diagnostic"), 503, "temporarily_unavailable", true},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
@@ -87,7 +91,7 @@ func TestIAMOAuthClientLookupFailureClassification(t *testing.T) {
 					if payload["error"] != tc.code || payload["access_token"] != nil || payload["refresh_token"] != nil {
 						t.Fatalf("failure response = %#v", payload)
 					}
-					for _, sensitive := range []string{secret, "private storage diagnostic", "OAuth Storage"} {
+					for _, sensitive := range []string{secret, "private storage diagnostic", "private database recovery diagnostic", "OAuth Storage"} {
 						if strings.Contains(response.Body.String(), sensitive) {
 							t.Fatal("response exposed storage details or credentials")
 						}

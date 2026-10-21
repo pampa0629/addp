@@ -1,5 +1,53 @@
 import { expect, test } from '@playwright/test'
 
+for (const contextType of ['tenant', 'platform']) {
+  for (const failure of ['503', 'network']) {
+    test(`${contextType} session initialization ${failure} shows retry instead of missing permissions`, async ({ page }) => {
+      let unavailable = true
+      let releaseRefresh
+      let holdRefresh = false
+      await page.addInitScript(() => {
+        localStorage.setItem('addp-lang', 'zh-cn')
+        localStorage.setItem('user', JSON.stringify({ display_name: 'Cached user' }))
+      })
+      await page.route('**/api/v1/**', async route => {
+        const path = new URL(route.request().url()).pathname
+        if (path.endsWith('/refresh')) {
+          if (unavailable) return failure === 'network' ? route.abort('connectionrefused') :
+            route.fulfill({ status: 503, json: { error: 'service_unavailable' } })
+          if (holdRefresh) await new Promise(resolve => { releaseRefresh = resolve })
+          return route.fulfill({ json: { access_token: 'restored-token', expires_in: 900 } })
+        }
+        if (path.endsWith('/users/me')) return route.fulfill({ json: { id: '17', display_name: 'Current user' } })
+        if (path.endsWith('/auth/context')) return route.fulfill({ json: {
+          principal: { id: '17', type: 'user' },
+          context: contextType === 'tenant' ? { type: 'tenant', tenant_id: '3', tenant_membership_id: '19' } : { type: 'platform' },
+          authorization: { role_assignments: [] }
+        } })
+        return route.fulfill({ status: 403, json: { error: 'unexpected_request' } })
+      })
+      await page.goto('/')
+      await expect(page.getByText('无法确认当前页面的访问权限')).toBeVisible()
+      await expect(page.getByText('当前账号暂无可用业务模块', { exact: true })).toBeHidden()
+      await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
+      unavailable = false
+      holdRefresh = true
+      await page.getByRole('button', { name: '重试', exact: true }).click()
+      await expect.poll(() => Boolean(releaseRefresh)).toBe(true)
+      await expect(page.locator('.main-content .el-loading-mask')).toBeVisible()
+      await expect(page.getByText('当前账号暂无可用业务模块', { exact: true })).toBeHidden()
+      releaseRefresh()
+      // A successful authoritative response with no grants really is an empty module list.
+      await expect(page.getByText('当前账号暂无可用业务模块', { exact: true })).toBeVisible()
+      await expect(page.getByText('无法确认当前页面的访问权限')).toHaveCount(0)
+      expect(await page.evaluate(async () => {
+        const { useAuthStore } = await import('/src/store/auth.js')
+        return { contextType: useAuthStore().contextType, permissions: useAuthStore().permissions }
+      })).toEqual({ contextType, permissions: [] })
+    })
+  }
+}
+
 async function setup(page) {
   let generation = 0
   let hold = false

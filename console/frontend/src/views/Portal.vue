@@ -219,7 +219,9 @@ watch(iframeUrl, url => {
 
 const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
 const navigationPermissions = computed(() => authStore.permissions)
-const authorizationUnavailable = computed(() => Boolean(authStore.token && !authStore.authContext))
+const authorizationUnavailable = computed(() =>
+  authStore.sessionStatus === 'error' || authStore.sessionStatus === 'initializing' ||
+  Boolean(authStore.token && !authStore.authContext))
 const authorizationLoading = computed(() => authorizationUnavailable.value &&
   Boolean(authStore.authContextLoadPromise || authStore.sessionInitPromise))
 const authorizationIdentity = computed(() => {
