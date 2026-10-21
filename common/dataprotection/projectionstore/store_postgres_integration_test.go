@@ -10,6 +10,11 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
+	"github.com/addp/common/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -142,6 +147,114 @@ func TestProjectionStoreResultExpiryAgainstPostgres(t *testing.T) {
 			assertPreparedOutputExpiry(t, store, owner, action)
 		})
 	}
+}
+
+// Future validity is a defensive protocol state, not a configurable product
+// start time. Install through the protocol's explicit time argument, reopen
+// from PostgreSQL, then read at wall-clock time; no process/host clock is changed.
+func TestProjectionStoreFutureReasonHistoryAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	const schema = "projection_future_reason_it"
+	dropProjectionStoreTestSchema(t, db, schema)
+	t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
+	store, err := Migrate(db, schema, "develop", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initializeTenant(t, store, 7)
+	model := plugin.DynamicSchemaCatalogModel()
+	path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+	fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+	projection := activeTableProjection(t, "develop", "query", model, path, fields)
+	projection.ValidFrom = time.Now().UTC().Add(time.Hour)
+	projection.ExpiresAt = nil
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	batch := &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes: []dataprotection.ProjectionChange{{ChangeID: "future", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "future"}
+	if err := store.ApplyBatch(t.Context(), 7, "", batch, projection.ValidFrom); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(db, schema, "develop", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protected, refusal := reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", time.Now().UTC())
+	if protected != nil || !errors.Is(refusal, dataprotection.ErrNotYetValid) {
+		t.Fatalf("future projection did not refuse preparation: %v", refusal)
+	}
+	if err := execution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.NewString()
+	t.Cleanup(func() {
+		if err := db.Where("execution_id = ?", id).Delete(&execution.TaskExecution{}).Error; err != nil {
+			t.Error(err)
+		}
+		var remaining int64
+		if err := db.Model(&execution.TaskExecution{}).Where("execution_id = ?", id).Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Errorf("future diagnostic execution cleanup: count=%d, error=%v", remaining, err)
+		}
+	})
+	reason := execution.ProtectionFailureReason(refusal)
+	if reason != "protection_not_yet_valid" {
+		t.Fatalf("wrong future reason: %s", reason)
+	}
+	row := execution.TaskExecution{ExecutionID: id, TenantID: 7, Module: "develop", Source: "develop", TaskType: "query",
+		Status: "failed", TriggerType: "manual", ErrorDetails: models.JSONMap{"category": "execution_failed",
+			"code": "develop.query.protection_required", "diagnostic": execution.NewFailureDiagnostic("preparation", reason)}}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	var history execution.TaskExecution
+	if err := db.Where("execution_id = ?", id).First(&history).Error; err != nil {
+		t.Fatal(err)
+	}
+	observed := execution.Observe(&history)
+	payload, err := json.Marshal(observed.ErrorDetails)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"reason":"protection_not_yet_valid"`) ||
+		!strings.Contains(string(payload), `"stage":"preparation"`) || history.Metadata["result"] != nil {
+		t.Fatal("future reason history lost the diagnostic or retained a result")
+	}
+	// Recover through a newer normal protocol revision; the refused historical
+	// execution remains unchanged and no clock is advanced to make it pass.
+	projection.Revision = "00000000000000000002"
+	projection.ValidFrom = time.Now().UTC().Add(-time.Minute)
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	batch.Changes[0].ChangeID, batch.NextCursor = "restored", "restored"
+	if err := reader.ApplyBatch(t.Context(), 7, "future", batch, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", time.Now().UTC())
+	if err != nil || protected == nil {
+		t.Fatalf("normal revision did not recover: %v", err)
+	}
+	result := &plugin.QueryResult{Columns: []string{"phone"}, Rows: []map[string]interface{}{{"phone": "13812345678"}}}
+	if err := protected.Apply(result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Rows[0]["phone"] != "138****5678" {
+		t.Fatal("recovered output was not masked")
+	}
+	t.Log("future validity: persisted projection reopened; preparation refused; execution history kept precise reason/no result; newer revision recovered masked output")
 }
 
 func postgresLegacyStructuredMaskProjection(t *testing.T) dataprotection.Projection {

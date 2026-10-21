@@ -7,10 +7,27 @@ fail() { echo "Security owner fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] &&
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail "Hosted Linux x86_64 is required"
-[ "$#" -eq 1 ] || fail "usage: online-security-owner-fixture.sh start|stop"
+[ "$#" -eq 1 ] || fail "usage: online-security-owner-fixture.sh start|stop|bank-schema-add|bank-schema-remove"
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
 containers=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 case "$1" in
+  bank-schema-add|bank-schema-remove)
+    container=${containers[1]}
+    [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = security ] || fail "container ownership mismatch"
+    [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
+    bank_mysql() {
+      docker exec "$container" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -h127.0.0.1 -uroot --batch --skip-column-names security_fixture "$@"' sh "$@" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-bank-schema-error.log"
+    }
+    count=$(bank_mysql --execute "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='security_fixture' AND table_name='bank_card_accounts' AND column_name='_security_drift_probe'") || fail "cannot inspect owned bank schema"
+    case "$count" in 0|1) ;; *) fail "unexpected owned bank schema state" ;; esac
+    if [ "$1" = bank-schema-add ]; then
+      [ "$count" = 0 ] || fail "refusing an existing bank schema probe"
+      bank_mysql --execute 'ALTER TABLE bank_card_accounts ADD COLUMN _security_drift_probe integer NULL' >/dev/null || fail "bank schema drift failed"
+    elif [ "$count" = 1 ]; then
+      bank_mysql --execute 'ALTER TABLE bank_card_accounts DROP COLUMN _security_drift_probe' >/dev/null || fail "bank schema restoration failed"
+    fi
+    exit 0 ;;
   stop)
     # Check all owners before removing any container.
     for container in "${containers[@]}"; do
@@ -28,7 +45,7 @@ case "$1" in
     [ -z "$remaining" ] || fail "fixture containers remain after cleanup"
     exit 0 ;;
   start) ;;
-  *) fail "usage: online-security-owner-fixture.sh start|stop" ;;
+  *) fail "usage: online-security-owner-fixture.sh start|stop|bank-schema-add|bank-schema-remove" ;;
 esac
 for container in "${containers[@]}"; do
   ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing fixture container"

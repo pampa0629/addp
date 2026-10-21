@@ -229,6 +229,58 @@ async function checkProtectionFailurePanel(panel, executionID, stage, reason) {
   await expect(panel).toContainText(executionID)
 }
 
+async function verifyAdditionalProtectionHistories(page, env, navigate) {
+  const cases = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT).additional_refusals
+  const expected = {
+    not_ready: { reason: 'protection_not_ready', text: /数据保护配置尚未就绪|Data protection configuration is not ready/,
+      action: /等待数据保护纳管和规则同步完成|Wait for protection enrollment and rule synchronization/ },
+    operation_unsupported: { reason: 'protection_operation_unsupported', text: /当前操作暂不支持所需的数据脱敏保护|This operation does not yet support the required data masking protection/,
+      action: /改用支持该保护规则的执行方式|Use an execution method that supports these protection rules/ },
+    schema_mismatch: { reason: 'protection_schema_mismatch', text: /当前数据结构与保护规则不匹配|The current data structure does not match its protection rules/,
+      action: /更新元数据并重新确认保护规则|update metadata and reconfirm the protection rules/ }
+  }
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(expected).sort())
+  const ids = new Set()
+  for (const [name, proof] of Object.entries(expected)) {
+    const id = cases[name].execution_id
+    expect(id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+    expect(ids.has(id)).toBe(false)
+    ids.add(id)
+    const path = `/api/v1/develop/executions/${id}`
+    const api = await navigate(`/develop/executions/${id}`, path)
+    const execution = await json(await api.get(path), 'same-user additional protection history')
+    expect(execution.execution_id).toBe(id)
+    expect(execution.status).toBe('failed')
+    expect(execution.metadata || {}).not.toHaveProperty('result')
+    expect(execution.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: proof.reason })
+    expect(execution.error_details.code).toBe('develop.query.protection_required')
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    async function check(panel) {
+      await expect(panel).toBeVisible()
+      await expect(panel).toContainText(proof.text)
+      await expect(panel).toContainText(proof.action)
+      await expect(panel).toContainText(/准备执行|Prepare execution/)
+      await expect(panel).toContainText(id)
+      await expect(panel).toContainText('develop.query.protection_required')
+      await expect(panel).not.toContainText(/访问资格|access eligibility/i)
+    }
+    const panel = frame.locator('.execution-failure')
+    await check(panel)
+    await expect(frame.getByText(/^(暂无执行结果|No execution result)$/)).toBeVisible()
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `security-develop-${name}-history.png`) })
+    const href = await panel.getByRole('link', { name: /查看监控错误详情|View error details in Monitor/ }).getAttribute('href')
+    const target = new URL(href, page.url())
+    expect(target.origin).toBe(new URL(page.url()).origin)
+    expect(target.pathname).toBe('/monitor/executions')
+    expect([...target.searchParams]).toEqual([['execution_id', id]])
+    await navigate(target.pathname + target.search, `/api/v1/monitor/executions/by-execution-id/${id}/tree`)
+    await check(frame.locator('.execution-detail-content > .execution-failure'))
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `security-develop-${name}-monitor.png`) })
+  }
+  return { additional_protection_histories_verified: true, additional_protection_monitors_verified: true,
+    additional_protection_refusal_count: ids.size }
+}
+
 async function verifyTransferResultProtection(page, env, navigate, getAPI, runTransfer) {
   const requiredOwners = requiredProtectionOwners(env)
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT).result_protection
@@ -643,6 +695,7 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
 
     const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual, navigateWithBrowserSession)
     const developProtection = await verifyDevelopProtectionRefusal(page, browserAPI, env, navigateWithBrowserSession)
+    const additionalProtection = await verifyAdditionalProtectionHistories(page, env, navigateWithBrowserSession)
     const outputProtection = await verifyServiceTransferProtectionRefusal(page, env, navigateWithBrowserSession, () => browserAPI,
       value => { expectedServiceRefusalPath = value }, preview.data.columns)
     await navigateWithBrowserSession(path, '/api/v1/manager/preview')
@@ -750,10 +803,10 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
-    expect(browserSessionRebinds).toBe(10)
+    expect(browserSessionRebinds).toBe(16)
     expect(serviceRefusal403).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v8', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v9', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -763,9 +816,10 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
       search_to_preview_verified: true,
       ...resourceFilters,
       ...developProtection,
+      ...additionalProtection,
       ...outputProtection,
       expected_service_refusal_403: serviceRefusal403,
-      browser_session_rebound_verified: browserSessionRebinds === 10, resource_permanent_validity_visible: true,
+      browser_session_rebound_verified: browserSessionRebinds === 16, resource_permanent_validity_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

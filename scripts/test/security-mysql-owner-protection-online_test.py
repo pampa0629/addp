@@ -1559,7 +1559,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                 patch.object(ONLINE, 'wait_for_manager_search_ready', create=True) as initial_readiness,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
-                patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}}) as scenario,
+                patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}, 'bank_card_metadata': {'refusal_causes': {name: {'execution_id': name} for name in ('not_ready', 'operation_unsupported', 'schema_mismatch')}}}) as scenario,
                 patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': [], 'enrollment_id': 'mongo-enrollment'}),
                 patch.object(ONLINE, 'result_browser_context', return_value={'fixture': 'result'}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}),
@@ -1599,7 +1599,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v8", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v9", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "protection_transfer_execution_id": "64834320-203b-4d8c-838e-15e01024d484",
@@ -1617,6 +1617,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             "develop_alias_protected": True, "develop_refusal_rows": 0,
             "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
             "develop_monitor_same_execution": True,
+            "additional_protection_histories_verified": True, "additional_protection_monitors_verified": True, "additional_protection_refusal_count": 3,
             "service_normal_output_verified": True, "service_refusal_http_status": 403,
             "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
             "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
@@ -1635,6 +1636,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
         valid = self.report()
         self.assertEqual(ONLINE.validate_export_browser_report(valid, "run-42", "2"), valid)
         for key, value in (
+            ("additional_protection_histories_verified", False), ("additional_protection_monitors_verified", False), ("additional_protection_refusal_count", 2), ("additional_protection_refusal_count", "3"), ("additional_protection_refusal_count", True),
             ("schema_version", "old"), ("run_id", "other"), ("tenant_id", "9"),
             ("execution_id", "invalid"), ("execution_id", "00000000-0000-0000-0000-000000000000"),
             ("access_token", "unexpected"), ("records", 4), ("email_field_present", True),
@@ -1779,7 +1781,7 @@ for (const data of [
                              "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
                              "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
-                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png"):
+                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png", "security-develop-not_ready-history.png", "security-develop-not_ready-monitor.png", "security-develop-operation_unsupported-history.png", "security-develop-operation_unsupported-monitor.png", "security-develop-schema_mismatch-history.png", "security-develop-schema_mismatch-monitor.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
@@ -1790,7 +1792,7 @@ for (const data of [
                             "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
                              "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
-                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png"):
+                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png", "security-develop-not_ready-history.png", "security-develop-not_ready-monitor.png", "security-develop-operation_unsupported-history.png", "security-develop-operation_unsupported-monitor.png", "security-develop-schema_mismatch-history.png", "security-develop-schema_mismatch-monitor.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)
                     (artifact / missing).unlink()
@@ -2191,6 +2193,8 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "list_pages", return_value=[self.finding()]),
               patch.object(ONLINE, "wait_for_algorithm_projections"),
               patch.object(ONLINE, "exercise_bank_card_computed_outputs", return_value={"protected_results_absent": True}),
+              patch.object(ONLINE, "exercise_enrolling_refusal", return_value={"diagnostic_reason": "protection_not_ready"}),
+              patch.object(ONLINE, "exercise_bank_card_refusal_causes", return_value={"schema_restored": True}),
               patch.object(ONLINE, "develop_rows", side_effect=lambda *args: self.mixed_rows() if "copied_card" in args[4] else self.rows()) as develop,
               patch.object(ONLINE, "service_rows", return_value=self.rows()),
               patch.object(ONLINE, "create_and_run_task", side_effect=transfer),
@@ -2362,6 +2366,92 @@ class TransferProtectionDiagnosticContractTests(unittest.TestCase):
             destination[key] = bad
             with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_transfer_protection_refusal(mutated, "preparation", "data_protection_required", "data_protection_required")
+
+class AdditionalProtectionRefusalTest(unittest.TestCase):
+    def execution(self, reason):
+        return {"execution_id": "98d20ee1-a505-4b77-99ad-0f5c6fda2b8e", "status": "failed", "metadata": {},
+                "error_details": {"category": "execution_failed", "code": "develop.query.protection_required",
+                    "diagnostic": {"schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": reason}}}
+
+    def test_each_actual_cause_requires_same_execution_history_without_result(self):
+        for reason in ('protection_not_ready', 'protection_operation_unsupported', 'protection_schema_mismatch'):
+            original = self.execution(reason)
+            for mutation in ('none', 'generic', 'stage', 'result', 'other_execution', 'raw_detail'):
+                history = copy.deepcopy(original)
+                if mutation == 'generic': history['error_details']['diagnostic']['reason'] = 'data_protection_required'
+                if mutation == 'stage': history['error_details']['diagnostic']['stage'] = 'result'
+                if mutation == 'result': history['metadata']['result'] = {'rows': ['private']}
+                if mutation == 'other_execution': history['execution_id'] = str(uuid.uuid4())
+                if mutation == 'raw_detail': history['error_details']['message'] = 'private'
+                client = Mock()
+                client.request.return_value = ONLINE.SUPPORT.Response(200, history)
+                with self.subTest(reason=reason, mutation=mutation), patch.object(ONLINE, 'develop_execution', return_value=original):
+                    if mutation == 'none':
+                        result = ONLINE.develop_refusal_with_history(client, 23, 'locator', 'SELECT phone', reason, time.monotonic()+10)
+                        self.assertEqual(result['diagnostic_reason'], reason)
+                        self.assertTrue(result['history_result_absent'])
+                    else:
+                        with self.assertRaises(ONLINE.SuiteError):
+                            ONLINE.develop_refusal_with_history(client, 23, 'locator', 'SELECT phone', reason, time.monotonic()+10)
+
+    def test_unready_needs_all_enrolling_receipts_before_querying(self):
+        base = {'state': 'enrolling', 'owner_progress': [
+            {'consumer_owner': owner, 'projection_state': 'enrolling', 'acknowledged': True, 'rules': []}
+            for owner in ONLINE.PROTECTION_OWNERS]}
+        for fault in ('none', 'active', 'missing_receipt', 'missing_owner', 'rules'):
+            value = copy.deepcopy(base)
+            if fault == 'active': value['state'] = 'active'
+            if fault == 'missing_receipt': value['owner_progress'][0]['acknowledged'] = False
+            if fault == 'missing_owner': value['owner_progress'].pop()
+            if fault == 'rules': value['owner_progress'][0]['rules'] = [{'effect': 'mask'}]
+            client = Mock()
+            client.request.return_value = ONLINE.SUPPORT.Response(200, value)
+            with self.subTest(fault=fault), patch.object(ONLINE, 'develop_refusal_with_history', return_value={}) as refusal, \
+                    patch.object(ONLINE.time, 'monotonic', side_effect=[0, 100]), patch.object(ONLINE.time, 'sleep'):
+                if fault == 'none':
+                    self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)['enrolling_acknowledged'])
+                    self.assertEqual(refusal.call_args.args[-2], 'protection_not_ready')
+                else:
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)
+                    refusal.assert_not_called()
+
+    def test_schema_restoration_runs_on_add_or_query_failure_and_checks_recovery(self):
+        for failure in ('none', 'add', 'query'):
+            calls = []
+            def physical(action, deadline):
+                calls.append(action)
+                if failure == 'add' and action == 'bank-schema-add': raise ONLINE.SuiteError('injected add failure')
+            def refuse(*args):
+                if failure == 'query' and args[-2] == 'protection_schema_mismatch': raise ONLINE.SuiteError('injected query failure')
+                return {'diagnostic_reason': args[-2]}
+            client = Mock()
+            client.request.return_value = ONLINE.SUPPORT.Response(200, {'owner_progress': [{'revision': '1'}]})
+            with self.subTest(failure=failure), patch.object(ONLINE, 'run_bank_schema_fixture', side_effect=physical), \
+                    patch.object(ONLINE, 'develop_refusal_with_history', side_effect=refuse), \
+                    patch.object(ONLINE, 'develop_rows', return_value=[]) as rows, \
+                    patch.object(ONLINE, 'assert_bank_card_rows', return_value={'rows': 5}):
+                if failure == 'none':
+                    result = ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10)
+                    self.assertTrue(result['schema_restored'])
+                    self.assertTrue(result['protection_revisions_unchanged'])
+                    rows.assert_called_once()
+                else:
+                    with self.assertRaisesRegex(ONLINE.SuiteError, 'injected'):
+                        ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10)
+                    rows.assert_not_called()
+                self.assertEqual(calls, ['bank-schema-add', 'bank-schema-remove'])
+
+    def test_physical_cleanup_has_independent_bounded_budget_and_admission(self):
+        with patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle') as admission, \
+                patch.object(ONLINE.subprocess, 'run', return_value=Mock(returncode=0)) as command:
+            ONLINE.run_bank_schema_fixture('bank-schema-remove', 0)
+            self.assertEqual(command.call_args.kwargs['timeout'], 30)
+            admission.assert_called_once()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.run_bank_schema_fixture('unknown', 0)
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.run_bank_schema_fixture('bank-schema-add', 0)
+            self.assertEqual(command.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1829,6 +1829,90 @@ def exercise_bank_card_computed_outputs(client: GatewayClient, engine_id: int, l
     return {"cases": cases, "count_star": 5, "unprotected_calculation_rows": 5, "protected_results_absent": True}
 
 
+def develop_refusal_with_history(client: GatewayClient, engine_id: int, locator: str,
+                                 query: str, reason: str, deadline: float) -> dict[str, object]:
+    execution = develop_execution(client, engine_id, locator, deadline, query, "sql")
+    execution_id = execution.get("execution_id")
+    try:
+        valid = isinstance(execution_id, str) and str(uuid.UUID(execution_id)) == execution_id and uuid.UUID(execution_id).int != 0
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        raise SuiteError("protection refusal needs an actual execution UUID")
+    evidence = validate_develop_protection_refusal(execution, "preparation", reason)
+    history = _object(client.request("GET", "/api/v1/develop/executions/" + execution_id, (200,)).payload,
+                      "protection refusal history")
+    if history.get("execution_id") != execution_id or history.get("error_details") != execution.get("error_details"):
+        raise SuiteError("protection refusal history differs from the same execution")
+    validate_develop_protection_refusal(history, "preparation", reason)
+    return {**evidence, "execution_id": execution_id, "history_result_absent": True}
+
+
+def exercise_enrolling_refusal(client: GatewayClient, enrollment_id: str, engine_id: int,
+                               locator: str, deadline: float) -> dict[str, object]:
+    # Do not review Findings until this probe is complete: an enrolling resource
+    # is a durable deny state, not a race against the discovery Worker.
+    while time.monotonic() < deadline:
+        enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
+                                            (200,)).payload, "unready enrollment")
+        if enrollment.get("state") != "enrolling":
+            raise SuiteError("unready acceptance requires the actual enrolling state")
+        progress = [_object(v, "enrolling owner") for v in _array(enrollment.get("owner_progress"), "enrolling owners")]
+        by_owner = {v.get("consumer_owner"): v for v in progress}
+        if (set(by_owner) == set(PROTECTION_OWNERS) and len(progress) == len(PROTECTION_OWNERS)
+                and all(v.get("projection_state") == "enrolling" and v.get("acknowledged") is True
+                        and v.get("rules") == [] for v in progress)):
+            result = develop_refusal_with_history(client, engine_id, locator,
+                "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE,
+                "protection_not_ready", deadline)
+            return {**result, "enrolling_acknowledged": True}
+        time.sleep(1)
+    raise SuiteError("enrolling protection did not converge before refusal acceptance")
+
+
+def run_bank_schema_fixture(action: str, deadline: float) -> None:
+    if action not in {"bank-schema-add", "bank-schema-remove"}:
+        raise SuiteError("unsupported owned schema action")
+    repository = Path(__file__).resolve().parents[2]
+    SUPPORT.require_hosted_security_lifecycle(repository)
+    remaining = 30 if action == "bank-schema-remove" else deadline - time.monotonic()
+    if remaining <= 0:
+        raise SuiteError("owned schema acceptance exceeded its budget")
+    result = subprocess.run(["bash", "business/scripts/online-security-owner-fixture.sh", action],
+        cwd=repository, capture_output=True, text=True, timeout=min(remaining, 30))
+    if result.returncode:
+        raise SuiteError("owned bank schema fixture failed: " + action)
+
+
+def exercise_bank_card_refusal_causes(client: GatewayClient, enrollment_id: str, engine_id: int,
+                                      locator: str, deadline: float) -> dict[str, object]:
+    # This direct field has proven lineage. The SQL output compiler rejects
+    # string-literal predicates in its current conservative transform subset.
+    unsupported = develop_refusal_with_history(client, engine_id, locator,
+        "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE + " WHERE customer_code='CUST-10001'",
+        "protection_operation_unsupported", deadline)
+    before = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
+                                    (200,)).payload, "pre-drift enrollment")
+    attempted = False
+    try:
+        attempted = True
+        run_bank_schema_fixture("bank-schema-add", deadline)
+        mismatch = develop_refusal_with_history(client, engine_id, locator,
+            "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE,
+            "protection_schema_mismatch", deadline)
+    finally:
+        if attempted:
+            run_bank_schema_fixture("bank-schema-remove", deadline)
+    after = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
+                                   (200,)).payload, "restored enrollment")
+    if before.get("owner_progress") != after.get("owner_progress"):
+        raise SuiteError("schema drift acceptance unexpectedly changed protection revisions")
+    recovered = assert_bank_card_rows(develop_rows(client, engine_id, locator, deadline,
+        "SELECT " + ",".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id"), "schema restoration query")
+    return {"operation_unsupported": unsupported, "schema_mismatch": mismatch,
+            "schema_restored": True, "protection_revisions_unchanged": True, "recovered": recovered}
+
+
 def exercise_bank_card_sql_pages(client: GatewayClient, name: str) -> dict[str, object]:
     rows = []
     cursor = ""
@@ -1937,6 +2021,9 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     columns, rows = preview_rows(client, locator)
     assert_bank_card_rows(rows, "Unprotected bank-card source control", columns, protected=False)
     enrollment_id, initialized = ensure_enrollment(client, source_engine_id, database + "." + BANK_SOURCE, locator)
+    if not initialized:
+        raise SuiteError("bank protection acceptance requires a fresh isolated enrollment")
+    enrolling_refusal = exercise_enrolling_refusal(client, enrollment_id, source_engine_id, locator, deadline)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, BANK_FIELD, BANK_DETECTOR)
     discovery = assert_bank_card_discovery(client, enrollment_id, assessment_id, finding_id)
@@ -1944,6 +2031,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                         (200,)).payload, "bank-card Enrollment")
     projections = bank_card_projections(enrollment)
+    refusal_causes = exercise_bank_card_refusal_causes(client, enrollment_id, source_engine_id, locator, deadline)
     name = "addp-online-security-bank-" + run_suffix(run_id, "-")
     service_id = None
     sql_service_id = None
@@ -2043,6 +2131,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "develop_mixed_wildcard": develop_mixed_wildcard,
             "develop_page_wildcard": develop_page_wildcard, "service_sql_page": service_sql_page,
             "computed_outputs": computed_outputs, "computed_service_deleted": True,
+            "refusal_causes": {"not_ready": enrolling_refusal, **refusal_causes},
             "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 4,
             "temporary_execution_resource_residuals": 0}
 
@@ -2306,7 +2395,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v23",
+            "schema_version": "addp.security-mysql-owner-protection-online/v24",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2428,7 +2517,7 @@ def result_browser_context(client: GatewayClient, engine_id: int, source: Mappin
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v8", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v9", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -2443,6 +2532,8 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "develop_alias_protected": True, "develop_refusal_rows": 0,
         "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
         "develop_monitor_same_execution": True,
+        "additional_protection_histories_verified": True, "additional_protection_monitors_verified": True,
+        "additional_protection_refusal_count": 3,
         "service_normal_output_verified": True, "service_refusal_http_status": 403,
         "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
         "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
@@ -2507,7 +2598,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
         "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
         "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png",
-    )]
+    )] + [report_path.parent / f"security-develop-{name}-{view}.png"
+          for name in ("not_ready", "operation_unsupported", "schema_mismatch") for view in ("history", "monitor")]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator,
@@ -2612,6 +2704,8 @@ def main() -> int:
         "transfer_payload": transfer_payload(browser_name, source_locator, build_schema_locator(target_engine_id, target_item)),
         "result_protection": result_browser_context(client, mongodb_engine_id, mongodb_source["item"],
             mongodb_transfer_targets, report["mongodb_algorithms"]["enrollment_id"]),
+        "additional_refusals": {name: report["bank_card_metadata"]["refusal_causes"][name]
+                                for name in ("not_ready", "operation_unsupported", "schema_mismatch")},
     }
     report["manager_export_browser"] = run_export_browser(
         Path(__file__).resolve().parents[2], dict(os.environ), source_locator, output_context)

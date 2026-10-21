@@ -38,7 +38,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
             case "$1" in
               info) exit 0 ;;
               container) [ -f "$ADDP_TEST_STATE/$3" ]; exit ;;
-              inspect) echo "${ADDP_TEST_OWNER:-security}"; exit ;;
+              inspect) [ -f "$ADDP_TEST_STATE/${@: -1}" ] || exit 1; echo "${ADDP_TEST_OWNER:-security}"; exit ;;
               run)
                 previous=
                 for item in "$@"; do
@@ -63,6 +63,16 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                 exit 0 ;;
               ps) ls "$ADDP_TEST_STATE"; exit ;;
               exec)
+                if [[ "$*" == *information_schema.columns* ]]; then
+                  if [ -f "$ADDP_TEST_PROBE" ]; then echo 1; else echo 0; fi
+                  exit 0
+                fi
+                if [[ "$*" == *'ALTER TABLE bank_card_accounts ADD COLUMN'* ]]; then
+                  touch "$ADDP_TEST_PROBE"; echo 'bank:add' >> "$ADDP_TEST_TRACE"; exit 0
+                fi
+                if [[ "$*" == *'ALTER TABLE bank_card_accounts DROP COLUMN'* ]]; then
+                  rm -f "$ADDP_TEST_PROBE"; echo 'bank:remove' >> "$ADDP_TEST_TRACE"; exit 0
+                fi
                 if [[ "$*" == *pg_isready* ]]; then exit 0; fi
                 if [[ "$*" == *psql* ]]; then cat > "$ADDP_TEST_SQL"; exit 0; fi
                 if [[ "$*" == *'SELECT 1'* ]]; then exit 0; fi
@@ -77,7 +87,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         ''')
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
                         ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_HOST='1', ADDP_ONLINE_SECRET_DIR=str(self.secrets),
-                        ADDP_TEST_MYSQL=str(self.mysql), ADDP_TEST_MONGO=str(self.mongo), ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace))
+                        ADDP_TEST_MYSQL=str(self.mysql), ADDP_TEST_MONGO=str(self.mongo), ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace), ADDP_TEST_PROBE=str(self.root / 'bank-probe'))
 
     def executable(self, name, content):
         path = self.bin / name
@@ -131,6 +141,21 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         result = self.run_fixture('start')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.trace.exists())
+
+    def test_bank_drift_is_owned_hosted_only_and_restores_exact_probe(self):
+        self.assertNotEqual(self.run_fixture('bank-schema-add').returncode, 0)
+        (self.state / 'addp-security-online-mysql').touch()
+        for action in ('bank-schema-add', 'bank-schema-remove'):
+            self.assertNotEqual(self.run_fixture(action, GITHUB_ACTIONS='false').returncode, 0)
+            self.assertNotEqual(self.run_fixture(action, ADDP_TEST_OWNER='other').returncode, 0)
+        self.assertFalse(self.trace.exists())
+        self.assertEqual(self.run_fixture('bank-schema-add').returncode, 0)
+        self.assertTrue((self.root / 'bank-probe').exists())
+        self.assertNotEqual(self.run_fixture('bank-schema-add').returncode, 0)
+        self.assertEqual(self.run_fixture('bank-schema-remove').returncode, 0)
+        self.assertEqual(self.run_fixture('bank-schema-remove').returncode, 0)
+        self.assertFalse((self.root / 'bank-probe').exists())
+        self.assertEqual(self.trace.read_text().splitlines(), ['bank:add', 'bank:remove'])
 
     def test_rejects_unknown_retained_fixture_before_creation(self):
         (self.state / 'retained-security-fixture').touch()
