@@ -33,6 +33,8 @@ Meta 的授权资源事实可以通过 `make test-meta-postgres META_POSTGRES_TE
 
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
+账号与权限的崩溃恢复回归使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--test database-crash-recovery'`。该分组自行创建带唯一归属标记的一次性 PostgreSQL 15 容器、回环临时端口和 `addp_iam_test`，不消费外部 DSN，也不连接共享 `addp-postgres`。测试分别向自有数据库后端发送 SIGQUIT、对自有容器发送 SIGKILL 后重新启动；对账已提交的 IAM 全表内容，验证未提交变更回滚、原登录凭据和授权上下文可继续使用、迁移重入保留事实。成功及失败路径均删除自有容器与数据卷并核验零残留。默认完整 IAM 门禁同时运行该分组，既有 System IAM PostgreSQL CI Job 覆盖；这是模块 T2，不代替跨模块 Online 或宿主机断电／磁盘损坏认证。
+
 该门禁对每个 Go 测试包显式设置 20 分钟上限。完整 Migration 回归会反复重放历史版本，累计运行可能超过 Go 默认的 10 分钟包级超时；单个迁移阶段仍保留自身期限，CI Job 仍以 30 分钟限制整轮运行，不通过拆包、跳过场景或取消超时规避完整验收。
 
 Manager 剖析执行授权的 PostgreSQL 夹具从同一数据库的 `clock_timestamp()` 读取认证时间，与正式 Browser 会话的墙钟校验一致，避免主机与 Docker VM 时钟差触发“认证时间在未来”；正式拒绝未来认证时间的规则保持不变。

@@ -52,7 +52,8 @@ from pathlib import Path
 with open(os.environ["TEST_GO_CWD"], "a") as trace:
     trace.write(str(Path.cwd()) + "\\n")
 with open(os.environ["TEST_GO_TRACE"], "a") as trace:
-    trace.write(" ".join(sys.argv[1:]) + "\\n")
+    marker = " owned-crash-recovery-enabled" if os.environ.get("ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_INTEGRATION") == "1" else ""
+    trace.write(" ".join(sys.argv[1:]) + marker + "\\n")
 if os.environ.get("TEST_GO_HOLD") == "1" and "./internal/testsupport" in sys.argv:
     Path(os.environ["TEST_STARTED"]).touch()
     deadline = time.monotonic() + {2 * PROCESS_TIMEOUT_SECONDS}
@@ -60,12 +61,38 @@ if os.environ.get("TEST_GO_HOLD") == "1" and "./internal/testsupport" in sys.arg
         if time.monotonic() >= deadline:
             sys.exit("test holder timed out")
         time.sleep(0.02)
+if os.environ.get("TEST_GO_ORPHAN") == "1":
+    Path(os.environ["ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_STATE_DIR"], "crash-recovery-owner").write_text("12345678-1234-1234-1234-123456789abc")
+    Path(os.environ["TEST_DOCKER_STATE"]).touch()
+if os.environ.get("TEST_GO_SKIP") == "1":
+    print("--- SKIP: TestIAMDatabaseCrashRecovery")
 sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
 ''')
         go.chmod(0o755)
+        docker = bin_dir / "docker"
+        docker.write_text('''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+state = Path(os.environ["TEST_DOCKER_STATE"])
+args = sys.argv[1:]
+if args[0] == "ps":
+    if state.exists(): print("a" * 64)
+elif args[0] == "inspect":
+    print(json.dumps({"Id": "a"*64, "Config": {"Labels": {"addp.test.iam-crash-recovery":
+        "foreign" if os.environ.get("TEST_DOCKER_FOREIGN") == "1" else "12345678-1234-1234-1234-123456789abc"}},
+        "Mounts": [{"Type": "volume", "Name": "b"*64, "Destination": "/var/lib/postgresql/data"}]}))
+elif args[0] == "rm":
+    Path(os.environ["TEST_DOCKER_REMOVED"]).write_text(" ".join(args))
+    state.unlink()
+elif args[:2] != ["volume", "ls"]:
+    sys.exit(99)
+''')
+        docker.chmod(0o755)
         self.environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
+                                TMPDIR=str(self.root),
                                 ADDP_SYSTEM_POSTGRES_TEST_DSN="postgres://fixture/addp_iam_test",
                                 GITHUB_ACTIONS="true",
+                                TEST_DOCKER_STATE=str(self.root / "docker-state"), TEST_DOCKER_REMOVED=str(self.root / "docker-removed"),
                                 TEST_STARTED=str(self.started), TEST_RELEASE=str(self.release), TEST_GO_CWD=str(self.root / "cwd-trace"))
 
     def tearDown(self):
@@ -101,6 +128,44 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
             self.assertIn(f'./internal/{package} -run {pattern}', (self.root / 'trace-1').read_text())
         result = self.run_gate(arguments=('--package', 'api', '--test', 'task-authorization'))
         self.assertEqual(result.returncode, 2)
+
+    def test_crash_recovery_owns_its_database_and_never_resets_external_dsn(self):
+        result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"),
+                               ADDP_SYSTEM_POSTGRES_TEST_DSN="", GITHUB_ACTIONS="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/api -run ^TestIAMDatabaseCrashRecovery$", trace)
+        self.assertIn("owned-crash-recovery-enabled", trace)
+        self.assertNotIn("./internal/testsupport", trace)
+        result = self.run_gate(arguments=("--test", "database-crash-recovery"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --package api", result.stderr)
+
+    def test_default_gate_includes_crash_recovery_before_shared_database_reset(self):
+        result = self.run_gate(arguments=("--package", ""))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertLess(trace.index("^TestIAMDatabaseCrashRecovery$"), trace.index("^TestResetDisposablePostgresForGate$"))
+        self.assertEqual(trace.count("owned-crash-recovery-enabled"), 1)
+
+    def test_failed_crash_test_cleans_only_its_owned_partial_container(self):
+        result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"),
+                               TEST_GO_ORPHAN="1", TEST_GO_STATUS="37")
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertEqual((self.root / "docker-removed").read_text(), "rm --force --volumes " + "a" * 64)
+        self.assertFalse((self.root / "docker-state").exists())
+
+    def test_crash_cleanup_rejects_foreign_container_identity(self):
+        result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"),
+                               TEST_GO_ORPHAN="1", TEST_DOCKER_FOREIGN="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refusing foreign", result.stderr)
+        self.assertFalse((self.root / "docker-removed").exists())
+
+    def test_crash_recovery_refuses_unexecuted_test(self):
+        result = self.run_gate(arguments=("--package", "api", "--test", "database-crash-recovery"), TEST_GO_SKIP="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refuses skipped tests", result.stderr)
 
     def test_unified_data_authorizer_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "unified-data-authorizer"))

@@ -35,7 +35,8 @@ while [ "$#" -gt 0 ]; do
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
             echo "FTP file composition Grant/current read: --package engineaccess --test file-composition" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
-            echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
+            echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
+            echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
             ;;
     esac
@@ -45,11 +46,55 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-system-iam-postgres.XXXXXX")
 
 cleanup() {
-    rm -rf "$WORK_DIR"
+    status=$?
+    cleanup_failed=0
+    trap - EXIT
+    if [ -f "$WORK_DIR/crash-recovery-owner" ]; then
+        # The Go test normally removes its container. This owner-marked sweep
+        # also handles an interrupted/failed test process or partial creation.
+        python3 - "$WORK_DIR/crash-recovery-owner" <<'PY' || { status=1; cleanup_failed=1; }
+import json, re, subprocess, sys
+from pathlib import Path
+
+owner = Path(sys.argv[1]).read_text().strip()
+if not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", owner):
+    sys.exit("invalid IAM crash-recovery cleanup owner")
+label = "addp.test.iam-crash-recovery=" + owner
+def docker(*args):
+    result = subprocess.run(["docker", *args], text=True, capture_output=True, timeout=45)
+    if result.returncode:
+        sys.exit("IAM crash-recovery cleanup could not verify Docker state")
+    return result.stdout.strip()
+volumes = []
+for identity in docker("ps", "-aq", "--no-trunc", "--filter", "label=" + label).split():
+    fact = json.loads(docker("inspect", "--format", "{{json .}}", identity))
+    mounts = fact.get("Mounts", [])
+    if (not re.fullmatch(r"[0-9a-f]{64}", identity) or fact.get("Id") != identity
+            or fact.get("Config", {}).get("Labels", {}).get("addp.test.iam-crash-recovery") != owner
+            or len(mounts) != 1 or mounts[0].get("Type") != "volume"
+            or mounts[0].get("Destination") != "/var/lib/postgresql/data"):
+        sys.exit("refusing foreign IAM crash-recovery cleanup target")
+    volumes.append(mounts[0]["Name"])
+    docker("rm", "--force", "--volumes", identity)
+if docker("ps", "-aq", "--no-trunc", "--filter", "label=" + label):
+    sys.exit("IAM crash-recovery cleanup left a container")
+remaining = docker("volume", "ls", "--format", "{{.Name}}").splitlines()
+if set(volumes).intersection(remaining):
+    sys.exit("IAM crash-recovery cleanup left a volume")
+PY
+    fi
+    if [ "$cleanup_failed" = 1 ]; then
+        echo "IAM crash-recovery cleanup evidence retained: $WORK_DIR" >&2
+    else
+        rm -rf "$WORK_DIR"
+    fi
+    exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-if [ -z "${ADDP_SYSTEM_POSTGRES_TEST_DSN:-}" ]; then
+if [ "$TEST_FILTER" != database-crash-recovery ] && [ -z "${ADDP_SYSTEM_POSTGRES_TEST_DSN:-}" ]; then
     echo "ADDP_SYSTEM_POSTGRES_TEST_DSN must reference a disposable PostgreSQL 15+ database" >&2
     exit 1
 fi
@@ -66,8 +111,13 @@ if [ "$source_checkout" != "$SOURCE_ROOT" ] ||
     exit 1
 fi
 
-source "$ROOT_DIR/scripts/infra/ports.sh"
-addp_infra_verify_test_postgres_dsn "$ADDP_SYSTEM_POSTGRES_TEST_DSN"
+if [ "$TEST_FILTER" != database-crash-recovery ]; then
+    source "$ROOT_DIR/scripts/infra/ports.sh"
+    addp_infra_verify_test_postgres_dsn "$ADDP_SYSTEM_POSTGRES_TEST_DSN"
+elif [ -n "$PACKAGE_FILTER" ] && [ "$PACKAGE_FILTER" != api ]; then
+    echo "database-crash-recovery requires --package api or no package filter" >&2
+    exit 2
+fi
 
 # All checkouts share the same local IAM test database. Keep the open file
 # description alive in this shell and its children until the entire gate exits.
@@ -99,6 +149,14 @@ run_without_skips() {
         exit 1
     fi
 }
+
+if [ "$TEST_FILTER" = database-crash-recovery ] || { [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; }; then
+    ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_INTEGRATION=1 ADDP_SYSTEM_DATABASE_CRASH_RECOVERY_STATE_DIR="$WORK_DIR" \
+        run_without_skips ./internal/api '^TestIAMDatabaseCrashRecovery$'
+    if [ "$TEST_FILTER" = database-crash-recovery ]; then
+        exit 0
+    fi
+fi
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
 case "$PACKAGE_FILTER" in
