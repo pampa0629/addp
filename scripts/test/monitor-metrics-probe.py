@@ -212,128 +212,134 @@ def discovery_text(text):
     pending.write_text(text)
     pending.replace(WORK / 'source/discovery.json')
 
-# Two genuine Common SDK processes in the existing owned non-root source
-# container. Loopback-only test ports also exercise Desktop's host transport;
-# there is no business process, workspace mount or extra service.
-source_id = compose('ps', '-q', 'metrics-source').strip()
-source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
-source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
-processes, records = [], []
-try:
-    for index in (1, 2):
-        path = WORK / 'source' / f'process-{index}.json'
-        path.write_text('')
-        path.chmod(0o666)
-        address = source_ip + ':' + str(19440 + index)
-        envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
-                'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',
-                'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index), 'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'}
-        command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
-        for key, value in envs.items(): command.extend(['-e', key + '=' + value])
-        command.extend(['metrics-source', '/source/process-source.test', '-test.run=^TestIntegrationMetricsSelfSource$', '-test.timeout=9m'])
-        log = (WORK / 'source' / f'process-{index}.log').open('w')
-        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
-        processes.append((process, log, path))
-        eventually(lambda: bool(path.read_text()) or process.poll() is not None, 'native process starts')
-        if process.poll() is not None:
-            log.flush()
-            print(path.with_suffix('.log').read_text()[-4000:], flush=True)
-            raise AssertionError('native source failed at startup')
-        records.append(json.loads(path.read_text()))
-    projection = [{'targets': [source_ip + ':' + str(19440 + index)], 'labels': {
-        '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
-        'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': records[index - 1]['role']}} for index in (1, 2)]
-    if desktop_transport:
-        process_loopback_ports = [port('metrics-source', 19440 + index) for index in (1, 2)]
-        os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORTS'] = ','.join(process_loopback_ports)
-        subprocess.run(['python3', str(Path(__file__).resolve().parents[1] / 'infra/generate-metrics-config.py')], check=True)
-        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'prometheus')
-        base = 'https://localhost:' + port('prometheus', 9090)
-        for group, published in zip(projection, process_loopback_ports):
-            group['targets'] = ['127.0.0.1:' + published]
-    discovery_text(json.dumps(projection))
-    for record, group in zip(records, projection): record['instance'] = group['targets'][0]
-    process_metadata = WORK / 'source' / 'process-records.json'
-    process_metadata.write_text(json.dumps(records))
-    eventually(lambda: len(query('process_resident_memory_bytes{job="addp_nodes",addp_monitor_kind="process_resources"}')) == 2,
-               'two genuine Linux processes enter the sole SD job')
-    if desktop_transport:
-        def desktop_process_targets():
-            active = [t for t in api('targets')['activeTargets'] if t['labels'].get('addp_monitor_kind') == 'process_resources']
-            return (len(active) == 2 and all(t['health'] == 'up' and
-                    t['scrapeUrl'] == 'https://host.docker.internal:' + t['labels']['instance'].rsplit(':', 1)[1] + '/metrics' and
-                    t['labels']['instance'] in {r['instance'] for r in records} and
-                    t['labels']['addp_instance_id'] == 'native-' + str(next(r['id'] for r in records if r['instance'] == t['labels']['instance']))
-                    for t in active))
-        eventually(desktop_process_targets, 'both Desktop SDK endpoints preserve canonical identities through exact host transport')
-        print('Metrics T2: two real SDK sources use distinct Desktop loopback ports in the sole Job, preserving instance identities', flush=True)
-    env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
-               MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
-               MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
+def check_native_process_sources():
+    global base
+    # Two genuine Common SDK processes in the existing owned non-root source
+    # container. Loopback-only test ports also exercise Desktop's host transport;
+    # there is no business process, workspace mount or extra service.
+    source_id = compose('ps', '-q', 'metrics-source').strip()
+    source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
+    source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
+    processes, records = [], []
     try:
-        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+        for index in (1, 2):
+            path = WORK / 'source' / f'process-{index}.json'
+            path.write_text('')
+            path.chmod(0o666)
+            address = source_ip + ':' + str(19440 + index)
+            envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
+                    'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',
+                    'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index), 'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'}
+            command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
+            for key, value in envs.items(): command.extend(['-e', key + '=' + value])
+            command.extend(['metrics-source', '/source/process-source.test', '-test.run=^TestIntegrationMetricsSelfSource$', '-test.timeout=9m'])
+            log = (WORK / 'source' / f'process-{index}.log').open('w')
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+            processes.append((process, log, path))
+            eventually(lambda: bool(path.read_text()) or process.poll() is not None, 'native process starts')
+            if process.poll() is not None:
+                log.flush()
+                print(path.with_suffix('.log').read_text()[-4000:], flush=True)
+                raise AssertionError('native source failed at startup')
+            records.append(json.loads(path.read_text()))
+        projection = [{'targets': [source_ip + ':' + str(19440 + index)], 'labels': {
+            '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
+            'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': records[index - 1]['role']}} for index in (1, 2)]
+        if desktop_transport:
+            process_loopback_ports = [port('metrics-source', 19440 + index) for index in (1, 2)]
+            os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORTS'] = ','.join(process_loopback_ports)
+            subprocess.run(['python3', str(Path(__file__).resolve().parents[1] / 'infra/generate-metrics-config.py')], check=True)
+            compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'prometheus')
+            base = 'https://localhost:' + port('prometheus', 9090)
+            for group, published in zip(projection, process_loopback_ports):
+                group['targets'] = ['127.0.0.1:' + published]
+        discovery_text(json.dumps(projection))
+        for record, group in zip(records, projection): record['instance'] = group['targets'][0]
+        process_metadata = WORK / 'source' / 'process-records.json'
+        process_metadata.write_text(json.dumps(records))
+        eventually(lambda: len(query('process_resident_memory_bytes{job="addp_nodes",addp_monitor_kind="process_resources"}')) == 2,
+                   'two genuine Linux processes enter the sole SD job')
+        if desktop_transport:
+            def desktop_process_targets():
+                active = [t for t in api('targets')['activeTargets'] if t['labels'].get('addp_monitor_kind') == 'process_resources']
+                return (len(active) == 2 and all(t['health'] == 'up' and
+                        t['scrapeUrl'] == 'https://host.docker.internal:' + t['labels']['instance'].rsplit(':', 1)[1] + '/metrics' and
+                        t['labels']['instance'] in {r['instance'] for r in records} and
+                        t['labels']['addp_instance_id'] == 'native-' + str(next(r['id'] for r in records if r['instance'] == t['labels']['instance']))
+                        for t in active))
+            eventually(desktop_process_targets, 'both Desktop SDK endpoints preserve canonical identities through exact host transport')
+            print('Metrics T2: two real SDK sources use distinct Desktop loopback ports in the sole Job, preserving instance identities', flush=True)
+        env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
+                   MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
+                   MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
+        try:
+            subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+                           cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+        except subprocess.SubprocessError:
+            # Preserve closed signals before owned processes/center are destroyed.
+            # No labels, endpoints, request bodies or credentials enter diagnostics.
+            try:
+                diagnostic = {'host_unix':time.time(), 'center_unix':[row['value'][1] for row in query('vector(time())')], 'processes':[]}
+                for record in records:
+                    selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_instance_id='+json.dumps(record['instance_id'])+',instance='+json.dumps(record['instance'])+'}'
+                    cpu = 'process_cpu_seconds_total'+selector
+                    signals = {}
+                    for key, expression in {'up_count':'count(up'+selector+') or vector(0)',
+                                            'up':'max(up'+selector+') or vector(0)',
+                                            'sample_age':'time()-max(timestamp(up'+selector+'))',
+                                            'identity_count':'count(addp_process_identity_info'+selector+') or vector(0)',
+                                        'cpu_count':'count('+cpu+') or vector(0)',
+                                        'cpu_window_samples':'min(count_over_time('+cpu+'[1m]))',
+                                        'cpu_resets':'max(resets('+cpu+'[1m]))',
+                                        'cpu_delta':'max('+cpu+')-max('+cpu+' offset 1m)',
+                                        'cpu_age':'time()-max(timestamp('+cpu+'))',
+                                        'cpu_previous_age':'time()-max(timestamp('+cpu+' offset 1m))',
+                                            'start_difference':'max(process_start_time_seconds'+selector+')-'+str(datetime.datetime.fromisoformat(record['started_at'].replace('Z', '+00:00')).timestamp())}.items():
+                        signals[key] = [row['value'][1] for row in query(expression)]
+                    diagnostic['processes'].append(signals)
+                print('Metrics T2 process query diagnostics: '+json.dumps(diagnostic, sort_keys=True), flush=True)
+            except Exception:
+                print('Metrics T2 process query diagnostics unavailable', flush=True)
+            raise
+        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
-    except subprocess.SubprocessError:
-        # Preserve closed signals before owned processes/center are destroyed.
-        # No labels, endpoints, request bodies or credentials enter diagnostics.
-        try:
-            diagnostic = {'host_unix':time.time(), 'center_unix':[row['value'][1] for row in query('vector(time())')], 'processes':[]}
-            for record in records:
-                selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_instance_id='+json.dumps(record['instance_id'])+',instance='+json.dumps(record['instance'])+'}'
-                cpu = 'process_cpu_seconds_total'+selector
-                signals = {}
-                for key, expression in {'up_count':'count(up'+selector+') or vector(0)',
-                                        'up':'max(up'+selector+') or vector(0)',
-                                        'sample_age':'time()-max(timestamp(up'+selector+'))',
-                                        'identity_count':'count(addp_process_identity_info'+selector+') or vector(0)',
-                                    'cpu_count':'count('+cpu+') or vector(0)',
-                                    'cpu_window_samples':'min(count_over_time('+cpu+'[1m]))',
-                                    'cpu_resets':'max(resets('+cpu+'[1m]))',
-                                    'cpu_delta':'max('+cpu+')-max('+cpu+' offset 1m)',
-                                    'cpu_age':'time()-max(timestamp('+cpu+'))',
-                                    'cpu_previous_age':'time()-max(timestamp('+cpu+' offset 1m))',
-                                        'start_difference':'max(process_start_time_seconds'+selector+')-'+str(datetime.datetime.fromisoformat(record['started_at'].replace('Z', '+00:00')).timestamp())}.items():
-                    signals[key] = [row['value'][1] for row in query(expression)]
-                diagnostic['processes'].append(signals)
-            print('Metrics T2 process query diagnostics: '+json.dumps(diagnostic, sort_keys=True), flush=True)
-        except Exception:
-            print('Metrics T2 process query diagnostics unavailable', flush=True)
-        raise
-    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
-                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
-    subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsHTTPAlertLifecycle$', '-count=1', '-timeout=300s', '-v'],
-                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
-                   env=dict(env, ADDP_HTTP_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
-                            ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
-                            ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
-                            ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
-                            ADDP_TEST_POSTGRES_SSLMODE='disable'), check=True, timeout=320)
-    process, log, path = processes[0]
-    Path(str(path) + '.stop').touch()
-    assert process.wait(timeout=10) == 0
-    # Consumers evaluate at whole seconds. A failed scrape later in the current
-    # second must not release them to query the preceding healthy instant.
-    eventually(lambda: bool(query('up{job="addp_nodes",addp_instance_id="native-1"} == 0', at=math.floor(time.time()))),
-               'stopped real process becomes a failed source')
-    assert bool(query('up{job="addp_nodes",addp_instance_id="native-2"} == 1'))
-    assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'
-    env['ADDP_PROCESS_T2_STOPPED'] = '1'
-    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
-                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
-    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
-                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
-    print('Metrics T2: two native Linux SDK processes isolated; stopped source clears values while peer stays live', flush=True)
-finally:
-    for process, log, path in processes:
+        subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsHTTPAlertLifecycle$', '-count=1', '-timeout=300s', '-v'],
+                       cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                       env=dict(env, ADDP_HTTP_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
+                                ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
+                                ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
+                                ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                                ADDP_TEST_POSTGRES_SSLMODE='disable'), check=True, timeout=320)
+        process, log, path = processes[0]
         Path(str(path) + '.stop').touch()
-        try:
-            result = process.wait(timeout=10)
-            if result != 0: raise RuntimeError('test-owned process source failed')
-        finally: log.close()
-    discovery_text(original_discovery)
-eventually(valid_sample, 'fixture scope restored after native process checks')
+        assert process.wait(timeout=10) == 0
+        # Consumers evaluate at whole seconds. A failed scrape later in the current
+        # second must not release them to query the preceding healthy instant.
+        eventually(lambda: bool(query('up{job="addp_nodes",addp_instance_id="native-1"} == 0', at=math.floor(time.time()))),
+                   'stopped real process becomes a failed source')
+        assert bool(query('up{job="addp_nodes",addp_instance_id="native-2"} == 1'))
+        assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'
+        env['ADDP_PROCESS_T2_STOPPED'] = '1'
+        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
+                       cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
+        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+                       cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
+        print('Metrics T2: two native Linux SDK processes isolated; stopped source clears values while peer stays live', flush=True)
+    finally:
+        for process, log, path in processes:
+            Path(str(path) + '.stop').touch()
+            try:
+                result = process.wait(timeout=10)
+                if result != 0: raise RuntimeError('test-owned process source failed')
+            finally: log.close()
+        discovery_text(original_discovery)
+    eventually(valid_sample, 'fixture scope restored after native process checks')
+
+
+if os.environ.get('ADDP_METRICS_T2_CASE') != 'host-resources':
+    check_native_process_sources()
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality':
-    print('Metrics T2: HTTP quality scope complete; remaining host-resource regression belongs to --case=all', flush=True)
+    print('Metrics T2: HTTP quality scope complete; remaining host-resource regression belongs to --case=host-resources or --case=all', flush=True)
     raise SystemExit(0)
 
 

@@ -2002,10 +2002,14 @@ jobs:
       - name: Verify isolated log lifecycle
         run: make test-system-runtime-log
 
-  monitor-metrics:
-    name: Monitor metrics infrastructure
+  monitor-metrics-cases:
+    name: Monitor metrics infrastructure (${{ matrix.case }})
     needs: selection
     if: needs.selection.outputs.monitor == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [postgres-source, http-quality, host-resources]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -2017,7 +2021,41 @@ jobs:
           go-version-file: common/go.mod
           cache: false
       - name: Verify isolated metrics lifecycle
+        env:
+          MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}
         run: make test-monitor-metrics
+
+      - name: Summarize metrics case
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Monitor metrics infrastructure (${{ matrix.case }})
+          status: ${{ job.status }}
+
+  monitor-metrics:
+    name: Monitor metrics infrastructure
+    needs: [selection, monitor-metrics-cases]
+    if: always() && needs.selection.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require every selected metrics case
+        env:
+          METRICS_SELECTED: ${{ needs.selection.outputs.monitor }}
+          METRICS_SELECTION_RESULT: ${{ needs.selection.result }}
+          METRICS_CASES_RESULT: ${{ needs.monitor-metrics-cases.result }}
+        run: bash scripts/ci/report-selected-gate.sh "Monitor metrics infrastructure" "$METRICS_SELECTED" "$METRICS_SELECTION_RESULT" "$METRICS_CASES_RESULT"
+
+      - name: Summarize complete metrics gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Monitor metrics infrastructure
+          status: ${{ job.status }}
+          selected: ${{ needs.selection.outputs.monitor }}
 
   monitor-traces:
     name: Monitor HTTP trace infrastructure

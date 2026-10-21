@@ -69,16 +69,61 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('--case=http-quality) metrics_case=http-quality ;;', gate)
         self.assertIn('export ADDP_METRICS_T2_CASE="$metrics_case"', gate)
         self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality'", probe)
-        pg_scope = re.search(r'(?ms)^if \[\[ "\$metrics_case" != http-quality \]\]; then\n  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true\n.*?^fi$', gate)
+        pg_scope = re.search(r'(?ms)^if \[\[ "\$metrics_case" == all \|\| "\$metrics_case" == postgres-source \]\]; then\n  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true\n.*?^fi$', gate)
         self.assertIsNotNone(pg_scope)
         self.assertIn('postgres-observation-probe.py', pg_scope.group())
         self.assertIn('postgres_directory_probe', pg_scope.group())
         stub = 'python3(){ printf "probe\\n"; }; postgres_directory_probe(){ printf "directory\\n"; }; metrics_case="$1"\n'
-        for case in ('http-quality', 'all', 'postgres-source'):
+        for case in ('http-quality', 'host-resources', 'all', 'postgres-source'):
             completed = subprocess.run(['bash', '-c', stub + pg_scope.group(), '_', case], capture_output=True, text=True, timeout=5)
             self.assertEqual(completed.returncode, 0)
             expected = ['probe'] * pg_scope.group().count('\n  python3 ') + ['directory']
-            self.assertEqual(completed.stdout.splitlines(), [] if case == 'http-quality' else expected)
+            self.assertEqual(completed.stdout.splitlines(), expected if case in ('all', 'postgres-source') else [])
+
+    def test_metrics_cases_partition_native_and_host_work_without_shortening_full_gate(self):
+        probe = ast.parse((ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
+        selector = next(index for index, node in enumerate(probe.body)
+                        if isinstance(node, ast.If) and any(isinstance(item, ast.Name)
+                        and item.id == 'check_native_process_sources' for item in ast.walk(node)))
+        selection = compile(ast.Module(body=probe.body[selector:selector+2], type_ignores=[]), '<metrics case selection>', 'exec')
+        for case in ('all', 'http-quality', 'host-resources'):
+            native = mock.Mock()
+            environment = mock.Mock(environ={'ADDP_METRICS_T2_CASE': case})
+            namespace = {'os': environment, 'check_native_process_sources': native, 'print': mock.Mock()}
+            if case == 'http-quality':
+                with self.assertRaises(SystemExit) as stopped:
+                    exec(selection, namespace)
+                self.assertEqual(stopped.exception.code, 0)
+            else:
+                exec(selection, namespace)
+            self.assertEqual(native.call_count, int(case != 'host-resources'))
+        gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
+        self.assertIn("''|--case=all) metrics_case=all ;;", gate)
+        self.assertIn('--case=host-resources) metrics_case=host-resources ;;', gate)
+        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+
+    def test_ci_requires_every_isolated_metrics_case_and_preserves_budget(self):
+        workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
+        cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
+        self.assertIn('fail-fast: false', cases)
+        self.assertIn('case: [postgres-source, http-quality, host-resources]', cases)
+        self.assertIn('timeout-minutes: 20', cases)
+        self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
+        self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
+        result = re.search(r'^  monitor-metrics:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
+        self.assertIn('name: Monitor metrics infrastructure\n', result)
+        self.assertIn('needs: [selection, monitor-metrics-cases]', result)
+        self.assertIn("if: always() && needs.selection.result != 'skipped'", result)
+        self.assertIn('METRICS_CASES_RESULT: ${{ needs.monitor-metrics-cases.result }}', result)
+        self.assertIn('bash scripts/ci/report-selected-gate.sh', result)
+        for selected, selection, verification in [('true', 'success', 'success'), ('true', 'success', 'failure'),
+                                                     ('true', 'success', 'cancelled'), ('true', 'success', 'skipped'),
+                                                     ('true', 'failure', 'skipped'), ('false', 'success', 'skipped')]:
+            completed = subprocess.run(['bash', str(ROOT / 'scripts/ci/report-selected-gate.sh'), 'Metrics', selected, selection, verification],
+                                       capture_output=True, text=True, timeout=5)
+            self.assertEqual(completed.returncode == 0,
+                             selection == 'success' and ((selected == 'true' and verification == 'success')
+                                                       or (selected == 'false' and verification == 'skipped')))
 
     def test_postgres_auth_directory_reuses_runtime_and_preserves_managed_policy(self):
         directory = self.directory.resolve() / 'authentication'
@@ -360,7 +405,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'scripts/infra/node-metrics-desktop.yml'):
             self.assertTrue(gate_module.gate_input_covers(inputs, path), path)
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
-        job = re.search(r'^  monitor-metrics:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
+        job = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('uses: actions/setup-go@', job)
         self.assertIn('go-version-file: common/go.mod', job)
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))

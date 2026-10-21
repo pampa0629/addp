@@ -10,12 +10,13 @@ case "${1:-}" in
   --case=postgres-observation) metrics_case=postgres-observation ;;
   --case=postgres-source) metrics_case=postgres-source ;;
   --case=http-quality) metrics_case=http-quality ;;
+  --case=host-resources) metrics_case=host-resources ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac
 export ADDP_METRICS_T2_CASE="$metrics_case"
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
-if [[ "$metrics_case" != http-quality ]]; then
+if [[ "$metrics_case" == all || "$metrics_case" == postgres-observation || "$metrics_case" == postgres-source ]]; then
   python3 -m unittest "$ROOT_DIR/scripts/test/postgres-metrics-lifecycle_test.py"
 fi
 # Test-owned transport starts dynamically, then the probe pins its assigned port.
@@ -248,13 +249,14 @@ compose exec -T metrics-source nginx -s reload
 compose run --rm --no-deps --entrypoint nginx metrics-control -t
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
-if [[ "$metrics_case" != http-quality ]]; then
+if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
   python3 "$ROOT_DIR/scripts/test/postgres-observation-probe.py"
   python3 "$ROOT_DIR/scripts/test/postgres-lifecycle-probe.py"
   postgres_directory_probe
 fi
 if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
+if [[ "$metrics_case" != host-resources ]]; then
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')
@@ -268,4 +270,5 @@ openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMEN
 cp "$WORK_DIR/source-server.key" "$WORK_DIR/source/process-tls/server.key"
 cp "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" "$WORK_DIR/source/process-tls/ca.crt"
 chmod 644 "$WORK_DIR/source/process-tls/server.key"
+fi
 python3 "$ROOT_DIR/scripts/test/monitor-metrics-probe.py"
