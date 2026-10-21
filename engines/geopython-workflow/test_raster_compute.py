@@ -5406,14 +5406,14 @@ def test_boundary_clean_rejects_complex_and_alpha_data(tmp_path,case):
 def test_boundary_clean_intermediate_and_failed_output_removed(tmp_path,monkeypatch,stage):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'source.tif',np.ones((6,7)))
-    windows=compute._boundary_blocks
+    windows=compute._cell_neighbourhood_blocks
     def fail(dataset,band):
         # A read-only reopened dataset is the complete expansion snapshot.
         expanding=dataset.GetRasterBand(1).GetNoDataValue()==-9999
         for block in windows(dataset,band):
             yield block
             if expanding == (stage=='expand'):raise RuntimeError('injected stage failure')
-    monkeypatch.setattr(compute,'_boundary_blocks',fail)
+    monkeypatch.setattr(compute,'_cell_neighbourhood_blocks',fail)
     with raster_workspace():
         source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
         with pytest.raises(RuntimeError,match='injected'):compute.raster_boundary_clean(source,1)
@@ -5505,3 +5505,306 @@ def test_boundary_clean_safe_classes_with_unsafe_nodata_and_explicit_mask(tmp_pa
     with raster_workspace():
         result=compute.raster_boundary_clean(raster_load(source_plan(path)),1)
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(array,valid));ds=None
+
+
+# Independent scalar Guo–Hall decisions, evaluated on a whole immutable image.
+# Neighbour bit order E, NE, N, NW, W, SW, S, SE; no product helpers or halos.
+def _thin_scalar_delete(bits, phase):
+    transitions = sum(not bits[i] and (bits[(i+1)%8] or bits[(i+2)%8]) for i in (0,2,4,6))
+    n1 = sum(bits[i] or bits[i+1] for i in (0,2,4,6))
+    n2 = sum(bits[i] or bits[(i+1)%8] for i in (1,3,5,7))
+    direction = ((bits[1] or bits[2] or not bits[7]) and bits[0]) if phase == 0 else ((bits[5] or bits[6] or not bits[3]) and bits[4])
+    return transitions == 1 and min(n1,n2) in (2,3) and not direction
+
+
+def _thin_oracle(values, valid, foreground):
+    image = valid & (values == foreground)
+    offsets = ((0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1),(1,0),(1,1))
+    while True:
+        count = int(image.sum())
+        for phase in (0,1):
+            padded = np.pad(image,1)
+            output = image.copy()
+            for y,x in np.argwhere(image):
+                bits = [bool(padded[y+1+dy,x+1+dx]) for dy,dx in offsets]
+                if _thin_scalar_delete(bits,phase):output[y,x] = False
+            image = output
+        if count == int(image.sum()):return np.where(valid,image.astype(float),np.nan)
+
+
+def test_raster_thin_all_neighbourhoods_and_phase_order():
+    import operators.raster_compute as compute
+    offsets = ((1,2),(0,2),(0,1),(0,0),(1,0),(2,0),(2,1),(2,2))
+    for phase in (0,1):
+        for number in range(256):
+            bits = [bool(number & (1 << i)) for i in range(8)]
+            values = np.zeros((3,3));values[1,1] = 1
+            for point,value in zip(offsets,bits):values[point] = value
+            actual,removed = compute._thin_subiteration(values,phase)
+            expected = _thin_scalar_delete(bits,phase)
+            assert removed == expected and actual[0,0] == (not expected),(phase,number)
+            values[1,1] = 0
+            assert not compute._thin_subiteration(values,phase)[1]
+
+
+def test_raster_thin_published_guo_hall_golden_and_idempotence(tmp_path):
+    import operators.raster_compute as compute
+    # The published scikit-image Guo–Hall example fixes orientation and phase order.
+    values = np.zeros((7,7));values[1:-1,2:-2] = 1;values[0,1] = 1
+    expected = np.zeros((7,7));expected[0,1] = expected[1,2] = 1;expected[2:5,3] = 1
+    path=create_raster(tmp_path/'golden.tif',values)
+    with raster_workspace():
+        result=compute.raster_thin(raster_load(source_plan(path)),1,1)
+        second=compute.raster_thin(result,1,1)
+        for item in (result,second):
+            ds=gdal.Open(str(item.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);ds=None
+
+
+def _thin_components(image, connectivity):
+    remaining=set(map(tuple,np.argwhere(image)));count=0
+    offsets=[(y,x) for y in (-1,0,1) for x in (-1,0,1) if (y or x) and (connectivity==8 or abs(y)+abs(x)==1)]
+    while remaining:
+        pending=[remaining.pop()];count+=1
+        while pending:
+            y,x=pending.pop()
+            for dy,dx in offsets:
+                point=(y+dy,x+dx)
+                if point in remaining:remaining.remove(point);pending.append(point)
+    return count
+
+
+@pytest.mark.parametrize('shape',['line','diagonal','t','y','cross','ring','point','border','square'])
+def test_raster_thin_topology_holes_endpoints_and_full_oracle(tmp_path,shape):
+    import operators.raster_compute as compute
+    values=np.zeros((21,25))
+    if shape=='line':values[8:13,3:22]=1
+    elif shape=='diagonal':
+        for i in range(3,18):values[i-1:i+2,i-1:i+2]=1
+    elif shape in ('t','cross'):
+        values[3:18,10:15]=1;values[3:8 if shape=='t' else 13,3:22]=1
+    elif shape=='y':
+        values[10:19,10:13]=1
+        for i in range(2,11):values[i,i:i+3]=1;values[i,20-i:23-i]=1
+    elif shape=='ring':values[3:18,3:22]=1;values[7:14,7:18]=0
+    elif shape=='point':values[4,4]=1;values[15,20]=1
+    elif shape=='border':values[:5,:18]=1;values[:18,:5]=1
+    else:values[8:10,9:11]=1
+    expected=_thin_oracle(values,np.ones(values.shape,bool),1)
+    path=create_raster(tmp_path/'shape.tif',values)
+    with raster_workspace():
+        result=compute.raster_thin(raster_load(source_plan(path)),1,1)
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        np.testing.assert_array_equal(actual,expected)
+        assert not np.any((actual==1)&(values!=1))
+        assert _thin_components(actual==1,8)==_thin_components(values==1,8)
+        assert _thin_components(np.pad(actual==0,1,constant_values=True),4)==_thin_components(np.pad(values==0,1,constant_values=True),4)
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,517),(515,1),(515,519)])
+def test_raster_thin_cross_block_global_snapshots_and_cog(tmp_path,shape,monkeypatch):
+    import operators.raster_compute as compute
+    values=np.zeros(shape);height,width=shape
+    # Thick crossing over the 510-core and 512-source boundaries, plus a ring.
+    values[max(0,height//2-3):height//2+4,:]=7
+    values[:,max(0,width//2-3):width//2+4]=7
+    if min(shape)>30:values[498:515,498:519]=7;values[502:509,502:512]=0
+    valid=np.ones(shape,bool);valid[height//2,width//3]=False;values[~valid]=-9999
+    expected=_thin_oracle(values,valid,7)
+    transform=(100,2,.5,200,.25,-3)
+    path=create_raster(tmp_path/'source.tif',values,transform,'EPSG:3857');before=path.read_bytes()
+    blocks=compute._blocks;reads=[]
+    def bounded(dataset,indices,**kwargs):
+        for x,y,arrays,masks in blocks(dataset,indices,**kwargs):
+            assert all(max(a.shape)<=512 for a in arrays)
+            reads.append(arrays[0].shape);yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        result=compute.raster_thin(source,1,7)
+        assert set(source.workspace.iterdir())==prior|{result.path}
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert ds.RasterCount==1 and ds.GetGeoTransform()==transform
+        assert ds.GetSpatialRef().GetAuthorityCode(None)=='3857';band=ds=None
+        if min(shape)>30:
+            target=tmp_path/'thin.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+            assert artifact['size_bytes']==target.stat().st_size>0
+            assert validate_cog(raster_load(source_plan(target)))['valid']
+            ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+            np.testing.assert_array_equal(read_band_values(band),expected)
+            np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+            assert ds.GetGeoTransform()==transform and band.GetOverviewCount()>0;band=ds=None
+    assert reads and path.read_bytes()==before
+
+
+@pytest.mark.parametrize('foreground',[0,-7,2**53-1,-(2**53-1)])
+def test_raster_thin_explicit_class_native_precision_and_other_classes(tmp_path,foreground):
+    import operators.raster_compute as compute
+    values=np.full((13,17),42,dtype=np.int64);values[2:11,3:14]=foreground;values[5:8,6:11]=42
+    path=tmp_path/'classes.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),17,13,1,gdal.GDT_Int64)
+    ds.GetRasterBand(1).WriteArray(values);ds=None
+    with raster_workspace():
+        result=compute.raster_thin(raster_load(source_plan(path)),1,foreground)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_thin_oracle(values,np.ones(values.shape,bool),foreground));ds=None
+
+
+@pytest.mark.parametrize('position',['none','crs-only','transform-only'])
+@pytest.mark.parametrize('empty',['no-hit','all-invalid'])
+def test_raster_thin_empty_and_missing_location(tmp_path,position,empty):
+    import operators.raster_compute as compute
+    values=np.full((4,6),-9999. if empty=='all-invalid' else 9.)
+    path=create_raster(tmp_path/'empty.tif',values,None if position!='transform-only' else (0,2,.5,0,.2,-3),'EPSG:4326' if position=='crs-only' else '')
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_thin(source,1,0)
+        for key in ('width','height','crs','transform','extent'):assert raster_info(result)[key]==raster_info(source)[key]
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        assert np.isnan(actual).all() if empty=='all-invalid' else (actual==0).all()
+
+
+def test_raster_thin_alpha_mask_nonfinite_selected_band_and_raw_storage(tmp_path):
+    import operators.raster_compute as compute
+    values=np.ones((13,17));values[0,0]=.5;values[0,1]=2**53;values[0,2]=np.inf;values[0,3]=np.nan;values[4:7,7:10]=-9999
+    alpha=np.full(values.shape,255.);alpha[0,1]=0;alpha[0,2]=-1;alpha[0,3]=np.nan;alpha[2,2]=128
+    mask=np.full(values.shape,255,np.uint8);mask[0,0]=0;mask[8,8]=0
+    path=create_raster(tmp_path/'source.tif',np.stack([np.full(values.shape,.25),values,alpha]))
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetScale(100);ds.GetRasterBand(2).SetOffset(12)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask>0)
+    with raster_workspace():
+        result=compute.raster_thin(raster_load(source_plan(path)),2,1)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_thin_oracle(values,valid,1));ds=None
+
+
+@pytest.mark.parametrize('language,prefix',[('zh-cn','栅格细化'),('en','Raster thinning')])
+@pytest.mark.parametrize('reason',['band','alpha','complex','classes','foreground'])
+def test_raster_thin_bilingual_validation_and_no_output(tmp_path,language,prefix,reason):
+    import operators.raster_compute as compute
+    path=tmp_path/'bad.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,3,1,gdal.GDT_CFloat64 if reason=='complex' else gdal.GDT_Float64)
+    ds.GetRasterBand(1).Fill(.5 if reason=='classes' else 1)
+    if reason=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    with raster_error_language(language),raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='^'+prefix):compute.raster_thin(source,0 if reason=='band' else 1,True if reason=='foreground' else 1)
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('value',[True,None,[],{},'1',.5,float('inf'),float('-inf'),float('nan'),2**53,-2**53])
+def test_raster_thin_rejects_foreground_parameters(tmp_path,value):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((2,2)))
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='foreground classification'):
+        compute.raster_thin(raster_load(source_plan(path)),1,value)
+
+
+@pytest.mark.parametrize('dtype,value,nodata',[(gdal.GDT_Int64,2**53+1,2**53),(gdal.GDT_Int64,-2**53-1,-2**53),(gdal.GDT_UInt64,2**64-1,2**64-2)])
+def test_raster_thin_native_class_cannot_hide_behind_rounded_nodata(tmp_path,dtype,value,nodata):
+    import operators.raster_compute as compute
+    path=tmp_path/'native.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,dtype)
+    ds.GetRasterBand(1).SetNoDataValue(nodata)
+    ds.GetRasterBand(1).WriteArray(np.array([[nodata,value],[0,0]],dtype=np.uint64 if dtype==gdal.GDT_UInt64 else np.int64));ds=None
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='exact safe integers'):
+        compute.raster_thin(raster_load(source_plan(path)),1,0)
+
+
+@pytest.mark.parametrize('stage',['seed','phase0','phase1','output'])
+def test_raster_thin_failure_removes_all_private_snapshots(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((7,9)))
+    blocks=compute._blocks;subiteration=compute._thin_subiteration;native_calls=0
+    def fail_blocks(dataset,indices,**kwargs):
+        nonlocal native_calls
+        if kwargs.get('native'):native_calls+=1
+        for block in blocks(dataset,indices,**kwargs):
+            yield block
+            if stage=='seed' and kwargs.get('native') and native_calls==2:raise RuntimeError('injected thinning failure')
+            if stage=='output' and dataset.GetDescription()==str(source.path) and not kwargs.get('native'):raise RuntimeError('injected thinning failure')
+    def fail_phase(values,phase):
+        if stage=='phase'+str(phase):raise RuntimeError('injected thinning failure')
+        return subiteration(values,phase)
+    monkeypatch.setattr(compute,'_blocks',fail_blocks);monkeypatch.setattr(compute,'_thin_subiteration',fail_phase)
+    with raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(RuntimeError,match='injected thinning failure'):compute.raster_thin(source,1,1)
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('case',['direct','reclassified','invalid'])
+def test_raster_thin_async_save_reclassification_and_cleanup(tmp_path,monkeypatch,case):
+    import api_server,workflow_engine
+    values=np.zeros((9,11));values[1:8,2:9]=8;values[3:6,4:7]=0;values[0,0]=-9999
+    if case=='invalid':values[0,1]=.5
+    path=create_raster(tmp_path/'source.tif',values,(0,2,.5,10,.25,-3),'EPSG:4326');before=path.read_bytes();target=tmp_path/'thin.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];source='source';foreground=8;classified=values.copy()
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-7},{'value':8,'class':0}]}})
+        source='classes';foreground=0;classified=np.select([values==0,values==8],[-7.,0.],default=np.nan)
+    tasks += [{'id':'thin','operator':'raster_thin','depends_on':[source],'params':{'input_raster':{'$ref':source},'band':1,'foreground_value':foreground}},
+              {'id':'save','operator':'raster_save','depends_on':['thin'],'params':{'input_raster':{'$ref':'thin'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    paths=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_thin':paths.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='invalid' else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and path.read_bytes()==before
+    if case=='invalid':assert not target.exists()
+    else:
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_thin_oracle(classified,np.isfinite(classified)&(classified!=-9999),foreground));ds=None
+        assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_thin/invoke',json={'params':{}}).status_code==403
+
+
+def test_raster_thin_discovery_and_single_workflow_contract():
+    spec=next(item for item in list_operators() if item['id']=='raster_thin')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert [p['name'] for p in spec['parameters']]==['input_raster','band','foreground_value']
+    assert all(p['required'] for p in spec['parameters'])
+    assert spec['detailed_description']['workflow_example']['params']['foreground_value']==1
+
+
+@pytest.mark.parametrize('band',[True,0,-1,1.5,'1',3])
+def test_raster_thin_invalid_band_types_and_range(tmp_path,band):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((2,2)))
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='one-based data band'):
+        compute.raster_thin(raster_load(source_plan(path)),band,1)
+
+
+def test_raster_thin_complex_alpha_rejected_even_when_data_is_not_selected_alpha(tmp_path):
+    import operators.raster_compute as compute
+    path=tmp_path/'alpha.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,3,2,gdal.GDT_CFloat64)
+    for index in (1,2):ds.GetRasterBand(index).Fill(1)
+    ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds=None
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='complex'):
+        compute.raster_thin(raster_load(source_plan(path)),1,1)
+
+
+@pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
+def test_raster_thin_native_nodata_and_mask_excluded_before_safe_validation(tmp_path,dtype):
+    import operators.raster_compute as compute
+    values=np.full((7,9),2**53-1,dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64)
+    values[0,0]=2**53;values[2,3]=2**53+1
+    mask=np.full(values.shape,255,np.uint8);mask[2,3]=0
+    path=tmp_path/'native.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),9,7,1,dtype)
+    ds.GetRasterBand(1).SetNoDataValue(2**53);ds.GetRasterBand(1).WriteArray(values)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=(values!=2**53)&(mask!=0)
+    with raster_workspace():
+        result=compute.raster_thin(raster_load(source_plan(path)),1,2**53-1)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_thin_oracle(values,valid,2**53-1));ds=None

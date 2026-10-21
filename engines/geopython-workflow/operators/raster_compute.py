@@ -1469,7 +1469,7 @@ def _boundary_error(code):
     return ValueError(_BOUNDARY_MESSAGES[code][_DISK_LANGUAGE.get()])
 
 
-def _boundary_blocks(dataset, band):
+def _cell_neighbourhood_blocks(dataset, band):
     """A 510-pixel core plus one-cell halo, never reading more than 512 squared."""
     for y in range(0, dataset.RasterYSize, 510):
         for x in range(0, dataset.RasterXSize, 510):
@@ -1524,7 +1524,7 @@ def raster_boundary_clean(input_raster, band):
         expanded = _numeric_output(dataset, 1)
         expanded_path = Path(expanded.GetDescription())
         destination = expanded.GetRasterBand(1)
-        for x, y, values in _boundary_blocks(dataset, band):
+        for x, y, values in _cell_neighbourhood_blocks(dataset, band):
             center = values[1:-1, 1:-1]
             best = np.full(center.shape, -1, dtype=np.int64)
             result = np.full(center.shape, np.nan)
@@ -1544,7 +1544,7 @@ def raster_boundary_clean(input_raster, band):
         output = _numeric_output(dataset, 1)
         output_path = Path(output.GetDescription())
         destination = output.GetRasterBand(1)
-        for x, y, values in _boundary_blocks(expanded, 1):
+        for x, y, values in _cell_neighbourhood_blocks(expanded, 1):
             height, width = values.shape[0]-2, values.shape[1]-2
             _, _, arrays, masks = next(_blocks(dataset, [band], window=(x, y, width, height)))
             original = arrays[0]
@@ -1564,6 +1564,125 @@ def raster_boundary_clean(input_raster, band):
         destination = output = expanded = dataset = None
         if expanded_path is not None:
             expanded_path.unlink(missing_ok=True)
+        if output_path is not None and not completed:
+            output_path.unlink(missing_ok=True)
+
+
+_THIN_MESSAGES = {
+    'band': {'zh-cn': '栅格细化必须显式选择有效的一基数据波段',
+             'en': 'Raster thinning requires a valid explicit one-based data band'},
+    'alpha': {'zh-cn': '栅格细化必须选择分类数据波段，不能选择 alpha',
+              'en': 'Raster thinning requires a classification data band, not alpha'},
+    'complex': {'zh-cn': '栅格细化不支持复数数据或复数 alpha 波段',
+                'en': 'Raster thinning does not support complex data or complex alpha bands'},
+    'classes': {'zh-cn': '栅格细化的有效分类值必须为 ±(2^53−1) 内的精确整数',
+                'en': 'Raster thinning classification values must be exact safe integers within ±(2^53−1)'},
+    'foreground': {'zh-cn': '栅格细化必须显式指定一个 ±(2^53−1) 内的精确整数前景分类',
+                   'en': 'Raster thinning requires one explicit exact safe integer foreground classification within ±(2^53−1)'},
+}
+
+
+def _thin_error(code):
+    return ValueError(_THIN_MESSAGES[code][_DISK_LANGUAGE.get()])
+
+
+def _thin_subiteration(values, phase):
+    """Guo–Hall, ordered neighbours E, NE, N, NW, W, SW, S, SE.
+
+    Phase 0 removes with G3, phase 1 with G3p. The caller supplies an
+    immutable global snapshot, so decisions never see same-phase deletions.
+    """
+    cells = values == 1  # NaN halo outside the image is background.
+    nw, n, ne, w, center, e, sw, s, se = _boundary_neighbours(cells)
+    neighbours = (e, ne, n, nw, w, sw, s, se)
+    transitions = np.zeros(center.shape, dtype=np.uint8)
+    pairs_a = np.zeros(center.shape, dtype=np.uint8)
+    pairs_b = np.zeros(center.shape, dtype=np.uint8)
+    for i in (0, 2, 4, 6):
+        transitions += ~neighbours[i] & (neighbours[i+1] | neighbours[(i+2) % 8])
+        pairs_a += neighbours[i] | neighbours[i+1]
+        pairs_b += neighbours[i+1] | neighbours[(i+2) % 8]
+    count = np.minimum(pairs_a, pairs_b)
+    protected = ((ne | n | ~se) & e) if phase == 0 else ((sw | s | ~nw) & w)
+    remove = center & (transitions == 1) & (count >= 2) & (count <= 3) & ~protected
+    return (center & ~remove).astype(np.uint8), bool(remove.any())
+
+
+def raster_thin(input_raster, band, foreground_value):
+    """Thin one exact classification to convergence using two disk snapshots."""
+    dataset = _open(input_raster)
+    if type(band) is not int or not 1 <= band <= dataset.RasterCount:
+        raise _thin_error('band')
+    selected = dataset.GetRasterBand(band)
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise _thin_error('alpha')
+    for index in range(1, dataset.RasterCount+1):
+        candidate = dataset.GetRasterBand(index)
+        if (index == band or candidate.GetColorInterpretation() == gdal.GCI_AlphaBand) and gdal.DataTypeIsComplex(candidate.DataType):
+            raise _thin_error('complex')
+    selected = candidate = None
+    if (isinstance(foreground_value, bool) or not isinstance(foreground_value, (int, float))
+            or not -(2**53-1) <= foreground_value <= 2**53-1
+            or foreground_value != int(foreground_value)):
+        raise _thin_error('foreground')
+    foreground_value = int(foreground_value)
+    # Validate native integer values before Float64 conversion can round them.
+    for _, _, arrays, masks in _blocks(dataset, [band], native=True):
+        try:
+            _safe_classification_values(arrays[0], masks[0])
+        except ValueError as error:
+            raise _thin_error('classes') from error
+    paths = []
+    snapshot = destination = output = target = None
+    output_path = None
+    completed = False
+    try:
+        paths = [_path(), _path()]
+        destination = gdal.GetDriverByName('GTiff').Create(
+            str(paths[0]), dataset.RasterXSize, dataset.RasterYSize, 1,
+            gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+        target = destination.GetRasterBand(1)
+        for x, y, arrays, masks in _blocks(dataset, [band], native=True):
+            target.WriteArray((masks[0] & (arrays[0] == foreground_value)).astype(np.uint8), x, y)
+        target = None
+        destination.FlushCache()
+        destination = None
+        while True:
+            changed = False
+            for phase in (0, 1):
+                snapshot = gdal.Open(str(paths[0]))
+                destination = gdal.GetDriverByName('GTiff').Create(
+                    str(paths[1]), dataset.RasterXSize, dataset.RasterYSize, 1,
+                    gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+                target = destination.GetRasterBand(1)
+                for x, y, values in _cell_neighbourhood_blocks(snapshot, 1):
+                    result, removed = _thin_subiteration(values, phase)
+                    changed |= removed
+                    target.WriteArray(result, x, y)
+                target = None
+                destination.FlushCache()
+                destination = snapshot = None
+                paths.reverse()
+            if not changed:
+                break
+        snapshot = gdal.Open(str(paths[0]))
+        output = _numeric_output(dataset, 1)
+        output_path = Path(output.GetDescription())
+        target = output.GetRasterBand(1)
+        for x, y, arrays, masks in _blocks(dataset, [band]):
+            height, width = arrays[0].shape
+            binary = snapshot.GetRasterBand(1).ReadAsArray(x, y, width, height)
+            target.WriteArray(np.where(masks[0], binary, np.nan), x, y)
+        target = None
+        output.FlushCache()
+        output = None
+        result = _raster(output_path)
+        completed = True
+        return result
+    finally:
+        target = output = destination = snapshot = dataset = None
+        for path in paths:
+            path.unlink(missing_ok=True)
         if output_path is not None and not completed:
             output_path.unlink(missing_ok=True)
 
@@ -2239,6 +2358,7 @@ _SPECS = [
     (raster_proximity, OperatorCategory.RASTER_CELL, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CELL, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CELL, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
+    (raster_thin, OperatorCategory.RASTER_CELL, '分类栅格细化', [_INPUT(), _param('band', 'int', '显式分类数据波段，不能选择 alpha'), _param('foreground_value', 'float', '单个精确安全整数前景分类；Guo–Hall 八邻域收敛，输出骨架1／背景0／原无效NaN')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CELL, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
@@ -2270,6 +2390,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
     if name == 'raster_proximity':
         examples.update({'band': 1, 'target_values': [0, 1]})
+    if name == 'raster_thin':
+        examples.update({'band': 1, 'foreground_value': 1})
     if name == 'raster_boundary_clean':
         examples.update({'band': 1})
     if name == 'raster_nibble':
