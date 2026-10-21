@@ -206,4 +206,16 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 
 本次冻结源码基线 `667b25923fd6b25007ae55e6741a806d22367351`，仅叠加本方分组编排输入。三个标准命令均退出 0：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 为 315.279 秒，`--case=http-quality` 为 403.107 秒，`--case=host-resources` 为 736.779 秒，覆盖完整专业来源/认证/生命周期、真实进程与 HTTP 窗口/告警/停源清空，以及主机/受限来源/中心 WAL/总览 TOP5/资源告警。三个分组的容器、网络、卷及临时目录均由各自退出路径清零，随后另读回三类资源全部为零；共享主机并非独占，不由本机耗时承诺 Linux CI 时长。结果 `/tmp/addp-metrics-partition-results.json`，各自日志 `/tmp/addp-metrics-partition-{postgres-source,http-quality,host-resources}.log`；原生进程场景封装前后的检查语句 AST 完全一致（除函数作用域及 `global base`），没有删减原断言。默认全量路径仍包含同一批场景，新的本地证据来自三个互补分组，不声称本轮又执行了无参数全量调用。
 
-T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）、38 项 CI 登记回归、实际 T2 登记检查和 `make test-workflow-security` 均通过。既有根 Make 入口、owner 自动发现和变更输入覆盖有效，无新增依赖或平行测试实现。先前排队的 `01925025a` / [Release 39626206650](https://github.com/pampa0629/addp/actions/runs/39626206650) 选择成功但 Metrics 作业 `119318812307` 实际跳过，不能作为替代通过证据；未取消或重跑它。新输入 Linux 三分组及稳定汇总检查仍待推送后 CI，专业指标/页面正式身份 T4 的既有缺口也不由本次 T2 关闭。
+T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）、38 项 CI 登记回归、实际 T2 登记检查和 `make test-workflow-security` 均通过。既有根 Make 入口、owner 自动发现和变更输入覆盖有效，无新增依赖或平行测试实现。先前排队的 `01925025a` / [Release 39626206650](https://github.com/pampa0629/addp/actions/runs/39626206650) 选择成功但 Metrics 作业 `119318812307` 实际跳过，不能作为替代通过证据；未取消或重跑它。当次新输入 Linux 三分组及稳定汇总检查尚待 CI，现已取得下述终态证据；专业指标/页面正式身份 T4 的既有缺口仍不由本次 T2 关闭。
+
+
+2026-10-22，精确提交 `b100eda7b803d180e0db53297331ba618de11b67` 的 [Release 39634536388](https://github.com/pampa0629/addp/actions/runs/39634536388) attempt 1 已取得完整 Metrics T2 通过证据：
+
+| 分组 / 汇总 | 实际 Job | 结论与范围 |
+| --- | --- | --- |
+| `http-quality` | [119356253850](https://github.com/pampa0629/addp/actions/runs/39634536388/job/119356253850) | `Verify isolated metrics lifecycle` 成功：完整窗口、真实 SDK 进程及 HTTP 查询、HTTP 告警触发/签名通知/恢复、停源清空与对等进程存活；HTTP 告警场景实际 180.29 秒。 |
+| `postgres-source` | [119356254038](https://github.com/pampa0629/addp/actions/runs/39634536388/job/119356254038) | 同一标准入口成功：真实 PG 专业指标、来源、认证和安装/停用/恢复生命周期，非 HTTP UP 或局部阶段替代。 |
+| `host-resources` | [119356254095](https://github.com/pampa0629/addp/actions/runs/39634536388/job/119356254095) | 同一标准入口成功：主机及 Linux 受限来源、停源与新样本恢复、SIGKILL 后 WAL 重放、六来源总览/TOP5、资源告警触发/通知/恢复；资源告警场景实际 180.24 秒。 |
+| 完整汇总 | [119387244768](https://github.com/pampa0629/addp/actions/runs/39634536388/job/119387244768) | `Require every selected metrics case` 成功，三个已选分组全部真实成功，非条件跳过。 |
+
+三个分组完整原始日志均以 `zero owned containers/networks/volumes and temporary files` 结束。本会话复核全部日志文件与独立审计记录的 SHA-256 一致，日志源码为上述精确提交，并再次通过 GitHub API 确认四个 Job 均为 `completed/success`；未重跑测试。证据位于 `/tmp/addp-ci-20261021-180013/job-{119356253850,119356254038,119356254095,119387244768}.log` 和 `metrics-complete-independent-audit.json`。此前约 20 分钟取消的记录仍不计通过；本次仅关闭 Metrics 完整 T2 的 CI 预算收口，不将父 Release 的其他 Owner 结论并入，也不扩展为 PostgreSQL 专业页面 Hosted T4、七天自然留存或 T5 通过。定时任务保持停用。
