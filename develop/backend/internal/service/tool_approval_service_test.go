@@ -10,6 +10,7 @@ import (
 	commonAuth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -18,13 +19,14 @@ import (
 )
 
 type fakeApprovalExecutor struct {
-	prepareCount int
-	persistCount int
-	startCount   int
+	preparedLanguage string
+	prepareCount     int
+	persistCount     int
+	startCount       int
 }
 
 func (executor *fakeApprovalExecutor) prepareContentExecution(
-	_ context.Context,
+	ctx context.Context,
 	devType string,
 	content map[string]interface{},
 	executionConfig map[string]interface{},
@@ -36,6 +38,7 @@ func (executor *fakeApprovalExecutor) prepareContentExecution(
 	_ int,
 ) (*preparedContentExecution, error) {
 	executor.prepareCount++
+	executor.preparedLanguage = commoni18n.Language(ctx)
 	now := time.Now().UTC()
 	triggeredBy := int(userID)
 	return &preparedContentExecution{
@@ -315,4 +318,65 @@ func newToolApprovalTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	return db
+}
+
+func TestWorkflowApprovalFreezesInitialLanguageAcrossLaterRequests(t *testing.T) {
+	for _, lang := range []string{"en", "zh-cn"} {
+		t.Run(lang, func(t *testing.T) {
+			db := newToolApprovalTestDB(t)
+			executor := &fakeApprovalExecutor{}
+			service := &ToolApprovalService{db: db, executor: executor, now: time.Now}
+			initial, _ := commoni18n.WithLanguage(context.Background(), lang)
+			other := "zh-cn"
+			if lang == other {
+				other = "en"
+			}
+			later, _ := commoni18n.WithLanguage(context.Background(), other)
+			runID := uuid.NewString()
+			approval, err := service.CreateWorkflowRunApproval(initial, delegatedApprovalContext(3, 5, runID, "initial"), workflowRunRequest())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if approval.RequestPayload[commonExecution.DisplayLanguageKey] != lang {
+				t.Fatal("approval lost initial language")
+			}
+			_, otherFingerprint, err := canonicalApprovalPayload(workflowRunRequest(), other)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, sameFingerprint, err := canonicalApprovalPayload(workflowRunRequest(), lang)
+			if err != nil || otherFingerprint == sameFingerprint {
+				t.Fatal("language not bound to approval fingerprint")
+			}
+			if _, err := service.DecideApproval(later, userApprovalContext(3, 5), approval.ID.String(), models.ToolApprovalStatusApproved); err != nil {
+				t.Fatal(err)
+			}
+			id, err := service.ConsumeWorkflowRunApproval(later, delegatedApprovalContext(3, 5, runID, "consume"), approval.ID.String(), approval.RequestFingerprint)
+			if err != nil || id == "" {
+				t.Fatal(err)
+			}
+			if executor.preparedLanguage != lang {
+				t.Fatal("consumption used later request language")
+			}
+		})
+	}
+}
+func TestWorkflowApprovalRejectsMissingPersistedLanguage(t *testing.T) {
+	db := newToolApprovalTestDB(t)
+	executor := &fakeApprovalExecutor{}
+	service := &ToolApprovalService{db: db, executor: executor, now: time.Now}
+	runID := uuid.NewString()
+	approval, err := service.CreateWorkflowRunApproval(context.Background(), delegatedApprovalContext(3, 5, runID, "initial"), workflowRunRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(approval.RequestPayload, commonExecution.DisplayLanguageKey)
+	if err := db.Model(approval).Update("request_payload", approval.RequestPayload).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.ConsumeWorkflowRunApproval(context.Background(), delegatedApprovalContext(3, 5, runID, "consume"), approval.ID.String(), approval.RequestFingerprint)
+	assertApprovalErrorCode(t, err, "approval_invalid_request")
+	if executor.persistCount != 0 {
+		t.Fatal("invalid approval dispatched")
+	}
 }

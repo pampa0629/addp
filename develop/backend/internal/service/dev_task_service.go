@@ -732,6 +732,9 @@ func stringSliceFromInterface(value interface{}) ([]string, bool) {
 }
 
 func validateDevTaskExecutionConfig(devType string, content map[string]interface{}, executionConfig map[string]interface{}) error {
+	if _, exists := executionConfig[commonExecution.DisplayLanguageKey]; exists {
+		return fmt.Errorf("execution_config.display_language is owned by the execution snapshot")
+	}
 	if devType == commonExecution.TaskTypeScript {
 		if devTaskExecutionConfigEngineID(executionConfig) == nil {
 			return fmt.Errorf("script 任务必须提供 execution_config.engine_id")

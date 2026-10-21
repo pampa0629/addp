@@ -467,6 +467,12 @@ const docTemplate = `{
                 "summary": "执行临时内容 | Execute temporary content",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "首次提交时冻结；审批消费沿用最初语言 | Frozen at initial submission, retained through approval",
+                        "name": "Accept-Language",
+                        "in": "header"
+                    },
+                    {
                         "description": "执行请求 | Execution request",
                         "name": "body",
                         "in": "body",
@@ -2934,6 +2940,12 @@ const docTemplate = `{
                 ],
                 "summary": "执行开发任务 | Execute development task",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "提交时冻结的执行显示语言 | Execution language frozen at submission",
+                        "name": "Accept-Language",
+                        "in": "header"
+                    },
                     {
                         "type": "integer",
                         "description": "开发任务 ID | Development task ID",

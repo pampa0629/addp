@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	commoni18n "github.com/addp/common/middleware/i18n"
 )
 
 func RuntimeBaseURL(connInfo ConnectionInfo) (string, error) {
@@ -58,6 +60,9 @@ func HTTPListOperators(ctx context.Context, connInfo ConnectionInfo) ([]Operator
 }
 
 func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req WorkflowExecuteRequest) (*WorkflowExecuteResult, error) {
+	if !commoni18n.IsSupportedLanguage(req.DisplayLanguage) {
+		return nil, fmt.Errorf("canonical workflow display language is required")
+	}
 	baseURL, err := RuntimeBaseURL(connInfo)
 	if err != nil {
 		return nil, err
@@ -85,6 +90,7 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept-Language", req.DisplayLanguage)
 	client := &http.Client{Timeout: workflowRuntimeTimeout(req.Timeout)}
 	resp, err := client.Do(httpReq)
 	if err != nil {

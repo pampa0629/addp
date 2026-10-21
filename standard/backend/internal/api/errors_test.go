@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonclient "github.com/addp/common/client"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
@@ -57,7 +58,9 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			context, _ := gin.CreateTestContext(response)
-			context.Set("addp_lang", "en")
+			context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+			context.Request = context.Request.WithContext(languageContext)
 
 			respondError(context, tt.fallback, tt.err)
 
@@ -74,7 +77,9 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 func TestRespondErrorReturnsInvalidStandardCodeContract(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrInvalidStandardCode)
 
@@ -93,7 +98,9 @@ func TestRespondErrorReturnsInvalidStandardCodeContract(t *testing.T) {
 func TestRespondErrorReturnsInvalidStandardScopeCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrInvalidStandardScope)
 
@@ -128,7 +135,9 @@ func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			context, _ := gin.CreateTestContext(recorder)
-			context.Set("addp_lang", "en")
+			context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+			context.Request = context.Request.WithContext(languageContext)
 			respondDocumentExtractionError(context, test.err)
 			if recorder.Code != test.want {
 				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.want, recorder.Body.String())
@@ -140,7 +149,9 @@ func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
 func TestRespondErrorReturnsDocumentExtractionNamespaceCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrDocumentExtractionNamespaceInvalid)
 
@@ -158,7 +169,9 @@ func TestRespondErrorReturnsDocumentExtractionNamespaceCode(t *testing.T) {
 func TestRespondErrorReturnsCandidateFamilyQueryCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrDocumentCandidateFamilyQueryInvalid)
 
@@ -176,7 +189,9 @@ func TestRespondErrorReturnsCandidateFamilyQueryCode(t *testing.T) {
 func TestRespondErrorReturnsCandidateFamilyDecisionCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrCandidateFamilyDecisionInvalid)
 
@@ -194,7 +209,9 @@ func TestRespondErrorReturnsCandidateFamilyDecisionCode(t *testing.T) {
 func TestRespondErrorReturnsCandidateFamilyDecisionRequiredCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrCandidateFamilyDecisionRequired)
 
@@ -212,7 +229,9 @@ func TestRespondErrorReturnsCandidateFamilyDecisionRequiredCode(t *testing.T) {
 func TestRespondErrorReturnsCandidateFamilySnapshotStaleCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrCandidateFamilySnapshotStale)
 
@@ -230,7 +249,9 @@ func TestRespondErrorReturnsCandidateFamilySnapshotStaleCode(t *testing.T) {
 func TestRespondErrorReturnsCandidateRepresentativeStaleCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrCandidateRepresentativeStale)
 
@@ -248,7 +269,9 @@ func TestRespondErrorReturnsCandidateRepresentativeStaleCode(t *testing.T) {
 func TestRespondErrorReturnsGlossaryPublicationHistoryCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Set("addp_lang", "en")
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(context.Request.Context(), "en")
+	context.Request = context.Request.WithContext(languageContext)
 
 	respondError(context, http.StatusInternalServerError, service.ErrGlossaryPublicationHistory)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 
@@ -348,6 +349,9 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
 	execution.MaxAttempts = 1
 	execution.ExecutionConfig = devTaskExecutionRecordConfig(tempItem, inputs)
+	if err := commonExecution.FreezeDisplayLanguage(execution, commoni18n.Language(ctx)); err != nil {
+		return nil, err
+	}
 
 	return &preparedContentExecution{
 		execution: execution, devTask: tempItem, tenantID: int(tenantID),
@@ -1398,6 +1402,17 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 	applyScriptExecutionActor(ctx, execution)
 
+	if parentExecutionID != nil {
+		parent, err := e.taskExecutionRepo.GetByExecutionID(ctx, *parentExecutionID, int(tenantID))
+		if err != nil {
+			return "", err
+		}
+		if err := commonExecution.InheritDisplayLanguage(execution, parent); err != nil {
+			return "", err
+		}
+	} else if err := commonExecution.FreezeDisplayLanguage(execution, commoni18n.Language(ctx)); err != nil {
+		return "", err
+	}
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
@@ -1584,6 +1599,9 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 		IssuedAuthorizationVersion: &authorizationVersion,
 		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.task, preparedTask.inputs),
 		CreatedAt:                  now, UpdatedAt: now,
+	}
+	if err := commonExecution.InheritDisplayLanguage(execution, parent); err != nil {
+		return "", err
 	}
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)

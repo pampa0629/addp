@@ -23,8 +23,12 @@ flowchart LR
     FrontendI18n --> UI[模块前端文本与 Element Plus 组件]
     FrontendI18n --> HTTP[HTTP 请求 Accept-Language]
     HTTP --> BackendMiddleware[common/middleware/i18n.I18nMiddleware]
-    BackendMiddleware --> GinContext[gin.Context addp_lang]
-    GinContext --> Translator[commoni18n.T / TWithDetail]
+    BackendMiddleware --> RequestContext[标准 context.Context 语言]
+    RequestContext --> Translator[commoni18n.T / TWithDetail]
+    RequestContext --> Snapshot[execution_config.display_language]
+    Snapshot --> Worker[Worker 恢复语言与父子继承]
+    Worker --> Provider[Common Provider Accept-Language]
+    Provider --> Runtime[Runtime 保存当次语言文本]
     Translator --> Bundle[全局 Bundle]
     Bundle --> CommonLocales[common 通用消息]
     Bundle --> ModuleLocales[各模块 i18n/locales]
@@ -46,8 +50,10 @@ flowchart LR
 
 后端国际化由 `common/middleware/i18n` 提供统一基础能力：
 
-- `I18nMiddleware()`：解析请求 `Accept-Language`，将标准语言代码写入 `gin.Context`。
-- `GetLang()`：读取当前请求语言，缺省返回 `zh-cn`。
+- `I18nMiddleware()`：解析请求 `Accept-Language`，将标准语言代码写入请求的标准 `context.Context`。
+- `GetLang()`：通过 Gin 请求读取标准上下文语言，缺省返回 `zh-cn`。
+- `Language(ctx)` / `WithLanguage(ctx, lang)`：供 Service 与 Worker 读取、恢复规范语言，写入时拒绝非规范码。
+- `common/execution`：按[执行显示语言规范](../spec/tasks/执行记录与租约.md#执行显示语言)冻结和继承持久事实。
 - `RegisterBundle()`：允许各模块注册自己的 TOML 翻译文件。
 - `T()`：按当前请求语言翻译消息 ID，失败时回退到 `zh-cn`，仍失败则返回消息 ID。
 - `TWithDetail()`：翻译静态消息并追加动态错误详情。

@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/develop/backend/internal/config"
@@ -138,6 +139,9 @@ func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t
 				ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 				IssuedAuthorizationVersion: &authorizationVersion, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 			}
+			if err := commonExecution.FreezeDisplayLanguage(parent, "en"); err != nil {
+				t.Fatal(err)
+			}
 			if err := executionRepo.Create(context.Background(), parent); err != nil {
 				t.Fatalf("create parent execution: %v", err)
 			}
@@ -172,8 +176,9 @@ func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t
 			}
 			notifications := 0
 			executor.SetExecutionNotifier(func() { notifications++ })
+			childContext, _ := commoni18n.WithLanguage(context.Background(), "zh-cn")
 			childExecutionID, err := executor.ExecuteWithParamsFromParentExecution(
-				context.Background(), devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
+				childContext, devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
 				commonExecution.ModuleOrchestrator, parentExecutionID, taskType,
 			)
 			if err != nil || childExecutionID == "" || called || notifications != 1 {
@@ -192,6 +197,9 @@ func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t
 				child.ExecutionAuthorizationID != nil {
 				t.Fatalf("queued child execution facts = %#v", child)
 			}
+			if lang, err := commonExecution.DisplayLanguage(child); err != nil || lang != "en" {
+				t.Fatalf("child language = %q, %v", lang, err)
+			}
 			if _, ok := child.ExecutionConfig["content"]; !ok {
 				t.Fatalf("queued child did not freeze content: %#v", child.ExecutionConfig)
 			}
@@ -201,6 +209,15 @@ func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t
 					t.Fatalf("source digest not frozen before compilation: %#v", inputs)
 				}
 			}
+			delete(parent.ExecutionConfig, commonExecution.DisplayLanguageKey)
+			if err := db.Model(parent).Update("execution_config", parent.ExecutionConfig).Error; err != nil {
+				t.Fatal(err)
+			}
+			rejected, err := executor.ExecuteWithParamsFromParentExecution(childContext, devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled, commonExecution.ModuleOrchestrator, parentExecutionID, taskType)
+			if err == nil || rejected != "" || notifications != 1 {
+				t.Fatal("missing parent language queued another child")
+			}
+
 		})
 	}
 }
@@ -668,5 +685,87 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 	runs = executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
 	if calls != 1 || len(runs) != 1 || runs[0]["error_code"] != "develop.workflow.scan_provenance_unavailable" {
 		t.Fatal("failed output persistence submitted a scan")
+	}
+}
+
+func TestWorkflowSubmissionFreezesRequestLanguageWithoutChangingTask(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { sqlDB.Close() })
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE develop.dev_tasks (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
+ display_name TEXT, dev_type TEXT NOT NULL, content JSON NOT NULL, execution_config JSON,
+ editor_layout JSON, timeout INTEGER, description TEXT, tags TEXT, created_by INTEGER,
+ updated_by INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
+ status TEXT, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME
+ )`).Error; err != nil {
+		t.Fatal(err)
+	}
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/auth/execution-authorizations" || r.Header.Get("Authorization") != "Bearer addp_at_test" {
+			t.Error("unexpected authorization call")
+			http.Error(w, "denied", 403)
+			return
+		}
+		var request commonClient.IssueExecutionAuthorizationRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{ID: "91", TenantID: "7", ExecutionID: request.ExecutionID, Audience: request.Audience, Accesses: request.Accesses, ExpiresAt: time.Now().Add(10 * time.Minute), ActorPrincipalID: "31", TenantMembershipID: "37", IssuedAuthorizationVersion: "5"})
+	}))
+	defer system.Close()
+	taskRepo := repository.NewDevTaskRepository(db)
+	executionRepo := commonExecution.NewTaskExecutionRepository(db)
+	executor := &DevExecutor{devTaskRepo: taskRepo, taskExecutionRepo: executionRepo, operatorDiscovery: newWorkflowValidationTestService(t), sqlEngine: NewSQLEngineService(&config.Config{}, nil, commonClient.NewSystemExecutionAuthorizationClient(system.URL, system.Client()))}
+	content := models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "buffer", "operator": "buffer", "depends_on": []interface{}{}, "params": map[string]interface{}{"distance": 1.0}}}}}
+	config := models.DevTaskContent{"engine_id": float64(12)}
+	task := &models.DevTask{TenantID: 7, Name: "language snapshot", DevType: "workflow", Status: "active", Timeout: 60, Content: content, ExecutionConfig: config}
+	if err := taskRepo.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	for _, language := range []string{"zh-cn", "en"} {
+		ctx, _ := commoni18n.WithLanguage(context.Background(), language)
+		for _, saved := range []bool{false, true} {
+			var id string
+			if saved {
+				id, err = executor.ExecuteWithParams(ctx, task.ID, nil, 7, 31, "addp_at_test")
+			} else {
+				id, err = executor.ExecuteContent(ctx, "workflow", content, config, nil, 7, 31, "addp_at_test", "manual", 60, "")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := executionRepo.GetByExecutionID(context.Background(), id, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := commonExecution.DisplayLanguage(stored); err != nil || got != language {
+				t.Fatalf("submission language %q, %v", got, err)
+			}
+		}
+	}
+	if _, exists := config[commonExecution.DisplayLanguageKey]; exists {
+		t.Fatal("submission changed input config")
+	}
+	storedTask, err := taskRepo.FindByID(task.ID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := storedTask.ExecutionConfig[commonExecution.DisplayLanguageKey]; exists {
+		t.Fatal("execution language persisted on task definition")
+	}
+	if err := validateDevTaskExecutionConfig("workflow", content, map[string]interface{}{"engine_id": 12, commonExecution.DisplayLanguageKey: "en"}); err == nil {
+		t.Fatal("client supplied frozen language")
 	}
 }

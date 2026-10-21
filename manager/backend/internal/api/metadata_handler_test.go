@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,8 +143,9 @@ func TestItemEncodingRefreshRejectsInvalidEncodingWithStableLocalizedContract(t 
 		c, _ := gin.CreateTestContext(recorder)
 		c.Params = gin.Params{{Key: "id", Value: "9"}}
 		setTenantAuthContextForTest(c, 1, 7)
-		c.Set("addp_lang", lang)
 		c.Request = httptest.NewRequest(http.MethodPost, "/engines/9/items/refresh", strings.NewReader(`{"item_id":8,"encoding":"bad"}`))
+		languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), lang)
+		c.Request = c.Request.WithContext(languageContext)
 		c.Request.Header.Set("Authorization", "Bearer current-user")
 		c.Request.Header.Set("Content-Type", "application/json")
 		handler.RefreshItem(c)

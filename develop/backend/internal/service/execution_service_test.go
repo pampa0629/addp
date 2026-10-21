@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"gorm.io/driver/postgres"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
@@ -24,17 +27,57 @@ import (
 )
 
 func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T) {
-	for _, scenario := range []string{"success", "runtime_failed", "target_exists", "revoked", "authorization_expired", "lease_lost"} {
+	testClaimedWorkflowLanguage(t, "", []string{"success", "success_zh", "runtime_failed", "target_exists", "revoked", "authorization_expired", "lease_lost", "language_missing", "language_invalid"})
+}
+
+// The standard Develop PostgreSQL gate exercises durable JSONB reload, a fresh
+// worker context and the real Common HTTP Provider in both languages.
+func TestWorkflowDisplayLanguageAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("DEVELOP_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("DEVELOP_POSTGRES_TEST_DSN is not set")
+	}
+	testClaimedWorkflowLanguage(t, dsn, []string{"success", "success_zh", "runtime_failed", "language_missing", "language_invalid"})
+}
+
+func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
+	t.Helper()
+	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
-			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			language, workerLanguage := "en", "zh-cn"
+			if scenario == "success_zh" {
+				language, workerLanguage = "zh-cn", "en"
+			}
+			var db *gorm.DB
+			var err error
+			if dsn == "" {
+				db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			} else {
+				db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			sqlDB, _ := db.DB()
 			sqlDB.SetMaxOpenConns(1)
 			t.Cleanup(func() { sqlDB.Close() })
-			if err := executiontest.EnsureSQLiteStore(db); err != nil {
-				t.Fatal(err)
+			if dsn == "" {
+				if err := executiontest.EnsureSQLiteStore(db); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				db = db.Begin()
+				if db.Error != nil {
+					t.Fatal(db.Error)
+				}
+				t.Cleanup(func() {
+					if err := db.Rollback().Error; err != nil {
+						t.Error(err)
+					}
+				})
+				if err := commonExecution.EnsureStore(db); err != nil {
+					t.Fatal(err)
+				}
 			}
 			queue := repository.NewExecutionRepository(db)
 			engineType := "test_leased_workflow_" + scenario
@@ -47,6 +90,9 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 					json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "operators": []map[string]interface{}{{"id": "contract_op", "name": "contract_op", "display_name": "Contract", "engine_type": engineType, "category": "test", "category_path": []string{"test"}, "description": "contract", "execution_modes": []string{"workflow"}, "effects": []string{"read"}, "parameters": []interface{}{}, "output_ports": []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}}}}})
 				case "/api/workflow":
 					runtimeCalls++
+					if got := r.Header.Get("Accept-Language"); got != language {
+						t.Errorf("runtime language = %q, want snapshot %q", got, language)
+					}
 					if scenario == "lease_lost" {
 						db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", executionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Minute))
 					}
@@ -113,6 +159,13 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 			item := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: executionID, Module: "develop", TaskType: "workflow", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(), ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires,
 				ExecutionConfig: commonModels.JSONMap{"engine_id": 91, "timeout": 30, "content": map[string]interface{}{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}, "depends_on": []interface{}{}}}}}},
 			}
+			item.ExecutionConfig[commonExecution.DisplayLanguageKey] = language
+			if scenario == "language_missing" {
+				delete(item.ExecutionConfig, commonExecution.DisplayLanguageKey)
+			}
+			if scenario == "language_invalid" {
+				item.ExecutionConfig[commonExecution.DisplayLanguageKey] = "en-US"
+			}
 			if err := db.Create(item).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -120,7 +173,8 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 			if err != nil || lease == nil {
 				t.Fatalf("claim: %v", err)
 			}
-			err = runner.Execute(t.Context(), claimed, *lease)
+			workerContext, _ := commoni18n.WithLanguage(t.Context(), workerLanguage)
+			err = runner.Execute(workerContext, claimed, *lease)
 			if scenario == "lease_lost" {
 				if err == nil || statusCalls != 0 {
 					t.Fatal("lost lease accepted a receipt or polled remote")
@@ -131,10 +185,13 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 			} else if err != nil {
 				t.Fatal(err)
 			}
+			if (scenario == "language_missing" || scenario == "language_invalid") && (runtimeCalls != 0 || statusCalls != 0) {
+				t.Fatal("invalid snapshot dispatched")
+			}
 			var stored commonExecution.TaskExecution
 			db.Where("execution_id = ?", executionID).First(&stored)
 			want := "failed"
-			if scenario == "success" {
+			if scenario == "success" || scenario == "success_zh" {
 				want = "success"
 			}
 			if stored.Status != want || stored.LeaseToken != nil {

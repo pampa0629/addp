@@ -139,6 +139,15 @@ paths:
         `execution_config.engine_specific.spark_cluster_id` 映射而来。
       operationId: executeWorkflow
       tags: [Workflow]
+      parameters:
+        - name: Accept-Language
+          in: header
+          required: false
+          description: ADDP 后端必须传入本次执行快照冻结的规范语言；Runtime 受理时绑定并保存执行文本，后续查询不改写。
+          schema:
+            type: string
+            enum: [zh-cn, en]
+            default: zh-cn
       requestBody:
         required: true
         content:

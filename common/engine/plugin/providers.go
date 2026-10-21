@@ -830,11 +830,13 @@ type OutputPortDescriptor struct {
 }
 
 type WorkflowExecuteRequest struct {
-	WorkflowDef map[string]interface{}  `json:"workflow_def"`
-	InputData   map[string]interface{}  `json:"input_data,omitempty"`
-	EngineID    uint                    `json:"engine_id,omitempty"`
-	Runtime     *WorkflowRuntimeContext `json:"runtime,omitempty"`
-	Timeout     time.Duration           `json:"-"`
+	// DisplayLanguage is the frozen execution language, sent only as Accept-Language.
+	DisplayLanguage string                  `json:"-"`
+	WorkflowDef     map[string]interface{}  `json:"workflow_def"`
+	InputData       map[string]interface{}  `json:"input_data,omitempty"`
+	EngineID        uint                    `json:"engine_id,omitempty"`
+	Runtime         *WorkflowRuntimeContext `json:"runtime,omitempty"`
+	Timeout         time.Duration           `json:"-"`
 }
 
 type WorkflowRuntimeContext struct {

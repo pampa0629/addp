@@ -52,7 +52,9 @@ func TestProfileResultErrorDoesNotExposeSourceOrCredential(t *testing.T) {
 	for _, lang := range []string{commoni18n.LangZhCN, commoni18n.LangEn} {
 		response := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(response)
-		c.Set("addp_lang", lang)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), lang)
+		c.Request = c.Request.WithContext(languageContext)
 		err := fmt.Errorf("private source D credential addp_at_secret: %w", commonClient.ErrManagerPreviewReadDenied)
 		handleDataProfileError(c, err, "unused")
 		body := response.Body.String()

@@ -29,6 +29,10 @@ Public Operator Spec 由 Develop Adapter Spec registry 统一维护。Workflow R
 Develop 聚合算子时必须校验 Runtime Operator Spec：发现 UI 参数或公开资源身份参数时拒绝该运行时算子目录；存在 Develop Adapter Spec 时，runtime `parameters[]` 必须完整声明 adapter spec 所需的运行时参数。不得在参数缺失时继续展示算子并等待执行阶段失败。
 
 
+## 执行语言接线
+
+Develop 在一次性执行和已保存任务的执行快照中冻结 `display_language`；由 Orchestrator 触发的子执行从已核验父记录继承，不从子请求重新取语言。审批式 workflow.run 使用最初提交语言。Worker 从快照恢复后经 Common Workflow Provider 发送规范 `Accept-Language`；任务定义、算子参数和授权摘要不承载该值。完整契约见[执行显示语言](../tasks/执行记录与租约.md#执行显示语言)。
+
 ## 集成架构
 
 Develop 模块通过 Common Engine 的 `WorkflowRuntimeProvider` 统一调用各工作流引擎：

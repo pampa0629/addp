@@ -197,6 +197,7 @@ func queryExportError(c *gin.Context, err error) {
 // ExecuteDevTask 执行开发任务（支持参数化）
 // @Summary 执行开发任务 | Execute development task
 // @Tags Execution
+// @Param Accept-Language header string false "提交时冻结的执行显示语言 | Execution language frozen at submission"
 // @Accept json
 // @Produce json
 // @Param id path int true "开发任务 ID | Development task ID"
@@ -272,6 +273,7 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Summary 执行临时内容 | Execute temporary content
 // @Description 第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。| First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint.
 // @Tags Execution
+// @Param Accept-Language header string false "首次提交时冻结；审批消费沿用最初语言 | Frozen at initial submission, retained through approval"
 // @Accept json
 // @Produce json
 // @Param body body models.CreateExecutionSwaggerRequest true "执行请求 | Execution request"

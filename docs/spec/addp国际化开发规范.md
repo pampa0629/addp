@@ -169,7 +169,11 @@ import i18nmiddleware "github.com/addp/common/middleware/i18n"
 router.Use(i18nmiddleware.I18nMiddleware())
 ```
 
-中间件从 `Accept-Language` 解析语言并写入 `gin.Context`。Handler 中不应自行解析请求头。
+中间件从 `Accept-Language` 解析语言并写入请求的标准 `context.Context`。`GetLang(c)` 从 `c.Request.Context()` 读取同一语言事实，Handler 和 Service 不应自行解析请求头。
+
+### 异步执行语言
+
+请求语言经公共中间件规范化为 `zh-cn` 或 `en`；Service 通过公共 `Language(ctx)` 读取，不依赖 Gin。执行提交时将该值冻结为 `execution_config.display_language`，编排子执行继承父执行，Worker 从持久快照恢复上下文，Common Provider 通过 `Accept-Language` 传递给 Runtime。冻结、审批、缺失拒绝及历史文本不可改写的完整规则见[执行显示语言](tasks/执行记录与租约.md#执行显示语言)。请求即时响应仍按当前请求语言翻译；已经生成并保存的执行失败文本不属于随查看语言重新翻译的界面词条。
 
 ### 模块 i18n 包
 

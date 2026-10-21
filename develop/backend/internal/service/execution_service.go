@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
@@ -34,15 +35,23 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 	if item == nil || item.Module != commonExecution.ModuleDevelop || item.ExecutionID != lease.ExecutionID || item.TenantID != lease.TenantID || item.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded {
 		return fmt.Errorf("claimed Develop execution does not match its lease")
 	}
+	startedAt := time.Now().UTC()
+	if item.StartedAt != nil {
+		startedAt = *item.StartedAt
+	}
+	lang, err := commonExecution.DisplayLanguage(item)
+	if err != nil {
+		return s.fail(ctx, item, lease, startedAt, "snapshot_invalid", err)
+	}
+	ctx, err = commoni18n.WithLanguage(ctx, lang)
+	if err != nil {
+		return s.fail(ctx, item, lease, startedAt, "snapshot_invalid", err)
+	}
 	if item.TaskType == commonExecution.TaskTypeQuery {
 		return s.query.Execute(ctx, item, lease)
 	}
 	if item.TaskType != commonExecution.TaskTypeWorkflow && item.TaskType != commonExecution.TaskTypeScript {
 		return fmt.Errorf("unsupported Develop execution type")
-	}
-	startedAt := time.Now().UTC()
-	if item.StartedAt != nil {
-		startedAt = *item.StartedAt
 	}
 	task, err := devRuntimeTaskFromExecution(item)
 	if err != nil {
@@ -162,7 +171,7 @@ func devRuntimeTaskFromExecution(item *commonExecution.TaskExecution) (*models.D
 	for key, value := range item.ExecutionConfig {
 		config[key] = value
 	}
-	for _, key := range []string{"content", "inputs", "timeout", "runtime_parameters"} {
+	for _, key := range []string{"content", "inputs", "timeout", "runtime_parameters", commonExecution.DisplayLanguageKey} {
 		delete(config, key)
 	}
 	parameters, _ := mapValue(item.ExecutionConfig["runtime_parameters"])

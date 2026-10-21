@@ -39,6 +39,8 @@ Math 的响应示例与字段定义统一见 [OpenAPI](../../../engines/docs/wor
 
 **请求**：`POST /api/workflow`，`Content-Type: application/json`。
 
+ADDP 后端通过 Common Provider 必须发送 `Accept-Language: zh-cn` 或 `Accept-Language: en`，值来自本次 execution 已冻结的 `execution_config.display_language`，不放入 JSON 业务参数或 `runtime.execution_authorization`。Runtime 在受理时绑定该语言，异步运行按该语言生成并保存失败文本；`GET /api/executions/{execution_id}` 不得依据查询请求的语言重写已有文本。冻结和父子继承规则见[执行显示语言](../tasks/执行记录与租约.md#执行显示语言)。
+
 完整请求见 [Math Workflow 示例](../../../engines/docs/examples/workflow-execute-request.json)：先计算 `10 + 20`，再通过 `$ref` 将结果传入乘法节点，最终结果为 `60`。示例的 `runtime` 表达后端注入的执行上下文，字段来源与授权要求见下文。
 
 `engine_id` 仅用于 `spark_workflow` 的执行期绑定，必须位于请求顶层，指向已注册且启用的 `engine_type=spark` 通用引擎资源。Develop 从 `execution_config.engine_specific.spark_cluster_id` 派生该值；其他 Workflow Runtime 的请求不得携带此字段。

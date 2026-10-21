@@ -16,7 +16,9 @@ func TestEngineUnavailableUsesStableTransientErrorContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Set("addp_lang", commoni18n.LangZhCN)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), commoni18n.LangZhCN)
+	c.Request = c.Request.WithContext(languageContext)
 
 	engineUnavailable(c)
 
@@ -36,7 +38,9 @@ func TestProtectionRequiredUsesStableFailClosedErrorContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Set("addp_lang", commoni18n.LangZhCN)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), commoni18n.LangZhCN)
+	c.Request = c.Request.WithContext(languageContext)
 
 	protectionRequired(c)
 
@@ -56,7 +60,9 @@ func TestDataProfileProtectionErrorUsesStableFailClosedContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Set("addp_lang", commoni18n.LangZhCN)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), commoni18n.LangZhCN)
+	c.Request = c.Request.WithContext(languageContext)
 
 	handleDataProfileError(c, service.ErrDataProfileProtectionRequired, manageri18n.MsgDataProfileQueryFailed)
 
@@ -74,7 +80,9 @@ func TestDataProfileProtectionErrorUsesStableFailClosedContract(t *testing.T) {
 
 func TestManagerErrorMessagesRegistered(t *testing.T) {
 	c := &gin.Context{}
-	c.Set("addp_lang", commoni18n.LangZhCN)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	languageContext, _ := commoni18n.WithLanguage(c.Request.Context(), commoni18n.LangZhCN)
+	c.Request = c.Request.WithContext(languageContext)
 
 	messageIDs := []string{
 		manageri18n.MsgInvalidEngineID,

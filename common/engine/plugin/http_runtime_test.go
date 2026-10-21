@@ -16,6 +16,9 @@ func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 	var got map[string]interface{}
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Accept-Language") != "en" {
+				t.Errorf("language header = %q", r.Header.Get("Accept-Language"))
+			}
 			if r.URL.Path != "/api/workflow" {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
@@ -45,7 +48,7 @@ func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 		"protocol": "http",
 		"host":     "127.0.0.1",
 		"port":     port,
-	}, WorkflowExecuteRequest{
+	}, WorkflowExecuteRequest{DisplayLanguage: "en",
 		WorkflowDef: map[string]interface{}{
 			"tasks": []interface{}{},
 		},
@@ -133,7 +136,7 @@ func TestHTTPExecuteWorkflowEmptyInputData(t *testing.T) {
 			}
 			result, err := HTTPExecuteWorkflow(context.Background(), ConnectionInfo{
 				"protocol": "http", "host": host, "port": port,
-			}, WorkflowExecuteRequest{WorkflowDef: map[string]interface{}{"tasks": []interface{}{}}, InputData: input.data})
+			}, WorkflowExecuteRequest{DisplayLanguage: "en", WorkflowDef: map[string]interface{}{"tasks": []interface{}{}}, InputData: input.data})
 			if err != nil || result.Status != "success" {
 				t.Fatalf("empty-input workflow rejected: result=%+v err=%v", result, err)
 			}
@@ -232,7 +235,7 @@ func TestHTTPExecuteWorkflowReturnsErrorForFailedStatusWithOKHTTPStatus(t *testi
 		"protocol": "http",
 		"host":     "127.0.0.1",
 		"port":     port,
-	}, WorkflowExecuteRequest{})
+	}, WorkflowExecuteRequest{DisplayLanguage: "en"})
 	if err == nil {
 		t.Fatal("HTTPExecuteWorkflow returned nil error for failed runtime status")
 	}
@@ -564,5 +567,24 @@ func TestHTTPGetExecutionStatusParsesError(t *testing.T) {
 	}
 	if status == nil || status.Status != "failed" || status.ErrorCode != "EXECUTION_NOT_FOUND" {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestHTTPWorkflowRejectsUnfrozenLanguageBeforeDispatch(t *testing.T) {
+	calls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	defer runtime.Close()
+	host := strings.TrimPrefix(runtime.URL, "http://")
+	hostname, port, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, language := range []string{"", "EN", "en-US", "en\r\nInjected: yes"} {
+		if _, err := HTTPExecuteWorkflow(context.Background(), ConnectionInfo{"host": hostname, "port": port}, WorkflowExecuteRequest{DisplayLanguage: language}); err == nil {
+			t.Fatalf("accepted %q", language)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("invalid language dispatched")
 	}
 }

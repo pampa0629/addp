@@ -215,10 +215,11 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 
 	// 4. 通过 Common Engine 的 WorkflowRuntimeProvider 执行工作流
 	workflowReq := plugin.WorkflowExecuteRequest{
-		WorkflowDef: preprocessedWorkflowDef,
-		InputData:   inputData,
-		EngineID:    runtimeEngineID,
-		Runtime:     runtimeContext,
+		DisplayLanguage: commoni18n.Language(ctx),
+		WorkflowDef:     preprocessedWorkflowDef,
+		InputData:       inputData,
+		EngineID:        runtimeEngineID,
+		Runtime:         runtimeContext,
 	}
 	result, err := dbbridge.ExecuteWorkflow(ctx, engine, workflowReq)
 	if err != nil {

@@ -2192,6 +2192,11 @@ paths:
         content and receives an approval; after approval, the resume request contains
         only approval_id and request_fingerprint.
       parameters:
+      - description: 首次提交时冻结；审批消费沿用最初语言 | Frozen at initial submission, retained through
+          approval
+        in: header
+        name: Accept-Language
+        type: string
       - description: 执行请求 | Execution request
         in: body
         name: body
@@ -3865,6 +3870,10 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: 提交时冻结的执行显示语言 | Execution language frozen at submission
+        in: header
+        name: Accept-Language
+        type: string
       - description: 开发任务 ID | Development task ID
         in: path
         name: id

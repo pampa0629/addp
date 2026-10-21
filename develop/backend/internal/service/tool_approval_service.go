@@ -13,6 +13,7 @@ import (
 
 	commonAuth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -97,7 +98,7 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 		return nil, approvalError("approval_invalid_request", err.Error())
 	}
 
-	payload, fingerprint, err := canonicalApprovalPayload(req)
+	payload, fingerprint, err := canonicalApprovalPayload(req, commoni18n.Language(ctx))
 	if err != nil {
 		return nil, approvalError("approval_invalid_request", "无法规范化 workflow.run 请求")
 	}
@@ -240,6 +241,14 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 	if err != nil {
 		return "", approvalError("approval_invalid_request", "审批中的 workflow.run 请求无效")
 	}
+	language, err := commonExecution.DisplayLanguage(&commonExecution.TaskExecution{ExecutionConfig: map[string]interface{}(snapshot.RequestPayload)})
+	if err != nil {
+		return "", approvalError("approval_invalid_request", "审批中的执行语言无效")
+	}
+	ctx, err = commoni18n.WithLanguage(ctx, language)
+	if err != nil {
+		return "", err
+	}
 	prepared, err := service.executor.prepareContentExecution(
 		ctx,
 		req.DevType,
@@ -329,7 +338,7 @@ func normalizeInitialWorkflowRunRequest(req *models.CreateExecutionRequest) erro
 	return nil
 }
 
-func canonicalApprovalPayload(req models.CreateExecutionRequest) (models.DevTaskContent, string, error) {
+func canonicalApprovalPayload(req models.CreateExecutionRequest, language string) (models.DevTaskContent, string, error) {
 	payload := models.DevTaskContent{
 		"dev_type":         req.DevType,
 		"trigger_type":     req.TriggerType,
@@ -337,6 +346,10 @@ func canonicalApprovalPayload(req models.CreateExecutionRequest) (models.DevTask
 		"execution_config": req.ExecutionConfig,
 		"timeout":          req.Timeout,
 	}
+	if !commoni18n.IsSupportedLanguage(language) {
+		return nil, "", fmt.Errorf("canonical approval display language is required")
+	}
+	payload[commonExecution.DisplayLanguageKey] = language
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", err

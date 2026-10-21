@@ -1,6 +1,8 @@
 package i18n
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,12 +15,34 @@ const (
 	LangEn = "en"
 	// DefaultLang 默认语言
 	DefaultLang = LangZhCN
-
-	// contextKey gin context 中存储语言的 key
-	contextKey = "addp_lang"
 )
 
-// I18nMiddleware 从请求的 Accept-Language 头提取语言偏好，注入到 gin context。
+type languageKey struct{}
+
+// IsSupportedLanguage reports whether lang is a canonical execution language.
+func IsSupportedLanguage(lang string) bool {
+	return lang == LangZhCN || lang == LangEn
+}
+
+// WithLanguage binds an already normalized language without accepting header syntax.
+func WithLanguage(ctx context.Context, lang string) (context.Context, error) {
+	if ctx == nil || !IsSupportedLanguage(lang) {
+		return nil, fmt.Errorf("canonical display language is required")
+	}
+	return context.WithValue(ctx, languageKey{}, lang), nil
+}
+
+// Language reads the standard request context; a request without a preference uses Chinese.
+func Language(ctx context.Context) string {
+	if ctx != nil {
+		if lang, ok := ctx.Value(languageKey{}).(string); ok {
+			return lang
+		}
+	}
+	return DefaultLang
+}
+
+// I18nMiddleware 从请求的 Accept-Language 头提取语言偏好，注入标准 context。
 //
 // 用法（在各模块 router 中注册）：
 //
@@ -30,19 +54,18 @@ const (
 func I18nMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		lang := extractLang(c.GetHeader("Accept-Language"))
-		c.Set(contextKey, lang)
+		ctx, _ := WithLanguage(c.Request.Context(), lang)
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }
 
-// GetLang 从 gin context 获取当前请求的语言代码，默认返回 "zh-cn"。
+// GetLang reads the same language fact as services using the request context.
 func GetLang(c *gin.Context) string {
-	if val, exists := c.Get(contextKey); exists {
-		if lang, ok := val.(string); ok && lang != "" {
-			return lang
-		}
+	if c == nil || c.Request == nil {
+		return DefaultLang
 	}
-	return DefaultLang
+	return Language(c.Request.Context())
 }
 
 // extractLang 解析 Accept-Language 请求头，返回 ADDP 支持的语言代码。
