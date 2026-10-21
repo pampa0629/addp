@@ -921,6 +921,7 @@ work = Path(sys.argv[1])
 limit = int(sys.argv[2])
 pending = iter(sys.argv[3:])
 active = {}
+log_offsets = {}
 interrupted = 0
 
 def interrupt(signum, frame):
@@ -929,6 +930,20 @@ def interrupt(signum, frame):
 
 signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
+
+def emit_log(name):
+    # Copy bytes once, including partial UTF-8 sequences. A fixed end position
+    # prevents a busy builder from indefinitely delaying signal handling.
+    with (work / (name + '.log')).open('rb') as source:
+        end = source.seek(0, os.SEEK_END)
+        source.seek(log_offsets.get(name, 0))
+        while source.tell() < end:
+            chunk = source.read(min(65536, end - source.tell()))
+            if not chunk:
+                break
+            sys.stdout.buffer.write(chunk)
+        log_offsets[name] = source.tell()
+    sys.stdout.buffer.flush()
 
 def stop_workers():
     for process in active:
@@ -954,9 +969,10 @@ def stop_workers():
             os.killpg(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-    for process, (_, stream, _) in active.items():
+    for process, (name, stream, _) in active.items():
         process.wait()
         stream.close()
+        emit_log(name)
 
 try:
     with (work / 'results.tsv').open('w') as results:
@@ -981,12 +997,14 @@ try:
                     raise
                 active[process] = (name, stream, time.monotonic())
             for process, (name, stream, started) in tuple(active.items()):
+                if limit == 1:
+                    emit_log(name)
                 code = process.poll()
                 if code is None:
                     continue
                 stream.close()
                 elapsed = time.monotonic() - started
-                print((work / (name + '.log')).read_text(), end='', flush=True)
+                emit_log(name)
                 print(f'Image result: {name}, exit={code}, duration={elapsed:.2f}s', flush=True)
                 results.write(f'{name}\t{code}\t{elapsed:.2f}\n')
                 results.flush()

@@ -8,6 +8,7 @@ import shlex
 import importlib.util
 import json
 import os
+import select
 import signal
 import time
 import shutil
@@ -749,6 +750,8 @@ try:
 finally:
     if child:
         child.wait(timeout=10)
+    if os.environ.get('FAKE_SIGNAL_TAIL')=='1':
+        print(name+' log cancelled tail',flush=True)
     event('end')
 sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
 ''')
@@ -795,6 +798,33 @@ sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
         self.assertEqual(0,result.returncode,result.stdout+result.stderr)
         self.assertEqual(1,self.peak())
 
+    def test_single_worker_outputs_partial_log_before_build_finishes(self):
+        process=subprocess.Popen(
+            ['bash',str(self.builder),'--verify','--jobs','1','--services','console'],
+            env=dict(self.env,FAKE_BLOCK='1'),stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,bufsize=0)
+        output=b''
+        try:
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline and b'console log start' not in output:
+                if select.select([process.stdout],[],[],0.1)[0]:
+                    chunk=os.read(process.stdout.fileno(),65536)
+                    if not chunk: break
+                    output+=chunk
+            self.assertIn(b'console log start',output)
+            self.assertIsNone(process.poll(),output.decode(errors='replace'))
+        finally:
+            if process.poll() is None: process.send_signal(signal.SIGTERM)
+            remaining,_=process.communicate(timeout=15)
+            output+=remaining
+            for event in self.events():
+                if event['kind']=='start':
+                    try: os.killpg(event['group'],signal.SIGKILL)
+                    except ProcessLookupError: pass
+        self.assertEqual(143,process.returncode,output.decode(errors='replace'))
+        self.assertEqual(1,output.count(b'console log start'))
+        self.assertEqual([],list(self.root.glob('addp-image-build.*')))
+
     def test_failure_is_reported_and_other_images_finish(self):
         result=self.run_builder(FAKE_FAILURE='manager-frontend')
         self.assertNotEqual(0,result.returncode)
@@ -809,17 +839,27 @@ sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
         self.assertEqual([],self.events())
 
     def test_interrupt_stops_worker_process_groups_and_cleans_logs(self):
+        self.assert_interrupted_build(signal.SIGTERM)
+
+    def test_sigint_stops_worker_process_groups_and_preserves_tail_logs(self):
+        self.assert_interrupted_build(signal.SIGINT)
+
+    def assert_interrupted_build(self, signum):
         process=subprocess.Popen(['bash',str(self.builder),'--verify','--services',','.join(self.services)],
-                                 env=dict(self.env,FAKE_BLOCK='1'),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+                                 env=dict(self.env,FAKE_BLOCK='1',FAKE_SIGNAL_TAIL='1'),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
         try:
             deadline=time.monotonic()+10
             while time.monotonic()<deadline:
                 if sum(event['kind']=='child' for event in self.events())==2: break
                 time.sleep(0.02)
             else: self.fail('Both workers did not reach the blocking build')
-            process.send_signal(signal.SIGTERM)
+            process.send_signal(signum)
             output,_=process.communicate(timeout=15)
-            self.assertEqual(143,process.returncode,output)
+            self.assertEqual(128+signum,process.returncode,output)
+            self.assertEqual(1,output.count('console log start'),output)
+            self.assertEqual(1,output.count('system-frontend log start'),output)
+            self.assertEqual(1,output.count('console log cancelled tail'),output)
+            self.assertEqual(1,output.count('system-frontend log cancelled tail'),output)
             self.assertEqual(2,self.peak())
             for event in self.events():
                 if event['kind']=='start':

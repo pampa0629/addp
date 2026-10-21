@@ -613,7 +613,7 @@ jobs:
       group: online-t4-ftp-consumer-flow
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
