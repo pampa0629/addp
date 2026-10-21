@@ -24,8 +24,9 @@ class GatewayDownloadTest(unittest.TestCase):
             owned = []
             with self.subTest(status=status, expected_status=expected_status):
                 if raises:
-                    with self.assertRaises(ONLINE.SuiteError):
+                    with self.assertRaises(ONLINE.SuiteError) as failure:
                         ONLINE.create_and_run_task(client, {}, float("inf"), owned, expected_status=expected_status)
+                    self.assertEqual(str(failure.exception), f"Transfer execution ended with status {status}; expected={expected_status}, task_id=11, execution_id=one")
                 else:
                     self.assertEqual(ONLINE.create_and_run_task(client, {}, float("inf"), owned,
                         expected_status=expected_status), (11, {"status": status}))

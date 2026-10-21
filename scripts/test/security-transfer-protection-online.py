@@ -452,7 +452,7 @@ def create_and_run_task(
         if status == expected_status:
             return task_id, current
         if status in TERMINAL_STATUSES:
-            raise SuiteError(f"Transfer execution ended with status {status}")
+            raise SuiteError(f"Transfer execution ended with status {status}; expected={expected_status}, task_id={task_id}, execution_id={execution_id}")
         time.sleep(1)
     raise SuiteError("Transfer execution did not finish before the convergence timeout")
 

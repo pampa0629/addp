@@ -2631,7 +2631,7 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                 self.assertEqual(payload['config']['source']['query']['language'], 'sql')
                 statement = payload['config']['source']['query']['statement']
                 self.assertIn(' FROM addp_online_security.spatial_algorithm_source', statement)
-                self.assertIn('substring(value_a,1,100) AS value_a' if suffix.startswith('computed') else " WHERE id='1'", statement)
+                self.assertIn('CAST(value_a AS text) AS value_a' if suffix.startswith('computed') else "SELECT DISTINCT id,value_a FROM", statement)
                 self.assertEqual(payload['config']['transforms'][0]['fields'][1]['source'], 'value_a')
                 self.assertEqual(refusal.call_args.args[2:], ('target', reason, 60, 7))
         with self.assertRaises(ONLINE.SuiteError): ONLINE.postgres_query_refusal_payload('source', 'parent', 'unknown')

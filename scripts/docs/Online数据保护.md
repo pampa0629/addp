@@ -46,3 +46,5 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 这是当前普通表／MongoDB 集合验收 profile 的覆盖边界，协议层单元格仍明确保留实际出口 T4 缺口，不表示产品入口永远不可能触发。`make test-common-postgres` 的 `TestProjectionStoreReasonMatrixAgainstPostgres` 对四个 Owner 的七种共享协议原因持久化、重开、拒绝和正常修订恢复作 T2 验证；PreparedQuery 证明与编译器拒绝由受控协议夹具提供，不能冒称原生引擎或 HTTP T4。尚未生效仍通过协议显式时间参数验证，不更改系统时钟或添加产品设置。新增临时 Service／Transfer 定义必须按实际 ID 删除并确认消失，结构探针沿既有归属 fixture 的 finally 恢复；无需额外数据库、部署入口或 CI 路线。实现、确定性门禁与实际 T4 结果分别记录，v24 旧证据不能替代新增 runtime 单元格。
 
 未就绪探针不能依赖“尚未人工复核”的自动发现窗口：命中检测器置信度的 Finding 会直接采用默认保护并进入 active。套件因此复用已有、字段名不会命中检测器的 PostgreSQL 合成表，在发现完成且零 Finding、尚无人工 Assessment 的真实 enrolling 阶段验证四出口；不暂停 Worker、不加锁、不改检测器阈值或产品状态。报告记录该组实际源与发现完成事实，后续人工指定、三算法、SQL拒绝和银行卡流程沿原路径继续。
+
+查询源拒绝语句必须符合实际原生方言：PostgreSQL 的字符串字面量过滤可以安全重写，不能因 MySQL 的保守限制而预期 PostgreSQL 拒绝。Transfer 的操作不支持探针使用直接字段的 `SELECT DISTINCT`（血缘直接、输出重写不支持）；计算输出探针使用 `CAST(value_a AS text)`（血缘派生），不依赖尚不能证明所有函数依赖的 SUBSTRING 重载。两者须经真实 PostgreSQL Provider／Transfer pipeline 的精确准备拒绝和目标不变回归，且保留字符串过滤合法对照必须只写脱敏值；不扩展 Provider 或函数可信范围。

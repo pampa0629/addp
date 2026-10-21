@@ -1860,9 +1860,9 @@ def develop_refusal_with_history(client: GatewayClient, engine_id: int, locator:
 def postgres_query_refusal_payload(locator: str, parent: str, reason: str) -> dict[str, object]:
     relation = TARGET_SCHEMA + "." + SPATIAL_SOURCE
     if reason == "protection_computed_output_unsupported":
-        query = "SELECT id,substring(value_a,1,100) AS value_a FROM " + relation
+        query = "SELECT id,CAST(value_a AS text) AS value_a FROM " + relation
     elif reason == "protection_operation_unsupported":
-        query = "SELECT id,value_a FROM " + relation + " WHERE id='1'"
+        query = "SELECT DISTINCT id,value_a FROM " + relation
     else:
         raise SuiteError("unsupported PostgreSQL query refusal fixture")
     payload = transfer_payload("addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)

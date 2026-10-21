@@ -148,6 +148,80 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	if phone != "136****4499" {
 		t.Fatalf("query-exported phone = %q, want masked value", phone)
 	}
+	for _, probe := range []struct {
+		name      string
+		statement string
+		refusal   error
+	}{
+		{"literal_control", fmt.Sprintf(`SELECT id, phone AS contact_phone FROM "%s"."%s" WHERE id='1'`, schema, sourceTable), nil},
+		{"distinct_refusal", fmt.Sprintf(`SELECT DISTINCT id, phone AS contact_phone FROM "%s"."%s"`, schema, sourceTable), plugin.ErrQueryOutputTransformUnsupported},
+		{"computed_refusal", fmt.Sprintf(`SELECT id, CAST(phone AS text) AS contact_phone FROM "%s"."%s"`, schema, sourceTable), dataprotection.ErrComputedOutputUnsupported},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			// These use the real PostgreSQL provider and the same protected source.
+			// A string literal is supported here; DISTINCT has direct lineage but
+			// its output rewrite is deliberately unsupported. CAST has derived lineage.
+			request := plugin.QueryRequest{EngineID: 11, Language: "sql", Query: probe.statement, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true}}
+			prepared, err := pg.PrepareQuery(ctx, connInfo, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lineage, err := prepared.OutputLineage(ctx)
+			if err != nil || len(lineage.Sources) != 1 {
+				t.Fatalf("query lineage = %#v, err=%v", lineage, err)
+			}
+			found := false
+			for _, binding := range lineage.Sources[0].Bindings {
+				if len(binding.OutputPath) == 1 && binding.OutputPath[0] == "contact_phone" {
+					want := plugin.QueryOutputTransformationDirect
+					if probe.name == "computed_refusal" {
+						want = plugin.QueryOutputTransformationDerived
+					}
+					if binding.Transformation != want {
+						t.Fatalf("output lineage = %#v, want %s", binding, want)
+					}
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("protected output has no actual field binding")
+			}
+			path := queryTargetPath
+			if probe.refusal == nil {
+				path = plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermSchema, schema, plugin.EngineCatalogTermTable, plugin.EngineCatalogKindTable, "literal_control_export")
+			}
+			export, err := executor.NewTableTransferExecutor("postgresql", "postgresql", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			export.SourceProtector = protector
+			metrics, err := export.Execute(ctx, executor.TableTransferPlan{
+				Source: executor.TableSourcePlan{Kind: executor.TableEndpointQuery, ConnInfo: connInfo, RuntimeQuery: &request,
+					ExpectedQueryReadSet: expectedQueryReadSet, QueryInputs: []executor.TableQueryInput{{Port: "source", Path: sourcePath}},
+					TableInfo: &datatype.TableInfo{Name: sourceTable, Fields: queryFields}},
+				Target: executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: path, DeleteBeforeWrite: true}, BatchSize: 10,
+			})
+			if probe.refusal == nil {
+				if err != nil || metrics == nil || metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+					t.Fatalf("PostgreSQL literal predicate must transfer protected output: metrics=%+v, err=%v", metrics, err)
+				}
+			} else if !errors.Is(err, probe.refusal) || !errors.Is(err, executor.ErrProtectionPreparation) ||
+				errors.Is(err, executor.ErrTargetMayHaveChanged) || metrics != nil && (metrics.RecordsRead != 0 || metrics.RecordsWritten != 0) {
+				t.Fatalf("query must refuse before target mutation: metrics=%+v, err=%v", metrics, err)
+			}
+			target := queryTargetTable
+			if probe.refusal == nil {
+				target = "literal_control_export"
+			}
+			var count int
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM "%s"."%s"`, schema, target)).Scan(&count); err != nil || count != 1 {
+				t.Fatalf("physical target row count=%d, err=%v", count, err)
+			}
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT contact_phone FROM "%s"."%s" WHERE id=1`, schema, target)).Scan(&phone); err != nil || phone != "136****4499" {
+				t.Fatalf("target must contain only the protected control value: err=%v", err)
+			}
+		})
+	}
 
 	for _, querySource := range []bool{false, true} {
 		t.Run(fmt.Sprintf("expired_query_%t", querySource), func(t *testing.T) {
