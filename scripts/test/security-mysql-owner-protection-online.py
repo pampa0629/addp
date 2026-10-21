@@ -1857,13 +1857,31 @@ def develop_refusal_with_history(client: GatewayClient, engine_id: int, locator:
     return {**evidence, "execution_id": execution_id, "history_result_absent": True}
 
 
-def bank_query_transfer_payload(locator: str, parent: str, query: str) -> dict[str, object]:
+def postgres_query_refusal_payload(locator: str, parent: str, reason: str) -> dict[str, object]:
+    relation = TARGET_SCHEMA + "." + SPATIAL_SOURCE
+    if reason == "protection_computed_output_unsupported":
+        query = "SELECT id,substring(value_a,1,100) AS value_a FROM " + relation
+    elif reason == "protection_operation_unsupported":
+        query = "SELECT id,value_a FROM " + relation + " WHERE id='1'"
+    else:
+        raise SuiteError("unsupported PostgreSQL query refusal fixture")
     payload = transfer_payload("addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)
     payload["config"]["source"]["query"] = {"language": "sql", "statement": query}
     payload["config"]["transforms"] = [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
         {"source": "id", "target": "id", "target_type": "bigint", "nullable": False},
-        {"source": BANK_FIELD, "target": BANK_FIELD, "target_type": "string", "nullable": True}]}]
+        {"source": "value_a", "target": BANK_FIELD, "target_type": "string", "nullable": True}]}]
     return payload
+
+
+def postgres_query_transfer_refusal(client: GatewayClient, engine_id: int, parent: str, target_locator: str,
+                                    reason: str, deadline: float, principal_id: int) -> dict[str, object]:
+    # This existing fixture is PostgreSQL and already enrolled by the earlier
+    # spatial scalar scenario. MySQL does not provide query read sessions.
+    source = find_item(client, engine_id, TARGET_SCHEMA + "." + SPATIAL_SOURCE, "table")
+    locator = build_item_locator(engine_id, source)
+    payload = postgres_query_refusal_payload(locator, parent, reason)
+    evidence = transfer_refusal_with_history(client, payload, target_locator, reason, deadline, principal_id)
+    return {**evidence, "query_source": {"engine_type": "postgresql", "locator": locator}}
 
 
 def transfer_refusal_with_history(client: GatewayClient, payload: dict[str, object], target_locator: str,
@@ -1899,7 +1917,7 @@ def transfer_refusal_with_history(client: GatewayClient, payload: dict[str, obje
     return result
 
 
-def bank_outlet_refusals(client: GatewayClient, engine_id: int, source: Mapping[str, object], locator: str,
+def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id: int, source: Mapping[str, object], locator: str,
                         parent: str, target_locator: str, reason: str, query: str | None,
                         deadline: float, principal_id: int) -> dict[str, object]:
     if reason not in {"protection_not_ready", "protection_schema_mismatch", "protection_operation_unsupported"}:
@@ -1925,9 +1943,11 @@ def bank_outlet_refusals(client: GatewayClient, engine_id: int, source: Mapping[
             "page": {"limit": 2}, "format": "json"})
         validate_service_protection_refusal(response)
         outcomes["service"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
-        payload = bank_query_transfer_payload(locator, parent, query) if query else transfer_payload(
-            "addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)
-        outcomes["transfer"] = transfer_refusal_with_history(client, payload, target_locator, reason, deadline, principal_id)
+        if query:
+            outcomes["transfer"] = postgres_query_transfer_refusal(client, query_engine_id, parent, target_locator, reason, deadline, principal_id)
+        else:
+            payload = transfer_payload("addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)
+            outcomes["transfer"] = transfer_refusal_with_history(client, payload, target_locator, reason, deadline, principal_id)
     finally:
         cleanup_service(client, service_id)
     return outcomes
@@ -1965,6 +1985,13 @@ def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
                 raise SuiteError("matrix Transfer needs zero writes and an unchanged target")
             if owner == "develop" and evidence.get("denied_result_absent") is not True:
                 raise SuiteError("matrix Develop refusal retained output")
+            if owner == "transfer" and reason in {"protection_computed_output_unsupported", "protection_operation_unsupported"}:
+                source = evidence.get("query_source") or {}
+                locator = urllib.parse.urlsplit(str(source.get("locator", "")))
+                if (source.get("engine_type") != "postgresql" or locator.scheme != "addp" or locator.netloc != "engine"
+                        or not re.fullmatch(r"/[1-9][0-9]*/path/" + TARGET_SCHEMA + "/" + SPATIAL_SOURCE, locator.path)
+                        or urllib.parse.parse_qs(locator.query).get("type") != ["table"]):
+                    raise SuiteError("matrix SQL Transfer refusal must identify its actual PostgreSQL source")
             transport = "execution_history"
         matrix[reason][owner] = {"level": "runtime", "transport": transport, "evidence": evidence}
     refusals = bank["refusal_causes"]
@@ -2184,7 +2211,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     parent = build_schema_locator(target_engine_id, target)
     target_locator = build_item_locator(target_engine_id, target)
     def probe(reason, query):
-        return bank_outlet_refusals(client, source_engine_id, source, locator, parent, target_locator, reason, query, deadline, positive_int(identity["principal_id"], "ordinary principal"))
+        return bank_outlet_refusals(client, source_engine_id, target_engine_id, source, locator, parent, target_locator, reason, query, deadline, positive_int(identity["principal_id"], "ordinary principal"))
     enrolling_refusal["outlets"] = probe("protection_not_ready", None)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, BANK_FIELD, BANK_DETECTOR)
@@ -2250,8 +2277,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             {"select": ["id", "computed"], "order_by": [{"field": "id", "direction": "asc"}], "page": {"limit": 2}, "format": "json"})
         validate_service_protection_refusal(refusal)
         computed_outputs["service_refusal"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
-        computed_outputs["transfer_refusal"] = transfer_refusal_with_history(client,
-            bank_query_transfer_payload(locator, parent, "SELECT id,substring(" + BANK_FIELD + ",1,100) AS " + BANK_FIELD + " FROM " + BANK_SOURCE),
+        computed_outputs["transfer_refusal"] = postgres_query_transfer_refusal(client, target_engine_id, parent,
             target_locator, "protection_computed_output_unsupported", deadline, positive_int(identity["principal_id"], "ordinary principal"))
 
         task_id, execution = create_and_run_task(client,

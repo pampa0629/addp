@@ -2195,6 +2195,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "exercise_bank_card_computed_outputs", return_value={"protected_results_absent": True}),
               patch.object(ONLINE, "exercise_enrolling_refusal", return_value={"diagnostic_reason": "protection_not_ready"}),
               patch.object(ONLINE, "bank_outlet_refusals", return_value={}),
+              patch.object(ONLINE, "postgres_query_transfer_refusal", return_value={}),
               patch.object(ONLINE, "transfer_refusal_with_history", return_value={}),
               patch.object(ONLINE, "exercise_bank_card_refusal_causes", return_value={"schema_restored": True}),
               patch.object(ONLINE, "develop_rows", side_effect=lambda *args: self.mixed_rows() if "copied_card" in args[4] else self.rows()) as develop,
@@ -2483,6 +2484,8 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
         if owner in ('manager', 'service'):
             return {'http_status': 403, 'error_code': 'security_protection_required' if owner == 'manager' else 'data_protection_required', 'result_absent': True}
         return {'execution_id': str(uuid.uuid4()), 'diagnostic_reason': reason, 'diagnostic_stage': 'preparation',
+                **({'query_source': {'engine_type': 'postgresql', 'locator': 'addp://engine/17/path/addp_online_security/spatial_algorithm_source?type=table&item_id=3'}}
+                   if owner == 'transfer' and reason in {'protection_computed_output_unsupported', 'protection_operation_unsupported'} else {}),
                 'diagnostic_code': 'develop.query.protection_required' if owner == 'develop' else ('query_output_lineage_unresolved' if reason.endswith('lineage_unverified') else 'data_protection_required'),
                 'history_result_absent': True, 'denied_result_absent': True,
                 'records_written': 0, 'bytes_written': 0, 'target_unchanged': True, 'same_user_verified': True}
@@ -2530,6 +2533,39 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
             if fault=='target': proof['outlets']['transfer']['target_unchanged']=False
             with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError): ONLINE.protection_reason_matrix(report)
 
+    def test_matrix_sql_transfer_proof_cannot_claim_mysql_or_another_source(self):
+        for reason in ('computed_output_unsupported', 'operation_unsupported'):
+            for fault in ('missing', 'mysql', 'wrong_table', 'missing_type', 'wrong_scheme'):
+                report = self.report()
+                proof = (report['bank_card_metadata']['computed_outputs']['transfer_refusal'] if reason.startswith('computed')
+                         else report['bank_card_metadata']['refusal_causes'][reason]['outlets']['transfer'])
+                if fault == 'missing': del proof['query_source']
+                elif fault == 'mysql': proof['query_source']['engine_type'] = 'mysql'
+                elif fault == 'wrong_table': proof['query_source']['locator'] = 'addp://engine/17/path/security_fixture/bank_card_accounts?type=table'
+                elif fault == 'missing_type': proof['query_source']['locator'] = 'addp://engine/17/path/addp_online_security/spatial_algorithm_source'
+                else: proof['query_source']['locator'] = proof['query_source']['locator'].replace('addp:', 'https:')
+                with self.subTest(reason=reason, fault=fault), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.protection_reason_matrix(report)
+
+    def test_sql_transfer_probes_bind_existing_postgres_source_and_keep_strict_history(self):
+        source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
+        for suffix in ('computed_output_unsupported', 'operation_unsupported'):
+            reason = 'protection_' + suffix
+            with self.subTest(reason=reason), patch.object(ONLINE, 'find_item', return_value=source) as find, \
+                    patch.object(ONLINE, 'transfer_refusal_with_history', return_value=self.proof(reason, 'transfer')) as refusal:
+                result = ONLINE.postgres_query_transfer_refusal(Mock(), 17, 'parent', 'target', reason, 60, 7)
+                find.assert_called_once_with(refusal.call_args.args[0], 17, source['full_name'], 'table')
+                payload = refusal.call_args.args[1]
+                self.assertEqual(result['query_source'], {'engine_type': 'postgresql', 'locator': ONLINE.build_item_locator(17, source)})
+                self.assertEqual(payload['config']['source']['locator'], result['query_source']['locator'])
+                self.assertEqual(payload['config']['source']['query']['language'], 'sql')
+                statement = payload['config']['source']['query']['statement']
+                self.assertIn(' FROM addp_online_security.spatial_algorithm_source', statement)
+                self.assertIn('substring(value_a,1,100) AS value_a' if suffix.startswith('computed') else " WHERE id='1'", statement)
+                self.assertEqual(payload['config']['transforms'][0]['fields'][1]['source'], 'value_a')
+                self.assertEqual(refusal.call_args.args[2:], ('target', reason, 60, 7))
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.postgres_query_refusal_payload('source', 'parent', 'unknown')
+
     def test_transfer_refusal_compares_same_history_and_target_and_always_cleans(self):
         reason='protection_schema_mismatch'
         for fault in ('none','reason','history','writes','bytes','result','target','actor','start'):
@@ -2567,15 +2603,19 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                 client.request.side_effect=request
                 query="SELECT id,bank_card_number FROM bank_card_accounts WHERE customer_code='CUST-10001'" if name=='operation_unsupported' else None
                 with self.subTest(name=name,fault=fault),patch.object(ONLINE,'cleanup_service') as cleanup, \
-                        patch.object(ONLINE,'transfer_refusal_with_history',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as transfer:
+                        patch.object(ONLINE,'transfer_refusal_with_history',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as transfer, \
+                        patch.object(ONLINE,'postgres_query_transfer_refusal',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as sql_transfer:
                     if fault=='none':
-                        result=ONLINE.bank_outlet_refusals(client,23,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                        result=ONLINE.bank_outlet_refusals(client,23,17,source,'source','parent','target',reason,query,time.monotonic()+10,7)
                         self.assertEqual(set(result),{'service','transfer'} if query else {'manager','service','transfer'})
-                        payload=transfer.call_args.args[1]
-                        if query: self.assertEqual(payload['config']['source']['query'],{'language':'sql','statement':query})
-                        else: self.assertNotIn('query',payload['config']['source'])
+                        if query:
+                            self.assertEqual(sql_transfer.call_args.args[:5],(client,17,'parent','target',reason))
+                            transfer.assert_not_called()
+                        else:
+                            self.assertNotIn('query',transfer.call_args.args[1]['config']['source'])
+                            sql_transfer.assert_not_called()
                     else:
-                        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_outlet_refusals(client,23,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_outlet_refusals(client,23,17,source,'source','parent','target',reason,query,time.monotonic()+10,7)
                     cleanup.assert_called_once_with(client,41)
 
 

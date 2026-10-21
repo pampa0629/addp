@@ -33,12 +33,14 @@
 
 | 原因 | Manager | Develop | Service | Transfer |
 | --- | --- | --- | --- | --- |
-| 计算输出不支持 | 协议层 | 实际查询 | 实际 SQL 服务 | 实际查询源传输 |
+| 计算输出不支持 | 协议层 | 实际 MySQL 查询 | 实际 MySQL SQL 服务 | 实际 PostgreSQL 查询源传输 |
 | 血缘无法证明 | 协议层 | 实际 MongoDB 查询 | 协议层 | 实际 MongoDB 查询源传输 |
 | 保护未就绪 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
 | 保护到期 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
 | 尚未生效 | 协议层 | 协议层 | 协议层 | 协议层 |
 | 结构不匹配 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
-| 操作不支持 | 协议层 | 实际查询 | 实际 SQL 服务 | 实际查询源传输 |
+| 操作不支持 | 协议层 | 实际 MySQL 查询 | 实际 MySQL SQL 服务 | 实际 PostgreSQL 查询源传输 |
+
+Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `spatial_algorithm_source.value_a` 合成字段，报告记录实际源 Locator 和引擎；它们不证明 MySQL 查询源已获支持。MySQL 当前未声明 `compute.query.read_session`，以它创建查询源任务会在配置校验返回400，尚未进入保护准备阶段，不能把这个400记为保护拒绝。MySQL 原生表的未就绪、结构不匹配、自然到期和正常脱敏搬运仍使用原有探针；不为验收扩大 Provider 能力、权限或源授权。
 
 这是当前普通表／MongoDB 集合验收 profile 的覆盖边界，协议层单元格仍明确保留实际出口 T4 缺口，不表示产品入口永远不可能触发。`make test-common-postgres` 的 `TestProjectionStoreReasonMatrixAgainstPostgres` 对四个 Owner 的七种共享协议原因持久化、重开、拒绝和正常修订恢复作 T2 验证；PreparedQuery 证明与编译器拒绝由受控协议夹具提供，不能冒称原生引擎或 HTTP T4。尚未生效仍通过协议显式时间参数验证，不更改系统时钟或添加产品设置。新增临时 Service／Transfer 定义必须按实际 ID 删除并确认消失，结构探针沿既有归属 fixture 的 finally 恢复；无需额外数据库、部署入口或 CI 路线。实现、确定性门禁与实际 T4 结果分别记录，v24 旧证据不能替代新增 runtime 单元格。

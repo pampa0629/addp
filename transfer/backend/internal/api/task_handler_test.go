@@ -11,15 +11,95 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
+	for _, engineType := range []string{"mysql", "postgresql"} {
+		for _, computed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/computed=%t", engineType, computed), func(t *testing.T) {
+				db := newTransferTaskHandlerTestDB(t)
+				auth := authtest.NewTenantUserAuthContext("7", "91", []string{"transfer.task.create"})
+				system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_ = json.NewEncoder(w).Encode(auth)
+				}))
+				defer system.Close()
+				field, relation := "bank_card_number", "bank_card_accounts"
+				locator := "addp://engine/1/path/security_fixture/bank_card_accounts?type=table&item_id=3"
+				predicate := "customer_code='CUST-10001'"
+				if engineType == "postgresql" {
+					field, relation = "value_a", "addp_online_security.spatial_algorithm_source"
+					locator = "addp://engine/1/path/addp_online_security/spatial_algorithm_source?type=table&item_id=3"
+					predicate = "id='1'"
+				}
+				statement := "SELECT id," + field + " FROM " + relation + " WHERE " + predicate
+				if computed {
+					statement = "SELECT id,substring(" + field + ",1,100) AS " + field + " FROM " + relation
+				}
+				config := map[string]interface{}{
+					"runtime": map[string]interface{}{"boundary": "bounded"}, "load": map[string]interface{}{"mode": "snapshot"},
+					"source": map[string]interface{}{"locator": locator, "data_type": "table", "representation": "native",
+						"query": map[string]interface{}{"language": "sql", "statement": statement}},
+					"target": map[string]interface{}{"parent_locator": "addp://engine/2/path/addp_online_security?type=schema&node_id=1",
+						"name": "bank_card_transfer", "data_type": "table", "representation": "native", "policy": map[string]interface{}{"apply_mode": "replace"}},
+					"transforms": []interface{}{map[string]interface{}{"type": "field_mapping", "version": "v1", "mode": "project", "fields": []interface{}{
+						map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false},
+						map[string]interface{}{"source": field, "target": "bank_card_number", "target_type": "string", "nullable": true},
+					}}}, "batch_size": 100,
+				}
+				no := false
+				body, err := json.Marshal(models.CreateTaskRequest{Name: "protection refusal source capability", TaskType: "sync", Config: config,
+					Enabled: &no, AutoScanMetadata: &no, BatchSize: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				svc := service.NewTaskService(db, nil, nil)
+				svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1}})
+				router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/transfer/task-definitions", strings.NewReader(string(body)))
+				request.Header.Set("Content-Type", "application/json")
+				request.Header.Set("Authorization", "Bearer addp_at_fixture")
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				wantStatus, wantTasks := http.StatusCreated, int64(1)
+				if engineType == "mysql" {
+					wantStatus, wantTasks = http.StatusBadRequest, 0
+					var failure map[string]interface{}
+					if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil {
+						t.Fatal(err)
+					}
+					if failure["error"] != `invalid transfer task config: query source engine "mysql" does not declare query read_session` {
+						t.Fatalf("unexpected rejection: %s", response.Body)
+					}
+					t.Logf("reproduced configuration response: HTTP %d %s", response.Code, response.Body)
+				}
+				if response.Code != wantStatus {
+					t.Fatalf("HTTP %d want %d: %s", response.Code, wantStatus, response.Body)
+				}
+				var tasks, executions int64
+				if err := db.Model(&models.TransferTask{}).Count(&tasks).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&models.TaskExecution{}).Count(&executions).Error; err != nil {
+					t.Fatal(err)
+				}
+				if tasks != wantTasks || executions != 0 {
+					t.Fatalf("tasks=%d executions=%d", tasks, executions)
+				}
+			})
+		}
+	}
+}
 
 func TestTaskHandlerListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
