@@ -147,7 +147,7 @@ Business PostgreSQL 的运行认证文件由部署 owner 在仓库外维护，�
 
 来源模板 `scripts/infra/postgres-metrics.yml` 与独占 T2 共用固定 SQL Exporter 0.24.11 多架构摘要；固定配置唯一生成实现为 `scripts/infra/postgres-observation/source.py`，只查询 4.6 的函数，关闭 ping、缓存和动态目标，不接受用户 SQL。每个作用域独立来源、单 SQL 连接、零空闲连接，查询上限四秒。数据库密码只在部署用户私有的只读来源配置内，不进入环境变量、命令参数、发现快照或平台 DTO。源侧 SQL 当前限定受控 Docker 私网；生产数据库 TLS 另须认证，不把本机 T2 计为生产验收。
 
-SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同命名空间 Nginx 在 `9443` 提供独立 mTLS。TLS 进程仅挂载自己的服务端证书／CA，不挂载含数据库密码的来源配置；两进程均使用显式非特权 UID/GID、只读文件系统、移除全部 capabilities 及资源限制。外部只允许无 query 的 GET `/metrics`，配置、重载、exporter 自身诊断、其他路径及方法均拒绝；凭据不因持有采集证书而可读取。没有默认宿主机端口；标准 Infra／Business 入口仅按各自显式开关部署，不自动修改个人环境选择。
+SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同命名空间 Nginx 在 `9443` 提供独立 mTLS。TLS 进程仅挂载自己的服务端证书／CA，不挂载含数据库密码的来源配置；两进程均使用显式非特权 UID/GID、只读文件系统、移除全部 capabilities 及资源限制。外部只允许无 query 的 GET `/metrics`，配置、重载、exporter 自身诊断、其他路径及方法均拒绝；凭据不因持有采集证书而可读取。保持 `ssl_verify_client on`；Nginx 的客户端证书缺失／校验失败（内部 496／495）统一返回 403，不转发上游。来源准入仍只认可明确的 TLS 证书拒绝或 HTTP 401／403，不把通用 400 当作保护证据。没有默认宿主机端口；标准 Infra／Business 入口仅按各自显式开关部署，不自动修改个人环境选择。
 
 当前固定输出 `addp_postgresql_` 前缀的 16 项指标，对应 4.6 的有类型汇总；时间输出 Unix 秒，容量为字节，连接为数量，累计量后缀 `_total`。累计量带固定计算的 `counter_epoch`，同时覆盖统计代际与服务启动时间；代际信息独立表达，不以数据库名、SQL 或租户作为标签。统计关闭时不输出三项累计值，不填有效零。
 

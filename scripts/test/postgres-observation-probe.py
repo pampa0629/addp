@@ -442,7 +442,18 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         get('/reload', method='POST', expected=404)
         get('/metrics?target=forbidden', expected=400)
         get(method='POST', expected=405)
-        get(tls=ssl.create_default_context(cafile=str(web / 'ca.crt')), expected=400)
+        subprocess.run(['go', 'test', './internal/metricsdiscovery', '-run', '^TestIntegrationMetricsPostgreSQLAdmission$',
+                        '-count=1', '-timeout=30s', '-v'], cwd=ROOT / 'monitor/backend',
+                       env=dict(os.environ, GOWORK='off', GOMAXPROCS='2', ADDP_POSTGRES_ADMISSION_INTEGRATION='1',
+                                ADDP_POSTGRES_ADMISSION_ENDPOINT='https://127.0.0.1:' + port + '/metrics',
+                                ADDP_POSTGRES_ADMISSION_CA=str(web / 'ca.crt'),
+                                ADDP_POSTGRES_ADMISSION_CERT=str(work / 'admission.crt'),
+                                ADDP_POSTGRES_ADMISSION_KEY=str(work / 'admission.key')),
+                       check=True, timeout=45)
+        get(tls=ssl.create_default_context(cafile=str(web / 'ca.crt')), expected=403)
+        untrusted = ssl.create_default_context(cafile=str(web / 'ca.crt'))
+        untrusted.load_cert_chain(str(work / 'untrusted.crt'), str(work / 'untrusted.key'))
+        get(tls=untrusted, expected=403)
         try:
             urllib.request.urlopen(origin.replace('https://', 'http://') + '/metrics', timeout=3)
         except urllib.error.HTTPError as error:
