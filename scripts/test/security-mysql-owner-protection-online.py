@@ -1917,7 +1917,7 @@ def transfer_refusal_with_history(client: GatewayClient, payload: dict[str, obje
     return result
 
 
-def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id: int, source: Mapping[str, object], locator: str,
+def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id: int, source: Mapping[str, object], fields: list[str], locator: str,
                         parent: str, target_locator: str, reason: str, query: str | None,
                         deadline: float, principal_id: int) -> dict[str, object]:
     if reason not in {"protection_not_ready", "protection_schema_mismatch", "protection_operation_unsupported"}:
@@ -1928,7 +1928,7 @@ def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id:
         validate_manager_protection_refusal(response)
         outcomes["manager"] = {"http_status": 403, "error_code": "security_protection_required", "result_absent": True}
     name = "addp-security-refusal-" + uuid.uuid4().hex
-    service = service_payload(name, engine_id, locator, BANK_FIELDS)
+    service = service_payload(name, engine_id, locator, fields)
     if reason == "protection_operation_unsupported":
         service = bank_card_computed_service_payload(name, engine_id, source, locator)
         service["sql_query"] = query
@@ -1951,6 +1951,51 @@ def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id:
     finally:
         cleanup_service(client, service_id)
     return outcomes
+
+
+def exercise_unready_source(client: GatewayClient, engine_id: int, principal_id: int, deadline: float) -> dict[str, object]:
+    source = find_item(client, engine_id, TARGET_SCHEMA + "." + SPATIAL_SOURCE, "table")
+    target = find_item(client, engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
+    locator = build_item_locator(engine_id, source)
+    enrollment_id, initialized = ensure_enrollment(client, engine_id, source["full_name"], locator)
+    if not initialized:
+        raise SuiteError("unready source must be a fresh isolated enrollment")
+    while time.monotonic() < deadline:
+        before = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id, (200,)).payload, "unready discovery")
+        if before.get("state") not in {"activating", "enrolling"}:
+            raise SuiteError("unready source left its actual enrolling lifecycle")
+        summary = before.get("discovery_summary") or {}
+        if summary.get("status") == "completed":
+            if any(type(summary.get(key)) is not int or summary[key] != 0 for key in ("finding_count", "reviewed_count", "pending_review_count")):
+                raise SuiteError("unready source discovery must complete without Findings")
+            if not before.get("latest_discovery_execution_id") or not before.get("latest_source_snapshot_hash"):
+                raise SuiteError("unready source has no completed discovery identity")
+            break
+        time.sleep(1)
+    else:
+        raise SuiteError("unready source discovery did not complete before the deadline")
+    # No matching Findings or manual Assessments exist: discovery has already
+    # completed, so empty-rule enrolling is stable rather than a Worker race.
+    proof = exercise_enrolling_refusal(client, enrollment_id, engine_id, locator, deadline,
+        "SELECT id,value_a FROM " + TARGET_SCHEMA + "." + SPATIAL_SOURCE)
+    proof["outlets"] = bank_outlet_refusals(client, engine_id, engine_id, source, SPATIAL_FIELDS, locator,
+        build_schema_locator(engine_id, target), build_item_locator(engine_id, target),
+        "protection_not_ready", None, deadline, principal_id)
+    after = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id, (200,)).payload, "unready source after outlets")
+    def revisions(enrollment):
+        progress = [_object(p, "unready owner") for p in _array(enrollment.get("owner_progress"), "unready owners")]
+        if (enrollment.get("state") != "enrolling" or len(progress) != len(PROTECTION_OWNERS)
+                or {p.get("consumer_owner") for p in progress} != set(PROTECTION_OWNERS)
+                or any(p.get("projection_state") != "enrolling" or p.get("rules") != [] for p in progress)):
+            raise SuiteError("unready source did not retain actual empty enrolling projections")
+        return {p["consumer_owner"]: (p.get("revision"), p.get("published_cursor")) for p in progress}
+    if (revisions(before) != revisions(after) or any(p.get("acknowledged") is not True for p in after["owner_progress"])
+            or any(before.get(key) != after.get(key) for key in ("latest_discovery_execution_id", "latest_source_snapshot_hash", "discovery_summary"))):
+        raise SuiteError("unready source changed during outlet refusal acceptance")
+    return {**proof, "fixture_source": {"engine_type": "postgresql", "locator": locator,
+            "discovery_execution_id": after["latest_discovery_execution_id"],
+            "owner_revisions": {owner: values[0] for owner, values in revisions(after).items()}},
+            "discovery_completed_without_findings": True, "all_outlets_enrolling_verified": True}
 
 
 def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
@@ -1995,13 +2040,31 @@ def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
             transport = "execution_history"
         matrix[reason][owner] = {"level": "runtime", "transport": transport, "evidence": evidence}
     refusals = bank["refusal_causes"]
+    unready = refusals["not_ready"]
+    source = _object(unready.get("fixture_source"), "unready matrix source")
+    try:
+        discovery_id = source.get("discovery_execution_id")
+        if str(uuid.UUID(str(discovery_id))) != discovery_id or uuid.UUID(discovery_id).int == 0:
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("unready matrix needs an actual discovery UUID") from error
+    revisions = _object(source.get("owner_revisions"), "unready matrix revisions")
+    locator = urllib.parse.urlsplit(str(source.get("locator", "")))
+    if (source.get("engine_type") != "postgresql" or locator.scheme != "addp" or locator.netloc != "engine"
+            or not re.fullmatch(r"/[1-9][0-9]*/path/" + TARGET_SCHEMA + "/" + SPATIAL_SOURCE, locator.path)
+            or urllib.parse.parse_qs(locator.query).get("type") != ["table"]
+            or set(revisions) != set(PROTECTION_OWNERS) or any(not isinstance(v, str) or not re.fullmatch(r"[0-9]{20}", v) for v in revisions.values())
+            or unready.get("discovery_completed_without_findings") is not True or unready.get("all_outlets_enrolling_verified") is not True):
+        raise SuiteError("unready matrix needs its stable actual PostgreSQL source")
     for name in ("not_ready", "schema_mismatch", "operation_unsupported"):
         proof = refusals[name]
         reason = "protection_" + name
-        runtime(reason, "develop", {k:v for k,v in proof.items() if k != "outlets" and k != "enrolling_acknowledged"})
+        runtime(reason, "develop", {k:v for k,v in proof.items() if k not in {"outlets", "enrolling_acknowledged", "fixture_source", "discovery_completed_without_findings", "all_outlets_enrolling_verified"}})
         expected = {"service", "transfer"} if name == "operation_unsupported" else {"manager", "service", "transfer"}
         if set(proof["outlets"]) != expected: raise SuiteError("matrix outlet refusal is incomplete")
         for owner, evidence in proof["outlets"].items(): runtime(reason, owner, evidence)
+        if name == "not_ready":
+            for cell in matrix[reason].values(): cell["fixture_source"] = source
     computed = bank["computed_outputs"]
     runtime("protection_computed_output_unsupported", "develop", computed["cases"]["substring"])
     runtime("protection_computed_output_unsupported", "service", computed["service_refusal"])
@@ -2027,9 +2090,7 @@ def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
 
 
 def exercise_enrolling_refusal(client: GatewayClient, enrollment_id: str, engine_id: int,
-                               locator: str, deadline: float) -> dict[str, object]:
-    # Do not review Findings until this probe is complete: an enrolling resource
-    # is a durable deny state, not a race against the discovery Worker.
+                               locator: str, deadline: float, query: str) -> dict[str, object]:
     while time.monotonic() < deadline:
         enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                             (200,)).payload, "unready enrollment")
@@ -2043,8 +2104,7 @@ def exercise_enrolling_refusal(client: GatewayClient, enrollment_id: str, engine
         if (set(by_owner) == set(PROTECTION_OWNERS) and len(progress) == len(PROTECTION_OWNERS)
                 and all(v.get("projection_state") == "enrolling" and v.get("acknowledged") is True
                         and v.get("rules") == [] for v in progress)):
-            result = develop_refusal_with_history(client, engine_id, locator,
-                "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE,
+            result = develop_refusal_with_history(client, engine_id, locator, query,
                 "protection_not_ready", deadline)
             return {**result, "enrolling_acknowledged": True}
         time.sleep(1)
@@ -2195,7 +2255,7 @@ def assert_bank_card_discovery(client: GatewayClient, enrollment_id: str,
 
 def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
                                 target_engine_id: int, database: str, run_id: str,
-                                identity: Mapping[str, object], deadline: float) -> dict[str, object]:
+                                identity: Mapping[str, object], deadline: float, enrolling_refusal: dict[str, object]) -> dict[str, object]:
     source = find_item(client, source_engine_id, database + "." + BANK_SOURCE, "table")
     target = find_item(client, target_engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
     locator = build_item_locator(source_engine_id, source)
@@ -2207,12 +2267,10 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     enrollment_id, initialized = ensure_enrollment(client, source_engine_id, database + "." + BANK_SOURCE, locator)
     if not initialized:
         raise SuiteError("bank protection acceptance requires a fresh isolated enrollment")
-    enrolling_refusal = exercise_enrolling_refusal(client, enrollment_id, source_engine_id, locator, deadline)
     parent = build_schema_locator(target_engine_id, target)
     target_locator = build_item_locator(target_engine_id, target)
     def probe(reason, query):
-        return bank_outlet_refusals(client, source_engine_id, target_engine_id, source, locator, parent, target_locator, reason, query, deadline, positive_int(identity["principal_id"], "ordinary principal"))
-    enrolling_refusal["outlets"] = probe("protection_not_ready", None)
+        return bank_outlet_refusals(client, source_engine_id, target_engine_id, source, BANK_FIELDS, locator, parent, target_locator, reason, query, deadline, positive_int(identity["principal_id"], "ordinary principal"))
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, BANK_FIELD, BANK_DETECTOR)
     discovery = assert_bank_card_discovery(client, enrollment_id, assessment_id, finding_id)
@@ -2502,9 +2560,10 @@ def run_scenario(
     )
     source_scan = wait_for_scan(client, source_engine_id, deadline)
     target_scan = wait_for_scan(client, target_engine_id, deadline)
+    enrolling_refusal = exercise_unready_source(client, target_engine_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
     spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
     bank_card_metadata = exercise_bank_card_metadata(
-        client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline)
+        client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(

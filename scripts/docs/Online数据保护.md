@@ -22,7 +22,7 @@
 
 保护原因细分沿用 execution-failure/v3 的闭合 reason：v23 必须精确核对 MySQL 六种计算及其历史为 `protection_computed_output_unsupported`，MongoDB 无法证明的派生输出为 `protection_lineage_unverified`，自然到期的 Develop／Transfer 为 `protection_expired`。浏览器同时核对具体原因与对应处理建议，不接受通用保护原因代替这些已证明原因；非法值导致的结果阶段拒绝尚无进一步类型化事实时仍为 `data_protection_required`。不得解析错误正文猜测子原因、放宽为任意保护错误或将原值授权扩大为计算许可。
 
-后续 v24／浏览器 v9 在同一隔离套件补三类真实拒绝：银行卡 Finding 尚未确认时，先在既有截止时间内等待 activating 安装屏障进入 enrolling，再等待五个 Owner 的 enrolling 投影回执齐备，验证 `protection_not_ready`；规则激活后，直接字段带字符串字面量过滤超出当前保守 SQL 输出重写子集时，验证 `protection_operation_unsupported`；仅在当轮带 Security 归属标签的 MySQL 容器内给固定银行卡表增加临时可空探针列，不重扫 Meta 或更新保护规则，验证 `protection_schema_mismatch`，finally 精确删除探针列，并验证原规则修订未变及正常脱敏输出恢复。三条拒绝必须各有实际 UUID、同一历史且无结果，普通用户真实 Owner／Monitor 页面按各自具体原因和建议展示，六张新增截图为必需证据；不接受其他保护原因代替，不改变源授权或产品规则。
+后续 v24／浏览器 v9 在同一隔离套件补三类真实拒绝：在既有 PostgreSQL 合成表人工指定敏感字段之前，先等待自动发现真实完成且 Finding 数为零，再等待五个 Owner 的 enrolling 空规则投影回执齐备，验证四出口 `protection_not_ready`；全部请求后再次核对同一发现、投影修订和 enrolling 状态不变，随后才沿原流程人工指定敏感字段并验正常脱敏；规则激活后，直接字段带字符串字面量过滤超出当前保守 SQL 输出重写子集时，验证 `protection_operation_unsupported`；仅在当轮带 Security 归属标签的 MySQL 容器内给固定银行卡表增加临时可空探针列，不重扫 Meta 或更新保护规则，验证 `protection_schema_mismatch`，finally 精确删除探针列，并验证原规则修订未变及正常脱敏输出恢复。三条拒绝必须各有实际 UUID、同一历史且无结果，普通用户真实 Owner／Monitor 页面按各自具体原因和建议展示，六张新增截图为必需证据；不接受其他保护原因代替，不改变源授权或产品规则。
 
 `protection_not_yet_valid` 是现有协议防御状态，产品没有保护开始时间的设置入口，不为验收新增该配置或更改宿主机／进程时钟。通过既有 `make test-common-postgres` 自动发现的真实 PostgreSQL 用例，用协议显式时间参数安装未来投影、重新 Open 后在当前时间拒绝准备，并验证执行诊断持久化／安全观察和无结果，再由正常的新修订恢复掩码输出；仅记 T2，不冒称完整 HTTP／浏览器 T4。上述扩展实际运行前均不得计为通过，原 v23 的通过范围保持。
 
@@ -35,7 +35,7 @@
 | --- | --- | --- | --- | --- |
 | 计算输出不支持 | 协议层 | 实际 MySQL 查询 | 实际 MySQL SQL 服务 | 实际 PostgreSQL 查询源传输 |
 | 血缘无法证明 | 协议层 | 实际 MongoDB 查询 | 协议层 | 实际 MongoDB 查询源传输 |
-| 保护未就绪 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
+| 保护未就绪 | 实际 PostgreSQL 预览 | 实际 PostgreSQL 查询 | 实际 PostgreSQL 服务 | 实际 PostgreSQL 原生表传输 |
 | 保护到期 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
 | 尚未生效 | 协议层 | 协议层 | 协议层 | 协议层 |
 | 结构不匹配 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
@@ -44,3 +44,5 @@
 Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `spatial_algorithm_source.value_a` 合成字段，报告记录实际源 Locator 和引擎；它们不证明 MySQL 查询源已获支持。MySQL 当前未声明 `compute.query.read_session`，以它创建查询源任务会在配置校验返回400，尚未进入保护准备阶段，不能把这个400记为保护拒绝。MySQL 原生表的未就绪、结构不匹配、自然到期和正常脱敏搬运仍使用原有探针；不为验收扩大 Provider 能力、权限或源授权。
 
 这是当前普通表／MongoDB 集合验收 profile 的覆盖边界，协议层单元格仍明确保留实际出口 T4 缺口，不表示产品入口永远不可能触发。`make test-common-postgres` 的 `TestProjectionStoreReasonMatrixAgainstPostgres` 对四个 Owner 的七种共享协议原因持久化、重开、拒绝和正常修订恢复作 T2 验证；PreparedQuery 证明与编译器拒绝由受控协议夹具提供，不能冒称原生引擎或 HTTP T4。尚未生效仍通过协议显式时间参数验证，不更改系统时钟或添加产品设置。新增临时 Service／Transfer 定义必须按实际 ID 删除并确认消失，结构探针沿既有归属 fixture 的 finally 恢复；无需额外数据库、部署入口或 CI 路线。实现、确定性门禁与实际 T4 结果分别记录，v24 旧证据不能替代新增 runtime 单元格。
+
+未就绪探针不能依赖“尚未人工复核”的自动发现窗口：命中检测器置信度的 Finding 会直接采用默认保护并进入 active。套件因此复用已有、字段名不会命中检测器的 PostgreSQL 合成表，在发现完成且零 Finding、尚无人工 Assessment 的真实 enrolling 阶段验证四出口；不暂停 Worker、不加锁、不改检测器阈值或产品状态。报告记录该组实际源与发现完成事实，后续人工指定、三算法、SQL拒绝和银行卡流程沿原路径继续。

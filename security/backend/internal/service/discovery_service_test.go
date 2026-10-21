@@ -162,6 +162,7 @@ func TestStructuredMetadataFindingCompilesGenericSuppressionForEveryStructuredOu
 	for _, detectorCase := range []struct{ code, capability, field string }{
 		{"email", models.FindingDetectorEmailMetadataV1, "email"},
 		{"bank_card_number", models.FindingDetectorBankCardNumberMetadataV1, "bank_card_number"},
+		{"unmatched_phone_field", models.FindingDetectorPhoneMetadataV2, "value_a"},
 	} {
 		t.Run(detectorCase.code, func(t *testing.T) {
 			db := openSecurityTestDB(t)
@@ -224,6 +225,27 @@ func TestStructuredMetadataFindingCompilesGenericSuppressionForEveryStructuredOu
 			if err != nil {
 				t.Fatal(err)
 			}
+			if detectorCase.field == "value_a" {
+				if listed.Total != 0 {
+					t.Fatalf("unmatched scalar field produced Findings: %#v", listed)
+				}
+				for _, owner := range allRequiredProtectionOwners() {
+					changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+					if err != nil || len(changes.Changes) != 2 || changes.Changes[1].Projection == nil ||
+						changes.Changes[1].Projection.State != dataprotection.ProjectionStateEnrolling || len(changes.Changes[1].Projection.Rules) != 0 {
+						t.Fatalf("%s empty discovery projections = %#v, err=%v", owner, changes, err)
+					}
+					if err := enrollments.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
+						t.Fatal(err)
+					}
+				}
+				current, err := enrollments.Get(context.Background(), 7, created.ID)
+				if err != nil || current.State != models.EnrollmentStateEnrolling || current.LatestDiscoveryExecutionID != execution.ExecutionID ||
+					current.LatestSourceSnapshotHash != hash || current.DiscoverySummary.Status != models.DiscoverySummaryStatusCompleted || current.DiscoverySummary.FindingCount != 0 {
+					t.Fatalf("empty discovery should remain enrolling after every acknowledgement: %#v, err=%v", current, err)
+				}
+				return
+			}
 			if listed.Total != 1 || listed.Data[0].ComponentKey != detectorCase.field || listed.Data[0].DetectorVersion != detectorCase.capability {
 				t.Fatalf("email findings = %#v", listed)
 			}
@@ -238,6 +260,19 @@ func TestStructuredMetadataFindingCompilesGenericSuppressionForEveryStructuredOu
 					t.Fatalf("%s changes = %#v, err=%v", owner, changes, err)
 				}
 				assertion(t, changes.Changes[1].Projection, dataprotection.EffectSuppress)
+			}
+			for _, owner := range allRequiredProtectionOwners() {
+				changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := enrollments.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
+					t.Fatal(err)
+				}
+			}
+			current, err := enrollments.Get(context.Background(), 7, created.ID)
+			if err != nil || current.State != models.EnrollmentStateActive || current.DiscoverySummary.PendingReviewCount != 1 || current.DiscoverySummary.ReviewedCount != 0 {
+				t.Fatalf("automatic default protection should activate before manual review: %#v, err=%v", current, err)
 			}
 		})
 	}

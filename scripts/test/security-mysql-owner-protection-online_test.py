@@ -2205,7 +2205,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "cleanup_tasks", side_effect=ONLINE.SuiteError("cleanup blocked") if cleanup_failure else None) as cleanup):
             try:
                 return ONLINE.exercise_bank_card_metadata(client, 23, 17, "security_fixture", "run-42",
-                                                          {"principal_id": "7"}, time.monotonic() + 30)
+                                                          {"principal_id": "7"}, time.monotonic() + 30, {"diagnostic_reason": "protection_not_ready"})
             finally:
                 self.assertEqual(develop.call_count, 7)
                 self.assertEqual([call.args[4] for call in develop.call_args_list][1:], [
@@ -2412,11 +2412,11 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
             with self.subTest(fault=fault), patch.object(ONLINE, 'develop_refusal_with_history', return_value={}) as refusal, \
                     patch.object(ONLINE.time, 'monotonic', side_effect=[0, 100]), patch.object(ONLINE.time, 'sleep'):
                 if fault == 'none':
-                    self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)['enrolling_acknowledged'])
+                    self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10, 'SELECT id,value_a FROM addp_online_security.spatial_algorithm_source')['enrolling_acknowledged'])
                     self.assertEqual(refusal.call_args.args[-2], 'protection_not_ready')
                 else:
                     with self.assertRaises(ONLINE.SuiteError):
-                        ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)
+                        ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10, 'SELECT id,value_a FROM addp_online_security.spatial_algorithm_source')
                     refusal.assert_not_called()
 
     def test_unready_waits_for_initial_installation_and_receipts_within_existing_deadline(self):
@@ -2430,7 +2430,7 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
                                      ({'state': 'activating', 'owner_progress': []}, pending, ready)]
         with patch.object(ONLINE, 'develop_refusal_with_history', return_value={}) as refusal, \
                 patch.object(ONLINE.time, 'monotonic', return_value=0), patch.object(ONLINE.time, 'sleep') as sleep:
-            self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)['enrolling_acknowledged'])
+            self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10, 'SELECT id,value_a FROM addp_online_security.spatial_algorithm_source')['enrolling_acknowledged'])
             self.assertEqual(client.request.call_count, 3)
             self.assertEqual(sleep.call_count, 2)
             refusal.assert_called_once()
@@ -2439,7 +2439,7 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
         with patch.object(ONLINE, 'develop_refusal_with_history') as refusal, \
                 patch.object(ONLINE.time, 'monotonic', side_effect=[0, 11]), patch.object(ONLINE.time, 'sleep'):
             with self.assertRaisesRegex(ONLINE.SuiteError, 'before refusal acceptance'):
-                ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)
+                ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10, 'SELECT id,value_a FROM addp_online_security.spatial_algorithm_source')
             refusal.assert_not_called()
 
     def test_schema_restoration_runs_on_add_or_query_failure_and_checks_recovery(self):
@@ -2479,6 +2479,60 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
             self.assertEqual(command.call_count, 1)
 
 
+class UnreadySourceFixtureTest(unittest.TestCase):
+    def enrollment(self):
+        return {'state': 'enrolling', 'latest_discovery_execution_id': str(uuid.uuid4()), 'latest_source_snapshot_hash': 'sha256:source',
+                'discovery_summary': {'status': 'completed', 'finding_count': 0, 'reviewed_count': 0, 'pending_review_count': 0},
+                'owner_progress': [{'consumer_owner': owner, 'revision': '00000000000000000002', 'published_cursor': owner,
+                                   'projection_state': 'enrolling', 'acknowledged': True, 'rules': []} for owner in ONLINE.PROTECTION_OWNERS]}
+
+    def test_completed_empty_discovery_keeps_all_outlets_before_manual_assessment(self):
+        for fault in ('none', 'finding', 'active', 'after_active', 'after_revision', 'after_receipt', 'after_discovery', 'reused'):
+            before = self.enrollment(); after = copy.deepcopy(before)
+            if fault == 'finding': before['discovery_summary']['finding_count'] = 1
+            if fault == 'active': before['state'] = 'active'
+            if fault == 'after_active': after['state'] = 'active'
+            if fault == 'after_revision': after['owner_progress'][0]['revision'] = '00000000000000000003'
+            if fault == 'after_receipt': after['owner_progress'][0]['acknowledged'] = False
+            if fault == 'after_discovery': after['latest_discovery_execution_id'] = str(uuid.uuid4())
+            client = Mock(); client.request.side_effect = [ONLINE.SUPPORT.Response(200, item) for item in (before, after)]
+            source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
+            target = {'id': 4, 'node_id': 5, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.BANK_TARGET, 'item_type': 'table'}
+            with self.subTest(fault=fault), patch.object(ONLINE, 'find_item', side_effect=[source,target]), \
+                    patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment', fault != 'reused')), \
+                    patch.object(ONLINE, 'exercise_enrolling_refusal', return_value={'enrolling_acknowledged': True}) as develop, \
+                    patch.object(ONLINE, 'bank_outlet_refusals', return_value={}) as outlets:
+                if fault == 'none':
+                    proof = ONLINE.exercise_unready_source(client,17,7,time.monotonic()+10)
+                    self.assertTrue(proof['all_outlets_enrolling_verified'])
+                    self.assertEqual(proof['fixture_source']['locator'], ONLINE.build_item_locator(17,source))
+                    self.assertEqual(develop.call_args.args[-1], 'SELECT id,value_a FROM addp_online_security.spatial_algorithm_source')
+                    self.assertEqual(outlets.call_args.args[1:5], (17,17,source,ONLINE.SPATIAL_FIELDS))
+                else:
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.exercise_unready_source(client,17,7,time.monotonic()+10)
+                    if fault in ('finding','active','reused'):
+                        develop.assert_not_called(); outlets.assert_not_called()
+
+    def test_empty_discovery_must_actually_complete_within_original_deadline(self):
+        ready = self.enrollment()
+        pending = copy.deepcopy(ready); pending['discovery_summary']['status'] = 'not_completed'
+        source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
+        target = {'id': 4, 'node_id': 5, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.BANK_TARGET, 'item_type': 'table'}
+        client = Mock(); client.request.side_effect = [ONLINE.SUPPORT.Response(200,v) for v in (pending,ready,ready)]
+        with patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
+                patch.object(ONLINE, 'exercise_enrolling_refusal', return_value={}) as develop, patch.object(ONLINE,'bank_outlet_refusals',return_value={}), \
+                patch.object(ONLINE.time,'sleep') as sleep:
+            ONLINE.exercise_unready_source(client,17,7,time.monotonic()+10)
+            sleep.assert_called_once_with(1); develop.assert_called_once()
+        client.request.side_effect = None; client.request.return_value = ONLINE.SUPPORT.Response(200,pending)
+        with patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
+                patch.object(ONLINE, 'exercise_enrolling_refusal') as develop, patch.object(ONLINE.time,'sleep'), \
+                patch.object(ONLINE.time,'monotonic',side_effect=[0,11]):
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'did not complete'):
+                ONLINE.exercise_unready_source(client,17,7,10)
+            develop.assert_not_called()
+
+
 class FourOutletReasonMatrixTest(unittest.TestCase):
     def proof(self, reason, owner):
         if owner in ('manager', 'service'):
@@ -2496,6 +2550,9 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
             reason='protection_'+name
             owners=('service','transfer') if name=='operation_unsupported' else ('manager','service','transfer')
             refusals[name]={**self.proof(reason,'develop'),'outlets':{o:self.proof(reason,o) for o in owners}}
+        refusals['not_ready'].update(fixture_source={'engine_type': 'postgresql', 'locator': 'addp://engine/17/path/addp_online_security/spatial_algorithm_source?type=table&item_id=3',
+                                    'discovery_execution_id': str(uuid.uuid4()), 'owner_revisions': {o: '00000000000000000002' for o in ONLINE.PROTECTION_OWNERS}},
+                                    discovery_completed_without_findings=True, all_outlets_enrolling_verified=True)
         lineage=self.proof('protection_lineage_unverified','transfer')
         lineage['target_empty_before_and_after']=True
         return {'bank_card_metadata':{'refusal_causes':refusals, 'computed_outputs':{
@@ -2546,6 +2603,19 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                 else: proof['query_source']['locator'] = proof['query_source']['locator'].replace('addp:', 'https:')
                 with self.subTest(reason=reason, fault=fault), self.assertRaises(ONLINE.SuiteError):
                     ONLINE.protection_reason_matrix(report)
+
+    def test_unready_matrix_requires_stable_completed_discovery_and_actual_source(self):
+        for fault in ('incomplete_discovery', 'changed_state', 'mysql', 'wrong_table', 'missing_source', 'discovery_uuid', 'owner_revision'):
+            report = self.report()
+            proof = report['bank_card_metadata']['refusal_causes']['not_ready']
+            if fault == 'incomplete_discovery': proof['discovery_completed_without_findings'] = False
+            elif fault == 'changed_state': proof['all_outlets_enrolling_verified'] = False
+            elif fault == 'mysql': proof['fixture_source']['engine_type'] = 'mysql'
+            elif fault == 'wrong_table': proof['fixture_source']['locator'] = 'addp://engine/23/path/security_fixture/bank_card_accounts?type=table'
+            elif fault == 'discovery_uuid': proof['fixture_source']['discovery_execution_id'] = 'not-an-execution'
+            elif fault == 'owner_revision': del proof['fixture_source']['owner_revisions']['transfer']
+            else: del proof['fixture_source']
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError): ONLINE.protection_reason_matrix(report)
 
     def test_sql_transfer_probes_bind_existing_postgres_source_and_keep_strict_history(self):
         source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
@@ -2606,7 +2676,7 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                         patch.object(ONLINE,'transfer_refusal_with_history',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as transfer, \
                         patch.object(ONLINE,'postgres_query_transfer_refusal',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as sql_transfer:
                     if fault=='none':
-                        result=ONLINE.bank_outlet_refusals(client,23,17,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                        result=ONLINE.bank_outlet_refusals(client,23,17,source,ONLINE.BANK_FIELDS,'source','parent','target',reason,query,time.monotonic()+10,7)
                         self.assertEqual(set(result),{'service','transfer'} if query else {'manager','service','transfer'})
                         if query:
                             self.assertEqual(sql_transfer.call_args.args[:5],(client,17,'parent','target',reason))
@@ -2615,7 +2685,7 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                             self.assertNotIn('query',transfer.call_args.args[1]['config']['source'])
                             sql_transfer.assert_not_called()
                     else:
-                        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_outlet_refusals(client,23,17,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_outlet_refusals(client,23,17,source,ONLINE.BANK_FIELDS,'source','parent','target',reason,query,time.monotonic()+10,7)
                     cleanup.assert_called_once_with(client,41)
 
 
