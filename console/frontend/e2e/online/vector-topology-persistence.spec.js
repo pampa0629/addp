@@ -22,11 +22,18 @@ function polygonParts(coordinates) {
   }).sort()).map(value => JSON.stringify(value)).sort()
 }
 
-test('同一普通User核对构面、修复、严格吸附、面叠地图及塌缩失败', async ({ page }) => {
+function gapRings(rings) {
+  expect(rings.length).toBeGreaterThan(0)
+  for (const ring of rings) expect(ring.at(-1)).toEqual(ring[0])
+  return JSON.stringify([canonical(rings[0], true), rings.slice(1).map(ring => canonical(ring, true)).sort()])
+}
+
+test('同一普通User核对构面、修复、严格吸附、面叠面缝地图及塌缩失败', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
   for (const key of ['run_id', 'principal_id', 'tenant_id', 'execution_id']) expect(evidence[key]).toBeTruthy()
-  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps'])
+  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps'])
   expect(evidence.overlap_expected).toHaveLength(7)
+  expect(evidence.gap_expected).toHaveLength(8)
   const expectedIdentity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id,
     permissions: evidence.permissions_verified }
   const executionRead = page.waitForResponse(response => response.request().method() === 'GET' &&
@@ -40,8 +47,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠地图及塌�
   await expect(frame.getByText('成功', { exact: true })).toBeVisible()
   for (const output of evidence.outputs) await expect(frame.locator('.workflow-result')).toContainText(output.name)
   await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-execution.png') })
-  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v3', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
-  expect(evidence.sources).toHaveLength(5)
+  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v4', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  expect(evidence.sources).toHaveLength(7)
   for (const output of evidence.outputs) {
     const locator = `${output.locator}&item_id=${output.item_id}`
     const previewRead = page.waitForResponse(response => response.request().method() === 'GET' &&
@@ -61,10 +68,16 @@ test('同一普通User核对构面、修复、严格吸附、面叠地图及塌�
       }
       const graph = await json(await previewAPI.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`), 'current output lineage')
       expect(graph.truncated).not.toBe(true)
-      for (const index of output.port === 'overlaps' ? [4] : output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
+      for (const index of output.port === 'gaps' ? [5,6] : output.port === 'overlaps' ? [4] : output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
         const sourceID = evidence.sources[index].id
         expect(graph.edges.some(edge => edge.source?.item_id === sourceID && edge.target?.item_id === output.item_id &&
           edge.evidence?.execution_id === evidence.execution_id && edge.status === 'active' && edge.relation_kind === 'derive')).toBe(true)
+      }
+      if (output.port === 'gaps') {
+        const currentSources = graph.edges.filter(edge => edge.target?.item_id === output.item_id &&
+          edge.evidence?.execution_id === evidence.execution_id && edge.status === 'active' && edge.relation_kind === 'derive')
+          .map(edge => edge.source?.item_id).sort((a,b) => a-b)
+        expect(currentSources).toEqual([evidence.sources[5].id, evidence.sources[6].id].sort((a,b) => a-b))
       }
       sourceLineage.observations.push({ output_item_id: output.item_id, sources, graph, preview })
       writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-source-lineage-raw.json'), JSON.stringify(sourceLineage, null, 2))
@@ -75,9 +88,19 @@ test('同一普通User核对构面、修复、严格吸附、面叠地图及塌�
     expect(preview.preview_type).toBe('table')
     if (output.layer_name) {
       expect([data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint])
-        .toEqual([output.port === 'overlaps' ? 7 : 5, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
+        .toEqual([output.port === 'gaps' ? 8 : output.port === 'overlaps' ? 7 : 5, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
       expect(data.geometry_columns).toEqual([output.geometry_column])
-      if (output.port === 'overlaps') {
+      if (output.port === 'gaps') {
+        expect(output.fid_column).toBeTruthy()
+        expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, 'gap_area'].sort())
+        expect(data.rows.map(row => row[output.fid_column])).toEqual([1,2,3,4,5,6,7,8])
+        const actual = data.rows.map(row => {
+          const geometry = decodePreviewEWKB(row[data.geometry_column])
+          expect(geometry.type).toBe('Polygon')
+          return { gap_area: row.gap_area, rings: gapRings(geometry.coordinates) }
+        })
+        expect(actual).toEqual(evidence.gap_expected.map(row => ({ ...row.properties, rings: gapRings(row.geometry.coordinates) })))
+      } else if (output.port === 'overlaps') {
         expect(output.fid_column).toBeTruthy()
         expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, 'source_id_a', 'source_id_b', 'overlap_area'].sort())
         expect(data.rows.map(row => row[output.fid_column])).toEqual([1,2,3,4,5,6,7])
@@ -129,7 +152,18 @@ test('同一普通User核对构面、修复、严格吸附、面叠地图及塌�
       if (!map || map.getView().getAnimating()) return []
       return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
         .map(feature => feature.getGeometry().getType()).sort()
-    })).toEqual(Array(output.port === 'overlaps' ? 7 : output.port === 'snapped' ? 5 : output.port === 'repaired' ? 2 : 4).fill(output.port === 'faces' ? 'Polygon' : ['repaired','overlaps'].includes(output.port) ? 'MultiPolygon' : 'LineString'))
+    })).toEqual(Array(output.port === 'gaps' ? 8 : output.port === 'overlaps' ? 7 : output.port === 'snapped' ? 5 : output.port === 'repaired' ? 2 : 4).fill(['faces','gaps'].includes(output.port) ? 'Polygon' : ['repaired','overlaps'].includes(output.port) ? 'MultiPolygon' : 'LineString'))
+    if (output.port === 'gaps') {
+      await expect(table.locator('thead')).toContainText('gap_area')
+      const expected = evidence.gap_expected.map(row => gapRings(row.geometry.coordinates.map(ring => ring.map(webMercatorPreviewCoordinate)))).sort()
+      await expect.poll(async () => renderer.evaluate(element => {
+        const value = element.__vueParentComponent?.setupState?.mapInstance
+        const map = value?.value || value
+        if (!map || map.getView().getAnimating() || map.getView().getProjection().getCode() !== 'EPSG:3857') return []
+        return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+          .map(feature => feature.getGeometry().getCoordinates())
+      }).then(geometries => geometries.map(gapRings).sort())).toEqual(expected)
+    }
     if (output.port === 'overlaps') {
       await expect(table.locator('thead')).toContainText('source_id_a')
       await expect(table.locator('thead')).toContainText('source_id_b')
@@ -191,6 +225,6 @@ test('同一普通User核对构面、修复、严格吸附、面叠地图及塌�
   await expect(frame.getByText('失败', { exact:true })).toBeVisible()
   await page.screenshot({ path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-snap-failed.png') })
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-browser.json'), JSON.stringify({
-    ...evidence, schema_version: 'addp.topology-browser/v4', result: 'passed'
+    ...evidence, schema_version: 'addp.topology-browser/v5', result: 'passed'
   }, null, 2))
 })

@@ -192,7 +192,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_five_saves_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_six_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -225,11 +225,17 @@ def test_hosted_topology_physical_oracle_accepts_real_five_saves_and_rejects_cor
         {'id': 'overlap', 'operator': 'check_polygon_overlap', 'params': {'input_gdf': {'$ref': 'overlap_input'}, 'id_field': 'parcel_id'}, 'depends_on': ['overlap_input']},
         {'id': 'save_overlaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'overlap'}, 'connection_info': connection, 'path': 'outputs/overlaps.gpkg', 'mode': 'fail'}, 'depends_on': ['overlap']},
     ])
+    tasks.extend([
+        {'id': 'gap_input', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'gap-input.gpkg'}, 'depends_on': []},
+        {'id': 'gap_coverage', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'gap-coverage.gpkg'}, 'depends_on': []},
+        {'id': 'gap', 'operator': 'check_polygon_gap', 'params': {'input_gdf': {'$ref': 'gap_input'}, 'coverage_gdf': {'$ref': 'gap_coverage'}}, 'depends_on': ['gap_input','gap_coverage']},
+        {'id': 'save_gaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'gap'}, 'connection_info': connection, 'path': 'outputs/gaps.gpkg', 'mode': 'fail'}, 'depends_on': ['gap']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -285,8 +291,38 @@ def test_hosted_topology_physical_oracle_accepts_real_five_saves_and_rejects_cor
         dataset = None
         with pytest.raises(fixture.FixtureError): fixture.worker('verify', tmp_path)
         path.write_bytes(original)
+    path = tmp_path / 'outputs/gaps.gpkg'; original = path.read_bytes()
+    for problem in ('area','tiny_area','coordinate','hole','filled','crs','count','order','duplicate'):
+        dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0)
+        if problem=='crs':dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='count':layer.DeleteFeature(8)
+        elif problem in ('order','duplicate'):
+            first,second=layer.GetFeature(1),layer.GetFeature(2)
+            shape=first.GetGeometryRef().Clone();first.SetGeometry(second.GetGeometryRef())
+            if problem=='order':layer.SetFeature(first)
+            second.SetGeometry(shape);layer.SetFeature(second)
+        else:
+            feature=layer.GetFeature(8 if problem=='tiny_area' else 3 if problem=='hole' else 1)
+            if problem in ('area','tiny_area'):feature.SetField('gap_area',0 if problem=='area' else 1e-12)
+            else:
+                geometry=json.loads(feature.GetGeometryRef().ExportToJson())
+                if problem=='hole':geometry['coordinates'].pop()
+                elif problem=='filled':geometry={'type':'Polygon','coordinates':[fixture.rectangle(100,0,106,4)]}
+                else:geometry['coordinates'][0][0][0]-=.25
+                changed=ogr.CreateGeometryFromJson(json.dumps(geometry));feature.SetGeometry(changed)
+                feature.SetField('gap_area',changed.GetArea())
+            layer.SetFeature(feature)
+        dataset=None
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+        path.write_bytes(original)
+    for name in ('gap-input.gpkg','gap-coverage.gpkg'):
+        path=tmp_path/name;original=path.read_bytes()
+        dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0);feature=layer.GetFeature(1)
+        feature.SetField('source_name','foreign-source');layer.SetFeature(feature);dataset=None
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+        path.write_bytes(original)
     baseline = fixture.worker('verify', tmp_path)
-    failed_tasks = tasks[-7:-3]
+    failed_tasks = [task.copy() for task in tasks if task['id'] in ('snap_input','snap_reference','snap','save_snapped')]
     failed_tasks[2]['params']['tolerance'] = 1.25
     failed_tasks[3]['params']['path'] = 'outputs/failed-snap.gpkg'
     failed = execute_workflow({'tasks': failed_tasks})

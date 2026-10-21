@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned Hosted topology, repair, snapping and overlap physical oracles."""
+"""Owned Hosted topology, repair, snapping, overlap and gap physical oracles."""
 import hashlib
 import json
 import math
@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,92 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def gap_source_features(coverage=False):
+    if coverage:
+        shapes = [[rectangle(100,0,106,4)], [rectangle(100,0,104,4)],
+                  [rectangle(120,0,126,6), rectangle(121,1,122,2)], [rectangle(140,0,144,4)]]
+        geometries = [{'type':'Polygon','coordinates':rings} for rings in shapes]
+        geometries += [{'type':'MultiPolygon','coordinates':[[rectangle(*bounds)] for bounds in
+                        ((160,0,161,1),(161,1,162,2),(163,0,164,1))]}]
+        geometries += [{'type':'Polygon','coordinates':[rectangle(*bounds)]} for bounds in
+                       ((180,0,181,2**-40),(190,0,191,1))]
+    else:
+        shapes = [[rectangle(*bounds)] for bounds in
+                  ((100,0,102,4),(103,0,105,4),(100,0,102,4),(99,-1,100,5),(123,3,124,4))]
+        shapes += [[rectangle(140,0,144,4),rectangle(141,1,143,3)],[rectangle(190,0,191,1)]]
+        geometries = [{'type':'Polygon','coordinates':rings} for rings in shapes]
+    return [{'geometry':geometry,'properties':{'source_name':f'{"coverage" if coverage else "input"}-{index}'}}
+            for index,geometry in enumerate(geometries)]
+
+
+def gap_expected_features():
+    # Independent hand-specified uncovered regions, not production difference.
+    shapes = [([rectangle(102,0,103,4)],4), ([rectangle(105,0,106,4)],4),
+              ([rectangle(120,0,126,6),rectangle(121,1,122,2),rectangle(123,3,124,4)],34),
+              ([rectangle(141,1,143,3)],4), ([rectangle(160,0,161,1)],1),
+              ([rectangle(161,1,162,2)],1), ([rectangle(163,0,164,1)],1),
+              ([rectangle(180,0,181,2**-40)],2**-40)]
+    return [{'properties':{'gap_area':area},'geometry':{'type':'Polygon','coordinates':rings}}
+            for rings,area in shapes]
+
+
+def validate_gap_features(features, source=None):
+    expected = gap_expected_features() if source is None else gap_source_features(coverage=source)
+    if len(features)!=len(expected): raise FixtureError('gap source/result count differs')
+    for actual,wanted in zip(features,expected):
+        geometry,reference=actual['geometry'],wanted['geometry']
+        if source is None and (type(actual['properties'].get('gap_area')) not in (int,float)
+            or not math.isfinite(actual['properties']['gap_area']) or actual['properties']['gap_area']<=0):
+            raise FixtureError('gap area must be a finite positive number')
+        if actual['properties']!=wanted['properties'] or geometry.get('type')!=reference['type']:
+            raise FixtureError('gap attributes, exact area, source order or geometry type differ')
+        parts=geometry['coordinates'] if geometry['type']=='MultiPolygon' else [geometry['coordinates']]
+        wanted_parts=reference['coordinates'] if reference['type']=='MultiPolygon' else [reference['coordinates']]
+        def rings(part):
+            if not part: raise FixtureError('gap polygon requires an exterior ring')
+            return canonical(part[0],True),tuple(sorted(canonical(ring,True) for ring in part[1:]))
+        if (len(parts)!=len(wanted_parts) or sorted(rings(part) for part in parts)
+                != sorted(rings(part) for part in wanted_parts)):
+            raise FixtureError('gap components, holes or exact coordinates differ')
+
+
+def seed_gap(path, coverage=False):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    dataset=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=dataset.CreateLayer(path.stem,crs,ogr.wkbUnknown)
+    layer.CreateField(ogr.FieldDefn('source_name',ogr.OFTString))
+    for row in gap_source_features(coverage):
+        feature=ogr.Feature(layer.GetLayerDefn());feature.SetField('source_name',row['properties']['source_name'])
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed gap source')
+    dataset=None
+
+
+def verify_gap(path, source=None):
+    from osgeo import ogr,osr
+    dataset=ogr.Open(str(path),0)
+    if dataset is None or dataset.GetLayerCount()!=1:raise FixtureError('expected one gap GeoPackage layer')
+    layer=dataset.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('gap CRS differs')
+    fields=['gap_area'] if source is None else ['source_name'];schema=layer.GetLayerDefn()
+    if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields:
+        raise FixtureError('gap field schema differs')
+    if source is None and schema.GetFieldDefn(0).GetType()!=ogr.OFTReal:raise FixtureError('gap area must be Float64')
+    features=[]
+    for feature in layer:
+        geometry=feature.GetGeometryRef()
+        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():raise FixtureError('gap geometry invalid or non-XY')
+        properties={name:feature.GetField(name) for name in fields}
+        if source is None and geometry.GetArea()!=properties['gap_area']:raise FixtureError('gap physical area differs')
+        features.append({'properties':properties,'geometry':ogr_polygon_geometry(geometry)})
+    validate_gap_features(features,source)
+    result={**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
+            'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
+    dataset=None
+    return result
 
 
 def overlap_source_features():
@@ -245,6 +331,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'gaps.gpkg':
+        return validate_gap_features(features)
     if name == 'overlaps.gpkg':
         return validate_overlap_features(features)
     if name == 'snapped.gpkg':
@@ -275,6 +363,8 @@ def worker(action, root):
         seed_snap(root / 'snap-input.gpkg', SNAP_INPUT)
         seed_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
         seed_overlap(root / 'overlap-input.gpkg')
+        seed_gap(root / 'gap-input.gpkg')
+        seed_gap(root / 'gap-coverage.gpkg', coverage=True)
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -289,8 +379,13 @@ def worker(action, root):
     verify_snap(root / 'snap-input.gpkg', SNAP_INPUT)
     verify_snap(root / 'snap-reference.gpkg', SNAP_REFERENCE)
     verify_overlap(root / 'overlap-input.gpkg', source=True)
+    verify_gap(root / 'gap-input.gpkg', source=False)
+    verify_gap(root / 'gap-coverage.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'gaps.gpkg':
+            results[name] = verify_gap(path)
+            continue
         if name == 'overlaps.gpkg':
             results[name] = verify_overlap(path)
             continue

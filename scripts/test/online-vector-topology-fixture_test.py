@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'gaps.gpkg':
+        return m.gap_expected_features()
     if name == 'overlaps.gpkg':
         return m.overlap_expected_features()
     if name == 'snapped.gpkg':
@@ -135,3 +137,28 @@ class TopologyFixtureTest(unittest.TestCase):
         ):
             rows=copy.deepcopy(original);mutate(rows)
             with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_overlap_features(rows)
+
+    def test_gap_oracle_requires_exact_regions_holes_order_and_binary_area(self):
+        original=m.gap_expected_features();m.validate_gap_features(original)
+        self.assertEqual(len(original),8)
+        self.assertEqual([row['properties']['gap_area'] for row in original],[4,4,34,4,1,1,1,2**-40])
+        for coverage in (False,True):m.validate_gap_features(m.gap_source_features(coverage),source=coverage)
+        for mutate in (
+            lambda rows:rows.pop(),lambda rows:rows.reverse(),
+            lambda rows:rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows:rows[0]['properties'].update(gap_area=True),
+            lambda rows:rows[-1]['properties'].update(gap_area=0),
+            lambda rows:rows[-1]['properties'].update(gap_area=1e-12),
+            lambda rows:rows[2]['geometry']['coordinates'].pop(),
+            lambda rows:rows[2]['geometry']['coordinates'].reverse(),
+            lambda rows:rows[0]['geometry']['coordinates'][0][0].__setitem__(0,101),
+            lambda rows:rows.append({'properties':{'gap_area':1},'geometry':{'type':'Polygon','coordinates':[m.rectangle(190,0,191,1)]}}),
+        ):
+            rows=copy.deepcopy(original);mutate(rows)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_gap_features(rows)
+        # Hole order and ring start/direction do not change the region.
+        rows=copy.deepcopy(original);rows[2]['geometry']['coordinates'][1:]=list(reversed(rows[2]['geometry']['coordinates'][1:]))
+        for row in rows:
+            for ring in row['geometry']['coordinates']:
+                vertices=ring[:-1];vertices=list(reversed(vertices[1:]+vertices[:1]));ring[:]=vertices+[vertices[0]]
+        m.validate_gap_features(rows)

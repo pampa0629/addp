@@ -599,7 +599,7 @@ test-vector-pmtiles-online-runner: ## 验证 PMTiles T4 场景、物理夹具与
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-vector-topology-online-runner
-test-vector-topology-online-runner: ## 验证构面、几何修复、严格吸附、面叠及普通User的Hosted隔离生命周期
+test-vector-topology-online-runner: ## 验证构面、几何修复、严格吸附、面叠面缝及普通User的Hosted隔离生命周期
 	@node --check console/frontend/e2e/online/vector-topology-persistence.spec.js
 	@bash -n scripts/test/online-hosted-topology-gate.sh
 	@python3 -m unittest scripts/test/vector-topology-persistence-online_test.py scripts/test/online-vector-topology-fixture_test.py scripts/test/online-hosted-topology-gate_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_topology_requires_manual_nfs_identity_and_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
