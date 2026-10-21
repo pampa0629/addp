@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { stableEmptyReviewSelection } from '../graph-visual.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -118,11 +119,16 @@ test('ordinary reviewer uses the real queue and observes native batch partial fa
     expect(commands.at(-1).body.ids).toEqual(['batch-before', 'bad-native', 'batch-after'].map(key => expected.items[key]))
     expect(failures).toEqual([{ path: root + '/batch/approve', status: 500 }])
     expect(errors).toEqual([])
+    const selection = await frame.locator('.el-table').evaluate(stableEmptyReviewSelection)
+    expect(selection.states.map(state => state.scope).sort()).toEqual(['header', 'row'])
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-review-stable-selection.json'), JSON.stringify({
+      ...expected, schema_version: 'addp.graph-review-stable-selection/v1', stable_frames: selection.stableFrames, states: selection.states
+    }, null, 2))
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-review-partial-failure-console.png') })
     writeFileSync(required('ADDP_ONLINE_GRAPH_REVIEW_REPORT'), JSON.stringify({
-      ...expected, schema_version: 'addp.graph-review-browser/v1', result: 'passed', permissions,
+      ...expected, schema_version: 'addp.graph-review-browser/v2', result: 'passed', permissions,
       single_approve: true, single_reject: true, modify: true, relation_approve: true,
-      batch_status: 500, batch_continued: true, selection_cleared: true, refreshed: true,
+      batch_status: 500, batch_continued: true, selection_cleared: true, selection_stable_visible: true, refreshed: true,
       unexpected_http_failures: 0, browser_errors: 0, controlled_extraction: true, real_model: false
     }))
   } finally {

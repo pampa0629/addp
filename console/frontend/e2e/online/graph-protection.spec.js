@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
+import { stableSearchPixels, searchNodeHits } from '../graph-visual.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -95,10 +96,16 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   await frame.locator('.toolbar-center input').fill('Fixture')
   await frame.locator('.toolbar-center input').press('Enter')
   const found = await json(await search, 'Console native full-text search')
-  expect(found.nodes.map(node => node.properties.id).sort()).toEqual(['p1', 'p2', 'p3'])
+  expect(Object.fromEntries(found.nodes.map(node => [node.properties.id, node.id]))).toEqual(expected.native_ids)
   await expect(frame.locator('.toolbar-left .el-tag--success')).toContainText('3')
   await expect(frame.locator('.graph-canvas canvas')).toBeVisible()
   await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
+  const canvas = frame.locator('.graph-canvas')
+  const stableFrame = await canvas.evaluate(stableSearchPixels, { count: found.nodes.length })
+  const hits = await searchNodeHits(frame, canvas, stableFrame, found.nodes)
+  writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-search-stable-frame.json'), JSON.stringify({
+    ...expected, schema_version: 'addp.graph-search-stable-frame/v1', frame: stableFrame, hits
+  }, null, 2))
   await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-private-browse-console.png') })
 
   stage = 'knowledge-service:navigation'
@@ -130,9 +137,9 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-protection-browser/v3', result: 'passed',
+    ...expected, schema_version: 'addp.graph-protection-browser/v4', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
-    browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true,
+    browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true, search_stable_visible: true, search_node_hits: hits.length,
     public_switch_disabled: true, graph_writes: 0, failed_business_responses: 0,
     browser_errors: 0, anonymous_refresh_401: anonymousRefresh,
     release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true, theme_typography: true

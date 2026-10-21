@@ -42,12 +42,30 @@ def upload(client, path, suite):
     return suite.SUPPORT.positive_int(data[0]["id"], "review material id")
 
 
+def verify_selection(suite, visual, expected):
+    suite.require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stable_frames", "states"} and
+                  all(type(visual.get(key)) is type(value) and visual[key] == value for key, value in expected.items()) and
+                  visual.get("schema_version") == "addp.graph-review-stable-selection/v1" and
+                  type(visual.get("stable_frames")) is int and visual["stable_frames"] >= 3, "Review stable selection identity/frames differ")
+    states = visual.get("states")
+    suite.require(type(states) is list and len(states) == 2 and all(type(state) is dict for state in states) and
+                  sorted(state.get("scope", "") for state in states) == ["header", "row"], "Review needs the visible header and remaining row")
+    for state in states:
+        suite.require(set(state) == {"scope", "visible", "checked", "indeterminate", "checkedClass", "mixedClass", "background", "emptyBackground", "tick", "emptyTick", "animating"} and
+                      state.get("visible") is True and
+                      all(state.get(key) is False for key in ("checked", "indeterminate", "checkedClass", "mixedClass", "animating")) and
+                      all(type(state.get(key)) is str and bool(state[key]) for key in ("background", "emptyBackground", "tick", "emptyTick")) and
+                      state["background"] == state["emptyBackground"] and state["tick"] == state["emptyTick"],
+                      "Review selection still checked, animated or visually filled")
+
+
 def browser(suite, expected):
     env = suite.SUPPORT.required_environment
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
     output = artifacts / "graph-review-browser.json"
+    visual = artifacts / "graph-review-stable-selection.json"
     screenshots = [artifacts / f"graph-review-{phase}-console.png" for phase in ("pending", "modified", "partial-failure")]
-    for path in [output, *screenshots]:
+    for path in [output, visual, *screenshots]:
         path.unlink(missing_ok=True)
     environment = {key: value for key, value in os.environ.items() if not key.endswith(("_ACCESS_TOKEN", "_USERNAME", "_PASSWORD"))}
     environment.update(ADDP_ONLINE_GRAPH_REVIEW_USERNAME=env("ADDP_ONLINE_GRAPH_REVIEW_USERNAME"),
@@ -57,10 +75,12 @@ def browser(suite, expected):
                              "--config=playwright.online.config.js"],
                             cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
     suite.require(result.returncode == 0 and output.is_file() and all(p.is_file() for p in screenshots), "Review Console evidence missing or failed")
+    suite.require(visual.is_file(), "Review stable selection evidence missing")
+    verify_selection(suite, json.loads(visual.read_text()), expected)
     evidence = json.loads(output.read_text())
-    required = dict(expected, schema_version="addp.graph-review-browser/v1", result="passed", permissions=sorted(PERMISSIONS),
+    required = dict(expected, schema_version="addp.graph-review-browser/v2", result="passed", permissions=sorted(PERMISSIONS),
                     single_approve=True, single_reject=True, modify=True, relation_approve=True,
-                    batch_status=500, batch_continued=True, selection_cleared=True, refreshed=True,
+                    batch_status=500, batch_continued=True, selection_cleared=True, selection_stable_visible=True, refreshed=True,
                     unexpected_http_failures=0, browser_errors=0, controlled_extraction=True, real_model=False)
     suite.require(type(evidence) is dict and set(evidence) == set(required) and all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in required.items()), "Review Console report differs from the exact fixture and actions")
     return evidence

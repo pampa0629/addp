@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import subprocess
 import sys
@@ -164,19 +165,49 @@ def create_schema(client, oid):
     })
 
 
-def run_browser(report, graph_id, engine_id, tenant_id):
+def verify_search_frame(visual, expected):
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "frame", "hits"} and
+            all(type(visual.get(key)) is type(value) and visual[key] == value for key, value in expected.items()) and
+            visual.get("schema_version") == "addp.graph-search-stable-frame/v1", "Search frame identity differs")
+    frame, hits = visual.get("frame"), visual.get("hits")
+    number = lambda value: type(value) in (int, float) and math.isfinite(value)
+    require(type(frame) is dict and set(frame) == {"width", "height", "color", "nodes", "stableFrames"} and
+            all(number(frame.get(key)) and frame[key] > 0 for key in ("width", "height")) and
+            type(frame.get("stableFrames")) is int and frame["stableFrames"] >= 10 and
+            type(frame.get("color")) is list and len(frame["color"]) == 3 and
+            all(type(value) is int and 0 <= value <= 255 for value in frame["color"]), "Search frame did not settle")
+    nodes = frame.get("nodes")
+    require(type(nodes) is list and type(hits) is list and len(nodes) == len(hits) == 3, "Search frame needs three visible hits")
+    for node, hit in zip(nodes, hits):
+        require(type(node) is dict and set(node) == {"x", "y", "box", "pixelCount"} and
+                type(node.get("box")) is list and len(node["box"]) == 4 and all(number(v) for v in node["box"]) and
+                all(number(node.get(key)) for key in ("x", "y")) and
+                type(node.get("pixelCount")) is int and node["pixelCount"] >= 40, "Missing search pixel bounds")
+        x0, y0, x1, y1 = node["box"]
+        require(1 < x0 < node["x"] < x1 < frame["width"] - 1 and
+                1 < y0 < node["y"] < y1 < frame["height"] - 1, "Search node outside visible viewport")
+        require(type(hit) is dict and set(hit) == {"source_id", "native_id", "x", "y"} and
+                hit["x"] == node["x"] and hit["y"] == node["y"] and type(hit["source_id"]) is str and
+                type(hit["native_id"]) is str and hit["native_id"] == expected["native_ids"].get(hit["source_id"]),
+                "Search click did not bind the actual native node")
+    require(len({hit["source_id"] for hit in hits}) == 3 and
+            {hit["source_id"] for hit in hits} == set(expected["native_ids"]), "Search clicks missed native identities")
+
+
+def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
     env = SUPPORT.required_environment
     env("ADDP_ONLINE_TEST_USER_USERNAME")
     env("ADDP_ONLINE_TEST_USER_PASSWORD")
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
     output = artifacts / "graph-protection-browser.json"
     diagnostics = artifacts / "graph-browser-diagnostics.json"
+    visual = artifacts / "graph-search-stable-frame.json"
     screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png",
                    *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")))]
-    for path in [output, diagnostics, *screenshots]:
+    for path in [output, diagnostics, visual, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
-                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type()}
+                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type(), "native_ids": native_ids}
     # The browser authenticates the ordinary User through the formal login UI.
     # It must not inherit any API fixture's preparation or consumption tokens.
     environment = {key: value for key, value in os.environ.items() if not key.endswith("_ACCESS_TOKEN")}
@@ -189,9 +220,11 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     require(diagnostics.is_file() and json.loads(diagnostics.read_text()) == {
         "schema_version": "addp.graph-browser-diagnostics/v1", "entries": []
     }, "Graph Console omitted clean browser diagnostics")
+    require(visual.is_file(), "Search stable frame evidence missing")
+    verify_search_frame(json.loads(visual.read_text()), expected)
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-protection-browser/v3", result="passed", permissions=sorted(READER_PERMISSIONS),
-                    node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
+    expected.update(schema_version="addp.graph-protection-browser/v4", result="passed", permissions=sorted(READER_PERMISSIONS),
+                    node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
                     public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
                     release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, theme_typography=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401"} and
@@ -285,7 +318,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             report["private"][name] = {"reader": probe(r, target, ids, 200), "outsider": probe(o, target, ids, 403, "permission"), "anonymous": probe(a, target, ids, 401)}
             o.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
             r.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
-        report["browser"] = run_browser(report, target, engine_id, tenant_id)
+        report["browser"] = run_browser(report, target, engine_id, tenant_id, ids)
         SUPPORT.wait_for_scan(preparer, engine_id, deadline)
         if targets[1]["engine_id"] != engine_id:
             SUPPORT.wait_for_scan(preparer, targets[1]["engine_id"], deadline)
@@ -354,7 +387,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v5", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v6", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

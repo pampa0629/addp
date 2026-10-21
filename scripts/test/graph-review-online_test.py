@@ -89,17 +89,34 @@ class GraphReviewOnlineTest(unittest.TestCase):
                            'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret', 'ADDP_ONLINE_TEST_USER_PASSWORD': 'reader-password'}
             for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True), ({'real_model': True}, True), ({'real_model': 0}, True),
                     ({'batch_continued': False}, True), ({'batch_status': 200}, True), ({'refreshed': False}, True),
-                    ({'selection_cleared': False}, True), ({'browser_errors': 1}, True), ({}, False)):
+                    ({'selection_cleared': False}, True), ({'schema_version': 'addp.graph-review-browser/v1'}, True),
+                    ({'_missing_visual': True}, True), ({'_omit': ['selection_stable_visible']}, True),
+                    ({'selection_stable_visible': False}, True), ({'selection_stable_visible': 1}, True), ({'_visual': {'principal_id': 'other'}}, True),
+                    ({'_state': {'checked': True}}, True), ({'_state': {'visible': False}}, True), ({'_state': {'checked': 0}}, True),
+                    ({'_state': {'indeterminate': True}}, True), ({'_state': {'mixedClass': True}}, True),
+                    ({'_state': {'checkedClass': True}}, True), ({'_state': {'scope': 'row'}}, True),
+                    ({'_state': {'tick': 'matrix(1, 0, 0, 1, 0, 0)'}}, True), ({'_state': {'animating': True}}, True),
+                    ({'_state': {'background': 'rgb(0, 0, 255)'}}, True),
+                    ({'_visual': {'stable_frames': 1}}, True), ({'browser_errors': 1}, True), ({}, False)):
                 def launch(command, **kwargs):
                     self.assertIn('e2e/online/graph-review.spec.js', command)
                     self.assertFalse(any(k.endswith('_ACCESS_TOKEN') for k in kwargs['env']))
                     self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', kwargs['env'])
                     self.assertEqual(kwargs['env']['ADDP_ONLINE_GRAPH_REVIEW_PASSWORD'], 'review-password')
-                    evidence = dict(expected, schema_version='addp.graph-review-browser/v1', result='passed', permissions=sorted(REVIEW.PERMISSIONS),
+                    evidence = dict(expected, schema_version='addp.graph-review-browser/v2', result='passed', permissions=sorted(REVIEW.PERMISSIONS),
                                     single_approve=True, single_reject=True, modify=True, relation_approve=True,
-                                    batch_status=500, batch_continued=True, selection_cleared=True, refreshed=True,
+                                    batch_status=500, batch_continued=True, selection_cleared=True, selection_stable_visible=True, refreshed=True,
                                     unexpected_http_failures=0, browser_errors=0, controlled_extraction=True, real_model=False)
-                    evidence.update(mutation)
+                    evidence.update({key: value for key, value in mutation.items() if not key.startswith('_')})
+                    for key in mutation.get('_omit', []): evidence.pop(key, None)
+                    states = [dict(scope=scope, visible=True, checked=False, indeterminate=False, checkedClass=False, mixedClass=False,
+                                   background='rgb(255, 255, 255)', emptyBackground='rgb(255, 255, 255)',
+                                   tick='none', emptyTick='none', animating=False) for scope in ('header', 'row')]
+                    for state in states: state.update(mutation.get('_state', {}))
+                    visual = dict(expected, schema_version='addp.graph-review-stable-selection/v1', stable_frames=3, states=states)
+                    visual.update(mutation.get('_visual', {}))
+                    if not mutation.get('_missing_visual'):
+                        (Path(directory) / 'graph-review-stable-selection.json').write_text(json.dumps(visual))
                     Path(kwargs['env']['ADDP_ONLINE_GRAPH_REVIEW_REPORT']).write_text(json.dumps(evidence))
                     if screenshots:
                         for phase in ('pending', 'modified', 'partial-failure'):

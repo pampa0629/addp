@@ -329,7 +329,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                  'console/frontend/e2e/online/develop-graph-query.spec.js',
                  'scripts/test/docker-compose.graph-protection-t4.yml', 'graph/frontend/Dockerfile', 'graph/frontend/nginx.conf',
                  'scripts/test/graph-review-online.py', 'scripts/test/graph-review-extractor.py', 'console/frontend/e2e/online/graph-review.spec.js',
-                 'scripts/test/online-gate.py', 'scripts/utils/hosted-online.sh')
+                 'scripts/test/online-gate.py', 'scripts/utils/hosted-online.sh', 'console/frontend/e2e/graph-visual.fixture.js')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -354,8 +354,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[8], '127.0.0.1:8180:8180'), (paths[9], 'COPY graph/frontend/nginx.conf'),
                                    (paths[10], 'try_files $uri $uri/ /index.html;'), (paths[6], 'theme_canvas_pixels: true'),
                                    (paths[6], 'graph-browser-diagnostics.json'), (paths[6], 'graphBrowserDiagnostic('),
-                                   (paths[6], 'addp.graph-protection-browser/v3'), (paths[6], 'theme_typography: true'),
+                                   (paths[6], 'addp.graph-protection-browser/v4'), (paths[6], 'theme_typography: true'),
                                    (paths[6], 'graphDocumentHasThemeTypography)'),
+                                   (paths[6], 'search_stable_visible: true'), (paths[6], 'searchNodeHits('),
+                                   (paths[13], 'selection_stable_visible: true'), (paths[13], 'stableEmptyReviewSelection)'),
+                                   (paths[3], 'verify_search_frame'), (paths[11], 'verify_selection'),
+                                   (paths[16], 'getImageData'), (paths[16], 'getAnimations'),
                                    (paths[8], '127.0.0.1:8186:8186'),
                                    (paths[2], 'GRAPH_URL=http://127.0.0.1:8186'),
                                    (paths[1], 'console/frontend/e2e/online/develop-graph-query.spec.js')):

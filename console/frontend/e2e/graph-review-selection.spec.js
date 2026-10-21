@@ -50,7 +50,11 @@ for (const [action, label] of [['approve', '批量通过'], ['reject', '批量�
     await expect(graph.locator('.el-message--error')).toHaveText('隔离夹具批量写入失败')
     await expect(graph.locator('.el-message--success')).toHaveCount(0)
     const stable = await graph.locator('.el-table').evaluate(stableEmptyReviewSelection)
-    expect(stable).toHaveLength(2) // Header and the remaining failed row.
+    expect(stable.states).toHaveLength(2) // Header and the remaining failed row.
+    const table = graph.locator('.el-table')
+    await table.evaluate(element => { element.style.visibility = 'hidden' })
+    await expect(table.evaluate(stableEmptyReviewSelection, { timeout: 200 })).rejects.toThrow('unchecked visual state')
+    await table.evaluate(element => { element.style.visibility = '' })
     await testInfo.attach('stable-empty-selection.json', { body: JSON.stringify(stable, null, 2), contentType: 'application/json' })
     await testInfo.attach('stable-empty-selection.png', { body: await page.screenshot(), contentType: 'image/png' })
     expect(unexpected).toEqual([])

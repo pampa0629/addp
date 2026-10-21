@@ -112,14 +112,25 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertEqual(kwargs['cwd'].name, 'frontend')
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
-                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb'})
-                payload = dict(expected, schema_version='addp.graph-protection-browser/v3', result='passed',
+                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb', 'native_ids': {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}})
+                payload = dict(expected, schema_version='addp.graph-protection-browser/v4', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
-                               browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
+                               browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
                                public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
                                browser_errors=0, anonymous_refresh_401=1, release_assets=True, deep_link_reload=True,
                                theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True, theme_typography=True)
-                payload.update({key: value for key, value in mutation.items() if key != '_diagnostics'})
+                payload.update({key: value for key, value in mutation.items() if not key.startswith('_')})
+                for key in mutation.get('_omit', []): payload.pop(key, None)
+                visual = dict(expected, schema_version='addp.graph-search-stable-frame/v1',
+                    frame={'width': 800, 'height': 600, 'color': [245, 108, 108], 'stableFrames': 10,
+                           'nodes': [{'x': x, 'y': 100, 'box': [x-10, 90, x+10, 110], 'pixelCount': 100} for x in (100, 200, 300)]},
+                    hits=[{'source_id': 'p'+str(i), 'native_id': 'native-'+str(i), 'x': i*100, 'y': 100} for i in (1, 2, 3)])
+                visual.update(mutation.get('_visual', {}))
+                visual['frame'].update(mutation.get('_frame', {}))
+                for node in visual['frame'].get('nodes', []): node.update(mutation.get('_node', {}))
+                for hit in visual.get('hits', []): hit.update(mutation.get('_hit', {}))
+                if not mutation.get('_missing_visual'):
+                    (artifacts / 'graph-search-stable-frame.json').write_text(json.dumps(visual))
                 Path(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_REPORT']).write_text(json.dumps(payload))
                 diagnostics = mutation.get('_diagnostics', {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': []})
                 if diagnostics is not None:
@@ -131,21 +142,28 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         (artifacts / f'graph-private-theme-{mode}.png').write_bytes(b'unit-test-screenshot')
                 return type('Process', (), {'returncode': 0})()
             for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True),
+                    ({'_missing_visual': True}, True), ({'_omit': ['search_stable_visible']}, True),
+                    ({'search_stable_visible': False}, True), ({'search_stable_visible': 1}, True), ({'search_node_hits': 2}, True), ({'_visual': {'principal_id': 'other'}}, True),
+                    ({'_visual': {'hits': []}}, True), ({'_frame': {'stableFrames': 1}}, True),
+                    ({'_frame': {'stableFrames': True}}, True), ({'_frame': {'width': 0}}, True),
+                    ({'_node': {'box': [-20, 90, 110, 110]}}, True), ({'_node': {'pixelCount': 0}}, True),
+                    ({'_hit': {'native_id': 'wrong-node'}}, True), ({'_hit': {'source_id': 'p1'}}, True), ({'_visual': {'frame': {}}}, True),
                     ({'permissions': ['graph.graph.read', 'graph.graph.update']}, True),
                     ({'public_switch_disabled': False}, True), ({'browser_errors': 1}, True),
                     ({'release_assets': False}, True), ({'deep_link_reload': False}, True),
                     ({'theme_modes': ['dark']}, True), ({'theme_canvas_pixels': False}, True), ({'theme_typography': False}, True),
                     ({'schema_version': 'addp.graph-protection-browser/v1'}, True),
                     ({'schema_version': 'addp.graph-protection-browser/v2'}, True),
+                    ({'schema_version': 'addp.graph-protection-browser/v3'}, True),
                     ({'_diagnostics': None}, True), ({'_diagnostics': {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': [{'type': 'warning'}]}}, True),
                     ({}, False), ({}, 'partial')):
                 for path in artifacts.glob('*.png'): path.unlink()
                 with self.subTest(mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
                      patch.object(SUITE.subprocess, 'run', side_effect=launch):
                     if mutation or screenshots is not True:
-                        with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2)
+                        with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})
                     else:
-                        self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2)['principal_id'], '4')
+                        self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})['principal_id'], '4')
 
     def test_main_emits_the_standard_dispatcher_report_without_credentials(self):
         dispatcher = importlib.import_module('scripts.test.online-gate')

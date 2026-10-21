@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableGraphFrame } from './graph-visual.fixture.js'
+import { stableSearchPixels, searchNodeHits } from './graph-visual.fixture.js'
 
 for (const replace of [false, true]) {
   test(`Graph search settles to visible clickable nodes (${replace ? 'new' : 'retained'} identities)`, async ({ page }, testInfo) => {
-    const nodes = ids => ids.map(id => ({ id, labels: ['Person'], display_name: `合成节点${id}`, properties: { name: `合成节点${id}` } }))
+    const nodes = ids => ids.map(id => ({ id, labels: ['Person'], display_name: `合成节点${id}`, properties: { id, name: `合成节点${id}` } }))
     const initial = nodes(['a', 'b', 'c'])
     const found = nodes(replace ? ['d', 'e', 'f'] : ['a', 'b', 'c'])
     const edges = values => values.slice(1).map((node, index) => ({ id: `edge-${node.id}`, source: values[index].id, target: node.id, type: 'Link', directed: true }))
@@ -28,12 +28,12 @@ for (const replace of [false, true]) {
     await frame.locator('.search-input input').fill('合成节点')
     await frame.locator('.search-input input').press('Enter')
     await response
-    const stable = await canvas.evaluate(stableGraphFrame, found.map(node => node.id))
-    await testInfo.attach('stable-search-frame.json', { body: JSON.stringify(stable, null, 2), contentType: 'application/json' })
-    for (const node of stable.nodes) {
-      await canvas.locator('canvas').click({ position: { x: node.x, y: node.y } })
-      await expect(frame.locator('.node-panel .panel-name')).toHaveText(`合成节点${node.id}`)
-    }
+    const stable = await canvas.evaluate(stableSearchPixels, { count: found.length })
+    await canvas.locator('canvas').evaluate(element => { element.style.visibility = 'hidden' })
+    await expect(canvas.evaluate(stableSearchPixels, { count: found.length, timeout: 200 })).rejects.toThrow('visible stable frame')
+    await canvas.locator('canvas').evaluate(element => { element.style.visibility = '' })
+    const hits = await searchNodeHits(frame, canvas, stable, found)
+    await testInfo.attach('stable-search-frame.json', { body: JSON.stringify({ ...stable, hits }, null, 2), contentType: 'application/json' })
     await testInfo.attach('stable-search.png', { body: await page.screenshot(), contentType: 'image/png' })
     expect(unexpected).toEqual([])
   })
