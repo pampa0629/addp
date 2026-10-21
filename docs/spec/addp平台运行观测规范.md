@@ -121,7 +121,7 @@ System `GET /platform/engine_deployments/discovery` 仅接受非委托 Platform 
 
 ### 4.6 PostgreSQL 数据库侧汇总读取边界
 
-Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 通过唯一来源生命周期安装版本化的 `scripts/infra/postgres-observation/000002_lifecycle.sql`，不进入 System IAM 迁移；`000001_init.sql` 保留为不可变历史。支持 PostgreSQL 15 数据库侧读取及可选来源部署；认证发现、Monitor 专业查询与页面尚未开放，不能因来源运行或 T2 通过宣称专业监控产品已就绪。
+Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 通过唯一来源生命周期安装版本化的 `scripts/infra/postgres-observation/000002_lifecycle.sql`，不进入 System IAM 迁移；`000001_init.sql` 保留为不可变历史。支持 PostgreSQL 15 数据库侧读取及可选来源部署；专业来源发现、Monitor 授权查询与页面沿本文同一观测链实现。数据库侧验证只证明其读取边界，不能替代专业查询与页面的正式身份 T4。
 
 各实例分别使用 `addp_infra_observer` 或 `addp_business_observer`，密码独立；非登录的 `addp_observation_owner` 仅继承 `pg_read_all_stats`，Login 无任何角色成员资格，不获该统计角色、业务对象或服务管理权限。安装在单事务中校验作用域、SCRAM 校验值、身份标记、成员资格、schema／函数归属与 ACL；陌生对象、额外权限、PUBLIC 业务读权或不安全默认授权均拒绝并回滚，不接管或全局撤销其他用户权限。Login 只授当前连接库 CONNECT、私有 schema USAGE 和唯一无参数 `addp_observation.snapshot()` EXECUTE。密码校验值通过部署侧私有 stdin 的 psql 变量注入，不进入参数、普通配置、发现快照、System API 或日志；原始密码不参与 SQL 文本。
 
@@ -153,7 +153,7 @@ SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同
 
 所选版本在 SQL 失败时可能仍返回 HTTP 200 和累计 `scrape_errors_total`，此时不得输出旧数据库样本。HTTP `up` 只证明传输可达，累计错误计数也不是当前失败状态；专业读取必须验证固定样本及新鲜采样时间。T2 覆盖权限撤销后的两次真实失败、错误计数递增与无旧样本、恢复新样本、统计关闭／恢复，以及错误客户端证书、明文 HTTP、路径和方法拒绝。精确入口为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，默认完整门禁同样包含；业务／Infra 全退出核验由同一门禁负责。
 
-该契约包含可选部署生命周期及独占传输验证，不代表个人实例已经启用、认证发现、已登记引擎的指标读取或页面已经开放。自动关联仍须沿明确身份投影与当前 User 授权，不将来源模板直接登记成节点或租户 Engine。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
+该契约包含可选部署生命周期及独占传输验证，不代表个人实例已经启用或专业页面已通过正式身份 T4。已实现的自动关联、引擎指标读取及页面仍须沿明确身份投影与当前 User 授权，不将来源模板直接登记成节点或租户 Engine。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
 
 ## 五、技术路线与故障隔离
 
