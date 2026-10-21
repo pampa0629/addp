@@ -849,3 +849,241 @@ def test_polygon_overlap_runtime_discovery_workflow_save_reload_and_source_bytes
             time.sleep(.01)
         assert state["status"] == "success", state
         assert len(json.loads(state["result"])["features"]) == 2
+
+
+def gap(frame, coverage):
+    return get_operator("check_polygon_gap")(input_gdf=frame, coverage_gdf=coverage)
+
+
+def test_polygon_gap_reports_internal_and_edge_gaps_without_mutating_sources():
+    frame = overlap_frame([Polygon(box(0, 0, 3, 4).exterior.coords, [box(1, 1, 2, 2).exterior.coords])])
+    coverage = lines([box(0, 0, 4, 4)]).rename_geometry("extent")
+    frame.index = [19]
+    originals = [frame.copy(deep=True), coverage.copy(deep=True)]
+    result = gap(frame, coverage)
+    assert result.columns.tolist() == ["gap_area", "geometry"]
+    assert result.gap_area.tolist() == [1, 4]
+    assert result.geom_type.tolist() == ["Polygon", "Polygon"]
+    assert result.geometry.iloc[0].equals(box(1, 1, 2, 2))
+    assert result.geometry.iloc[1].equals(box(3, 0, 4, 4))
+    assert result.crs == frame.crs == coverage.crs
+    for source, before in zip([frame, coverage], originals):
+        assert_geodataframe_equal(source, before)
+
+
+def test_polygon_gap_unions_both_layers_and_ignores_outside_coverage_and_row_order():
+    coverage = lines([box(0, 0, 4, 4), box(2, 0, 6, 4), box(0, 0, 4, 4)])
+    frame = lines([box(-2, -2, 1, 8), box(3, 0, 4, 4), box(3, 0, 4, 4), box(10, 0, 11, 1)])
+    result = gap(frame, coverage)
+    assert result.gap_area.tolist() == [8, 8]
+    assert result.geometry.iloc[0].equals(box(1, 0, 3, 4))
+    assert result.geometry.iloc[1].equals(box(4, 0, 6, 4))
+    reversed_source = frame.iloc[::-1].copy()
+    reversed_source.geometry = shapely.reverse(reversed_source.geometry.array)
+    assert_geodataframe_equal(gap(reversed_source, coverage.iloc[::-1]), result)
+
+
+def test_polygon_gap_excludes_coverage_holes_and_retains_islands_as_result_holes():
+    boundary = Polygon(box(0, 0, 6, 6).exterior.coords, [box(1, 1, 2, 2).exterior.coords])
+    coverage = lines([boundary])
+    result = gap(lines([box(3, 3, 4, 4)]), coverage)
+    assert len(result) == 1 and result.gap_area.tolist() == [34]
+    assert len(result.geometry.iloc[0].interiors) == 2
+    assert not result.geometry.iloc[0].contains(Point(1.5, 1.5))
+    assert not result.geometry.iloc[0].contains(Point(3.5, 3.5))
+    assert gap(lines([box(0, 0, 6, 6)]), coverage).empty
+
+
+def test_polygon_gap_splits_multipart_and_point_contacts_into_separate_rows():
+    coverage = lines([shapely.MultiPolygon([box(0, 0, 1, 1), box(1, 1, 2, 2), box(3, 0, 4, 1)])])
+    result = gap(lines([]), coverage)
+    assert result.gap_area.tolist() == [1, 1, 1]
+    assert result.geom_type.tolist() == ["Polygon"] * 3
+    assert [geometry.bounds for geometry in result.geometry] == [(0, 0, 1, 1), (1, 1, 2, 2), (3, 0, 4, 1)]
+
+
+@pytest.mark.parametrize("crs", ["EPSG:3857", "EPSG:2263"])
+def test_polygon_gap_keeps_tiny_exact_positive_area_and_source_square_units(crs):
+    tiny = 2. ** -40
+    result = gap(lines([], crs), lines([box(0, 0, 1, tiny)], crs))
+    assert result.gap_area.tolist() == [tiny]
+    assert result.geometry.iloc[0].bounds == (0, 0, 1, tiny)
+    assert result.crs == lines([], crs).crs
+
+
+@pytest.mark.parametrize("geometries", [[], [Polygon()], [shapely.MultiPolygon([])]])
+def test_polygon_gap_empty_input_reports_entire_range_without_inventing_source_ids(geometries):
+    result = gap(lines(geometries), lines([box(0, 0, 2, 2)]))
+    assert result.columns.tolist() == ["gap_area", "geometry"]
+    assert result.gap_area.tolist() == [4]
+    assert result.geometry.iloc[0].equals(box(0, 0, 2, 2))
+
+
+@pytest.mark.parametrize("source", [[box(0, 0, 2, 2)], [box(-1, -1, 3, 3)], [box(0, 0, 1, 2), box(1, 0, 2, 2)]])
+def test_polygon_gap_full_coverage_returns_typed_empty_schema(source):
+    result = gap(lines(source), lines([box(0, 0, 2, 2), Polygon()]))
+    assert result.empty and result.columns.tolist() == ["gap_area", "geometry"]
+    assert result.gap_area.dtype == np.dtype("float64") and result.crs.to_epsg() == 3857
+
+
+@pytest.mark.parametrize("coverage", [[], [Polygon()], [shapely.MultiPolygon([]), Polygon()]])
+def test_polygon_gap_rejects_absent_effective_coverage(coverage):
+    with pytest.raises(ValueError, match="coverage_gdf.*non-empty"):
+        gap(lines([]), lines(coverage))
+    with pytest.raises(TypeError, match="coverage_gdf"):
+        get_operator("check_polygon_gap")(input_gdf=lines([]))
+
+
+@pytest.mark.parametrize("source_crs,coverage_crs", [(None, "EPSG:3857"), ("EPSG:3857", None), ("EPSG:4326", "EPSG:4326"), ("EPSG:3857", "EPSG:2263")])
+def test_polygon_gap_rejects_unknown_geographic_or_different_crs_before_empty_result(source_crs, coverage_crs):
+    with pytest.raises(ValueError, match="CRS"):
+        gap(lines([], source_crs), lines([box(0, 0, 1, 1)], coverage_crs))
+
+
+@pytest.mark.parametrize("side", ["input", "coverage"])
+@pytest.mark.parametrize("geometry,message", [
+    (None, "non-null"), (Point(0, 0), "Polygon"), (LineString([(0, 0), (1, 1)]), "Polygon"),
+    (shapely.GeometryCollection([box(0, 0, 1, 1)]), "Polygon"),
+    (Polygon([(0, 0), (1, 1), (0, 1), (1, 0), (0, 0)]), "valid"),
+    (shapely.from_wkt("POLYGON Z ((0 0 1, 1 0 1, 1 1 1, 0 0 1))"), "XY"),
+    (shapely.from_wkt("POLYGON M ((0 0 1, 1 0 1, 1 1 1, 0 0 1))"), "XY"),
+    (Polygon([(0, 0), (1, 0), (float('inf'), 1), (0, 0)]), "finite"),
+])
+def test_polygon_gap_rejects_unsupported_geometry_on_either_side(side, geometry, message):
+    good, bad = lines([box(0, 0, 2, 2)]), lines([geometry])
+    with pytest.raises(ValueError, match=message):
+        gap(bad if side == "input" else good, bad if side == "coverage" else good)
+
+
+@pytest.mark.parametrize("side", ["input", "coverage"])
+@pytest.mark.parametrize("frame", [None, pd.DataFrame(), gpd.GeoDataFrame({"value": [1]})])
+def test_polygon_gap_requires_two_active_geodataframes(side, frame):
+    good = lines([box(0, 0, 1, 1)])
+    with pytest.raises(ValueError, match="GeoDataFrame|active geometry"):
+        gap(frame if side == "input" else good, frame if side == "coverage" else good)
+
+
+@pytest.mark.parametrize("size", [1e200, 1e-200])
+def test_polygon_gap_fails_unrepresentable_area_without_discarding_a_gap(size):
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="finite positive Float64"):
+            gap(lines([]), lines([box(0, 0, size, size)]))
+
+
+def test_polygon_gap_matches_an_independent_integer_cell_oracle():
+    boundary = [(0, 0, 6, 4), (4, 0, 8, 2)]
+    source = [(-1, -1, 1, 5), (2, 0, 3, 4), (4, 1, 7, 3), (5, 0, 6, 1)]
+    def cells(bounds):
+        return {(x, y) for a, b, c, d in bounds for x in range(a, c) for y in range(b, d)}
+    expected = cells(boundary) - cells(source)
+    result = gap(lines([box(*bound) for bound in source]), lines([box(*bound) for bound in boundary]))
+    assert result.gap_area.sum() == len(expected)
+    for x in range(-1, 9):
+        for y in range(-1, 6):
+            matches = sum(geometry.contains(Point(x + .5, y + .5)) for geometry in result.geometry)
+            assert matches == int((x, y) in expected)
+
+
+@pytest.mark.parametrize("fully_covered", [False, True])
+def test_polygon_gap_two_source_workflow_save_reload_independent_gdal_and_source_bytes(tmp_path, fully_covered):
+    from osgeo import ogr
+    source = lines([box(0, 0, 4 if fully_covered else 3, 4)])
+    coverage = lines([box(0, 0, 4, 4)])
+    for name, frame in [("source", source), ("coverage", coverage)]:
+        frame.to_file(tmp_path / f"{name}.gpkg", layer=name, driver="GPKG")
+    before = {name: (tmp_path / f"{name}.gpkg").read_bytes() for name in ["source", "coverage"]}
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": name, "operator": "load", "params": {"connection_info": connection, "path": f"{name}.gpkg"}, "depends_on": []}
+        for name in ["source", "coverage"]
+    ] + [
+        {"id": "check", "operator": "check_polygon_gap", "params": {"input_gdf": {"$ref": "source"}, "coverage_gdf": {"$ref": "coverage"}}, "depends_on": ["source", "coverage"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "gaps.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+    ]
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "success", execution.get("error")
+    saved = gpd.read_file(tmp_path / "gaps.gpkg")
+    assert saved.crs == source.crs and saved.gap_area.tolist() == ([] if fully_covered else [4])
+    dataset = ogr.Open(str(tmp_path / "gaps.gpkg"))
+    layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == int(not fully_covered)
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    if not fully_covered:
+        feature = layer.GetNextFeature()
+        geometry = feature.GetGeometryRef()
+        assert geometry.GetGeometryName() == "POLYGON" and geometry.IsValid()
+        assert feature.GetField("gap_area") == geometry.GetArea() == 4
+        assert set(geometry.GetGeometryRef(0).GetPoints()) == {(3, 0), (3, 4), (4, 4), (4, 0)}
+    dataset = None
+    assert all((tmp_path / f"{name}.gpkg").read_bytes() == data for name, data in before.items())
+
+
+def test_polygon_gap_invalid_or_missing_coverage_fails_before_publishing(tmp_path):
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    lines([box(0, 0, 1, 1)]).to_file(tmp_path / "source.gpkg", driver="GPKG")
+    lines([]).to_file(tmp_path / "empty.gpkg", driver="GPKG")
+    for extra_params, message in [({}, "coverage_gdf"), ({"coverage_gdf": {"$ref": "coverage"}}, "non-empty")]:
+        result = execute_workflow({"tasks": [
+            {"id": "source", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
+            {"id": "coverage", "operator": "load", "params": {"connection_info": connection, "path": "empty.gpkg"}, "depends_on": []},
+            {"id": "check", "operator": "check_polygon_gap", "params": {"input_gdf": {"$ref": "source"}, **extra_params}, "depends_on": ["source", "coverage"]},
+            {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "must-not-exist.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+        ]})
+        assert result["status"] == "failed"
+        assert message in str(result)
+        assert not (tmp_path / "must-not-exist.gpkg").exists()
+
+
+@pytest.mark.parametrize("crs,authority", [("EPSG:3857", "3857"), ("EPSG:2263", "2263")])
+def test_polygon_gap_native_save_retains_exact_tiny_coordinates_and_square_units(tmp_path, crs, authority):
+    from osgeo import ogr
+    tiny = 2. ** -40
+    frame = lines([box(0, tiny, 1, 1)], crs)
+    frame["gap_area"] = [-1]  # Diagnostic output must not copy source attributes.
+    result = gap(frame, lines([box(0, 0, 1, 1)], crs))
+    assert result.gap_area.tolist() == [tiny]
+    get_operator("save")(
+        input_df=result, connection_info={"engine_type": "nfs", "mount_path": str(tmp_path)},
+        path="tiny.gpkg", mode="fail",
+    )
+    dataset = ogr.Open(str(tmp_path / "tiny.gpkg"))
+    layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == 1 and layer.GetSpatialRef().GetAuthorityCode(None) == authority
+    feature = layer.GetNextFeature()
+    geometry = feature.GetGeometryRef()
+    assert geometry.GetArea() == feature.GetField("gap_area") == tiny
+    assert set(geometry.GetGeometryRef(0).GetPoints()) == {(0, 0), (0, tiny), (1, tiny), (1, 0)}
+    dataset = None
+
+
+def test_polygon_gap_discovery_two_required_input_ports_async_workflow_and_direct_rejection(tmp_path, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    for name, geometry in [("source", box(0, 0, 3, 4)), ("coverage", box(0, 0, 4, 4))]:
+        lines([geometry]).to_file(tmp_path / f"{name}.gpkg", driver="GPKG")
+    tasks = [
+        {"id": name, "operator": "load", "params": {"connection_info": connection, "path": f"{name}.gpkg"}, "depends_on": []}
+        for name in ["source", "coverage"]
+    ] + [{"id": "check", "operator": "check_polygon_gap", "params": {"input_gdf": {"$ref": "source"}, "coverage_gdf": {"$ref": "coverage"}}, "depends_on": ["source", "coverage"]}]
+    monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_polygon_gap")
+        assert op["display_name"] == "面缝检查" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+        assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("coverage_gdf", "input", True)]
+        assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
+        assert client.post("/api/operators/check_polygon_gap/invoke", json={"params": {}}).status_code == 403
+        workflow = {"tasks": tasks}
+        assert client.post("/api/workflow", json={"workflow_def": workflow}).status_code == 400
+        response = client.post("/api/workflow", json={"workflow_def": workflow, "runtime": {"tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}})
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
+            if state["status"] in {"success", "failed"}:
+                break
+            time.sleep(.01)
+        assert state["status"] == "success", state
+        features = json.loads(state["result"])["features"]
+        assert len(features) == 1 and features[0]["properties"]["gap_area"] == 4

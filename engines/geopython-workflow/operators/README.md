@@ -38,7 +38,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 84 个算子：通用处理 18 个、矢量处理 31 个、栅格处理 35 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 85 个算子：通用处理 18 个、矢量处理 32 个、栅格处理 35 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -47,7 +47,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 14 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap` |
+| 矢量处理 | 几何处理 | 15 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -79,6 +79,10 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 ## 面叠检查
 
 `check_polygon_overlap` 检查单个面图层内要素对的正面积交集。来源标识、稳定去重、面积单位、接触与空结果、容量及保存边界统一见[面叠检查契约](../../../docs/spec/workflow/矢量算子契约.md#面叠检查契约)。
+
+## 面缝检查
+
+`check_polygon_gap` 检查显式覆盖范围减去待检查面整体覆盖后的缺口，只报告面几何和面积，不自动填补。范围孔洞、空输入、结果顺序、面积单位及保存边界统一见[面缝检查契约](../../../docs/spec/workflow/矢量算子契约.md#面缝检查契约)。
 
 ## 参考吸附
 

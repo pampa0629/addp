@@ -281,6 +281,39 @@ def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     )
 
 
+def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Report uncovered polygon components inside an explicit coverage boundary."""
+    geometry = _finite_xy_geometry(input_gdf)
+    coverage = _finite_xy_geometry(coverage_gdf, "coverage_gdf")
+    for name, values in [("input_gdf", geometry), ("coverage_gdf", coverage)]:
+        _require_projected_xy_crs(values.crs)
+        if values.isna().any() or not values.geom_type.isin(["Polygon", "MultiPolygon"]).all():
+            raise ValueError(f"{name} requires non-null Polygon or MultiPolygon geometries")
+        if not shapely.is_valid(values.array).all():
+            raise ValueError(f"{name} requires valid polygons; repair explicitly before checking gaps")
+    if not geometry.crs.equals(coverage.crs):
+        raise ValueError("both inputs require the same known projected CRS; reproject explicitly")
+    if coverage.empty or coverage.is_empty.all():
+        raise ValueError("coverage_gdf requires at least one non-empty polygon")
+
+    # Reuse the existing global dissolve, without per-feature overlay attributes
+    # or implicit make_valid. A coverage hole is an explicit excluded region.
+    uncovered = shapely.difference(
+        dissolve(coverage_gdf).geometry.iloc[0], dissolve(input_gdf).geometry.iloc[0],
+    )
+    parts = [shapely.normalize(part) for part in shapely.get_parts(uncovered) if not part.is_empty]
+    if any(part.geom_type != "Polygon" or not part.is_valid for part in parts):
+        raise ValueError("gap difference did not produce valid polygon components")
+    parts.sort(key=lambda part: (*part.bounds, shapely.to_wkb(part, output_dimension=2)))
+    areas = shapely.area(parts)
+    if not np.isfinite(areas).all() or (areas <= 0).any():
+        raise ValueError("gap requires a finite positive Float64 area")
+    return gpd.GeoDataFrame(
+        {"gap_area": pd.Series(areas, dtype="float64")},
+        geometry=gpd.GeoSeries(parts, crs=geometry.crs),
+    )
+
+
 def snap_geometry(
     input_gdf: gpd.GeoDataFrame,
     reference_gdf: gpd.GeoDataFrame,
@@ -393,6 +426,22 @@ CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
     use_cases=["查找地块重叠并定位双方来源", "识别完全重复或被其他面包含的图斑"],
     notes=["每对按原始行位置只报告一次，多处重叠保留在同一 MultiPolygon", "面积采用源投影水平单位的平方，不自动换算平方米或忽略微小重叠", "保留来源标识类型和源 CRS，不复制其他业务属性、不修改源", "不检查缺口、不决定重叠归属或生成 Quality 质量结论；保存另接 save", "索引及结果驻内存，不承诺固定容量"],
     workflow_example={"id": "check_overlaps", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
+)
+
+CHECK_POLYGON_GAP_METADATA = OperatorMetadata(
+    name="check_polygon_gap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="面缝检查", brief_description="检查显式覆盖范围内未被面图层覆盖的区域，只报告不填补",
+    execution_modes=["workflow"], effects=["read"],
+    overview="将覆盖范围与待检查面分别整体融合，计算范围减覆盖，每个独立缺口输出一行面及面积。"
+             "范围孔洞表示合法留白，范围外不报告；不修改源或推断相邻要素归属。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的面图层", notes="有效有限二维 Polygon/MultiPolygon；空批或空面按实际覆盖计算"),
+        OperatorParam(name="coverage_gdf", type="input", data_type="GeoDataFrame", required=True, description="必须显式提供的应覆盖范围", notes="与输入相同的已知投影 CRS，至少一个非空有效二维面；孔洞为合法留白"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="gap_area/Polygon，每个独立缺口一行，保留源 CRS", is_default=True)],
+    use_cases=["检查地块在指定管理范围内的覆盖缺口", "检查边缘缺口并排除明确的合法留白"],
+    notes=["所有正面积缺口均报告，不忽略微小缝隙、不自动填补或分配归属", "面积采用源投影水平单位的平方，不自动换算平方米", "范围及待检查面分别整体融合，重叠或重复不重复报缺口", "不复制业务属性、不生成 Quality 质量结论；保存另接 save", "融合及差集驻内存，不承诺固定容量"],
+    workflow_example={"id": "check_gaps", "operator": "check_polygon_gap", "params": {"input_gdf": {"$ref": "load"}, "coverage_gdf": {"$ref": "coverage"}}, "depends_on": ["load", "coverage"]},
 )
 
 CHECK_GEOMETRY_METADATA = OperatorMetadata(
@@ -973,4 +1022,5 @@ OPERATORS = dict([
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
+    register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
 ])
