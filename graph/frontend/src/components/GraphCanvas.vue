@@ -24,6 +24,8 @@ G6.registerEdge(SEMANTIC_EDGE_TYPE, {
     const group = item.getContainer()
     updateSemanticEdgeLine(config, group)
     updateDirectionMarker(config, group)
+    const matrix = group.getTotalMatrix()
+    syncRenderedSize(item, matrix ? Math.hypot(matrix[0], matrix[1]) : 1)
   }
 }, 'quadratic')
 
@@ -69,10 +71,11 @@ function updateDirectionMarker(config, group) {
   }
   const attrs = { path, fill: config._meta?.visual_color || config._meta?.color }
   if (existing) {
+    existing.set('unscaledPath', path)
     existing.show()
     existing.attr(attrs)
   } else {
-    group.addShape('path', { name: 'direction-marker', attrs })
+    group.addShape('path', { name: 'direction-marker', unscaledPath: path, attrs })
   }
 }
 
@@ -124,7 +127,6 @@ let resizeObserver = null
 let resizeFrame = 0
 let layoutFrame = 0
 let layoutCompletionReason = 'data'
-let semanticZoomLevel = ''
 const analysisVisuals = new Map()
 
 const isEmpty = computed(() => props.nodes.length === 0 && !props.loading)
@@ -177,7 +179,7 @@ function buildG6Data(nodes, edges) {
             fill: node.visual_label_color || getContrastingTextColor(fill, theme.labelLight, theme.labelDark),
             fontFamily: theme.fontFamily,
             fontSize: density.labelFontSize,
-            fontWeight: 'bold'
+            fontWeight: 500
           }
         }
       }
@@ -207,7 +209,7 @@ function buildG6Data(nodes, edges) {
             fill: theme.edgeLabel,
             fontFamily: theme.fontFamily,
             fontSize: 11,
-            fontWeight: '600',
+            fontWeight: 500,
             stroke: theme.edgeLabelStroke,
             lineWidth: 3
           },
@@ -277,9 +279,9 @@ function initGraph() {
       pendingFocusIds = null
       if (first) graphInstance.focusItem(first, true, { duration: 300, easing: 'easeCubic' })
     } else {
-      graphInstance?.fitView()
+      fitView()
     }
-    syncSemanticZoom(true)
+    syncSemanticZoom()
     layoutCompletionReason = ''
     layoutInProgress.value = false
   })
@@ -320,7 +322,7 @@ function updateGraph() {
     graphInstance.changeData(data)
     syncInteractionStates({ syncZoom: false })
     applyAnalysisVisuals()
-    syncSemanticZoom(true)
+    syncSemanticZoom()
     return
   }
 
@@ -328,7 +330,7 @@ function updateGraph() {
     graphInstance.changeData(data)
     syncInteractionStates({ syncZoom: false })
     applyAnalysisVisuals()
-    syncSemanticZoom(true)
+    syncSemanticZoom()
     return
   }
 
@@ -437,15 +439,57 @@ function syncInteractionStates({ syncZoom = true } = {}) {
     graphInstance.setItemState(selectedEdgeId, 'selected', true)
   }
   restoreSemanticChannels()
-  if (syncZoom) syncSemanticZoom(true)
+  if (syncZoom) syncSemanticZoom()
 }
 
-function syncSemanticZoom(force = false) {
+function fitView() {
+  // Fit sparse graphs at natural size instead of requesting an oversized zoom.
+  graphInstance?.fitView(undefined, { onlyOutOfViewPort: true })
+}
+
+function syncRenderedSize(item, zoom) {
+  const scale = 1 / Math.max(1, zoom)
+  const model = item.getModel()
+  const group = item.getContainer()
+  const state = ['selected', 'search-match', 'path', 'related'].find(name => item.hasState(name))
+  const style = { ...model.style, ...(state ? item.getStateStyle(state) : {}) }
+  item.getKeyShape()?.attr({
+    lineWidth: style.lineWidth * scale,
+    lineDash: (model.style?.lineDash || []).map(length => length * scale),
+    lineAppendWidth: (model.style?.lineAppendWidth || 0) * scale,
+    shadowBlur: (style.shadowBlur || 0) * scale
+  })
+  const label = group.find(element => element.get('type') === 'text')
+  const fontSize = model.labelCfg.style.fontSize
+  label?.attr({
+    fontSize: Math.min(fontSize, 14 / zoom),
+    lineWidth: (model.labelCfg.style.lineWidth || 0) * scale
+  })
+  group.find(element => element.get('name') === 'semantic-edge-line')?.attr({
+    lineWidth: style.lineWidth * scale,
+    lineDash: (model.style?.lineDash || []).map(length => length * scale)
+  })
+  const marker = group.find(element => element.get('name') === 'direction-marker')
+  const path = marker?.get('unscaledPath')
+  if (path) {
+    const [, x, y] = path[0]
+    marker.attr({ path: path.map(([command, px, py]) => command === 'Z' ? ['Z']
+      : [command, x + (px - x) * scale, y + (py - y) * scale]) })
+  }
+}
+
+function syncRenderedSizes() {
   if (!graphInstance) return
   const zoom = graphInstance.getZoom()
+  graphInstance.getNodes().forEach(node => syncRenderedSize(node, zoom))
+  graphInstance.getEdges().forEach(edge => syncRenderedSize(edge, zoom))
+}
+
+function syncSemanticZoom() {
+  if (!graphInstance) return
+  syncRenderedSizes()
+  const zoom = graphInstance.getZoom()
   const level = zoom < 0.38 ? 'far' : zoom < 0.72 ? 'middle' : 'near'
-  if (!force && level === semanticZoomLevel) return
-  semanticZoomLevel = level
 
   graphInstance.getNodes().forEach(node => {
     const model = node.getModel()
@@ -551,6 +595,7 @@ function applyAnalysisVisuals() {
       labelCfg: { style: { fill: getContrastingTextColor(visual.fill, theme.labelLight, theme.labelDark) } }
     })
   })
+  syncRenderedSizes()
 }
 
 defineExpose({
@@ -565,9 +610,7 @@ defineExpose({
       pendingFocusIds = itemIds
     }
   },
-  fitView() {
-    graphInstance?.fitView()
-  },
+  fitView,
   applyScoreColors(nodeScores, mode = 'gradient', sizeMapping = false) {
     if (!graphInstance || !nodeScores?.length) return
     const theme = effectiveTheme()
