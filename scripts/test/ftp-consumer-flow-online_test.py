@@ -172,6 +172,19 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def test_completed_phase_preserves_observations_without_claiming_suite_success(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_ARTIFACT_DIR': directory}):
+            report = {'run_id': 'ftp-unit', 'physical_model_storage': [{'format': '3ds', 'objects': []}]}
+            M.save_completed_phase(report, 'physical_model_storage')
+            path = Path(directory, 'ftp-consumer-flow-progress.json')
+            self.assertEqual(json.loads(path.read_text()), {
+                'completed_phase': 'physical_model_storage', 'observations': report})
+            self.assertFalse(Path(directory, 'ftp-consumer-flow.json').exists())
+            report['failed_generation'] = {'status': 'failed', 'preserved_result_id': 1}
+            M.save_completed_phase(report, 'failed_generation_preserves_output')
+            self.assertEqual(json.loads(path.read_text())['observations'], report)
+            self.assertEqual(json.loads(path.read_text())['completed_phase'], 'failed_generation_preserves_output')
+
     def denied_generation_fixture(self, kind='3ds', mutate=None):
         model, published, detail = self.owned_detail(kind)
         identifier = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -183,7 +196,7 @@ class FTPConsumerTest(unittest.TestCase):
                      'status': 'failed', 'attempt': 0, 'progress': 0, 'trigger_type': 'manual',
                      'triggered_by': 8, 'completed_at': '2026-10-21T00:00:00Z',
                      'metadata': {}, 'error_details': {'code': 'source_authorization_required'}}
-        response = {'error': 'Source permission required', 'error_code': 'source_authorization_required'}
+        response = {'error': 'Source permission required'}
         changed_detail = copy.deepcopy(detail)
         if mutate:
             mutate(after, execution, changed_detail, response)
@@ -212,6 +225,8 @@ class FTPConsumerTest(unittest.TestCase):
                 observed = M.verify_denied_generation(client, report, kind, 'source_withdrawn')
             self.assertEqual(observed['execution_id'], identifier)
             self.assertEqual(observed['attempt'], 0)
+            self.assertEqual(observed['http_status'], 403)
+            self.assertEqual(observed['http_error_fields'], ['error'])
             self.assertIsNone(observed['started_at'])
             self.assertFalse(observed['input_preparation_created'])
             self.assertEqual(observed['preserved_execution_id'], published['execution_id'])
@@ -224,11 +239,16 @@ class FTPConsumerTest(unittest.TestCase):
     def test_denied_generation_rejects_claimed_foreign_or_staged_attempts(self):
         mutations = {
             'not a source denial': lambda a,e,d,r: r.update(error_code='security_protection_required'),
+            'execution code in HTTP body': lambda a,e,d,r: r.update(error_code='source_authorization_required'),
+            'missing HTTP error': lambda a,e,d,r: r.clear(),
+            'blank HTTP error': lambda a,e,d,r: r.update(error='  '),
+            'non-text HTTP error': lambda a,e,d,r: r.update(error={'code': 'forbidden'}),
             'no new audit': lambda a,e,d,r: a.update(last_execution_id='12345678-1234-4234-8234-123456789abc'),
             'claimed': lambda a,e,d,r: e.update(attempt=1),
             'started': lambda a,e,d,r: e.update(started_at='2026-10-21T00:00:00Z'),
             'wrong owner': lambda a,e,d,r: e.update(source_task_id='999'),
             'wrong actor': lambda a,e,d,r: e.update(triggered_by=99),
+            'parent execution': lambda a,e,d,r: e.update(parent_execution_id='12345678-1234-4234-8234-123456789abc'),
             'not settled': lambda a,e,d,r: a.update(last_execution_status='pending'),
             'wrong failure': lambda a,e,d,r: e.update(error_details={'code': 'conversion_failed'}),
             'runtime facts': lambda a,e,d,r: e.update(metadata={'workflow_runtime': {'engine_type': 'model3d'}}),

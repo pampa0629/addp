@@ -605,9 +605,9 @@ def verify_denied_generation(client, report, kind, reason):
     before = owned_model_details(client, report, model, published)
     denial = client.request('POST', task_path + '/execute', (403,),
                             {'parameters': {'existing_result_action': 'overwrite'}}).payload
-    require(isinstance(denial, dict) and bool(denial.get('error')) and
-            denial.get('error_code') == 'source_authorization_required',
-            'FTP generation must be rejected by current source authorization')
+    require(isinstance(denial, dict) and set(denial) == {'error'} and
+            isinstance(denial['error'], str) and bool(denial['error'].strip()),
+            'FTP denied generation must follow the task execute HTTP 403 error contract')
     task = client.request('GET', task_path, (200,)).payload
     identifier = task.get('last_execution_id')
     known = {row['execution_id'] for row in report['browser']['models']}
@@ -625,6 +625,7 @@ def verify_denied_generation(client, report, kind, reason):
         'status': 'failed', 'progress': 0, 'trigger_type': 'manual',
         'triggered_by': int(report['principal_id'])}.items()) and
         type(execution.get('attempt')) is int and execution['attempt'] == 0 and
+        execution.get('parent_execution_id') is None and
         execution.get('started_at') is None and bool(execution.get('completed_at')) and
         execution.get('error_details', {}).get('code') == 'source_authorization_required' and
         not execution.get('metadata', {}).get('workflow_runtime') and
@@ -639,6 +640,7 @@ def verify_denied_generation(client, report, kind, reason):
     objects = verify_physical_objects([{**object_ref(after['storage_ref']), 'exists': True,
                                        'size': published['size'], 'sha256': published['sha256']}])
     return {'format': kind, 'task_id': published['task_id'], 'execution_id': identifier,
+            'http_status': 403, 'http_error_fields': ['error'],
             'status': 'failed', 'reason': reason, 'attempt': 0, 'started_at': None,
             'input_preparation_created': False, 'preserved_result_id': published['result_id'],
             'preserved_execution_id': published['execution_id'], 'objects': objects,
@@ -1087,6 +1089,13 @@ def run_browser(report, *, withdrawn=False):
     return actual
 
 
+def save_completed_phase(report, phase):
+    # Persist only the existing suite report, never a client, credential or raw
+    # failure response. A checkpoint is partial evidence, not a passing verdict.
+    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow-progress.json').write_text(
+        json.dumps({'completed_phase': phase, 'observations': report}, ensure_ascii=False, indent=2))
+
+
 def main():
     require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1', 'FTP suite requires the Hosted Online entry')
     tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
@@ -1098,31 +1107,40 @@ def main():
     report = run(client, tenant, engine, samples, model_samples, timeout)
     report['ifc_product_profile'] = verify_ifc_product_profile(Path(__file__).resolve().parents[2],
         Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')))
+    save_completed_phase(report, 'source_facts_and_ifc_profile')
     issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
                                    SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), min(timeout, 30))
     authorization = ModelSourceAuthorization(issuer, client, report)
     try:
         report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
         report['browser'] = run_browser(report)
+        save_completed_phase(report, 'browser_generation_cache_and_source_downloads')
         report['physical_model_storage'] = verify_owned_model_storage(client, report)
+        save_completed_phase(report, 'physical_model_storage')
         report['failed_generation'] = verify_failed_generation(client, report, timeout)
+        save_completed_phase(report, 'failed_generation_preserves_output')
         report['denied_generations'] = []
         source = next(model for model in report['models'] if model['format'] == '3ds')
         report['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, timeout)
         report['denied_generations'].append(report['old_grant_composition']['denied_generation'])
+        save_completed_phase(report, 'old_grant_composition_denial')
         report['restored_before_deny'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
         deny = authorization.deny(source)
         report['source_deny_id'] = deny
         report['deny_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
         report['composition_rules'] = verify_composition_rules(client, authorization, report, deny, timeout)
         report['released_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
+        save_completed_phase(report, 'composition_deny_release_and_restoration')
     finally:
         authorization.cleanup()
     report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
     report['denied_generations'].extend(verify_denied_generation(client, report, model['format'], 'source_withdrawn')
                                         for model in report['models'])
+    save_completed_phase(report, 'source_withdrawal_denials')
     report['withdrawn_browser'] = run_browser(report, withdrawn=True)
+    save_completed_phase(report, 'withdrawn_browser')
     report['deleted_models'] = delete_owned_models(client, report)
+    save_completed_phase(report, 'model_deletion')
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 

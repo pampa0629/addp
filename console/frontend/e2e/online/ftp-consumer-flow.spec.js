@@ -206,12 +206,12 @@ async function withdrawnModel(page, expectedIdentity, model, published, latest) 
       expect(Object.hasOwn(headers, 'cookie')).toBe(false)
       expect(new URL(denied.url()).search).toBe('')
     }
-    expect(contentSuccesses).toBe(0)
-    expect(generationRequests).toBe(0)
     const task = await json(await api.get(`/api/v1/manager/tasks/model_3d_glb_generation/${published.task_id}`), 'FTP withdrawn task execution summary')
     expect(task.last_execution_id).toBe(latest.execution_id)
     expect(task.last_execution_status).toBe(latest.status)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-withdrawn.png`) })
+    expect(contentSuccesses).toBe(0)
+    expect(generationRequests).toBe(0)
     return { format: model.format, item_id: model.item_id, result_id: published.result_id,
       status: 403, error_visible: true, content_successes: 0, generation_requests: 0,
       unchanged_execution_id: latest.execution_id, unchanged_execution_status: latest.status }
