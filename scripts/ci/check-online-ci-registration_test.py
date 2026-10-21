@@ -17,6 +17,33 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_disk_pressure_requires_owned_ext4_exact_rejection_recovery_and_cleanup(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',
+                 'scripts/test/online-hosted-raster-disk-pressure-gate.sh',
+                 'scripts/test/raster-disk-pressure-online.py', 'business/scripts/online-raster-disk-pressure-fixture.py',
+                 'engines/geopython-workflow/test_online_disk_pressure_fixture.py')
+        for relative in paths:
+            target = self.repository/relative; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source/relative, target)
+        registered = {'raster-disk-pressure'}
+        CHECK.validate_raster_disk_pressure_profile(self.repository, registered)
+        mutations = ((paths[0], "inputs.suite != 'raster-disk-pressure'"),
+            (paths[0], 'nfs-kernel-server nfs-common e2fsprogs util-linux'),
+            (paths[3], '--suite raster-workflow'), (paths[3], 'TMPDIR=/raster-pressure-tmp'),
+            (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), (paths[4], 'raster.strict_sizes'),
+            (paths[4], 'capacity.validate_scan'), (paths[4], 'SubmittedLanguageClient'),
+            (paths[4], 'product Runtime or master/worker restarted'), (paths[4], 'pending_bytes'), (paths[4], 'workflow_sha256'),
+            (paths[5], 'refusing foreign loop cleanup'), (paths[5], 'nodiscard'), (paths[5], 'loop_detached'),
+            (paths[5], 'np.array_equal(band.ReadAsArray(), expected, equal_nan=True)'),
+            (paths[6], 'test_pressure_native_exact_phase_rejection_and_same_process_recovery'))
+        for relative, fragment in mutations:
+            target = self.repository/relative; original = target.read_text()
+            target.write_text(original.replace(fragment, 'omitted'))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_disk_pressure_profile(self.repository, registered)
+            target.write_text(original)
+
     def test_workflow_runtime_health_requires_manual_hosted_lifecycle_and_regressions(self):
         source = SCRIPT.parents[2]
         paths = ("Makefile", "scripts/test/online-host-gate.sh", ".github/workflows/online-t4-gates.yml",

@@ -2308,6 +2308,46 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             raise RegistrationError(f'nibble capacity contract incomplete: {relative}')
 
 
+def validate_raster_disk_pressure_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-disk-pressure'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-disk-pressure-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "inputs.suite == 'raster-disk-pressure'" not in job.group('body')
+        or "inputs.suite != 'raster-disk-pressure'" not in workflow
+        or 'nfs-kernel-server nfs-common e2fsprogs util-linux' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('disk pressure requires manual isolated Hosted Linux ext4/NFS')
+    required = {
+        'scripts/test/online-hosted-raster-disk-pressure-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime',
+            '--cpus 4 --memory 2g --memory-swap 2g', 'TMPDIR=/raster-pressure-tmp',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-disk-pressure-fixture.py stop'),
+        'business/scripts/online-raster-disk-pressure-fixture.py': (
+            'NFSExport', 'posix_fallocate', 'mkfs.ext4', 'nodiscard', 'losetup', 'findmnt', 'umount',
+            'refusing foreign loop cleanup', 'loop_detached', 'image_removed',
+            'np.array_equal(band.ReadAsArray(), expected, equal_nan=True)', 'full_check=True'),
+        'scripts/test/raster-disk-pressure-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'verify_failure',
+            'SubmittedLanguageClient', 'Accept-Language', 'capacity.validate_scan', 'raster.strict_sizes',
+            'raster.wait_lineage', 'source_edges(client', 'source metadata changed',
+            'product Runtime or master/worker restarted', 'pending_bytes', 'safety_bytes', 'workflow_sha256',
+            'exact rejected workflow/target'),
+        'engines/geopython-workflow/test_online_disk_pressure_fixture.py': (
+            'test_pressure_native_exact_phase_rejection_and_same_process_recovery',
+            'test_pressure_oracle_rejects_corrupt_or_extra_publications'),
+        'Makefile': ('test_online_disk_pressure_fixture.py', '@$(MAKE) test-raster-disk-pressure-online-runner',
+            'scripts/test/raster-disk-pressure-online_test.py', 'scripts/test/online-raster-disk-pressure-fixture_test.py',
+            'scripts/test/online-hosted-raster-disk-pressure-gate_test.py')}
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('disk pressure strict contract incomplete: '+relative)
+
+
 def validate_raster_nibble_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-nibble-persistence'
     if suite not in registered:
@@ -2922,6 +2962,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_mode_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
+    validate_raster_disk_pressure_profile(repository, registered)
     validate_raster_nibble_capacity_profile(repository, registered)
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)

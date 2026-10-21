@@ -132,6 +132,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-disk-pressure": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-disk-pressure-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "raster-nibble-capacity": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-nibble-capacity-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

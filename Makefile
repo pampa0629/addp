@@ -201,7 +201,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_disk_pressure_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
@@ -626,6 +626,12 @@ test-raster-band-recommendation-online-runner: ## 验证OIF 三波段推荐只�
 	@bash -n scripts/test/online-hosted-raster-band-recommendation-gate.sh
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-band-recommendation-workflow-online_test.py scripts/test/online-raster-band-recommendation-fixture_test.py scripts/test/online-hosted-raster-band-recommendation-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions
 
+.PHONY: test-raster-disk-pressure-online-runner
+test-raster-disk-pressure-online-runner: ## 验证真实低磁盘拒绝、恢复与隔离磁盘清理
+	@bash -n scripts/test/online-hosted-raster-disk-pressure-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-disk-pressure-online_test.py scripts/test/online-raster-disk-pressure-fixture_test.py scripts/test/online-hosted-raster-disk-pressure-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_disk_pressure_requires_owned_ext4_exact_rejection_recovery_and_cleanup
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
 .PHONY: test-raster-nibble-capacity-online-runner
 test-raster-nibble-capacity-online-runner: ## 验证分类蚕食容量矩阵、资源采样、完整成果与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-nibble-capacity-gate.sh
@@ -654,6 +660,7 @@ test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
 
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-raster-disk-pressure-online-runner
 	@$(MAKE) test-raster-proximity-online-runner
 	@$(MAKE) test-vector-zonal-statistics-online-runner
 	@$(MAKE) test-raster-focal-mode-online-runner
