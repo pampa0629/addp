@@ -385,7 +385,7 @@ class MongoClient(SpatialClient):
             denied = "aggregate" in query and ((self.confirmed and not self.allow_protected_derived)
                                                or (not self.confirmed and self.fail_unprotected_derived))
             if denied:
-                execution = {"status": "failed", "metadata": {}, "error_details": {
+                execution = {"execution_id": str(uuid.uuid4()), "status": "failed", "metadata": {}, "error_details": {
                     "category": "execution_failed", "code": "develop.query.protection_required",
                     "diagnostic": {"schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "protection_lineage_unverified"}}}
             else:
@@ -2194,6 +2194,8 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "wait_for_algorithm_projections"),
               patch.object(ONLINE, "exercise_bank_card_computed_outputs", return_value={"protected_results_absent": True}),
               patch.object(ONLINE, "exercise_enrolling_refusal", return_value={"diagnostic_reason": "protection_not_ready"}),
+              patch.object(ONLINE, "bank_outlet_refusals", return_value={}),
+              patch.object(ONLINE, "transfer_refusal_with_history", return_value={}),
               patch.object(ONLINE, "exercise_bank_card_refusal_causes", return_value={"schema_restored": True}),
               patch.object(ONLINE, "develop_rows", side_effect=lambda *args: self.mixed_rows() if "copied_card" in args[4] else self.rows()) as develop,
               patch.object(ONLINE, "service_rows", return_value=self.rows()),
@@ -2235,7 +2237,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         self.assertTrue(result["sql_service_deleted"])
         self.assertTrue(result["computed_service_deleted"])
         self.assertTrue(result["computed_outputs"]["service_refusal"]["result_absent"])
-        self.assertEqual(result["temporary_execution_resources"], 4)
+        self.assertEqual(result["temporary_execution_resources"], 11)
         self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
         self.assertTrue(result["task_deleted"] and result["service_deleted"])
         self.assertNotIn("6222000000000000001", json.dumps(result))
@@ -2455,13 +2457,13 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
                     patch.object(ONLINE, 'develop_rows', return_value=[]) as rows, \
                     patch.object(ONLINE, 'assert_bank_card_rows', return_value={'rows': 5}):
                 if failure == 'none':
-                    result = ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10)
+                    result = ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10, Mock(return_value={}))
                     self.assertTrue(result['schema_restored'])
                     self.assertTrue(result['protection_revisions_unchanged'])
                     rows.assert_called_once()
                 else:
                     with self.assertRaisesRegex(ONLINE.SuiteError, 'injected'):
-                        ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10)
+                        ONLINE.exercise_bank_card_refusal_causes(client, 'id', 23, 'locator', time.monotonic()+10, Mock(return_value={}))
                     rows.assert_not_called()
                 self.assertEqual(calls, ['bank-schema-add', 'bank-schema-remove'])
 
@@ -2474,6 +2476,107 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
             with self.assertRaises(ONLINE.SuiteError): ONLINE.run_bank_schema_fixture('unknown', 0)
             with self.assertRaises(ONLINE.SuiteError): ONLINE.run_bank_schema_fixture('bank-schema-add', 0)
             self.assertEqual(command.call_count, 1)
+
+
+class FourOutletReasonMatrixTest(unittest.TestCase):
+    def proof(self, reason, owner):
+        if owner in ('manager', 'service'):
+            return {'http_status': 403, 'error_code': 'security_protection_required' if owner == 'manager' else 'data_protection_required', 'result_absent': True}
+        return {'execution_id': str(uuid.uuid4()), 'diagnostic_reason': reason, 'diagnostic_stage': 'preparation',
+                'diagnostic_code': 'develop.query.protection_required' if owner == 'develop' else ('query_output_lineage_unresolved' if reason.endswith('lineage_unverified') else 'data_protection_required'),
+                'history_result_absent': True, 'denied_result_absent': True,
+                'records_written': 0, 'bytes_written': 0, 'target_unchanged': True, 'same_user_verified': True}
+
+    def report(self):
+        refusals = {}
+        for name in ('not_ready','schema_mismatch','operation_unsupported'):
+            reason='protection_'+name
+            owners=('service','transfer') if name=='operation_unsupported' else ('manager','service','transfer')
+            refusals[name]={**self.proof(reason,'develop'),'outlets':{o:self.proof(reason,o) for o in owners}}
+        lineage=self.proof('protection_lineage_unverified','transfer')
+        lineage['target_empty_before_and_after']=True
+        return {'bank_card_metadata':{'refusal_causes':refusals, 'computed_outputs':{
+                    'cases':{'substring':self.proof('protection_computed_output_unsupported','develop')},
+                    'service_refusal':self.proof('protection_computed_output_unsupported','service'),
+                    'transfer_refusal':self.proof('protection_computed_output_unsupported','transfer')}},
+                'mongodb_algorithms':{'cases':[{'query_boundaries':self.proof('protection_lineage_unverified','develop'),'derived_transfer_denied':lineage}]},
+                'resource_validity':{'same_user_verified':True,'expired_outputs':{'manager_http_status':403,'service_http_status':403,
+                    'service_error_code':'data_protection_required','develop_execution_id':str(uuid.uuid4()),'transfer_execution_id':str(uuid.uuid4()),
+                    'transfer_diagnostic':self.proof('protection_expired','transfer'),'records_written':0,'bytes_written':0,'target_unchanged':True,'result_absent':True}}}
+
+    def test_closed_matrix_keeps_protocol_cells_distinct_from_runtime(self):
+        matrix=ONLINE.protection_reason_matrix(self.report())
+        self.assertEqual(len(matrix['rows']),7)
+        self.assertEqual(matrix['coverage_counts'],{'runtime':20,'protocol_only':8})
+        for reason,row in matrix['rows'].items():
+            self.assertEqual(set(row),set(ONLINE.OWNER_ACTIONS))
+            for owner,cell in row.items():
+                if cell['level']=='protocol_only':
+                    self.assertEqual(cell['entry'],'make test-common-postgres')
+                    self.assertIn('/'+owner+'/'+reason,cell['case'])
+                    self.assertNotIn('evidence',cell)
+        self.assertTrue(all(c['level']=='protocol_only' for c in matrix['rows']['protection_not_yet_valid'].values()))
+
+    def test_matrix_rejects_missing_http_or_historical_proof_and_transfer_writes(self):
+        for fault in ('missing','reason','history','uuid','http_data','writes','bool_writes','target'):
+            report=self.report(); proof=report['bank_card_metadata']['refusal_causes']['not_ready']
+            if fault=='missing': del proof['outlets']['manager']
+            if fault=='reason': proof['diagnostic_reason']='data_protection_required'
+            if fault=='history': proof['history_result_absent']=False
+            if fault=='uuid': proof['execution_id']='not-an-execution'
+            if fault=='http_data': proof['outlets']['service']['rows']=[]
+            if fault=='writes': proof['outlets']['transfer']['records_written']=1
+            if fault=='bool_writes': proof['outlets']['transfer']['records_written']=False
+            if fault=='target': proof['outlets']['transfer']['target_unchanged']=False
+            with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError): ONLINE.protection_reason_matrix(report)
+
+    def test_transfer_refusal_compares_same_history_and_target_and_always_cleans(self):
+        reason='protection_schema_mismatch'
+        for fault in ('none','reason','history','writes','bytes','result','target','actor','start'):
+            row={'status':'failed','trigger_by':7,'metadata':{},'records_written':0,'bytes_written':0,**self.proof(reason,'transfer')}
+            row['error_details']={'code':'data_protection_required','diagnostic':{'schema_version':'addp.execution-failure/v3','reason':reason,'stage':'preparation'}}
+            history=copy.deepcopy(row)
+            if fault=='reason': history['error_details']['diagnostic']['reason']='data_protection_required'
+            if fault=='history': history['execution_id']=str(uuid.uuid4())
+            if fault=='writes': history['records_written']=1
+            if fault=='bytes': history['bytes_written']=1
+            if fault=='result': history['metadata']['result']={'rows':['private']}
+            if fault=='actor': history['trigger_by']=9
+            client=Mock();client.request.return_value=ONLINE.SUPPORT.Response(200,history)
+            def run(*args,**kwargs):
+                args[3].append(31)
+                if fault=='start': raise ONLINE.SuiteError('start failed')
+                return 31,row
+            with self.subTest(fault=fault),patch.object(ONLINE,'create_and_run_task',side_effect=run),patch.object(ONLINE,'cleanup_tasks') as cleanup, \
+                    patch.object(ONLINE,'preview_rows',side_effect=[(['id'],[]),(['id'],[{'id':1}]) if fault=='target' else (['id'],[])]):
+                if fault=='none': self.assertTrue(ONLINE.transfer_refusal_with_history(client,{},'target',reason,time.monotonic()+10,7)['target_unchanged'])
+                else:
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.transfer_refusal_with_history(client,{},'target',reason,time.monotonic()+10,7)
+                cleanup.assert_called_once_with(client,[31])
+
+    def test_bank_http_outlets_preserve_contract_query_source_and_cleanup(self):
+        source=BankCardMetadataAcceptanceTest().source_item()
+        for name in ('not_ready','schema_mismatch','operation_unsupported'):
+            reason='protection_'+name
+            for fault in ('none','service','transfer'):
+                client=Mock()
+                def request(method,path,status,body=None):
+                    if method=='GET': return ONLINE.SUPPORT.Response(403,{'error':'safe','error_code':'security_protection_required'})
+                    if status==(201,): return ONLINE.SUPPORT.Response(201,{'id':41})
+                    return ONLINE.SUPPORT.Response(403,{'error':'safe','error_code':'data_protection_required',**({'rows':['private']} if fault=='service' else {})})
+                client.request.side_effect=request
+                query="SELECT id,bank_card_number FROM bank_card_accounts WHERE customer_code='CUST-10001'" if name=='operation_unsupported' else None
+                with self.subTest(name=name,fault=fault),patch.object(ONLINE,'cleanup_service') as cleanup, \
+                        patch.object(ONLINE,'transfer_refusal_with_history',side_effect=ONLINE.SuiteError('transfer failed') if fault=='transfer' else None,return_value=self.proof(reason,'transfer')) as transfer:
+                    if fault=='none':
+                        result=ONLINE.bank_outlet_refusals(client,23,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                        self.assertEqual(set(result),{'service','transfer'} if query else {'manager','service','transfer'})
+                        payload=transfer.call_args.args[1]
+                        if query: self.assertEqual(payload['config']['source']['query'],{'language':'sql','statement':query})
+                        else: self.assertNotIn('query',payload['config']['source'])
+                    else:
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_outlet_refusals(client,23,source,'source','parent','target',reason,query,time.monotonic()+10,7)
+                    cleanup.assert_called_once_with(client,41)
 
 
 if __name__ == "__main__":

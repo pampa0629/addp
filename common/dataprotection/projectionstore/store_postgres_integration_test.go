@@ -1,8 +1,10 @@
 package projectionstore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -255,6 +257,128 @@ func TestProjectionStoreFutureReasonHistoryAgainstPostgres(t *testing.T) {
 		t.Fatal("recovered output was not masked")
 	}
 	t.Log("future validity: persisted projection reopened; preparation refused; execution history kept precise reason/no result; newer revision recovered masked output")
+}
+
+// These are owner-local protocol tests backed by the real projection database.
+// PreparedQuery evidence and the compiler refusal are controlled protocol inputs,
+// not claims that a native Provider or an HTTP outlet was exercised.
+type reasonMatrixUnsupportedQuery struct{ plugin.PreparedQuery }
+
+func (reasonMatrixUnsupportedQuery) BindOutputTransforms(context.Context, []plugin.QueryOutputTransform) error {
+	return plugin.ErrQueryOutputTransformUnsupported
+}
+
+func TestProjectionStoreReasonMatrixAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	owners := []struct{ owner, action string }{{"manager", "preview"}, {"develop", "query"}, {"service", "service_execute"}, {"transfer", "export"}}
+	reasons := []string{"protection_not_ready", "protection_expired", "protection_not_yet_valid", "protection_schema_mismatch", "protection_lineage_unverified", "protection_computed_output_unsupported", "protection_operation_unsupported"}
+	for _, outlet := range owners {
+		t.Run(outlet.owner, func(t *testing.T) {
+			for index, reason := range reasons {
+				t.Run(reason, func(t *testing.T) {
+					schema := fmt.Sprintf("projection_reason_matrix_%s_%d", outlet.owner, index)
+					dropProjectionStoreTestSchema(t, db, schema)
+					t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
+					store, err := Migrate(db, schema, outlet.owner, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					initializeTenant(t, store, 7)
+					model := plugin.DynamicSchemaCatalogModel()
+					path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+					fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+					now := time.Now().UTC()
+					normal := activeTableProjection(t, outlet.owner, outlet.action, model, path, fields)
+					normal.ValidFrom, normal.ExpiresAt = now.Add(-time.Minute), nil
+					projection := normal
+					installedAt := now
+					switch reason {
+					case "protection_not_ready":
+						projection.State, projection.Rules, projection.SourceSnapshotHash = dataprotection.ProjectionStateEnrolling, []dataprotection.Rule{}, ""
+					case "protection_not_yet_valid":
+						projection.ValidFrom = now.Add(time.Hour)
+						installedAt = projection.ValidFrom
+					case "protection_expired":
+						projection.ValidFrom = now.Add(-2 * time.Hour)
+						projection.ExpiresAt = dataprotection.ProjectionDeadline(now.Add(-time.Hour))
+						installedAt = now.Add(-90 * time.Minute)
+					}
+					if err := projection.Seal(); err != nil {
+						t.Fatal(err)
+					}
+					batch := &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "matrix", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "matrix"}
+					if err := store.ApplyBatch(t.Context(), 7, "", batch, installedAt); err != nil {
+						t.Fatal(err)
+					}
+					reader, err := Open(db, schema, outlet.owner, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					currentFields := append([]datatype.FieldInfo(nil), fields...)
+					if reason == "protection_schema_mismatch" {
+						currentFields = append(currentFields, datatype.FieldInfo{Name: "extra", Path: []string{"extra"}, Type: datatype.FieldTypeString, Nullable: true})
+					}
+					source := plugin.QueryOutputSource{Path: path, Fields: currentFields, IdentityOutput: true}
+					if reason == "protection_computed_output_unsupported" {
+						source.IdentityOutput = false
+						source.Bindings = []plugin.QueryOutputBinding{{SourcePath: []string{"phone"}, OutputPath: []string{"phone"}, Transformation: plugin.QueryOutputTransformationDerived}}
+					}
+					var sources []plugin.QueryOutputSource
+					if reason != "protection_lineage_unverified" {
+						sources = []plugin.QueryOutputSource{source}
+					}
+					executed := false
+					prepared, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
+						func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+						func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+							return &plugin.QueryOutputLineage{Sources: sources}, nil
+						},
+						func(context.Context) (*plugin.QueryResult, error) { executed = true; return nil, nil })
+					if err != nil {
+						t.Fatal(err)
+					}
+					if reason == "protection_operation_unsupported" || reason == "protection_computed_output_unsupported" {
+						prepared = reasonMatrixUnsupportedQuery{prepared}
+					}
+					protected, refusal := reader.PrepareQueryProtection(t.Context(), 7, model, prepared, outlet.action, dataprotection.SubjectReference{}, now)
+					if protected != nil || refusal == nil || execution.ProtectionFailureReason(refusal) != reason || executed {
+						t.Fatalf("protocol refusal: want=%s got=%s error=%v executed=%t", reason, execution.ProtectionFailureReason(refusal), refusal, executed)
+					}
+					normal.Revision = "00000000000000000002"
+					if err := normal.Seal(); err != nil {
+						t.Fatal(err)
+					}
+					batch.Changes[0].ChangeID, batch.Changes[0].Projection, batch.NextCursor = "restore", &normal, "restore"
+					if err := reader.ApplyBatch(t.Context(), 7, "matrix", batch, now); err != nil {
+						t.Fatal(err)
+					}
+					protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, outlet.action, now)
+					if err != nil || protected == nil {
+						t.Fatalf("normal revision did not recover: %v", err)
+					}
+					result := &plugin.QueryResult{Columns: []string{"phone"}, Rows: []map[string]interface{}{{"phone": "13812345678"}}}
+					if err := protected.Apply(result); err != nil {
+						t.Fatal(err)
+					}
+					if result.Rows[0]["phone"] != "138****5678" {
+						t.Fatal("normal revision did not mask")
+					}
+				})
+			}
+		})
+	}
 }
 
 func postgresLegacyStructuredMaskProjection(t *testing.T) dataprotection.Projection {

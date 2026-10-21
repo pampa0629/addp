@@ -1387,6 +1387,14 @@ def validate_transfer_protection_refusal(execution: Mapping[str, object], stage:
     return {"diagnostic_code": code, "diagnostic_stage": stage, "diagnostic_reason": reason}
 
 
+def validate_manager_protection_refusal(response: SUPPORT.Response) -> None:
+    payload = _object(response.payload, "Manager protection refusal")
+    if (response.status != 403 or set(payload) != {"error", "error_code"}
+            or payload.get("error_code") != "security_protection_required"
+            or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+        raise SuiteError("Manager refusal must preserve its safe localized 403 contract")
+
+
 def validate_service_protection_refusal(response: SUPPORT.Response) -> None:
     payload = _object(response.payload, "Service protection refusal")
     if (response.status != 403 or set(payload) != {"error", "error_code"}
@@ -1402,7 +1410,7 @@ def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
         raise SuiteError("MongoDB count must return seven without field values")
     execution = develop_execution(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
     evidence = validate_develop_protection_refusal(execution, "preparation", "protection_lineage_unverified")
-    return {"count": 7, "derived_output_denied": True, **evidence}
+    return {"count": 7, "derived_output_denied": True, "execution_id": execution["execution_id"], "history_result_absent": True, **evidence}
 
 
 def verify_mongodb_raw_export(client: GatewayClient, locator: str, identity: Mapping[str, object],
@@ -1561,6 +1569,7 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             protection_diagnostic = validate_transfer_protection_refusal(execution, "preparation", "query_output_lineage_unresolved", "protection_lineage_unverified")
             diagnostics = _object(execution.get("error_details"), "query failure diagnostics")
             if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
+                    or "result" in (execution.get("metadata") or {}) or "result" in execution
                     or diagnostics.get("category") != "execution_failed"
                     or diagnostics.get("code") != "query_output_lineage_unresolved"
                     or "error_msg" in execution or "message" in diagnostics or "details" in diagnostics):
@@ -1848,6 +1857,148 @@ def develop_refusal_with_history(client: GatewayClient, engine_id: int, locator:
     return {**evidence, "execution_id": execution_id, "history_result_absent": True}
 
 
+def bank_query_transfer_payload(locator: str, parent: str, query: str) -> dict[str, object]:
+    payload = transfer_payload("addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)
+    payload["config"]["source"]["query"] = {"language": "sql", "statement": query}
+    payload["config"]["transforms"] = [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+        {"source": "id", "target": "id", "target_type": "bigint", "nullable": False},
+        {"source": BANK_FIELD, "target": BANK_FIELD, "target_type": "string", "nullable": True}]}]
+    return payload
+
+
+def transfer_refusal_with_history(client: GatewayClient, payload: dict[str, object], target_locator: str,
+                                  reason: str, deadline: float, principal_id: int) -> dict[str, object]:
+    before = preview_rows(client, target_locator)
+    tasks: list[int] = []
+    try:
+        _, execution = create_and_run_task(client, payload, deadline, tasks, expected_status="failed")
+        execution_id = execution.get("execution_id")
+        try:
+            if str(uuid.UUID(str(execution_id))) != execution_id or uuid.UUID(execution_id).int == 0:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError) as error:
+            raise SuiteError("Transfer refusal needs an actual execution UUID") from error
+        evidence = validate_transfer_protection_refusal(execution, "preparation", "data_protection_required", reason)
+        history = _object(client.request("GET", "/api/v1/transfer/executions/" + execution_id, (200,)).payload, "same Transfer refusal")
+        if history.get("execution_id") != execution_id or history.get("error_details") != execution.get("error_details"):
+            raise SuiteError("Transfer refusal history changed its execution or diagnostic")
+        validate_transfer_protection_refusal(history, "preparation", "data_protection_required", reason)
+        for row in (execution, history):
+            if (positive_int(row.get("trigger_by"), "refusal initiator") != principal_id
+                    or nonnegative_int(row.get("records_written"), "refusal writes") != 0
+                    or nonnegative_int(row.get("bytes_written"), "refusal bytes") != 0
+                    or "result" in (row.get("metadata") or {}) or "result" in row):
+                raise SuiteError("Transfer refusal retained output or wrote data")
+        if preview_rows(client, target_locator) != before:
+            raise SuiteError("Transfer refusal changed its existing target")
+        result = {**evidence, "execution_id": execution_id, "history_result_absent": True,
+                  "records_written": 0, "bytes_written": 0, "target_unchanged": True, "same_user_verified": True,
+                  "created_resources": 1, "deleted_resources": 1, "residual_resources": 0}
+    finally:
+        cleanup_tasks(client, tasks)
+    return result
+
+
+def bank_outlet_refusals(client: GatewayClient, engine_id: int, source: Mapping[str, object], locator: str,
+                        parent: str, target_locator: str, reason: str, query: str | None,
+                        deadline: float, principal_id: int) -> dict[str, object]:
+    if reason not in {"protection_not_ready", "protection_schema_mismatch", "protection_operation_unsupported"}:
+        raise SuiteError("unsupported bank outlet refusal fixture")
+    outcomes = {}
+    if reason != "protection_operation_unsupported":
+        response = client.request("GET", "/api/v1/manager/preview?" + urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 100}), (403,))
+        validate_manager_protection_refusal(response)
+        outcomes["manager"] = {"http_status": 403, "error_code": "security_protection_required", "result_absent": True}
+    name = "addp-security-refusal-" + uuid.uuid4().hex
+    service = service_payload(name, engine_id, locator, BANK_FIELDS)
+    if reason == "protection_operation_unsupported":
+        service = bank_card_computed_service_payload(name, engine_id, source, locator)
+        service["sql_query"] = query
+        service["data_config"]["default_fields"] = ["id", BANK_FIELD]
+        service["output_contract"]["table"]["fields"][1]["name"] = BANK_FIELD
+    service_id = None
+    try:
+        created = _object(client.request("POST", "/api/v1/service/query", (201,), service).payload, "refusal Service")
+        service_id = positive_int(created.get("id"), "refusal Service ID")
+        response = client.request("POST", "/api/query/" + name + "/query", (403,), {
+            "select": service["data_config"]["default_fields"], "order_by": [{"field": "id", "direction": "asc"}],
+            "page": {"limit": 2}, "format": "json"})
+        validate_service_protection_refusal(response)
+        outcomes["service"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
+        payload = bank_query_transfer_payload(locator, parent, query) if query else transfer_payload(
+            "addp_security_refusal_" + uuid.uuid4().hex, locator, parent, BANK_TARGET)
+        outcomes["transfer"] = transfer_refusal_with_history(client, payload, target_locator, reason, deadline, principal_id)
+    finally:
+        cleanup_service(client, service_id)
+    return outcomes
+
+
+def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
+    """Validate the closed outlet matrix; protocol references never assert HTTP coverage."""
+    bank = report["bank_card_metadata"]
+    reasons = ("computed_output_unsupported", "lineage_unverified", "not_ready", "expired",
+               "not_yet_valid", "schema_mismatch", "operation_unsupported")
+    matrix = {"protection_" + reason: {owner: {
+        "level": "protocol_only", "entry": "make test-common-postgres",
+        "case": "TestProjectionStoreReasonMatrixAgainstPostgres/" + owner + "/protection_" + reason,
+        "scope": "shared owner-local protocol, not outlet HTTP"} for owner in OWNER_ACTIONS} for reason in reasons}
+    def runtime(reason, owner, evidence):
+        if owner in {"manager", "service"}:
+            expected_code = "security_protection_required" if owner == "manager" else "data_protection_required"
+            if evidence != {"http_status": 403, "error_code": expected_code, "result_absent": True}:
+                raise SuiteError("matrix HTTP refusal differs from its closed safe contract")
+            transport = "http_controlled_fixture"
+        else:
+            expected_code = "develop.query.protection_required" if owner == "develop" else (
+                "query_output_lineage_unresolved" if reason == "protection_lineage_unverified" else "data_protection_required")
+            if (evidence.get("diagnostic_reason") != reason or evidence.get("diagnostic_stage") != "preparation"
+                    or evidence.get("diagnostic_code") != expected_code or evidence.get("history_result_absent") is not True):
+                raise SuiteError("matrix execution lacks its precise safe historical reason")
+            try:
+                value = evidence.get("execution_id")
+                if str(uuid.UUID(str(value))) != value or uuid.UUID(value).int == 0: raise ValueError()
+            except (ValueError, TypeError, AttributeError) as error:
+                raise SuiteError("matrix execution needs a canonical UUID") from error
+            if owner == "transfer" and (type(evidence.get("records_written")) is not int or evidence["records_written"] != 0
+                    or type(evidence.get("bytes_written")) is not int or evidence["bytes_written"] != 0
+                    or evidence.get("target_unchanged") is not True or evidence.get("same_user_verified") is not True):
+                raise SuiteError("matrix Transfer needs zero writes and an unchanged target")
+            if owner == "develop" and evidence.get("denied_result_absent") is not True:
+                raise SuiteError("matrix Develop refusal retained output")
+            transport = "execution_history"
+        matrix[reason][owner] = {"level": "runtime", "transport": transport, "evidence": evidence}
+    refusals = bank["refusal_causes"]
+    for name in ("not_ready", "schema_mismatch", "operation_unsupported"):
+        proof = refusals[name]
+        reason = "protection_" + name
+        runtime(reason, "develop", {k:v for k,v in proof.items() if k != "outlets" and k != "enrolling_acknowledged"})
+        expected = {"service", "transfer"} if name == "operation_unsupported" else {"manager", "service", "transfer"}
+        if set(proof["outlets"]) != expected: raise SuiteError("matrix outlet refusal is incomplete")
+        for owner, evidence in proof["outlets"].items(): runtime(reason, owner, evidence)
+    computed = bank["computed_outputs"]
+    runtime("protection_computed_output_unsupported", "develop", computed["cases"]["substring"])
+    runtime("protection_computed_output_unsupported", "service", computed["service_refusal"])
+    runtime("protection_computed_output_unsupported", "transfer", computed["transfer_refusal"])
+    mongo = report["mongodb_algorithms"]["cases"][0]
+    runtime("protection_lineage_unverified", "develop", mongo["query_boundaries"])
+    derived = mongo["derived_transfer_denied"]
+    runtime("protection_lineage_unverified", "transfer", {**derived,
+        "history_result_absent": True, "target_unchanged": derived["target_empty_before_and_after"]})
+    expired = report["resource_validity"]["expired_outputs"]
+    for owner in ("manager", "service"):
+        runtime("protection_expired", owner, {"http_status": expired[owner + "_http_status"],
+            "error_code": "security_protection_required" if owner == "manager" else expired["service_error_code"], "result_absent": expired["result_absent"]})
+    runtime("protection_expired", "develop", {"execution_id": expired["develop_execution_id"],
+        "diagnostic_reason": "protection_expired", "diagnostic_stage": "preparation", "diagnostic_code": "develop.query.protection_required",
+        "history_result_absent": True, "denied_result_absent": expired["result_absent"]})
+    runtime("protection_expired", "transfer", {**expired["transfer_diagnostic"], "execution_id": expired["transfer_execution_id"],
+        "history_result_absent": True, "records_written": expired["records_written"], "bytes_written": expired["bytes_written"], "target_unchanged": expired["target_unchanged"], "same_user_verified": report["resource_validity"]["same_user_verified"]})
+    counts = {level: sum(cell["level"] == level for row in matrix.values() for cell in row.values()) for level in ("runtime", "protocol_only")}
+    if counts != {"runtime": 20, "protocol_only": 8}: raise SuiteError("unexpected reason matrix coverage")
+    return {"scope": "ordinary MySQL table and MongoDB collection profile; protocol-only cells retain outlet T4 gaps",
+            "rows": matrix, "coverage_counts": counts}
+
+
 def exercise_enrolling_refusal(client: GatewayClient, enrollment_id: str, engine_id: int,
                                locator: str, deadline: float) -> dict[str, object]:
     # Do not review Findings until this probe is complete: an enrolling resource
@@ -1888,12 +2039,14 @@ def run_bank_schema_fixture(action: str, deadline: float) -> None:
 
 
 def exercise_bank_card_refusal_causes(client: GatewayClient, enrollment_id: str, engine_id: int,
-                                      locator: str, deadline: float) -> dict[str, object]:
+                                      locator: str, deadline: float, probe: Callable[[str, str | None], dict[str, object]]) -> dict[str, object]:
     # This direct field has proven lineage. The SQL output compiler rejects
     # string-literal predicates in its current conservative transform subset.
     unsupported = develop_refusal_with_history(client, engine_id, locator,
         "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE + " WHERE customer_code='CUST-10001'",
         "protection_operation_unsupported", deadline)
+    unsupported["outlets"] = probe("protection_operation_unsupported",
+        "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE + " WHERE customer_code='CUST-10001'")
     before = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                     (200,)).payload, "pre-drift enrollment")
     attempted = False
@@ -1903,6 +2056,7 @@ def exercise_bank_card_refusal_causes(client: GatewayClient, enrollment_id: str,
         mismatch = develop_refusal_with_history(client, engine_id, locator,
             "SELECT id," + BANK_FIELD + " FROM " + BANK_SOURCE,
             "protection_schema_mismatch", deadline)
+        mismatch["outlets"] = probe("protection_schema_mismatch", None)
     finally:
         if attempted:
             run_bank_schema_fixture("bank-schema-remove", deadline)
@@ -2027,6 +2181,11 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     if not initialized:
         raise SuiteError("bank protection acceptance requires a fresh isolated enrollment")
     enrolling_refusal = exercise_enrolling_refusal(client, enrollment_id, source_engine_id, locator, deadline)
+    parent = build_schema_locator(target_engine_id, target)
+    target_locator = build_item_locator(target_engine_id, target)
+    def probe(reason, query):
+        return bank_outlet_refusals(client, source_engine_id, source, locator, parent, target_locator, reason, query, deadline, positive_int(identity["principal_id"], "ordinary principal"))
+    enrolling_refusal["outlets"] = probe("protection_not_ready", None)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, BANK_FIELD, BANK_DETECTOR)
     discovery = assert_bank_card_discovery(client, enrollment_id, assessment_id, finding_id)
@@ -2034,7 +2193,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
     enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                         (200,)).payload, "bank-card Enrollment")
     projections = bank_card_projections(enrollment)
-    refusal_causes = exercise_bank_card_refusal_causes(client, enrollment_id, source_engine_id, locator, deadline)
+    refusal_causes = exercise_bank_card_refusal_causes(client, enrollment_id, source_engine_id, locator, deadline, probe)
     name = "addp-online-security-bank-" + run_suffix(run_id, "-")
     service_id = None
     sql_service_id = None
@@ -2091,6 +2250,9 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             {"select": ["id", "computed"], "order_by": [{"field": "id", "direction": "asc"}], "page": {"limit": 2}, "format": "json"})
         validate_service_protection_refusal(refusal)
         computed_outputs["service_refusal"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
+        computed_outputs["transfer_refusal"] = transfer_refusal_with_history(client,
+            bank_query_transfer_payload(locator, parent, "SELECT id,substring(" + BANK_FIELD + ",1,100) AS " + BANK_FIELD + " FROM " + BANK_SOURCE),
+            target_locator, "protection_computed_output_unsupported", deadline, positive_int(identity["principal_id"], "ordinary principal"))
 
         task_id, execution = create_and_run_task(client,
             transfer_payload("addp_online_security_bank_" + run_suffix(run_id, "_"), locator,
@@ -2135,7 +2297,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "develop_page_wildcard": develop_page_wildcard, "service_sql_page": service_sql_page,
             "computed_outputs": computed_outputs, "computed_service_deleted": True,
             "refusal_causes": {"not_ready": enrolling_refusal, **refusal_causes},
-            "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 4,
+            "task_deleted": True, "service_deleted": True, "sql_service_deleted": True, "temporary_execution_resources": 11,
             "temporary_execution_resource_residuals": 0}
 
 
@@ -2239,6 +2401,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
             raise SuiteError("natural expiry silently refreshed Owner rules")
         query = urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 100})
         manager = client.request("GET", "/api/v1/manager/preview?" + query, (403,))
+        validate_manager_protection_refusal(manager)
         if any(key in _object(manager.payload, "expired preview error") for key in ("data", "rows", "columns")):
             raise SuiteError("expired preview exposed data or field structure")
         develop = develop_execution(client, source_engine_id, locator, deadline,
@@ -2255,7 +2418,8 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
         _, transfer = create_and_run_task(client, transfer_payload(task_name + "_validity_expired", locator, parent_locator),
                                           deadline, tasks, expected_status="failed")
         transfer_diagnostic = validate_transfer_protection_refusal(transfer, "preparation", "data_protection_required", "protection_expired")
-        if (nonnegative_int(transfer.get("records_written"), "expired Transfer writes") != 0
+        if ("result" in (transfer.get("metadata") or {}) or "result" in transfer
+                or nonnegative_int(transfer.get("records_written"), "expired Transfer writes") != 0
                 or nonnegative_int(transfer.get("bytes_written"), "expired Transfer bytes") != 0
                 or positive_int(transfer.get("trigger_by"), "expired Transfer initiator") != positive_int(identity["principal_id"], "ordinary User")):
             raise SuiteError("expired Transfer wrote data or changed its initiating User")
@@ -2277,7 +2441,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
                   "same_user_verified": True, "owner_processes_unchanged": True,
                   "natural_expiry_verified": True, "stale_version_rejected": True,
                   "expiry_observed_at": expiry_observed_at, "owner_processes": processes,
-                  "expired_outputs": {"manager_http_status": 403, "develop_status": "failed", "service_http_status": 403,
+                  "expired_outputs": {"manager_http_status": 403, "develop_status": "failed", "develop_execution_id": develop["execution_id"], "service_http_status": 403,
                     "service_error_code": "data_protection_required", "transfer_diagnostic": transfer_diagnostic,
                     "transfer_execution_id": transfer["execution_id"], "records_written": 0, "bytes_written": 0,
                     "target_unchanged": True, "result_absent": True}, "permanent_restored": True}
@@ -2398,7 +2562,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v24",
+            "schema_version": "addp.security-mysql-owner-protection-online/v25",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2434,6 +2598,7 @@ def run_scenario(
             "deleted_resources": 5 + len(task_ids),
             "residual_resources": 0,
         }
+        result["protection_reason_matrix"] = protection_reason_matrix(result)
     except BaseException as error:
         scenario_error = error
     try:
