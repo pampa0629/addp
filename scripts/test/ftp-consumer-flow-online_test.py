@@ -37,15 +37,16 @@ class FakeClient:
         for i, sample in enumerate(self.model_samples[:2]):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
-            native = {'scan_complete': True}
+            attributes = {'schema_version': 1,
+                          'item': {'data_type': 'model_3d', 'layout': 'single', 'format': kind},
+                          'storage': {'physical_path': path}}
             if kind == '3ds':
                 refs.append({'path': 'models/3ds/texture.png', 'role': 'texture', 'required': True})
-                native['texture_refs'] = ['texture.png']
+                attributes['item']['refs'] = refs
+                attributes['format_info'] = {'3ds': {'scan_complete': True, 'texture_refs': ['texture.png']}}
             self.items.append({'id': 4 + i, 'engine_id': 17, 'item_type': 'file', 'full_name': path,
                                'fingerprint': hashlib.sha256(f'17:{path}'.encode()).hexdigest(),
-                               'attributes': {'schema_version': 1,
-                                              'item': {'data_type': 'model_3d', 'layout': 'single', 'format': kind, 'refs': refs},
-                                              'storage': {'physical_path': path}, 'format_info': {kind: native}}})
+                               'attributes': attributes})
         self.bad_download = False
         self.admin = False
         self.write = False
@@ -583,6 +584,47 @@ class FTPConsumerTest(unittest.TestCase):
                 changed['models'][1].update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)
+
+    def test_basic_ifc_accepts_single_identity_without_fabricated_deep_metadata(self):
+        client = FakeClient()
+        item = next(row for row in client.items if row['full_name'] == 'models/ifc/model.ifc')
+        self.assertNotIn('format_info', item['attributes'])
+        self.assertNotIn('refs', item['attributes']['item'])
+        models = M.prepare_models(client.items, 17, client.model_samples)
+        model, = [row for row in models if row['format'] == 'ifc']
+        self.assertEqual(model['composition'], [{'path': item['full_name'], 'role': 'model',
+                                                 'required': True, 'primary': True}])
+        item['attributes']['format_info'] = {'ifc': {'schema': 'IFC4'}}
+        self.assertEqual(M.prepare_models(client.items, 17, client.model_samples), models)
+
+    def test_basic_ifc_keeps_strict_identity_and_composition_boundaries(self):
+        mutations = [lambda item: item.update(id='4'),
+                     lambda item: item.update(engine_id=18),
+                     lambda item: item.update(fingerprint='a' * 64),
+                     lambda item: item['attributes']['item'].update(layout='multi'),
+                     lambda item: item['attributes']['storage'].update(physical_path='models/other.ifc'),
+                     lambda item: item['attributes']['item'].update(refs=[
+                         {'path': 'models/ifc/other.ifc', 'role': 'model', 'required': True, 'primary': True}])]
+        for mutate in mutations:
+            client = FakeClient()
+            item = next(row for row in client.items if row['full_name'] == 'models/ifc/model.ifc')
+            mutate(item)
+            with self.subTest(mutation=mutations.index(mutate)), self.assertRaises(M.SuiteError):
+                M.prepare_models(client.items, 17, client.model_samples)
+
+    def test_3ds_requires_complete_native_structure_and_exact_texture_declarations(self):
+        mutations = [lambda item: item['attributes'].pop('format_info'),
+                     lambda item: item['attributes']['format_info'].pop('3ds'),
+                     lambda item: item['attributes']['format_info']['3ds'].pop('scan_complete'),
+                     lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=False),
+                     lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=1),
+                     lambda item: item['attributes']['format_info']['3ds'].pop('texture_refs'),
+                     lambda item: item['attributes']['format_info']['3ds'].update(texture_refs=[])]
+        for index, mutate in enumerate(mutations):
+            client = FakeClient()
+            mutate(client.items[-1])
+            with self.subTest(mutation=index), self.assertRaises(M.SuiteError):
+                M.prepare_models(client.items, 17, client.model_samples)
 
     def test_model_metadata_rejects_incomplete_expanded_or_changed_composition(self):
         mutations = [lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=False),

@@ -900,9 +900,8 @@ def prepare_models(items, engine_id, samples):
                 item.get('item_type') == 'file' and attributes.get('schema_version') == 1 and
                 all(facts.get(key) == value for key, value in
                     {'data_type': 'model_3d', 'layout': 'single', 'format': kind}.items()) and
-                attributes.get('storage', {}).get('physical_path') == sample['full_name'] and
-                native.get('scan_complete') is True,
-                'FTP model identity, single layout or complete native facts are missing')
+                attributes.get('storage', {}).get('physical_path') == sample['full_name'],
+                f'FTP {kind} model identity or single-file facts are missing')
         refs = facts.get('refs')
         # IFC's fixed geometry profile has no external inputs; Meta may project
         # its sole primary from the committed single-file identity.
@@ -910,6 +909,8 @@ def prepare_models(items, engine_id, samples):
             refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
         expected_refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
         if kind == '3ds':
+            require(native.get('scan_complete') is True,
+                    'FTP 3DS requires complete structural native facts')
             require(native.get('texture_refs') == ['texture.png'],
                     'FTP 3DS must retain its exact texture declaration')
             expected_refs.append({'path': by_format['png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
