@@ -181,7 +181,7 @@
 | `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。固定 `9b2830a39` 的完整 Hosted 已通过，见本节验收边界。 |
 | `make test-online ONLINE_SUITE=raster-band-recommendation-workflow` | 只读 OIF 三波段组合推荐的完整 object、共同有效域、560 个组合、无界／并列、候选顺序、非法输入和精确源身份；仅源扫描，无成果文件／派生血缘；独立手工 Hosted、600 秒预算，固定 `e712b3b13` 已通过完整验收及归档审计。 |
 | `make test-online ONLINE_SUITE=raster-nibble-persistence` | 直接蚕食、重分类接蚕食及无目标命中的三条 COG 链；独立最近原供体 oracle、完整精确分类／mask、严格三方大小、扫描、同用户／当前执行血缘、非法输入失败与零残留；独立手工 Hosted、600 秒预算，固定 `a7d627e5a` 已通过完整验收及归档审计。 |
-| `make test-online ONLINE_SUITE=raster-boundary-clean-persistence` | 直接清理、重分类接清理及全无效三条 COG 链；独立全图 Counter／两阶段完整像元与 mask、旋转跨块、安全整数并列分类、严格三方大小、精确扫描、当前执行血缘及非法输入零发布／零扫描／零新增血缘；独立手工 Hosted，600 秒预算，首次真实运行与归档审计尚待完成。 |
+| `make test-online ONLINE_SUITE=raster-boundary-clean-persistence` | 直接清理、重分类接清理及全无效三条 COG 链；独立全图 Counter／两阶段完整像元与 mask、旋转跨块、安全整数并列分类、严格三方大小、精确扫描、当前执行血缘及非法输入零发布／零扫描／零新增血缘；独立手工 Hosted，600 秒预算，固定 `1b5a26bc1` 已通过 API 保存链及归档复核，见 6.12 节。 |
 | `make test-online ONLINE_SUITE=raster-focal-mode-persistence` | 分类众数3×3、5×5及重分类接3×3三条COG链；独立Counter核对完整精确整数像元／mask、旋转跨块、COG、严格三方大小、扫描、同用户／当前执行血缘及非法波段／小数／越界分类失败清理；独立手工 Hosted，600 秒业务预算，固定 `a7d627e5a` 已通过完整验收及归档审计。 |
 | `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
@@ -232,3 +232,9 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 独立 `raster-nibble-persistence` 复用同源产品 Runtime、NFS、原普通用户 12 权限及既有 COG 保存，独立 600 秒业务预算。519×515 北向方形网格、多波段输入执行直接蚕食、重分类接蚕食、无目标命中等值三条链；原始稀疏供体由全幅整数平方暴力 oracle 按行列顺序裁定，精确核对完整分类／mask、合法零、负值、安全整数边界、等距及跨无效区域，不能用产品 EDT 或近似数组比较验证自身。逐成果验证 COG、网格／CRS、严格 artifact／物理／Meta 相等正整数大小、精确自动扫描、同用户／当前执行源血缘、Monitor、源及先前成果不变；非法波段、越界分类和无供体失败不得发布或新增扫描。固定 `a7d627e5a` 已通过完整 Hosted 及独立归档审计：三份 artifact／物理／Meta 大小严格相等为 27216／27216／13871 字节，每份 265670 个有效像元；预检与业务 160978 毫秒，Runtime／NFS／部署和 Infra 零残留通过。最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)；仅认证 API 保存闭环，不含 UI、边界清理、细化、任意网格、业务删除、覆盖冲突或容量保证。
 
 本批 OIF 推荐、分类蚕食与新增三套独立夹具均纳入标准 `make test-geopython-workflow`。固定修复版 `a7d627e5a` 的 Linux 全量实际通过 1652 项（21 条警告，1051.41 秒），无失败或跳过；同源标准 `make test-platform` 通过，完整原始日志已复核。本地 macOS 全量 1652 项（548.33 秒），255 个输入及标准入口前后不变；独立 Ubuntu 24.04 x86_64／NumPy 2.2.6／GDAL 3.8.4 标准专项 233 项（17.91 秒）通过。26 条新回归覆盖 UInt64 精确写入、大整数 NoData 混同及显式 mask，保留原拒绝断言；修复版众数及蚕食 Hosted 已通过严格归档复核，最终固定版本与证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。既有三个独立 runner、登记一致性和工作流安全检查证据保持；确定性、各套 Hosted、UI 与容量分别记账。
+
+### 6.12 分类栅格边界清理验收边界
+
+独立 `raster-boundary-clean-persistence` 的 [Hosted 39625363775](https://github.com/pampa0629/addp/actions/runs/39625363775/job/119309061524) 在固定源码 `1b5a26bc1a0a18d0e9133a8b4c4544f7faf277dd` 已通过直接清理、重分类接清理和全无效输入三条 COG 保存链。519×515、旋转 EPSG:4326 六波段样本覆盖零、负类别、安全整数边界及相邻大类别、全图计数并列和无效覆盖；现场独立两阶段全幅 oracle 精确校验完整像元／mask、原网格／CRS、COG／金字塔及未继承 scale／offset／色表。三份 artifact／物理／Meta 大小严格相等且为正整数，分别为 31270／13788／10787 字节，有效像元数为 267227／267227／0；精确自动扫描、普通用户与当前父执行、租户／引擎、资源血缘和 Monitor 一致，源及先前成果不变。非法波段、小数和越界类别三次失败均核对真实 Runtime 诊断，零发布、零新增扫描／派生血缘；工作目录、NFS、Runtime、镜像、部署及 Infra 清理通过。预检与业务 194662 毫秒，保持原 12 权限及独立 600 秒预算。
+
+归档回执、固定版本校验源码和原始日志已独立复核；归档未保留 TIFF 原字节，未作离线成果重读。本结论仅认证 API 保存闭环，不计页面／截图、容量、业务 DELETE、覆盖冲突、双向多轮或细化。同版本 Linux 全量／Platform 尚待已审计终态证据，不以本地 Native 或 Hosted 代替。最终链接和报告哈希见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。
