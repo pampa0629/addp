@@ -173,7 +173,7 @@ func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (author
 			}
 			return authorizationfacts.AuthorizationBasisComplete, nil
 		}
-		if node.NodeType != plugin.EngineCatalogTermDirectory || node.Name != parts[i] || node.FullName != strings.Join(parts[:i+1], "/") || node.ParentNodeID == nil {
+		if node.NodeType != "dir" || node.Name != parts[i] || node.FullName != strings.Join(parts[:i+1], "/") || node.ParentNodeID == nil {
 			return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
 		}
 		id = *node.ParentNodeID

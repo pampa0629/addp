@@ -20,7 +20,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	if err := db.Create(&root).Error; err != nil {
 		t.Fatal(err)
 	}
-	dir := models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &root.ID, NodeType: "directory", Name: "models", FullName: "models"}
+	dir := models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &root.ID, NodeType: "dir", Name: "models", FullName: "models"}
 	if err := db.Create(&dir).Error; err != nil {
 		t.Fatal(err)
 	}
