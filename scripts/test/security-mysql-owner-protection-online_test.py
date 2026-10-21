@@ -2416,6 +2416,29 @@ class AdditionalProtectionRefusalTest(unittest.TestCase):
                         ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)
                     refusal.assert_not_called()
 
+    def test_unready_waits_for_initial_installation_and_receipts_within_existing_deadline(self):
+        ready = {'state': 'enrolling', 'owner_progress': [
+            {'consumer_owner': owner, 'projection_state': 'enrolling', 'acknowledged': True, 'rules': []}
+            for owner in ONLINE.PROTECTION_OWNERS]}
+        pending = copy.deepcopy(ready)
+        pending['owner_progress'][0]['acknowledged'] = False
+        client = Mock()
+        client.request.side_effect = [ONLINE.SUPPORT.Response(200, v) for v in
+                                     ({'state': 'activating', 'owner_progress': []}, pending, ready)]
+        with patch.object(ONLINE, 'develop_refusal_with_history', return_value={}) as refusal, \
+                patch.object(ONLINE.time, 'monotonic', return_value=0), patch.object(ONLINE.time, 'sleep') as sleep:
+            self.assertTrue(ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)['enrolling_acknowledged'])
+            self.assertEqual(client.request.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+            refusal.assert_called_once()
+        client.request.side_effect = None
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {'state': 'activating', 'owner_progress': []})
+        with patch.object(ONLINE, 'develop_refusal_with_history') as refusal, \
+                patch.object(ONLINE.time, 'monotonic', side_effect=[0, 11]), patch.object(ONLINE.time, 'sleep'):
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'before refusal acceptance'):
+                ONLINE.exercise_enrolling_refusal(client, 'id', 23, 'locator', 10)
+            refusal.assert_not_called()
+
     def test_schema_restoration_runs_on_add_or_query_failure_and_checks_recovery(self):
         for failure in ('none', 'add', 'query'):
             calls = []

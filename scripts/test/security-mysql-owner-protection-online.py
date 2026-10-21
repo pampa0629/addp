@@ -1855,6 +1855,9 @@ def exercise_enrolling_refusal(client: GatewayClient, enrollment_id: str, engine
     while time.monotonic() < deadline:
         enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                             (200,)).payload, "unready enrollment")
+        if enrollment.get("state") == "activating":
+            time.sleep(1)
+            continue
         if enrollment.get("state") != "enrolling":
             raise SuiteError("unready acceptance requires the actual enrolling state")
         progress = [_object(v, "enrolling owner") for v in _array(enrollment.get("owner_progress"), "enrolling owners")]

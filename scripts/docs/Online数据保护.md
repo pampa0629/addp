@@ -22,6 +22,6 @@
 
 保护原因细分沿用 execution-failure/v3 的闭合 reason：v23 必须精确核对 MySQL 六种计算及其历史为 `protection_computed_output_unsupported`，MongoDB 无法证明的派生输出为 `protection_lineage_unverified`，自然到期的 Develop／Transfer 为 `protection_expired`。浏览器同时核对具体原因与对应处理建议，不接受通用保护原因代替这些已证明原因；非法值导致的结果阶段拒绝尚无进一步类型化事实时仍为 `data_protection_required`。不得解析错误正文猜测子原因、放宽为任意保护错误或将原值授权扩大为计算许可。
 
-后续 v24／浏览器 v9 在同一隔离套件补三类真实拒绝：银行卡 Finding 尚未确认时，等待五个 Owner 的 enrolling 投影回执齐备，验证 `protection_not_ready`；规则激活后，直接字段带字符串字面量过滤超出当前保守 SQL 输出重写子集时，验证 `protection_operation_unsupported`；仅在当轮带 Security 归属标签的 MySQL 容器内给固定银行卡表增加临时可空探针列，不重扫 Meta 或更新保护规则，验证 `protection_schema_mismatch`，finally 精确删除探针列，并验证原规则修订未变及正常脱敏输出恢复。三条拒绝必须各有实际 UUID、同一历史且无结果，普通用户真实 Owner／Monitor 页面按各自具体原因和建议展示，六张新增截图为必需证据；不接受其他保护原因代替，不改变源授权或产品规则。
+后续 v24／浏览器 v9 在同一隔离套件补三类真实拒绝：银行卡 Finding 尚未确认时，先在既有截止时间内等待 activating 安装屏障进入 enrolling，再等待五个 Owner 的 enrolling 投影回执齐备，验证 `protection_not_ready`；规则激活后，直接字段带字符串字面量过滤超出当前保守 SQL 输出重写子集时，验证 `protection_operation_unsupported`；仅在当轮带 Security 归属标签的 MySQL 容器内给固定银行卡表增加临时可空探针列，不重扫 Meta 或更新保护规则，验证 `protection_schema_mismatch`，finally 精确删除探针列，并验证原规则修订未变及正常脱敏输出恢复。三条拒绝必须各有实际 UUID、同一历史且无结果，普通用户真实 Owner／Monitor 页面按各自具体原因和建议展示，六张新增截图为必需证据；不接受其他保护原因代替，不改变源授权或产品规则。
 
 `protection_not_yet_valid` 是现有协议防御状态，产品没有保护开始时间的设置入口，不为验收新增该配置或更改宿主机／进程时钟。通过既有 `make test-common-postgres` 自动发现的真实 PostgreSQL 用例，用协议显式时间参数安装未来投影、重新 Open 后在当前时间拒绝准备，并验证执行诊断持久化／安全观察和无结果，再由正常的新修订恢复掩码输出；仅记 T2，不冒称完整 HTTP／浏览器 T4。上述扩展实际运行前均不得计为通过，原 v23 的通过范围保持。
