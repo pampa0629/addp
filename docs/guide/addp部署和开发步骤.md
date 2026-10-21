@@ -84,14 +84,7 @@ bash scripts/dev/restart.sh -transfer
 
 单模块开发时，脚本会启动 System Backend、Gateway 和 Console；除 Asset、Catalog、Ontology 外，还会启动 Meta Backend 和 Meta Worker。模块额外依赖按 `start.sh` 的实际选择规则补齐，例如 Manager 依赖 Transfer，Model、Quality 依赖 Standard，Portal 依赖 Asset。Engine Runtime 不随业务模块隐式启动，须使用对应的显式 Runtime 参数。
 
-SuperMap Workflow Engine 使用本地两层镜像。首次安装时，保留完整 SuperMap iObjects C++ SDK 母版，把许可放入 Git 忽略的 `engines/supermap-workflow/vendor/license`，并通过 `SUPERMAP_CPP_SDK_PATH` 显式构建稳定基础镜像：
-
-```bash
-SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
-  bash scripts/build/build-supermap-workflow-base.sh
-```
-
-之后全量启动、`restart.sh -all` 和局部重启都会计算当前 ADDP C++ 源码、CMake、运行脚本、Dockerfile、基础镜像和目标平台的构建指纹；输入未变化时直接复用现有代码镜像，输入变化或镜像不存在时才重新编译并测试 C++ Runtime。单独验证超图算子时使用：
+SuperMap Workflow Engine 的 SDK 母版、许可、两层镜像准备、构建指纹和运行参数统一见 [SuperMap README](../../engines/supermap-workflow/README.md#本地依赖与两层镜像)。首次安装须先准备基础镜像；日常启动和重启使用：
 
 ```bash
 bash scripts/dev/start.sh -supermap-workflow
@@ -106,9 +99,6 @@ make build
 
 # 构建 Docker 镜像
 make build-images
-
-# 只构建三维模型转换运行时镜像（Apple Silicon 默认为 linux/arm64）
-make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --force"
 
 # 只构建点云转换运行时镜像（内置 PDAL）
 make build-images IMAGE_BUILD_ARGS="--services pointcloud-workflow-engine --force"
@@ -134,40 +124,27 @@ make test-module MODULE=<模块>
 
 共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 负责检查新模块、测试入口、前端、Python 包、PostgreSQL 门禁和产品构建是否完整登记。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
 
-GeoPython Workflow 开发环境使用原生 Python 3.12、GDAL、MDBTools 和 unixODBC。macOS 可先执行 `brew install python@3.12 gdal mdbtools pkg-config`；标准入口创建独立 `engines/geopython-workflow/venv`、同步完整依赖并安装与所选原生 `gdal-config --version` 一致的 GDAL Python 绑定；macOS 固定选择 Homebrew 的 GDAL、PROJ 与 pkg-config，启动子进程中的 GDAL 编译命令也使用该来源，不受 Conda base 的 PATH 和资源变量影响，先检查现有 GDAL 绑定能否加载及版本是否匹配；健康绑定直接复用，失效绑定由已有依赖安装锁串行处理，禁用缓存并从源码重建匹配版本，只重建 GDAL 绑定而不升级其他依赖。重建后再检查版本、依赖一致性、PGeo、OpenFileGDB、GTiff、COG 及 EPSG:4326；失败则停止准备，不停止现有服务。GDAL/PROJ 资源与 Runtime 专属 ODBC 配置只注入该子进程。首次迁移先由用户在 Docker Desktop 停止旧 GeoPython 开发容器，再执行 `./scripts/dev/restart.sh -geopython-workflow`；后续 start/restart/stop 只管理本机 PID，产品镜像仍由正式构建和部署入口负责。
+GeoPython、Spark、Model3D、PointCloud 和 Document Workflow 在开发模式下使用原生进程，便于调试和快速迭代；产品部署保留正式容器镜像。各引擎的平台支持和依赖要求见下文及模块 README。
 
-Manager 的 Raster Mosaic Runtime 同样使用原生 GDAL 与独立 Python 3.12 环境；`./scripts/dev/restart.sh -manager` 停止所属 Runtime 后，同步完整依赖并自动重建继承系统包的旧环境。不能在 Runtime 运行期间改写该环境。开发入口不以 Docker 镜像兜底；GDAL 来源与绑定修复复用共享入口，Raster Mosaic 不要求 MDBTools。
+GeoPython Workflow 开发需要原生 Python 3.12、GDAL、MDBTools 和 unixODBC。依赖准备与产品镜像入口见 [GeoPython 运行说明](../../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md)。需要重启时，由用户执行 `./scripts/dev/restart.sh -geopython-workflow`；开发入口仅管理原生进程，拒绝接管外部监听者。
 
-Spark Workflow 开发环境需要原生 Python 3.11/3.12 虚拟环境和 OpenJDK 11。标准启动与重启入口自动发现 Java 11、创建缺失的虚拟环境，并按完整依赖声明同步；全套重启先预检再停止现有服务。macOS 需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，Docker Worker 保留内置解析，确保 Driver 与 Worker 都能访问相同的数据端点和 Driver 动态端口。该方式无需启用 Docker Desktop host networking。修改源码后执行 `./scripts/dev/restart.sh -spark-workflow`；标准停止按本机 PID 退出。产品构建与 Hosted 镜像验收由独立入口负责。
+Raster Mosaic Runtime 归 Manager 管理，随普通 Manager 启停入口运行；开发使用原生进程，不以 Docker 镜像兜底。环境隔离、GDAL 准备和依赖同步规则统一见[生命周期规范](../spec/addp开发服务生命周期与构建身份规范.md#三运行时依赖构建输入)。需要更新依赖时，由用户执行 `./scripts/dev/restart.sh -manager`，先停止所属 Runtime 再准备；运行中或端口被占用时不得改写环境。
 
-`model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。产品转换器一次构建一个 Linux 平台；macOS Apple Silicon 开发态使用私有原生工具包，见 Model3D README。
+Spark Workflow 的依赖准备、原生启动与产品镜像入口统一见 [Spark README](../../engines/spark-workflow/README.md#配置与启动)。macOS 需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，Docker Worker 保留内置解析，确保 Driver 与 Worker 都能访问相同的数据端点和 Driver 动态端口。该方式无需启用 Docker Desktop host networking。修改源码后，由用户执行 `./scripts/dev/restart.sh -spark-workflow`；完整重启时序与失败处理见[生命周期规范](../spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。
 
-`model3d-workflow-engine` 运行在 Docker 中时，NFS/localfs 数据根目录必须挂载进 runtime 容器，并且 Manager 传给 operator 的本地路径必须在容器内可见。Compose 默认提供：
+Model3D Workflow 的原生开发、产品镜像构建与挂载配置统一见 [Model3D README](../../engines/model3d-workflow/README.md)。容器部署时，NFS/localfs 数据根必须挂载到 Runtime，且 Manager 传给 operator 的本地路径在容器内仍可访问。
 
-```bash
-MODEL3D_DATA_HOST_PATH=./business/nfs/data
-MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
-```
+Manager 的 GLB 快显 artifact 统一使用 ADDP infra MinIO 配置，不另设 `model3d_workflow` 专用 endpoint。Compose 部署时，Manager 与 Runtime 同在 Compose 网络内，统一访问 `minio:9000`；macOS 原生开发时，两者统一访问实际 Infra MinIO 宿主机端口。
 
-单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发使用宿主机 Python Runtime 与私有原生转换器，Manager 与 Runtime 统一访问实际 Infra MinIO 宿主机端口。
+PointCloud Workflow 的依赖准备、原生启动与产品镜像入口统一见 [PointCloud README](../../engines/pointcloud-workflow/README.md)。开发服务使用独立 Conda 前缀，PDAL、GDAL、PROJ、E57 原生库与资源目录属于该环境，不继承 Homebrew 或 Conda base 的资源、插件路径；运行中只校验环境，不修改依赖。
 
-PointCloud Workflow 开发服务使用独立 Conda 前缀，首次启动需要可用的 Conda。`start.sh -manager` 或 `start.sh -pointcloud-workflow` 按运行时 `native-packages.txt` 安装 Python 3.12、PDAL core/E57 2.10.2，同步 Python 依赖并验证实际 COPC 转换，然后启动回环监听的原生进程。全部原生库和资源目录属于该环境，不受 Homebrew 升级或 Conda base 的资源变量影响。NFS 源文件直接使用宿主机路径，工作目录通过 `POINTCLOUD_WORK_HOST_PATH` 配置（默认 `data/pointcloud-work`）。
+原生开发直接读取宿主机 NFS 路径；COPC 先写入 `POINTCLOUD_WORK_HOST_PATH` 指定的受控工作目录（默认 `data/pointcloud-work`），再按 access plan 发布到目标存储，目录须有足够磁盘空间。需要更新依赖时，由用户执行 `./scripts/dev/restart.sh -pointcloud-workflow`，先停止所选 Runtime 再准备；准备失败不启动。
 
-首次迁移先由用户停止、删除旧 PointCloud 开发容器，并将已有普通 Python venv 移出 `engines/pointcloud-workflow/venv`；随后执行 `./scripts/dev/restart.sh -pointcloud-workflow`。原生环境运行中需要更新依赖时，应先通过 `stop.sh -pointcloud-workflow` 停止，再启动。产品 Compose 仍使用正式镜像。
-
-Document Workflow 开发态只处理可信文件，使用独立 Python 3.12 venv、私有官方 LibreOffice 26.8.0.3 与固定中文字体。首次准备按 SHA-256 下载/安装，不改系统应用或字体；macOS arm64/x86_64 与 Linux x86_64 使用同一原生路线，Linux 系统库由开发环境提供。用户先停止、删除旧 Document 开发容器，再执行 `./scripts/dev/restart.sh -document-workflow`。原生进程以开发用户权限运行，生产 Compose 继续保留容器隔离。
+Document Workflow 的依赖准备、原生启动与产品容器说明统一见 [Document Workflow README](../../engines/document-workflow/README.md#启动)。开发态只处理可信文件，以非 root 开发用户运行；独立 venv、LibreOffice profile 和临时目录不提供文件系统沙箱。产品 Compose 保留正式容器镜像及非 root、只读根文件系统和能力限制。需重启时，由用户执行 `./scripts/dev/restart.sh -document-workflow`；检测到同名 `document-workflow-engine` 容器或外部监听者时，开发入口拒绝启动。
 
 点云 COPC artifact 统一使用 ADDP infra MinIO 配置。原生开发直接访问 access plan 中的宿主机实际端点；产品 Compose 使用其 Docker 网络端点。
 
-`supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。私有组件只保存在 Git 忽略的 `engines/supermap-workflow/vendor/` 并进入稳定基础镜像；日常代码镜像每次重启都重新编译。可选变量：
-
-```bash
-SUPERMAP_WORKFLOW_PORT=8103
-SUPERMAP_WORKFLOW_BASE_IMAGE=addp-supermap-workflow-base:local
-SUPERMAP_WORKFLOW_IMAGE=addp-supermap-workflow-engine:dev
-SUPERMAP_DATA_HOST_PATH=/path/to/supermap/data
-SUPERMAP_OUTPUT_HOST_PATH=/tmp/supermap-out
-```
+SuperMap Workflow 当前接入的 iObjects C++ SDK 为 Linux ARM64 制品，开发与产品部署均通过 Docker 提供对应运行环境，不要求宿主机为 Linux。
 
 Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存储引擎配置 SuperMap 专用挂载目录。Develop 会在执行期把用户选择的 NFS 引擎连接事实和相对输出路径传给 `supermap-workflow-engine`；容器需要包含 `nfs-common` 并具备 Linux mount 权限，开发脚本和 Compose 已为该容器启用 `SYS_ADMIN` capability。
 
@@ -175,7 +152,9 @@ Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存�
 
 本地和生产容器部署使用 `addp-infra`、`addp-platform`、`addp-runtimes` 三个 ADDP Compose project；业务数据引擎保留独立 `business` project。平台模块共用 `addp-platform` 生命周期，内置 Runtime 由 `docker-compose.runtimes.yml` 独立启动；所有 ADDP project 在外部 `addp-network` 上以服务名互访。Docker Desktop 中看到的 project 分组不等于 System 模块或引擎注册表。
 
-从旧 `addp-app` 容器部署切换时，须先核对该 project 的容器归属并停止旧项目，再以本节标准入口启动新分组；固定 `container_name` 不能在两个 project 下同时存在。此切换不删除 `addp-infra` 或 `business` 的数据卷。源码开发模式中的容器化 Runtime 仍由 `scripts/dev/` 启停，其项目标签用于 Docker Desktop 分组，不以生产 Compose 命令接管。
+启停前核对容器的 Compose project 与工作区归属；固定 `container_name` 不能由多个 project 同时占用。平台与 Runtime 的标准停止入口保留数据卷，不删除 `addp-infra` 或 `business` 的数据卷；Infra 卷删除边界见[部署与项目隔离](../../scripts/infra/docs/部署与项目隔离.md#数据持久化)。
+
+源码开发模式中的容器化 Runtime 仍由 `scripts/dev/` 启停，其项目标签用于 Docker Desktop 分组，不以生产 Compose 命令接管。
 
 ```bash
 # 通过 Docker Compose 启动完整平台
@@ -184,7 +163,7 @@ bash scripts/local/start.sh
 # 检查状态
 bash scripts/local/status.sh
 
-# 停止所有服务
+# 停止平台服务与内置 Runtime（保留 Infra 和数据卷）
 bash scripts/local/stop.sh
 ```
 
@@ -209,45 +188,18 @@ bash scripts/prod/start.sh
 
 ### 构建和部署
 
-- [`Makefile`](../../Makefile) - 项目范围的编排命令
-- [`scripts/`](../../scripts/) - 所有用于开发、构建和部署的自动化脚本
-  - [`scripts/infra/`](../../scripts/infra/) - 基础设施管理 (PostgreSQL, Redis, MinIO, Meilisearch)
-    - `up.sh` - 启动基础设施 + 自动初始化
-    - `down.sh` - 停止基础设施
-    - `status.sh` - 检查服务健康状态
-    - `init-postgresql.sh` - 初始化数据库 schemas
-    - `init-redis.sh` - 初始化 Redis 配置
-    - `init-minio.sh` - 初始化 MinIO buckets
-    - `init-meilisearch.sh` - 校验 Meilisearch API 健康，不预建业务索引
-  - [`scripts/dev/`](../../scripts/dev/) - 开发模式脚本 (直接 Go/npm 进程)
-    - `start.sh` - 启动完整开发环境 (基础设施 + 后端 + 前端)
-    - `stop.sh` - 停止所有开发服务
-    - `restart.sh` - 重启所有服务
-    - `modtidy.sh` - 清理 Go 模块依赖
-  - [`scripts/build/`](../../scripts/build/) - 编译和 Docker 镜像构建
-    - `compile.sh` - 编译 Go 二进制文件 (go build)
-    - `build-images.sh` - 构建 Docker 镜像 (docker build)
-    - `package.sh` - 打包部署工件 (docker save/push)
-    - `push-images.sh` - 推送镜像到仓库
-  - [`scripts/local/`](../../scripts/local/) - 本地 Docker Compose 部署
-    - `start.sh` - 通过 Docker Compose 启动完整平台
-    - `stop.sh` - 停止 Docker 服务
-    - `status.sh` - 查看容器状态和资源使用
-  - [`scripts/prod/`](../../scripts/prod/) - 生产部署脚本
-    - `start.sh` - 启动生产环境 (分步执行)
-    - `stop.sh` - 停止生产服务
-    - `health-check.sh` - 健康监控
-    - `swarm/` - 现存 Swarm 脚本，部署缺口与操作范围见[生产指南](../../scripts/prod/README.md#swarm)
-  - 完整脚本文档参阅 [`scripts/README.md`](../../scripts/README.md)
+各模式的主要执行命令见上文；目录职责、脚本参数与专题入口统一从[脚本总入口](../../scripts/README.md#目录入口)查阅，平台编排命令见[根 Makefile](../../Makefile)。
+
+现存 Swarm 脚本的部署缺口与操作范围见[生产指南](../../scripts/prod/README.md#swarm)。
 
 ### Backend 与 Worker 启动顺序
 
-System Backend 先完成公共 schema 初始化。各模块 Backend 并行迁移自身 schema 并达到 `/health/ready` 后，各自的 Worker 才启动；不同模块不互相等待。Compose 使用对应 Backend 的 `service_healthy` 条件，开发脚本使用按模块的并发等待任务。Worker 初始化不执行平台 schema DDL，独立启动时必须通过模块及公共 schema 版本校验。结构升级前先停止相关 Worker 领取任务并结束在途任务，禁止旧 Worker 与新 schema 混跑。
+Backend 与 Worker 的迁移职责、就绪依赖和并行启动规则统一见[生命周期规范](../spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。结构升级前，必须先停止相关 Worker 领取任务并结束在途任务，再执行迁移和恢复；禁止旧 Worker 与新 schema 混跑。
 
 ## 模块实例运行日志部署
 
-标准 Infra 包含 Loki、Alloy、独立授权代理和节点源清理器；`scripts/infra/up.sh` 负责初始化独立日志 bucket/账号与 Loki 卷权限，`status.sh` 分别显示组件健康和当前链路探针结果。应用按标准生命周期启动，由共享接收器关联进程身份和输出。Go/Python 应用不再各自写固定模块日志文件。
+应用通过标准生命周期入口接入运行日志；设施组件、初始化、启停、状态检查、备份范围和验证入口统一见 [Infra 运行日志专题](../../scripts/infra/docs/运行日志.md#模块实例运行日志)。
 
 System 平台系统管理员可在“模块管理 → 服务实例 → 查看日志”按实例查看。权限迁移会失效受影响管理员的旧授权会话，需要重新登录。应用重启不删除日志 Infra；Docker 和本机开发都写受控节点源目录，不通过 Docker Socket 或远端任意路径读取日志。普通 `docker logs` 主要用于容器入口和日志设施自身错误，模块正文以本入口为准。
 
-日志限额、7 天集中保留和已知丢失边界见 [运行日志规范](../spec/addp模块服务运行日志规范.md)；备份范围和标准验证见 [Infra 指南](../../scripts/infra/docs/运行日志.md#模块实例运行日志)。
+集中日志默认保留 7 天；节点源默认最长保留 48 小时，并受磁盘额度限制。日志可能丢失，不承诺零丢失归档或自动备份；限额、清理与已知缺口见[运行日志规范](../spec/addp模块服务运行日志规范.md#三设施容量与可靠性)。

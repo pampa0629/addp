@@ -32,34 +32,9 @@ docker info
 
 ### 2. 构建镜像
 
-在首次使用前,需要构建所有服务镜像:
+首次启动前须在本机备齐本次部署所需的 Linux 镜像，架构、`REGISTRY` 和 `IMAGE_TAG` 与部署配置一致。源码构建使用 `make build`、`make build-images`；产物要求、平台限制和验证/推送边界统一见 [Build 指南](../build/README.md#build-imagessh)。
 
-```bash
-# 从项目根目录执行
-
-# 步骤 1: 编译所有二进制文件
-make build
-
-# 步骤 2: 构建 Docker 镜像
-make build-images
-
-# 验证镜像已创建
-docker images | grep localhost:5001/addp
-```
-
-**预期输出**:
-```
-localhost:5001/addp-system-backend       latest
-localhost:5001/addp-manager-backend      latest
-localhost:5001/addp-meta-backend         latest
-localhost:5001/addp-transfer-backend     latest
-localhost:5001/addp-orchestrator-backend latest
-localhost:5001/addp-develop-backend      latest
-localhost:5001/addp-gateway              latest
-localhost:5001/addp-console               latest
-localhost:5001/addp-nginx                latest
-...
-```
+启动前的镜像预检以 [start.sh](start.sh) 的 `check_images` 清单为准；发现本机镜像缺失即退出并提示构建，该预检不自动构建应用镜像。镜像引用的默认值见[镜像来源](#镜像来源)。
 
 ## 使用方法
 
@@ -98,15 +73,7 @@ bash scripts/local/start.sh
 
 **幂等性**: 可重复执行，使用 `docker compose up -d --wait --remove-orphans` 确保服务存在且就绪，并清理已删除的旧服务容器。
 
-**镜像检查**: 如果发现缺少镜像,会提示:
-```
-❌ Missing images:
-  - localhost:5001/addp-system-backend:latest
-
-Please build images first:
-  make build
-  make build-images
-```
+**镜像检查**：出现 `Missing images` 时，按[镜像准备](#2-构建镜像)核对并补齐对应镜像，再运行本节启动命令。
 
 #### 2. stop.sh - 停止服务
 
@@ -158,12 +125,7 @@ ADDP 本地部署采用**分层架构**:
 
 ### 基础设施层 (docker-compose.infra.yml)
 
-```
-postgres      (port 5433)  - PostgreSQL 数据库
-redis         (port 6379)  - Redis 缓存、事件和分布式锁
-minio         (port 9000-9001) - MinIO 对象存储
-meilisearch   (port 7700)  - Meilisearch 全文搜索
-```
+基础设施由 `addp-infra` Compose project 管理，容器内端口与宿主机首选映射见 [Infra 端口映射](../infra/docs/部署与项目隔离.md#端口映射)。首选值不代表运行地址；连接前执行 `bash scripts/infra/status.sh`，核对当前工作区的实际映射，不从示例或 `.env` 首选值推断端口。
 
 ### 平台层 (docker-compose.yml)
 
@@ -175,7 +137,7 @@ Console、各模块 Frontend、Backend 和 Gateway 使用 Docker 网络内的服
 
 ### 镜像来源
 
-所有服务使用本地镜像仓库:
+平台与内置 Runtime 镜像的 Registry 和标签由 `REGISTRY`、`IMAGE_TAG` 配置，默认引用格式如下：
 ```
 ${REGISTRY:-localhost:5001}/addp-<service>:${IMAGE_TAG:-latest}
 ```
@@ -183,10 +145,12 @@ ${REGISTRY:-localhost:5001}/addp-<service>:${IMAGE_TAG:-latest}
 ## 与其他部署模式对比
 
 | 部署模式 | 脚本目录 | 用途 | 运行方式 | 镜像来源 |
-|---------|---------|------|---------|---------|
-| **开发模式** | scripts/dev/ | 本地开发调试 | 直接运行 Go/npm | 无 (源码) |
-| **本地 Docker** | scripts/local/ | 本地容器化测试 | Docker Compose | localhost:5001 |
-| **生产环境** | scripts/prod/ | 服务器部署 | Docker Compose | 远程 Registry |
+| --- | --- | --- | --- | --- |
+| **开发模式** | `scripts/dev/` | 本地源码开发与调试 | Go 服务、Node 前端和 Python Runtime 使用原生进程；SuperMap 使用 Docker | 源码与原生依赖；容器依赖按各自配置取镜像 |
+| **本地 Docker** | `scripts/local/` | 本地容器化测试 | Docker Compose 管理平台与内置 Runtime | `REGISTRY` 可配置，默认 `localhost:5001`；版本由 `IMAGE_TAG` 指定 |
+| **生产环境** | `scripts/prod/` | 服务器容器部署 | Docker Compose 管理平台与内置 Runtime | 按部署配置指定 Registry 与版本标签 |
+
+各 Runtime 的开发方式与平台限制见[引擎运行方式](../../engines/README.md#本地开发运行方式)。原生开发不改变产品部署使用正式容器镜像的路线；Infra 与 Business 的容器和网络由各自入口管理。
 
 ## 常见问题
 
@@ -206,15 +170,7 @@ sudo systemctl start docker
 
 ### 2. 镜像不存在
 
-```bash
-# 错误提示
-❌ Missing images:
-  - localhost:5001/addp-system-backend:latest
-
-# 解决方法
-make build
-make build-images
-```
+核对 `Missing images` 列出的服务、Registry 和标签，再按[镜像准备](#2-构建镜像)处理。源码构建和单平台验证参数见 [Build 指南](../build/README.md#build-imagessh)。
 
 ### 3. 端口被占用
 
@@ -352,8 +308,8 @@ docker compose -f docker-compose.yml ps -a system-backend
 
 ## 模块实例运行日志
 
-模块服务正文统一由共享接收器按进程实例写入节点源，再由 Alloy 发送到 Loki；平台系统管理员在“System → 模块管理 → 服务实例 → 查看日志”读取。Go、Python、Gateway 和 Worker 使用同一条链路，应用重启保留旧实例集中日志。首次接入需要重新登录以获取独立日志读取权限。
+已登记模块正文从“System → 模块管理 → 服务实例 → 查看日志”读取；有效可信未登记来源可从“未登记实例的运行日志”入口选择，复用同一日志抽屉。两类入口均要求 Platform 上下文及 `platform.module_log.read`，默认仅授予平台系统管理员；权限变更导致旧会话失效时须重新登录。完整身份、授权与目录保留规则见[运行日志规范](../../docs/spec/addp模块服务运行日志规范.md#四可信来源目录)。
 
-本指南中的 `docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断，不再作为模块运行日志正文入口。业务尚未登记就初始化失败时，通过受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 排查；页面不会虚构未登记的实例。
+`docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断；受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 与启动终端输出用于本地诊断，不从路径推断 System 可信身份。未登记不等于 DOWN 或启动失败，目录存在也不代表正文已送达。
 
-部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。
+应用停止或重启不停止日志 Infra、不删除日志卷；部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。

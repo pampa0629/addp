@@ -19,36 +19,33 @@
 ### 使用方法
 
 ```bash
-# 基本用法（启动所有服务）
-./scripts/prod/start.sh
-
-# 从项目根目录调用
+# 从项目根目录启动
 cd /path/to/addp
 ./scripts/prod/start.sh
 ```
 
 ### 启动流程
 
-1. 启动基础设施并等待其就绪。
-2. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
-3. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
-4. 启动 `addp-runtimes` 中全部内置 Runtime，再检查两组服务状态。
+1. 调用 `setup-env.sh` 初始化或校验根 `.env`；配置要求与已有凭据边界见[首次部署](#首次部署)。校验失败时停止启动。
+2. 启动基础设施并等待其就绪。
+3. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
+4. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
+5. 启动 `addp-runtimes` 中全部内置 Runtime，再检查两组服务状态。
 
 容器内部端口固定，平台 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
 
 ### 示例
 
+首次部署先按[首次部署流程](#首次部署)准备配置；服务器重启后沿用上述启动入口。需要保存本次启动终端输出时使用：
+
 ```bash
-# 场景 1: 首次部署启动
-cd /opt/addp
-./scripts/prod/start.sh
-
-# 场景 2: 服务器重启后启动
-./scripts/prod/start.sh
-
-# 场景 3: 检查启动日志
-./scripts/prod/start.sh 2>&1 | tee startup.log
+(
+  set -o pipefail
+  ./scripts/prod/start.sh 2>&1 | tee startup.log
+)
 ```
+
+`startup.log` 记录部署脚本的终端输出，管道保留启动失败的退出码；模块正文使用[实例日志入口](#模块实例运行日志)。
 
 ---
 
@@ -67,11 +64,9 @@ cd /opt/addp
 
 ### 示例
 
-```bash
-# 场景 1: 临时停止服务（维护）
-./scripts/prod/stop.sh
+重启沿用上述停止范围，按停止、启动的顺序执行：
 
-# 场景 2: 重启服务
+```bash
 ./scripts/prod/stop.sh
 ./scripts/prod/start.sh
 ```
@@ -162,65 +157,63 @@ Docker 的格式及部署前提见[官方 Stack 部署说明](https://docs.docke
 
 ### 首次部署
 
+先准备可用的 Docker、Docker Compose 和 OpenSSL，将目标版本的源码或部署包放入服务器部署目录，并按 [Build 指南](../build/README.md#build-imagessh)准备对应平台与版本的镜像。
+
+生产配置只使用根 `.env`，通过 [setup-env.sh](setup-env.sh) 从唯一模板 `.env.example` 初始化。文件缺失时生成 `ENV=production` 和独立随机 Secret；已有文件须通过生产配置校验，脚本仅收紧文件权限，不自动补齐、覆盖或轮换已有 Secret。配置规则见[环境变量参考](../../docs/spec/configuration/环境变量参考.md#根目录-env)。
+
 ```bash
-# 1. 准备服务器
-ssh user@production-server
-sudo apt update && sudo apt install -y docker.io docker-compose
+# 1. 进入服务器上的项目或部署包根目录
+cd /opt/addp
 
-# 2. 克隆或上传项目
-cd /opt
-git clone https://github.com/your-org/addp.git
-cd addp
+# 2. 初始化或校验生产配置
+bash scripts/prod/setup-env.sh
 
-# 3. 配置环境变量
-cp .env.example .env
-vi .env  # 修改密码、密钥等
+# 3. 核对部署参数，保留已有有效凭据
+vi .env  # 核对 Registry、镜像版本、公共 URL、反向代理及 Business 连接信息
 
-# 4. 启动服务
+# 4. 标准启动会再次校验配置，再启动 Infra、平台与 Runtime
 ./scripts/prod/start.sh
 
-# 5. 验证部署
+# 5. 核对容器状态与统一入口
 ./scripts/prod/health-check.sh
-
-# 6. 通过启动输出中的 ADDP_PUBLIC_ORIGIN 访问 Console 并验证所需业务功能
-# 上述健康检查仅核对容器状态与 Nginx /health，不代替业务验收
 ```
+
+检测到已有 `addp-infra_postgres_data` 卷而根 `.env` 缺失时，初始化会拒绝重建，须从原部署恢复配置。配置校验失败时先修正对应问题；不要通过重新生成密码连接旧数据卷。
+
+通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console，再验证所需业务功能；上述健康检查只核对容器状态与 Nginx `/health`，不代替业务验收。
 
 ### 更新部署
 
+更新前先核对目标 Linux 平台、所需服务和版本，按 [Build 指南](../build/README.md#build-imagessh)构建或准备对应镜像。Model3D 每次只构建一个原生 Linux 平台；SuperMap 要求已准备的私有 Linux ARM64 基础镜像。多架构发布仅对已确认支持的服务使用 `--services` 配合 `--multi-arch`，其他 Runtime 按各自平台规则准备。
+
+部署引用须匹配已发布镜像的 Registry 与版本标签；启动前核对根 `.env` 中的 `REGISTRY`、`IMAGE_TAG` 及 Runtime 平台配置，不能仅用构建时的临时环境变量推断部署版本。
+
 ```bash
-# 1. 拉取最新代码
+# 1. 更新部署文件
 cd /opt/addp
 git pull
 
-# 2. 重新构建镜像（如果有代码变更）
-make build BUILD_ARGS="--arch both"
-IMAGE_TAG=v1.1.0 make build-images IMAGE_BUILD_ARGS=--multi-arch
+# 2. 按上文准备目标平台镜像，核对根 .env 的 Registry、版本与平台
+vi .env
 
-# 3. 重启服务
+# 3. 停止并重新启动平台与内置 Runtime（保留数据卷）
 ./scripts/prod/stop.sh
 ./scripts/prod/start.sh
 
-# 4. 验证更新
+# 4. 检查容器状态与统一入口
 ./scripts/prod/health-check.sh
 ```
+
+健康检查不代替升级后的业务功能与数据结构验收；验证范围和标准入口见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)。
 
 ### 回滚部署
 
-```bash
-# 1. 切换到旧版本
-cd /opt/addp
-git checkout v1.0.0
+切换代码或镜像不会恢复数据库、对象存储及其他持久状态。ADDP 默认不兼容旧实现；现行迁移规范禁止旧进程覆盖较新的 schema，Worker 也须通过模块及公共 schema 版本校验，详见[迁移与 Worker 启动规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
-# 2. 停止当前服务
-./scripts/prod/stop.sh
-
-# 3. 使用旧版本镜像启动
-IMAGE_TAG=v1.0.0 ./scripts/prod/start.sh
-
-# 4. 验证
-./scripts/prod/health-check.sh
-```
+1. 先核对目标版本的镜像平台、部署配置与持久化状态要求。需要恢复数据时，先核验备份覆盖、恢复点和演练证据，确定已验证的生产恢复方案；范围要求见[备份恢复边界](#问题-4-数据丢失)。`make infra-restore-drill` 只在隔离容器演练，不是生产数据回写入口，工具范围见[Infra 备份专题](../infra/docs/备份恢复与搜索迁移.md#本地-infra-备份与隔离恢复演练)。
+2. 涉及数据结构或持久状态恢复时，先停止相关 Worker 领取任务并妥善结束在途任务；执行回退均须按[标准停止入口](#stopsh)停止平台与内置 Runtime。该入口保留 Infra、Business 和数据卷，不执行其数据恢复；这些 owner 的停服与恢复须按对应方案单独处理。
+3. 仅在持久状态满足目标版本要求后，切换匹配的部署制品与配置，核对根 `.env` 的 `REGISTRY`、`IMAGE_TAG`、Runtime 平台及与数据匹配的已有凭据；不通过重新生成 Secret 替代配置恢复。
+4. 按[首次部署中的标准入口](#首次部署)启动并检查容器状态与统一入口，再验证所需业务功能和数据结果。回滚结论以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)及实际证据为准，不以容器 healthy 代替完整恢复验收。
 
 ---
 
@@ -319,20 +312,20 @@ docker system df
 
 ## 最佳实践
 
-1. **使用统一入口**: 通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问；域名、HTTPS 或上级代理部署显式配置用户实际访问的 origin
-2. **备份恢复**: 上线前建立覆盖 PostgreSQL、MinIO、部署配置和密钥材料的备份策略，并定期完成恢复演练
-3. **监控日志**: 使用 `health-check.sh` 定期检查服务健康
-4. **渐进式更新**: 先在测试环境验证，再部署到生产环境
-5. **可靠性边界**: 按实际部署与验收证据说明可用性；Swarm 脚本的现状和缺口见[上文](#swarm)
-6. **资源限制**: 在 docker-compose.yml 中配置 CPU 和内存限制
-7. **安全加固**: 修改默认密码、启用 HTTPS、配置防火墙
+| 事项 | 操作入口与边界 |
+| --- | --- |
+| 配置与对外访问 | 根 `.env` 初始化和 Secret 处理见[首次部署](#首次部署)，变量归属与生效见[配置规范](../../docs/spec/addp配置介绍.md)。按实际入口配置 `ADDP_PUBLIC_ORIGIN`、HTTPS/上级代理和防火墙，访问要求见[启动流程](#启动流程)。 |
+| 备份恢复 | 生产备份范围、密钥保护与恢复演练要求见[数据丢失与备份边界](#问题-4-数据丢失)。本地 Infra 导出不是完整生产备份；工具与覆盖范围见[Infra 备份专题](../infra/docs/备份恢复与搜索迁移.md#本地-infra-备份与隔离恢复演练)。 |
+| 健康与日志 | 容器状态和统一入口按[健康检查](#health-checksh)核对；正文、权限与日志链路分别见[模块实例日志](#模块实例运行日志)和[Infra 日志专题](../infra/docs/运行日志.md#模块实例运行日志)。健康检查通过不证明日志完整或业务验收通过。 |
+| 更新与可靠性 | 先在测试环境验证目标版本，再按[更新部署](#更新部署)操作。可用性和发布结论以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)及实际证据为准，Swarm 缺口见[现状说明](#swarm)。 |
+| 资源限制 | 根据实际部署负载配置并验证 CPU、内存限制；配置位置见[平台 Compose](../../docker-compose.yml)与[Runtime Compose](../../docker-compose.runtimes.yml)。 |
 
 ---
 
 ## 模块实例运行日志
 
-模块服务正文统一由共享接收器按进程实例写入节点源，再由 Alloy 发送到 Loki；平台系统管理员在“System → 模块管理 → 服务实例 → 查看日志”读取。Go、Python、Gateway 和 Worker 使用同一条链路，应用重启保留旧实例集中日志。首次接入需要重新登录以获取独立日志读取权限。
+已登记模块正文从“System → 模块管理 → 服务实例 → 查看日志”读取；有效可信未登记来源可从“未登记实例的运行日志”入口选择，复用同一日志抽屉。两类入口均要求 Platform 上下文及 `platform.module_log.read`，默认仅授予平台系统管理员；权限变更导致旧会话失效时须重新登录。完整身份、授权与目录保留规则见[运行日志规范](../../docs/spec/addp模块服务运行日志规范.md#四可信来源目录)。
 
-本指南中的 `docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断，不再作为模块运行日志正文入口。业务尚未登记就初始化失败时，通过受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 排查；页面不会虚构未登记的实例。
+`docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断；受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 与启动终端输出用于本地诊断，不从路径推断 System 可信身份。未登记不等于 DOWN 或启动失败，目录存在也不代表正文已送达。
 
-部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。
+应用停止或重启不停止日志 Infra、不删除日志卷；部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。

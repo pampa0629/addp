@@ -108,7 +108,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **日志位置**:
 
-模块正文从“System → 模块管理 → 服务实例 → 查看日志”读取。下列路径是受控节点源，用于尚未登记就失败等本地诊断；引擎、前端和容器入口输出不等同于模块正文。完整契约见[日志规范](../../docs/spec/addp模块服务运行日志规范.md)。
+已登记模块正文从“System → 模块管理 → 服务实例 → 查看日志”读取；有效可信未登记来源使用“未登记实例的运行日志”入口，均需 Platform 上下文及 `platform.module_log.read`。下列受控节点源用于本地诊断，不从路径推断 System 可信身份；引擎、前端和容器入口输出不等同于模块正文。完整契约见[日志规范](../../docs/spec/addp模块服务运行日志规范.md#四可信来源目录)。
 
 - 模块服务运行日志: `logs/runtime/<module>/<instance_id>/*.jsonl`；引擎和前端启动输出保留各自日志
 - 示例: `logs/runtime/system/<instance_id>/*.jsonl`、`logs/runtime/manager/<instance_id>/*.jsonl`；Worker 同样按独立实例分目录
@@ -251,7 +251,7 @@ sed -n '/^SYSTEM_BACKEND_PORT=/p' .dev-state/ports.env
 ps -p "$(cat .dev-pids/system.pid)" -o pid=,command=
 ```
 
-PID 文件或端口记录存在不代表服务已就绪；结合实际进程命令行核对工作区归属。已登记的实例从 System 页面读取日志；未登记的启动失败检查 `logs/runtime/system/<instance_id>/*.jsonl` 及启动终端输出。修正原因后，从项目根目录使用 `bash scripts/dev/restart.sh -system` 重启，不绕过标准入口手动运行后端。
+PID 文件或端口记录存在不代表服务已就绪；结合实际进程命令行核对工作区归属。已登记实例与有效可信未登记来源均可从 System 的相应入口查询日志；未登记不等于启动失败，目录存在不代表正文已送达。尚未纳入目录或页面不可用时，可结合受控节点源 `logs/runtime/system/<instance_id>/*.jsonl` 及启动终端输出诊断，不从路径推断 System 可信身份。修正原因后，从项目根目录使用 `bash scripts/dev/restart.sh -system` 重启，不绕过标准入口手动运行后端。
 
 ### 健康检查超时
 

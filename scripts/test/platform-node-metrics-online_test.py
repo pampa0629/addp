@@ -1914,6 +1914,16 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
             self.assertEqual(set(query['metrics'][0].split(',')), {'postgresql.transactions.committed_per_second'} if trend else set(ONLINE.ENGINE_METRICS))
             self.assertEqual(set(query), {'deployment_id', 'metrics', 'start', 'end'} if trend else {'deployment_id', 'metrics'})
 
+    def test_default_budget_version_zero_is_valid_and_invalid_metadata_rejects(self):
+        value = self.response()
+        value["policy_version"] = 0
+        self.assertEqual(ONLINE.assert_engine_resources(value, [self.owner], fresh=True), value)
+        for version in (-1, True, 0.5, None):
+            invalid = copy.deepcopy(value)
+            invalid["policy_version"] = version
+            with self.subTest(version=version), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_engine_resources(invalid, [self.owner], fresh=True)
+
     def test_fixed_catalog_zero_is_valid_and_invalid_scope_units_or_private_fields_reject(self):
         value = self.response()
         self.assertEqual(ONLINE.assert_engine_resources(value, [self.owner], fresh=True), value)

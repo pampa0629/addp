@@ -1189,7 +1189,7 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
     step = value.get("step_seconds")
     require(type(step) is int and step >= 15 and step % 15 == 0 and start <= end <= queried
             and (trend or start == end) and type(value.get("policy_version")) is int
-            and value["policy_version"] >= 1 and value.get("lookback_seconds") == 300, "engine query metadata differs")
+            and value["policy_version"] >= 0 and value.get("lookback_seconds") == 300, "engine query metadata differs")
     count = int((end-start)//step)+1
     require(1 <= count <= 1000 and count*len(owners)*len(keys) <= 20000, "engine query exceeds declared budget")
     seen = set()

@@ -1,160 +1,110 @@
 # Build Scripts 使用指南
 
-本目录包含 ADDP 项目的编译和镜像构建脚本，遵循单一职责和参数化原则。
+本目录维护编译、镜像构建、推送与部署包生成。命令在仓库根目录执行；正式编译和镜像构建分别使用 `make build` 与 `make build-images`，参数通过 `BUILD_ARGS` 与 `IMAGE_BUILD_ARGS` 传入。完整流程见[构建打包与推送](../docs/构建打包与推送.md)，部署操作见[部署指南](../../docs/guide/addp部署和开发步骤.md)。
 
 ## 目录
 
-- [compile.sh](#compilesh) - 二进制编译器
-- [build-images.sh](#build-imagessh) - Docker 镜像构建器
-- [build-supermap-workflow-base.sh](#build-supermap-workflow-basesh) - SuperMap Workflow 私有基础镜像构建器
-- [push-images.sh](#push-imagessh) - 镜像推送工具
-- [package.sh](#packagesh) - 部署包生成器
-
----
+- [compile.sh](#compilesh) - Go 二进制编译
+- [build-images.sh](#build-imagessh) - 产品镜像构建
+- [build-supermap-workflow-base.sh](#build-supermap-workflow-basesh) - SuperMap 私有基础镜像
+- [push-images.sh](#push-imagessh) - 跨 Registry 推送
+- [package.sh](#packagesh) - 部署包生成
 
 ## compile.sh
 
-**用途**: 编译所有 ADDP 后端服务的二进制文件（带智能缓存）
+编译正式 Go 服务、Worker 与共享启动工具。服务范围以 [compile.sh](compile.sh) 的 `SERVICES` 为准，不在文档维护第二份清单。
 
 ### 使用方法
 
 ```bash
-# 容器构建（默认，编译 Linux 二进制用于 Docker）
-./scripts/build/compile.sh
+# 默认编译当前架构的 Linux 产物
+make build
 
-# 本地开发（编译本机操作系统的可执行文件）
-./scripts/build/compile.sh --local
+# 编译本机 OS 产物
+make build BUILD_ARGS=--local
 
-# 编译多架构（amd64 + arm64，用于容器）
-./scripts/build/compile.sh --arch both
-
-# 强制重新编译（忽略缓存）
-./scripts/build/compile.sh --force
-
-# 组合使用
-./scripts/build/compile.sh --local --force
+# 编译所选服务的两种架构
+make build BUILD_ARGS="--arch both --services system-backend,gateway"
 ```
 
 ### 参数说明
 
 | 参数 | 值 | 说明 |
-|------|------|------|
-| `--arch` | `amd64` \| `arm64` \| `both` | 目标架构（默认：自动检测本机架构） |
-| `--local` | - | 本地开发模式，编译本机 OS 可执行文件（macOS/Linux/Windows） |
-| `--force` | - | 强制重新编译，忽略缓存 |
+| --- | --- | --- |
+| `--arch` | `amd64` / `arm64` / `both` | 默认当前主机架构；`both` 编译两种架构 |
+| `--local` | 无 | 使用 `go env GOOS` 指定的本机目标系统 |
+| `--services` | 逗号分隔的服务名 | 默认 `all`；名称必须在脚本登记，空清单、未知项和重复项均失败 |
+| `--force` | 无 | 忽略产物指纹的复用判断，重新编译 |
 
 ### 环境变量
 
 | 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `BUILD_TYPE` | `release` | 构建类型（`release` 或 `debug`） |
-| `GOOS` | `linux` | 目标操作系统（使用 `--local` 时自动检测） |
+| --- | --- | --- |
+| `BUILD_TYPE` | `release` | 产物目录标识，如 `release` 或 `debug`；不等同于自动启用调试编译选项 |
+| `GOOS` | `linux` | 目标系统；`--local` 改用 `go env GOOS` |
+| `ADDP_BUILD_GOMODCACHE` | 仓库 `.gomodcache` | Go 模块缓存 |
+| `ADDP_BUILD_GOPATH` | 仓库 `.gopath` | Go 工作目录 |
+| `ADDP_BUILD_GOCACHE` | 仓库 `.cache/go-build` | Go 编译缓存 |
 
 ### 输出目录结构
 
-```
-dist/
-├── release-linux-amd64/        # 容器构建（Linux + AMD64）
-│   ├── system                   # System 后端
-│   ├── gateway                  # API Gateway
-│   ├── manager-backend          # Manager 后端
-│   ├── meta-backend             # Meta 后端
-│   ├── meta-worker              # Meta Worker
-│   ├── transfer-backend         # Transfer 后端
-│   ├── transfer-bounded-worker  # Transfer 有界 Worker
-│   ├── transfer-continuous-worker # Transfer 持续运行时 Worker
-│   ├── quality-worker           # Quality Worker
-│   ├── orchestrator-backend     # Orchestrator 后端
-│   └── develop-backend          # Develop 后端（内嵌 Query Execution Supervisor）
-│
-├── release-linux-arm64/        # 容器构建（Linux + ARM64）
-│   └── (同上)
-│
-└── release-darwin-arm64/       # 本地构建（macOS Apple Silicon）
-    └── (同上，使用 --local 时生成)
-```
+产物位于 `dist/{BUILD_TYPE}-{GOOS}-{arch}/`；例如 `dist/release-linux-amd64/system`、`meta-worker`、`transfer-bounded-worker`、`transfer-continuous-worker` 和 `runtime-log`。Backend 名称去掉 `-backend` 后缀，Worker 保留 `-worker`。`--local` 的产物供本机使用，不能代替 Linux 产品镜像所需二进制。
 
 ### 智能缓存机制
 
-- 自动检测源代码修改时间
-- 仅重新编译变更的服务
-- 使用 `.compile-cache/` 存储缓存元数据
-- 使用 `--force` 可跳过缓存检查
+缓存比较真实 Go 依赖图、共享代码、构建配置及工具链输入的指纹，不按文件修改时间判断。已有产物缺少指纹也须重编译。构建前后输入必须一致，成功后才替换正式二进制并记录指纹；失败清理本次临时产物。原子构建与身份规则见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#二原子构建)。
 
-### 示例
-
-```bash
-# 场景 1: 容器构建（默认，用于 Docker）
-./scripts/build/compile.sh
-
-# 场景 2: 本地开发调试（macOS 上直接运行）
-./scripts/build/compile.sh --local
-# 输出: dist/release-darwin-arm64/system (可直接运行)
-
-# 场景 3: 生产发布（多架构容器）
-./scripts/build/compile.sh --arch both
-
-# 场景 4: 调试构建（本地 + 调试符号）
-BUILD_TYPE=debug ./scripts/build/compile.sh --local
-
-# 场景 5: 清理缓存重新编译
-./scripts/build/compile.sh --force
-```
-
-### 使用场景对比
-
-| 场景 | 命令 | 输出 | 用途 |
-|------|------|------|------|
-| **容器构建** | `./scripts/build/compile.sh` | `dist/release-linux-{arch}/` | 用于 Docker 镜像构建 |
-| **本地开发** | `./scripts/build/compile.sh --local` | `dist/release-{os}-{arch}/` | macOS/Linux 上直接运行调试 |
-| **多架构发布** | `./scripts/build/compile.sh --arch both` | Linux amd64 + arm64 | 生产环境跨平台部署 |
-
----
+保留 Go 模块和编译缓存；需要复验产物时使用 `make build BUILD_ARGS=--force`，不以定期删除缓存作为日常构建步骤。
 
 ## build-images.sh
 
-**用途**: 构建 ADDP 服务的 Docker 镜像（支持单架构和多架构）
+构建 `{REGISTRY}/addp-{SERVICE}:{IMAGE_TAG}` 产品镜像。默认构建当前主机架构的 Linux 镜像，并推送到所选 Registry；`--verify` 只在本机验证产品镜像。
 
 ### 使用方法
 
 ```bash
-# 基本用法（构建本机架构镜像）
-./scripts/build/build-images.sh
+# 常规构建并推送
+make build-images
 
-# 构建多架构镜像（amd64 + arm64）
-./scripts/build/build-images.sh --multi-arch
+# 只验证所选镜像，不推送产品镜像
+make build-images IMAGE_BUILD_ARGS="--services system-backend,agent-backend,console,nginx --verify --jobs 1"
 
-# 指定 Registry
-./scripts/build/build-images.sh --registry harbor.example.com:5001
-
-# 禁用构建缓存
-./scripts/build/build-images.sh --skip-cache
-
-# 仅构建特定服务
-./scripts/build/build-images.sh --services system-backend,manager-backend
-
-# CI/一次性验证：强制构建但不推送产品镜像，也不修改 Docker daemon 配置
-./scripts/build/build-images.sh --verify --services system-backend,agent-backend,console,nginx
-
-# 输出 CI 固定基线与当前 Git 改动影响的镜像列表
+# 查看 CI 基线及当前改动影响的服务
 make select-image-services
-
-# 组合使用（生产场景）
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
-  --multi-arch \
-  --registry myregistry.com:5001
 ```
 
 ### 参数说明
 
 | 参数 | 值 | 说明 |
-|------|------|------|
-| `--registry` | URL | Registry 地址（默认：`localhost:5001`） |
-| `--multi-arch` | - | 构建多架构镜像（amd64 + arm64） |
-| `--skip-cache` | - | 禁用 Docker 构建缓存 |
-| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`） |
-| `--verify` | - | 非交互强制构建；基础镜像仍预热到临时 Registry，产品镜像只加载到本机、不推送 |
-| `--jobs` | `1` 或 `2` | 最大同时构建数量，默认 `2`；两种取值使用同一调度路径 |
+| --- | --- | --- |
+| `--registry` | Registry 地址 | 默认 `localhost:5001` |
+| `--tag` | 标签 | 覆盖 `IMAGE_TAG`，默认 `latest` |
+| `--services` | 逗号分隔的服务名 | 默认 `all`；未知或重复名称失败 |
+| `--multi-arch` | 无 | 请求 `linux/amd64,linux/arm64` 构建并推送；仍受各 Runtime 平台约束限制 |
+| `--force` | 无 | 跳过镜像智能复用判断 |
+| `--skip-cache` | 无 | 不引用 `--cache-from`；不会清空已有 Docker 缓存 |
+| `--verify` | 无 | 非交互强制构建，不推送产品镜像、不修改 Docker daemon 配置；只支持单一本机平台，不能与 `--multi-arch` 同用 |
+| `--jobs` | `1` / `2` | 默认 `2`；两种取值使用同一调度路径 |
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `REGISTRY` | `localhost:5001` | 镜像目标 Registry |
+| `IMAGE_TAG` | `latest` | 镜像标签，可由 `--tag` 覆盖 |
+| `BUILD_TYPE` | `release` | 读取对应类型的预编译 Go 产物，须与编译时一致 |
+
+### 构建的服务列表
+
+服务与构建上下文以 [build-images.sh](build-images.sh) 的 `main` 登记为准；`make select-image-services` 输出 CI 的构建选择，不代替正式服务登记。新增正式服务、Worker、前端或 Compose 镜像时，须同时补齐构建登记；检查入口为 `make test-build-registration`。
+
+### 前置条件
+
+所选 Go 镜像使用预编译二进制，须先用 `make build` 生成对应 `BUILD_TYPE` 和 Linux 架构的产物。前端与独立 Runtime 按各自 Dockerfile 准备依赖，不要求无关 Go 二进制。
+
+多架构构建需要 Docker Buildx 和可写 Registry。Model3D 当前每次只构建一个原生 Linux 平台；SuperMap 依赖私有 Linux ARM64 基础镜像，不能把全量 `--multi-arch` 当作所有 Runtime 已支持双架构的承诺。
+
+### 构建与 CI 边界
 
 前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。基础镜像预热完成后才调度产品镜像；每个任务保留独立日志，完成后统一输出，并在摘要中记录耗时与失败服务。任何一个任务失败均使整个构建失败；中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷。
 
@@ -165,134 +115,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 
 Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Backend、Console 和 Nginx 四类构建基线，再自动追加本次改动影响的模块镜像。`common/`、`common-frontend/`、`common-python/` 按实际消费者扩散，`.dockerignore` 变更扩散到全部 Hosted Runner 可构建镜像。Model3D 统一 Linux 构建支持 amd64/arm64，Model3D 或其 common-python 依赖变化会进入 Hosted amd64 镜像验证。只有 SuperMap 私有 arm64 基础镜像不在 GitHub amd64 Runner 范围内。
 
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `REGISTRY` | `localhost:5001` | Registry 地址 |
-| `IMAGE_TAG` | `latest` | 镜像标签 |
-| `BUILD_TYPE` | `release` | 构建类型（需与 compile.sh 一致） |
-
-### 构建的服务列表
-
-**后端服务** (17 个):
-- `system-backend` - System 后端
-- `manager-backend` - Manager 后端
-- `meta-backend` - Meta 后端
-- `transfer-backend` - Transfer 后端
-- `orchestrator-backend` - Orchestrator 后端
-- `develop-backend` - Develop 后端
-- `service-backend` - Service 后端
-- `monitor-backend` - Monitor 后端
-- `standard-backend` - Standard 后端
-- `copilot-backend` - Copilot 后端
-- `agent-backend` - Agent 后端
-- `model-backend` - Model 后端
-- `quality-backend` - Quality 后端
-- `asset-backend` - Asset 后端
-- `portal-backend` - Portal 后端
-- `graph-backend` - Graph 后端
-- `gateway` - API Gateway
-
-**Worker 服务** (4 个):
-- `meta-worker` - Meta Worker
-- `quality-worker` - Quality Worker
-- `transfer-bounded-worker` - Transfer Bounded Worker
-- `transfer-continuous-worker` - Transfer Continuous Worker
-
-**Engine/Runtime 服务** (6 个):
-- `geopython-workflow-engine` - GeoPython Workflow
-- `raster-mosaic-runtime` - Raster Mosaic Runtime
-- `model3d-workflow-engine` - Model3D Workflow Engine
-- `pointcloud-workflow-engine` - PointCloud Workflow Engine
-- `spark-workflow-engine` - Spark Workflow Engine
-- `jupyter-engine` - Jupyter Engine
-
-**前端服务** (16 个):
-- `console` - Console 前端
-- `system-frontend` - System 前端
-- `manager-frontend` - Manager 前端
-- `meta-frontend` - Meta 前端
-- `transfer-frontend` - Transfer 前端
-- `orchestrator-frontend` - Orchestrator 前端
-- `develop-frontend` - Develop 前端
-- `service-frontend` - Service 前端
-- `monitor-frontend` - Monitor 前端
-- `standard-frontend` - Standard 前端
-- `agent-frontend` - Agent 前端
-- `model-frontend` - Model 前端
-- `quality-frontend` - Quality 前端
-- `asset-frontend` - Asset 前端
-- `portal-frontend` - Portal 前端
-- `graph-frontend` - Graph 前端
-
-**基础设施服务** (1 个):
-- `nginx` - 反向代理
-
-### 前置条件
-
-**必须先运行 compile.sh**，否则会报错：
-
-```bash
-# 错误示例
-./scripts/build/build-images.sh
-# ❌ 错误: amd64 架构的二进制文件不存在
-
-# 正确流程
-./scripts/build/compile.sh           # 1. 先编译
-./scripts/build/build-images.sh      # 2. 再构建镜像
-```
-
-### 镜像命名规范
-
-```
-{REGISTRY}/addp-{SERVICE}:{TAG}
-
-示例:
-localhost:5001/addp-system-backend:latest
-localhost:5001/addp-manager-backend:v1.0.0
-localhost:5001/addp-meta-worker:latest
-```
-
-### 多架构构建说明
-
-使用 `--multi-arch` 时：
-- 需要 Docker Buildx 支持
-- 构建平台：`linux/amd64,linux/arm64`
-- 自动检测并使用 buildx builder
-- 镜像会同时包含两个架构
-
-### 示例
-
-```bash
-# 场景 1: 本地开发测试
-./scripts/build/compile.sh
-./scripts/build/build-images.sh
-
-# 场景 2: 构建特定服务
-./scripts/build/compile.sh
-./scripts/build/build-images.sh --services system-backend
-
-# 场景 3: 生产单架构发布
-./scripts/build/compile.sh --arch amd64
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
-  --registry hub.docker.com/myorg
-
-# 场景 4: 生产多架构发布
-./scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
-  --multi-arch \
-  --registry hub.docker.com/myorg
-
-# 场景 5: 推送到私有 Registry
-./scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.2.0 ./scripts/build/build-images.sh \
-  --multi-arch \
-  --registry harbor.example.com:5001
-docker push harbor.example.com:5001/addp-system-backend:v1.2.0
-```
-
----
+`--verify` 仍需要可访问的 Registry：基础镜像会预热并推送到所选 Registry，它只禁止推送产品镜像。普通构建可能检查 Docker daemon 配置；环境准备与 Registry 管理见 [Registry 指南](../registry/README.md)。镜像构建通过不代替真实服务、分布式 Worker 或产品发布验收。
 
 ## build-supermap-workflow-base.sh
 
@@ -315,725 +138,127 @@ bash scripts/dev/restart.sh -supermap-workflow
 
 局部重启和 `restart.sh -all` 会根据 C++ 源码、CMake、Dockerfile、基础镜像 ID 和目标平台计算构建指纹。输入变化时在多阶段镜像中重新编译并测试 C++ Runtime，然后替换运行容器；输入未变化时复用现有代码镜像。
 
----
-
 ## push-images.sh
 
-**用途**: 推送 Docker 镜像到远程镜像仓库（Docker Hub、Harbor、私有 Registry）
+将本机源镜像重新标记并推送到目标 Registry，适用于构建 Registry 与发布 Registry 不同的情况。普通 `make build-images` 已向所选 Registry 推送产品镜像，无需为同一目标重复推送。
 
 ### 使用方法
 
 ```bash
-# 推送到 Docker Hub
-./scripts/build/push-images.sh --registry docker.io/myusername
+# 登录目标 Registry 后，推送指定服务与版本
+# docker.io/myorg、Harbor 项目和其他 namespace 均按同一参数传入
+docker login harbor.example.com:5001
+bash scripts/build/push-images.sh --registry harbor.example.com:5001/addp --tag v1.0.0 --services system-backend,manager-backend,gateway
 
-# 推送到阿里云 ACR
-./scripts/build/push-images.sh \
-  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
-
-# 推送到 Harbor
-./scripts/build/push-images.sh --registry harbor.example.com:5001/project
-
-# 指定镜像标签
-./scripts/build/push-images.sh --registry docker.io/myusername --tag v1.0.0
-
-# 仅推送特定服务
-./scripts/build/push-images.sh \
-  --registry docker.io/myusername \
-  --services system-backend,manager-backend,gateway
-
-# 干运行（不实际推送，仅显示将推送的镜像）
-./scripts/build/push-images.sh --registry docker.io/myusername --dry-run
+# 仅查看拟推送项；仍检查 Docker 与本机源镜像
+bash scripts/build/push-images.sh --registry harbor.example.com:5001/addp --tag v1.0.0 --services system-backend,gateway --dry-run
 ```
 
 ### 参数说明
 
 | 参数 | 值 | 说明 |
-|------|------|------|
-| `--registry` | URL | **必填**，目标 Registry 地址（如 `docker.io/USERNAME`、`registry.com/namespace`） |
-| `--tag` | 版本号 | 镜像标签（默认：`latest`） |
-| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 43 个镜像，包含 postgres） |
-| `--dry-run` | - | 干运行模式，仅显示将推送的镜像，不实际推送 |
-| `--source-registry` | URL | 源 Registry 地址（默认：`localhost:5001`） |
-
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `IMAGE_TAG` | `latest` | 镜像标签 |
-| `SOURCE_REGISTRY` | `localhost:5001` | 源 Registry |
+| --- | --- | --- |
+| `--registry` | 目标地址 | 必填，包含所需 namespace / project |
+| `--tag` | 标签 | 默认读取 `IMAGE_TAG`，缺省为 `latest` |
+| `--services` | 逗号分隔的服务名 | 默认 `all`；按推送脚本的 `ALL_SERVICES` 遍历 |
+| `--source-registry` | 源地址 | 默认读取 `SOURCE_REGISTRY`，缺省为 `localhost:5001` |
+| `--dry-run` | 无 | 不重新标记或推送镜像，只显示计划 |
+| `--force` | 无 | 跳过本地推送缓存，重新推送 |
 
 ### 镜像命名规则
 
-脚本使用标准 Docker 命名格式：
+普通服务使用 `{SOURCE_REGISTRY}/addp-{service}:{tag}` 作为源，目标为 `{TARGET_REGISTRY}/addp-{service}:{tag}`。每个服务对应独立 repository，版本用 tag 表达；生产发布使用明确版本，并在构建、推送、打包和部署时保持一致。
 
-**格式**: `{REGISTRY}/addp-{service}:{TAG}`
-
-**适用场景**:
-- Docker Hub
-- Harbor
-- 阿里云 ACR（个人版和企业版）
-- 私有 Registry
-
-**示例**:
-```bash
-# Docker Hub
-docker.io/myusername/addp-system-backend:latest
-docker.io/myusername/addp-manager-backend:latest
-
-# 阿里云 ACR
-crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
-crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
-
-# Harbor
-harbor.example.com:5001/project/addp-system-backend:latest
-harbor.example.com:5001/project/addp-manager-backend:latest
-```
-
-**特点**:
-- 每个服务对应一个独立的镜像仓库（repository）
-- 版本通过 tag 管理（`latest`, `v1.0.0` 等）
-- 符合 Docker 标准规范
+| Registry 类型 | 目标地址示例 |
+| --- | --- |
+| Docker Hub | `docker.io/USERNAME` |
+| Harbor | `harbor.example.com:5001/PROJECT` |
+| 私有 Registry | `registry.company.com:5000` |
+| GitHub Container Registry | `ghcr.io/USERNAME` |
+| 阿里云 ACR | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` |
 
 ### 推送的镜像列表
 
-脚本会推送以下 43 个镜像（当使用 `--services all` 或不指定时，包含 postgres）：
-
-**后端服务** (17 个):
-- `addp-system-backend`
-- `addp-manager-backend`
-- `addp-meta-backend`
-- `addp-transfer-backend`
-- `addp-orchestrator-backend`
-- `addp-develop-backend`
-- `addp-service-backend`
-- `addp-monitor-backend`
-- `addp-standard-backend`
-- `addp-copilot-backend`
-- `addp-agent-backend`
-- `addp-model-backend`
-- `addp-quality-backend`
-- `addp-asset-backend`
-- `addp-portal-backend`
-- `addp-graph-backend`
-- `addp-gateway`
-
-**Worker 服务** (4 个):
-- `addp-meta-worker`
-- `addp-quality-worker`
-- `addp-transfer-bounded-worker`
-- `addp-transfer-continuous-worker`
-
-**Engine/Runtime 服务** (6 个):
-- `addp-geopython-workflow-engine`
-- `addp-raster-mosaic-runtime`
-- `addp-model3d-workflow-engine`
-- `addp-pointcloud-workflow-engine`
-- `addp-spark-workflow-engine`
-- `addp-jupyter-engine`
-
-**前端服务** (16 个):
-- `addp-console`
-- `addp-system-frontend`
-- `addp-manager-frontend`
-- `addp-meta-frontend`
-- `addp-transfer-frontend`
-- `addp-orchestrator-frontend`
-- `addp-develop-frontend`
-- `addp-service-frontend`
-- `addp-monitor-frontend`
-- `addp-standard-frontend`
-- `addp-agent-frontend`
-- `addp-model-frontend`
-- `addp-quality-frontend`
-- `addp-asset-frontend`
-- `addp-portal-frontend`
-- `addp-graph-frontend`
-
-**基础设施服务** (1 个):
-- `addp-nginx`
+完整清单以 [push-images.sh](push-images.sh) 的 `ALL_SERVICES` 为准，不在文档固定镜像数量。当前默认清单还包含 `postgres`：它使用本机 `pampa0629/addp-postgres:15-arm64`，不读取 `SOURCE_REGISTRY` 或普通服务的标签；不能据此推断它支持其他架构。
 
 ### 前置条件
 
-1. **必须先构建镜像**（运行 `build-images.sh`）
-2. **必须登录目标 Registry**：
-   ```bash
-   # Docker Hub
-   docker login
-
-   # Harbor 或私有 Registry
-   docker login harbor.example.com:5001
-   ```
+源镜像必须已经存在，目标账号须具有推送权限并完成 `docker login`。登录使用 Registry 主机，目标参数可额外包含 namespace / project。
 
 ### 工作原理
 
-脚本执行以下步骤：
+脚本依次检查源镜像、重新标记、推送并输出成功、失败、缺失跳过与缓存复用摘要。每个镜像最多尝试推送 5 次，重试间隔 15 秒。成功后在 `.push-cache` 记录目标引用与本机源 image ID；缓存命中只表示该本地记录未变化，不是对远端镜像仍存在的实时验证。
 
-1. **验证参数** - 检查 `--registry` 是否提供
-2. **检查 Docker 状态** - 验证 Docker 是否运行
-3. **检查登录状态** - 提示用户是否已登录 Registry
-4. **遍历服务列表**：
-   - 检查源镜像是否存在（`localhost:5001/addp-{service}:{tag}`）
-   - Tag 镜像到目标 Registry（`{target-registry}/addp-{service}:{tag}`）
-   - 推送镜像到目标 Registry
-   - 记录成功/失败/跳过的服务
-5. **显示推送摘要** - 成功数、失败数、跳过数
-
-### 示例
-
-```bash
-# 场景 1: 推送所有镜像到 Docker Hub
-docker login
-./scripts/build/push-images.sh --registry docker.io/myusername
-
-# 场景 2: 推送到阿里云 ACR
-docker login crpi-xxx.cn-beijing.personal.cr.aliyuncs.com
-./scripts/build/push-images.sh \
-  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
-
-# 场景 3: 推送特定版本到 Docker Hub
-./scripts/build/push-images.sh \
-  --registry docker.io/myusername \
-  --tag v1.0.0
-
-# 场景 4: 仅推送核心服务
-./scripts/build/push-images.sh \
-  --registry docker.io/myusername \
-  --services system-backend,manager-backend,meta-backend,gateway
-
-# 场景 5: 推送到私有 Harbor
-docker login harbor.example.com:5001
-./scripts/build/push-images.sh \
-  --registry harbor.example.com:5001/addp \
-  --tag v2.0.0
-
-# 场景 6: 干运行测试（不实际推送）
-./scripts/build/push-images.sh \
-  --registry docker.io/myusername \
-  --dry-run
-```
-
-### Registry 地址格式
-
-不同 Registry 的地址格式和说明：
-
-| Registry 类型 | 格式示例 | 说明 |
-|--------------|---------|------|
-| **Docker Hub** | `docker.io/USERNAME` | 最常用的公共镜像仓库 |
-| **Harbor** | `harbor.example.com:5001/PROJECT` | 企业级私有镜像仓库 |
-| **私有 Registry** | `registry.company.com:5000` | 自建 Docker Registry |
-| **GitHub Container Registry** | `ghcr.io/USERNAME` | GitHub 提供的容器镜像服务 |
-| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 43 个镜像仓库完全够用 |
-| **阿里云 ACR 企业版** | `registry.cn-hangzhou.aliyuncs.com/NAMESPACE` | 企业版无仓库数量限制 |
-
-**说明**:
-- 所有 Registry 均使用标准 Docker 命名格式：`{REGISTRY}/addp-{service}:{TAG}`
-- 每个服务对应一个独立的镜像仓库（repository）
-- 版本通过 tag 管理（`latest`, `v1.0.0` 等）
-
-### 推送结果示例
-
-```
-========================================
-ADDP Image Pusher
-========================================
-
-Source Registry: localhost:5001
-Target Registry: docker.io/myusername
-Tag: latest
-Services: all
-Dry Run: false
-
-Services to push (18 total):
-  - system-backend
-  - manager-backend
-  - meta-backend
-  ...
-
-========================================
-Pushing Images
-========================================
-
-Processing system-backend...
-  Tagging: localhost:5001/addp-system-backend:latest → docker.io/myusername/addp-system-backend:latest
-  Pushing: docker.io/myusername/addp-system-backend:latest
-✓ Pushed system-backend (245MB)
-
-...
-
-========================================
-Summary
-========================================
-Total services: 18
-Successfully pushed: 18
-Failed: 0
-Skipped (not found): 0
-
-✓ All images pushed successfully!
-
-Next steps:
-1. Verify images in registry: docker.io/myusername
-   Visit: https://hub.docker.com/r/myusername/repositories
-2. Generate deployment package:
-   ./scripts/build/package.sh --mode registry --registry docker.io/myusername
-3. Deploy on server:
-   docker compose -f docker-compose.yml pull
-   bash scripts/prod/start.sh
-```
-
-**阿里云 ACR 推送示例**:
-
-```bash
-# 推送到阿里云 ACR
-./scripts/build/push-images.sh \
-  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
-
-# 结果：43 个独立仓库
-# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
-# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
-# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-meta-backend:latest
-# ... (共 43 个仓库)
-```
-
-### 注意事项
-
-1. **登录验证**: 推送前必须登录目标 Registry（`docker login`）
-2. **网络依赖**: 推送所有 43 个镜像需要稳定的网络（总大小约 5-10GB）
-3. **权限要求**: 确保 Docker Hub 或 Registry 账号有推送权限
-4. **命名规范**: 镜像名称保持 `addp-` 前缀不变
-5. **版本管理**: 生产环境建议使用明确的版本标签（如 `v1.0.0`），避免 `latest`
-6. **推送时间**: 首次推送所有镜像可能需要 10-30 分钟（取决于网络速度）
+源镜像缺失会跳过；存在其他成功或缓存复用项时，命令可能返回成功。因此发布前须核对摘要中的缺失项，不能把退出码为零等同于所需镜像全部送达。
 
 ### 故障排查
 
-#### 问题 1: 源镜像不存在
-
-**错误信息**:
-```
-⚠ Warning: Source image not found: localhost:5001/addp-system-backend:latest
-```
-
-**解决方法**:
-```bash
-# 先构建镜像
-./scripts/build/compile.sh
-./scripts/build/build-images.sh
-```
-
-#### 问题 2: 未登录 Registry
-
-**错误信息**:
-```
-denied: requested access to the resource is denied
-```
-
-**解决方法**:
-```bash
-# Docker Hub
-docker login
-
-# Harbor 或私有 Registry
-docker login harbor.example.com:5001
-```
-
-#### 问题 3: 推送超时
-
-**解决方法**:
-```bash
-# 增加 Docker daemon 超时时间（在 Docker Desktop 设置中）
-# 或者仅推送部分服务
-./scripts/build/push-images.sh \
-  --registry docker.io/myusername \
-  --services system-backend,manager-backend
-```
-
-#### 问题 4: Registry 磁盘空间不足
-
-**错误信息**:
-```
-error writing blob: insufficient_storage
-```
-
-**解决方法**:
-- 清理 Registry 中的旧镜像
-- 联系 Registry 管理员增加存储配额
-
----
+| 问题 | 核对与处理 |
+| --- | --- |
+| 源镜像不存在 | 核对源 Registry、标签和本机镜像；按上文先编译所需 Go 产物，再构建镜像 |
+| `denied` | 核对目标 namespace、账号权限及 `docker login` 主机 |
+| 推送超时 | 核对网络和目标 Registry，可用 `--services` 缩小本次范围 |
+| `insufficient_storage` | 由目标 Registry 管理员核对配额和保留策略 |
 
 ## package.sh
 
-**用途**: 生成部署包，支持离线部署和镜像仓库部署两种模式
+生成包含现有镜像或 Registry 配置的部署包，不在目标服务器重新编译应用。
 
 ### 使用方法
 
 ```bash
-# 离线部署包（默认，包含构建脚本）
-./scripts/build/package.sh
+# 导出本机已有镜像，生成离线镜像包
+IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode images
 
-# 镜像仓库部署包（轻量，仅配置文件）
-./scripts/build/package.sh --mode registry
-
-# 指定 Registry URL
-./scripts/build/package.sh --registry harbor.example.com:5001
-
-# 自动传输到服务器
-./scripts/build/package.sh --server ubuntu@192.168.1.100
-
-# 组合使用
-./scripts/build/package.sh \
-  --mode offline \
-  --registry localhost:5001 \
-  --server ubuntu@production-server
+# 生成目标 Registry 的配置目录
+IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode registry --registry harbor.example.com:5001/addp
 ```
 
 ### 参数说明
 
 | 参数 | 值 | 说明 |
-|------|------|------|
-| `--mode` | `images` \| `registry` | 部署模式（默认：`images`） |
-| `--registry` | URL | Registry 地址（默认：`localhost:5001`） |
-| `--server` | `user@host` | 自动传输到远程服务器 |
+| --- | --- | --- |
+| `--mode` | `images` / `registry` | 默认 `images`；不接受 `offline` |
+| `--registry` | 地址 | 默认读取 `REGISTRY`，缺省为 `localhost:5001` |
+| `--server` | `user@host` | 生成后传输到远端 `~/addp-deploy/`，优先 rsync，缺少时使用 scp |
+
+`IMAGE_TAG` 默认 `latest`，决定 images 模式导出的镜像版本。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。部署时须核对实际 `.env` 的 Registry 和版本，不能仅靠包目录名判断。
 
 ### 两种部署模式
 
-#### Images Mode（离线镜像部署）
+| 模式 | 前提与内容 | 服务器操作 | 产物 |
+| --- | --- | --- | --- |
+| `images` | 本机已构建的 ADDP 镜像，通过 `docker save` 导出；附配置和加载脚本 | 使用 `load-images.sh` 加载，再按生产入口部署 | 目录及 tarball |
+| `registry` | 目标 Registry 已有所需版本镜像；只生成部署配置，不导出镜像 | 核对 Registry 访问与凭据，拉取所需镜像后部署 | 配置目录，不生成 tarball |
 
-**适用场景**：服务器无法访问镜像仓库，将镜像打包为 tar 文件传输
-
-**包含内容**：
-- 所有配置文件（docker-compose, .env, nginx）
-- 基础设施脚本（scripts/infra/）
-- 生产脚本（scripts/prod/）
-- **构建脚本**（scripts/build/compile.sh, build-images.sh）
-- 业务基础设施（business/）
-- **Tarball 打包**（dist/addp-deploy-offline-{timestamp}.tar.gz）
-
-**部署流程**：
-1. 传输完整包到服务器
-2. 在服务器上编译二进制（compile.sh）
-3. 在服务器上构建镜像（build-images.sh）
-4. 从本地 registry 部署
-
-**优点**：
-- ✅ 无需网络访问镜像仓库
-- ✅ 可针对服务器架构优化编译
-- ✅ 完全自包含
-
-**缺点**：
-- ⚠️ 包体积大（~5-10GB，含所有镜像 tar 文件）
-- ⚠️ 传输时间较长
-
-#### Registry Mode（镜像仓库部署）
-
-**适用场景**：服务器可访问镜像仓库，镜像已预先构建并推送
-
-**包含内容**：
-- 所有配置文件（docker-compose, .env, nginx）
-- 基础设施脚本（scripts/infra/）
-- 生产脚本（scripts/prod/）
-- 业务基础设施（business/）
-- **不包含**构建脚本
-- **不生成** tarball（轻量包）
-
-**部署流程**：
-1. 传输配置包到服务器
-2. 配置 Registry 访问
-3. 从 Registry 拉取镜像
-4. 立即部署
-
-**优点**：
-- ✅ 部署速度快（无需编译）
-- ✅ 服务器无需构建环境
-- ✅ 镜像构建与部署分离
-
-**缺点**：
-- ⚠️ 需要维护镜像仓库
-- ⚠️ 依赖网络访问 Registry
+images 模式的导出清单由 [package.sh](package.sh) 的 `export_images` 维护；缺失或导出失败的镜像会列入摘要，但不会阻止后续打包。包生成成功不证明镜像清单完整，也不证明所有 Infra、业务引擎与外部依赖已离线齐备。部署前须核对所需镜像、架构和版本，不保留固定包体积或导出数量承诺。
 
 ### 生成的包结构
 
-**Images Mode**:
-```
-dist/package-images-{timestamp}/
-├── docker-compose.infra.yml       # 基础设施配置
-├── docker-compose.yml        # 应用服务配置
-├── .env.example                   # 环境变量模板
-├── images/                        # 预构建 Docker 镜像（40 个 tar 文件，~5-10GB）
-├── load-images.sh                 # 镜像加载脚本
-├── scripts/
-│   ├── infra/                     # 基础设施初始化
-│   └── prod/                      # 生产启动脚本
-├── business/                      # 业务基础设施
-├── nginx/                         # Nginx 配置
-├── README.md                      # 离线部署说明
-└── DEPLOY_INFO.txt                # 部署包元信息
+两种模式均生成 `dist/package-{mode}-{timestamp}/`，包含三份根 Compose 定义、环境模板、Infra/Prod 脚本、Business 目录、Nginx 配置、`README.md` 和 `DEPLOY_INFO.txt`；已有根 `.env` 时同时携带该文件。两种模式都会更新平台与 Runtime Compose 中的 Registry 地址。
 
-Tarball: dist/addp-deploy-images-{timestamp}.tar.gz
-```
-
-**Registry Mode**:
-```
-dist/package-registry-{timestamp}/
-├── docker-compose.infra.yml       # 基础设施配置
-├── docker-compose.yml        # 应用服务配置（Registry URLs 已更新）
-├── .env.example                   # 环境变量模板
-├── scripts/
-│   ├── infra/                     # 基础设施初始化
-│   └── prod/                      # 生产启动脚本
-├── business/                      # 业务基础设施
-├── nginx/                         # Nginx 配置
-├── README.md                      # 镜像仓库部署说明
-└── DEPLOY_INFO.txt                # 部署包元信息
-
-（无 tarball，直接 rsync 目录）
-```
-
-### 示例
-
-```bash
-# 场景 1: 镜像离线打包（默认，将镜像导出为 tar 文件）
-./scripts/build/package.sh --mode images
-
-# 场景 2: Docker Hub 镜像仓库部署包
-./scripts/build/package.sh --mode registry --registry docker.io/pampa0629
-
-# 场景 3: Harbor 私有仓库部署包
-./scripts/build/package.sh --mode registry --registry harbor.example.com:5001
-
-# 场景 4: 离线打包并自动传输到服务器
-./scripts/build/package.sh \
-  --mode images \
-  --server ubuntu@192.168.1.100
-
-# 场景 5: Docker Hub 部署包并传输到服务器
-./scripts/build/package.sh \
-  --mode registry \
-  --registry docker.io/pampa0629 \
-  --server ubuntu@production-server
-
-# 场景 6: 私有仓库部署包并传输到服务器
-./scripts/build/package.sh \
-  --mode registry \
-  --registry myregistry.com:5001 \
-  --server ubuntu@production-server
-```
-
----
+images 模式额外包含 `images/*.tar` 与 `load-images.sh`，生成 `dist/addp-deploy-images-{timestamp}.tar.gz`；registry 模式保留配置目录，可用 `--server` 传输。实际复制范围和成功项以脚本及打包输出为准，不把清单存在当作完整部署验收。
 
 ## 完整的构建流程
 
-### 本地开发测试流程
+编译、镜像构建、跨 Registry 推送、打包和部署的顺序统一见[构建打包与推送](../docs/构建打包与推送.md)。本地容器与生产环境分别使用 [Local 指南](../local/README.md)和 [Prod 指南](../prod/README.md)的标准生命周期入口，不复制直接 Compose 启停或临时服务器命令。
 
-```bash
-# 1. 编译本机架构
-./scripts/build/compile.sh
-
-# 2. 构建本地镜像
-./scripts/build/build-images.sh
-
-# 3. 启动测试
-docker-compose -f docker-compose.infra.yml up -d
-docker-compose -f docker-compose.yml up -d
-
-# 4. 验证
-curl http://localhost:8080/health
-```
-
-### 生产发布流程
-
-```bash
-# 1. 编译多架构二进制
-./scripts/build/compile.sh --arch both
-
-# 2. 构建多架构镜像
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
-  --multi-arch \
-  --registry localhost:5001
-
-# 3. 推送镜像到 Registry（使用 push-images.sh）
-docker login  # Docker Hub
-# 或者: docker login harbor.example.com:5001  # Harbor
-
-./scripts/build/push-images.sh \
-  --registry docker.io/myorg \
-  --tag v1.0.0
-
-# 4. 生成部署包
-./scripts/build/package.sh \
-  --mode registry \
-  --registry docker.io/myorg
-
-# 5. 传输到生产服务器
-scp -r dist/package-registry-*/ ubuntu@production-server:/opt/addp/
-
-# 6. 在生产服务器上部署
-ssh ubuntu@production-server
-cd /opt/addp/package-registry-*/
-bash scripts/prod/start.sh
-```
-
-### CI/CD 自动化流程
-
-```yaml
-# .github/workflows/release.yml 示例
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Compile binaries
-        run: ./scripts/build/compile.sh --arch both
-
-      - name: Build images
-        env:
-          REGISTRY: ghcr.io/${{ github.repository }}
-          IMAGE_TAG: ${{ github.ref_name }}
-        run: |
-          ./scripts/build/build-images.sh \
-            --multi-arch \
-            --registry $REGISTRY
-
-      - name: Package deployment
-        run: |
-          ./scripts/build/package.sh \
-            --mode registry \
-            --registry ghcr.io/${{ github.repository }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: deployment-package
-          path: ./release-${{ github.ref_name }}
-```
-
----
-
-## 与设计文档的对应关系
-
-| 设计文档功能 | 当前实现 | 状态 |
-|-------------|---------|------|
-| `compile.sh --arch both` | ✅ 完全实现 | 完全匹配 |
-| `build-images.sh --arch both` | `--multi-arch` | 功能等价 |
-| `--tag <version>` | 环境变量 `IMAGE_TAG` | 功能等价 |
-| `--push` | 需手动 `docker push` | 可手动操作 |
-| `--registry <url>` | ✅ 完全实现 | 完全匹配 |
-| `--service <name>` | `--services <list>` | 功能增强 |
-
----
+CI 编排与标准验证见[测试与发布入口](../docs/测试与发布入口.md#ci-登记与隔离检查)及[测试与验收规范](../../docs/spec/addp测试与验收规范.md)，以仓库实际 Workflow 为准，不维护示例 release YAML。
 
 ## 故障排查
 
-### 问题 1: 二进制文件不存在
-
-**错误信息**:
-```
-错误: amd64 架构的二进制文件不存在
-请先运行: ./scripts/build/compile.sh --arch amd64
-```
-
-**解决方法**:
-```bash
-# 先编译，再构建镜像
-./scripts/build/compile.sh
-./scripts/build/build-images.sh
-```
-
-### 问题 2: Docker Buildx 不可用
-
-**错误信息**:
-```
-ERROR: multiple platforms feature is currently not supported for docker driver
-```
-
-**解决方法**:
-```bash
-# 创建 buildx builder
-docker buildx create --use --name addp-builder
-
-# 验证
-docker buildx ls
-```
-
-### 问题 3: Registry 连接失败
-
-**错误信息**:
-```
-error: failed to push manifest to localhost:5001
-```
-
-**解决方法**:
-```bash
-# 检查 Registry 是否运行
-docker ps | grep registry
-
-# 启动本地 Registry
-docker run -d -p 5001:5000 --name registry registry:2
-
-# 或者使用远程 Registry
-./scripts/build/build-images.sh --registry hub.docker.com/myorg
-```
-
-### 问题 4: 缓存导致构建问题
-
-**解决方法**:
-```bash
-# 清理编译缓存
-rm -rf .compile-cache/
-
-# 清理 Docker 缓存
-docker builder prune -af
-
-# 强制重新编译和构建
-./scripts/build/compile.sh --force
-./scripts/build/build-images.sh --skip-cache
-```
-
----
+| 问题 | 核对与处理 |
+| --- | --- |
+| Go 镜像缺少二进制 | 核对 `dist/{BUILD_TYPE}-linux-{arch}/`，按所选平台执行 `make build BUILD_ARGS="--arch <架构> --services <服务列表>"` |
+| Buildx 不支持多平台 | 检查 `docker buildx ls`；单平台验证使用 `--verify`，需要多架构时先准备可用 builder 与目标 Registry |
+| Registry 不可达 | 按 [Registry 指南](../registry/README.md)核对实际部署；不直接创建第二个同名 Registry 容器 |
+| 产物复用不符合预期 | Go 编译使用 `BUILD_ARGS=--force`，镜像构建使用 `IMAGE_BUILD_ARGS=--force`；`--skip-cache` 只控制 cache-from，不清理共享缓存 |
 
 ## 相关文档
 
-- [scripts/prod/README.md](../prod/README.md) - 生产部署脚本文档
-- [scripts/dev/README.md](../dev/README.md) - 开发环境脚本文档
-- [脚本总导航](../README.md) - 目录职责与构建专题入口
-- [CLAUDE.md](../../CLAUDE.md) - 项目总体架构文档
-
----
-
-## 最佳实践
-
-1. **本地开发**: 使用默认参数，快速迭代
-   ```bash
-   ./scripts/build/compile.sh && ./scripts/build/build-images.sh
-   ```
-
-2. **生产发布**: 始终使用多架构构建和明确的版本标签
-   ```bash
-   ./scripts/build/compile.sh --arch both
-   IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh --multi-arch
-   ```
-
-3. **CI/CD**: 使用环境变量传递配置
-   ```bash
-   BUILD_TYPE=release IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh
-   ```
-
-4. **调试**: 使用 debug 构建类型
-   ```bash
-   BUILD_TYPE=debug ./scripts/build/compile.sh
-   BUILD_TYPE=debug ./scripts/build/build-images.sh
-   ```
-
-5. **缓存管理**: 定期清理缓存以避免问题
-   ```bash
-   # 每周一次
-   rm -rf .compile-cache/ .gomodcache/ .cache/
-   docker builder prune -af
-   ```
+- [脚本总导航](../README.md)
+- [部署和开发步骤](../../docs/guide/addp部署和开发步骤.md)
+- [前端镜像构建规范](../docs/前端镜像构建规范.md)
+- [生产部署脚本](../prod/README.md)
+- [开发环境脚本](../dev/README.md)
+- [项目总体架构](../../CLAUDE.md)

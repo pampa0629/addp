@@ -4090,10 +4090,44 @@ const docTemplate = `{
                 "boundary_hash": {
                     "type": "string"
                 },
+                "file_composition": {
+                    "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
                 "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
+                    }
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionRef": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }

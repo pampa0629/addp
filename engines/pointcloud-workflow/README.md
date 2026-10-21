@@ -32,25 +32,13 @@ bash scripts/dev/restart.sh -pointcloud-workflow
 
 HTTP 仅监听 `127.0.0.1` 与已分配的 `POINTCLOUD_WORKFLOW_PORT`，按原生 PID 和监听归属判定就绪。System 与对象存储端点按宿主机实际地址直接访问，不进行容器 host gateway 改写。NFS 源文件直接读取本机路径；工作目录为 `${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}`，COPC 仍先写受控临时文件，再按 access plan 发布到目标存储。目录应有足够磁盘空间。
 
-首次迁移需由用户停止并删除旧 `pointcloud-workflow-engine` 开发容器；若已有普通 Python venv，先将其移出上述前缀再启动。开发入口拒绝使用非 Conda 前缀，也不会删除未知环境或接管外部监听者。此后的 start/restart/stop 仅管理原生进程。日志为 `logs/pointcloud-workflow-engine.log`。
-
-当前已有旧开发容器和普通 venv 的工作区，首次切换由用户在终端执行（旧 venv 移到临时目录保留）：
-
-```bash
-docker stop pointcloud-workflow-engine
-docker rm pointcloud-workflow-engine
-pointcloud_backup=$(mktemp -d /tmp/addp-pointcloud-old.XXXXXX)
-mv engines/pointcloud-workflow/venv "$pointcloud_backup/venv"
-./scripts/dev/restart.sh -pointcloud-workflow
-```
+开发态 start/restart/stop 仅管理原生进程。开发入口拒绝使用非 Conda 前缀，也不会删除未知环境或接管外部监听者。日志为 `logs/pointcloud-workflow-engine.log`。
 
 `POINTCLOUD_COPC_THREADS` 默认 4，限制为 `1..8`；进度回调间隔 `POINTCLOUD_PROGRESS_INTERVAL_SECONDS` 默认 5 秒，限制为 `1..60`。运行时专属 PDAL 绝对路径由开发入口注入。
 
 ## 产品部署
 
-```bash
-docker compose up -d pointcloud-workflow-engine
-```
+[Local](../../scripts/local/start.sh) 与 [Prod](../../scripts/prod/start.sh) 通过根 [docker-compose.runtimes.yml](../../docker-compose.runtimes.yml) 启动 `pointcloud-workflow-engine`。完整步骤见[部署指南](../../docs/guide/addp部署和开发步骤.md)。
 
 产品镜像继续由根构建入口维护，与原生开发入口分离，不作为开发启动的备选路线。
 

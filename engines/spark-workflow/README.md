@@ -14,7 +14,7 @@ bash scripts/dev/start.sh -spark-workflow
 ./scripts/dev/restart.sh -spark-workflow
 ```
 
-Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套与局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 完成 Java、Python、依赖和共享地址验证；准备失败的服务不启动，入口返回非零。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
+Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。标准入口自动发现 Java 11、创建缺失的虚拟环境。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套与局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 完成 Java、Python、依赖和共享地址验证；准备失败的服务不启动，入口返回非零。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
 
 原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。依赖版本只在进程加载时读取；健康请求直接读取算子注册表的数量，不重建元数据或重复查询安装包。请求日志记录方法、路径、状态和耗时，不记录 query、请求体或认证头；真实 HTTP 回归同时验证执行任务和等待注册期间仍可查询健康状态与执行快照。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
 
