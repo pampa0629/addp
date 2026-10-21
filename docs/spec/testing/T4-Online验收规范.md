@@ -89,4 +89,6 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 
 离线恢复在同一临时部署中通过标准 `make build-iam-recovery build-iam-bootstrap` 构建的正式 CLI 验收。驱动真实伪终端完成 `prepare/apply`、隐藏密码输入和每名持有人两个连续的真实 TOTP 时间窗口，不增加非交互参数、固定验证码或测试时钟。核验全部当前持有人凭据替换、旧密码／TOTP／会话失效、角色分配与原暂停状态保留、Secret 不可复用、Bootstrap 不可重建及完整脱敏审计；暂停身份仍须另外按原矩阵批准恢复。终端内容和恢复凭据只在进程内存中流转，不写入文件、参数、环境变量或验收归档，子进程退出时关闭终端并清理内存引用。
 
+凭编号核清复用该套件：收集阶段中断并确认 CLI 退出后，新进程只能观察到 prepared，错误恢复编号必须返回 unknown；四人 Apply 正常完成并确认原进程退出后，另启不同进程执行 `status <attempt-id> <submission-id>`，不输入 Secret、密码或验证码。核清必须返回原提交的 completed_this_submission、同一成功提交编号、四名历史 Principal／岗位及恢复时授权版本；另一个提交编号只能得到 completed_other_submission。后续恢复暂停、撤销新增岗位后再次核清，原回执必须不变，重复核清前后恢复审计完整行和当前会话授权事实不变。报告只保存断言布尔值，非敏感编号也不保存为凭据副本。此项仅证明真实 CLI 退出后的跨进程核清，不替代已提交成功响应被截断的 PostgreSQL T2，也不声称跨进程网络确认丢失 T4 已通过。
+
 凭据不写 URL、日志或报告；浏览器不保留截图、Trace、视频或 Storage State，报告只保存固定断言和脱敏身份。准入、业务和清理任一失败均为失败，未实际 Hosted 运行不计 T4 通过。

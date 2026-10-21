@@ -62,7 +62,7 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
                         '输入新密码（至少 14 字符）: ', '再次输入新密码: ',
                         '备用 TOTP Secret: '+secret+'\n', '输入当前 TOTP 验证码: ',
                         '等待验证码变化后输入下一个 TOTP 验证码: ']
-        outputs += ['IAM 管理员凭据恢复已完成于 now（Attempt 7）']
+        outputs += ['Submission ID: 00000000-0000-4000-8000-000000000007\n', 'IAM 管理员凭据恢复已完成于 now（Attempt 7）']
         outputs += [f'{holders[pid]["role_key"]} -> Principal {pid}\n' for pid in sorted(holders, key=int)]
         if mutate: mutate(outputs)
         class Dialog:
@@ -83,9 +83,10 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
 
     def test_offline_dialog_binds_each_principal_including_same_role_and_consecutive_counters(self):
         holders = self.recovery_holders()
-        terminal, (recovered, counters, attempt), secrets = self.collect_dialog(holders)
+        terminal, (recovered, counters, attempt, submission), secrets = self.collect_dialog(holders)
         self.assertEqual(set(recovered), set(holders))
         self.assertEqual(attempt, '7')
+        self.assertEqual(submission, '00000000-0000-4000-8000-000000000007')
         self.assertEqual(terminal.exits, [0])
         self.assertFalse(terminal.values)
         for index, username in enumerate(('audit', 'security', 'system', 'successor')):
@@ -101,11 +102,56 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         self.assertEqual(recovered['1']['role_key'], recovered['4']['role_key'])
         self.assertNotEqual(recovered['1']['totp'], recovered['4']['totp'])
 
+    def resolution_dialog(self, state, *, mutate=None, exit_code=None):
+        holders = self.recovery_holders()
+        winner = '00000000-0000-4000-8000-000000000007'
+        versions = {'1': 11, '2': 11, '3': 12, '4': 11}
+        outputs = ['Attempt ID: 7\n', f'state={state}\n']
+        if state.startswith('completed_'):
+            outputs += [f'Submission ID: {winner}\n', 'completed_at=2026-10-21T01:00:00Z\n']
+            outputs += [f'{holders[pid]["role_key"]} -> Principal {pid}; authorization_version={versions[pid]}\n'
+                        for pid in sorted(holders, key=int)]
+        if mutate: mutate(outputs)
+        actual_exit = (1 if state == 'unknown' else 0) if exit_code is None else exit_code
+        class Dialog:
+            def expect(self, pattern):
+                SCENE.require(bool(outputs), 'resolution evidence ended early')
+                match = re.search(pattern, outputs.pop(0))
+                SCENE.require(match is not None, 'resolution evidence differs')
+                return match
+            def finish(self, expected):
+                SCENE.require(expected == actual_exit and not outputs, 'resolution did not finish cleanly')
+            def send_line(self, *_):
+                raise AssertionError('result lookup must never request a recovery credential')
+        return SCENE.read_recovery_resolution(Dialog(), '7', state,
+                winner=winner, holders=holders, versions=versions)
+
+    def test_resolution_dialog_binds_winner_holders_and_historical_versions_without_credentials(self):
+        for state in ('prepared', 'unknown', 'completed_this_submission', 'completed_other_submission'):
+            receipt = self.resolution_dialog(state)
+            self.assertEqual(receipt['state'], state)
+            self.assertEqual(receipt['attempt_id'], '7')
+            if state.startswith('completed_'):
+                self.assertEqual(len(receipt['principals']), 4)
+                self.assertEqual(receipt['principals']['3'][1], 12)
+
+    def test_resolution_rejects_wrong_attempt_winner_version_and_bad_exit(self):
+        mutations = [lambda rows: rows.__setitem__(0, 'Attempt ID: 8\n'),
+                     lambda rows: rows.__setitem__(1, 'state=prepared\n'),
+                     lambda rows: rows.__setitem__(2, 'Submission ID: 00000000-0000-4000-8000-000000000008\n'),
+                     lambda rows: rows.__setitem__(4, rows[4].replace('version=11', 'version=12')),
+                     lambda rows: rows.pop()]
+        for mutate in mutations:
+            with self.assertRaises(API.SuiteError): self.resolution_dialog('completed_this_submission', mutate=mutate)
+        with self.assertRaises(API.SuiteError): self.resolution_dialog('unknown', exit_code=0)
+        with self.assertRaises(API.SuiteError): self.resolution_dialog('completed_this_submission', exit_code=1)
+
     def test_interrupted_dialog_stops_after_three_validated_holders_before_fourth_password(self):
-        terminal, (partial, counters, attempt), _ = self.collect_dialog(self.recovery_holders(), interrupt_before_last=True)
+        terminal, (partial, counters, attempt, submission), _ = self.collect_dialog(self.recovery_holders(), interrupt_before_last=True)
         self.assertEqual(set(partial), {'1', '2', '3'})
         self.assertEqual(len(counters), 3)
         self.assertIsNone(attempt)
+        self.assertIsNone(submission)
         self.assertEqual(terminal.exits, [-SCENE.signal.SIGTERM])
         self.assertEqual(len(terminal.writes), 12)
         self.assertTrue(terminal.values[0].startswith('再次输入新密码'))
@@ -164,7 +210,7 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         holders = self.recovery_holders()
         recovered = {pid: {**item, 'password': 'new-'+pid, 'totp': 'MFRGGZDFMZTWQ2LK'}
                      for pid, item in holders.items()}
-        checks, governance = [], []
+        checks, governance, resolutions, terminal_commands = [], [], [], []
         state = {'recovered': False}
         def context(actor):
             result = identity('system' if actor == 'successor' else actor)
@@ -192,12 +238,22 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
                 checks.append(('public', method, path, expected, body))
                 return API.Response(expected[0], {'next_action': 'verify_mfa', 'mfa': {'challenge_token': 'challenge'}})
         class Terminal:
+            def __init__(self, command):
+                terminal_commands.append(command)
+                self.process = type('Process', (), {'pid': len(terminal_commands), 'poll': lambda _: 0})()
             def __enter__(self): return self
             def __exit__(self, *_): pass
             def expect(self, pattern):
                 return ('match', '7' if pattern.startswith('Attempt ID:') else 'addp_ir_ephemeral')
             def send_line(self, *_, **__): pass
             def finish(self, *_): pass
+        def resolve(terminal, attempt_id, expected_state, **extra):
+            resolutions.append((str(attempt_id), expected_state, extra))
+            if expected_state.startswith('completed_'):
+                self.assertEqual(extra['holders'], holders)
+                self.assertEqual(extra['versions'], {'1': 11, '2': 11, '3': 12, '4': 11})
+            return {'state': expected_state, 'attempt_id': str(attempt_id), 'submission_id': extra.get('winner'),
+                    'completed_at': '2026-10-21T00:00:00Z'}
         scene.public = Public()
         scene.actors = {actor: Client(actor, old=True) for actor in (*SCENE.ROLES, 'successor')}
         def login(actor): scene.actors[actor] = Client(actor)
@@ -208,9 +264,9 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
             self.assertEqual(expected, holders)
             checks.append(('collector', interrupt_before_last))
             if interrupt_before_last:
-                return {pid: item for pid, item in recovered.items() if pid != '4'}, {}, None
+                return {pid: item for pid, item in recovered.items() if pid != '4'}, {}, None, None
             state['recovered'] = True
-            return recovered, {}, '7'
+            return recovered, {}, '7', '00000000-0000-4000-8000-000000000007'
         tenant = {'principal': {'id': '4', 'type': 'user'},
                   'context': {'type': 'tenant', 'tenant_id': '2', 'tenant_membership_id': '42'},
                   'authentication': {'assurance_level': 'aal2'}, 'token': {'type': 'first_party_access_token'},
@@ -218,7 +274,8 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
         class Tenant:
             def request(self, *_): return API.Response(200, tenant)
         with patch.object(SCENE, 'validate_hosted'), patch.object(SCENE.Path, 'is_file', return_value=True), \
-             patch.object(SCENE.os, 'access', return_value=True), patch.object(SCENE, 'RecoveryTerminal', return_value=Terminal()), \
+             patch.object(SCENE.os, 'access', return_value=True), patch.object(SCENE, 'RecoveryTerminal', side_effect=lambda command, _: Terminal(command)), \
+             patch.object(SCENE, 'read_recovery_resolution', side_effect=resolve), \
              patch.object(SCENE.subprocess, 'run', return_value=type('Result', (), {'returncode': 1, 'stderr': '必须直接运行在交互终端'})()), \
              patch.object(scene, 'create', side_effect=create), patch.object(scene, 'review', return_value={'status': 'applied'}), \
              patch.object(scene, 'login', side_effect=login), patch.object(scene, 'status', return_value='suspended'), \
@@ -227,6 +284,14 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
              patch.object(API, 'GatewayClient', return_value=Tenant()):
             result = scene.offline_recovery()
         self.assertEqual(result, {key: True for key in SCENE.OFFLINE_PROOFS})
+        self.assertEqual([item[1] for item in resolutions], ['prepared', 'unknown', 'completed_this_submission',
+                                                          'completed_other_submission', 'completed_this_submission'])
+        status_commands = [command for command in terminal_commands if command[1] == 'status']
+        self.assertEqual(len(status_commands), 5)
+        self.assertTrue(all(len(command) == 4 and command[2].isdigit() for command in status_commands))
+        self.assertTrue(all('addp_ir_' not in ' '.join(command) and 'new-' not in ' '.join(command)
+                            for command in status_commands))
+
         self.assertEqual([row[1] for row in governance], ['platform_role_grant', 'platform_identity_suspend',
                                                        'platform_identity_reactivate', 'platform_role_revoke'])
         self.assertEqual(governance[0], ('security', 'platform_role_grant', 'successor', {'target_role_key': 'platform.system_administrator'}))

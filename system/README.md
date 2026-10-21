@@ -96,6 +96,8 @@ COMMIT 确认丢失时不按错误或退出码推定回滚，不自动重试。�
 
 三员跨进程验收使用 `platform-administrator-governance`，只允许 GitHub Hosted 人工触发；不在本机运行生命周期。同一套件通过正式治理审批增授第二名系统管理员，按 Principal ID 和账号覆盖四名持有人；先在前三人完成凭据收集、第四人输入密码前终止私有 CLI，核验原凭据／会话／角色／授权版本未变及仅有准备审计，再使用同一 Secret 完整恢复，最后批准撤销新增岗位并核验原三员保留；通过正式 CLI 的真实伪终端和连续两个 TOTP 时间窗口验收离线恢复，核验旧凭据与会话失效、原暂停状态与角色分配保留、Secret 不可复用及完整审计；CLI 新凭据只在场景进程内存中流转。`make test-platform-administrator-online-runner` 仅验证准入、身份断言、伪终端协议、清理、浏览器语法与 CI 登记，不连接开发服务或数据库；新身份夹具的 T2 由既有 System PostgreSQL `--package online-fixture` 门禁自动发现，真实 T4 结果单独报告。
 
+同一 Hosted 套件在原 CLI 退出后以新进程按 Attempt／Submission 编号核清，覆盖中断后 prepared、错编号 unknown、本／其他提交判别、四人历史回执，以及后来恢复暂停和撤任不改变回执、重复核清不写恢复审计或撤销当前会话。status 不输入任何恢复凭据，报告只保存布尔证明。它验证跨进程核清，不能替代 PostgreSQL COMMIT 确认截断的 T2，也不能外推跨进程网络确认丢失故障。
+
 ## 🐛 常见问题
 
 ### 平台管理员无法登录？

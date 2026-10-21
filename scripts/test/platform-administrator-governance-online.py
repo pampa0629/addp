@@ -19,6 +19,7 @@ import subprocess
 import sys
 import termios
 import time
+import uuid
 import urllib.error
 import urllib.request
 from importlib import import_module
@@ -40,7 +41,10 @@ OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovere
                   'secret_single_use', 'bootstrap_not_reopened', 'audit_complete', 'credentials_memory_only',
                   'tenant_boundary_preserved', 'same_role_multiple_holders', 'additional_holder_recovered',
                   'additional_role_revoked', 'interrupted_before_apply', 'interrupted_credentials_unchanged',
-                  'interrupted_sessions_valid', 'interrupted_audit_prepared_only', 'same_secret_retry_completed'}
+                  'interrupted_sessions_valid', 'interrupted_audit_prepared_only', 'same_secret_retry_completed',
+                  'prepared_resolved_after_cli_exit', 'unknown_attempt_not_retry_permission',
+                  'apply_process_exited_before_resolution', 'original_submission_resolved',
+                  'other_submission_distinguished', 'historical_receipt_preserved', 'resolution_has_no_side_effects'}
 
 
 class GovernanceAssertion(API.SuiteError):
@@ -156,7 +160,7 @@ def collect_recovery_credentials(terminal, credentials, *, interrupt_before_last
                     'interruption must separate holders of the same role')
             terminal.expect('输入新密码（至少 14 字符）: ')
             terminal.interrupt()
-            return replacements, counters, None
+            return replacements, counters, None, None
         password = 'Offline-recovered-' + secrets.token_urlsafe(24)
         terminal.expect('输入新密码（至少 14 字符）: ')
         terminal.send_line(password, hidden=True)
@@ -174,11 +178,28 @@ def collect_recovery_credentials(terminal, credentials, *, interrupt_before_last
         terminal.send_line(totp(secret, time.time()))
         counters[secret] = counter+1
         replacements[principal_id] = {**credentials[principal_id], 'password': password, 'totp': secret}
+    submission = terminal.expect(r'Submission ID: ([0-9a-f-]{36})\r?\n')[1]
+    require(str(uuid.UUID(submission)) == submission, 'offline submission identity is malformed')
     attempt = terminal.expect(r'IAM 管理员凭据恢复已完成于 [^\r\n]+（Attempt ([1-9][0-9]*)）')[1]
     for principal_id in sorted(credentials, key=int):
         terminal.expect(re.escape(f'{credentials[principal_id]["role_key"]} -> Principal {principal_id}') + r'\r?\n')
     terminal.finish(0)
-    return replacements, counters, attempt
+    return replacements, counters, attempt, submission
+
+
+def read_recovery_resolution(terminal, attempt_id, expected_state, *, winner=None, holders=None, versions=None):
+    terminal.expect(re.escape(f'Attempt ID: {attempt_id}') + r'\r?\n')
+    terminal.expect(re.escape('state=' + expected_state) + r'\r?\n')
+    receipt = {'attempt_id': str(attempt_id), 'state': expected_state}
+    if expected_state.startswith('completed_'):
+        terminal.expect(re.escape(f'Submission ID: {winner}') + r'\r?\n')
+        receipt['submission_id'] = winner
+        receipt['completed_at'] = terminal.expect(r'completed_at=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z)\r?\n')[1]
+        for pid in sorted(holders, key=int):
+            terminal.expect(re.escape(f'{holders[pid]["role_key"]} -> Principal {pid}; authorization_version={versions[pid]}') + r'\r?\n')
+        receipt['principals'] = {pid: (holders[pid]['role_key'], versions[pid]) for pid in holders}
+    terminal.finish(1 if expected_state == 'unknown' else 0)
+    return receipt
 
 
 def validate_hosted(environment):
@@ -405,8 +426,8 @@ class Scenario:
         require(all(path.is_file() and os.access(path, os.X_OK) for path in binaries.values()),
                 'offline acceptance requires the standard CLI build artifacts')
         cli_env = recovery_cli_environment(self.env)
-        def terminal(name, action):
-            command = [str(binaries[name]), action]
+        def terminal(name, action, *identifiers):
+            command = [str(binaries[name]), action, *map(str, identifiers)]
             if name == "recovery" and action == "apply":
                 command.append(str(recovery_attempt))
             return RecoveryTerminal(command, cli_env)
@@ -426,8 +447,9 @@ class Scenario:
         old_credentials = {actor: dict(self.credentials[actor]) for actor in holder_actors}
         old_sessions = {actor: self.actors[actor] for actor in holder_actors}
         self.stage = 'offline-tty-boundary'
-        for action in ('prepare', 'apply'):
-            result = subprocess.run([str(binaries['recovery']), action, *(['1'] if action == 'apply' else [])], stdin=subprocess.DEVNULL,
+        for action in ('prepare', 'apply', 'status'):
+            identifiers = [] if action == 'prepare' else ['1'] if action == 'apply' else ['1', str(uuid.uuid4())]
+            result = subprocess.run([str(binaries['recovery']), action, *identifiers], stdin=subprocess.DEVNULL,
                         capture_output=True, text=True, env=cli_env, cwd=ROOT, timeout=20)
             require(result.returncode == 1 and '必须直接运行在交互终端' in result.stderr,
                     'offline CLI accepted nonterminal input or output')
@@ -450,9 +472,16 @@ class Scenario:
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
             console.send_line(proof, hidden=True)
-            uncommitted, _, interrupted_attempt = collect_recovery_credentials(console, holders, interrupt_before_last=True)
-        require(interrupted_attempt is None and len(uncommitted) == len(holders)-1,
+            interrupted_pid = console.process.pid
+            uncommitted, _, interrupted_attempt, interrupted_submission = collect_recovery_credentials(console, holders, interrupt_before_last=True)
+        require(interrupted_attempt is None and interrupted_submission is None and len(uncommitted) == len(holders)-1,
                 'offline CLI did not stop before the final holder')
+        self.stage = 'offline-interrupted-resolution'
+        with terminal('recovery', 'status', recovery_attempt, uuid.uuid4()) as status:
+            require(status.process.pid != interrupted_pid, 'resolution reused the interrupted CLI process')
+            read_recovery_resolution(status, recovery_attempt, 'prepared')
+        with terminal('recovery', 'status', recovery_attempt + 1000000, uuid.uuid4()) as status:
+            read_recovery_resolution(status, recovery_attempt + 1000000, 'unknown')
         self.stage = 'offline-interrupted-identities'
         for actor in holder_actors:
             current = old_sessions[actor].request('GET', CONTEXT, (200,)).payload
@@ -483,8 +512,22 @@ class Scenario:
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
             console.send_line(proof, hidden=True)
-            recovered, counters, attempt_id = collect_recovery_credentials(console, holders)
+            apply_pid = console.process.pid
+            recovered, counters, attempt_id, submission_id = collect_recovery_credentials(console, holders)
         require(attempt_id == prepared_attempt == str(recovery_attempt), 'offline retry consumed a different recovery attempt')
+        require(console.process.poll() == 0, 'Apply CLI had not exited before result resolution')
+        receipt_versions = {self.credentials[actor]['id']: int(before[actor]['authorization_version'])
+                            + (2 if actor == 'audit' else 1) for actor in holder_actors}
+        self.stage = 'offline-completed-resolution'
+        with terminal('recovery', 'status', attempt_id, submission_id) as status:
+            require(status.process.pid != apply_pid, 'resolution reused the Apply CLI process')
+            original_receipt = read_recovery_resolution(status, attempt_id, 'completed_this_submission',
+                    winner=submission_id, holders=holders, versions=receipt_versions)
+        other_submission = str(uuid.uuid4())
+        require(other_submission != submission_id, 'resolution reference must differ from the winner')
+        with terminal('recovery', 'status', attempt_id, other_submission) as status:
+            read_recovery_resolution(status, attempt_id, 'completed_other_submission',
+                    winner=submission_id, holders=holders, versions=receipt_versions)
         self.stage = 'offline-single-use'
         with terminal('recovery', 'apply') as console:
             console.expect('Recovery Secret: ')
@@ -559,6 +602,23 @@ class Scenario:
             assert_identity(current, role, self.credentials[role]['id'])
             require(current['authorization']['role_assignments'] == before[role]['role_assignments'],
                     'removing the additional holder changed an original assignment')
+        self.stage = 'offline-historical-resolution'
+        current_contexts = {role: self.actors[role].request('GET', CONTEXT, (200,)).payload for role in ROLES}
+        with terminal('recovery', 'status', attempt_id, submission_id) as status:
+            repeated_receipt = read_recovery_resolution(status, attempt_id, 'completed_this_submission',
+                    winner=submission_id, holders=holders, versions=receipt_versions)
+        require(repeated_receipt == original_receipt, 'later identity governance changed the historical recovery receipt')
+        after_resolution = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=iam_recovery_attempt&page_size=100', (200,)).payload
+        require(after_resolution.get('data') == events.get('data'), 'resolution wrote or changed recovery audit facts')
+        for role in ROLES:
+            after = self.actors[role].request('GET', CONTEXT, (200,)).payload
+            require(after.get('principal') == current_contexts[role].get('principal')
+                    and after.get('authorization') == current_contexts[role].get('authorization'),
+                    'resolution changed a current principal, role or authorization version')
+        after_candidate = API.GatewayClient(self.env['GATEWAY_URL'], token, 10).request('GET', CONTEXT, (200,)).payload
+        require(after_candidate.get('principal') == candidate_context.get('principal')
+                and after_candidate.get('context') == candidate_context.get('context'),
+                'resolution invalidated the candidate Tenant session')
         # Only booleans are returned; no PTY output or recovery credential leaves
         # this process or enters the artifact directory.
         return {key: True for key in OFFLINE_PROOFS}
