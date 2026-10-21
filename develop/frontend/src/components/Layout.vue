@@ -103,7 +103,7 @@ const handleCommand = (command) => {
   width: 100%;
   height: 100vh;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* 完整布局（独立访问） */

@@ -201,7 +201,7 @@ const handleLogout = () => {
 .content-only {
   width: 100%;
   height: 100vh;
-  overflow: hidden;
+  overflow: auto;
   background: var(--addp-bg-secondary) !important;
 }
 </style>
