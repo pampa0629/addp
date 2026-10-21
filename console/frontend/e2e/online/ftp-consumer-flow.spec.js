@@ -142,12 +142,26 @@ async function generateModel(page, expectedIdentity, model) {
     const source = await api.get(`/api/v1/manager/downloads/file?${new URLSearchParams({ locator: model.locator })}`)
     expect(source.status()).toBe(200)
     const original = await source.body()
-    expect(original.length).toBe(model.size)
-    expect(createHash('sha256').update(original).digest('hex')).toBe(model.sha256)
+    const bundled = model.composition.length > 1
+    const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
+    const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
+      sha256: createHash('sha256').update(original).digest('hex'),
+      content_type: source.headers()['content-type'] || '',
+      content_disposition: source.headers()['content-disposition'] || '' }
+    // Preserve the actual logical-object response before checking it. The runner
+    // verifies every bundle member against the confirmed composition and seed.
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-source.json`), JSON.stringify(sourceDownload, null, 2))
+    if (bundled) {
+      expect(sourceDownload.content_type).toBe('application/zip')
+    } else {
+      expect(original.length).toBe(model.size)
+      expect(sourceDownload.sha256).toBe(model.sha256)
+    }
     return { format: model.format, item_id: model.item_id, task_id: started.task_id,
       execution_id: started.execution_id, result_id: result.result_id,
       size: actualPageBytes.length, sha256: checksum,
-      source_sha256: model.sha256, rendered: true, reopened: true, cached_without_execution: true }
+      source_download: sourceDownload, rendered: true, reopened: true, cached_without_execution: true }
   } finally {
     page.off('request', observe)
     page.off('response', observeContent)

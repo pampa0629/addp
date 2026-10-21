@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import base64
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import sys
 import time
 import tempfile
 import uuid
+import zipfile
 from urllib.parse import quote, urlencode
 
 API = import_module('scripts.utils.online-api')
@@ -977,6 +979,57 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout):
             'models': prepare_models(items, engine_id, model_samples)}
 
 
+def validate_source_download(observed, source, artifact_dir):
+    bundled = len(source['composition']) > 1
+    artifact = f"ftp-{source['format']}-source.{'zip' if bundled else source['format']}"
+    filename = Path(source['full_name']).name + ('.zip' if bundled else '')
+    require(isinstance(observed, dict) and set(observed) == {
+                'artifact', 'status', 'size', 'sha256', 'content_type', 'content_disposition'} and
+            observed.get('artifact') == artifact and type(observed.get('status')) is int and
+            observed['status'] == 200 and type(observed.get('size')) is int and
+            0 < observed['size'] <= 64 * 1024 and
+            isinstance(observed.get('content_type'), str) and bool(observed['content_type']) and
+            observed.get('content_disposition') == f'attachment; filename="{filename}"',
+            'FTP logical source download identity, headers or bounded size differs')
+    require(json.loads((artifact_dir / f"ftp-{source['format']}-source.json").read_text()) == observed,
+            'FTP logical source response metadata differs from the browser report')
+    raw = (artifact_dir / artifact).read_bytes()
+    require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed['sha256'],
+            'FTP logical source response differs from the captured bytes')
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    pinned = {'models/ifc/model.ifc': 'addp_online_model_fixture.ifc',
+              'models/3ds/model.3ds': 'addp_online_model_fixture.3ds',
+              'models/3ds/texture.png': 'addp_online_exchange_texture.png'}
+    require(all(ref['path'] in pinned for ref in source['composition']),
+            'FTP source download requires the exact confirmed fixed-fixture composition')
+    expected = {Path(ref['path']).name: (fixture / pinned[ref['path']]).read_bytes()
+                for ref in source['composition']}
+    require(len(expected) == len(source['composition']) and
+            len(expected[Path(source['full_name']).name]) == source['size'] and
+            hashlib.sha256(expected[Path(source['full_name']).name]).hexdigest() == source['sha256'],
+            'FTP source manifest differs from the fixed physical primary')
+    if not bundled:
+        require(observed['content_type'] != 'application/zip' and raw == next(iter(expected.values())),
+                'FTP single-file source differs from the physical primary')
+        return
+    require(observed['content_type'] == 'application/zip', 'FTP multi-ref source must be a logical ZIP bundle')
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            entries = archive.infolist()
+            require(len(entries) == len(expected) and {entry.filename for entry in entries} == set(expected),
+                    'FTP source ZIP must contain exactly the confirmed primary and dependencies, without duplicates')
+            for entry in entries:
+                original = expected[entry.filename]
+                require(not entry.is_dir() and not entry.flag_bits & 1 and entry.file_size == len(original),
+                        'FTP source ZIP member type, encryption or declared size differs')
+                with archive.open(entry) as content:
+                    actual = content.read(len(original) + 1)
+                require(actual == original and hashlib.sha256(actual).digest() == hashlib.sha256(original).digest(),
+                        'FTP source ZIP member bytes or SHA-256 differ from the physical seed')
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, ValueError, OSError) as error:
+        raise SuiteError('FTP logical source ZIP is invalid or corrupt') from error
+
+
 def validate_browser_report(actual, expected, artifact_dir):
     proof = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
     proof.update(meta_ui_scan=True, previews=3, downloads=[{key: sample[key] for key in ('format', 'item_id', 'size', 'sha256')} for sample in expected['samples']])
@@ -987,14 +1040,14 @@ def validate_browser_report(actual, expected, artifact_dir):
             'FTP browser must generate and reopen both model formats')
     for observed, source in zip(models, expected['models']):
         require(set(observed) == {'format', 'item_id', 'task_id', 'execution_id', 'result_id',
-                                 'size', 'sha256', 'source_sha256', 'rendered', 'reopened',
+                                 'size', 'sha256', 'source_download', 'rendered', 'reopened',
                                  'cached_without_execution'} and
                 observed.get('format') == source['format'] and observed.get('item_id') == source['item_id'] and
                 all(type(observed.get(key)) is int and observed[key] > 0 for key in ('task_id', 'result_id', 'size')) and
                 isinstance(observed.get('execution_id'), str) and bool(observed['execution_id']) and
-                observed.get('source_sha256') == source['sha256'] and
                 all(observed.get(key) is True for key in ('rendered', 'reopened', 'cached_without_execution')),
                 'FTP browser model identity, source integrity, rendering or cache proof differs')
+        validate_source_download(observed['source_download'], source, artifact_dir)
         raw = (artifact_dir / f"ftp-{source['format']}.glb").read_bytes()
         require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed.get('sha256'),
                 'FTP model report differs from actual downloaded GLB')

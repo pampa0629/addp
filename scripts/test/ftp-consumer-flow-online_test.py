@@ -12,11 +12,40 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import unittest
+import warnings
+import zipfile
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlsplit
 
 M = import_module('scripts.test.ftp-consumer-flow-online')
 GLB = import_module('scripts.test.manager-internal-artifact-lineage-online_test')
+
+
+def source_download_proof(source, artifacts, entries=None):
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    files = {'model.ifc': 'addp_online_model_fixture.ifc', 'model.3ds': 'addp_online_model_fixture.3ds',
+             'texture.png': 'addp_online_exchange_texture.png'}
+    bundled = len(source['composition']) > 1
+    if bundled:
+        if entries is None:
+            entries = [(Path(ref['path']).name, (fixture / files[Path(ref['path']).name]).read_bytes())
+                       for ref in source['composition']]
+        output = io.BytesIO()
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)  # Duplicate entry is an explicit negative case.
+            with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for name, raw in entries:
+                    archive.writestr(name, raw)
+        raw = output.getvalue()
+    else:
+        raw = (fixture / files[Path(source['full_name']).name]).read_bytes()
+    name = f"ftp-{source['format']}-source.{'zip' if bundled else source['format']}"
+    proof = {'artifact': name, 'status': 200, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+             'content_type': 'application/zip' if bundled else 'application/octet-stream',
+             'content_disposition': f'attachment; filename="{Path(source["full_name"]).name}{".zip" if bundled else ""}"'}
+    (artifacts / name).write_bytes(raw)
+    (artifacts / f"ftp-{source['format']}-source.json").write_text(json.dumps(proof))
+    return proof
 
 
 def preview():
@@ -564,18 +593,19 @@ class FTPConsumerTest(unittest.TestCase):
                 proof['models'].append({'format': source['format'], 'item_id': source['item_id'],
                                         'task_id': 10, 'execution_id': 'owned-execution', 'result_id': 20,
                                         'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
-                                        'source_sha256': source['sha256'], 'rendered': True,
+                                        'source_download': source_download_proof(source, artifacts), 'rendered': True,
                                         'reopened': True, 'cached_without_execution': True})
             M.validate_browser_report(proof, expected, artifacts)
             for key, value in (('principal_id', 'another'), ('meta_ui_scan', False), ('downloads', []), ('previews', 2), ('models', [])):
                 changed = {**proof, key: value}
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)
-            for field, value in (('item_id', 99), ('reopened', False), ('cached_without_execution', False), ('source_sha256', 'b' * 64)):
+            for field, value in (('item_id', 99), ('reopened', False), ('cached_without_execution', False), ('source_download', {})):
                 changed = copy.deepcopy(proof)
                 changed['models'][0][field] = value
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)
+
             # Even a matching report checksum cannot turn arbitrary bytes or a
             # different texture into a physically verified model.
             for raw in (b'glTFinvalid', GLB.fixture_glb('3ds', texture_png=b'not-a-png')):
@@ -584,6 +614,41 @@ class FTPConsumerTest(unittest.TestCase):
                 changed['models'][1].update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)
+
+
+    def test_logical_source_download_rejects_incomplete_duplicate_extra_or_corrupt_members(self):
+        source = M.prepare_models(FakeClient().items, 17, model_samples())[1]
+        fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+        model = (fixture / 'addp_online_model_fixture.3ds').read_bytes()
+        png = (fixture / 'addp_online_exchange_texture.png').read_bytes()
+        valid = [('model.3ds', model), ('texture.png', png)]
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            proof = source_download_proof(source, artifacts, valid)
+            M.validate_source_download(proof, source, artifacts)
+            for entries in (valid[:1], valid[1:], valid + [valid[0]], valid + [('extra.txt', b'extra')],
+                            [('model.3ds', model[:-1]), valid[1]],
+                            [valid[0], ('texture.png', png[:-1] + b'!')],
+                            [('models/model.3ds', model), valid[1]],
+                            [('model.3ds/', model), valid[1]]):
+                with self.subTest(members=[name for name, _ in entries]):
+                    bad = source_download_proof(source, artifacts, entries)
+                    with self.assertRaises(M.SuiteError):
+                        M.validate_source_download(bad, source, artifacts)
+            for field, value in (('status', 201), ('size', True), ('sha256', '0' * 64),
+                                 ('artifact', '../elsewhere.zip'), ('content_type', 'application/octet-stream'),
+                                 ('content_disposition', 'attachment; filename="model.3ds"')):
+                proof = source_download_proof(source, artifacts, valid)
+                bad = {**proof, field: value}
+                (artifacts / 'ftp-3ds-source.json').write_text(json.dumps(bad))
+                with self.subTest(field=field), self.assertRaises(M.SuiteError):
+                    M.validate_source_download(bad, source, artifacts)
+            proof = source_download_proof(source, artifacts, valid)
+            (artifacts / proof['artifact']).write_bytes(b'not a ZIP')
+            proof.update(size=9, sha256=hashlib.sha256(b'not a ZIP').hexdigest())
+            (artifacts / 'ftp-3ds-source.json').write_text(json.dumps(proof))
+            with self.assertRaises(M.SuiteError):
+                M.validate_source_download(proof, source, artifacts)
 
     def test_basic_ifc_accepts_single_identity_without_fabricated_deep_metadata(self):
         client = FakeClient()
