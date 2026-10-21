@@ -51,7 +51,6 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
@@ -67,11 +66,7 @@ const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const canEnter = path => allowsConsoleRoute(`/orchestrator${path}`, authStore.contextType, authStore.permissions)
-const isInIframe = ref(false)
-
-onMounted(() => {
-  isInIframe.value = window.self !== window.top
-})
+const isInIframe = window.self !== window.top
 
 const handleCommand = (command) => {
   if (command === 'logout') {

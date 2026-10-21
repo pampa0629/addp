@@ -179,7 +179,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -267,6 +267,7 @@ let addedNodeCounter = 0
 let syncingNodeDraft = false
 let syncingDependencies = false
 let stepsLoadGeneration = 0
+let disposed = false
 const taskRuntimeMetadataRequests = new Map()
 let canvasColors = resolveCanvasColors()
 
@@ -444,6 +445,11 @@ watch(
   { flush: 'sync' }
 )
 
+onBeforeUnmount(() => {
+  disposed = true
+  stepsLoadGeneration += 1
+})
+
 watch(() => props.initialSteps, async steps => {
   if (!graph.value || stepsSignature(steps) === lastStepsSignature.value) return
   await loadStepsWithRuntimeMetadata(steps)
@@ -455,6 +461,7 @@ onMounted(async () => {
   initSelectionListener()
   graph.value.on('afterremoveitem', refreshConnectionFocus)
   await loadTaskProviderRuntimeMetadata()
+  if (disposed) return
 
   // 双击节点事件
   graph.value.on('node:dblclick', handleNodeClick)
@@ -864,6 +871,7 @@ async function addTask(nodeData, point = null) {
   try {
     if (!graph.value || !nodeData) return null
     await ensureTaskRuntimeMetadata(nodeData.provider, nodeData.taskType, nodeData.taskId)
+    if (disposed) return null
     const targetPoint = point || viewportCenterPoint()
     const colorKey = nodeData.provider || 'unknown'
     const color = generateColor(colorKey)
@@ -901,6 +909,7 @@ async function addTask(nodeData, point = null) {
     emitLayout()
     return item
   } catch (error) {
+    if (disposed) return null
     console.error('添加任务节点失败:', error)
     ElMessage.error(t('orchestrator.dagEditor.addNodeFailed', { error: error.message }))
     return null
@@ -1013,6 +1022,7 @@ async function loadSteps(steps) {
   } else if (nodes.length > 0) {
     await autoLayout()
   }
+  if (disposed) return
   resetHistory(graph.value.save())
   emitLayout()
 }
@@ -1105,6 +1115,7 @@ function handleFitView() {
 
 async function handleAutoLayout() {
   await autoLayout()
+  if (disposed) return
   recordHistory()
   emitLayout()
 }
@@ -1179,6 +1190,7 @@ function taskContextIndexKey(provider, taskType, taskId) {
 async function loadTaskProviderRuntimeMetadata() {
   try {
     const providers = await taskProvidersAPI.list()
+    if (disposed) return
     const editUrlIndex = new Map()
     providers.forEach(provider => {
       const moduleName = provider.module_name
@@ -1193,6 +1205,7 @@ async function loadTaskProviderRuntimeMetadata() {
     })
     taskTypeEditUrlIndex.value = editUrlIndex
   } catch (error) {
+    if (disposed) return
     console.error('加载任务提供者运行态元数据失败:', error)
   }
 }
@@ -1203,6 +1216,7 @@ async function loadStepsWithRuntimeMetadata(steps) {
   await ensureTaskRuntimeMetadataForSteps(steps)
   if (generation !== stepsLoadGeneration) return
   await loadSteps(steps)
+  if (generation !== stepsLoadGeneration) return
   emit('ready', true)
 }
 
@@ -1218,6 +1232,7 @@ async function ensureTaskRuntimeMetadataForSteps(steps) {
   const results = await Promise.allSettled(
     [...tasks.values()].map(task => ensureTaskRuntimeMetadata(task.provider, task.taskType, task.taskId))
   )
+  if (disposed) return
   const failures = results.filter(result => result.status === 'rejected')
   if (failures.length > 0) {
     failures.forEach(result => console.error('加载任务执行契约失败:', result.reason))
@@ -1235,6 +1250,7 @@ async function ensureTaskRuntimeMetadata(provider, taskType, taskId) {
 
   const request = taskProvidersAPI.getTaskDetail(provider, taskType, taskId)
     .then(detail => {
+      if (disposed) return
       if (!detail?.execution_contract) {
         throw new Error(`execution_contract is unavailable for ${provider}/${taskType}/${taskId}`)
       }
