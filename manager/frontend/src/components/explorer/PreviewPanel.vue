@@ -347,7 +347,7 @@
     </div>
 
     <!-- 渲染预览组件 -->
-    <div v-else class="preview-content" :class="{ 'is-document-flow': isMarkdownContent }">
+    <div v-else class="preview-content" :class="{ 'is-document-flow': isMarkdownContent || isGraphOverview }">
       <el-alert
         v-if="previewRefreshAdvisory"
         class="preview-advisory"
@@ -3181,7 +3181,8 @@ const handleNavigate = (path) => {
   align-items: stretch;
 }
 
-.preview-content.is-document-flow > :deep(.markdown-preview-container) {
+.preview-content.is-document-flow > :deep(.markdown-preview-container),
+.preview-content.is-document-flow > .graph-preview-layout {
   flex: 0 0 auto;
 }
 
