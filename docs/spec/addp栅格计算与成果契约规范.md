@@ -64,6 +64,7 @@
 | `raster_proximity` | raster、必填不超过 32 位的整数数据波段、显式目标分类值 | 首期已实现；投影北向方形网格，最近有效目标像元中心的米制 Float64 欧氏距离；源无效位置保留 NoData，不作为障碍，无有效目标失败；Native 与真实链路分开记账。 |
 | `raster_recommend_band_combination` | raster、显式 3–16 个候选数据波段 | 首期已实现并通过独立 Hosted；全量共同有效像元的 OIF 三波段组合排名及推荐 object，原始存储值，不自动 RGB 或宣称专题最优。 |
 | `raster_nibble` | raster、显式分类数据波段、目标分类列表 | 首期已实现并通过独立 Hosted；全图最近有效非目标供体替换，等距按源行列，保持无效覆盖；限投影北向方形网格，沿既有 COG。 |
+| `raster_boundary_clean` | raster、显式分类数据波段 | 原分类有效总数优先、并列较小分类；3×3 八邻域单轮扩张／收缩，同网格 Float64／NaN，保持无效覆盖；沿既有 COG。Native 与真实平台验收分别记账。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |
 | `raster_slope` | raster、必填高程单位、band、degree/percent | 同网格单波段坡度，默认角度。 |
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |

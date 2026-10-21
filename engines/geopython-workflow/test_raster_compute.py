@@ -22,7 +22,7 @@ from operators.raster_compute import (
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
     raster_tile, raster_save_tiles, raster_tiles_info,
     raster_slope, raster_aspect, raster_hillshade, raster_contour, vector_rasterize,
-    raster_focal_statistics, raster_vector_zonal_statistics, raster_proximity,
+    raster_focal_statistics, raster_vector_zonal_statistics, raster_proximity, raster_error_language,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -5247,3 +5247,261 @@ def test_focal_mode_result_connects_existing_classification_polygonize_without_f
             assert area==np.count_nonzero(expected==code)*determinant
         assert regions.area.sum()==np.count_nonzero(valid)*determinant
     assert source.read_bytes()==before
+
+
+# Boundary clean uses an independent scalar oracle: immutable full stages, not halos.
+def _boundary_clean_oracle(values, valid):
+    from collections import Counter
+    counts = Counter(int(value) for value in values[valid])
+    height, width = values.shape
+    def neighbours(y, x):
+        return ((ny, nx) for ny in range(max(0, y-1), min(height, y+2))
+                for nx in range(max(0, x-1), min(width, x+2)) if valid[ny, nx])
+    expanded = np.full(values.shape, np.nan)
+    result = expanded.copy()
+    for y, x in np.argwhere(valid):
+        choices = [int(values[ny, nx]) for ny, nx in neighbours(y, x)]
+        expanded[y, x] = max(choices, key=lambda value: (counts[value], -value))
+    for y, x in np.argwhere(valid):
+        original = values[y, x]
+        result[y, x] = (original if any(expanded[ny, nx] == original for ny, nx in neighbours(y, x))
+                        else expanded[y, x])
+    return result
+
+
+@pytest.mark.parametrize('shape', [(1,1), (1,17), (19,1), (8,11), (513,517)])
+def test_boundary_clean_complete_oracle_edges_halos_and_stage_snapshot(tmp_path, shape, monkeypatch):
+    import operators.raster_compute as compute
+    rng = np.random.default_rng(811)
+    values = rng.choice([0., -7., 42.], size=shape, p=[.55,.35,.1])
+    valid = rng.random(shape) > .07
+    values[~valid] = -9999
+    transform = (100,2,.5,200,.25,-3)
+    path = create_raster(tmp_path/'source.tif',values,transform,'EPSG:3857')
+    before = path.read_bytes()
+    windows = []
+    blocks = compute._blocks
+    def bounded(dataset, indices, **kwargs):
+        for x,y,arrays,masks in blocks(dataset,indices,**kwargs):
+            assert all(array.shape[0] <= 512 and array.shape[1] <= 512 for array in arrays)
+            windows.append((x,y,arrays[0].shape))
+            yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    expected = _boundary_clean_oracle(values,valid)
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        result = compute.raster_boundary_clean(source,1)
+        assert set(source.workspace.iterdir()) == prior | {result.path}
+        ds = gdal.Open(str(result.path)); band = ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+        assert ds.GetGeoTransform() == transform and ds.RasterCount == 1
+        assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        band = ds = None
+        if shape == (513,517):
+            target = tmp_path/'clean.cog.tif'
+            artifact = raster_save(result,target_plan(target),profile='cog',blocksize=128)
+            assert artifact['size_bytes'] == target.stat().st_size > 0
+            assert validate_cog(raster_load(source_plan(target)))['valid']
+            ds=gdal.Open(str(target));saved=ds.GetRasterBand(1)
+            np.testing.assert_array_equal(read_band_values(saved),expected)
+            np.testing.assert_array_equal(saved.GetMaskBand().ReadAsArray()!=0,valid)
+            assert ds.GetGeoTransform()==transform and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+            assert saved.GetOverviewCount()>0
+            saved=ds=None
+    assert windows and path.read_bytes() == before
+
+
+def test_boundary_clean_global_disconnected_counts_override_code_and_local_majority(tmp_path):
+    import operators.raster_compute as compute
+    # Class 1 wins globally, despite its remote disconnected regions. Local mode
+    # would pick 90; numerical priority would also incorrectly pick 90.
+    values = np.full((11,19),1.)
+    values[3:8,5:14] = 90
+    values[5,9] = 1
+    values[5,8] = 0
+    valid = np.ones(values.shape,dtype=bool)
+    expected = _boundary_clean_oracle(values,valid)
+    assert expected[5,8] == 1 and expected[5,9] == 1
+    path = create_raster(tmp_path/'source.tif',values)
+    with raster_workspace():
+        result = compute.raster_boundary_clean(raster_load(source_plan(path)),1)
+        ds = gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);ds=None
+
+
+@pytest.mark.parametrize('codes', [(-7,0), (2**53-2,2**53-1), (-(2**53-1),-(2**53-2))])
+def test_boundary_clean_equal_global_counts_smaller_exact_class_wins(tmp_path, codes):
+    import operators.raster_compute as compute
+    values = np.tile(np.array(codes,dtype=np.int64),(7,4))
+    path=tmp_path/'classes.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),8,7,1,gdal.GDT_Int64)
+    ds.GetRasterBand(1).WriteArray(values);ds=None
+    with raster_workspace():
+        result=compute.raster_boundary_clean(raster_load(source_plan(path)),1)
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        np.testing.assert_array_equal(actual,np.full(values.shape,float(min(codes))))
+
+
+@pytest.mark.parametrize('position', ['none','crs-only','transform-only'])
+def test_boundary_clean_preserves_missing_location_and_all_invalid(tmp_path, position):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'empty.tif',np.full((4,6),-9999.),
+                       None if position!='transform-only' else (0,2,.5,0,.2,-3),
+                       'EPSG:4326' if position=='crs-only' else '')
+    with raster_workspace():
+        source=raster_load(source_plan(path));facts=raster_info(source)
+        result=compute.raster_boundary_clean(source,1);info=raster_info(result)
+        for key in ('width','height','crs','transform','extent'):assert info[key]==facts[key]
+        ds=gdal.Open(str(result.path));assert np.isnan(read_band_values(ds.GetRasterBand(1))).all();ds=None
+
+
+def test_boundary_clean_selected_band_mask_alpha_nonfinite_and_raw_classes(tmp_path):
+    import operators.raster_compute as compute
+    values=np.array([[0,2,.5,2**53,1],[2,0,-3,1,np.inf],[0,1,-3,2,np.nan]],dtype=float)
+    alpha=np.full(values.shape,255.);alpha[0,3]=0;alpha[1,4]=np.nan;alpha[2,4]=-1;alpha[1,1]=128
+    mask=np.full(values.shape,255,dtype=np.uint8);mask[0,2]=0
+    path=create_raster(tmp_path/'source.tif',np.stack([np.full(values.shape,.25),values,alpha]))
+    ds=gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(2).SetScale(100);ds.GetRasterBand(2).SetOffset(12)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=np.isfinite(values)&np.isfinite(alpha)&(alpha>0)&(mask>0)
+    with raster_workspace():
+        result=compute.raster_boundary_clean(raster_load(source_plan(path)),2)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(values,valid));ds=None
+
+
+@pytest.mark.parametrize('value', [.5,2**53,-2**53])
+def test_boundary_clean_rejects_noninteger_or_unsafe_valid_classes_before_output(tmp_path,value):
+    import operators.raster_compute as compute
+    values=np.ones((5,5));values[2,2]=value
+    path=create_raster(tmp_path/'bad.tif',values)
+    with raster_error_language('en'),raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='classification values'):compute.raster_boundary_clean(source,1)
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('band', [True,0,-1,1.5,3])
+def test_boundary_clean_rejects_illegal_bands(tmp_path,band):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((3,3)))
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='band'):compute.raster_boundary_clean(raster_load(source_plan(path)),band)
+
+
+@pytest.mark.parametrize('case', ['data-complex','alpha-complex','selected-alpha'])
+def test_boundary_clean_rejects_complex_and_alpha_data(tmp_path,case):
+    import operators.raster_compute as compute
+    path=tmp_path/'source.tif'
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,3,2,gdal.GDT_CFloat64 if 'complex' in case else gdal.GDT_Float64)
+    for i in (1,2):ds.GetRasterBand(i).WriteArray(np.ones((3,3)))
+    if case!='data-complex':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='[Cc]omplex|alpha'):
+        compute.raster_boundary_clean(raster_load(source_plan(path)),2 if case=='selected-alpha' else 1)
+
+
+@pytest.mark.parametrize('stage', ['expand','shrink'])
+def test_boundary_clean_intermediate_and_failed_output_removed(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((6,7)))
+    windows=compute._boundary_blocks
+    def fail(dataset,band):
+        # A read-only reopened dataset is the complete expansion snapshot.
+        expanding=dataset.GetRasterBand(1).GetNoDataValue()==-9999
+        for block in windows(dataset,band):
+            yield block
+            if expanding == (stage=='expand'):raise RuntimeError('injected stage failure')
+    monkeypatch.setattr(compute,'_boundary_blocks',fail)
+    with raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(RuntimeError,match='injected'):compute.raster_boundary_clean(source,1)
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('case',['direct','reclassified','invalid'])
+def test_boundary_clean_async_cog_reclassification_and_failure_cleanup(tmp_path,monkeypatch,case):
+    import api_server,workflow_engine
+    values=np.array([[0,0,8,8],[0,-9999,4,8],[4,4,4,8]],dtype=float)
+    if case=='invalid':values[0,0]=.5
+    path=create_raster(tmp_path/'source.tif',values,(100,2,.5,200,.25,-3),'EPSG:3857')
+    target=tmp_path/'clean.cog.tif';before=path.read_bytes()
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];source='source';classified=values.copy()
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{
+            'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-3},{'value':4,'class':0},{'value':8,'class':7}]}})
+        source='classes';classified=np.select([values==0,values==4,values==8],[-3.,0.,7.],default=np.nan)
+    tasks += [{'id':'clean','operator':'raster_boundary_clean','depends_on':[source],'params':{'input_raster':{'$ref':source},'band':1}},
+              {'id':'save','operator':'raster_save','depends_on':['clean'],'params':{'input_raster':{'$ref':'clean'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_boundary_clean':paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='invalid' else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and path.read_bytes()==before
+    if case=='invalid':assert not target.exists()
+    else:
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(classified,np.isfinite(classified)&(classified!=-9999)));ds=None
+        artifact=json.loads(status['result']);assert artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_boundary_clean/invoke',json={'params':{}}).status_code==403
+
+
+def test_boundary_clean_discovery_single_required_band_and_workflow_resource_contract():
+    spec=next(item for item in list_operators() if item['id']=='raster_boundary_clean')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','像元计算']
+    assert [p['name'] for p in spec['parameters']]==['input_raster','band']
+    assert all(p['required'] for p in spec['parameters'])
+    assert spec['detailed_description']['workflow_example']['params']['band']==1
+
+
+@pytest.mark.parametrize('dtype,value,nodata',[(gdal.GDT_Int64,2**53+1,2**53),
+    (gdal.GDT_Int64,-2**53-1,-2**53),(gdal.GDT_UInt64,2**64-1,2**64-2)])
+def test_boundary_clean_native_invalid_class_cannot_hide_behind_rounded_nodata(tmp_path,dtype,value,nodata):
+    import operators.raster_compute as compute
+    path=tmp_path/'native.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,dtype)
+    ds.GetRasterBand(1).SetNoDataValue(nodata)
+    ds.GetRasterBand(1).WriteArray(np.array([[nodata,value],[0,0]],dtype=np.uint64 if dtype==gdal.GDT_UInt64 else np.int64));ds=None
+    with raster_error_language('en'),raster_workspace(),pytest.raises(ValueError,match='exact safe integers'):
+        compute.raster_boundary_clean(raster_load(source_plan(path)),1)
+
+
+@pytest.mark.parametrize('language,prefix',[('zh-cn','边界清理'),('en','Boundary cleaning')])
+@pytest.mark.parametrize('reason',['band','alpha','complex','classes'])
+def test_boundary_clean_diagnostics_follow_submission_language(tmp_path,language,prefix,reason):
+    import operators.raster_compute as compute
+    path=tmp_path/'source.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,
+                       gdal.GDT_CFloat64 if reason=='complex' else gdal.GDT_Float64)
+    ds.GetRasterBand(1).Fill(.5 if reason=='classes' else 0)
+    if reason=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    with raster_error_language(language),raster_workspace(),pytest.raises(ValueError,match='^'+prefix):
+        compute.raster_boundary_clean(raster_load(source_plan(path)),0 if reason=='band' else 1)
+
+
+@pytest.mark.parametrize('dtype', [gdal.GDT_Int64,gdal.GDT_UInt64])
+def test_boundary_clean_safe_classes_with_unsafe_nodata_and_explicit_mask(tmp_path,dtype):
+    import operators.raster_compute as compute
+    path=tmp_path/'native.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,3,1,dtype)
+    array=np.array([[0,2**53-1,2**53-1,0,2**53],[2**53-1,0,0,2**53-1,0],[0,0,2**53-1,2**53-1,0]],
+                   dtype=np.uint64 if dtype==gdal.GDT_UInt64 else np.int64)
+    ds.GetRasterBand(1).SetNoDataValue(2**53);ds.GetRasterBand(1).WriteArray(array)
+    mask=np.full(array.shape,255,dtype=np.uint8);mask[1,1]=0
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=(array!=2**53)&(mask!=0)
+    with raster_workspace():
+        result=compute.raster_boundary_clean(raster_load(source_plan(path)),1)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_boundary_clean_oracle(array,valid));ds=None
