@@ -37,7 +37,7 @@ GOTOOLCHAIN ?= local
 # 一次性 IAM CLI 使用 release 精简符号
 GOFLAGS_RELEASE := -ldflags "-s -w"
 
-# 内部函数仅供一次性 IAM CLI 使用；平台服务统一由 scripts/build/compile.sh 编译。
+# 内部函数用于独立运维 CLI（IAM 与审计归档）；平台服务统一由 scripts/build/compile.sh 编译。
 define build_one_service
   @if [ -d $(1)/cmd ]; then \
     name=$(2); \
@@ -57,6 +57,9 @@ build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
 
 build-iam-recovery: ## 构建离线 IAM 三员凭据恢复 CLI
 	$(call build_one_service,system/backend,addp-iam-recovery,cmd/iam-recovery/main.go)
+
+build-audit-archive: ## 构建独立域审计归档采集和只读核验 CLI
+	$(call build_one_service,system/backend,addp-audit-archive,cmd/audit-archive/main.go)
 
 build-iam-migration-repair: ## 构建精确状态校验的 IAM 定向迁移恢复 CLI
 	$(call build_one_service,system/backend,addp-iam-migration-repair,cmd/iam-migration-repair/main.go)
@@ -396,6 +399,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-gaussdb
 	@$(MAKE) test-common-ftp
 	@$(MAKE) test-common-starrocks
+	@$(MAKE) test-system-audit-archive
 
 test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
@@ -1199,3 +1203,7 @@ test-platform-administrator-online-runner: ## 验证三员 Hosted 准入、身�
 .PHONY: test-monitor-traces
 test-monitor-traces: ## 隔离验证 HTTP Trace 传播、真实尾采样、Tempo 和日志关联
 	@bash scripts/test/monitor-traces-gate.sh $(MONITOR_TRACES_TEST_ARGS)
+
+.PHONY: build-audit-archive test-system-audit-archive
+test-system-audit-archive: ## 仅 GitHub Hosted 独占 PostgreSQL 与对象存储的审计归档协议验收
+	@bash scripts/test/system-audit-archive-gate.sh

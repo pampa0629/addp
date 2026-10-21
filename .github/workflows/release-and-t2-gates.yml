@@ -384,6 +384,41 @@ jobs:
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-gaussdb-official-media/release-summary.md
 
+  system-audit-archive:
+    name: System independent audit archive (PostgreSQL and WORM protocol)
+    needs: selection
+    if: needs.selection.outputs.system == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Audit release workflow
+        run: make test-workflow-security
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+      - name: Verify independent audit archive protocol
+        run: make test-system-audit-archive
+      - name: Upload audit archive evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: system-audit-archive-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-audit-archive.*/integration.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Summarize independent audit archive
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: System independent audit archive (PostgreSQL and WORM protocol)
+          status: ${{ job.status }}
+
   system-iam-postgres-verification:
     name: System IAM verification (PostgreSQL 15)
     needs: selection

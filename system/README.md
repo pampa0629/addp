@@ -152,3 +152,21 @@ openssl rand -base64 32
 ---
 
 Copyright © 2025 ADDP Team
+
+## 独立审计归档
+
+事务审计与外部独立存证分别验收。采集／核验契约、三员部署权限、WORM、故障与测试边界统一见 [audit_logs 表：独立审计归档部署契约](docs/tables/audit_logs表.md#八独立审计归档部署契约)。既有在线列表仍表示源端记录，不表示独立归档已完整。采集器不随本地 Infra／开发服务默认启动，也不复用共享 MinIO 或根环境凭据；部署参数和管理域未验时不得声称生产防篡改完成。
+
+正式构建：`make build-audit-archive`。独立审计域运行 `addp-audit-archive init --config /受控私有路径/collector.json` 显式建立唯一快照基线，随后以前台进程 `collect --config ...` 消费同一复制槽；不注册到 ADDP 开发启动或设置定时任务。持有独立审计身份的操作者使用 `verify --config /受控私有路径/auditor.json`，或 `query --config ... --event-name iam.example --tenant-id 123` 做有界核验；筛选不授予权限，首期不向 Tenant 角色发放原始归档凭据。stdout 为机器可读结果，失败只返回安全本地化提示。
+
+配置文件必须是非符号链接的私有普通文件（权限 0600 或更严），启动时不读取根 `.env`。两类配置分别部署，不混放原始数据库凭据与人类查询凭据。字段示例仅说明契约，不含真实密钥；示例的30天不是项目保留期限决定，部署前必须替换为已批准值：
+
+```json
+{"mode":"collector","source_id":"由部署生成并固定的 UUID","endpoint":"https://独立归档端点","region":"目标区域","bucket":"独立归档桶","access_key":"独立注入","secret_key":"独立注入","retention_days":30,"postgres_dsn":"仅独立采集身份，postgres://独立用户:独立密码@权威主库/数据库?sslmode=verify-full&sslrootcert=/受控证书路径/ca.pem","slot":"addp_audit_archive","publication":"addp_audit_archive"}
+```
+
+`auditor` 配置使用同一来源／端点／区域／桶及已批准期限，仅替换为该实名审计身份的独立存储凭据、设置 `actor` 为部署绑定的 UUID，删除 `postgres_dsn/slot/publication`。存储策略将凭据绑定到 `queries/<actor>/`，其他 actor 前缀不可写；`actor` 不接受命令行覆盖。所有连接要求 HTTPS／PG 完整服务端证书校验，不回退明文、多主机或共享凭据。
+
+来源部署管理员通过既有受控迁移／运维流程启用 `wal_level=logical`、有限 `max_replication_slots/max_slot_wal_keep_size`，并建立只含 `system.audit_logs`、`publish='insert'` 的 publication。独立采集登录只授予所需 `REPLICATION`、`USAGE ON SCHEMA system`、`SELECT ON system.audit_logs`，不得为 SUPERUSER、表 owner 或 migration owner。程序不创建这些角色／publication、不启停数据库、不自动重建失效槽。目标桶须事先启用 Object Lock，策略拒绝过短保留和原始版本删除，独立管理访问日志及密钥；这些参数和真实管理域未提供前仅能验证协议实现。
+
+标准验证：`make test-module MODULE=system GO_ONLY=1`；`make test-system-audit-archive` 为已登记的 Hosted-only T2，使用本次独占 PostgreSQL 15 logical 与从既有固定源码构建的 MinIO，测试和退出清理不接触共享 Infra。其结果只证明真实 PG／S3 保留协议，不证明生产提供方根权限、独立运维域或全部访问日志。其临时 MinIO 使用 tmpfs、随 Job 销毁，因此不得当作生产 WORM 保留部署。

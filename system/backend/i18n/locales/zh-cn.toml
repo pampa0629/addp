@@ -502,3 +502,6 @@ other = "观察时尚无已提交的恢复结果；不是回滚证明。确认�
 
 [system.iam.emergency_session_conflict]
 other = "应急请求状态、版本或授权条件已变化，请重新核对；结果不明时先按原编号查询"
+
+[system.audit_archive.failed]
+other = "审计归档未能核验或持久化，结果未确认。请检查独立审计部署。"
