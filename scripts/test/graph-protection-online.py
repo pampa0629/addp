@@ -197,17 +197,36 @@ def verify_pixel_frame(frame, hits, native_ids):
             {hit["source_id"] for hit in hits} == set(native_ids), "Search clicks missed native identities")
 
 
+def verify_native_edges(edges, ids):
+    require(type(edges) is list and len(edges) == 2 and all(type(edge) is dict and
+            set(edge) == {"id", "source", "target", "type"} and all(type(value) is str and value for value in edge.values()) and
+            edge["type"] == "Link" for edge in edges), "Exploration needs the two original native relations")
+    require(len({edge["id"] for edge in edges}) == 2 and
+            {(edge["source"], edge["target"]) for edge in edges} == {(ids["p1"], ids["p2"]), (ids["p2"], ids["p3"])}, "Exploration native relation endpoints differ")
+
+
+def native_path_edges(reader, graph_id, ids):
+    path = reader.request("POST", f"/api/v1/graph/kg/{graph_id}/paths", (200,), {
+        "source_node_id": ids["p1"], "target_node_id": ids["p3"], "max_hops": 3,
+    }).payload
+    nodes = path.get("nodes", [])
+    require(type(nodes) is list and len(nodes) == 3 and
+            {node.get("properties", {}).get("id"): node.get("id") for node in nodes} == ids,
+            "Native reference path must bind all three fixture entities")
+    raw_edges = path.get("edges", [])
+    require(type(raw_edges) is list and all(type(edge) is dict for edge in raw_edges), "Native reference path omitted relations")
+    edges = [{key: edge.get(key) for key in ("id", "source", "target", "type")} for edge in raw_edges]
+    verify_native_edges(edges, ids)
+    return sorted(edges, key=lambda edge: edge["id"])
+
+
 def verify_exploration(visual, expected):
     require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "native_edges"} and
             all(type(visual.get(key)) is type(value) and visual[key] == value for key, value in expected.items()) and
             visual.get("schema_version") == "addp.graph-exploration-stable-frame/v1", "Exploration identity differs")
     ids = expected["native_ids"]
     edges, stages = visual.get("native_edges"), visual.get("stages")
-    require(type(edges) is list and len(edges) == 2 and all(type(edge) is dict and
-            set(edge) == {"id", "source", "target", "type"} and all(type(value) is str and value for value in edge.values()) and
-            edge["type"] == "Link" for edge in edges), "Exploration needs the two original native relations")
-    require(len({edge["id"] for edge in edges}) == 2 and
-            {(edge["source"], edge["target"]) for edge in edges} == {(ids["p1"], ids["p2"]), (ids["p2"], ids["p3"])}, "Exploration native relation endpoints differ")
+    verify_native_edges(edges, ids)
     labels = [("dagre", "分层"), ("circular", "环形"), ("radial", "辐射"), ("force", "力导向")]
     phases = ["expand-1", "expand-2", *("layout-" + key for key, _ in labels)]
     require(type(stages) is list and len(stages) == len(phases), "Exploration omitted expansion or layout frames")
@@ -235,7 +254,8 @@ def verify_exploration(visual, expected):
     require(visual["requests"] == requests, "Layout change issued requests or expansion sequence differed")
 
 
-def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
+def run_browser(report, graph_id, engine_id, tenant_id, native_ids, native_edges):
+    verify_native_edges(native_edges, native_ids)
     env = SUPPORT.required_environment
     env("ADDP_ONLINE_TEST_USER_USERNAME")
     env("ADDP_ONLINE_TEST_USER_PASSWORD")
@@ -250,7 +270,7 @@ def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
     for path in [output, diagnostics, visual, exploration, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
-                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type(), "native_ids": native_ids}
+                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id, "engine_type": engine_type(), "native_ids": native_ids, "native_edges": native_edges}
     # The browser authenticates the ordinary User through the formal login UI.
     # It must not inherit any API fixture's preparation or consumption tokens.
     environment = {key: value for key, value in os.environ.items() if not key.endswith("_ACCESS_TOKEN")}
@@ -268,7 +288,7 @@ def run_browser(report, graph_id, engine_id, tenant_id, native_ids):
     require(exploration.is_file(), "Expansion/layout stable frame evidence missing")
     verify_exploration(json.loads(exploration.read_text()), expected)
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-protection-browser/v5", result="passed", permissions=sorted(READER_PERMISSIONS),
+    expected.update(schema_version="addp.graph-protection-browser/v6", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
                     expansion_stable_visible=True, layout_stable_visible=True, layout_modes=["dagre", "circular", "radial", "force"],
                     public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
@@ -364,7 +384,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             report["private"][name] = {"reader": probe(r, target, ids, 200), "outsider": probe(o, target, ids, 403, "permission"), "anonymous": probe(a, target, ids, 401)}
             o.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
             r.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
-        report["browser"] = run_browser(report, target, engine_id, tenant_id, ids)
+        report["browser"] = run_browser(report, target, engine_id, tenant_id, ids, native_path_edges(reader, target, ids))
         SUPPORT.wait_for_scan(preparer, engine_id, deadline)
         if targets[1]["engine_id"] != engine_id:
             SUPPORT.wait_for_scan(preparer, targets[1]["engine_id"], deadline)
@@ -433,7 +453,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v7", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v8", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

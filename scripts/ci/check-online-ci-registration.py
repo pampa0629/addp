@@ -2872,17 +2872,17 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v7", "verify_search_frame", "verify_exploration", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v8", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
             'e2e/online/develop-graph-query.spec.js',
         ),
         "console/frontend/e2e/online/graph-protection.spec.js": (
-            "addp.graph-protection-browser/v5", "browserAPIFromResponse", "login(",
+            "addp.graph-protection-browser/v6", "browserAPIFromResponse", "login(",
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
             "release_assets: true", "deep_link_reload: true", "theme_canvas_pixels: true",
-            "graph-browser-diagnostics.json", "graphBrowserDiagnostic(", "search_stable_visible: true", "search_node_hits: hits.length", "expansion_stable_visible: true", "layout_stable_visible: true", "graph-exploration-stable-frame.json", "exploreGraphLayouts(", "graphNodeHits(", "stableGraphPixels", "graph-search-stable-frame.json", "theme_typography: true", "graphDocumentHasThemeTypography)",
+            "graph-browser-diagnostics.json", "graphBrowserDiagnostic(", "search_stable_visible: true", "search_node_hits: hits.length", "expansion_stable_visible: true", "nativeNodes, expected.native_edges,", "layout_stable_visible: true", "graph-exploration-stable-frame.json", "exploreGraphLayouts(", "graphNodeHits(", "stableGraphPixels", "graph-search-stable-frame.json", "theme_typography: true", "graphDocumentHasThemeTypography)",
         ),
         "console/frontend/e2e/online/develop-graph-query.spec.js": (
             "addp.develop-graph-query-browser/v1", "browserAPIFromResponse", "login(",

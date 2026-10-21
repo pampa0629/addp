@@ -112,7 +112,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   stage = 'graph:expand-and-layout'
   const nativeNodes = ['p1', 'p2', 'p3'].map(id => found.nodes.find(node => node.properties.id === id))
   const exploration = await exploreGraphLayouts(page, frame, canvas, `/api/v1/graph/graphs/${expected.graph_id}`,
-    nativeNodes, snapshot.overview.edges, async phase => {
+    nativeNodes, expected.native_edges, async phase => {
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-${phase}-console.png`) })
     })
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-exploration-stable-frame.json'), JSON.stringify({
@@ -148,7 +148,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-protection-browser/v5', result: 'passed',
+    ...expected, schema_version: 'addp.graph-protection-browser/v6', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true, search_stable_visible: true, search_node_hits: hits.length,
     expansion_stable_visible: true, layout_stable_visible: true, layout_modes: ['dagre', 'circular', 'radial', 'force'],

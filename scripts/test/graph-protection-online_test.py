@@ -13,10 +13,14 @@ from unittest.mock import patch
 SUITE = importlib.import_module('scripts.test.graph-protection-online')
 
 
+def native_edges(ids):
+    return [dict(id='link-12', source=ids['p1'], target=ids['p2'], type='Link'),
+            dict(id='link-23', source=ids['p2'], target=ids['p3'], type='Link')]
+
+
 def exploration_fixture(expected):
     ids = expected['native_ids']
-    edges = [dict(id='link-12', source=ids['p1'], target=ids['p2'], type='Link'),
-             dict(id='link-23', source=ids['p2'], target=ids['p3'], type='Link')]
+    edges = expected['native_edges']
     stages = []
     labels = [('dagre', '分层'), ('circular', '环形'), ('radial', '辐射'), ('force', '力导向')]
     for index, phase in enumerate(['expand-1', 'expand-2', *['layout-'+key for key, _ in labels]]):
@@ -132,8 +136,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertEqual(kwargs['cwd'].name, 'frontend')
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
-                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb', 'native_ids': {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}})
-                payload = dict(expected, schema_version='addp.graph-protection-browser/v5', result='passed',
+                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17, 'engine_type': 'falkordb', 'native_ids': {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}, 'native_edges': native_edges({'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})})
+                payload = dict(expected, schema_version='addp.graph-protection-browser/v6', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
                                browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True, search_stable_visible=True, search_node_hits=3,
                                expansion_stable_visible=True, layout_stable_visible=True, layout_modes=["dagre", "circular", "radial", "force"],
@@ -172,7 +176,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
             for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True),
                     ({'_missing_visual': True}, True), ({'_missing_exploration': True}, True), ({'_missing_layout_png': True}, True),
                     ({'expansion_stable_visible': 1}, True), ({'layout_stable_visible': False}, True), ({'_omit': ['expansion_stable_visible']}, True),
-                    ({'layout_modes': ['force']}, True), ({'schema_version': 'addp.graph-protection-browser/v4'}, True), ({'_exploration': {'stages': []}}, True), ({'_omit': ['search_stable_visible']}, True),
+                    ({'layout_modes': ['force']}, True), ({'schema_version': 'addp.graph-protection-browser/v4'}, True), ({'schema_version': 'addp.graph-protection-browser/v5'}, True), ({'_omit': ['native_edges']}, True), ({'_visual': {'native_edges': []}}, True), ({'_exploration': {'native_edges': []}}, True), ({'_exploration': {'stages': []}}, True), ({'_omit': ['search_stable_visible']}, True),
                     ({'search_stable_visible': False}, True), ({'search_stable_visible': 1}, True), ({'search_node_hits': 2}, True), ({'_visual': {'principal_id': 'other'}}, True),
                     ({'_visual': {'hits': []}}, True), ({'_frame': {'stableFrames': 1}}, True),
                     ({'_frame': {'stableFrames': True}}, True), ({'_frame': {'width': 0}}, True),
@@ -191,13 +195,35 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 with self.subTest(mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
                      patch.object(SUITE.subprocess, 'run', side_effect=launch):
                     if mutation or screenshots is not True:
-                        with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})
+                        with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}, native_edges({'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}))
                     else:
-                        self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'})['principal_id'], '4')
+                        self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2, {'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}, native_edges({'p1': 'native-1', 'p2': 'native-2', 'p3': 'native-3'}))['principal_id'], '4')
+
+    def test_native_path_reference_rejects_aggregate_edges_and_changed_native_identity(self):
+        ids = {'p1': '4:node:1', 'p2': '4:node:2', 'p3': '4:node:3'}
+        original = {'nodes': [{'id': value, 'properties': {'id': key}} for key, value in ids.items()],
+                    'edges': native_edges(ids)}
+        class Reader:
+            def request(reader, method, path, statuses, body):
+                self.assertEqual((method, path, statuses), ('POST', '/api/v1/graph/kg/17/paths', (200,)))
+                self.assertEqual(body, {'source_node_id': ids['p1'], 'target_node_id': ids['p3'], 'max_hops': 3})
+                return SUITE.SUPPORT.Response(200, candidate)
+        mutations = [lambda v: v.update(edges=[]), lambda v: v['edges'].pop(),
+            lambda v: v['edges'][0].update(source='aggregate-person'),
+            lambda v: v['edges'][0].update(type='Other'), lambda v: v['edges'][0].update(id=''),
+            lambda v: v['edges'][0].update(id=v['edges'][1]['id']),
+            lambda v: v['nodes'][0].update(id='another-native-node')]
+        candidate = copy.deepcopy(original)
+        self.assertEqual(SUITE.native_path_edges(Reader(), 17, ids), native_edges(ids))
+        for mutate in mutations:
+            candidate = copy.deepcopy(original); mutate(candidate)
+            with self.subTest(mutate=mutate), self.assertRaises(SUITE.SuiteError):
+                SUITE.native_path_edges(Reader(), 17, ids)
 
     def test_exploration_rejects_wrong_geometry_ids_requests_and_incomplete_layouts(self):
         expected = {'run_id': 'r', 'tenant_id': '2', 'principal_id': '4', 'graph_id': 17, 'engine_id': 13, 'engine_type': 'neo4j',
                     'native_ids': {'p1': '4:node:1', 'p2': '4:node:2', 'p3': '4:node:3'}}
+        expected['native_edges'] = native_edges(expected['native_ids'])
         valid = exploration_fixture(expected)
         SUITE.verify_exploration(valid, expected)
         mutations = [lambda v: v.update(principal_id='other'), lambda v: v.update(stages=v['stages'][:-1]),
@@ -208,6 +234,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
             lambda v: v['stages'][2]['hits'][0].update(native_id='wrong'),
             lambda v: v['stages'][0]['native_ids'].update(p3=expected['native_ids']['p3']),
             lambda v: v['native_edges'][0].update(target=expected['native_ids']['p3']),
+            lambda v: v['native_edges'][0].update(id='changed-relation'),
             lambda v: v['requests'].append({'method': 'GET', 'path': '/extra', 'body': None}),
             lambda v: v['stages'][3].update(frame=copy.deepcopy(v['stages'][2]['frame']), hits=copy.deepcopy(v['stages'][2]['hits']))]
         for mutate in mutations:
@@ -245,6 +272,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 if method == 'GET' and path.endswith('/entities/Person'):
                     return SUITE.SUPPORT.Response(200, {'data': [
                         {'id': str(i), 'properties': {'id': 'p' + str(i + 1)}} for i in range(3)]})
+                if method == 'POST' and path.endswith('/paths'):
+                    return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)],
+                        'edges': native_edges({'p1': '0', 'p2': '1', 'p3': '2'})})
                 if method == 'DELETE': deleted.append(path)
                 return SUITE.SUPPORT.Response(expected[0], {})
         report = {}
@@ -270,6 +300,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 if method == 'GET' and path.endswith('/entities/Person'):
                     return SUITE.SUPPORT.Response(200, {'data': [
                         {'id': str(i), 'properties': {'id': 'p' + str(i + 1)}} for i in range(3)]})
+                if method == 'POST' and path.endswith('/paths'):
+                    return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)],
+                        'edges': native_edges({'p1': '0', 'p2': '1', 'p3': '2'})})
                 if method == 'DELETE': deleted.append(path)
                 return SUITE.SUPPORT.Response(expected[0], {})
         report = {}

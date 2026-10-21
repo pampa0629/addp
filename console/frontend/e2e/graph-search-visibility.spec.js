@@ -12,12 +12,13 @@ for (const replace of [false, true]) {
       '/api/v1/graph/graphs/7': { id: 7, name: '搜索稳定帧合成图' },
       '/api/v1/graph/graphs/7/browse-snapshot': {
         schema: { node_shapes: [{ name: 'Person', labels: ['Person'] }], relationship_shapes: [{ type: 'Link', directed: true }] },
-        stats: { node_count: 3, relationship_count: 2 }, overview: { nodes: initial, edges: edges(initial) }
+        stats: { node_count: 3, relationship_count: 2 }, overview: { nodes: [{ id: 'aggregate-person', kind: 'aggregate', labels: ['Person'], display_name: 'Person', member_count: 3 }], edges: [] }
       }
     } })
+    let searches = 0
     await page.route('**/api/v1/graph/graphs/7/search', route => {
       expect(route.request().method()).toBe('POST')
-      return route.fulfill({ json: { nodes: found, edges: edges(found) } })
+      return route.fulfill({ json: { nodes: ++searches === 1 ? initial : found, edges: [] } })
     })
     await page.route('**/api/v1/graph/graphs/7/expand', route => {
       expect(route.request().method()).toBe('POST')
@@ -29,6 +30,12 @@ for (const replace of [false, true]) {
     const canvas = frame.locator('.graph-canvas')
     await expect(canvas.locator('canvas')).toBeVisible()
     await expect(canvas.locator('.el-loading-mask')).toHaveCount(0)
+    // Start from actual entity search results, independently of the aggregate overview.
+    const first = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/graph/graphs/7/search')
+    await frame.locator('.search-input input').fill('初始合成节点')
+    await frame.locator('.search-input input').press('Enter')
+    await first
+    await canvas.evaluate(stableGraphPixels, { count: initial.length, color: await graphObservationColor(frame, canvas) })
     const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/graph/graphs/7/search')
     await frame.locator('.search-input input').fill('合成节点')
     await frame.locator('.search-input input').press('Enter')
