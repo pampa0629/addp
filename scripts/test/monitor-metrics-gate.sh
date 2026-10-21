@@ -261,9 +261,10 @@ process_arch=$(docker info --format '{{.Architecture}}')
 case "$process_arch" in aarch64|arm64) process_arch=arm64 ;; x86_64|amd64) process_arch=amd64 ;; *) echo 'Unsupported metrics T2 architecture' >&2; exit 1 ;; esac
 (cd "$ROOT_DIR/common" && CGO_ENABLED=0 GOOS=linux GOARCH="$process_arch" GOWORK=off go test -c ./processmetrics -o "$WORK_DIR/source/process-source.test")
 mkdir -m 755 "$WORK_DIR/source/process-tls"
-# The node fixture certificate above is reissued for its pinned IP. The SDK
-# endpoints use the Compose DNS name, so retain the original DNS certificate.
-cp "$WORK_DIR/source-server.crt" "$WORK_DIR/source/process-tls/server.crt"
+# Native admission and SD use the inspected IP; Desktop rewrites only its
+# explicitly published loopback transport. The source validates its declaration.
+printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:host.docker.internal,IP:127.0.0.1,IP:%s\nextendedKeyUsage=serverAuth\n' "$source_ip" >"$WORK_DIR/process-extensions"
+openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -days 1 -extfile "$WORK_DIR/process-extensions" -out "$WORK_DIR/source/process-tls/server.crt" >/dev/null 2>&1
 cp "$WORK_DIR/source-server.key" "$WORK_DIR/source/process-tls/server.key"
 cp "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" "$WORK_DIR/source/process-tls/ca.crt"
 chmod 644 "$WORK_DIR/source/process-tls/server.key"

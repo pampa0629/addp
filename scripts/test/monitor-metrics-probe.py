@@ -1,5 +1,6 @@
 """Real scrape, admission, mTLS, persistence and owned outage checks."""
 import json
+import datetime
 import math
 import os
 import re
@@ -222,7 +223,7 @@ try:
         path.chmod(0o666)
         address = source_ip + ':' + str(19440 + index)
         envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
-                'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://metrics-source:{19440 + index}/metrics',
+                'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',
                 'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index), 'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'}
         command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
         for key, value in envs.items(): command.extend(['-e', key + '=' + value])
@@ -236,7 +237,7 @@ try:
             print(path.with_suffix('.log').read_text()[-4000:], flush=True)
             raise AssertionError('native source failed at startup')
         records.append(json.loads(path.read_text()))
-    projection = [{'targets': ['metrics-source:' + str(19440 + index)], 'labels': {
+    projection = [{'targets': [source_ip + ':' + str(19440 + index)], 'labels': {
         '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
         'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': records[index - 1]['role']}} for index in (1, 2)]
     if desktop_transport:
@@ -266,8 +267,35 @@ try:
     env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
                MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
                MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
-    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
-                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+    try:
+        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+                       cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+    except subprocess.SubprocessError:
+        # Preserve closed signals before owned processes/center are destroyed.
+        # No labels, endpoints, request bodies or credentials enter diagnostics.
+        try:
+            diagnostic = {'host_unix':time.time(), 'center_unix':[row['value'][1] for row in query('vector(time())')], 'processes':[]}
+            for record in records:
+                selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_instance_id='+json.dumps(record['instance_id'])+',instance='+json.dumps(record['instance'])+'}'
+                cpu = 'process_cpu_seconds_total'+selector
+                signals = {}
+                for key, expression in {'up_count':'count(up'+selector+') or vector(0)',
+                                        'up':'max(up'+selector+') or vector(0)',
+                                        'sample_age':'time()-max(timestamp(up'+selector+'))',
+                                        'identity_count':'count(addp_process_identity_info'+selector+') or vector(0)',
+                                    'cpu_count':'count('+cpu+') or vector(0)',
+                                    'cpu_window_samples':'min(count_over_time('+cpu+'[1m]))',
+                                    'cpu_resets':'max(resets('+cpu+'[1m]))',
+                                    'cpu_delta':'max('+cpu+')-max('+cpu+' offset 1m)',
+                                    'cpu_age':'time()-max(timestamp('+cpu+'))',
+                                    'cpu_previous_age':'time()-max(timestamp('+cpu+' offset 1m))',
+                                        'start_difference':'max(process_start_time_seconds'+selector+')-'+str(datetime.datetime.fromisoformat(record['started_at'].replace('Z', '+00:00')).timestamp())}.items():
+                    signals[key] = [row['value'][1] for row in query(expression)]
+                diagnostic['processes'].append(signals)
+            print('Metrics T2 process query diagnostics: '+json.dumps(diagnostic, sort_keys=True), flush=True)
+        except Exception:
+            print('Metrics T2 process query diagnostics unavailable', flush=True)
+        raise
     subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
                    cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
     subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsHTTPAlertLifecycle$', '-count=1', '-timeout=300s', '-v'],

@@ -147,14 +147,19 @@ func TestIntegrationMetricsHTTPAlertLifecycle(t *testing.T) {
 	for {
 		trendEnd := time.Now().UTC().Truncate(time.Second).Add(-15 * time.Second)
 		trend, err := observations.HTTP(ctx, "fixture-human", "module-fixture-user", HTTPObservationRequest{IDs: []uint{uint(id)}, WindowSeconds: 60, Route: &route, Method: "GET", Trend: true, Start: trendEnd.Add(-30 * time.Second), End: trendEnd})
-		if err != nil || len(trend.Data) != 1 || trend.Data[0].Collection.State != "collecting" || len(trend.Data[0].Observations) != 1 {
-			t.Fatal("native authorized HTTP trend collection", err)
+		if err != nil || len(trend.Data) != 1 {
+			t.Fatal("native authorized HTTP trend collection", err, "subjects", len(trend.Data))
+		}
+		if trend.Data[0].Collection.State != "collecting" || len(trend.Data[0].Observations) > 1 {
+			t.Fatal("native authorized HTTP trend collection", "state", trend.Data[0].Collection.State, "groups", len(trend.Data[0].Observations))
 		}
 		valid := false
-		for _, line := range trend.Data[0].Observations[0].Series {
-			if line.MetricKey == "http.failures.percent" {
-				for _, point := range line.Points {
-					valid = valid || (point.DataState == "valid" && point.Value != nil && *point.Value > 50)
+		for _, observation := range trend.Data[0].Observations {
+			for _, line := range observation.Series {
+				if line.MetricKey == "http.failures.percent" {
+					for _, point := range line.Points {
+						valid = valid || (point.DataState == "valid" && point.Value != nil && *point.Value > 50)
+					}
 				}
 			}
 		}
@@ -163,8 +168,9 @@ func TestIntegrationMetricsHTTPAlertLifecycle(t *testing.T) {
 			break
 		}
 		if time.Now().After(historyDeadline) {
-			t.Fatal("native historical HTTP trend lost valid failure points")
+			t.Fatal("native historical HTTP trend lost valid failure points", "groups", len(trend.Data[0].Observations))
 		}
+		t.Log("awaiting complete historical HTTP failure window", "groups", len(trend.Data[0].Observations))
 		time.Sleep(time.Second)
 	}
 	off := false
