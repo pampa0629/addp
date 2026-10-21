@@ -1172,8 +1172,18 @@ definitions:
         format: date-time
         type: string
         x-nullable: true
+      recipient_code:
+        type: string
       recipient_id:
         example: ""
+        type: string
+      recipient_label_status:
+        enum:
+        - resolved
+        - not_found
+        - unavailable
+        type: string
+      recipient_name:
         type: string
       recipient_type:
         type: string
@@ -1200,36 +1210,6 @@ definitions:
         - window_expired
         - closed
         type: string
-    type: object
-  github_com_addp_catalog_internal_service.SharingFulfillmentRequest:
-    properties:
-      action:
-        type: string
-      created_at:
-        type: string
-      decision_id:
-        type: string
-      expires_at:
-        format: date-time
-        type: string
-        x-nullable: true
-      expiry_mode:
-        enum:
-        - at_time
-        - until_revoked
-        type: string
-      recipient_id:
-        example: ""
-        type: string
-      recipient_type:
-        type: string
-      request_id:
-        type: string
-      requirement_version:
-        example: ""
-        type: string
-      target:
-        $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget'
     type: object
   github_com_addp_catalog_internal_service.SharingFulfillmentResult:
     properties:
@@ -3123,11 +3103,12 @@ paths:
       - catalog.sharing_decision.create
   /entries/{id}/sharing_fulfillments:
     get:
-      description: 当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原参数，资格过滤后分页，不查询他人历史；不提交、关闭、核清或授权
+      description: 当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原请求，资格过滤后分页，并动态查询接收方名称及权威办理、签发结果；不提交、关闭、核清或授权
         | Requires current tenant user entry-read and independent fulfillment permissions
         plus current management scope for each original engine. Paginate only my original
-        parameters under a still-visible entry after scope filtering; never submit,
-        close, settle or grant access
+        requests under a still-visible entry after scope filtering, dynamically resolving
+        recipient names and authoritative fulfillment and issuance history; never
+        submit, close, settle or grant access
       parameters:
       - description: 条目 UUID | Entry UUID
         in: path
@@ -3153,7 +3134,7 @@ paths:
             properties:
               data:
                 items:
-                  $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentRequest'
+                  $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentHistory'
                 type: array
               page:
                 type: integer
@@ -3165,32 +3146,44 @@ paths:
                 type: integer
             type: object
         "400":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object
         "401":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object
         "403":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object
         "404":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object
         "500":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object
         "503":
-          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          description: 请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency
+            error
           schema:
             additionalProperties: true
             type: object

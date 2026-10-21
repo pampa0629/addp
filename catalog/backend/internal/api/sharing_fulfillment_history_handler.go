@@ -14,15 +14,15 @@ import (
 
 // ListSharingFulfillments godoc
 // @Summary 找回本人原办理请求 | Find my original fulfillment requests
-// @Description 当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原参数，资格过滤后分页，不查询他人历史；不提交、关闭、核清或授权 | Requires current tenant user entry-read and independent fulfillment permissions plus current management scope for each original engine. Paginate only my original parameters under a still-visible entry after scope filtering; never submit, close, settle or grant access
+// @Description 当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原请求，资格过滤后分页，并动态查询接收方名称及权威办理、签发结果；不提交、关闭、核清或授权 | Requires current tenant user entry-read and independent fulfillment permissions plus current management scope for each original engine. Paginate only my original requests under a still-visible entry after scope filtering, dynamically resolving recipient names and authoritative fulfillment and issuance history; never submit, close, settle or grant access
 // @Tags Catalog Sharing
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "条目 UUID | Entry UUID"
 // @Param page query int false "页码，默认 1 | Page, default 1" default(1)
 // @Param page_size query int false "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100" default(20)
-// @Success 200 {object} object{data=[]service.SharingFulfillmentRequest,total=int64,page=int,page_size=int,total_pages=int} "本人原请求 | My original requests"
-// @Failure 400,401,403,404,500,503 {object} map[string]interface{} "请求、资格或依赖错误 | Request, eligibility or dependency error"
+// @Success 200 {object} object{data=[]service.SharingFulfillmentHistory,total=int64,page=int,page_size=int,total_pages=int} "本人原请求 | My original requests"
+// @Failure 400,401,403,404,409,500,503 {object} map[string]interface{} "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["catalog.entry.read","system.engine_access_fulfillment.create"]
 // @Router /entries/{id}/sharing_fulfillments [get]

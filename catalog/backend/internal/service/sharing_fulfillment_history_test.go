@@ -270,6 +270,113 @@ func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
 }
 
 func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
+	t.Run("list resolves outcomes and names and rechecks scope without writes", func(t *testing.T) {
+		entry, check, binding := seedFulfillmentHistory(t, db)
+		auth := authtest.NewTenantUserAuthContext("7", "50", []string{"catalog.entry.read", "catalog.inventory.read", sourceHandlingPermission})
+		p, m, v, _ := sharingUserProvenance(auth, 7, "catalog.entry.read", sourceHandlingPermission)
+		scope := &historyScopeReader{operator: authorization.SharingFulfillmentOperator{PrincipalID: p, MembershipID: m, AuthorizationVersion: v}, denied: map[int64]bool{}}
+		labels := &candidateLabelResolver{}
+		s := NewEntryService(db, nil, labels).WithSharingHandlingScopeReader(scope)
+		state, unissued, failure := "accepted", "", false
+		issued := true
+		var before func()
+		recorded := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+		deadline, granted := recorded.Add(5*time.Minute), recorded.Add(time.Minute)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var actual authorization.SharingFulfillmentBinding
+			if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer fixture-catalog-runtime" || json.NewDecoder(r.Body).Decode(&actual) != nil || !equalSharingFulfillmentBinding(actual, binding) {
+				t.Error("list substituted binding or authority credentials")
+				w.WriteHeader(500)
+				return
+			}
+			if before != nil {
+				before()
+			}
+			if failure {
+				w.WriteHeader(503)
+				return
+			}
+			prefix := "/api/v1/system/runtime/engine-access-fulfillments/" + check.RequestID.String()
+			switch r.URL.Path {
+			case prefix + "/resolve":
+				lookup := authorization.SharingFulfillmentLookup{Found: state != "pending"}
+				if lookup.Found {
+					lookup.Resolution = &authorization.SharingFulfillmentResolution{RequestID: check.RequestID, TenantID: 7, Binding: actual, Outcome: state, RecordedAt: recorded}
+					if state == "accepted" {
+						lookup.Resolution.Deadline = &deadline
+					}
+				}
+				_ = json.NewEncoder(w).Encode(lookup)
+			case prefix + "/grant/resolve":
+				lookup := authorization.SharingFulfillmentGrantLookup{Found: issued, UnissuedReason: unissued}
+				if issued {
+					lookup.Grant = &authorization.SharingFulfillmentGrant{RequestID: check.RequestID, GrantedAt: granted}
+				}
+				_ = json.NewEncoder(w).Encode(lookup)
+			default:
+				t.Errorf("list attempted mutation: %s", r.URL.Path)
+				w.WriteHeader(500)
+			}
+		}))
+		defer server.Close()
+		s.WithSharingFulfillmentClient(client.NewSystemFulfillmentClient(server.URL, recoveryRuntimeTestTokens{}, server.Client()))
+		list := func() ([]SharingFulfillmentHistory, int64, error) {
+			return s.ListSharingFulfillments(context.Background(), 7, EntryAccess{}, entry.ID, auth, "addp_at_handler", 1, 20)
+		}
+		var audits int64
+		db.Model(&models.AuditEvent{}).Where("catalog_entry_id=?", entry.ID).Count(&audits)
+		rows, total, err := list()
+		if err != nil || total != 1 || len(rows) != 1 || rows[0].State != "accepted" || rows[0].GrantedAt == nil || !rows[0].GrantedAt.Equal(granted) || rows[0].RecipientName != "Recipient" || rows[0].RecipientLabelStatus != "resolved" || len(labels.refs) != 1 || labels.refs[0].ID != binding.RecipientID {
+			t.Fatalf("readable summary=%+v total=%d error=%v", rows, total, err)
+		}
+		for _, outcome := range []string{"pending", "closed", "accepted"} {
+			state, issued = outcome, false
+			for _, reason := range []string{"", "relation_exists", "window_expired", "closed"} {
+				if outcome != "accepted" && reason != "" {
+					continue
+				}
+				unissued = reason
+				rows, _, err := list()
+				if err != nil || len(rows) != 1 || rows[0].State != state || rows[0].UnissuedReason != reason || rows[0].GrantedAt != nil {
+					t.Fatalf("outcome %s/%s=%+v err=%v", outcome, reason, rows, err)
+				}
+			}
+		}
+		unissued = ""
+		for _, status := range []string{"not_found", "unavailable"} {
+			labels.missing, labels.mismatch = status == "not_found", status == "unavailable"
+			rows, _, err := list()
+			if err != nil || len(rows) != 1 || rows[0].RecipientLabelStatus != status || rows[0].RecipientName != "" {
+				t.Fatalf("name %s=%+v err=%v", status, rows, err)
+			}
+		}
+		labels.missing, labels.mismatch = false, false
+		failure = true
+		if rows, _, err := list(); rows != nil || !errors.Is(err, ErrReferenceValidationUnavailable) {
+			t.Fatalf("outage became pending: %+v %v", rows, err)
+		}
+		failure = false
+		before = func() { scope.denied[12] = true }
+		if rows, _, err := list(); rows != nil || !errors.Is(err, ErrSharingHandlingForbidden) {
+			t.Fatalf("scope lost during networking: %+v %v", rows, err)
+		}
+		scope.denied[12], before = false, nil
+		labels.before = func() {
+			if err := db.Model(&models.Entry{}).Where("id=?", entry.ID).Update("visibility", models.VisibilityInventory).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if rows, _, err := list(); rows != nil || !errors.Is(err, ErrEntryNotFound) {
+			t.Fatalf("visibility lost during names: %+v %v", rows, err)
+		}
+		var stored models.FulfillmentCheck
+		var auditsAfter, count int64
+		db.Model(&models.AuditEvent{}).Where("catalog_entry_id=?", entry.ID).Count(&auditsAfter)
+		db.Model(&models.FulfillmentCheck{}).Where("catalog_entry_id=?", entry.ID).Count(&count)
+		if err := db.Where("request_id=?", check.RequestID).Take(&stored).Error; err != nil || stored.ResolvedAt != nil || count != 1 || auditsAfter != audits {
+			t.Fatalf("GET wrote business history: %+v count=%d audits=%d/%d err=%v", stored, count, audits, auditsAfter, err)
+		}
+	})
 	t.Run("own paging filters original engine scopes before count", func(t *testing.T) {
 		entry, check, binding := seedFulfillmentHistory(t, db)
 		auth := authtest.NewTenantUserAuthContext("7", "50", []string{"catalog.entry.read", "catalog.inventory.read", sourceHandlingPermission})
@@ -289,12 +396,22 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 				t.Fatal(err)
 			}
 		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/resolve") || strings.Contains(r.URL.Path, "/grant/") {
+				t.Errorf("unexpected history mutation: %s %s", r.Method, r.URL.Path)
+				w.WriteHeader(500)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(authorization.SharingFulfillmentLookup{Found: false})
+		}))
+		defer server.Close()
+		s.WithSharingFulfillmentClient(client.NewSystemFulfillmentClient(server.URL, recoveryRuntimeTestTokens{}, server.Client()))
 		rows, total, err := s.ListSharingFulfillments(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 1, 1)
-		if err != nil || total != 1 || len(rows) != 1 || rows[0].RequestID != check.RequestID || len(scope.calls) != 2 || scope.calls[0] != 12 || scope.calls[1] != 13 {
+		if err != nil || total != 1 || len(rows) != 1 || rows[0].RequestID != check.RequestID || len(scope.calls) != 3 || scope.calls[0] != 12 || scope.calls[1] != 13 || scope.calls[2] != 12 {
 			t.Fatalf("scope-filtered page=%+v total=%d calls=%v err=%v", rows, total, scope.calls, err)
 		}
 		body, _ := json.Marshal(rows)
-		for _, forbidden := range []string{"caller_principal_id", "operator", "authorization_version", "resolved_at", "reason", "state"} {
+		for _, forbidden := range []string{"caller_principal_id", "operator", "authorization_version", "resolved_at", "reason"} {
 			if strings.Contains(string(body), `"`+forbidden+`"`) {
 				t.Fatalf("private/result field %s exposed: %s", forbidden, body)
 			}

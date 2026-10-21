@@ -194,7 +194,9 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 
 正式准备使用 `POST /entries/:id/sharing_fulfillments`，仅接受请求编号、决定编号及批准要求版本。当前 User 须具备条目可见、`catalog.entry.read`、独立 `system.engine_access_fulfillment.create` 及有效引擎管理委派；操作身份从可信 AuthContext 派生，调用服务身份由当前 Tenant Service AuthContext 核验，不接受正文覆盖。远端资格查询不持 Catalog 行锁，本地条目锁内按数据库墙钟复核权限／可见性并登记完整绑定；必须提交后才发送 System `/runtime/engine-access-fulfillments/:request_id/accept`。通信错误或未知响应保留 `pending`，不回滚已提交保护，也不把错误当作关闭；同参受理／关闭结果按原绑定核清，不在 Catalog 落受理结果副本。
 
-原办理请求只读找回（2026-10-03 已确认）：同一路径的分页 GET 只列当前 Tenant、当前仍可见条目下由本人原先办理、且本人当前仍有对应原引擎管理范围的请求；详情 GET `/entries/:id/sharing_fulfillments/:request_id` 按持久完整绑定向 System 查询原结果。两者均要求当前 Tenant User、`catalog.entry.read` 与独立 `system.engine_access_fulfillment.create`，部门、项目组和编目维护权不能替代。管理范围逐一以原请求的 Engine 为准，不以条目换源后的 Engine 代替；列表在资格过滤后计数、稳定分页，不返回他人请求或机器调用身份／历史授权版本。原操作身份仅用于识别本人的历史与匹配权威查询，不要求历史授权版本等于当前版本，也不能恢复当前资格。
+原办理请求只读找回（2026-10-03 已确认）：同一路径的分页 GET 只列当前 Tenant、当前仍可见条目下由本人原先办理、且本人当前仍有对应原引擎管理范围的请求；列表与详情 GET `/entries/:id/sharing_fulfillments/:request_id` 均按持久完整绑定向 System 查询原结果。两者均要求当前 Tenant User、`catalog.entry.read` 与独立 `system.engine_access_fulfillment.create`，部门、项目组和编目维护权不能替代。管理范围逐一以原请求的 Engine 为准，不以条目换源后的 Engine 代替；列表在资格过滤后计数、稳定分页，不返回他人请求或机器调用身份／历史授权版本。原操作身份仅用于识别本人的历史与匹配权威查询，不要求历史授权版本等于当前版本，也不能恢复当前资格。
+
+本人办理列表与详情复用权威结果投影，动态返回 `state/recorded_at/deadline/granted_at/unissued_reason`，并按本页精确接收方批量解析 `recipient_name/recipient_code/recipient_label_status`；不落结果或名称副本，不向前端暴露机器身份与用途正文。远端调用在本地只读事务外执行，返回前复核当前权限、可见性、原引擎管理范围及原请求绑定；依赖或绑定失败明确报错，名称解析失败仅标记不可用。列表页不由浏览器逐行补查详情。“我的访问授权办理记录”优先显示接收方、办理时间、批准使用期限和办理结果，编号置于详情可复制的技术信息中。已签发只表达历史签发，不能称为当前可访问；批准使用期限不代表请求已经签发或仍可读取。
 
 列表只返回原编号、决定引用、批准要求版本、原目标、接收方、动作、期限及创建时间，不从 Catalog 核清时间推断受理。详情结果只读消费 System 原回执，`pending` 表示权威明确尚未找到结果，`accepted`／`closed` 表示不可变历史受理／关闭；依赖失败或绑定错误返回 503，不能伪装为 pending、closed 或数据已授权。即使原窗口到期或条目已弃用，仍可在当前读取资格内查询历史，不重新核验为新的业务批准。所有网络调用在 Catalog 事务外，返回前重新检查权限期限、条目可见性、原绑定和当前原引擎管理资格。查询不提交、不关闭、不填写核清时间、不新增审计或 Grant、不延长窗口；不能复用正式准备 POST 或会关闭未受理请求的后台恢复命令。显式重试另用原编号及原三个参数，不自动生成新编号、补新版本或续期。
 

@@ -32,6 +32,7 @@ type SharingFulfillmentRequest struct {
 }
 
 type SharingFulfillmentHistory struct {
+	SharingRecipientDisplay
 	SharingFulfillmentRequest
 	State          string     `json:"state" enums:"pending,accepted,closed"`
 	RecordedAt     *time.Time `json:"recorded_at" format:"date-time" extensions:"x-nullable"`
@@ -110,7 +111,7 @@ func fulfillmentRequestView(check models.FulfillmentCheck) (SharingFulfillmentRe
 
 func (s *EntryService) ListSharingFulfillments(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID,
 	auth authorization.AuthContext, userToken string, page, size int,
-) ([]SharingFulfillmentRequest, int64, error) {
+) ([]SharingFulfillmentHistory, int64, error) {
 	p, m, v, err := sharingUserProvenance(auth, tenantID, "catalog.entry.read", sourceHandlingPermission)
 	if err != nil {
 		return nil, 0, ErrSharingHandlingForbidden
@@ -137,9 +138,10 @@ func (s *EntryService) ListSharingFulfillments(ctx context.Context, tenantID int
 		}
 		allowed = append(allowed, engine)
 	}
-	rows := make([]SharingFulfillmentRequest, 0)
+	var checks []models.FulfillmentCheck
 	var total int64
-	err = s.readFulfillmentSnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService) error {
+	read := func(local *EntryService) error {
+		checks = nil
 		if len(allowed) == 0 {
 			return nil
 		}
@@ -149,20 +151,47 @@ func (s *EntryService) ListSharingFulfillments(ctx context.Context, tenantID int
 		if err := query().Count(&total).Error; err != nil {
 			return err
 		}
-		var checks []models.FulfillmentCheck
-		if err := query().Order("created_at DESC, request_id DESC").Offset((page - 1) * size).Limit(size).Find(&checks).Error; err != nil {
-			return err
+		return query().Order("created_at DESC, request_id DESC").Offset((page - 1) * size).Limit(size).Find(&checks).Error
+	}
+	if err := s.readFulfillmentSnapshot(ctx, tenantID, access, entryID, auth, read); err != nil {
+		return nil, 0, err
+	}
+	original, originalTotal := checks, total
+	rows := make([]SharingFulfillmentHistory, 0, len(checks))
+	for _, check := range checks {
+		result, err := s.resolveSharingHistory(ctx, tenantID, check)
+		if err != nil {
+			return nil, 0, err
 		}
-		for _, check := range checks {
-			view, _, err := fulfillmentRequestView(check)
-			if err != nil {
-				return err
-			}
-			rows = append(rows, view)
+		rows = append(rows, *result)
+	}
+	s.resolveFulfillmentRecipientDisplays(ctx, tenantID, rows)
+	// Never return a result after losing the original engine scope or visibility.
+	for _, engine := range allowed {
+		if err := s.checkFulfillmentHistoryScope(ctx, tenantID, engine, operator, userToken); err != nil {
+			return nil, 0, err
 		}
-		return nil
-	})
-	return rows, total, err
+	}
+	if err := s.readFulfillmentSnapshot(ctx, tenantID, access, entryID, auth, read); err != nil {
+		return nil, 0, err
+	}
+	if total != originalTotal || len(checks) != len(original) {
+		return nil, 0, ErrSharingDecisionConflict
+	}
+	for i, check := range checks {
+		before, err := decodeSharingFulfillmentBinding(original[i].RequestBinding)
+		if err != nil {
+			return nil, 0, err
+		}
+		after, err := decodeSharingFulfillmentBinding(check.RequestBinding)
+		if err != nil || check.RequestID != original[i].RequestID || !check.CreatedAt.Equal(original[i].CreatedAt) || !equalSharingFulfillmentBinding(before, after) {
+			return nil, 0, ErrSharingDecisionConflict
+		}
+		if rows[i].State == "pending" && check.ResolvedAt != nil {
+			return nil, 0, ErrReferenceValidationUnavailable
+		}
+	}
+	return rows, total, nil
 }
 
 func (s *EntryService) GetSharingFulfillment(ctx context.Context, tenantID int64, access EntryAccess, entryID, requestID uuid.UUID,
@@ -194,6 +223,9 @@ func (s *EntryService) GetSharingFulfillment(ctx context.Context, tenantID int64
 	if err != nil {
 		return nil, err
 	}
+	rows := []SharingFulfillmentHistory{*result}
+	s.resolveFulfillmentRecipientDisplays(ctx, tenantID, rows)
+	result = &rows[0]
 	// Current qualification is distinct from the immutable original operator.
 	// A version change is not permission to replay with altered parameters.
 	if err := s.checkFulfillmentHistoryScope(ctx, tenantID, int64(binding.Path.EngineID), operator, userToken); err != nil {
@@ -229,7 +261,7 @@ func (s *EntryService) resolveSharingHistory(ctx context.Context, tenantID int64
 	if err != nil || lookup == nil || lookup.Found != (lookup.Resolution != nil) {
 		return nil, ErrReferenceValidationUnavailable
 	}
-	result := &SharingFulfillmentHistory{SharingFulfillmentRequest: view, State: "pending"}
+	result := &SharingFulfillmentHistory{SharingRecipientDisplay: SharingRecipientDisplay{RecipientLabelStatus: "unavailable"}, SharingFulfillmentRequest: view, State: "pending"}
 	if !lookup.Found {
 		if check.ResolvedAt != nil {
 			return nil, ErrReferenceValidationUnavailable
@@ -303,4 +335,15 @@ func (s *EntryService) ListSharingDecisionFulfillments(ctx context.Context, tena
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+func (s *EntryService) resolveFulfillmentRecipientDisplays(ctx context.Context, tenantID int64, rows []SharingFulfillmentHistory) {
+	refs := make([]commonClient.SystemCatalogReference, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, commonClient.SystemCatalogReference{SubjectType: row.RecipientType, ID: row.RecipientID})
+	}
+	labels := s.resolveSharingRecipientDisplays(ctx, tenantID, refs)
+	for i := range rows {
+		rows[i].SharingRecipientDisplay = labels[i]
+	}
 }

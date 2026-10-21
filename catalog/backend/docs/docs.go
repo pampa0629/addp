@@ -2170,7 +2170,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原参数，资格过滤后分页，不查询他人历史；不提交、关闭、核清或授权 | Requires current tenant user entry-read and independent fulfillment permissions plus current management scope for each original engine. Paginate only my original parameters under a still-visible entry after scope filtering; never submit, close, settle or grant access",
+                "description": "当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原请求，资格过滤后分页，并动态查询接收方名称及权威办理、签发结果；不提交、关闭、核清或授权 | Requires current tenant user entry-read and independent fulfillment permissions plus current management scope for each original engine. Paginate only my original requests under a still-visible entry after scope filtering, dynamically resolving recipient names and authoritative fulfillment and issuance history; never submit, close, settle or grant access",
                 "produces": [
                     "application/json"
                 ],
@@ -2210,7 +2210,7 @@ const docTemplate = `{
                                 "data": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentRequest"
+                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentHistory"
                                     }
                                 },
                                 "page": {
@@ -2229,42 +2229,49 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "401": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "403": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "503": {
-                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5704,9 +5711,23 @@ const docTemplate = `{
                     "format": "date-time",
                     "x-nullable": true
                 },
+                "recipient_code": {
+                    "type": "string"
+                },
                 "recipient_id": {
                     "type": "string",
                     "example": ""
+                },
+                "recipient_label_status": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "not_found",
+                        "unavailable"
+                    ]
+                },
+                "recipient_name": {
+                    "type": "string"
                 },
                 "recipient_type": {
                     "type": "string"
@@ -5741,49 +5762,6 @@ const docTemplate = `{
                         "window_expired",
                         "closed"
                     ]
-                }
-            }
-        },
-        "github_com_addp_catalog_internal_service.SharingFulfillmentRequest": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "decision_id": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string",
-                    "format": "date-time",
-                    "x-nullable": true
-                },
-                "expiry_mode": {
-                    "type": "string",
-                    "enum": [
-                        "at_time",
-                        "until_revoked"
-                    ]
-                },
-                "recipient_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "recipient_type": {
-                    "type": "string"
-                },
-                "request_id": {
-                    "type": "string"
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
-                },
-                "target": {
-                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget"
                 }
             }
         },

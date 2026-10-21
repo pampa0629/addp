@@ -338,14 +338,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	}
 	request(http.MethodGet, historyPath, "", http.StatusNotFound)
 	user = "41"
-	myHistory := request(http.MethodGet, preparePath+"?page=1&page_size=1", "", http.StatusOK)
-	var found struct {
-		Data  []service.SharingFulfillmentRequest `json:"data"`
-		Total int64                               `json:"total"`
-	}
-	if err := json.Unmarshal([]byte(myHistory), &found); err != nil || found.Total != 1 || len(found.Data) != 1 || found.Data[0].RequestID != historyID || !strings.Contains(myHistory, `"requirement_version":"9007199254740993"`) {
-		t.Fatalf("my original request=%s err=%v", myHistory, err)
-	}
+	request(http.MethodGet, preparePath, "", http.StatusServiceUnavailable)
 	// An absent authority client is an error, not an inferred pending/closed result.
 	request(http.MethodGet, historyPath, "", http.StatusServiceUnavailable)
 	runtimeCalls := 0
@@ -382,10 +375,19 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	if !strings.Contains(pending, `"state":"pending"`) || strings.Contains(pending, `"operator"`) || strings.Contains(pending, `"caller_principal_id"`) || runtimeCalls != 1 {
 		t.Fatalf("read-only pending=%s calls=%d", pending, runtimeCalls)
 	}
+	myHistory := request(http.MethodGet, preparePath+"?page=1&page_size=1", "", http.StatusOK)
+	var found struct {
+		Data  []service.SharingFulfillmentHistory `json:"data"`
+		Total int64                               `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(myHistory), &found); err != nil || found.Total != 1 || len(found.Data) != 1 || found.Data[0].RequestID != historyID || !strings.Contains(myHistory, `"requirement_version":"9007199254740993"`) {
+		t.Fatalf("my original request=%s err=%v", myHistory, err)
+	}
 	var stored models.FulfillmentCheck
 	if err := db.Where("request_id = ?", historyID).Take(&stored).Error; err != nil || stored.ResolvedAt != nil {
 		t.Fatalf("history GET settled the request: %+v %v", stored, err)
 	}
+	beforeDeniedReads := runtimeCalls
 	scopeStatus = http.StatusForbidden
 	request(http.MethodGet, historyPath, "", http.StatusForbidden)
 	unmanaged := request(http.MethodGet, preparePath, "", http.StatusOK)
@@ -397,7 +399,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	tenant = "8"
 	request(http.MethodGet, preparePath, "", http.StatusNotFound)
 	request(http.MethodGet, historyPath, "", http.StatusNotFound)
-	if runtimeCalls != 1 {
+	if runtimeCalls != beforeDeniedReads {
 		t.Fatal("denied reads reached runtime authority")
 	}
 }

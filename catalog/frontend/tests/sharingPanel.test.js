@@ -29,7 +29,7 @@ const renderer = createRenderer({
   remove(node) { const index = node.parent?.children.indexOf(node); if (index >= 0) node.parent.children.splice(index, 1); node.parent = null },
   parentNode: node => node.parent, nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1],
 })
-const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'date-picker', 'input', 'button', 'descriptions', 'descriptions-item', 'pagination', 'empty', 'steps', 'step', 'radio-group', 'radio-button', 'tag']
+const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'date-picker', 'input', 'button', 'descriptions', 'descriptions-item', 'pagination', 'empty', 'steps', 'step', 'radio-group', 'radio-button', 'tag', 'collapse', 'collapse-item']
 const rowContext = Symbol('table-row')
 const mounted = []
 const id = 'cc0a8000-6000-4000-8000-800000000001'
@@ -780,7 +780,7 @@ describe('actual sharing panel commands and recovery', () => {
     fixtures.api.getSharingRequest.mockResolvedValueOnce({ request_id: 'request', state: 'accepted', target: { segments: [] } }).mockRejectedValueOnce(new Error('offline'))
     const view = mount(); await settle()
     await view.button('sharing-record-kind').props.onChange('requests'); await settle()
-    const query = view.nodes().find(node => node.tag === 'button' && node.children.some(child => child.text === 'catalog.sharing.queryResult'))
+    const query = view.button('sharing-open-request')
     await query.props.onClick(); await settle()
     expect(fixtures.api.getSharingRequest).toHaveBeenCalledWith('entry', 'request')
     expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.state.accepted')).toBe(true)

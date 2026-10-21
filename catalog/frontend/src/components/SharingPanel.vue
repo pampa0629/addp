@@ -177,11 +177,13 @@
           <el-button :loading="historyLoading" @click="loadHistory">{{ t('catalog.common.refresh') }}</el-button></div>
       </template>
       <el-alert v-if="historyError" type="error" :closable="false" :title="historyError" />
-      <el-table :data="history" v-loading="historyLoading">
-        <el-table-column prop="request_id" :label="t('catalog.sharing.requestID')" min-width="240" />
-        <el-table-column :label="t('catalog.sharing.createdAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
-        <el-table-column :label="t('catalog.sharing.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
-        <el-table-column width="130"><template #default="{ row }"><el-button data-testid="sharing-open-request" link type="primary" @click="openRequest(row)">{{ t('catalog.sharing.queryResult') }}</el-button></template></el-table-column>
+      <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
+      <el-table data-testid="sharing-request-list" :data="history" v-loading="historyLoading">
+        <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip><template #default="{ row }">{{ recipientLabel(row) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.handledAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.approvedExpiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.handlingResult')" min-width="230"><template #default="{ row }"><el-tag :type="recordResultType(row)">{{ recordResultLabel(row) }}</el-tag></template></el-table-column>
+        <el-table-column width="130"><template #default="{ row }"><el-button data-testid="sharing-open-request" link type="primary" :disabled="switchingBlocked" @click="openRequest(row)">{{ t('catalog.sharing.viewRequestDetail') }}</el-button></template></el-table-column>
       </el-table>
       <el-empty v-if="!historyLoading && !historyError && !total" :description="t('catalog.sharing.noRequests')" />
       <el-pagination layout="prev, pager, next, total" :current-page="page" :page-size="20" :total="total" @current-change="changePage" />
@@ -192,15 +194,25 @@
       </div></template>
       <el-alert v-if="requestError" type="error" :closable="false" :title="requestError" />
       <div v-if="request" v-loading="requestLoading">
-        <el-alert type="info" :closable="false" :title="t(`catalog.sharing.state.${request.state}`)" />
         <el-descriptions :column="1" border>
-          <el-descriptions-item :label="t('catalog.sharing.requestID')">{{ request.request_id }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.sharing.decisionID')">{{ request.decision_id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ recipientLabel(request) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.handledAt')">{{ formatTime(request.created_at) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.approvedExpiry')">{{ expiryLabel(request) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.handlingResult')">{{ recordResultLabel(request) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(request.target) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.sharing.recordedAt')">{{ formatTime(request.recorded_at) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.sharing.deadline')">{{ formatTime(request.deadline) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.issuance')">{{ issuanceLabel(request) }}</el-descriptions-item>
         </el-descriptions>
+        <el-collapse data-testid="sharing-request-technical">
+          <el-collapse-item :title="t('catalog.sharing.technicalDetails')" name="technical">
+            <el-alert type="info" :closable="false" :title="t(`catalog.sharing.state.${request.state}`)" />
+            <el-descriptions :column="1" border>
+              <el-descriptions-item :label="t('catalog.sharing.requestID')"><span class="break-all">{{ request.request_id }}</span> <el-button data-testid="sharing-copy-request-id" text @click="copyIdentifier(request.request_id)">{{ t('common.copy') }}</el-button></el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.sharing.decisionID')"><span class="break-all">{{ request.decision_id }}</span> <el-button data-testid="sharing-copy-decision-id" text @click="copyIdentifier(request.decision_id)">{{ t('common.copy') }}</el-button></el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.sharing.recordedAt')">{{ formatTime(request.recorded_at) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.sharing.deadline')">{{ formatTime(request.deadline) }}</el-descriptions-item>
+            </el-descriptions>
+          </el-collapse-item>
+        </el-collapse>
         <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
       </div>
     </el-card>
@@ -211,6 +223,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
 import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement, matchingSharingApproval } from '../utils/sharingConfirmation'
@@ -267,6 +280,17 @@ const recipientLabel = row => sharingRecipientLabel(row, auth.authContext, t)
 const recipientOptionLabel = option => sharingRecipientOptionLabel(option, form.recipientType, auth.authContext, t)
 const candidateLabel = row => `${recipientLabel(row)} · ${expiryLabel(row)}`
 const candidateStatusLabel = row => t(`catalog.sharing.candidateState.${candidateGrantStatuses.value[row.id] || 'unknown'}`)
+const recordResultStatus = row => sharingProgress({ requestID: row.request_id, request: row }).status
+const recordResultLabel = row => t(`catalog.sharing.recordResult.${recordResultStatus(row)}`)
+const recordResultType = row => ({ issued: 'success', closed: 'info', issuing: 'warning', processing: 'warning', duplicate: 'info', expired: 'danger', unavailable: 'info' }[recordResultStatus(row)] || 'info')
+async function copyIdentifier(value) {
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success(t('common.copySuccess'))
+  } catch {
+    ElMessage.error(t('common.copyFailed'))
+  }
+}
 const stateType = state => ({ accepted: 'success', pending: 'warning', closed: 'info' }[state])
 function openSystemAuthorization() {
   if (systemAuthorizationRoute.value && !switchingBlocked.value) return openConsoleRoute(systemAuthorizationRoute.value)
@@ -544,7 +568,7 @@ function changeResultsPage(value) { resultsPage.value = value; loadConfirmationR
 async function loadHistory() {
   if (!eligibility.value.history) return
   const seq = ++historySequence, epoch = generation
-  history.value = []; total.value = 0; request.value = null; historyError.value = ''; historyLoading.value = true
+  history.value = []; request.value = null; historyError.value = ''; historyLoading.value = true
   requestSequence++; requestError.value = ''; requestLoading.value = false
   try {
     const result = await listSharingRequests(props.entry.id, { page: page.value, page_size: 20 })
