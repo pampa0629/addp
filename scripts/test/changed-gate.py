@@ -110,6 +110,8 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         "scripts/test/vector-zonal-statistics-persistence-online.py",
         "business/scripts/online-raster-proximity-fixture.py",
         "scripts/test/raster-proximity-persistence-online.py",
+        "business/scripts/online-raster-boundary-clean-fixture.py",
+        "scripts/test/raster-boundary-clean-persistence-online.py",
         "business/scripts/online-raster-focal-mode-fixture.py",
         "scripts/test/raster-focal-mode-persistence-online.py",
         "business/scripts/online-raster-band-recommendation-fixture.py",

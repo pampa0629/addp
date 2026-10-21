@@ -181,6 +181,7 @@
 | `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` | 矢量分区中心覆盖、全部触及／自定义前缀、重分类→转面→统计三条 GeoPackage 保存链；完整几何、属性、行序、字段类型、计数／统计／null，严格物理／Meta 大小、精确扫描、同用户／当前执行全部输入血缘和失败清理；独立手工 Hosted，600 秒预算。固定 `9b2830a39` 的完整 Hosted 已通过，见本节验收边界。 |
 | `make test-online ONLINE_SUITE=raster-band-recommendation-workflow` | 只读 OIF 三波段组合推荐的完整 object、共同有效域、560 个组合、无界／并列、候选顺序、非法输入和精确源身份；仅源扫描，无成果文件／派生血缘；独立手工 Hosted、600 秒预算，固定 `e712b3b13` 已通过完整验收及归档审计。 |
 | `make test-online ONLINE_SUITE=raster-nibble-persistence` | 直接蚕食、重分类接蚕食及无目标命中的三条 COG 链；独立最近原供体 oracle、完整精确分类／mask、严格三方大小、扫描、同用户／当前执行血缘、非法输入失败与零残留；独立手工 Hosted、600 秒预算，固定 `a7d627e5a` 已通过完整验收及归档审计。 |
+| `make test-online ONLINE_SUITE=raster-boundary-clean-persistence` | 直接清理、重分类接清理及全无效三条 COG 链；独立全图 Counter／两阶段完整像元与 mask、旋转跨块、安全整数并列分类、严格三方大小、精确扫描、当前执行血缘及非法输入零发布／零扫描／零新增血缘；独立手工 Hosted，600 秒预算，首次真实运行与归档审计尚待完成。 |
 | `make test-online ONLINE_SUITE=raster-focal-mode-persistence` | 分类众数3×3、5×5及重分类接3×3三条COG链；独立Counter核对完整精确整数像元／mask、旋转跨块、COG、严格三方大小、扫描、同用户／当前执行血缘及非法波段／小数／越界分类失败清理；独立手工 Hosted，600 秒业务预算，固定 `a7d627e5a` 已通过完整验收及归档审计。 |
 | `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |

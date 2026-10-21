@@ -4,7 +4,7 @@
 
 共同前置条件见[T4 Online 验收规范](../T4-Online验收规范.md)。每项条款仅适用于其声明的 suite 与 profile；代码就绪不表示真实 T4 已通过。
 
-本页场景：[manager-internal-artifact-lineage](#manager-internal-artifact-lineage)、[manager-hybrid-search](#manager-hybrid-search)、[vector-pmtiles-workflow](#vector-pmtiles-workflow)、[raster-workflow](#raster-workflow)、[raster-contour-persistence](#raster-contour-persistence)、[raster-polygonize-persistence](#raster-polygonize-persistence)。
+本页场景：[manager-internal-artifact-lineage](#manager-internal-artifact-lineage)、[manager-hybrid-search](#manager-hybrid-search)、[vector-pmtiles-workflow](#vector-pmtiles-workflow)、[raster-workflow](#raster-workflow)、[raster-contour-persistence](#raster-contour-persistence)、[raster-polygonize-persistence](#raster-polygonize-persistence)、[raster-boundary-clean-persistence](#raster-boundary-clean-persistence)。
 
 ## manager-internal-artifact-lineage
 
@@ -187,6 +187,16 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 独立 oracle 逐个有效目标中心穷举欧氏距离，不调用产品变换、下包络或 GDAL 距离算法。检查完整像元／mask、单位、网格／CRS、COG／金字塔与严格相等正整数的 artifact／物理／Meta 大小；精确两源手工扫描、两个当前执行自动扫描、同用户／租户、Monitor 以及各 DAG 仅自身实际源输入的 active derive 血缘。每次重核源物理／Meta 与先前成果不变；非法波段及无有效目标失败不得发布或新增扫描。退出核验工作目录、归属 NFS export／目录、产品 Runtime／registry／镜像、部署及 Infra 零残留。
 
 标准入口 `make test-online ONLINE_SUITE=raster-proximity-persistence`；真实 GDAL／COG 和错误像元／mask／单位／网格等篡改拒绝沿 `make test-geopython-workflow`，脚本／登记／隔离生命周期沿 `make test-raster-proximity-online-runner`，由原 `make test-raster-online-runner` 聚合。仅手工触发，不改原套件、权限或跨模块产品逻辑；不认证测地距离、成本／路径、旋转／非方形网格、容量或 Manager 绘制。当前尚未执行真实 Hosted，不能记作 T4 通过。
+
+## raster-boundary-clean-persistence
+
+独立手工 Hosted Linux x86_64，入口 `make test-online ONLINE_SUITE=raster-boundary-clean-persistence`，生命周期由 `scripts/test/online-hosted-raster-boundary-clean-gate.sh` 管理。复用同源默认入口产品 Runtime、隔离 NFS 和普通 User 原 12 权限，独立预检与业务预算 600 秒；原各套验收及权限保持。仅验 API 持久化，不计页面、容量或任意影像效果认证。
+
+同一 519×515、EPSG:4326 旋转六波段 TIFF 显式选择分类波段，执行直接清理、重分类接清理和全无效输入三条 COG 保存链。覆盖合法零、负分类、±(2^53−1) 及相邻大分类、全图类别计数并列、3×3 邻域跨块与边缘，以及 NoData／mask／透明和非有限值；全无效成果必须成功保存完整 NaN／无效 mask。独立全幅 Counter 与不可变两阶段逐像元 oracle 核对完整值及 mask，不调用产品排序、分块或中间文件实现，精确比较不采用近似容差。
+
+逐成果核对原尺寸、CRS 与完整仿射网格、Float64／NaN、完整 COG／金字塔、未继承源 scale／offset／色表，以及 artifact／物理／Meta 相等正整数大小。仅源由普通用户手工精确扫描一次，三个目标必须来自各自父执行的自动扫描；严格核扫描执行、父执行、用户、租户和引擎，Monitor 与当前执行源输入派生血缘一致。非法波段、小数类别和越界类别必须失败，输出、扫描及 active derive 图均不得增加；每步重核源物理／Meta 与先前成果不变。所有退出路径检查工作目录、NFS export／私有目录、Runtime／镜像／registry、部署及 Infra 清理，清理失败使门禁失败。
+
+真实 GDAL／COG 及篡改拒绝沿 `make test-geopython-workflow`；编排、严格校验、隔离生命周期与登记沿 `make test-raster-boundary-clean-online-runner`，并纳入原 `make test-raster-online-runner`。只登记手工 Hosted，不新增定时。首次真实运行与归档审计通过前不计为 T4 通过；结果统一维护于[栅格专题验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)。
 
 ## 分类蚕食容量（raster-nibble-capacity）
 
