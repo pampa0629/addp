@@ -280,6 +280,10 @@ func GetModel3DInfoProvider(formatType FormatType) (Model3DInfoProvider, error) 
 	return globalProviderRegistry.GetModel3DInfoProvider(formatType)
 }
 
+func GetModel3DCompositionProvider(formatType FormatType) (Model3DCompositionProvider, error) {
+	return pluginCapability[Model3DCompositionProvider](globalProviderRegistry, formatType, "3D model composition provider")
+}
+
 func (r *ProviderRegistry) GetModel3DInfoProvider(formatType FormatType) (Model3DInfoProvider, error) {
 	return pluginCapability[Model3DInfoProvider](r, formatType, "3D model info provider")
 }

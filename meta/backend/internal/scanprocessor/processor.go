@@ -137,6 +137,7 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 			confirmedFormat := commonJSON.String(existing.Attributes, "item", "format")
 			confirmedType := commonJSON.String(existing.Attributes, "item", "data_type")
 			sameFormat := confirmedFormat != "" && confirmedFormat == commonJSON.String(attrs, "item", "format")
+			metaattr.MergeBasicModelCompositionSnapshot(preserved, attrs)
 			metaattr.MergeStandardAttributes(preserved, attrs)
 			// Basic rediscovery refreshes catalog facts, without reading the
 			// content that established the existing deep type. Suffix defaults

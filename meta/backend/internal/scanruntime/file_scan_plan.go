@@ -84,8 +84,11 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		plan.order = append(plan.order, path)
 		plan.progress.Operation("identifying", path)
 		detectionReader := scanflow.ContentReaderForDepth(reader, depth)
+		structureReader := ftpModelStructureReader(resource, reader, depth)
 		if isRoot {
-			d.detection, d.detectionErr = resolveNonExclusiveScopeItems(ctx, detectionReader, conn, resource, path, d.files, d.subdirs)
+			candidates := scanflow.FileCatalogNonExclusiveCandidateSet(resource.ID, path, d.files, d.subdirs)
+			candidates.StructureReader = structureReader
+			d.detection, d.detectionErr = scanflow.ResolveNonExclusiveContentCandidates(ctx, detectionReader, conn, resource.ID, candidates)
 		} else {
 			var files []metaitem.StorageFileRef
 			var dirs []metaitem.StorageDirectoryRef
@@ -96,7 +99,9 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 			if err != nil {
 				d.detectionErr = err
 			} else {
-				d.detection, d.detectionErr = scanflow.DetectFileCatalogDirectoryItems(ctx, detectionReader, conn, resource.ID, path, d.files, d.subdirs, files, dirs)
+				candidates := scanflow.FileCatalogDirectoryCandidateSet(resource.ID, path, d.files, d.subdirs, files, dirs)
+				candidates.StructureReader = structureReader
+				d.detection, d.detectionErr = scanflow.ResolveContentCandidates(ctx, detectionReader, conn, resource.ID, candidates)
 			}
 		}
 		if d.detectionErr != nil {

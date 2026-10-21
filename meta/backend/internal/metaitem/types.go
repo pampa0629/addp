@@ -147,7 +147,10 @@ func ItemRefsFromPaths(paths []string) []dataitem.ItemRef {
 
 // DirectoryResolveInput 是 Meta 扫描范围 item 识别的输入。
 type DirectoryResolveInput struct {
-	ContentReader        plugin.ContentReadableProvider
+	ContentReader plugin.ContentReadableProvider
+	// StructureReader is used only for bounded primary-model declarations.
+	// Its presence is not permission to read content or a proof of authorization.
+	StructureReader      plugin.ContentReadableProvider
 	ConnInfo             plugin.ConnectionInfo
 	EngineID             uint
 	EngineCatalogPathFor func(path string) plugin.EngineCatalogPath

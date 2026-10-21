@@ -246,6 +246,8 @@ label set 必须标准化为去空、去重、排序后的稳定集合；当 nod
 
 DAE / 3DS 保持 `layout=single`。基础识别所需的有界模型结构读取必须将完整的原生贴图声明保存到 `format_info.<format>.texture_refs`，以 `scan_complete=true` 区分已完整读取与未知状态；明确的空数组表示已读取且没有贴图声明，缺字段、解析失败或预算未完成不得当作空数组。缺失、越界或无法精确匹配的声明仍保留在原生声明中，只有实际匹配成功的文件进入 `item.refs`。单体模型的 `item.refs` 保留主模型及精确认领的相关文件、角色和必需性，`storage.physical_path` 始终指向主模型；这些组成事实不依赖 deep scan，也不代表内容读取许可。基础识别不借此写入 deep 的网格或顶点统计。
 
+本轮仅为 FTP 接通 3DS 的目录与完整 refs 基础识别，通过原生 range 能力读取已观察主文件的 chunk 头和材质贴图声明：文件逻辑长度上限 64 MiB，实际结构读取累计不超过 256 KiB、4096 次 range、64 层嵌套、200 条声明，单条声明含终止符不超过 4096 字节。FTP 的 basic 与 deep 共用该组成识别阶段，deep 随后独立进行内容增强，其完整模型摘要不得重写结构阶段的 `texture_refs` 或 `scan_complete`；结构失败或尚无组成快照时，深度增强不得补造完整声明。已知单项 deep 刷新也只保留既有组成，不重新识别组成。跳过几何、动画等 payload，不打开贴图或范围外文件，也不使用顺序全文件解析兜底。完整结构读取成功后才写入 `scan_complete=true`；缺少 range 能力、损坏、超限或读取失败保存 `scan_complete=false`，不得沿用旧的完整声明。缺失贴图保留原始声明，组成投影返回不完整。该结构读取沿本次目录／完整 refs 的采集边界执行，不给操作者增加内容 Grant；已知单项 basic 刷新沿用既有 refs，不借此枚举兄弟或重识别边界。NFS／MinIO 和 DAE 的基础入口不因本片自动接通。当前共享文件路径层仍存在修剪名称首尾空格的限制，本轮不宣称此类 FTP 物理名称端到端可用；原生声明必须保留原文，无法精确表示或匹配的组成返回不完整／需刷新并拒绝绑定，禁止裁剪后匹配其他文件。该限制不是新的文件命名规则，后续应修复共享路径保真。
+
 S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本、根瓦片数、瓦片扩展名、文件类型和位置进入 `format_info.s3m`；`config/scene.scp` 通过 `item.refs` 以 `role=manifest + primary=true` 表达。S3M 前端 renderer、受控资源 URL、加载队列和浏览器纹理能力不得写入 Meta attributes。
 
 `type_info.point_cloud` 只承载点云跨格式稳定结构摘要。`point_cloud_kind` 表达点云子形态，第一版取值为 `raw_point_cloud`、`tiled_point_cloud`、`scan_collection`、`generic`。LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都使用 `data_type=point_cloud`；不得仅因点记录可展开为 x/y/z 等列而归为 `table`。点样本、抽稀结果、前端渲染协议、Potree / EPT / COPC 层级内容、派生瓦片等属于内容读取或 Manager 派生产物，不写入 attributes。CRS、空间定位和空间范围进入 `capabilities.spatial`；分类分布、密度等需要读取点记录的分析结果必须先定义点云领域的独立 owner 和结果结构，不得写入 Meta attributes 或借用表格数据剖析结果。

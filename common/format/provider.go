@@ -334,6 +334,15 @@ type Model3DInfoProvider interface {
 	DescribeModel3D(ctx context.Context, input io.Reader, options *ParseOptions) (*Model3DDescribeResult, error)
 }
 
+// Model3DCompositionProvider reads only bounded structural declarations from
+// one caller-bound primary file. A nil error proves the entire declaration set
+// was read, including an explicitly empty set; errors never return partial refs.
+// It neither resolves related files nor describes geometry or authorization.
+type Model3DCompositionProvider interface {
+	FormatPlugin
+	ReadModel3DComposition(ctx context.Context, input io.ReaderAt, size int64) ([]string, error)
+}
+
 // ScopeModel3DInfoProvider 表示 whole scope 三维模型格式能够提取模型类型信息。
 type ScopeModel3DInfoProvider interface {
 	FormatPlugin

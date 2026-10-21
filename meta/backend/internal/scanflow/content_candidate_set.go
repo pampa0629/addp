@@ -9,6 +9,7 @@ import (
 )
 
 type ContentCandidateSet struct {
+	StructureReader      plugin.ContentReadableProvider
 	DirPath              string
 	Files                []metaitem.StorageFileRef
 	Subdirs              []metaitem.StorageDirectoryRef
@@ -27,6 +28,7 @@ func ResolveContentCandidates(
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
 		ContentReader:        contentReader,
+		StructureReader:      candidates.StructureReader,
 		ConnInfo:             connInfo,
 		EngineID:             engineID,
 		EngineCatalogPathFor: candidates.EngineCatalogPathFor,
@@ -48,6 +50,7 @@ func ResolveNonExclusiveContentCandidates(
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveNonExclusiveItems(ctx, metaitem.DirectoryResolveInput{
 		ContentReader:        contentReader,
+		StructureReader:      candidates.StructureReader,
 		ConnInfo:             connInfo,
 		EngineID:             engineID,
 		EngineCatalogPathFor: candidates.EngineCatalogPathFor,

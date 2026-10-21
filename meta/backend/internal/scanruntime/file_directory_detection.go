@@ -1,22 +1,16 @@
 package scanruntime
 
 import (
-	"context"
-
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/scanflow"
 )
 
-func resolveNonExclusiveScopeItems(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	resource *commonModels.Engine,
-	dirPath string,
-	files []metaitem.StorageFileRef,
-	subdirs []metaitem.StorageDirectoryRef,
-) (*metaitem.DetectionResult, error) {
-	return scanflow.DetectFileCatalogNonExclusiveScopeItems(ctx, contentReader, connInfo, resource.ID, dirPath, files, subdirs)
+// FTP is the only admitted model-structure route in this slice. Other
+// engines and known-item refresh keep their existing depth and scope semantics.
+func ftpModelStructureReader(resource *commonModels.Engine, reader plugin.ContentReadableProvider, depth string) plugin.ContentReadableProvider {
+	if resource != nil && resource.EngineType == "ftp" && (depth == scanflow.ScanDepthBasic || depth == scanflow.ScanDepthDeep) {
+		return reader
+	}
+	return nil
 }

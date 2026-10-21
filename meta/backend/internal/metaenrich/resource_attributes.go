@@ -111,7 +111,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		if err := EnrichSinglePointCloudItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
+		if err := EnrichSingleModel3DItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, input.SourceEngine, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
 	}

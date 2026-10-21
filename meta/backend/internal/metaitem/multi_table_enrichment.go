@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"io"
-	"net/url"
 	"path"
 	"sort"
 	"strconv"
@@ -826,7 +825,7 @@ func EnrichKnownMultiTableItem(
 
 // The provider owns format parsing; Meta owns resource lookup and claims.
 func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []*DetectedItem {
-	if input.ContentReader == nil {
+	if input.ContentReader == nil && input.StructureReader == nil {
 		return nil
 	}
 	byPath := map[string]StorageFileRef{}
@@ -837,6 +836,13 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 	for _, file := range files {
 		formatType := format.DetectFormat(file.Path, nil)
 		if formatType != format.FormatDAE && formatType != format.Format3DS {
+			continue
+		}
+		if formatType == format.Format3DS && input.StructureReader != nil {
+			items = append(items, resolveStructured3DSItem(ctx, input, file, byPath))
+			continue
+		}
+		if input.ContentReader == nil {
 			continue
 		}
 		provider, err := format.GetModel3DInfoProvider(formatType)
@@ -856,37 +862,9 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 		if !ok || refs == nil || described.FormatInfo["scan_complete"] != true {
 			continue
 		}
-		refList := []dataitem.ItemRef{{Role: "model", Path: file.Path, Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
-		claims := []string{file.Path}
-		seen := map[string]bool{file.Path: true}
-		counts := map[string]int{}
-		total := file.Size
-		lookupRefs := append([]string{}, refs...)
-		sort.Strings(lookupRefs)
-		for _, ref := range lookupRefs {
-			if formatType == format.FormatDAE {
-				ref, err = url.PathUnescape(ref)
-				if err != nil {
-					continue
-				}
-			}
-			resolved, ok := ResolveExchangeModelTexturePath(file.Path, ref)
-			texture, found := byPath[resolved]
-			if !ok || !found || seen[resolved] {
-				continue
-			}
-			refList = append(refList, dataitem.ItemRef{Role: uniqueRefRole("texture", counts), Path: resolved, Required: true, Extension: strings.ToLower(path.Ext(resolved))})
-			claims = append(claims, resolved)
-			seen[resolved] = true
-			total += texture.Size
-		}
-		item := detectedItemFromResolvedItem(file.Path, dataitem.ResolvedItem{Name: file.Name, FullName: file.Path, Layout: format.LayoutSingle, DataType: datatype.Model3D, Format: string(formatType), PrimaryContentPath: file.Path, RefList: refList, ClaimPaths: claims, SizeBytes: &total, DetectionReason: "model_declared_textures"})
 		// Persist the declaration from this bounded composition read. Authorization
 		// fact queries must not reopen the source later to reconstruct it.
-		item.Attributes = map[string]interface{}{"format_info": map[string]interface{}{string(formatType): map[string]interface{}{
-			"texture_refs": append([]string{}, refs...), "scan_complete": true,
-		}}}
-		items = append(items, item)
+		items = append(items, exchangeModelResourceItem(file, formatType, refs, byPath, true))
 	}
 	return items
 }

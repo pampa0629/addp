@@ -571,3 +571,5 @@ go test ./manager/backend/internal/preview ./manager/backend/internal/objectcont
 - Manager 内容展示边界文档由 Manager 模块维护，不能反向约束 `common/format`。
 
 DAE / 3DS 的 `Model3DInfoProvider` 解析预算为 64 MiB；模型字段写入 `type_info.model_3d`，源版本、单位、上轴与声明贴图引用写入 `format_info.dae` / `format_info.3ds`。Meta 消费 `texture_refs` 精确认领资源，格式插件不访问存储目录。二者保持 `layout=single`，GLB 转换边界见内置格式规范。
+
+3DS 另实现 `Model3DCompositionProvider`，只消费调用方绑定到一个主文件的 `io.ReaderAt` 与已观察大小，返回完整原生贴图声明，不返回网格统计或授权结果。基础识别只读取必要 chunk 头和材质声明，跳过几何 payload；逻辑长度 64 MiB、实际读取 256 KiB／4096 次、嵌套 64 层、声明 200 条／每条 4096 字节是硬预算，任何错误均不返回部分声明。Meta 独占目录／refs 匹配、claims 和持久化，不将此接口当作读取许可；无 range 能力不转为全文件读取。现有 deep 模型统计仍由 `Model3DInfoProvider` 独占。

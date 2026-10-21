@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -161,6 +162,7 @@ func EnrichSingleModel3DItem(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
+	sourceEngine *commonModels.Engine,
 	item *metaitem.DetectedItem,
 	path string,
 	catalogPathFor func(path string) plugin.EngineCatalogPath,
@@ -216,6 +218,13 @@ func EnrichSingleModel3DItem(
 	if info.Model3D != nil {
 		item.Model3D = info.Model3D.Clone()
 		metaitem.ApplyModel3DInfo(attrs, item, info.Spatial)
+	}
+	if sourceEngine != nil && sourceEngine.EngineType == "ftp" && formatType == format.Format3DS {
+		// FTP composition is owned by the bounded structural observation. A
+		// successful full summary cannot upgrade an incomplete or absent one,
+		// or replace exact declarations during a known-item deep refresh.
+		delete(info.FormatInfo, "texture_refs")
+		delete(info.FormatInfo, "scan_complete")
 	}
 	if len(info.FormatInfo) > 0 {
 		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
