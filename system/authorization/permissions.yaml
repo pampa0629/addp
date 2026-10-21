@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 39
+manifest_version: 40
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -218,6 +218,62 @@ permissions:
     status: active
     name_i18n_key: permissions.iam.department_membership.update.name
     description_i18n_key: permissions.iam.department_membership.update.description
+  - key: iam.emergency_session_revocation.approve
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.approve.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.approve.description
+  - key: iam.emergency_session_revocation.cancel
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.cancel.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.cancel.description
+  - key: iam.emergency_session_revocation.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.create.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.create.description
+  - key: iam.emergency_session_revocation.execute
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.execute.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.execute.description
+  - key: iam.emergency_session_revocation.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.read.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.read.description
+  - key: iam.emergency_session_revocation.reject
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.reject.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.reject.description
+  - key: iam.emergency_session_revocation.revoke
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.emergency_session_revocation.revoke.name
+    description_i18n_key: permissions.iam.emergency_session_revocation.revoke.description
   - key: iam.external_identity.link
     allowed_scope_types: [platform]
     risk_level: high

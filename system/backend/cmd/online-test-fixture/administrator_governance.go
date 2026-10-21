@@ -82,7 +82,22 @@ func prepareAdministratorGovernanceIdentities(db *gorm.DB, cfg *config.Config, o
 		return err
 	}
 	values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"] = negative.AccessToken
-	candidate, assignmentID, password, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection, tenantID, ownerID, "online-governance-successor", []string{"monitor.execution.read"})
+	target, targetAssignment, _, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection, tenantID, ownerID, "online-governance-emergency-target", []string{"monitor.execution.read"})
+	if err != nil {
+		return err
+	}
+	targetBinding, err := roles.GetAssignment(ctx, tenantID, targetAssignment)
+	if err != nil {
+		return err
+	}
+	otherTarget, err := issueSession(ctx, repo, selection, targetBinding.PrincipalID, "emergency-target-other-session")
+	if err != nil {
+		return err
+	}
+	values["ADDP_ONLINE_GOV_TARGET_FAMILY_ID"] = fmt.Sprint(target.FamilyID)
+	values["ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN"] = target.AccessToken
+	values["ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN"] = otherTarget.AccessToken
+	candidate, assignmentID, password, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection, tenantID, ownerID, "online-governance-successor", []string{"monitor.execution.read", "iam.emergency_session_revocation.create", "iam.emergency_session_revocation.read", "iam.emergency_session_revocation.cancel", "iam.emergency_session_revocation.execute"})
 	if err != nil {
 		return err
 	}

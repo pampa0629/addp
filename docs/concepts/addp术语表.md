@@ -566,7 +566,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Platform Three Administrators | 平台三员 | Platform System Administrator、Platform Security Administrator、Platform Audit Administrator 三个内置、互斥的平台管理角色。 | 替代永久 `super_admin`；不存在可合并三种职责的全权角色。 |
 | Platform Administrator Change | 平台管理员变更 | 按目标三员角色，由不同岗位申请和复核的平台特权治理请求，涵盖角色任免／交接、身份暂停／恢复和凭据恢复。 | 申请人、复核人、目标及接任人须相互独立；复用既有特权请求与审批事实，不授予普通账号管理权。 |
 | Administrator Credential Recovery | 管理员凭据恢复 | 经三员治理批准后，由目标用户使用一次性短期凭据重新登记密码和 MFA 的流程。 | 不签发登录会话，不解除身份暂停，不变更角色；无法形成合格治理组合时使用离线凭据恢复。 |
-| Break-glass Grant | 紧急访问授权 | 在紧急处置中经双人批准产生的限定动作、限定时长且全程审计的临时授权。 | 不是常驻 root，不能删除审计记录或静默修改平台三员规则。 |
+| Break-glass Grant | 紧急访问授权 | 平台治理、精确资源作用域的短期应急授权。首期由平台系统管理员和安全管理员分别批准，允许指定租户普通 User 在限定窗口内撤销另一普通 User 的一个第一方 Web Token Family。 | 审计管理员独立监督、不参与批准；申请不算批准。审批期限10分钟，两次批准后15分钟内最多执行一次。不是三员角色分配或访问凭据，不授予跨租户、数据读取、改密、解锁或运维权限；到期不恢复已经撤销的会话。 |
 | Platform Statistics Viewer | 平台统计查看者 | 读取已发布跨租户聚合指标的独立平台只读角色。 | 不自动包含在平台三员角色中，不授予 Tenant 业务明细访问权。 |
 | AuthContext | 授权上下文 | System 对访问令牌完成验证并基于当前 Principal、会话模式、Tenant Membership、Role Assignment 和客户端约束生成的权威身份与授权投影。 | 是 Go/Python 模块消费主体事实的唯一契约；不包含主体可访问的全部资源列表，`/users/me` 不是 Token 验证接口。 |
 | External OAuth Client | 外部 OAuth 客户端 | 代表 `addp-cli`、外部 BI 或桌面工具等请求用户授权的客户端软件；管理归属可以是 Platform 或单个 Tenant。 | 不是 ADDP User、Service Principal、Tenant、Service Account 或 API Consumer；Tenant 外部 Client 固定使用 Authorization Code + PKCE、无 Client Secret，且只能获得其 owner Tenant 内当前 User 的委托授权。服务账号内部绑定的 Confidential OAuth Client 只是机器凭据，不进入外部应用管理列表。 |

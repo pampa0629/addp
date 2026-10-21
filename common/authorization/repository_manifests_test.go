@@ -8,14 +8,45 @@ import (
 	"testing"
 )
 
+func TestEmergencySessionPermissionsPreserveGovernanceAndTenantBoundary(t *testing.T) {
+	report, err := LoadRepositoryAuthorizationCatalog(testRepositoryRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range report.Permissions {
+		if !strings.HasPrefix(p.Key, "iam.emergency_session_revocation.") {
+			continue
+		}
+		if p.Delegable {
+			t.Fatalf("emergency permission is delegable: %s", p.Key)
+		}
+		if p.Action == "approve" || p.Action == "reject" || p.Action == "revoke" {
+			if p.TenantCustomizable || !reflect.DeepEqual(p.AllowedScopeTypes, []string{"platform"}) {
+				t.Fatalf("platform governance escaped boundary: %s", p.Key)
+			}
+		}
+	}
+	for _, r := range report.Roles {
+		for _, key := range r.Permissions {
+			if !strings.HasPrefix(key, "iam.emergency_session_revocation.") {
+				continue
+			}
+			allowed := r.Key == "platform.system_administrator" || r.Key == "platform.security_administrator" || r.Key == "platform.audit_administrator" && key == "iam.emergency_session_revocation.read"
+			if !allowed {
+				t.Fatalf("built-in role %s gained emergency authority %s", r.Key, key)
+			}
+		}
+	}
+}
+
 func TestRepositoryPermissionManifests(t *testing.T) {
 	report, err := LoadRepositoryAuthorizationCatalog(testRepositoryRoot(t))
 	if err != nil {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 516 {
-		t.Fatalf("descriptor count = %d, want 516", len(descriptors))
+	if len(descriptors) != 523 {
+		t.Fatalf("descriptor count = %d, want 523", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {

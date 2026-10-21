@@ -212,6 +212,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {
 		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
 	}
+	if err := RegisterIAMEmergencySessionRoutes(api, runtime); err != nil {
+		panic(fmt.Errorf("register emergency session routes: %w", err))
+	}
 	if err := RegisterIAMManagementRoutes(api, runtime, moduleRegistryHandler); err != nil {
 		panic(fmt.Errorf("注册 IAM 管理路由失败: %w", err))
 	}

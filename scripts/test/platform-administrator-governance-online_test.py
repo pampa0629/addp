@@ -350,7 +350,7 @@ class AdministratorGovernanceOnlineTest(unittest.TestCase):
             for role in SCENE.ROLES: scene.credentials[role]['password'] = 'CLI-only-password'
             return {key: True for key in SCENE.OFFLINE_PROOFS}
         with patch.object(API, 'GatewayClient', return_value=Client()), patch.object(scene, 'login'), \
-             patch.object(scene, 'assert_legacy_route_removed'), \
+             patch.object(scene, 'assert_legacy_route_removed'), patch.object(scene, 'emergency_session_revocation', return_value={'single_consumption_receipt': True}), \
              patch.object(scene, 'pause_restore'), patch.object(scene, 'recovery'), patch.object(scene, 'handover'), \
              patch.object(scene, 'browser', side_effect=browser), patch.object(scene, 'offline_recovery', side_effect=offline):
             result = scene.run()

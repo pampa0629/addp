@@ -499,3 +499,6 @@ other = "The recovery expired. Do not retry or extend it. Reconcile this attempt
 
 [system.iam.recovery_cli.state_prepared]
 other = "No committed recovery was observed. This is not proof of rollback. Confirm holders and roles before explicitly retrying with the original ID and Secret and fresh TOTP proofs."
+
+[system.iam.emergency_session_conflict]
+other = "Emergency request state, version or authorization changed. Recheck the request; resolve an unknown result using its original ID first."

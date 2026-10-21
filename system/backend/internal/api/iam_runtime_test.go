@@ -20,7 +20,7 @@ func TestNewIAMRuntimeComposesTargetServicesAndFosite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIAMRuntime() error = %v", err)
 	}
-	if runtime.Repository == nil || runtime.TokenFamilyService == nil || runtime.IdentityService == nil ||
+	if runtime.EmergencySessionService == nil || runtime.EmergencySessionHandler == nil || runtime.Repository == nil || runtime.TokenFamilyService == nil || runtime.IdentityService == nil ||
 		runtime.TenantMembershipService == nil || runtime.ContextSelectionService == nil ||
 		runtime.TenantServiceAccountService == nil || runtime.TenantServiceAccountHandler == nil ||
 		runtime.TenantInvitationService == nil ||

@@ -5686,6 +5686,432 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/emergency_session_requests": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "查询应急撤销请求 | List emergency revocation requests",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.read"
+                ]
+            }
+        },
+        "/platform/emergency_session_requests/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "核清应急撤销结果 | Resolve emergency revocation result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.read"
+                ]
+            }
+        },
+        "/platform/emergency_session_requests/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "批准 | Approve",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.approve"
+                ]
+            }
+        },
+        "/platform/emergency_session_requests/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "拒绝 | Reject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.reject"
+                ]
+            }
+        },
+        "/platform/emergency_session_requests/{id}/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "撤回授权 | Revoke grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.revoke"
+                ]
+            }
+        },
         "/platform/engine-raster-policies/engines": {
             "get": {
                 "security": [
@@ -11691,6 +12117,423 @@ const docTemplate = `{
                 ]
             }
         },
+        "/tenant/emergency_session_requests": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "查询应急撤销请求 | List emergency revocation requests",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "申请单会话应急撤销 | Request emergency single-session revocation",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.create"
+                ]
+            }
+        },
+        "/tenant/emergency_session_requests/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "核清应急撤销结果 | Resolve emergency revocation result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.read"
+                ]
+            }
+        },
+        "/tenant/emergency_session_requests/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "取消申请 | Cancel request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.cancel"
+                ]
+            }
+        },
+        "/tenant/emergency_session_requests/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "紧急会话撤销 | Emergency Session Revocation"
+                ],
+                "summary": "单次执行会话撤销 | Execute single-session revocation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMEmergencySessionExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.emergency_session_revocation.execute"
+                ]
+            }
+        },
         "/tenant/engine-raster-policies/engines": {
             "get": {
                 "security": [
@@ -16155,6 +16998,118 @@ const docTemplate = `{
                 "DepartmentStatusDisabled"
             ]
         },
+        "github_com_addp_system_internal_iam.EmergencySessionApproval": {
+            "type": "object",
+            "properties": {
+                "approved_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "role_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_iam.EmergencySessionRequest": {
+            "type": "object",
+            "properties": {
+                "approval_expires_at": {
+                    "type": "string"
+                },
+                "approvals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_iam.EmergencySessionApproval"
+                    }
+                },
+                "approved_at": {
+                    "type": "string"
+                },
+                "close_reason": {
+                    "type": "string"
+                },
+                "closed_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "effective_state": {
+                    "type": "string"
+                },
+                "execute_before": {
+                    "type": "string"
+                },
+                "executed_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "executor_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "executor_name": {
+                    "type": "string"
+                },
+                "executor_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string"
+                },
+                "incident_reference": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_family_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "target_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "target_name": {
+                    "type": "string"
+                },
+                "target_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "github_com_addp_system_internal_iam.LocalAccountStatus": {
             "type": "string",
             "enum": [
@@ -19468,6 +20423,48 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMEmergencySessionCreateRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "incident_reference": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "target_family_id": {
+                    "type": "string"
+                },
+                "target_principal_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMEmergencySessionExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMEmergencySessionReviewRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },

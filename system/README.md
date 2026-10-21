@@ -71,6 +71,28 @@ OAuth 2.0:       /api/v1/system/oauth/*
 
 详细安全机制请查看 [CLAUDE.md#安全机制](./CLAUDE.md#安全机制)
 
+## 单会话应急撤销
+
+这是平台级应急治理能力，授权效果仅限一个指定租户的一个普通用户、一个 `addp-web` 第一方 Web Token Family。申请人与执行人为同一普通 User；目标和执行人均不得是有效平台角色持有人。系统管理员与安全管理员分别在 Platform Context 批准，两次批准必须来自不同 User，且均不能是执行人或目标。审计管理员独立读取，不参与批准或执行。不会产生应急 Token、管理员角色或通用数据权限。
+
+首期通过 System 现有 HTTP 管理入口办理，Gateway 继续转发 `/api/v1/system`，不增加第二套入口：
+
+| Context | API | 用途 |
+| --- | --- | --- |
+| Tenant | `POST /tenant/emergency_session_requests` | 提交 `id`（新 UUID）、`target_principal_id`、`target_family_id`、`reason`、`incident_reference`；租户及执行人从当前身份取得 |
+| Platform / Tenant | `GET /{context}/emergency_session_requests`、`GET /{context}/emergency_session_requests/{id}` | 平台审核／审计查询；Tenant 仅查询本人申请及原执行回执 |
+| Platform | `POST /platform/emergency_session_requests/{id}/approve`、`reject`、`revoke` | `version`（十进制字符串）、`reason`；批准／拒绝／撤回未消费授权 |
+| Tenant | `POST /tenant/emergency_session_requests/{id}/cancel` | 本人放弃，提交 `version`、`reason` |
+| Tenant | `POST /tenant/emergency_session_requests/{id}/execute` | 本人单次执行，提交 `version`、新的 `execution_id`（UUID） |
+
+现有 Tenant 自定义 Role 可显式配置 `iam.emergency_session_revocation.create/read/cancel/execute` 入口权限，默认不授予任何租户内置角色；入口权限本身不能代替两次批准。目标 Family 编号来自已核实事件记录，不提供跨用户会话枚举。返回租户、执行人、目标与批准人的可读名称供复核；所有 BIGINT 均使用十进制字符串。批准与执行需要现有 MFA Step-up，不能靠复用旧 MFA 事实绕过。`409 resource_version_conflict` 要求重新读取原请求；超时、断连等结果不明时先 `GET` 原 UUID 核清，同一 `execution_id` 的已执行命令只返回原回执，其他编号不能再次消费。客户端不得自动重放写请求。
+
+审批自数据库申请时刻起10分钟，第二次批准记录的数据库时刻起15分钟内执行，事务提交后生效；等待锁或审计写入跨越期限时回滚。以实时数据库时钟判定，不依赖定时任务或后台清理。撤销仅影响目标 Family 及现有派生授权，不停止外部引擎已经运行的作业，也不改变全局授权版本或同用户其他会话。目标此前已撤销／已到期时回执明确为 `already_revoked`／`already_expired`，不能记为本次撤销成功。
+
+创建、两次批准、拒绝、放弃、撤回和执行写高风险业务审计；执行回执、授权消费、Family 和派生授权撤销与审计处于同一事务，审计失败整体回滚。拒绝／失败的 HTTP 尝试沿用现有请求审计，不记录请求 Body、Bearer 或会话秘密。追加式记录与三员职责分离不等于独立审计存储或数据库运维防篡改；这部分部署边界另验。
+
+最小验证为 `make test-module MODULE=system GO_ONLY=1`、`make test-system-frontend`、`make test-authorization`、Swagger 生成／覆盖检查；真实 PostgreSQL 使用已有 `make test-system-iam-postgres`，自动发现 `TestEmergencySessionRevocationAgainstPostgres`，只在独占 Hosted Service 验证，不连接本地数据库。既有 `platform-administrator-governance` Hosted 套件还通过真实 Gateway 调用验证 MFA 执行人、两员批准、10／15分钟窗口、单 Family 失效、同用户其他会话保留、回执重放和独立审计；不新增 Workflow 或本地部署入口。未执行的 Hosted／浏览器／独立审计部署验收不得计为通过。
+
 ## 三员治理验证
 
 标准 PostgreSQL 入口使用隔离测试库，不操作开发库：

@@ -233,6 +233,20 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 
 ## 七、Bootstrap、密码重置与灾难恢复
 
+### 7.0 紧急会话撤销
+
+System 唯一拥有首期 Break-glass 申请、两个独立批准及单次执行回执。平台侧负责审批和监督，Tenant 侧只允许当前申请人读取、放弃或消费本人申请；Tenant ID 和申请人来自可信 AuthContext，不接受调用方自报。平台读回投影提供明确租户、执行人与目标的可读引用，不给系统管理员附带普通账号管理或会话批量枚举权限。
+
+申请绑定客户端随机 UUID、执行人／Membership／授权版本、目标普通 User／Membership／授权版本、一个第一方 Web Token Family、原因、事件编号和数据库审批截止时刻。两条批准分别绑定 `platform.system_administrator` 与 `platform.security_administrator`、批准人、授权版本、理由与时间；同人、同岗重复及审计管理员批准均拒绝。第一次批准不产生可消费授权，第二次批准在同事务生成15分钟执行截止时刻。不可变目标不得因版本冲突、过期或重试重新解释。
+
+申请及每次可变操作使用正整数 BIGINT `version`；创建不传版本，批准／拒绝／撤销／放弃／执行均提交原版本。申请 UUID 同参重试恢复原记录，不重置10分钟审批期限。消费使用独立执行 UUID；原成功或明确未执行的同编号同参重试只返回不可变回执，不再撤销或追加执行审计；其他执行编号不能冒认原结果。读取已完成回执不把后来的人员变更解释为历史改写，也不恢复当前操作资格。
+
+锁顺序为所有相关 Principal 按 ID 升序、Membership 按 ID 升序／Tenant、当前凭据 Family／Token、应急请求、目标 Family；审批集合变化须返回冲突，不在下层锁后补取 Principal。操作在锁内复用唯一 AuthContext 凭据核验及精确 Permission，批准／消费额外要求当前有效 step-up。审批人资格和版本、执行人及目标事实、数据库墙钟在等待后及审计后提交前重核。消费、单个 Family 撤销和已有派生授权失效触发器、回执及审计在同一 System 事务；审计失败整体回滚。有效期只决定是否能消费，不使已撤销会话复活。
+
+执行入口不签发新 Token、不授予三员 Role Assignment、不复用三员一申请一复核流程假装双批准；`role_assignments.source_type=break_glass` 的历史枚举不作为本能力的授权依据。独立入口 Permission 不默认加入租户角色，只能通过现有受控角色配置赋予资格，且不能代替两个平台批准。
+
+最小验证由现有 System Go T1、IAM／API／Migration `AgainstPostgres$` 自动发现及 System 前端门禁覆盖；真实双人批准、单次消费和会话拒绝使用既有平台三员 Hosted T4 的独占部署补验。不得连接本地数据库或接管开发服务，独立审计职责与独立存储保护分别记录结果。
+
 ### 7.1 首批三员 Bootstrap
 
 系统不创建默认管理员。空 User 系统只允许使用与 System 同版本发布的离线 `iam-bootstrap prepare/apply`：

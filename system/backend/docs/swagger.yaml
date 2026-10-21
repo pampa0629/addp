@@ -1288,6 +1288,83 @@ definitions:
     x-enum-varnames:
     - DepartmentStatusActive
     - DepartmentStatusDisabled
+  github_com_addp_system_internal_iam.EmergencySessionApproval:
+    properties:
+      approved_at:
+        type: string
+      display_name:
+        type: string
+      principal_id:
+        example: ""
+        type: string
+      reason:
+        type: string
+      role_key:
+        type: string
+    type: object
+  github_com_addp_system_internal_iam.EmergencySessionRequest:
+    properties:
+      approval_expires_at:
+        type: string
+      approvals:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionApproval'
+        type: array
+      approved_at:
+        type: string
+      close_reason:
+        type: string
+      closed_by_principal_id:
+        example: ""
+        type: string
+      effective_state:
+        type: string
+      execute_before:
+        type: string
+      executed_at:
+        type: string
+      execution_id:
+        type: string
+      executor_membership_id:
+        example: ""
+        type: string
+      executor_name:
+        type: string
+      executor_principal_id:
+        example: ""
+        type: string
+      id:
+        type: string
+      incident_reference:
+        type: string
+      outcome:
+        type: string
+      reason:
+        type: string
+      requested_at:
+        type: string
+      status:
+        type: string
+      target_family_id:
+        example: ""
+        type: string
+      target_membership_id:
+        example: ""
+        type: string
+      target_name:
+        type: string
+      target_principal_id:
+        example: ""
+        type: string
+      tenant_id:
+        example: ""
+        type: string
+      tenant_name:
+        type: string
+      version:
+        example: ""
+        type: string
+    type: object
   github_com_addp_system_internal_iam.LocalAccountStatus:
     enum:
     - active
@@ -3524,6 +3601,33 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  internal_api.IAMEmergencySessionCreateRequest:
+    properties:
+      id:
+        type: string
+      incident_reference:
+        type: string
+      reason:
+        type: string
+      target_family_id:
+        type: string
+      target_principal_id:
+        type: string
+    type: object
+  internal_api.IAMEmergencySessionExecuteRequest:
+    properties:
+      execution_id:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_api.IAMEmergencySessionReviewRequest:
+    properties:
+      reason:
+        type: string
+      version:
+        type: string
     type: object
   internal_api.IAMErrorResponse:
     properties:
@@ -9454,6 +9558,281 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - audit.event.read
+  /platform/emergency_session_requests:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 页大小 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询应急撤销请求 | List emergency revocation requests
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.read
+  /platform/emergency_session_requests/{id}:
+    get:
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核清应急撤销结果 | Resolve emergency revocation result
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.read
+  /platform/emergency_session_requests/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准 | Approve
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.approve
+  /platform/emergency_session_requests/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 拒绝 | Reject
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.reject
+  /platform/emergency_session_requests/{id}/revoke:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤回授权 | Revoke grant
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.revoke
   /platform/engine-raster-policies/{id}:
     get:
       parameters:
@@ -13473,6 +13852,275 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.department.restore
+  /tenant/emergency_session_requests:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 页大小 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询应急撤销请求 | List emergency revocation requests
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 申请单会话应急撤销 | Request emergency single-session revocation
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.create
+  /tenant/emergency_session_requests/{id}:
+    get:
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核清应急撤销结果 | Resolve emergency revocation result
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.read
+  /tenant/emergency_session_requests/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 取消申请 | Cancel request
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.cancel
+  /tenant/emergency_session_requests/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 UUID | Request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMEmergencySessionExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_iam.EmergencySessionRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 单次执行会话撤销 | Execute single-session revocation
+      tags:
+      - 紧急会话撤销 | Emergency Session Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.emergency_session_revocation.execute
   /tenant/engine-raster-policies/{id}:
     get:
       parameters:

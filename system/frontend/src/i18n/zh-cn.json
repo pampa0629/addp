@@ -858,6 +858,7 @@
           "metrics_discovery": "指标发现",
           "platform_resource_rule": "主机资源告警规则",
           "engine_deployment": "平台引擎部署",
+          "emergency_session_revocation": "紧急会话撤销",
           "platform_administrator_change": "平台管理员变更",
           "http_observation": "HTTP 接口质量读取",
           "platform_http_rule": "HTTP 接口质量规则",

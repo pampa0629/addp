@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 137
+manifest_version: 138
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -26,6 +26,7 @@ roles:
     permissions:
       - audit.event.export
       - audit.event.read
+      - iam.emergency_session_revocation.read
       - iam.platform_administrator_change.approve
       - iam.platform_administrator_change.read
       - iam.platform_administrator_change.reject
@@ -217,6 +218,10 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [user]
     permissions:
+      - iam.emergency_session_revocation.approve
+      - iam.emergency_session_revocation.read
+      - iam.emergency_session_revocation.reject
+      - iam.emergency_session_revocation.revoke
       - iam.local_account.reset
       - iam.mfa_credential.reset
       - iam.platform_administrator_change.create
@@ -273,6 +278,10 @@ roles:
       - agent.configuration.update
       - copilot.configuration.read
       - copilot.configuration.update
+      - iam.emergency_session_revocation.approve
+      - iam.emergency_session_revocation.read
+      - iam.emergency_session_revocation.reject
+      - iam.emergency_session_revocation.revoke
       - iam.platform_administrator_change.approve
       - iam.platform_administrator_change.create
       - iam.platform_administrator_change.read

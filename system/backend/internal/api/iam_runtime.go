@@ -16,6 +16,8 @@ import (
 
 // IAMRuntime is the single production composition root for System IAM.
 type IAMRuntime struct {
+	EmergencySessionService                *iam.EmergencySessionService
+	EmergencySessionHandler                *IAMEmergencySessionHandler
 	Repository                             *iam.Repository
 	TokenFamilyService                     *iam.TokenFamilyService
 	IdentityService                        *iam.IdentityService
@@ -137,6 +139,11 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	platformTenantService := iam.NewPlatformTenantService(repository, nil)
 	platformUserService := iam.NewPlatformUserService(repository, identityService, nil)
 	auditQueryService := iam.NewAuditQueryService(repository)
+	emergencySessionService := iam.NewEmergencySessionService(repository)
+	emergencySessionHandler, err := NewIAMEmergencySessionHandler(emergencySessionService)
+	if err != nil {
+		return nil, err
+	}
 	administratorChangeService := iam.NewAdministratorChangeService(repository)
 	administratorCredentialRecoveryService := iam.NewAdministratorCredentialRecoveryService(repository, mfaCipher)
 	administratorChangeService.WithCredentialRecovery(administratorCredentialRecoveryService)
@@ -360,6 +367,8 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 		PlatformTenantService:                  platformTenantService,
 		PlatformUserService:                    platformUserService,
 		AuditQueryService:                      auditQueryService,
+		EmergencySessionService:                emergencySessionService,
+		EmergencySessionHandler:                emergencySessionHandler,
 		AdministratorChangeService:             administratorChangeService,
 		AdministratorCredentialRecoveryService: administratorCredentialRecoveryService,
 		SecurityPolicyService:                  securityPolicyService,

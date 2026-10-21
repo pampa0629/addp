@@ -1064,6 +1064,9 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		return fmt.Errorf("protect fixture environment: %w", err)
 	}
 	for _, key := range []string{
+		"ADDP_ONLINE_GOV_TARGET_FAMILY_ID",
+		"ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN",
+		"ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN",
 		"ADDP_ONLINE_GOV_SYSTEM_ID",
 		"ADDP_ONLINE_GOV_SYSTEM_USERNAME",
 		"ADDP_ONLINE_GOV_SYSTEM_PASSWORD",

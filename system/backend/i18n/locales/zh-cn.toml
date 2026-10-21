@@ -499,3 +499,6 @@ other = "原恢复已过期；不可重试或续期。核对原轮次后另行�
 
 [system.iam.recovery_cli.state_prepared]
 other = "观察时尚无已提交的恢复结果；不是回滚证明。确认人员和岗位后使用原编号、原 Secret 显式重试，重新验证 TOTP。"
+
+[system.iam.emergency_session_conflict]
+other = "应急请求状态、版本或授权条件已变化，请重新核对；结果不明时先按原编号查询"

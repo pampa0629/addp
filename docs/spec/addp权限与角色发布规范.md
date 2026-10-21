@@ -136,6 +136,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员通过独立的双人批准凭据恢复流程重新登记，不能形成合格治理组合时使用离线凭据恢复；不能扩大普通用户重置 Permission 绕过三员治理。
 
+首期 Break-glass 仅支持指定 Tenant 普通 User 的单个第一方 Web Token Family 撤销。`iam.emergency_session_revocation` 的创建／放弃／执行仅 Tenant Scope、不可委托，入口资格不默认组合进角色；读取允许 Platform 和 Tenant，Tenant 仅本人申请。批准／拒绝／撤销仅 Platform Scope、不可租户定制，只组合进系统和安全管理员；读取另授审计管理员，审计管理员不得批准、拒绝、撤销或执行。每次批准还在事务中核验具体平台岗位，两条批准必须分别来自系统及安全岗，不能只按 Permission 或两个账号判定完成。它不授予其他 IAM 管理权或业务数据读取权。
+
 Tenant 自定义 Role：
 
 角色标识 `role_key` 使用两段式 `<namespace>.<name>`，精确格式为 `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`；每段以小写英文字母开头，后续只允许小写英文字母、数字和下划线。创建时去除首尾空白，例如 `custom.ontology_manager`；`custom` 是示例命名空间，不是强制前缀。前端必须展示格式说明并在提交前校验；后端独立校验，不合规则返回 HTTP 400、稳定错误码 `role_key_invalid` 和对应语言的明确格式提示，不暴露内部错误详情。

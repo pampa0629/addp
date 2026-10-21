@@ -81,7 +81,7 @@ func TestAdministratorGovernanceIdentitiesAgainstPostgres(t *testing.T) {
 			values[key] = strings.Trim(value, "'")
 		}
 	}
-	if len(values) != 18 || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" {
+	if len(values) != 21 || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" {
 		t.Fatal("fixture exported unexpected facts")
 	}
 	ids := map[int64]bool{}
@@ -100,6 +100,11 @@ func TestAdministratorGovernanceIdentitiesAgainstPostgres(t *testing.T) {
 	var credentialCount int64
 	if err := db.Table("system.mfa_credentials").Where("user_id=? AND status='active'", values["ADDP_ONLINE_GOV_SUCCESSOR_ID"]).Count(&credentialCount).Error; err != nil || credentialCount != 1 {
 		t.Fatal("successor MFA enrollment missing")
+	}
+	for _, key := range []string{"ADDP_ONLINE_GOV_TARGET_FAMILY_ID", "ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN", "ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN"} {
+		if values[key] == "" {
+			t.Fatal("missing exact emergency target fixture")
+		}
 	}
 	repo := iam.NewRepository(db)
 	negative, err := iam.NewAuthContextService(repo)
@@ -120,7 +125,7 @@ func TestAdministratorGovernanceIdentitiesAgainstPostgres(t *testing.T) {
 }
 
 func TestAdministratorGovernanceFixtureExportsEveryRequiredCredential(t *testing.T) {
-	values := map[string]string{"ADDP_ONLINE_TEST_TENANT_ID": "2", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-only-token"}
+	values := map[string]string{"ADDP_ONLINE_TEST_TENANT_ID": "2", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-only-token", "ADDP_ONLINE_GOV_TARGET_FAMILY_ID": "99", "ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN": "fixture-target", "ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN": "fixture-other"}
 	for _, role := range []string{"SYSTEM", "SECURITY", "AUDIT", "SUCCESSOR"} {
 		for _, field := range []string{"ID", "USERNAME", "PASSWORD", "TOTP"} {
 			values["ADDP_ONLINE_GOV_"+role+"_"+field] = "fixture-only-value"
