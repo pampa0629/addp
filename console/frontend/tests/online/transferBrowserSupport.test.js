@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { browserAPIFromResponse, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
+import { browserAPIFromResponse, browserAPIFromNavigation, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
 
 const base = 'http://addp.invalid'
 
@@ -35,6 +35,53 @@ async function withSessionAuthority(run) {
 }
 
 describe('current browser session API binding', () => {
+  it('rebinds generation, cache reload, next model and withdrawal to each real navigation response', async () => {
+    await withSessionAuthority(async (authority, gateway) => {
+      const expected = identity(tenantIdentity())
+      let current
+      let deliver
+      const page = { waitForResponse: predicate => new Promise(resolve => {
+        deliver = response => { expect(predicate(response)).toBe(true); resolve(response) }
+      }) }
+      try {
+        for (const phase of ['ifc-generation', 'ifc-cache-reload', '3ds-generation', '3ds-cache-reload', 'withdrawn-ifc', 'withdrawn-3ds']) {
+          const previous = current
+          current = await browserAPIFromNavigation(page, gateway, expected, async () => {
+            authority.credential = `Bearer current-${phase}`
+            deliver(browserResponse(authority.credential))
+          }, response => response.ok())
+          expect((await current.get('/api/v1/system/auth/context')).status()).toBe(200)
+          if (previous) {
+            try {
+              expect((await previous.get('/api/v1/system/auth/context')).status()).toBe(401)
+            } finally { await previous.dispose() }
+          }
+        }
+        expect(authority.requests.every(item => item.method === 'GET' && item.path === '/api/v1/system/auth/context')).toBe(true)
+      } finally { await current?.dispose() }
+    })
+  })
+
+  it('fails closed if navigation switches user or tenant, or rejects the current credential', async () => {
+    for (const change of [
+      authority => { authority.payload.principal.id = '8' },
+      authority => { authority.payload.context.tenant_id = '3' },
+      authority => { authority.credential = 'Bearer unrelated' }
+    ]) {
+      await withSessionAuthority(async (authority, gateway) => {
+        let deliver
+        const page = { waitForResponse: predicate => new Promise(resolve => {
+          deliver = response => { expect(predicate(response)).toBe(true); resolve(response) }
+        }) }
+        await expect(browserAPIFromNavigation(page, gateway, identity(tenantIdentity()), async () => {
+          change(authority)
+          deliver(browserResponse('Bearer before-navigation'))
+        }, response => response.ok())).rejects.toThrow()
+        expect(authority.requests).toHaveLength(1)
+      })
+    }
+  })
+
   it('rejects the pre-navigation credential and binds the actual new browser request', async () => {
     await withSessionAuthority(async (authority, gateway) => {
       const expected = identity(tenantIdentity())

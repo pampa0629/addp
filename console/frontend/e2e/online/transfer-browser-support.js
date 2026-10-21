@@ -46,6 +46,14 @@ export async function browserAPIFromResponse(response, gateway, expected) {
   }
 }
 
+export async function browserAPIFromNavigation(page, gateway, expected, navigate, matchesResponse) {
+  const observed = page.waitForResponse(matchesResponse)
+  // A failed navigation must not leave a later response timeout unhandled.
+  observed.catch(() => {})
+  await navigate()
+  return browserAPIFromResponse(await observed, gateway, expected)
+}
+
 export function matchesRedirectURL(actual, expected) {
   if (actual.pathname !== expected.pathname) return false
   const actualQuery = new URLSearchParams(actual.search)

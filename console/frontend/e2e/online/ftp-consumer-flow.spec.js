@@ -1,7 +1,7 @@
-import { expect, request, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { identity, json, login } from './transfer-browser-support.js'
+import { browserAPIFromNavigation, identity, json, login } from './transfer-browser-support.js'
 import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
 import { resolve } from 'node:path'
 
@@ -10,11 +10,18 @@ const required = name => {
   return process.env[name]
 }
 
-async function generateModel(page, api, model) {
+const permissions = ['system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
+  'manager.data_item.read', 'manager.content.read', 'manager.derived_artifact.create', 'manager.derived_artifact.read',
+  'manager.derived_artifact.delete', 'manager.data_item.update']
+const managerPageResponse = response => response.request().method() === 'GET' &&
+  new URL(response.url()).pathname === '/api/v1/manager/engines'
+
+async function generateModel(page, expectedIdentity, model) {
   const route = `/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   let generationRequests = 0
   const pageContents = []
+  let api
   const observe = requestEvent => {
     if (requestEvent.method() !== 'POST') return
     const path = new URL(requestEvent.url()).pathname
@@ -31,7 +38,8 @@ async function generateModel(page, api, model) {
   page.on('request', observe)
   page.on('response', observeContent)
   try {
-    await page.goto(route)
+    api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,
+      () => page.goto(route), managerPageResponse)
     const generated = page.waitForResponse(response => {
       if (new URL(response.url()).pathname !== '/api/v1/manager/quick-view/actions' || response.request().method() !== 'POST') return false
       const body = response.request().postDataJSON()
@@ -117,7 +125,10 @@ async function generateModel(page, api, model) {
     expect(generationRequests).toBe(1)
     await assertOnlyOriginalExecution()
     const contentCount = pageContents.length
-    await page.reload()
+    await api.dispose()
+    api = null
+    api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,
+      () => page.reload(), managerPageResponse)
     await expect.poll(() => pageContents.slice(contentCount).filter(value => new URL(value.url()).pathname === contentPath).length,
       { timeout: 60_000 }).toBeGreaterThan(0)
     const reused = pageContents.slice(contentCount).find(value => new URL(value.url()).pathname === contentPath)
@@ -140,12 +151,14 @@ async function generateModel(page, api, model) {
   } finally {
     page.off('request', observe)
     page.off('response', observeContent)
+    await api?.dispose()
   }
 }
 
-async function withdrawnModel(page, api, model, published, latest) {
+async function withdrawnModel(page, expectedIdentity, model, published, latest) {
   const contentPath = `/api/v1/manager/model_3d_glb/${published.result_id}/content`
   const deniedResponses = []
+  let api
   let contentSuccesses = 0
   let generationRequests = 0
   const isPreview = url => url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === model.locator
@@ -162,7 +175,8 @@ async function withdrawnModel(page, api, model, published, latest) {
   page.on('response', observeResponse)
   page.on('request', observeRequest)
   try {
-    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
+    api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,
+      () => page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`), managerPageResponse)
     await expect.poll(() => deniedResponses.length, { timeout: 60_000 }).toBeGreaterThan(0)
     const denied = deniedResponses[0]
     const payload = await denied.json()
@@ -190,22 +204,24 @@ async function withdrawnModel(page, api, model, published, latest) {
   } finally {
     page.off('response', observeResponse)
     page.off('request', observeRequest)
+    await api?.dispose()
   }
 }
 
 test('FTP account root, scoped rescan, shared previews and byte-exact downloads through Console', async ({ page }) => {
   test.setTimeout(480_000)
   const expected = JSON.parse(required('ADDP_ONLINE_FTP_EXPECTATIONS'))
-  const token = await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'), required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/meta/scan?engine_id=${expected.engine_id}`)
-  const api = await request.newContext({ baseURL: required('GATEWAY_URL'), extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
+  const expectedIdentity = { principalID: expected.principal_id, tenantID: String(expected.tenant_id), permissions }
+  const api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,
+    () => login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'), required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/meta/scan?engine_id=${expected.engine_id}`),
+    response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/v1/meta/engines')
   try {
     const auth = identity(await json(await api.get('/api/v1/system/auth/context'), 'FTP browser identity'))
     expect(auth.principalType).toBe('user')
     expect(auth.contextType).toBe('tenant')
     expect(auth.tenantID).toBe(String(expected.tenant_id))
     expect(auth.principalID).toBe(expected.principal_id)
-    expect([...auth.permissions].sort()).toEqual(['system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'manager.data_item.read', 'manager.content.read',
-      'manager.derived_artifact.create', 'manager.derived_artifact.read', 'manager.derived_artifact.delete', 'manager.data_item.update'].sort())
+    expect([...auth.permissions].sort()).toEqual([...permissions].sort())
     if (expected.browser_phase === 'withdrawn') {
       const models = []
       for (const model of expected.models) {
@@ -213,7 +229,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
         const latest = expected.denied_generations?.findLast(row => row.format === model.format) ??
           (expected.failed_generation?.format === model.format ? expected.failed_generation :
             { execution_id: published.execution_id, status: 'success' })
-        models.push(await withdrawnModel(page, api, model, published, latest))
+        models.push(await withdrawnModel(page, expectedIdentity, model, published, latest))
       }
       writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
         run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
@@ -276,7 +292,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     }
     const models = []
     expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds'])
-    for (const model of expected.models) models.push(await generateModel(page, api, model))
+    for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
       principal_id: auth.principalID, meta_ui_scan: true, previews: 3, downloads, models
