@@ -43,7 +43,9 @@ bash scripts/infra/status.sh
 bash scripts/dev/start.sh
 ```
 
-开发环境的 `start.sh`、`restart.sh`、`stop.sh` 和 `keepalive.sh` 使用工作区级生命周期锁。同一工作区已有启动、停止或重启操作执行时，新的生命周期操作会立即失败并显示当前操作信息，不能并行修改 `.dev-pids`、`.dev-bins` 或运行进程。详细契约见 [开发服务生命周期与构建身份规范](../spec/addp开发服务生命周期与构建身份规范.md)。
+开发环境的 `start.sh`、`restart.sh`、`stop.sh` 和 `keepalive.sh` 使用工作区级生命周期锁。同一工作区已有启动、停止、重启或保活操作时，新的生命周期操作会立即失败并显示当前操作信息，不能并行修改 `.dev-pids`、`.dev-bins` 或运行进程。详细契约见 [开发服务生命周期与构建身份规范](../spec/addp开发服务生命周期与构建身份规范.md)。
+
+`keepalive.sh` 在整个托管周期持锁、退出清理后释放；即使只托管单模块，退出仍停止当前工作区整套开发服务。托管环境适用范围、本次明确许可及不得接管外部环境等边界见[保活说明](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)。
 
 开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
 
@@ -80,11 +82,9 @@ bash scripts/dev/restart.sh -transfer
 
 核心 Infra 健康时，应用启动和重启直接复用现有容器，不构建 Infra 镜像、不执行 Compose 更新。日志或指标关闭不会触发 Infra 启动；所选观测能力异常会单独提示并返回非零，业务启动继续，需要修复设施时显式运行 `bash scripts/infra/up.sh`。
 
-`-asset` 的启动清单包含 Asset 后端和前端，以及 System 后端、Gateway、Console；不自动启动 Meta 后端或 Worker。Catalog、Workbench 是相关业务操作的运行时软依赖，不随 Asset 隐式启动。重启时只停止并重新启动 Asset；Console 仍在运行时复用，前端就绪检查只覆盖本次清单中的 Asset 和 Console。
+模块依赖清单和 Asset 等例外统一见[模块选择启动指南](../../scripts/docs/模块选择启动指南.md#如何合并依赖)。普通模块选择保留 System Backend、Gateway 和 Console；Meta 和其他业务依赖按选择结果合并，不统一拉起全部模块前端。Engine Runtime 需[显式选择](../../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)，无参数全量启动和 Manager 自有 Raster Mosaic 的规则也见该节。
 
-单模块开发时，脚本会启动 System Backend、Gateway 和 Console；除 Asset、Catalog、Ontology 外，还会启动 Meta Backend 和 Meta Worker。模块额外依赖按 `start.sh` 的实际选择规则补齐，例如 Manager 依赖 Transfer，Model、Quality 依赖 Standard，Portal 依赖 Asset。Engine Runtime 不随业务模块隐式启动，须使用对应的显式 Runtime 参数。
-
-SuperMap Workflow Engine 的 SDK 母版、许可、两层镜像准备、构建指纹和运行参数统一见 [SuperMap README](../../engines/supermap-workflow/README.md#本地依赖与两层镜像)。首次安装须先准备基础镜像；日常启动和重启使用：
+SuperMap Workflow Engine 开发与产品部署均使用与 SDK 平台匹配的 Docker 环境；SDK 母版、两层镜像、构建指纹和运行参数统一见[SuperMap README](../../engines/supermap-workflow/README.md#本地依赖与两层镜像)。首次安装或更新许可时须准备或重建基础镜像，许可限制见[许可边界](../../engines/supermap-workflow/README.md#许可边界)；日常启动和重启使用：
 
 ```bash
 bash scripts/dev/start.sh -supermap-workflow
@@ -144,9 +144,7 @@ Document Workflow 的依赖准备、原生启动与产品容器说明统一见 [
 
 点云 COPC artifact 统一使用 ADDP infra MinIO 配置。原生开发直接访问 access plan 中的宿主机实际端点；产品 Compose 使用其 Docker 网络端点。
 
-SuperMap Workflow 当前接入的 iObjects C++ SDK 为 Linux ARM64 制品，开发与产品部署均通过 Docker 提供对应运行环境，不要求宿主机为 Linux。
-
-Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存储引擎配置 SuperMap 专用挂载目录。Develop 会在执行期把用户选择的 NFS 引擎连接事实和相对输出路径传给 `supermap-workflow-engine`；容器需要包含 `nfs-common` 并具备 Linux mount 权限，开发脚本和 Compose 已为该容器启用 `SYS_ADMIN` capability。
+Develop 向 NFS 输出 UDBX 时，仍在执行期向 Runtime 传入所选 NFS 引擎连接事实和相对输出路径，不预设 SuperMap 专用挂载目录；NFS 依赖及 Linux mount、`SYS_ADMIN` 等容器挂载权限统一按[SuperMap README](../../engines/supermap-workflow/README.md#本地依赖与两层镜像)配置。
 
 ### 第四步: 本地 Docker Compose 模式
 
@@ -176,15 +174,9 @@ bash scripts/local/stop.sh
 bash scripts/prod/start.sh
 ```
 
-**部署流程** (自动执行):
+首次部署的配置准备和服务启动顺序统一见 Prod README 的[首次部署](../../scripts/prod/README.md#首次部署)与[启动流程](../../scripts/prod/README.md#启动流程)。[健康检查](../../scripts/prod/README.md#health-checksh)仅核对所检查容器的运行/健康状态与 Nginx `/health` 可达性，不替代所需业务功能和数据结果验收；验收范围与标准入口见[测试与验收规范](../spec/addp测试与验收规范.md)。
 
-1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
-2. **启动 System Backend** (其他服务依赖它)
-3. **启动平台服务** (Manager、Meta、Transfer、Orchestrator、Develop 等 Backend、Gateway、前端、Console 和 Nginx)
-4. **启动内置 Runtime** (GeoPython Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow 等独立 `addp-runtimes` 服务)
-5. **健康检查** (验证所有服务就绪)
-
-**访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。需要限制宿主机监听范围时设置 `NGINX_BIND_HOST`，默认 `0.0.0.0`；隔离验收使用 `127.0.0.1`。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。
+**访问地址**：公开 origin 和根 `.env` 配置见[配置规范的环境变量参考](../spec/configuration/环境变量参考.md#根目录-env)；默认访问地址、Nginx 端口及监听范围见[端口规范](../spec/addp端口分配.md)。Console、模块前端和 `/api/` 统一经 Nginx 访问，容器内仍使用稳定服务名和端口，不额外发布应用模块宿主机端口。域名、HTTPS 或上级反向代理部署须将 `ADDP_PUBLIC_ORIGIN` 设为用户实际访问的 origin；`NGINX_BIND_HOST` 单独控制宿主机监听范围，隔离验收限制为 `127.0.0.1`。
 
 ### 构建和部署
 

@@ -21,7 +21,7 @@
 
 - 先关联 request / execution、日志和元数据事实，再选择受影响范围；不把“提交成功”“租约正常”“服务健康”当成业务执行完成。
 - 实际端口以标准脚本输出与 `.dev-state/ports.env` 为准。Infra 连接前运行 `bash scripts/infra/status.sh`；本地共享 PostgreSQL 测试仅用 `addp_test` / `addp_iam_test`，由标准入口管理。
-- 需要重启时先说明原因和模块，由用户在自己的终端执行。AI 执行 `keepalive.sh` 必须取得本次明确许可，退出清理范围见[开发服务专题](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)。
+- 需要重启时先说明原因和模块，由用户在自己的终端执行。AI 执行 `keepalive.sh` 必须取得本次明确许可；即使只托管单模块，退出仍停止当前工作区整套开发服务。托管期间持续持锁及使用边界见[开发服务专题](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)。
 - 改动后的验收遵循[测试与验收规范](../spec/addp测试与验收规范.md)，使用根 `Makefile` 标准入口；文档示例不是本次已运行的证据。
 
 ## 相关入口

@@ -48,6 +48,8 @@ bash scripts/dev/start.sh
 
 ### 单独脚本使用
 
+重启时序、Swagger 预检及失败边界见[重启说明](#restartsh)；依赖整理的执行范围与文件变更见[modtidy.sh 说明](#modtidysh)。
+
 ```bash
 # 启动开发环境
 bash scripts/dev/start.sh
@@ -55,22 +57,17 @@ bash scripts/dev/start.sh
 
 # 停止所有服务
 bash scripts/dev/stop.sh
-# 自动执行:
-# 1. 合并 PID 文件与工作区残留监听者
-# 2. 停止其他模块和 Runtime，保留 System 供注销
-# 3. 最后停止 System，清理 Vite 缓存和 PID 文件
+# 停止顺序与安全边界见下文 stop.sh
 
 # 重启服务
 bash scripts/dev/restart.sh
-# 等同于: stop.sh + start.sh
 
 # 在 Codex 等托管命令环境中启动并前台保活
 bash scripts/dev/keepalive.sh restart -orchestrator
-# Ctrl+C 退出时会自动调用 stop.sh 清理服务
+# Ctrl+C 退出会全量停止当前工作区开发服务，范围见下文 keepalive.sh
 
 # 清理 Go 依赖
 bash scripts/dev/modtidy.sh
-# 对所有 Go 模块执行 go mod tidy
 ```
 
 ## 脚本详细说明
@@ -98,11 +95,13 @@ bash scripts/dev/modtidy.sh
 4. 启动显式选择的 Runtime、Copilot 和 Agent，全部成功后启动 Gateway 与前端。无参数全量启动包含默认 Runtime；Engine Runtime 按各自协议检查 `/health`。
 5. 输出本次服务清单、实际访问地址与 PID。
 
+模块迁移与 Worker 启动顺序统一见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)：迁移由所属 Backend 独占，Worker 不执行平台 schema DDL、只读检查版本；公共执行与心跳表由 System Backend 初始化。结构或初始化迁移变化须递增 owner 的 `SchemaVersion`。
+
 Develop Backend 内嵌 Query Execution Supervisor，领取全部 query execution。
 
 **环境变量**:
 ```bash
-# 跳过 Go 依赖检查(节省5-10秒启动时间)
+# 跳过启动入口的 Go 依赖整理
 SKIP_MODTIDY=1 bash scripts/dev/start.sh
 ```
 
@@ -114,24 +113,18 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 - 示例: `logs/runtime/system/<instance_id>/*.jsonl`、`logs/runtime/manager/<instance_id>/*.jsonl`；Worker 同样按独立实例分目录
 
 **PID 文件**:
-- 所有 PID: `.dev-pids/*.pid`
-- 示例: `.dev-pids/system-backend.pid`
+- 受管进程的 PID 记录: `.dev-pids/*.pid`
+- System Backend 示例: `.dev-pids/system.pid`
 
 ### stop.sh
 
 **功能**: 停止所有开发服务
 
-**执行步骤**:
-1. 合并 PID 文件和一次批量端口扫描中的工作区监听者，按 PID 去重
-2. 卸载其他模块的 launchd 作业，向其他模块、Worker 和前端发送 TERM
-3. 等待最多 5 秒，超时才发送 KILL；System 保持可用，接收实例注销
-4. 对工作区 Runtime 容器先执行 `docker stop -t 5`，再删除容器
-5. 最后卸载 System 的 launchd 作业、停止 System Backend，独立等待最多 5 秒
-6. 清理 Vite 缓存和 PID 文件
+停止时序、优雅退出窗口及 Runtime 容器先停后删规则统一见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。System 在其他实例注销和退出前保持可用，最后才卸载其 launchd 作业并停止 System Backend。
 
 **安全性**:
 - launchd 作业必须同时满足 `com.addp.codex.*` 标签和当前仓库绝对路径才会被卸载
-- PID 文件用于精确停止正常启动的服务，进程名和端口检查用于清理 ADDP 残留进程
+- PID 记录与工作区残留监听者合并、按 PID 去重后，均须核验当前工作区归属；局部停止仅处理所选模块，不凭进程名或端口直接终止进程
 - 端口清理只执行一次批量 `lsof` 查询，限定目标 TCP 端口和 `LISTEN` 状态；按 PID 去重后逐个核验身份，不把浏览器等客户端连接当作监听服务，也不终止非 ADDP 监听进程
 - launchd 作业卸载失败时返回非零状态，`restart.sh` 会中断，不会带着残留进程继续启动
 
@@ -139,13 +132,13 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **功能**: 智能重启服务。
 
-- 无参数或 `-all` 时先 `stop.sh`，再同步 Swagger 并执行 `start.sh`；指定模块时只停止并启动所选模块。
-- 全局重启通过 `stop.sh` 统一停止 Python、Go 和 Runtime，保留 System 供注销；只有优雅退出超时后才强制终止工作区所属进程。
+- 无参数或 `-all` 时先停止，再同步和检查全部 Swagger，失败后不启动；局部重启先预检所选 Go 模块，失败时保留现有服务。未选 Go 模块时跳过局部预检，完整时序见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。
 - 所有局部重启统一通过 `stop.sh -<模块> ...` 停止所选服务，再通过 `start.sh -<模块> ...` 启动；运行中的公共依赖复用，缺失的依赖由启动入口补齐。停止失败时不进入准备和启动阶段。
-- Go Backend 和 Worker 在构建检查前分别核验进程状态；已经运行的受管服务跳过指纹检查和编译，仅对需要启动的进程按需构建。编译后、启动前重新核验端口和进程归属。单独重启 Runtime 不会顺带编译仍在运行的 Meta Backend/Worker。
-- `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
-- Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
-- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython、Model3D、PointCloud、Document 和 Raster Mosaic 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；共享同步入口只安装和追踪调用方显式声明的 editable 本地包，Raster Mosaic 不依赖 `common-python`；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，后续启动复用该记录。所有依赖同步与原生转换验证均在所选服务停止后进行；准备失败的服务不启动，入口返回非零。
+- Go Backend 和 Worker 分别核验进程状态；已运行的受管进程跳过构建检查和编译。编译后、启动前重新核验端口和工作区归属，不跨编译阶段复用监听快照。单独重启 Runtime 不会顺带编译仍在运行的 Meta Backend/Worker。
+- Go 增量构建与缓存规则统一见[生命周期规范的原子构建](../../docs/spec/addp开发服务生命周期与构建身份规范.md#二原子构建)。重启保留已有二进制和 Go 包缓存，所有选定服务仍重新启动；复用产物保留 `build_id`、`built_at`，新进程生成新的 `started_at`。
+- Swagger/OpenAPI 的生成与复用规则见[Swagger 集成指南](../../docs/spec/addp-Swagger集成指南.md#开发期增量生成)；复用产物仍须通过覆盖校验。生成失败、覆盖不一致或检查无法执行均阻断编译和启动。全部生成结束后才计算源码指纹并编译；同一模块的 `docs.go` 写入不得与两者并行。
+- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。
+- Python 依赖的安装互斥、输入与环境指纹、复用与失效条件、成功记录及失败处理统一见[生命周期规范的 Python 依赖同步](../../docs/spec/addp开发服务生命周期与构建身份规范.md#python-依赖同步)。Raster Mosaic 不安装或追踪 `common-python`。所有依赖同步与原生转换验证均在所选服务停止后进行；准备失败的服务不启动，入口返回非零。
 - Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
 - 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
@@ -167,16 +160,21 @@ bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
 
-GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力；首次切换须由用户先停掉旧开发容器。开发入口不构建或启动 GeoPython 镜像，产品栅格 Hosted 验收通过根构建入口独立完成。
+GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力。开发入口不构建或启动 GeoPython 镜像；产品部署保留容器方式，产品栅格 Hosted 验收通过根构建入口独立完成。环境隔离与端口归属要求见[GeoPython 运行说明](../../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)。
+
+Model3D Workflow 的 macOS Apple Silicon 开发启动与重启共用 `model3d-workflow.sh`，绑定 `.dev-state/model3d-native` 的固定版本私有工具包，不使用开发 Docker 转换 wrapper。首次准备需要 Conda、Rust 1.92.0、CMake 4.4.0 和 Xcode Command Line Tools，后续复用已验证缓存。产品构建与 Hosted 验收保留正式 Linux Runtime 镜像。
+
+PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 同步依赖、验证驱动和真实 COPC 写入并启动。开发入口不构建镜像，拒绝非 Conda 前缀，不自动删除未知环境或接管外部监听者；产品部署保留容器方式。完整约束见[PointCloud README](../../engines/pointcloud-workflow/README.md#开发启动)。
+
+Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性和版本并启动，核对 PID、监听归属及 HTTP 健康状态。真实三页中文 PDF 转换由 `make test-document-native` 和 CI 独立验证。开发态只处理可信文件，检测到同名 `document-workflow-engine` 容器或外部监听者时拒绝启动；生产保留容器隔离。完整约束见[Document README](../../engines/document-workflow/README.md)。
 
 SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `SUPERMAP_CPP_SDK_PATH` 指向完整 SDK 母版并运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 根据构建指纹决定是否重新编译当前 C++ 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
 
 **使用场景**:
+
 - 修改代码后需要重启
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
-- PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 同步依赖、验证驱动和真实 COPC 写入并启动。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
-- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性和版本并启动，核对 PID、监听归属及 HTTP 健康状态。真实三页中文 PDF 转换由 `make test-document-native` 和 CI 独立验证。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
 
 **Infra 处理**：开发重启保留健康的核心 Infra；启动入口只在核心未就绪时调用 `scripts/infra/up.sh`。所选观测能力异常单独报告，不触发健康核心设施重建，业务继续启动但命令返回非零。设施配置应用或故障处理见[Infra 生命周期指南](../infra/docs/生命周期脚本.md)，按实际问题选择操作。
 
@@ -198,31 +196,17 @@ bash scripts/dev/keepalive.sh start -system
 bash scripts/dev/keepalive.sh restart -all
 ```
 
-**退出行为**: 按 `Ctrl+C` 或终止该命令时，`keepalive.sh` 会调用 `scripts/dev/stop.sh` 清理开发服务。
+**退出行为**: 退出清理调用不带模块参数的 `scripts/dev/stop.sh`，停止当前工作区整套开发服务；即使只托管单模块，清理范围也不局限于该模块。`Ctrl+C` 和 TERM 会触发该清理。
 
-**适用边界**: 普通本地终端仍优先使用 `start.sh` / `restart.sh`；`keepalive.sh` 只用于命令会话结束后会回收后台进程的托管执行环境。
+**生命周期锁**: 整个托管周期持续持有 `.dev-state/lifecycle.lock`，退出清理后才释放；其他生命周期操作必须拒绝干预。锁的所有权与继承规则见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。
+
+**适用边界**: 普通本地终端仍优先使用 `start.sh` / `restart.sh`；`keepalive.sh` 只用于命令会话结束后会回收后台进程的托管执行环境，不得用局部保活接管用户外部终端已运行的整套环境。AI 执行前告知原因、涉及模块及全量清理范围并取得本次明确许可，具体要求见[托管环境保活说明](../../docs/guide/troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)。
 
 ### modtidy.sh
 
-**功能**: 清理所有 Go 模块的依赖
+**功能**: 对 [modtidy.sh](modtidy.sh) 的 `GO_MODULES` 清单中存在且包含 `go.mod` 的目录并发执行 `go mod tidy`；执行范围以脚本清单为准。
 
-**执行模块**:
-- common
-- system/backend
-- manager/backend
-- meta/backend
-- transfer/backend
-- orchestrator/backend
-- develop/backend
-- gateway
-
-**何时使用**:
-- 切换 Git 分支后
-- 拉取最新代码后
-- 添加/删除 Go 依赖后
-- 解决 `go.mod` 冲突后
-
-**幂等性**: 可多次执行,不会破坏依赖
+同步 `main` 后依赖发生变化、添加或删除 Go 依赖、解决 `go.mod` 冲突时使用。该操作可能修改各模块的 `go.mod` 和 `go.sum`，执行后核对差异；操作步骤见[添加新依赖](#添加新依赖)。
 
 ## 启动依赖关系
 
@@ -295,7 +279,7 @@ bash scripts/dev/start.sh
 # 2. 修改代码
 vim system/backend/internal/service/user_service.go
 
-# 3. 重启服务(自动重新编译)
+# 3. 重启服务（按需编译，构建输入未变时复用产物）
 bash scripts/dev/restart.sh
 
 # 4. 在 System → 模块管理 → 服务实例 → 查看日志中排查对应实例
@@ -306,29 +290,34 @@ bash scripts/dev/stop.sh
 
 ### 添加新依赖
 
+先停止受影响的服务，再更新和整理依赖，最后通过标准重启入口完成 Swagger 检查、按需构建和启动；任一步失败都不得继续。以下示例从项目根目录、由开发者在自己的终端执行；因 `modtidy.sh` 会整理脚本清单中的多个模块，示例采用全量停止和重启，依赖包路径须替换为实际目标。
+
 ```bash
-# 1. 添加依赖
-cd system/backend
-go get github.com/some/package
-cd ../..
+(
+  set -e
 
-# 2. 清理依赖
-bash scripts/dev/modtidy.sh
+  # 1. 停止受依赖整理影响的开发服务
+  bash scripts/dev/stop.sh
 
-# 3. 重启服务
-bash scripts/dev/restart.sh
+  # 2. 添加实际需要的依赖
+  cd system/backend
+  go get github.com/some/package
+  cd ../..
+
+  # 3. 整理依赖并核对 go.mod / go.sum 差异
+  bash scripts/dev/modtidy.sh
+
+  # 4. 经标准重启入口检查 Swagger、按需构建并启动
+  bash scripts/dev/restart.sh
+)
 ```
 
 ### 同步 main 后更新依赖
 
-人工与 AI 开发均直接使用 `main`。同步代码后如需更新依赖或重启，先停止受影响的服务，再从项目根目录执行标准依赖整理和启动入口，不建立功能分支。依赖变更步骤见[添加新依赖](#添加新依赖)。
+人工与 AI 开发均直接使用 `main`，不建立功能分支。同步代码后需要更新依赖时，按[添加新依赖](#添加新依赖)的顺序先停止受影响的服务，再更新和整理依赖，最后通过标准入口启动；停止或依赖更新失败时不继续。仅需重启、不更新依赖时，按[重启说明](#restartsh)执行 Swagger 预检与重启。
 
 ## 相关文档
 
 - [scripts/infra/README.md](../infra/README.md) - 基础设施脚本文档
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构
 - [开发服务生命周期与构建身份规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md) - 启动、停止、模块迁移与 Worker 顺序
-
-Backend 独占所属模块迁移；Worker 初始化不执行平台 schema DDL。全量启动按模块等待 `/health/ready` 后启动该模块 Worker，各模块仍并行。公共执行与心跳表由 System Backend 初始化，单独 Worker 只读检查 schema 版本。数据库结构变化须同步递增 owner 的 `SchemaVersion`。
-
-Model3D Workflow 的 macOS Apple Silicon 开发启动与重启共用 `model3d-workflow.sh`，绑定 `.dev-state/model3d-native` 的固定版本私有工具包，不使用开发 Docker 转换 wrapper。首次准备需要 Conda、Rust 1.92.0、CMake 4.4.0 和 Xcode Command Line Tools，后续复用已验证缓存。产品构建与 Hosted 验收保留正式 Linux Runtime 镜像。

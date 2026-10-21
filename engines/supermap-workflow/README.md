@@ -86,7 +86,11 @@ NFS 正式调用时，`connection_info.engine_type` 必须为 `nfs`，`path` 必
 
 ## 本地依赖与两层镜像
 
+当前接入的 iObjects C++ SDK 为 Linux ARM64 制品，开发与产品部署均通过 Docker 提供对应运行环境，不要求宿主机为 Linux。目标平台须与实际 SDK 制品匹配。
+
 SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载完整 C++ SDK 和系统依赖，代码镜像在构建阶段编译 ADDP C++ 源码。不得恢复 Java/GPA 回退、胖镜像/瘦镜像判断、源码 bind mount、运行时编译或 `SUPERMAP_WORKFLOW_REBUILD` 等并行路径。
+
+按访问计划动态挂载 NFS export 时，容器必须包含 `nfs-common` 并具备 Linux mount 权限。开发启动脚本和产品 Compose 为该容器配置 `SYS_ADMIN` capability 与 `apparmor=unconfined`；不需要为 NFS 引擎预设 SuperMap 专用挂载目录。
 
 ### 本机隔离技术页面验收
 

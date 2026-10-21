@@ -6,29 +6,16 @@
 
 ## 使用方式
 
-### 方式 1: Docker Compose（推荐）
+### 标准容器部署
 
-在根目录的 `docker-compose.yml` 中已配置 nginx 服务（使用 profile）：
+Nginx 是根 [docker-compose.yml](../docker-compose.yml) 中 `addp-platform` 的默认服务，随标准容器部署入口启动。从项目根目录按场景选择入口，并按对应指南准备镜像与配置：
 
-```bash
-# 启动包含 Nginx 的完整环境
-docker-compose --profile nginx up -d
+| 场景 | 启动入口 | 准备与生命周期说明 |
+| --- | --- | --- |
+| 本地容器部署 | `bash scripts/local/start.sh` | [Local 指南](../scripts/local/README.md#快速启动) |
+| 生产部署 | `bash scripts/prod/start.sh` | [Prod 首次部署](../scripts/prod/README.md#首次部署) |
 
-# 或者单独启动 Nginx
-docker-compose up -d nginx
-```
-
-### 方式 2: 独立 Docker 容器
-
-```bash
-# 构建并启动包含唯一生产路由配置的镜像
-docker build -t addp-nginx ./nginx
-docker run -d \
-  --name addp-nginx \
-  -p 80:80 \
-  --network addp-network \
-  addp-nginx
-```
+镜像的平台、Registry 和版本须与部署配置一致，构建与发布要求统一见[Build 指南](../scripts/build/README.md#build-imagessh)。
 
 Console 公开路由由根入口处理；各模块 iframe 与静态资源通过 `/module-ui/<frontend>/` 转发。`/portal/` 和 `/data-apps/` 保持独立入口。生产镜像与部署包均使用 `nginx/nginx.conf`。
 
@@ -69,13 +56,9 @@ docker exec addp-nginx nginx -T
 
 ### 1. 端口已被占用
 
-```bash
-# 查看占用 80 端口的进程
-lsof -i :80
+先按[生产端口冲突排查](../scripts/prod/README.md#问题-2-端口冲突)核对报错中的宿主机绑定地址、实际映射和占用者归属。需要更换本部署入口时，修改根 `.env` 的 `NGINX_PORT`，由 `NGINX_BIND_HOST` 控制监听范围；容器内保持 `listen 80;`，健康检查继续访问容器内部的 HTTP 80 `/health`。
 
-# 修改配置文件中的端口
-listen 8080;  # 改为其他端口
-```
+公开访问地址或上级代理目标变化时，同步核对 `ADDP_PUBLIC_ORIGIN` 与代理转发配置，再通过[标准部署入口](#标准容器部署)生效。生产入口端口冲突时启动失败，不自动改选端口；映射和公开地址规则见[端口规范](../docs/spec/addp端口分配.md)。
 
 ### 2. 日志查看
 
@@ -87,24 +70,27 @@ docker logs addp-nginx
 
 ## HTTPS 配置
 
+仓库的 `nginx.conf` 当前只监听 HTTP 80，根 Compose 只发布该入口，未配置证书挂载或 HTTPS server。生产 HTTPS 由部署方在上级反向代理终止 TLS，再转发到 ADDP 的 Nginx 统一入口。
+
 ### 使用 Let's Encrypt 免费证书
 
-```bash
-# 安装 certbot
-brew install certbot  # macOS
-sudo apt install certbot  # Ubuntu
+证书申请、域名验证及续期在实际 HTTPS 代理所在环境按 [Certbot 官方指南](https://eff-certbot.readthedocs.io/en/stable/using.html#nginx)配置。证书链和私钥路径须对该代理可读，私钥限制访问；若代理使用 Nginx，其 HTTPS `server` 块中的配置片段例如：
 
-# 获取证书
-sudo certbot certonly --nginx -d addp.example.com
-
-# 证书会保存在
-/etc/letsencrypt/live/addp.example.com/fullchain.pem
-/etc/letsencrypt/live/addp.example.com/privkey.pem
+```nginx
+listen 443 ssl;
+ssl_certificate /etc/letsencrypt/live/addp.example.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/addp.example.com/privkey.pem;
 ```
+
+路径和域名按实际证书部署填写，指令及证书链要求见 [Nginx HTTPS 指南](https://nginx.org/en/docs/http/configuring_https_servers.html)。
 
 ### 配置 HTTPS
 
-取消 `nginx.conf` 中 HTTPS 部分的注释，并更新证书路径。
+上级代理须能访问 ADDP 实际发布的 Nginx 地址，并将 Console、模块前端和 `/api/` 一起转发到该统一入口；API 仍经 Gateway，不绕过统一路由。
+
+在根 `.env` 将 `ADDP_PUBLIC_ORIGIN` 设置为用户实际访问的 HTTPS origin，例如 `https://addp.example.com`，配置要求见[环境变量参考](../docs/spec/configuration/环境变量参考.md#根目录-env)。该变量用于公开地址，不会生成证书或启用 TLS 监听。`NGINX_BIND_HOST` 和 `NGINX_PORT` 控制 ADDP 的宿主机监听范围与端口；同宿主机代理可使用回环监听，其他部署按实际代理网络限制监听范围，详见[端口规范](../docs/spec/addp端口分配.md)。
+
+证书和 TLS 配置变更后，由部署方在上级代理执行配置检查，再验证公开 HTTPS 入口、页面资源及 API；ADDP 的 HTTP `/health` 不能代替这些验证。
 
 ## 性能优化
 
@@ -117,17 +103,21 @@ gzip_types text/css application/javascript application/json;
 
 ### 启用 HTTP/2
 
-```nginx
-listen 443 ssl http2;
-```
+若上级 HTTPS 代理使用 Nginx，HTTP/2 配置也在该代理维护；模块支持及配置语法按实际部署版本参照 [Nginx HTTP/2 模块说明](https://nginx.org/en/docs/http/ngx_http_v2_module.html)。
 
 ### 调整工作进程
 
+`worker_processes` 位于主配置层，`worker_connections` 位于 `events` 块。[现有主配置](nginx.conf)已经包含这两项；调整时修改既有指令与 `events` 块，下面仅展示相关结构：
+
 ```nginx
-# nginx.conf 顶部添加
 worker_processes auto;
-worker_connections 1024;
+
+events {
+    worker_connections 1024;
+}
 ```
+
+该片段不是完整主配置。调整后的实际加载配置仍按[验证配置](#验证配置)检查；语法检查通过不代表性能或业务链路已经验收。
 
 ## 监控
 
