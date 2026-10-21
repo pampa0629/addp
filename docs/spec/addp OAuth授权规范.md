@@ -211,6 +211,8 @@ OAuth 授权页和设备授权页必须在批准前展示当前 Browser Context�
 
 `addp auth status` 必须在跨进程锁内轮换 Refresh Token，再调用唯一 AuthContext 接口确认服务端会话，并返回 Principal、Context、Client 和 Scope 摘要。Keychain 中存在字符串不代表已认证。网络或服务故障必须返回“状态不可用”，不能伪装成未登录；`invalid_grant` 才删除失效的本地 Refresh Token。
 
+撤销端点只对已成功提交的撤销或已知无效 Token 返回幂等 HTTP 200。客户端查询的暂时故障必须保留 `temporarily_unavailable` / HTTP 503；事务开始、审计写入或提交的其他服务器错误必须返回安全的 HTTP 5xx，不得由协议响应器吞成成功。此规则由同一个受控 Fosite 响应器执行，System 不另加错误协议分支。客户端收到非成功状态时保留凭据；503 的重试语义见 [RFC 7009 §2.2.1](https://www.rfc-editor.org/rfc/rfc7009.html#section-2.2.1)。
+
 `addp auth logout` 必须在同一个 ADDP Base URL 锁内调用 OAuth Revocation，服务端成功接受撤销后才删除 Keychain 凭据。服务不可用或返回非成功状态时保留凭据并返回失败，便于用户重试和完成服务端撤销。Revocation 对无效 Token 的幂等成功由 System 保证；Keychain 中存在凭据时，CLI 不建立绕过服务端的本地成功旁路。
 
 CLI 还必须满足：

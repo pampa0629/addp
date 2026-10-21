@@ -4771,6 +4771,7 @@
         },
         "/oauth/revoke": {
             "post": {
+                "description": "撤销与安全审计原子提交；存储故障返回 5xx，不能解释为已撤销 | Revocation and security audit commit atomically; storage failures return 5xx and must not be interpreted as successful revocation",
                 "consumes": [
                     "application/x-www-form-urlencoded"
                 ],
@@ -4781,6 +4782,30 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "400": {
+                        "description": "撤销请求格式错误 | Invalid revocation request",
+                        "schema": {
+                            "$ref": "#/definitions/fosite.RFC6749ErrorJson"
+                        }
+                    },
+                    "401": {
+                        "description": "客户端认证失败 | Client authentication failed",
+                        "schema": {
+                            "$ref": "#/definitions/fosite.RFC6749ErrorJson"
+                        }
+                    },
+                    "500": {
+                        "description": "撤销事务或审计失败 | Revocation transaction or audit failed",
+                        "schema": {
+                            "$ref": "#/definitions/fosite.RFC6749ErrorJson"
+                        }
+                    },
+                    "503": {
+                        "description": "暂时无法处理撤销 | Temporarily unable to process revocation",
+                        "schema": {
+                            "$ref": "#/definitions/fosite.RFC6749ErrorJson"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "public"

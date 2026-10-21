@@ -398,9 +398,14 @@ func (h *IAMOAuthHandler) Token(c *gin.Context) {
 
 // Revoke godoc
 // @Summary      撤销 OAuth Token | Revoke OAuth token
+// @Description  撤销与安全审计原子提交；存储故障返回 5xx，不能解释为已撤销 | Revocation and security audit commit atomically; storage failures return 5xx and must not be interpreted as successful revocation
 // @Tags         OAuth
 // @Accept       application/x-www-form-urlencoded
 // @Success      200
+// @Failure      400 {object} fosite.RFC6749ErrorJson "撤销请求格式错误 | Invalid revocation request"
+// @Failure      401 {object} fosite.RFC6749ErrorJson "客户端认证失败 | Client authentication failed"
+// @Failure      500 {object} fosite.RFC6749ErrorJson "撤销事务或审计失败 | Revocation transaction or audit failed"
+// @Failure      503 {object} fosite.RFC6749ErrorJson "暂时无法处理撤销 | Temporarily unable to process revocation"
 // @x-addp-auth-mode "public"
 // @Router       /oauth/revoke [post]
 func (h *IAMOAuthHandler) Revoke(c *gin.Context) {

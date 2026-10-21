@@ -14,7 +14,7 @@ ADDP 采用 System 内嵌的受控 Fosite 派生版本作为唯一 OAuth 2.0 协
 - OAuth Access Token 始终为随机 opaque Token，业务模块不接受 ID Token 或外部 IdP Token；
 - 不保留自研 OAuth 状态机，不按 grant、Client 或配置分流到第二套实现。
 
-当前受控版本为 `v0.50.0-addp.3`，补丁来源、上游基线与许可证见受控仓库的 [ADDP_FORK.md](https://github.com/pampa0629/fosite/blob/v0.50.0-addp.3/ADDP_FORK.md)。该版将客户端不存在与 Storage 查询故障分开：前者保持认证拒绝，后者返回 503 / `temporarily_unavailable`；Provider、Strategy、Storage 接口及数据库结构均未改变，无需新增 migration。
+当前受控版本为 `v0.50.0-addp.4`，补丁来源、上游基线与许可证见受控仓库的 [ADDP_FORK.md](https://github.com/pampa0629/fosite/blob/v0.50.0-addp.4/ADDP_FORK.md)。该版将客户端不存在与 Storage 查询故障分开：前者保持认证拒绝，后者返回 503 / `temporarily_unavailable`；撤销与内省响应器保留服务器故障的 5xx，不再将其吞成 HTTP 200；未知或失效 Token 的正常协议语义保持不变。Provider、Strategy、Storage 接口及数据库结构均未改变，无需新增 migration。
 
 受控依赖固定在 `system/backend/go.mod`，通过 `replace` 指向 ADDP 维护、带来源和补丁清单的不可变版本。升级必须重新执行上游测试、ADDP Storage 测试、PostgreSQL 协议测试和 CLI 产品门禁。
 

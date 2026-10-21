@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -666,6 +667,41 @@ func TestIAMOAuthHandlerDeviceTokenRevocationAgainstPostgres(t *testing.T) {
 		!strings.HasPrefix(tokenPayload.RefreshToken, "addp_rt_") {
 		t.Fatalf("token response = %#v", tokenPayload)
 	}
+
+	t.Run("failed_revocation_audit_is_not_success_and_rolls_back", func(t *testing.T) {
+		const callback = "test:reject_oauth_revocation_audit"
+		observed := false
+		if err := db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+			if event, ok := tx.Statement.Dest.(*iam.AuditLog); ok && event.EventName == "oauth.token.revoked" {
+				observed = true
+				tx.AddError(errors.New("private revocation audit failure"))
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		defer db.Callback().Create().Remove(callback)
+		response := performIAMOAuthFormRequest(t, router, "/api/v1/system/oauth/revoke", url.Values{
+			"client_id": {"addp-cli"}, "token": {tokenPayload.AccessToken}, "token_type_hint": {"access_token"},
+		})
+		if !observed || response.Code != http.StatusInternalServerError {
+			t.Fatalf("audit fault observed=%v status=%d body=%s", observed, response.Code, response.Body.String())
+		}
+		var failure struct {
+			Error string `json:"error"`
+		}
+		decodeIAMResponse(t, response, &failure)
+		if failure.Error != "server_error" || strings.Contains(response.Body.String(), "private revocation audit failure") {
+			t.Fatalf("unsafe failed revocation: %s", response.Body.String())
+		}
+		var revokedFamilies int64
+		if err := db.Raw(`SELECT count(*) FROM system.refresh_token_families WHERE principal_id = ? AND client_id = 'addp-cli' AND auth_type = 'oauth' AND revoked_at IS NOT NULL`, principalID).Scan(&revokedFamilies).Error; err != nil || revokedFamilies != 0 {
+			t.Fatalf("failed revocation changed families: count=%d err=%v", revokedFamilies, err)
+		}
+		var successAudits int64
+		if err := db.Raw(`SELECT count(*) FROM system.audit_logs WHERE event_name='oauth.token.revoked'`).Scan(&successAudits).Error; err != nil || successAudits != 0 {
+			t.Fatalf("failed revocation wrote success audit: count=%d err=%v", successAudits, err)
+		}
+	})
 
 	revokeResponse := performIAMOAuthFormRequest(t, router, "/api/v1/system/oauth/revoke", url.Values{
 		"client_id":       []string{"addp-cli"},

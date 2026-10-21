@@ -52,6 +52,7 @@ class OAuthFixture:
         self.access_tokens: dict[str, str] = {}
         self.refresh_submissions: list[str] = []
         self.revoked_tokens: list[str] = []
+        self.revocation_failure_status: int | None = None
         self.sensitive_values: set[str] = set()
 
     def secret(self, prefix: str) -> str:
@@ -311,7 +312,13 @@ class OAuthHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_client"})
             return
         with self.server.fixture.lock:
-            self.server.fixture.revoke(form.get("token", ""))
+            failure = self.server.fixture.revocation_failure_status
+            if failure is None:
+                self.server.fixture.revoke(form.get("token", ""))
+        if failure is not None:
+            code = "temporarily_unavailable" if failure == 503 else "server_error"
+            self._json(failure, {"error": code})
+            return
         self._json(HTTPStatus.OK, {})
 
     @staticmethod
@@ -522,6 +529,25 @@ def main(addp: Path) -> int:
         results.append(bound_status)
         assert_context(parse_json_output(bound_status), "101", "1001")
 
+        for failure_status in (500, 503):
+            stored_refresh = keyring.get_password(KEYRING_SERVICE, fixture.base_url)
+            before_revocations = len(fixture.revoked_tokens)
+            with fixture.lock:
+                fixture.revocation_failure_status = failure_status
+            failed_logout = capture_command(
+                [str(addp), "auth", "logout"], env, "unavailable revocation"
+            )
+            results.append(failed_logout)
+            failure_payload = parse_json_output(failed_logout)
+            if failed_logout.returncode == 0 or failure_payload.get("error", {}).get("code") != "logout_failed":
+                raise AssertionError("revocation failure was reported as successful logout")
+            if not stored_refresh or keyring.get_password(KEYRING_SERVICE, fixture.base_url) != stored_refresh:
+                raise AssertionError("failed revocation deleted or replaced the OS Keychain credential")
+            if len(fixture.revoked_tokens) != before_revocations:
+                raise AssertionError("failed revocation changed the protocol fixture")
+        with fixture.lock:
+            fixture.revocation_failure_status = None
+
         browser_logout = run_command([str(addp), "auth", "logout"], env, "browser logout")
         results.append(browser_logout)
         if parse_json_output(browser_logout).get("authenticated") is not False:
@@ -561,6 +587,7 @@ def main(addp: Path) -> int:
                         "authoritative_context_binding",
                         "cross_process_refresh_rotation",
                         "oauth_revocation",
+                        "revocation_5xx_retains_keychain",
                         "terminal_secret_redaction",
                     ],
                 },
