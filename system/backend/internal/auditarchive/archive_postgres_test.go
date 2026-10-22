@@ -363,6 +363,15 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
  ALTER TABLE system.audit_logs ENABLE TRIGGER trg_audit_logs_prevent_update_delete;`); e != nil {
 		t.Fatal(e)
 	}
+	if _, err := Load(ctx, reader, rootRef, true, nil); err != nil {
+		t.Fatal("auditor cannot verify source evidence before query", err)
+	}
+	if err := reader.Walk(ctx, "queries/"+testActor+"/", func(Version) error { return nil }); err != nil {
+		t.Fatal("auditor cannot confirm its own query-log versions", err)
+	}
+	if err := reader.Walk(ctx, "queries/948d2bb7-8071-4a85-83b8-873f5c8e1fd7/", func(Version) error { return nil }); err == nil {
+		t.Fatal("auditor listed another query-log identity")
+	}
 	if _, rows, e := QueryArchive(ctx, reader, reader, rootRef, testActor, 365, Query{EventName: "iam.archive_baseline"}, false); e != nil || len(rows) != 1 {
 		t.Fatal("source DBA changed independently archived facts", e)
 	}

@@ -88,6 +88,7 @@ policy('writer',[listing,read,
     retained([source+'root.json',source+'checkpoints/*'],control),
     no_hold([source+'*'])])
 policy('reader',[listing,read,
+    statement(['s3:ListBucketVersions'],[base],{'StringLike':{'s3:prefix':[queries+'*']}}),
     statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+queries+'*']),
     retained([queries+'*'],now+timedelta(days=365)),no_hold([source+'*',queries+'*'])])
 PY
