@@ -2566,33 +2566,54 @@ def _d8_acc_error(code):
     return ValueError(_D8_ACC_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _d8_accumulation(directions):
-    """Topological upstream counts (excluding self); never repair the supplied graph."""
+def _d8_graph(directions, error):
+    """Validate the supplied D8 graph once for all downstream consumers."""
     height, width = directions.shape
     valid = np.isfinite(directions)
     if np.any(valid & ~np.isin(directions, [0, *[step[2] for step in _D8_NEIGHBOURS]])):
-        raise _d8_acc_error('code')
+        raise error('code')
     if np.any((directions == 0) & ~_dem_open_outlets(valid)):
-        raise _d8_acc_error('terminal')
+        raise error('terminal')
     downstream = np.full(directions.size, -1, dtype=np.int64)
     indegree = np.zeros(directions.size, dtype=np.uint8)
     for dy, dx, code in _D8_NEIGHBOURS:
         rows, cols = np.nonzero(directions == code)
         target_rows, target_cols = rows + dy, cols + dx
         if np.any((target_rows < 0) | (target_rows >= height) | (target_cols < 0) | (target_cols >= width)):
-            raise _d8_acc_error('target')
+            raise error('target')
         if np.any(~valid[target_rows, target_cols]):
-            raise _d8_acc_error('target')
+            raise error('target')
         targets = target_rows * width + target_cols
         downstream[rows * width + cols] = targets
         # Within one direction targets are unique; a cell has at most eight donors.
         indegree[targets] += 1
-    counts = np.zeros(directions.size, dtype=np.int64)
+    return valid, downstream, indegree
+
+
+def _d8_topological_order(valid, downstream, indegree, error):
+    order = np.empty(np.count_nonzero(valid), dtype=np.int64)
     ready = deque(map(int, np.flatnonzero(valid.ravel() & (indegree == 0))))
     visited = 0
     while ready:
         cell = ready.popleft()
+        order[visited] = cell
         visited += 1
+        target = int(downstream[cell])
+        if target >= 0:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                ready.append(target)
+    if visited != order.size:
+        raise error('cycle')
+    return order
+
+
+def _d8_accumulation(directions):
+    """Topological upstream counts (excluding self); never repair the supplied graph."""
+    valid, downstream, indegree = _d8_graph(directions, _d8_acc_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_acc_error)
+    counts = np.zeros(directions.size, dtype=np.int64)
+    for cell in order:
         target = int(downstream[cell])
         if target < 0:
             continue
@@ -2601,36 +2622,31 @@ def _d8_accumulation(directions):
         if count > _D8_MAX_EXACT_COUNT:
             raise _d8_acc_error('overflow')
         counts[target] = count
-        indegree[target] -= 1
-        if indegree[target] == 0:
-            ready.append(target)
-    if visited != int(np.count_nonzero(valid)):
-        raise _d8_acc_error('cycle')
     result = counts.reshape(directions.shape).astype(np.float64)
     result[~valid] = np.nan
     return result
 
 
-def raster_flow_accumulation_d8(input_raster, band):
-    """Count upstream cells on an explicit, validated D8 direction raster."""
+def _d8_direction_source(input_raster, band, error):
+    """Read effective directions without rounding NoData classification."""
     source = _open(input_raster)
     try:
-        _projected_north_up_grid(source)
-    except ValueError as error:
-        raise _d8_acc_error('grid') from error
+        horizontal_metres = _projected_north_up_grid(source)
+    except ValueError as cause:
+        raise error('grid') from cause
     try:
         selected = _band(source, band)
-    except ValueError as error:
+    except ValueError as cause:
         key = 'complex' if type(band) is int and 1 <= band <= source.RasterCount else 'band'
-        raise _d8_acc_error(key) from error
+        raise error(key) from cause
     if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
-        raise _d8_acc_error('alpha')
+        raise error('alpha')
     if selected.GetScale() not in (None, 1) or selected.GetOffset() not in (None, 0):
-        raise _d8_acc_error('scale')
+        raise error('scale')
     for index in range(1, source.RasterCount + 1):
         candidate = source.GetRasterBand(index)
         if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
-            raise _d8_acc_error('complex')
+            raise error('complex')
     candidate = selected = None
     directions = np.full((source.RasterYSize, source.RasterXSize), np.nan)
     # Classify NoData in the source dtype; Float64 can merge adjacent Int64 codes.
@@ -2638,7 +2654,10 @@ def raster_flow_accumulation_d8(input_raster, band):
         values = np.where(masks[0], arrays[0], np.nan)
         height, width = values.shape
         directions[y:y+height, x:x+width] = values
-    counts = _d8_accumulation(directions)
+    return source, directions, horizontal_metres
+
+
+def _d8_output(source, values, unit=''):
     output = destination = None
     path = None
     completed = False
@@ -2646,9 +2665,10 @@ def raster_flow_accumulation_d8(input_raster, band):
         output = _numeric_output(source, 1)
         path = Path(output.GetDescription())
         destination = output.GetRasterBand(1)
+        destination.SetUnitType(unit)
         for y in range(0, source.RasterYSize, 512):
             for x in range(0, source.RasterXSize, 512):
-                destination.WriteArray(counts[y:y+512, x:x+512], x, y)
+                destination.WriteArray(values[y:y+512, x:x+512], x, y)
         destination = None
         output.FlushCache()
         output = None
@@ -2659,6 +2679,60 @@ def raster_flow_accumulation_d8(input_raster, band):
         destination = output = source = None
         if path is not None and not completed:
             path.unlink(missing_ok=True)
+
+
+def raster_flow_accumulation_d8(input_raster, band):
+    """Count upstream cells on an explicit, validated D8 direction raster."""
+    source, directions, _ = _d8_direction_source(input_raster, band, _d8_acc_error)
+    return _d8_output(source, _d8_accumulation(directions))
+
+
+_D8_LENGTH_MESSAGES = {
+    key: (zh.replace('D8 汇流累积', 'D8 下游流长'),
+          en.replace('D8 flow accumulation', 'D8 downstream flow length'))
+    for key, (zh, en) in _D8_ACC_MESSAGES.items() if key != 'overflow'
+}
+_D8_LENGTH_MESSAGES.update({
+    'step': ('D8 下游流长的米制横纵及对角步长必须有限且严格为正',
+             'D8 downstream flow length requires finite, strictly positive horizontal, vertical and diagonal steps in metres'),
+    'overflow': ('D8 下游流长累计距离超过Float64有限范围',
+                 'D8 downstream flow length accumulated distance exceeds the finite Float64 range'),
+})
+
+
+def _d8_length_error(code):
+    return ValueError(_D8_LENGTH_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_flow_length(directions, width_metres, height_metres):
+    """Sum centre-to-centre edge lengths backwards on the unmodified D8 graph."""
+    diagonal = math.hypot(width_metres, height_metres)
+    if any(not math.isfinite(step) or step <= 0 for step in (width_metres, height_metres, diagonal)):
+        raise _d8_length_error('step')
+    valid, downstream, indegree = _d8_graph(directions, _d8_length_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_length_error)
+    steps = {code: diagonal if dy and dx else height_metres if dy else width_metres
+             for dy, dx, code in _D8_NEIGHBOURS}
+    values = np.full(directions.size, np.nan)
+    codes = directions.ravel()
+    for cell in order[::-1]:
+        target = int(downstream[cell])
+        if target < 0:
+            values[cell] = 0.0
+            continue
+        length = steps[codes[cell]] + float(values[target])
+        if not math.isfinite(length):
+            raise _d8_length_error('overflow')
+        values[cell] = length
+    return values.reshape(directions.shape)
+
+
+def raster_flow_length_d8(input_raster, band):
+    """Measure projected downstream distance in metres to the supplied open outlet."""
+    source, directions, factor = _d8_direction_source(input_raster, band, _d8_length_error)
+    transform = source.GetGeoTransform()
+    values = _d8_flow_length(directions, transform[1] * factor, -transform[5] * factor)
+    return _d8_output(source, values, 'metre')
 
 
 def _terrain(input_raster, elevation_unit, band, processing, **options):
@@ -2798,6 +2872,7 @@ _SPECS = [
     (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
+    (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2824,7 +2899,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
-    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8'):
+    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8'):
         examples.update({'band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})
