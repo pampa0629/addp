@@ -198,6 +198,8 @@ FastAPI 模块（Agent、Copilot）由框架提供：
 
 新增、删除、修改 FastAPI 路由时，必须同步端点描述、请求/响应模型、认证声明和 `openapi_extra`，并通过标准脚本重新导出、提交 `backend/openapi.json`；覆盖检查使用实时 `app.openapi()` 比较该投影。Console API 文档中心使用 OpenAPI JSON，不另建接口清单。
 
+开发重启必须在停止所选 Agent/Copilot 后，复用生命周期唯一依赖指纹与安装锁同步环境，再导入应用生成和校验 OpenAPI；不能以已有 venv 或少量可导入包推定完整。全量重启准备两个 Backend，局部只准备所选 Backend。独立文档生成／覆盖检查只使用 Owner venv，不隐式安装依赖，不改写活动服务环境；依赖准备与失败边界见[生命周期规范](addp开发服务生命周期与构建身份规范.md#python-依赖同步)。
+
 ## 常见问题
 
 | 问题 | 核对与处理 |

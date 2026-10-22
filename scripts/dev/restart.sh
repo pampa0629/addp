@@ -165,7 +165,7 @@ for family in quality-worker meta-worker transfer-bounded-worker transfer-contin
   addp_worker_units "$family" >/dev/null || exit 1
 done
 
-# 所有依赖准备交由停止后的 start.sh 执行，避免改写活动 Runtime。
+# Python OpenAPI 导入需要的依赖只在停止后准备；与 start 复用同一函数。
 STOP_ARGS=()
 if [ "$RESTART_ALL" = true ]; then
   "${SCRIPT_DIR}/stop.sh" || exit 1
@@ -177,6 +177,8 @@ fi
 
 # 2. Swagger 是 Go 构建输入，先生成，再由 start.sh 统一校验产物指纹。
 if [ "$RESTART_ALL" = true ]; then
+  addp_prepare_python_backend "$ROOT_DIR" agent
+  addp_prepare_python_backend "$ROOT_DIR" copilot
   echo "📄 重新生成所有模块 Swagger 文档..."
   run_swagger_generate all
   echo "🔎 校验所有模块 Swagger 路由覆盖..."
@@ -197,6 +199,22 @@ if [ "$RESTART_ALL" = false ]; then
   if ! "${SCRIPT_DIR}/stop.sh" "${STOP_ARGS[@]}"; then
     echo "❌ 停止所选模块失败，已中断重启" >&2
     exit 1
+  fi
+fi
+# Python Backend 的文档必须在依赖同步之后导入；局部不触碰未选环境。
+if [ "$RESTART_ALL" = false ]; then
+  PYTHON_SWAGGER_TARGETS=()
+  for module in "${RESTART_MODULES[@]}"; do
+    case "$module" in
+      agent|copilot)
+        addp_prepare_python_backend "$ROOT_DIR" "$module"
+        PYTHON_SWAGGER_TARGETS+=("$module")
+        ;;
+    esac
+  done
+  if [ ${#PYTHON_SWAGGER_TARGETS[@]} -gt 0 ]; then
+    run_swagger_generate "${PYTHON_SWAGGER_TARGETS[@]}"
+    run_swagger_coverage_check "${PYTHON_SWAGGER_TARGETS[@]}"
   fi
 fi
 echo "✅ 保留已有产物，启动时校验构建指纹并按需编译"

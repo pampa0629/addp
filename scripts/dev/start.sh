@@ -2043,59 +2043,9 @@ fi
 start_runtime_copilot() (
   echo -e "${YELLOW}Step 5/6: 启动 Copilot Backend...${NC}"
 
-  # 检查并创建虚拟环境（幂等）
-  NEED_INSTALL=false
-  if [ ! -d "copilot/backend/venv" ]; then
-    echo "首次启动 Copilot，创建 Python 虚拟环境..."
-    cd copilot/backend
-    # 使用智能 Python 选择（优先 3.11）
-    SELECTED_PYTHON=$(select_python)
-    PYTHON_VER=$($SELECTED_PYTHON --version)
-    echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv venv
-    NEED_INSTALL=true
-else
-    # 检查关键依赖是否已安装
-    if ! ./copilot/backend/venv/bin/python -c "import fastapi; from langchain_core import __version__; assert __version__ == '1.6.6'" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd copilot/backend
-        NEED_INSTALL=true
-    else
-        echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-fi
-
-if [ "$NEED_INSTALL" = true ]; then
-    echo "使用 pip 安装 Copilot 依赖（首次安装可能需要 1-2 分钟）..."
-
-    # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    else
-        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
-    fi
-
-    # 升级 pip 并安装依赖
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Copilot Python 依赖安装完成${NC}"
-    else
-        echo -e "${RED}✗ Copilot 依赖安装失败，请检查错误信息${NC}"
-        cd ../..
-        exit 1
-    fi
-    cd ../..
-fi
-
-# 启动 Copilot Backend
+# 正在运行的服务只复用；不能在检查 PID/端口之前改写其环境。
 if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
+  addp_prepare_python_backend "$ROOT_DIR" copilot || exit 1
   echo "启动 Copilot Backend..."
   cd copilot/backend
 
@@ -2140,56 +2090,8 @@ fi
 start_runtime_agent() (
   echo -e "${YELLOW}Step 5b: 启动 Agent Backend...${NC}"
 
-  NEED_INSTALL=false
-  if [ ! -d "agent/backend/venv" ]; then
-    echo "首次启动 Agent，创建 Python 虚拟环境..."
-    cd agent/backend
-    SELECTED_PYTHON=$(select_python)
-    if ! "$SELECTED_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)' &> /dev/null; then
-      echo -e "${RED}✗ Agent DeerFlow Harness 需要 Python 3.12，请先安装 python3.12${NC}"
-      exit 1
-    fi
-    PYTHON_VER=$($SELECTED_PYTHON --version)
-    echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv venv
-    NEED_INSTALL=true
-  else
-    if ! ./agent/backend/venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12)' &> /dev/null; then
-      echo -e "${RED}✗ Agent 虚拟环境需要重建为 Python 3.12；请先停止 Agent 并将 agent/backend/venv 移到仓库外备份${NC}"
-      exit 1
-    fi
-    if ! ./agent/backend/venv/bin/python -c "import fastapi, deerflow; from langchain_core import __version__; assert __version__ == '1.6.6'" &> /dev/null; then
-      echo "检测到虚拟环境缺少依赖，重新安装..."
-      cd agent/backend
-      NEED_INSTALL=true
-    else
-      echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-  fi
-
-  if [ "$NEED_INSTALL" = true ]; then
-    echo "使用 pip 安装 Agent 依赖（首次安装可能需要 1-2 分钟）..."
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-      echo "  使用镜像源: $PIP_INDEX_URL"
-      PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-      if [ -n "$PIP_TRUSTED_HOST" ]; then
-        PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-      fi
-    fi
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
-    if [ $? -eq 0 ]; then
-      echo -e "${GREEN}✓ Agent Python 依赖安装完成${NC}"
-    else
-      echo -e "${RED}✗ Agent 依赖安装失败，请检查错误信息${NC}"
-      cd ../..
-      exit 1
-    fi
-    cd ../..
-  fi
-
   if check_service_running "agent-backend" "$AGENT_BACKEND_PORT"; then
+    addp_prepare_python_backend "$ROOT_DIR" agent || exit 1
     echo "启动 Agent Backend..."
     cd agent/backend
     export PORT=$AGENT_BACKEND_PORT

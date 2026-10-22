@@ -601,6 +601,10 @@ cases = [(name, args, failure) for name, args, failure in (
     ('selected', ['-system', '-asset', '-meta'], ''), ('single', ['-system'], ''),
     ('mixed', ['-system', '-pointcloud-workflow', '-pointcloud-workflow'], ''),
     ('runtime-union', ['-pointcloud-workflow', '-document-workflow'], ''),
+    ('python-union', ['-copilot', '-agent', '-copilot'], ''),
+    ('python-mixed', ['-system', '-copilot'], ''),
+    ('python-swagger-failure', ['-copilot'], 'swagger'),
+    ('python-coverage-failure', ['-agent'], 'coverage'),
     ('swagger-failure', ['-all'], 'swagger'), ('swagger-failure-single', ['-system'], 'swagger'),
     ('swagger-failure-legacy-override', ['-all'], 'swagger'),
     ('coverage-failure', ['-all'], 'coverage'), ('coverage-failure-single', ['-system'], 'coverage'),
@@ -612,7 +616,7 @@ for runtime in runtimes:
     cases += [(runtime, ['-' + runtime], ''),
               (runtime + '-stop-failure', ['-' + runtime], 'stop'),
               (runtime + '-prepare-failure', ['-' + runtime], runtime)]
-for runtime in runtimes[:5]:
+for runtime in (*runtimes[:5], 'agent', 'copilot'):
     cases.append((runtime + '-prepare-failure-all', ['-all'], runtime))
 
 for name, args, failure in cases:
@@ -621,6 +625,16 @@ for name, args, failure in cases:
     dev.mkdir(parents=True)
     for filename in ('restart.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh', 'worker-units.sh'):
         shutil.copy2(repository / 'scripts/dev' / filename, dev / filename)
+    with (dev/'lifecycle-lock.sh').open('a') as helper:
+        helper.write("""
+addp_prepare_python_backend() {
+  local runtime="$2"
+  echo "backend-prepare $runtime" >> "$FIXTURE_ROOT/events"
+  [ ! -f "$FIXTURE_ROOT/$runtime.active" ] || return 8
+  [ "$FAIL_PHASE" != "$runtime" ] || return 9
+  echo "backend-sync $runtime" >> "$FIXTURE_ROOT/events"
+}
+""")
     (dev / 'ports.sh').write_text('addp_dev_load_saved_ports() { :; }\n')
     (root / '.env').write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
     infra = root / 'scripts/infra'
@@ -710,22 +724,38 @@ case "$FAIL_PHASE" in coverage) exit 1;; coverage-error) exit 2;; esac
     selected = list(dict.fromkeys(arg[1:] for arg in args)) if not all_modules else list(runtimes)
     swagger = 'all' if all_modules else ' '.join(module for module in selected if module in ('system', 'asset', 'meta'))
     stop = 'stop ' + ('' if all_modules else ' '.join('-' + module for module in selected))
-    expected = [stop] if all_modules else []
-    if not (all_modules and failure == 'stop'):
-        if swagger:
-            expected += ['generate ' + swagger]
-            if failure != 'swagger': expected += ['generated', 'coverage ' + swagger]
-        if failure not in ('swagger', 'coverage', 'coverage-error'):
-            if not all_modules: expected += [stop]
-            if failure != 'stop':
-                expected += ['start ' + ('' if all_modules else ' '.join('-' + module for module in selected))]
-                for runtime in selected:
-                    if runtime not in runtimes: continue
-                    expected += ['prepare ' + runtime]
-                    if failure == runtime: break
-                    expected += ['sync ' + runtime, 'launch ' + runtime]
+    expected = []
+    failed = False
+    def event(value, phase=''):
+        global failed
+        if failed: return
+        expected.append(value)
+        if phase and phase == failure: failed = True
+    def backend(owner):
+        event('backend-prepare ' + owner, owner)
+        event('backend-sync ' + owner)
+    def docs(target):
+        event('generate ' + target, 'swagger')
+        event('generated')
+        event('coverage ' + target, failure if failure in ('coverage', 'coverage-error') else '')
+    if all_modules:
+        event(stop, 'stop')
+        for owner in ('agent', 'copilot'): backend(owner)
+        docs('all')
+    else:
+        if swagger: docs(swagger)
+        event(stop, 'stop')
+        py = [owner for owner in selected if owner in ('agent', 'copilot')]
+        for owner in py: backend(owner)
+        if py: docs(' '.join(py))
+    event('start ' + ('' if all_modules else ' '.join('-' + module for module in selected)))
+    for runtime in selected:
+        if runtime not in runtimes: continue
+        event('prepare ' + runtime, runtime)
+        event('sync ' + runtime)
+        event('launch ' + runtime)
     assert events == expected, (name, events, expected)
-    stopped = failure not in ('swagger', 'coverage', 'coverage-error', 'stop') or (all_modules and failure != 'stop')
+    stopped = any(e == stop for e in expected) and failure != 'stop'
     for runtime in runtimes:
         assert (root / (runtime + '.active')).exists() == (not (stopped and runtime in selected)), (name, runtime)
     for binary in ('system', 'asset', 'meta', 'meta-worker', 'gateway'):
@@ -1844,6 +1874,83 @@ assert 'exec env SKIP_MODTIDY=1' in restart_source
 PY
 }
 
+test_python_backend_dependency_sync() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import json, os, shutil, subprocess, sys
+from pathlib import Path
+root, temporary = map(Path, sys.argv[1:])
+work = temporary / 'backend dependencies with spaces'
+(work / 'scripts/dev').mkdir(parents=True)
+shutil.copy2(root/'scripts/dev/lifecycle-lock.sh', work/'scripts/dev/lifecycle-lock.sh')
+common = work/'common-python'; (common/'addp_common').mkdir(parents=True)
+(common/'pyproject.toml').write_text('[project]\nname="addp-common"\n')
+(common/'addp_common/__init__.py').write_text('')
+site=work/'site'; site.mkdir()
+metadata=site/'addp_common-1.0.dist-info'; metadata.mkdir()
+(metadata/'METADATA').write_text('Name: addp-common\nVersion: 1.0\n')
+fake=work/'python'
+fake.write_text('''#!/usr/bin/env python3
+import os,sys,json,time,shutil
+from pathlib import Path
+root=Path(os.environ['FIXTURE_ROOT'])
+with (root/'calls').open('a') as f:f.write(json.dumps(sys.argv[1:])+'\\n')
+args=sys.argv[1:]
+if args[:3]==['-m','pip','install']:
+ assert Path.cwd().resolve()==Path(args[args.index('-r')+1]).parent.resolve()
+ assert '-e' in args and str(root/'common-python') in args
+ if os.environ.get('FAIL_INSTALL'):sys.exit(17)
+ if os.environ.get('SLOW_INSTALL'):time.sleep(.25)
+ (root/'installed').write_text('new shared dependency')
+elif args[:3]==['-m','pip','check']:
+ if os.environ.get('FAIL_CHECK'):sys.exit(19)
+elif args[:1]==['-']:os.execv(sys.executable,[sys.executable]+args)
+elif args[:1]==['-c']:pass # 旧 FastAPI/LangChain 导入成功，无法证明共享依赖完整。
+else:raise SystemExit('unexpected invocation '+str(args))
+''');fake.chmod(0o755)
+for owner in ('agent','copilot'):
+ runtime=work/owner/'backend'; (runtime/'venv/bin').mkdir(parents=True)
+ shutil.copy2(fake,runtime/'venv/bin/python')
+ (runtime/'requirements.txt').write_text('-e ../../common-python\nnew-shared-dependency==1.0\n')
+runner='source "$1/scripts/dev/lifecycle-lock.sh"; addp_prepare_python_backend "$1" "$2"'
+env=dict(os.environ,FIXTURE_ROOT=str(work),PYTHONPATH=str(site))
+def run(owner='copilot',**flags):
+ (work/'calls').unlink(missing_ok=True)
+ p=subprocess.run(['bash','-ec',runner,'_',str(work),owner],env=dict(env,**flags),text=True,capture_output=True)
+ calls=[json.loads(s) for s in (work/'calls').read_text().splitlines()]
+ return p,calls
+for owner in ('agent','copilot'):
+ p,calls=run(owner);assert p.returncode==0,p.stdout+p.stderr
+ assert sum(c[:3]==['-m','pip','install'] for c in calls)==1,calls
+ assert (work/'installed').exists()
+ p,calls=run(owner);assert p.returncode==0,p.stdout+p.stderr
+ assert not any(c[:3]==['-m','pip','install'] for c in calls),calls
+# 共享输入新增依赖以及实际安装元数据变化都使旧环境失效。
+for path,value in ((common/'pyproject.toml','[project]\nname="addp-common"\ndependencies=["new-trace-dependency"]\n'),
+                   (metadata/'METADATA','Name: addp-common\nVersion: 1.0\nRequires-Dist: new-trace-dependency\n')):
+ path.write_text(value)
+ p,calls=run();assert p.returncode==0 and any(c[:3]==['-m','pip','install'] for c in calls),p.stdout+p.stderr
+mark=work/'copilot/backend/venv/.addp-dependency-fingerprint'
+for flag in ('FAIL_INSTALL','FAIL_CHECK'):
+ mark.unlink(missing_ok=True)
+ p,calls=run(**{flag:'1'});assert p.returncode!=0 and not mark.exists(),(flag,p.stdout,p.stderr)
+# 同一环境并发准备在共享锁内二次检查，只安装一次。
+(work/'calls').unlink()
+processes=[subprocess.Popen(['bash','-ec',runner,'_',str(work),'copilot'],env=dict(env,SLOW_INSTALL='1'),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in range(3)]
+for p in processes:
+ out,err=p.communicate(timeout=20);assert p.returncode==0,out+err
+calls=[json.loads(s) for s in (work/'calls').read_text().splitlines()]
+assert sum(c[:3]==['-m','pip','install'] for c in calls)==1,calls
+assert mark.exists()
+# 普通 start 必须先判断实际运行状态，未选或活动服务不进入准备。
+source=(root/'scripts/dev/start.sh').read_text()
+for owner in ('agent','copilot'):
+ block=source.split('start_runtime_'+owner+'() (',1)[1].split('\n)\n',1)[0]
+ assert block.index('if check_service_running') < block.index('addp_prepare_python_backend'),owner
+ assert 'NEED_INSTALL' not in block,owner
+print('PASS: Python Backend declaration/environment fingerprints, cwd, missing shared dependency, failure invalidation and shared install lock')
+PY
+}
+
 test_frontend_dependencies_precede_health_wait() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -2333,6 +2440,7 @@ PY
 test_frontend_defaults_match_port_registry
 test_build_only_stopped_processes
 test_model3d_python_dependency_sync
+test_python_backend_dependency_sync
 test_stop_keeps_system_available_for_deregistration
 test_worker_backend_readiness_order
 test_swagger_incremental_generation

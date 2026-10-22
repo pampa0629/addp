@@ -119,7 +119,7 @@ addp_install_python_dependencies() {
   fi
 
   echo "同步 $label Python 依赖..."
-  if ! "$python_bin" "${pip_args[@]}" ||
+  if ! (cd "$runtime_dir" && "$python_bin" "${pip_args[@]}") ||
      ! "$python_bin" -m pip check; then
     echo "✗ $label Python 依赖同步失败" >&2
     return 1
@@ -153,6 +153,33 @@ addp_sync_python_dependencies() {
     shift
     addp_install_python_dependencies "$@"
   ' _ "${BASH_SOURCE[0]}" "$project_root" "$runtime_dir" "$label" "$@"
+}
+
+
+# Agent/Copilot 的启动及停止后的 OpenAPI 导出共用同一准备路径。
+addp_prepare_python_backend() {
+  local project_root="$1" module="$2" runtime_dir
+  case "$module" in agent|copilot) ;; *) echo "✗ 未知 Python Backend: $module" >&2; return 1;; esac
+  runtime_dir="$project_root/$module/backend"
+  # 环境创建也使用共享安装锁，等待者必须在锁内重查。
+  addp_with_python_dependency_lock "$project_root" bash -c '
+    set -e
+    runtime_dir="$1"; module="$2"
+    if [ ! -x "$runtime_dir/venv/bin/python" ]; then
+      for candidate in python3.12 python3.11 python3; do
+        if command -v "$candidate" >/dev/null 2>&1 &&
+           "$candidate" -c "import sys; m=sys.argv[1]; raise SystemExit(0 if (sys.version_info[:2] == (3,12) if m == \"agent\" else (3,11) <= sys.version_info[:2] < (3,14)) else 1)" "$module" >/dev/null 2>&1; then
+          bootstrap="$candidate"; break
+        fi
+      done
+      [ -n "$bootstrap" ] || { echo "✗ $module 缺少符合声明的 Python（Agent 需要 3.12）" >&2; exit 1; }
+      "$bootstrap" -m venv "$runtime_dir/venv"
+    fi
+    "$runtime_dir/venv/bin/python" -c "import sys; m=sys.argv[1]; raise SystemExit(0 if (sys.version_info[:2] == (3,12) if m == \"agent\" else (3,11) <= sys.version_info[:2] < (3,14)) else 1)" "$module" || {
+      echo "✗ $module 虚拟环境 Python 版本不符；请停止服务并将旧 venv 移到仓库外备份后重建" >&2; exit 1;
+    }
+  ' _ "$runtime_dir" "$module" || return 1
+  addp_sync_python_dependencies "$project_root" "$runtime_dir" "$module" "$project_root/common-python"
 }
 
 addp_process_is_descendant_of() {

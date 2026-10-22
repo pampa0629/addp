@@ -20,8 +20,8 @@
 
 | 模式 | 执行时序 | Swagger 检查失败时 |
 | --- | --- | --- |
-| 全量 | `stop.sh` → 全部 Swagger 同步与覆盖检查 → `start.sh` | 服务已经停止，不进入后续启动。 |
-| 局部 | 所选 Go 模块 Swagger 同步与覆盖检查（未选 Go 模块时跳过）→ `stop.sh -<模块名> ...` → `start.sh -<模块名> ...` | 保留现有服务，不执行停止。 |
+| 全量 | `stop.sh` → Agent/Copilot 依赖准备 → 全部 Swagger 同步与覆盖检查 → `start.sh` | 服务已经停止，不进入后续启动。 |
+| 局部 | 所选 Go 模块 Swagger 同步与覆盖检查（未选 Go 模块时跳过）→ `stop.sh -<模块名> ...` → 所选 Agent/Copilot 依赖准备及 OpenAPI 同步／覆盖检查 → `start.sh -<模块名> ...` | Go 预检失败保留现有服务；停止后的 Python 准备／OpenAPI 失败不启动所选服务。 |
 
 依赖安装、环境创建、原生工具准备和真实转换验证属于停止后的启动准备，不能在停止前调用完整 Runtime prepare。停止失败时不得继续准备或启动；准备失败的服务不得启动，入口返回非零，不恢复旧进程；此前成功启动的其他服务可能已经运行。停服前仅可执行不会修改运行环境的参数、配置和归属检查。
 
@@ -80,14 +80,14 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ### Python 依赖同步
 
-Model3D、Spark Workflow、GeoPython Workflow、PointCloud Workflow、Document Workflow 和 Manager Raster Mosaic 的宿主机 Python Runtime 每次启动和重启必须共用同一依赖同步函数，并遵循以下规则：
+Agent/Copilot Backend，以及 Model3D、Spark Workflow、GeoPython Workflow、PointCloud Workflow、Document Workflow 和 Manager Raster Mosaic 的宿主机 Python Runtime 每次启动和重启必须共用同一依赖同步函数，并遵循以下规则：
 
-- **声明范围**：调用方显式传入需要 editable 安装的本地包目录，只有这些目录进入安装命令和输入指纹。前五个 Runtime 声明 `common-python`，Raster Mosaic 不声明该包。
+- **声明范围**：调用方显式传入需要 editable 安装的本地包目录，只有这些目录进入安装命令和输入指纹。Agent/Copilot 与前五个 Runtime 声明 `common-python`，Raster Mosaic 不声明该包。
 - **安装互斥**：依赖安装通过 `.dev-state/python-dependencies.lock` 文件锁互斥，避免多个 editable 安装同时改写 `common-python` 构建元数据。锁由操作系统在安装命令退出时释放，锁文件保留，不通过删除锁文件解锁。该锁只协调内部依赖安装，不替代工作区生命周期锁；Docker 构建具有独立上下文，不参与宿主机 Python 安装锁。
 - **指纹记录**：每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹。输入覆盖完整 `requirements.txt` 及其引用文件、显式声明的本地包构建声明与源码，排除本地包的虚拟环境、构建产物和缓存；环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。
 - **复用与失效**：只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化、依赖检查失败时，在安装锁内重新检查，仍失效时安装完整 requirements 及调用方显式声明的 editable 本地包，避免并发调用重复安装。
 - **成功记录与失败处理**：仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹。失败必须撤销本次同步记录并阻止启动。
-- **启动准备**：start/restart 共用唯一准备入口；重启先停止所选服务，再由 start 同步依赖。各 Runtime 继续执行已有导入与原生依赖预检。
+- **启动准备**：start/restart 共用唯一准备入口；重启先停止所选服务，再准备依赖。Agent/Copilot 的 `start` 与 `restart` 共用唯一 Backend 准备函数；`restart` 必须在导入应用生成 OpenAPI 前同步其环境，后续 `start` 复用成功指纹。未选 Backend 不准备，已运行 Backend 的普通 `start` 不改写环境。其余 Runtime 继续由 `start` 同步依赖并执行已有导入与原生依赖预检。requirements 中相对 editable 路径以所属 Runtime 目录为工作目录解析，不随入口调用目录改变。
 
 ### Runtime 补充约束
 
