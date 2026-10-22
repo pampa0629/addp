@@ -45,6 +45,7 @@ PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
                      'output_withdrawal_denies_read']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
+LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 
 
 def require(condition, message):
@@ -550,7 +551,8 @@ class Lifecycle:
                   'endpoint': READ_CHECK, 'catalog_path': self.path, 'principal_id': self.recipient,
                   'grant_id': command, 'item_fingerprint': facts['item_fingerprint'],
                   'boundary_hash': facts['boundary_hash'], 'concurrency': 1,
-                  'round_count': 3, 'samples_per_round': 100, 'warmups_per_round': 10,
+                  'round_count': LATENCY_ROUNDS, 'samples_per_round': LATENCY_SAMPLES,
+                  'warmups_per_round': LATENCY_WARMUPS,
                   'request_interval_ms': 10, 'round_interval_ms': 1000, 'budget_seconds': 90,
                   'quantile_method': 'nearest_rank', 'request_timeout_seconds': self.reader.timeout,
                   'started_at': datetime.now(timezone.utc).isoformat(),
@@ -595,14 +597,14 @@ class Lifecycle:
 
         baseline = snapshot()
         try:
-            for round_number in range(1, 4):
+            for round_number in range(1, LATENCY_ROUNDS + 1):
                 row = {'round': round_number, 'warmup_count': 0, 'samples_ms': []}
                 result['rounds'].append(row)
-                for number in range(110):
+                for number in range(LATENCY_SAMPLES + LATENCY_WARMUPS):
                     within_budget()
                     require((self.reader.token, self.operator.token) == credentials,
                             'latency sampling credential changed')
-                    result['phase'] = f'round_{round_number}_' + ('warmup' if number < 10 else 'sample')
+                    result['phase'] = f'round_{round_number}_' + ('warmup' if number < LATENCY_WARMUPS else 'sample')
                     result['attempted_count'] += 1
                     started = time.perf_counter_ns()
                     try:
@@ -618,7 +620,7 @@ class Lifecycle:
                         result['failed_count'] += 1
                         # Do not copy remote diagnostics or credentials into public evidence.
                         raise SuiteError('fixed-target latency request failed; no retry performed') from None
-                    if number < 10:
+                    if number < LATENCY_WARMUPS:
                         row['warmup_count'] += 1
                         result['warmup_count'] += 1
                     else:
@@ -629,7 +631,7 @@ class Lifecycle:
                 row.update(latency_statistics(row['samples_ms']))
                 result['phase'] = f'round_{round_number}_controls_after'
                 require(snapshot() == baseline, 'latency sampling identity, rules or facts drifted')
-                if round_number < 3:
+                if round_number < LATENCY_ROUNDS:
                     time.sleep(1)
             samples = [sample for row in result['rounds'] for sample in row['samples_ms']]
             result.update(latency_statistics(samples))

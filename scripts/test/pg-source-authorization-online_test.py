@@ -284,8 +284,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(self.scans.call_args_list[0].args[2], ['metric_people', 'metric_events'])
         self.assertEqual(self.scans.call_args_list[1].args[2], ['metric_people'])
         decisions = [call for call in server.calls if call[2] == READ_CHECK]
-        self.assertEqual(len(decisions), 330)
-        self.assertEqual(report['authorization_latency']['sample_count'], 300)
+        self.assertEqual(len(decisions), 1530)
+        self.assertEqual(report['authorization_latency']['sample_count'], 1500)
         writes = [call for call in server.calls if call[1] == 'POST' and call[2] != READ_CHECK]
         self.assertTrue(all(call[0] == ('login' if call[2].endswith('/login') else
                                       'coordinator' if '/memberships/' in call[2] else 'operator') for call in writes))
@@ -316,19 +316,20 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         server, lifecycle = self.lifecycle()
         command, _ = lifecycle.grant(self.facts, initialize=True)
         before_calls = len(server.calls)
-        # Each warmup costs 1s; each measured request costs 1..100ms per round.
-        durations = ([1000] * 10 + list(range(1, 101))) * 3
+        self.assertEqual((ONLINE.LATENCY_ROUNDS, ONLINE.LATENCY_SAMPLES, ONLINE.LATENCY_WARMUPS), (3, 500, 10))
+        # Each warmup costs 1s; each measured request costs 1..500ms per round.
+        durations = ([1000] * 10 + list(range(1, 501))) * 3
         clock = iter(value for duration in durations for value in (0, duration * 1000000))
         report = {}
         with patch.object(ONLINE.time, 'perf_counter_ns', side_effect=lambda: next(clock)):
             lifecycle.measure_read_latency(report, self.facts, command)
         result = report['authorization_latency']
-        self.assertEqual((result['sample_count'], result['warmup_count'], result['failed_count']), (300, 30, 0))
-        self.assertEqual((result['p50_ms'], result['p95_ms']), (50, 95))
-        self.assertEqual(result['round_p95_range_ms'], [95, 95])
+        self.assertEqual((result['sample_count'], result['warmup_count'], result['failed_count']), (1500, 30, 0))
+        self.assertEqual((result['p50_ms'], result['p95_ms']), (250, 475))
+        self.assertEqual(result['round_p95_range_ms'], [475, 475])
         self.assertTrue(result['unchanged_identity_rules_boundary'])
         self.assertEqual(len(result['rounds']), 3)
-        self.assertTrue(all(row['samples_ms'] == list(range(1, 101)) for row in result['rounds']))
+        self.assertTrue(all(row['samples_ms'] == list(range(1, 501)) for row in result['rounds']))
         self.assertEqual(len(server.grants), 1)
         self.assertTrue(all(call[1] == 'GET' or call[1:3] == ('POST', READ_CHECK)
                             for call in server.calls[before_calls:]))
@@ -372,7 +373,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                         lifecycle.measure_read_latency(report, self.facts, command)
                 result = report['authorization_latency']
                 self.assertEqual(result['result'], 'failed')
-                self.assertLessEqual(count, 110)
+                self.assertLessEqual(count, 510)
                 self.assertNotIn('private', json.dumps(result))
                 if fault in ('denied', 'transport', 'invalid_time', 'extra_data'):
                     self.assertEqual((count, result['sample_count'], result['failed_count']), (12, 1, 1))
