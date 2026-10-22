@@ -124,6 +124,7 @@
       "historyTitle": "我的访问授权办理记录",
       "requestID": "请求编号",
       "queryResult": "查看办理结果",
+      "resultRecordedAt": "结果记录时间",
       "recordedAt": "权威记录时间",
       "deadline": "原自动办理窗口截止时间",
       "noPermission": "共享确认与原请求查询分别需要独立功能权限，编目权限不能替代。",

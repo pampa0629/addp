@@ -24,7 +24,7 @@ const decisions = cases.map((item, index) => ({
   reason: '接收方名称展示验收', target: { engine_id: '2', version: 'v1', segments: [{ name: 'outdoor' }, { name: 'activities' }] }
 }))
 
-async function openSharing(page, { withoutHistoryCodes = false } = {}) {
+async function openSharing(page, { withoutHistoryCodes = false, results = [] } = {}) {
   const unexpected = [], writes = [], errors = [], reads = []
   const history = withoutHistoryCodes ? decisions.map(({ recipient_code, ...row }) => row) : decisions
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -67,7 +67,7 @@ async function openSharing(page, { withoutHistoryCodes = false } = {}) {
       const decision = history.find(item => suffix === `/sharing_decisions/${item.id}`)
       if (decision) return route.fulfill({ json: decision })
       if (decisions.some(item => suffix === `/sharing_decisions/${item.id}/fulfillments`)) {
-        return route.fulfill({ json: { data: [], total: 0 } })
+        return route.fulfill({ json: { data: results, total: results.length } })
       }
     }
     if (path === `/api/v1/catalog/me/entries/${entryID}/marks`) return route.fulfill({ json: { favorite: false, following: false } })
@@ -168,3 +168,49 @@ for (const [index, item] of cases.entries()) {
     fixture.verifyNoCommands()
   })
 }
+
+
+test('approval reviewers see readable handling outcomes and copy technical IDs without handling permission', async ({ page, context }) => {
+  const results = [
+    { state: 'accepted', granted_at: '2026-10-21T11:45:00Z' },
+    { state: 'accepted' }, { state: 'pending' },
+    { state: 'accepted', unissued_reason: 'relation_exists' },
+    { state: 'accepted', unissued_reason: 'window_expired' }, { state: 'closed' }
+  ].map((outcome, index) => ({
+    request_id: `00000000-0000-4000-8000-00000000010${index}`, decision_id: decisions[0].id,
+    recorded_at: outcome.state === 'pending' ? null : '2026-10-21T11:44:20Z',
+    ...outcome
+  }))
+  const fixture = await openSharing(page, { results }), { catalog } = fixture
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await catalog.getByTestId('sharing-open-confirmation').first().click()
+  const detail = catalog.getByTestId('sharing-confirmation-detail')
+  const table = detail.getByTestId('sharing-results')
+  await expect(table.getByRole('columnheader')).toHaveText(['结果记录时间', '办理结果', '本次签发结果', ''])
+  await expect(detail.getByTestId('sharing-copy-confirmation-id')).toBeHidden()
+  const tableRows = table.locator('.el-table__body tbody tr')
+  const outcomes = ['已签发授权', '已受理，尚未签发', '结果待确认', '已有授权，本次未重复签发', '签发窗口已结束，未签发', '已关闭']
+  await expect(tableRows).toHaveCount(outcomes.length)
+  for (let index = 0; index < outcomes.length; index++) {
+    await expect(tableRows.nth(index).locator('td').nth(1)).toHaveText(outcomes[index])
+    await expect(tableRows.nth(index)).not.toContainText(results[index].request_id)
+  }
+  await expect(tableRows.nth(2).locator('td').first()).toHaveText('—')
+  await tableRows.first().getByTestId('sharing-result-technical').click()
+  const technical = catalog.getByTestId('sharing-result-technical-content').filter({ visible: true })
+  await expect(technical).toContainText(results[0].request_id)
+  await technical.getByTestId('sharing-copy-result-id').click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(results[0].request_id)
+  await detail.getByTestId('sharing-confirmation-technical').getByRole('button', { name: '技术信息', exact: true }).click()
+  await detail.getByTestId('sharing-copy-confirmation-id').click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(decisions[0].id)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(table.getByRole('columnheader').first()).toHaveText('Outcome recorded at')
+  await expect(tableRows.nth(3).locator('td').nth(1)).toHaveText('Existing authorization; no duplicate issued')
+  await page.reload()
+  await expect(tableRows).toHaveCount(outcomes.length)
+  await expect(detail.getByTestId('sharing-copy-confirmation-id')).toBeHidden()
+  expect(fixture.reads.some(read => read.suffix.startsWith('/sharing_fulfillments'))).toBe(false)
+  fixture.verifyNoCommands()
+})

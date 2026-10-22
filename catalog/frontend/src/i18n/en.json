@@ -124,6 +124,7 @@
       "historyTitle": "My access authorization requests",
       "requestID": "Request ID",
       "queryResult": "View handling result",
+      "resultRecordedAt": "Outcome recorded at",
       "recordedAt": "Authoritative record time",
       "deadline": "Original automatic fulfillment deadline",
       "noPermission": "Confirmation and original request queries require independent permissions. Curation permission does not replace them.",

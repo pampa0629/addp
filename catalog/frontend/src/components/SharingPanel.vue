@@ -94,7 +94,6 @@
     <el-card v-if="workspace === 'records' && detailOpen && recordKind === 'confirmations' && eligibility.confirm" shadow="never" data-testid="sharing-confirmation-detail">
       <el-alert v-if="confirmationError" type="error" :closable="false" :title="confirmationError" />
       <div v-if="decisionID" class="record-heading">
-        <span class="break-all">{{ t('catalog.sharing.decisionID') }}: {{ decisionID }}</span>
         <el-button data-testid="sharing-query-confirmation" :loading="confirmationLoading" @click="refreshConfirmation">{{ t('catalog.sharing.refreshConfirmation') }}</el-button>
       </div>
       <el-descriptions v-if="confirmation" :column="1" border>
@@ -104,16 +103,31 @@
         <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(confirmation) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.reason')">{{ confirmation.reason }}</el-descriptions-item>
       </el-descriptions>
+      <el-collapse v-if="confirmation" data-testid="sharing-confirmation-technical">
+        <el-collapse-item :title="t('catalog.sharing.technicalDetails')" name="technical">
+          <span class="break-all">{{ t('catalog.sharing.decisionID') }}: {{ decisionID }}</span>
+          <el-button data-testid="sharing-copy-confirmation-id" text @click="copyIdentifier(decisionID)">{{ t('common.copy') }}</el-button>
+        </el-collapse-item>
+      </el-collapse>
       <template v-if="confirmation">
         <div class="record-heading"><strong>{{ t('catalog.sharing.resultsTitle') }}</strong>
           <el-button data-testid="sharing-refresh-results" :loading="resultsLoading" @click="loadConfirmationResults">{{ t('catalog.common.refresh') }}</el-button></div>
         <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
         <el-alert v-if="resultsError" type="error" :closable="false" :title="resultsError" />
         <el-table data-testid="sharing-results" :data="results" v-loading="resultsLoading">
-          <el-table-column prop="request_id" :label="t('catalog.sharing.requestID')" min-width="240" />
-          <el-table-column :label="t('catalog.sharing.acceptance')" min-width="140"><template #default="{ row }"><el-tag :type="stateType(row.state)">{{ t(`catalog.sharing.stateLabel.${row.state}`) }}</el-tag></template></el-table-column>
-          <el-table-column :label="t('catalog.sharing.recordedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.recorded_at) }}</template></el-table-column>
+          <el-table-column :label="t('catalog.sharing.resultRecordedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.recorded_at) }}</template></el-table-column>
+          <el-table-column :label="t('catalog.sharing.handlingResult')" min-width="210"><template #default="{ row }"><el-tag :type="recordResultType(row)">{{ recordResultLabel(row) }}</el-tag></template></el-table-column>
           <el-table-column :label="t('catalog.sharing.issuance')" min-width="210"><template #default="{ row }">{{ issuanceLabel(row) }}</template></el-table-column>
+          <el-table-column width="120"><template #default="{ row }">
+            <el-popover trigger="click" :width="360" :title="t('catalog.sharing.technicalDetails')">
+              <template #reference><el-button data-testid="sharing-result-technical" link type="primary">{{ t('catalog.sharing.technicalDetails') }}</el-button></template>
+              <div data-testid="sharing-result-technical-content">
+                <p class="break-all">{{ t('catalog.sharing.requestID') }}: {{ row.request_id }}</p>
+                <el-button data-testid="sharing-copy-result-id" text @click="copyIdentifier(row.request_id)">{{ t('common.copy') }}</el-button>
+                <p>{{ t('catalog.sharing.acceptance') }}: {{ t(`catalog.sharing.stateLabel.${row.state}`) }}</p>
+              </div>
+            </el-popover>
+          </template></el-table-column>
         </el-table>
         <el-empty v-if="!resultsLoading && !resultsError && !resultsTotal" :description="t('catalog.sharing.noResults')" />
         <el-pagination data-testid="sharing-results-pagination" layout="prev, pager, next, total" :current-page="resultsPage" :page-size="20" :total="resultsTotal" @current-change="changeResultsPage" />
@@ -291,7 +305,6 @@ async function copyIdentifier(value) {
     ElMessage.error(t('common.copyFailed'))
   }
 }
-const stateType = state => ({ accepted: 'success', pending: 'warning', closed: 'info' }[state])
 function openSystemAuthorization() {
   if (systemAuthorizationRoute.value && !switchingBlocked.value) return openConsoleRoute(systemAuthorizationRoute.value)
 }
