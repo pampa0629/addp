@@ -72,7 +72,7 @@ test('host references deduplicate, bound concurrent reads and stop after invalid
 
 
 test('monitor management views share the sole bounded host-reference resolver', () => {
- for (const path of ['../src/views/PlatformAlerts.vue', '../src/views/MonitoringTargets.vue', '../src/components/ResourceAlertRules.vue', '../src/views/ProcessResources.vue']) {
+ for (const path of ['../src/views/PlatformAlerts.vue', '../src/views/MonitoringTargets.vue', '../src/components/ResourceAlertRules.vue', '../src/views/ProcessResources.vue', '../src/views/EngineResources.vue']) {
    const source = readFileSync(new URL(path, import.meta.url), 'utf8')
    assert.match(source, /loadHostReferences/u)
    assert.doesNotMatch(source, /Promise\.allSettled/u)

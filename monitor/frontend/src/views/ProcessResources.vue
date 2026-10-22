@@ -35,12 +35,9 @@
         <el-table-column :label="t('monitor.process.endpoint')" min-width="210" show-overflow-tooltip><template #default="{ row }"><span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="140"><template #default="{ row }"><el-tag data-testid="process-online" size="small" :type="row.status === 'up' ? 'success' : 'danger'">{{ row.status.toUpperCase() }} · {{ t(`monitor.process.status.${row.status}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
-        <el-table-column :label="t('monitor.process.host')" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('monitor.resources.associatedHost')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            <span data-testid="process-host" :title="row.node_id || undefined">
-              <el-button v-if="canReadHost && Object.hasOwn(hostReferences, row.node_id)" text type="primary" :title="`${t('monitor.resources.view')} · ${row.node_id}`" @click="openHost(row)">{{ hostReferences[row.node_id].display_name }}</el-button>
-              <span v-else>{{ row.node_id || t('monitor.process.unbound') }}</span>
-            </span>
+            <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
           </template>
         </el-table-column>
         <el-table-column v-for="metric in processMetrics" :key="metric.key" min-width="200">
@@ -89,6 +86,7 @@ import { useAuthStore } from '../store/auth'
 import { processResourcesAPI as api } from '../api/processResources'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
+import MonitoredHostLink from '../components/MonitoredHostLink.vue'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
 import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
@@ -135,9 +133,6 @@ function sampledAt(row) {
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
 const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
-function openHost(row) {
-  if (canReadHost.value && Object.hasOwn(hostReferences.value, row.node_id)) return navigateMonitorRoute(router, { path: `/node-resources/${row.node_id}` }, { history: 'push' })
-}
 async function loadHosts(rows, ticket) {
   if (!canReadHost.value) return
   const current = () => requests.current(ticket) && canReadHost.value

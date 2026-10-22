@@ -15,6 +15,7 @@
         </form>
         <el-table :data="owners" v-loading="loading" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
           <el-table-column prop="display_name" :label="t('monitor.engines.name')" min-width="190" show-overflow-tooltip />
+          <el-table-column :label="t('monitor.resources.associatedHost')" min-width="180" show-overflow-tooltip><template #default="{ row }"><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></template></el-table-column>
           <el-table-column :label="t('monitor.engines.collection')" min-width="180"><template #default="{ row }">{{ collection(row.deployment_id) }}</template></el-table-column>
           <el-table-column v-for="metric in engineSummaryMetrics" :key="metric.key" min-width="170">
             <template #header>{{ t(`monitor.engines.metrics.${metric.name}`) }}</template>
@@ -26,6 +27,7 @@
       </template>
       <template v-else>
         <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><span>{{ collection(state.deploymentID) }}</span></div>
+        <div v-if="owners.length" class="toolbar"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="owners[0].node_id" :host="hostReferences[owners[0].node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
         <div v-loading="loading" class="metric-grid" data-testid="engine-metrics">
           <article v-for="metric in engineMetrics" :key="metric.key" class="metric-card">
             <h3>{{ t(`monitor.engines.metrics.${metric.name}`) }}</h3>
@@ -66,12 +68,17 @@ import { formatBytes, scaleByteValue } from '../../../../common-frontend/basic/s
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { engineResourcesAPI as api } from '../api/engineResources'
+import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
+import { loadHostReferences } from '../utils/hostReferences'
+import MonitoredHostLink from '../components/MonitoredHostLink.vue'
 import { engineMetrics, engineSummaryMetrics, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
 import { currentResourceValue, resourceErrorKey, resourceChartRows, resourceRanges } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, locale } = useI18n()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.engine_deployment.read'))
+const canReadHost = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
+const hostReferences = ref({})
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
@@ -97,12 +104,12 @@ const chart = computed(() => {
 const navigate = (query, history = 'replace') => navigateMonitorRoute(router, { path: '/engine-resources', query: resolveEngineRoute(query).query }, { history })
 function back() { const { deployment_id, metric, range, ...query } = state.value.query; return navigate(query) }
 function invalidChart() { history.value = null; trendError.value = 'monitor.resources.errors.invalidResponse' }
-const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null }, visibilityChanged: value => { visible.value = value } })
+const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null; hostReferences.value = {} }, visibilityChanged: value => { visible.value = value } })
 async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'EngineResources') return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  observed.value = null; history.value = null; owners.value = []; total.value = 0; errorKey.value = ''; trendError.value = ''
+  observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0; errorKey.value = ''; trendError.value = ''
   if (!automatic) blocked.value = false
   if (!canRead.value || !visible.value) { loading.value = false; return }
   if (state.value.changed) { await navigate(state.value.query); return }
@@ -119,6 +126,7 @@ async function reload({ automatic = false } = {}) {
     }
     if (!requests.current(ticket)) return
     owners.value = rows; total.value = count
+    void loadHosts(owners.value, ticket)
     if (rows.length) {
       const result = state.value.deploymentID ? await requests.request(config => api.instant({ deployment_id: state.value.deploymentID, metrics: engineMetrics.map(item => item.key).join(',') }, config)) : await requests.request(config => api.summaries(rows.map(item => item.deployment_id), config))
       if (!requests.current(ticket)) return
@@ -140,8 +148,14 @@ async function reload({ automatic = false } = {}) {
     if (!requests.current(ticket)) return
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) blocked.value = true
-    observed.value = null; history.value = null; owners.value = []; total.value = 0
+    observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
+}
+async function loadHosts(rows, ticket) {
+  if (!canReadHost.value) return
+  const current = () => requests.current(ticket) && canReadHost.value && owners.value === rows && !errorKey.value
+  const hosts = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
+  if (current()) hostReferences.value = hosts
 }
 watch([() => route.fullPath, identity], () => reload(), { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispose() })

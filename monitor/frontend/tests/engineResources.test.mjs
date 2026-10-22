@@ -1,10 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { engineMetrics, engineSummaryMetrics, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
 
 const id = '10000000-0000-4000-8000-000000000001', node = '10000000-0000-4000-8000-000000000002'
 const owner = { deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
 const at = '2026-10-20T14:00:00Z'
+test('service and engine host navigation share one domain component and bounded reference resolver', () => {
+  for (const name of ['ProcessResources', 'EngineResources']) {
+    const source = readFileSync(new URL(`../src/views/${name}.vue`, import.meta.url), 'utf8')
+    assert.match(source, /import MonitoredHostLink from '\.\.\/components\/MonitoredHostLink\.vue'/)
+    assert.match(source, /<MonitoredHostLink\b/)
+    assert.doesNotMatch(source, /function openHost|path: `\/node-resources\//)
+    assert.match(source, /loadHostReferences/)
+  }
+  const source = readFileSync(new URL('../src/components/MonitoredHostLink.vue', import.meta.url), 'utf8')
+  assert.match(source, /navigateMonitorRoute/)
+  assert.match(source, /history: 'push'/)
+  assert.match(source, /props\.host\?\.node_id === props\.nodeId/)
+})
 function response(metrics = engineSummaryMetrics) {
   return { queried_at: at, start: at, end: at, step_seconds: 15, policy_version: 1, lookback_seconds: 300, data: [{ subject: { kind: 'engine_deployment', deployment_id: id, display_name: owner.display_name, engine_type: 'postgresql' }, node_id: node, collection: { state: 'collecting', sampled_at: at }, series: metrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })) }] }
 }

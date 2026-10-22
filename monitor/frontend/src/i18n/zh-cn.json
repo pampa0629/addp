@@ -651,6 +651,8 @@
       "createUnknown": "采集配置保存结果待核实，请关闭窗口并刷新列表，确认后再操作，避免重复创建。"
     },
     "resources": {
+      "associatedHost": "关联主机",
+      "unboundHost": "未关联主机",
       "collection": {
         "not_connected": "尚未开启主机采集，请配置采集来源。",
         "no_sample": "正在等待采集证据，请检查采集配置是否已经生效。",
@@ -881,8 +883,6 @@
         "up": "在线",
         "down": "离线"
       },
-      "host": "关联主机",
-      "unbound": "未关联主机",
       "collection": "采集状态",
       "empty": "暂无符合条件的服务实例",
       "metrics": {
@@ -1226,6 +1226,7 @@
       "parentSpan": "父 Span ID"
     },
     "engines": {
+      "noCurrentHost": "当前无有效主机关联",
       "title": "引擎监控",
       "denied": "当前账号无权查看平台引擎监控",
       "search": "搜索部署名称",

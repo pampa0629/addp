@@ -651,6 +651,8 @@
       "createUnknown": "The save outcome is unknown. Close this dialog and refresh the list to verify it before creating another configuration."
     },
     "resources": {
+      "associatedHost": "Associated host",
+      "unboundHost": "No associated host",
       "collection": {
         "not_connected": "Host collection is not enabled. Configure a collection source.",
         "no_sample": "Waiting for collection evidence. Check whether settings have taken effect.",
@@ -881,8 +883,6 @@
         "up": "Online",
         "down": "Offline"
       },
-      "host": "Associated host",
-      "unbound": "No associated host",
       "collection": "Collection status",
       "empty": "No matching service instances",
       "metrics": {
@@ -1226,6 +1226,7 @@
       "parentSpan": "Parent Span ID"
     },
     "engines": {
+      "noCurrentHost": "No current host association",
       "title": "Engine monitoring",
       "denied": "This account cannot read platform engine monitoring",
       "search": "Search deployment name",
