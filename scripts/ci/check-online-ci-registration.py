@@ -2871,8 +2871,13 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             'manager.derived_artifact.read', 'mosaic_groups', 'submitted_tasks=1', 'automatic_scans=28',
             "physical('verify-mosaic',[name])", "physical('purge-mosaic',[name])",
             "validate_monitor_lineage(monitor,facts)",
-            'memory.peak', 'oom_kill', 'scene.strict_sizes(artifact,actual,item)',
+            'from scripts.utils import capacity_resources', 'capacity_resources.cgroup_directory',
+            'capacity_resources.read_metrics', 'scene.strict_sizes(artifact,actual,item)',
             "physical('purge',names)", 'capacity-progress.json', 'wait_lineage', "'runtime_container_id'",
+        ),
+        "scripts/utils/capacity_resources.py": (
+            'def cgroup_directory(', 'def read_metrics(', 'memory.peak', 'oom_kill',
+            'memory.swap.max', 'quota/period!=4', 'maximum!=2*(1<<30)',
         ),
         "business/scripts/online-raster-capacity-fixture.py": (
             'S2A_17SPV_20220304_0_L2A', 'SIZE = 10980', 'data_directory=root/',

@@ -656,7 +656,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
                  'scripts/test/online-hosted-raster-capacity-gate.sh', 'scripts/utils/hosted-product-runtime.sh',
                  'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile', 'scripts/test/raster-workflow-online.py',
-                 'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py')
+                 'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/capacity_resources.py')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -673,7 +673,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[7], 'size_evidence'), (paths[4], 'def run_directories('),
                 (paths[4], 'automatic_scans=28'), (paths[5], 'def verify_mosaic_directory('),
                 (paths[8], 'case "raster-workflow-capacity":'),
-                (paths[9], 'test_capacity_directory_oracle_rejects_corrupt_components_and_scope')):
+                (paths[9], 'test_capacity_directory_oracle_rejects_corrupt_components_and_scope'),
+                (paths[4], 'from scripts.utils import capacity_resources'),
+                (paths[4], 'capacity_resources.cgroup_directory'),
+                (paths[4], 'capacity_resources.read_metrics'),
+                (paths[10], 'memory.peak'), (paths[10], 'oom_kill'),
+                (paths[10], 'memory.swap.max'), (paths[10], 'quota/period!=4'),
+                (paths[10], 'maximum!=2*(1<<30)')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))
