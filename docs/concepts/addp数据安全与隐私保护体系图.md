@@ -61,6 +61,8 @@ flowchart TB
 - `ProtectionExemption` 是审批后形成的按用户临时原值授权；它不授予资源访问权，只有当前 Owner 已授权且调用主体与授权主体完全匹配时才生效，到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline。
 - `ProtectionProjection` 是交付给数据出口 owner 的最小、版本化、可校验执行契约，不是策略业务对象副本。
 
+已确认的角色可选脱敏设计在现有 ProtectionPolicy 内增加可选方式：字段默认方式保持自动生效，角色只扩充用户在具体业务中可选的算法与参数，多个角色取可用方式并集，不按最严格角色自动收紧。查询、服务和传输任务保存精确来源字段的选项引用，每次执行重新核验当前账号角色及选项有效性；Security 拥有选项，System 拥有角色事实，业务 Owner 拥有已保存选择，Common 统一裁决。Service 应用凭据的保护方式绑定暂缓。该段描述实现目标，不证明接口、运行链路或界面已经完成；详细约束见实现规范 7.1.1。
+
 ProtectionBaseline 或 SensitiveDataType 的保护语义变化由 Security 根据自身 Finding 与 Assessment 依赖精确定位 Enrollment，并通过唯一编译器重新发布投影；不依赖 Catalog，也不重新扫描 Meta。正式 Assessment revision 冻结当次分类分级结论，不随定义修改静默漂移。
 
 ### 2.1 产品信息架构
