@@ -166,13 +166,21 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 
 确定性生命周期与构建回归入口为 `make test-dev-lifecycle`，由 `make test-platform` 纳入 Platform CI；测试在临时工作区使用生命周期夹具，不接管正在运行的开发服务。
 
-## Meta Worker 启动单元
+## Meta 与 Transfer Worker 启动单元
 
-2026-10-22 确认的首期范围：原生开发部署通过 `ADDP_DEV_META_WORKER_REPLICAS` 选择一个或两个同类 Meta Worker，默认 `1`，只接受规范字符串 `1`、`2`。这是部署输入，与单个 Worker 的任务并发数分开；不进入模块运行配置或 Monitor 管理 API。非法值在启动设施、构建及重启停机前拒绝。
+原生开发部署分别选择下列 Worker 的副本数，均默认 `1`，只接受规范字符串 `1`、`2`。这些是部署输入，与单个 Worker 的任务并发数分开，不进入模块运行配置或 Monitor 管理 API。非法值在启动设施、构建及重启停机前拒绝。
 
-无论单、双副本，唯一启动单元均为 `meta-worker-1`、`meta-worker-2`，复用同一 `addp-meta-worker` 产物；PID 按启动单元保存，不保留旧单 Worker PID 或指标计划别名。每个新进程沿正式日志启动器生成独立身份，同一进程重登记身份不变。每个单元只消费自己的指标端点与 TLS 目录；同机单元共享实际主机声明，不共享实例身份。标准启动只补缺失单元，已运行单元不被重启；存在运行中、未被新数量选择的 Meta Worker 时拒绝缩容，部署方须显式停止或重启 Meta 后再应用数量。PID 复用、其他工作区或其他程序不得被当成本单元已运行。
+| Worker | 副本配置 | 唯一启动单元 | 共用产物 |
+| --- | --- | --- | --- |
+| Meta | `ADDP_DEV_META_WORKER_REPLICAS` | `meta-worker-1`、`meta-worker-2` | `addp-meta-worker` |
+| Transfer 单次同步 | `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS` | `transfer-bounded-worker-1`、`transfer-bounded-worker-2` | `addp-transfer-bounded-worker` |
+| Transfer 持续同步 | `ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS` | `transfer-continuous-worker-1`、`transfer-continuous-worker-2` | `addp-transfer-continuous-worker` |
 
-模块级 `stop.sh -meta`、`restart.sh -meta` 必须覆盖所有编号单元，仍保持其他模块及公共依赖。Backend 先迁移并 Ready、Worker 仅校验 schema 的顺序不变。进程资源观测、System 登记与主机绑定沿既有协议，不新增权限、调度器或副本管理实体。首次切换前由部署方停止原 Meta 服务，再按标准入口启动，不在线接管旧实例。
+单副本也使用编号单元；PID 按启动单元保存，不保留旧单 Worker PID 或指标计划别名。每个新进程沿正式日志启动器生成独立身份，同一进程重登记身份不变。每个单元只消费自己的指标端点与 TLS 目录；同机单元共享实际主机声明，不共享实例身份。标准启动只补缺失单元，已运行单元不被重启；存在运行中、未被新数量选择的 Worker 时拒绝缩容，部署方须显式停止或重启对应模块后再应用数量。PID 复用、其他工作区或其他程序不得被当成本单元已运行。
+
+Transfer 持续同步双副本不允许同时设置固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，必须在启动及重启停机前拒绝；沿已有入口为每个进程生成独立租约 Owner，单副本保留该显式配置。单次同步复用既有 claim，持续同步复用既有租约和 fencing；本次不改变任务并发度、租约语义或调度器。
+
+模块级 `stop.sh -meta/-transfer`、`restart.sh -meta/-transfer` 覆盖所选模块全部编号单元，保持其他模块及公共依赖。Backend 先迁移并 Ready、Worker 仅校验 schema 的顺序不变。进程资源观测、System 登记与主机绑定沿既有协议，不新增权限或副本管理实体。首次切换前由部署方停止原服务，再按标准入口启动，不在线接管旧实例。生命周期夹具验证进程隔离，不代替真实登记、主机绑定或多 Worker 业务任务的 Hosted 验收。
 
 ## 进程身份与运行日志
 

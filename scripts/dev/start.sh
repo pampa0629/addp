@@ -86,9 +86,15 @@ if [ -f ".env" ]; then
 fi
 
 source "${SCRIPT_DIR}/worker-units.sh"
-meta_units=$(addp_meta_worker_units) || exit 1
+meta_units=$(addp_worker_units meta-worker) || exit 1
 META_WORKER_UNITS=()
 while IFS= read -r unit; do META_WORKER_UNITS+=("$unit"); done <<< "$meta_units"
+bounded_units=$(addp_worker_units transfer-bounded-worker) || exit 1
+continuous_units=$(addp_worker_units transfer-continuous-worker) || exit 1
+TRANSFER_BOUNDED_WORKER_UNITS=()
+TRANSFER_CONTINUOUS_WORKER_UNITS=()
+while IFS= read -r unit; do TRANSFER_BOUNDED_WORKER_UNITS+=("$unit"); done <<< "$bounded_units"
+while IFS= read -r unit; do TRANSFER_CONTINUOUS_WORKER_UNITS+=("$unit"); done <<< "$continuous_units"
 
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
@@ -601,7 +607,13 @@ fi
 echo ""
 
 if [ "$START_META_WORKER" = true ]; then
-  addp_check_meta_worker_inventory || exit 1
+  addp_check_worker_inventory meta-worker || exit 1
+fi
+if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
+  addp_check_worker_inventory transfer-bounded-worker || exit 1
+fi
+if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
+  addp_check_worker_inventory transfer-continuous-worker || exit 1
 fi
 
 # ============================================================
@@ -665,7 +677,7 @@ check_service_running() {
     pid=$(cat "$pidfile" 2>/dev/null)
     if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
       case "$service_name" in
-        meta-worker-[12]) addp_meta_worker_pid_owned "$pid" || { echo 'Meta Worker PID ownership changed' >&2; exit 1; } ;;
+        meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) addp_worker_pid_owned "$pid" "$(addp_worker_binary "$service_name")" || { echo 'Worker PID ownership changed' >&2; exit 1; } ;;
       esac
       if [ -n "$port" ] && declare -F addp_dev_owned_listener >/dev/null; then
         echo "✗ ${service_name} PID 文件中的进程仍在运行，但没有监听分配端口 ${port}" >&2
@@ -1147,12 +1159,26 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
-    build_if_service_stopped "transfer-bounded-worker" "" build_transfer_bounded_worker &
+    (
+      for unit in "${TRANSFER_BOUNDED_WORKER_UNITS[@]}"; do
+        if check_service_running "$unit" ""; then
+          build_transfer_bounded_worker
+          break
+        fi
+      done
+    ) &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
-    build_if_service_stopped "transfer-continuous-worker" "" build_transfer_continuous_worker &
+    (
+      for unit in "${TRANSFER_CONTINUOUS_WORKER_UNITS[@]}"; do
+        if check_service_running "$unit" ""; then
+          build_transfer_continuous_worker
+          break
+        fi
+      done
+    ) &
     BUILD_PIDS+=($!)
   fi
 
@@ -1209,6 +1235,7 @@ require_started_backends() {
   fi
 }
 
+TRANSFER_WORKERS=()
 BACKEND_STARTS=()
 WORKER_START_PIDS=()
 if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
@@ -1443,8 +1470,8 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     WORKER_START_PIDS+=($!)
   fi
   TRANSFER_WORKERS=()
-  [ "$START_TRANSFER_BOUNDED_WORKER" != true ] || TRANSFER_WORKERS+=(transfer-bounded-worker)
-  [ "$START_TRANSFER_CONTINUOUS_WORKER" != true ] || TRANSFER_WORKERS+=(transfer-continuous-worker)
+  [ "$START_TRANSFER_BOUNDED_WORKER" != true ] || TRANSFER_WORKERS+=("${TRANSFER_BOUNDED_WORKER_UNITS[@]}")
+  [ "$START_TRANSFER_CONTINUOUS_WORKER" != true ] || TRANSFER_WORKERS+=("${TRANSFER_CONTINUOUS_WORKER_UNITS[@]}")
   if [ "${#TRANSFER_WORKERS[@]}" -gt 0 ]; then
     start_module_workers transfer "$TRANSFER_PID" "$TRANSFER_BACKEND_PORT" "${TRANSFER_WORKERS[@]}" &
     WORKER_START_PIDS+=($!)
@@ -1671,7 +1698,17 @@ if [ "$START_META_WORKER" = true ]; then
     BACKEND_STARTS+=("$unit:$worker_pid")
   done
 fi
-for worker_spec in "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID" "transfer-bounded-worker|$START_TRANSFER_BOUNDED_WORKER|TRANSFER_BOUNDED_WORKER_PID" "transfer-continuous-worker|$START_TRANSFER_CONTINUOUS_WORKER|TRANSFER_CONTINUOUS_WORKER_PID"; do
+TRANSFER_BOUNDED_WORKER_PID=''
+TRANSFER_CONTINUOUS_WORKER_PID=''
+for unit in "${TRANSFER_WORKERS[@]}"; do
+  worker_pid=$(cat ".dev-pids/${unit}.pid")
+  case "$unit" in
+    transfer-bounded-worker-*) TRANSFER_BOUNDED_WORKER_PID="${TRANSFER_BOUNDED_WORKER_PID:+$TRANSFER_BOUNDED_WORKER_PID,}$worker_pid" ;;
+    transfer-continuous-worker-*) TRANSFER_CONTINUOUS_WORKER_PID="${TRANSFER_CONTINUOUS_WORKER_PID:+$TRANSFER_CONTINUOUS_WORKER_PID,}$worker_pid" ;;
+  esac
+  BACKEND_STARTS+=("$unit:$worker_pid")
+done
+for worker_spec in "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID"; do
   IFS='|' read -r worker_name worker_selected worker_pid_var <<< "$worker_spec"
   if [ "$worker_selected" = true ]; then
     worker_pid=$(cat ".dev-pids/${worker_name}.pid")

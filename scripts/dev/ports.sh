@@ -69,7 +69,7 @@ addp_dev_saved_port() {
 addp_dev_process_module() {
   case "$1" in
     meta-worker-[12]) echo meta ;;
-    transfer-bounded-worker|transfer-continuous-worker) echo transfer ;;
+    transfer-bounded-worker|transfer-continuous-worker|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) echo transfer ;;
     jupyter-api-server) echo jupyter ;;
     raster-mosaic-runtime) echo manager ;;
     *-frontend) echo "${1%-frontend}" ;;

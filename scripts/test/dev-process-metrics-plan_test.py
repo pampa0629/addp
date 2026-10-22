@@ -23,8 +23,8 @@ class ProcessMetricsPlanTest(unittest.TestCase):
         self.plan = {
             "meta": deployment("meta", "backend", 19104),
             "meta-worker-1": deployment("meta", "worker", 19106),
-            "transfer-bounded-worker": deployment("transfer", "worker", 19107),
-            "transfer-continuous-worker": deployment("transfer", "worker", 19108),
+            "transfer-bounded-worker-1": deployment("transfer", "worker", 19107),
+            "transfer-continuous-worker-1": deployment("transfer", "worker", 19108),
         }
         self.raw = json.dumps(self.plan)
 
@@ -74,7 +74,7 @@ class ProcessMetricsPlanTest(unittest.TestCase):
     def test_independent_sources_cannot_repeat_addresses_or_tls_directories(self):
         for field in ("listen", "endpoint", "tls_dir"):
             plan = json.loads(self.raw)
-            plan["transfer-continuous-worker"][field] = plan["transfer-bounded-worker"][field]
+            plan["transfer-continuous-worker-1"][field] = plan["transfer-bounded-worker-1"][field]
             with self.subTest(field=field), self.assertRaises(ValueError):
                 LAUNCH.select_deployment(json.dumps(plan), "meta", "meta", "backend")
 

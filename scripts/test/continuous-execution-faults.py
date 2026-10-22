@@ -17,8 +17,9 @@ SUPPORT = importlib.import_module('scripts.test.orchestrator-execution-faults')
 def validate_process(process: Path, root: Path, secret: Path, module: str):
     executable = (process / 'exe').resolve(strict=True)
     environment = dict(x.split('=', 1) for x in (process / 'environ').read_bytes().decode().split('\0') if '=' in x)
-    if (module not in {'transfer', 'transfer-continuous-worker'} or
-        executable != root / f'.dev-bins/addp-{module}' or process.stat().st_uid != os.getuid() or
+    binary = 'transfer-continuous-worker' if module == 'transfer-continuous-worker-1' else module
+    if (module not in {'transfer', 'transfer-continuous-worker-1'} or
+        executable != root / f'.dev-bins/addp-{binary}' or process.stat().st_uid != os.getuid() or
         environment.get('ADDP_ONLINE_SECRET_DIR') != str(secret) or
         environment.get('POSTGRES_DB') != 'addp_online' or environment.get('ADDP_ONLINE_HOSTED') != '1'):
         raise ValueError('refusing to signal an unowned Transfer process')
@@ -93,7 +94,7 @@ class HostedFaults:
             time.sleep(.5)
 
     def kill_worker_and_replace(self):
-        pid, descriptor = self.pin('transfer-continuous-worker')
+        pid, descriptor = self.pin('transfer-continuous-worker-1')
         try:
             signal.pidfd_send_signal(descriptor, signal.SIGKILL)
             if not select.select([descriptor], [], [], 10)[0]:
@@ -106,7 +107,7 @@ class HostedFaults:
         with path.open('a') as output:
             subprocess.run(['bash', 'scripts/dev/start.sh', '-transfer'], cwd=self.root,
                            env=env, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=180)
-        replacement, descriptor = self.pin('transfer-continuous-worker')
+        replacement, descriptor = self.pin('transfer-continuous-worker-1')
         os.close(descriptor)
         if replacement == pid:
             raise ValueError('replacement must be a distinct proven Worker')

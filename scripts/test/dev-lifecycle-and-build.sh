@@ -434,7 +434,7 @@ child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2], sys.argv[3]]
 Path('frontend-child.pid').write_text(str(child.pid))
 while True: time.sleep(1)
 ''')
-names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2')
+names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2')
 ports = {}
 for name in names:
     if 'worker' in name:
@@ -445,7 +445,7 @@ for name in names:
 config = root / 'ports.json'
 config.write_text(json.dumps(ports))
 variables = {'system': 'SYSTEM_BACKEND_PORT', 'manager': 'MANAGER_BACKEND_PORT', 'asset': 'ASSET_BACKEND_PORT',
-             'asset-frontend': 'ASSET_FE_PORT', 'quality': 'QUALITY_BACKEND_PORT', 'meta': 'META_BACKEND_PORT'}
+             'asset-frontend': 'ASSET_FE_PORT', 'quality': 'QUALITY_BACKEND_PORT', 'meta': 'META_BACKEND_PORT', 'transfer': 'TRANSFER_BACKEND_PORT'}
 (root / '.dev-state/ports.env').write_text(''.join(f'{variables[name]}={port}\n' for name, port in ports.items()))
 start = root / 'start.py'
 start.write_text('''
@@ -454,7 +454,7 @@ from pathlib import Path
 root = Path(__file__).parent
 ports = json.loads((root / 'ports.json').read_text())
 selected = [arg[1:] for arg in sys.argv[1:]]
-for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'):
+for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2'):
     module = name.split('-')[0]
     if module not in selected: continue
     pidfile = root / '.dev-pids' / (name + '.pid')
@@ -515,7 +515,7 @@ def ready():
 def snapshot():
     return {p.name: p.read_text() for p in (root / '.dev-pids').glob('*.pid')}
 try:
-    subprocess.run(['bash', str(dev / 'start.sh'), '-system', '-manager', '-asset', '-quality', '-meta'], env=env, check=True)
+    subprocess.run(['bash', str(dev / 'start.sh'), '-system', '-manager', '-asset', '-quality', '-meta', '-transfer'], env=env, check=True)
     ready()
     remember()
     (root / 'manager/frontend/node_modules/.vite').mkdir(parents=True)
@@ -525,13 +525,16 @@ try:
     watcher = threading.Thread(target=monitor)
     watcher.start()
     # Swagger failure and invalid parameters must leave ALL existing processes in place.
-    for args, extra in ((['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {})):
+    for args, extra in ((['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {}),
+                        (['-transfer'], {'ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS':'3'}),
+                        (['-transfer'], {'ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS':'2','TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID':'fixed'})):
         result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=dict(env, **extra), capture_output=True, text=True)
         assert result.returncode != 0, result.stdout + result.stderr
         assert snapshot() == before, 'preflight failure stopped existing services'
         ready()
     for args, selected in ((['-asset', '-asset'], {'asset', 'asset-frontend'}),
-                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'})):
+                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'}),
+                           (['-transfer'], {'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2'})):
         before = snapshot()
         if 'asset' in selected:
             # A stale selected PID referencing another live module must never kill that module.
@@ -2228,11 +2231,13 @@ services = ('duckdb', 'manager', 'meta', 'transfer', 'orchestrator', 'develop',
             'service', 'monitor', 'standard', 'model', 'quality', 'security',
             'asset', 'catalog', 'ontology', 'workbench', 'portal', 'graph', 'inference')
 workers = ('meta-worker-1', 'quality-worker', 'security-worker',
-           'transfer-bounded-worker', 'transfer-continuous-worker')
+           'transfer-bounded-worker-1', 'transfer-continuous-worker-1')
 all_names = set(services + workers)
 base = r'''
 set -eu
 META_WORKER_UNITS=(meta-worker-1)
+TRANSFER_BOUNDED_WORKER_UNITS=(transfer-bounded-worker-1)
+TRANSFER_CONTINUOUS_WORKER_UNITS=(transfer-continuous-worker-1)
 YELLOW= GREEN= RED= NC=
 cd "$CASE_ROOT"
 source "$BUILD_SCRIPT"
@@ -2258,6 +2263,9 @@ cases = (
     ('missing-backend', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, {'meta'}, '', ''),
     ('port-conflict', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, set(), 'meta', ''),
     ('build-failure', {'meta', 'meta-worker-1'}, set(), {'meta', 'meta-worker-1'}, '', 'meta'),
+    ('bounded-second-missing', {'transfer','transfer-bounded-worker-1','transfer-bounded-worker-2'}, {'transfer','transfer-bounded-worker-1'}, {'transfer-bounded-worker-2'}, '', ''),
+    ('continuous-second-missing', {'transfer','transfer-continuous-worker-1','transfer-continuous-worker-2'}, {'transfer','transfer-continuous-worker-1'}, {'transfer-continuous-worker-2'}, '', ''),
+
 )
 for mode, selected, running, expected, conflict, failed_build in cases:
     workspace = temporary/('build-process-state-'+mode)
@@ -2267,24 +2275,26 @@ for mode, selected, running, expected, conflict, failed_build in cases:
         if not flag.startswith('START_'):
             continue
         name = flag.removeprefix('START_').removesuffix('_BACKEND').lower().replace('_', '-')
-        unit_name = 'meta-worker-1' if name == 'meta-worker' else name
+        unit_name = name+'-1' if name in ('meta-worker', 'transfer-bounded-worker', 'transfer-continuous-worker') else name
         flags.append(f'{flag}={"true" if unit_name in selected else "false"}')
     ports = {name: str(20000 + index) for index, name in enumerate(sorted(set(
         re.findall(r'\$\{?([A-Z_]+PORT)', source))))}
-    script = base+'\n'+'\n'.join(flags)+'\n'+helper+'\n'+phase+'\ntouch completed\n'
+    unit_setup = ''.join(f'\nTRANSFER_{family.upper()}_WORKER_UNITS=(transfer-{family}-worker-1 transfer-{family}-worker-2)\n'
+                         for family in ('bounded','continuous') if f'transfer-{family}-worker-2' in selected)
+    script = base+unit_setup+'\n'+'\n'.join(flags)+'\n'+helper+'\n'+phase+'\ntouch completed\n'
     result = subprocess.run(['bash', '-c', script], env=dict(
         os.environ, **ports, CASE_ROOT=str(workspace), BUILD_SCRIPT=str(root/'scripts/dev/build-identity.sh'),
         RUNNING=' '.join(sorted(running)), CONFLICT=conflict, FAILED_BUILD=failed_build),
         capture_output=True, text=True, timeout=10)
     events = [line.split('|') for line in (workspace/'events').read_text().splitlines()]
     builds = [event[1] for event in events if event[0] == 'build']
-    assert sorted(builds) == sorted('meta-worker' if n == 'meta-worker-1' else n for n in expected), (mode, builds, expected, result.stdout, result.stderr)
+    assert sorted(builds) == sorted(n[:-2] if n.endswith(('-worker-1','-worker-2')) else n for n in expected), (mode, builds, expected, result.stdout, result.stderr)
     assert (result.returncode != 0) == bool(conflict or failed_build), (mode, result.stdout, result.stderr)
     assert (workspace/'completed').exists() == (not conflict and not failed_build), mode
     checks = {event[1]: event[2] for event in events if event[0] == 'check'}
     assert set(checks) == selected, (mode, checks, selected)
     for name in selected:
-        expected_port = '' if name in workers else ports[name.upper()+'_BACKEND_PORT' if name != 'duckdb' else 'DUCKDB_RUNTIME_PORT']
+        expected_port = '' if name in workers or name.endswith('-worker-2') else ports[name.upper()+'_BACKEND_PORT' if name != 'duckdb' else 'DUCKDB_RUNTIME_PORT']
         assert checks[name] == expected_port, (mode, name, checks[name], expected_port)
 print('PASS: running backends/workers skip builds; missing processes build independently; conflicts and build failures stop startup')
 PY

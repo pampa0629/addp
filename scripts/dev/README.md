@@ -74,11 +74,11 @@ bash scripts/dev/modtidy.sh
 
 ### 开发进程采集计划
 
-根 `.env` 的 `ADDP_DEV_PROCESS_METRICS_PLAN` 按具体启动单元填写独立的五字段部署对象。当前每种 Worker 只启动一个进程，单元名为 `meta-worker`、`transfer-bounded-worker` 和 `transfer-continuous-worker`；后端使用原模块进程名。不同单元可以属于同一个 module/role，但必须分配不同监听地址、采集端点和仓库外证书目录。
+根 `.env` 的 `ADDP_DEV_PROCESS_METRICS_PLAN` 按具体启动单元填写独立的五字段部署对象。Meta 及 Transfer bounded、continuous 三类 Worker 默认各一个、可各选两个进程，单元名分别为 `meta-worker-1/-2`、`transfer-bounded-worker-1/-2` 和 `transfer-continuous-worker-1/-2`；后端使用原模块进程名。不同单元可以属于同一个 module/role，但必须分配不同监听地址、采集端点和仓库外证书目录。
 
 标准入口在创建 Go 子进程时调用 `process-metrics-launch.py`，只向该进程注入选中项对应的 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 单项数组，再以相同 PID exec 原日志接收器。没有选择时显式注入空值，根环境补齐不会覆盖它。根 `.env` 中旧 SDK 数组须删除，配置错误只关闭可选采集并报告 `dev_process_metrics_plan_invalid`，不阻断业务启动。端点及证书有效性仍由 Common SDK 唯一校验。
 
-计划不是多副本启动器：未来同类型多副本必须有各自启动单元，由部署入口分别注入；不能让多个副本继承同一来源，也不以配置键代替运行实例 ID。容器部署仍直接注入各自 SDK 输入，不消费开发计划。格式及边界见 [配置规范](../../docs/spec/addp配置介绍.md)。
+副本数量由 [标准生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#meta-与-transfer-worker-启动单元) 中的三个部署变量分别选择，采集计划只为已选择的编号单元注入配置；不能让多个副本继承同一来源，也不以配置键代替运行实例 ID。容器部署仍直接注入各自 SDK 输入，不消费开发计划。格式及边界见 [配置规范](../../docs/spec/addp配置介绍.md)。
 
 ### start.sh
 

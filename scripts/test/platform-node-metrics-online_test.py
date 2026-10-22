@@ -1190,7 +1190,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -1977,14 +1977,26 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
 
 
 class MetaWorkerAcceptanceTest(unittest.TestCase):
+    case = 'meta-workers'
+    module = 'meta'
+
+    def setUp(self):
+        self.env = patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=self.case)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.profile = ONLINE.FIXTURE.WORKER_PROFILES[self.case]
+
     host_id = "10000000-0000-4000-8000-000000000001"
 
     def owners(self):
         rows = []
-        for i, role in enumerate(("backend", "worker", "worker"), 1):
-            rows.append({"id": i, "instance_id": "meta-instance-"+str(i), "module_name": "meta", "role": role,
+        for i, role in enumerate(["backend"]+["worker"]*(len(self.profile["ports"])-1), 1):
+            rows.append({"id": i, "instance_id": self.module+"-instance-"+str(i), "module_name": self.module, "role": role,
                          "status": "up", "process_metrics_declared": True, "process_started_at": "2026-10-11T00:00:00Z",
                          "node_id": self.host_id, "declared_node_id": self.host_id, "node_binding_state": "bound", "node_binding_reason": ""})
+        if self.module == 'transfer':
+            for i, row in enumerate(rows[1:]):
+                row['metadata'] = {'runtime_name': 'sync' if i < 2 else 'continuous_sync'}
         return rows
 
     def test_binding_requires_two_distinct_same_module_workers_and_current_host_verdict(self):
@@ -1997,19 +2009,19 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
             client = unittest.mock.Mock()
             with patch.object(ONLINE, 'instance_list', return_value=rows):
                 if mutate:
-                    with self.assertRaises(ONLINE.SuiteError): ONLINE.meta_current_instances(client, self.host_id)
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.worker_current_instances(client, self.host_id)
                 else:
-                    self.assertEqual(ONLINE.meta_current_instances(client, self.host_id), good)
+                    self.assertEqual(ONLINE.worker_current_instances(client, self.host_id), good)
         rows = copy.deepcopy(good)
         for row in rows: row.update(node_id="", node_binding_state="rejected", node_binding_reason="node_disabled")
         with patch.object(ONLINE, 'instance_list', return_value=rows):
-            self.assertEqual(ONLINE.meta_current_instances(client, self.host_id, rejected=True), rows)
+            self.assertEqual(ONLINE.worker_current_instances(client, self.host_id, rejected=True), rows)
 
     def test_slots_use_real_sdk_identity_and_exact_per_unit_endpoints(self):
         owners = self.owners()
         rows = [{"metric": {"instance": "192.0.2.8:"+str(19103+i), "addp_instance_id": owners[i]["instance_id"],
-                            "runtime_instance_id": owners[i]["instance_id"], "module_name": "meta", "runtime_role": "worker"},
-                 "value": [100, "1"]} for i in (1, 2)]
+                            "runtime_instance_id": owners[i]["instance_id"], "module_name": self.module, "runtime_role": "worker"},
+                 "value": [100, "1"]} for i in range(1, len(owners))]
         for mutate in (None, lambda r: r.pop(), lambda r: r[1]["metric"].update(instance=r[0]["metric"]["instance"]),
                        lambda r: r[0]["metric"].update(runtime_instance_id="foreign"),
                        lambda r: r[0]["metric"].update(instance="192.0.2.9:19104"),
@@ -2019,19 +2031,19 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
             client = unittest.mock.Mock(query=unittest.mock.Mock(return_value=data))
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_NODE_IP="192.0.2.8"):
                 if mutate:
-                    with self.assertRaises(ONLINE.SuiteError): ONLINE.meta_worker_slots(client, owners)
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.worker_slots(client, owners)
                 else:
-                    self.assertEqual(ONLINE.meta_worker_slots(client, owners), {'meta-worker-1': owners[1], 'meta-worker-2': owners[2]})
+                    self.assertEqual(ONLINE.worker_slots(client, owners), dict(zip([u for u in self.profile['ports'] if u != self.module], owners[1:])))
 
     def test_lifecycle_is_bounded_owned_and_uses_standard_entrypoints(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE='meta-workers'), \
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=self.case), \
                  patch.object(ONLINE.FIXTURE, 'boundary', return_value=root), patch.object(ONLINE.subprocess, 'run') as run:
-                for action, expected in [('stop', ['bash','scripts/dev/stop.sh','-meta']),
-                                         ('start', ['bash','scripts/dev/start.sh','-monitor']),
-                                         ('stop-worker', ['bash','scripts/dev/stop-exact-process.sh','-meta-worker-1'])]:
-                    ONLINE.meta_worker_lifecycle(root, action, self.host_id)
+                for action, expected in [('stop', ['bash','scripts/dev/stop.sh','-'+self.module]),
+                                         ('start', ['bash','scripts/dev/start.sh','-'+self.module,'-monitor']),
+                                         ('stop-worker', ['bash','scripts/dev/stop-exact-process.sh','-'+self.profile['replace'][0]])]:
+                    ONLINE.worker_lifecycle(root, action, self.host_id, self.profile['replace'][0] if action == 'stop-worker' else None)
                     args, options = run.call_args
                     self.assertEqual(args[0], expected)
                     self.assertEqual(options['env']['ADDP_HOST_NODE_ID'], self.host_id)
@@ -2039,14 +2051,15 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
                     self.assertTrue(options['check'])
                 before = run.call_count
                 for action, node in [('unknown', self.host_id), ('start', 'invalid')]:
-                    with self.assertRaises(ONLINE.SuiteError): ONLINE.meta_worker_lifecycle(root, action, node)
-                with self.assertRaises(ONLINE.SuiteError): ONLINE.meta_worker_lifecycle(root/'foreign', 'start', self.host_id)
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.worker_lifecycle(root, action, node)
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.worker_lifecycle(root/'foreign', 'start', self.host_id)
                 self.assertEqual(run.call_count, before)
 
     def browser_evidence(self, artifacts):
         workers = self.owners()[1:]
         _, base = MetricsProtocolTest().process_reply()
         batch = copy.deepcopy(base)
+        batch['data'] = [copy.deepcopy(base['data'][0]) for _ in workers]
         frames = []
         for row, owner in zip(batch['data'], workers):
             row['subject'] = {'kind':'module_instance', **{k:owner[k] for k in ('id','instance_id','module_name','role')}}
@@ -2065,11 +2078,11 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
             frames.append({'path':'/api/v1/monitor/platform/process_resource_trends',
                            'query':{'instance_id':str(owner['id']), 'start':value['start'],'end':value['end']}, 'value':value})
         actor = identity(); actor['principal']['id'] = 'admin'
-        expected = {'run_id':'run','admin_id':'admin','meta_workers':{'workers':workers,'host':{'node_id':self.host_id}}}
+        expected = {'run_id':'run','admin_id':'admin','module_workers':{'module':self.module,'workers':workers,'host':{'node_id':self.host_id}}}
         value = {'schema_version':'addp.node-resources-browser/v1','result':'passed','stage':'complete','run_id':'run','identity':actor,
-                 'meta_workers':{'reload_restored':True,'host_navigation':True,'summary':{'path':ONLINE.PROCESS_SUMMARIES,
+                 'module_workers':{'reload_restored':True,'host_navigation':True,'summary':{'path':ONLINE.PROCESS_SUMMARIES,
                      'query':{'instance_ids':','.join(str(r['id']) for r in workers)},'value':batch},'trends':frames}}
-        for name in ('meta-workers-list.png','meta-workers-trends.png'):
+        for name in ('module-workers-list.png','module-workers-trends.png'):
             (artifacts/name).write_bytes(b'\x89PNG\r\n\x1a\n'+b'x'*1100)
         return expected, value
 
@@ -2077,19 +2090,46 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             artifacts = Path(folder)
             expected, good = self.browser_evidence(artifacts)
-            ONLINE.validate_meta_workers_browser(good, expected, artifacts)
+            ONLINE.validate_workers_browser(good, expected, artifacts)
             mutations = [lambda v:v.update(run_id='old'), lambda v:v['identity']['principal'].update(id='foreign'),
-                         lambda v:v['meta_workers'].update(host_navigation=False),
-                         lambda v:v['meta_workers']['summary']['query'].update(instance_ids='2,3,4'),
-                         lambda v:v['meta_workers']['trends'].pop(),
-                         lambda v:v['meta_workers']['trends'][0]['value']['subject'].update(id=3),
-                         lambda v:v['meta_workers']['trends'][1]['query'].update(instance_id='2'),
-                         lambda v:v['meta_workers']['trends'][0]['value']['series'][0]['points'][0].update(value=None)]
+                         lambda v:v['module_workers'].update(host_navigation=False),
+                         lambda v:v['module_workers']['summary']['query'].update(instance_ids='2,3,4'),
+                         lambda v:v['module_workers']['trends'].pop(),
+                         lambda v:v['module_workers']['trends'][0]['value']['subject'].update(id=3),
+                         lambda v:v['module_workers']['trends'][1]['query'].update(instance_id='2'),
+                         lambda v:v['module_workers']['trends'][0]['value']['series'][0]['points'][0].update(value=None)]
             for mutate in mutations:
                 value = copy.deepcopy(good); mutate(value)
-                with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_meta_workers_browser(value, expected, artifacts)
-            (artifacts/'meta-workers-list.png').unlink()
-            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_meta_workers_browser(good, expected, artifacts)
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_workers_browser(value, expected, artifacts)
+            (artifacts/'module-workers-list.png').unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_workers_browser(good, expected, artifacts)
+
+
+class TransferWorkerAcceptanceTest(MetaWorkerAcceptanceTest):
+    case = 'transfer-workers'
+    module = 'transfer'
+
+    def test_worker_endpoints_cannot_swap_bounded_and_continuous_identities(self):
+        owners = self.owners()
+        owners[1]['metadata']['runtime_name'] = 'continuous_sync'
+        rows = [{"metric": {"instance": "192.0.2.8:"+str(19103+i), "addp_instance_id": owners[i]["instance_id"],
+                            "runtime_instance_id": owners[i]["instance_id"], "module_name": self.module, "runtime_role": "worker"},
+                 "value": [100, "1"]} for i in range(1, len(owners))]
+        with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_NODE_IP='192.0.2.8'):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.worker_slots(unittest.mock.Mock(query=unittest.mock.Mock(return_value=rows)), owners)
+
+    def test_foreign_family_and_backend_stop_rejected_before_command(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(ONLINE.FIXTURE, 'boundary', return_value=root), patch.object(ONLINE.subprocess, 'run') as run:
+                for unit in ('meta-worker-1', 'transfer', 'transfer-bounded-worker-2', None):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.worker_lifecycle(root, 'stop-worker', self.host_id, unit)
+                run.assert_not_called()
+                for unit in self.profile['replace']:
+                    ONLINE.worker_lifecycle(root, 'stop-worker', self.host_id, unit)
+                    self.assertEqual(run.call_args.args[0][-1], '-'+unit)
 
 
 if __name__ == "__main__":

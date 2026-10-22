@@ -273,13 +273,13 @@ test('platform node resources through real Console password MFA and Monitor ifra
       save('complete')
       return
     }
-    if (expected.meta_workers) {
-      save('meta-worker-resources-and-host')
-      const { workers, host } = expected.meta_workers
-      const path = '/monitor/service-resources?module_name=meta&role=worker&refresh=off'
+    if (expected.module_workers) {
+      save('module-worker-resources-and-host')
+      const { module, workers, host } = expected.module_workers
+      const path = `/monitor/service-resources?module_name=${encodeURIComponent(module)}&role=worker&refresh=off`
       const checkList = async (after) => {
         await expect(monitor.getByTestId('process-list')).toBeVisible()
-        await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(2)
+        await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(workers.length)
         for (const owner of workers) await expect(monitor.getByTestId('process-list')).toContainText(owner.instance_id)
         await expect.poll(async () => {
           await Promise.all(pending)
@@ -299,7 +299,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       batchStart = serviceBatches.length
       await page.reload()
       const summary = await checkList(batchStart)
-      await page.screenshot({ path: resolve(artifact, 'meta-workers-list.png'), animations: 'disabled' })
+      await page.screenshot({ path: resolve(artifact, 'module-workers-list.png'), animations: 'disabled' })
       const trends = []
       for (const owner of workers) {
         await page.goto(path + '&instance_id=' + owner.id)
@@ -314,7 +314,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         for (const line of trend.value.series) expect(line.points.some(point => point.data_state === 'valid')).toBe(true)
         trends.push(trend)
       }
-      await page.screenshot({ path: resolve(artifact, 'meta-workers-trends.png'), animations: 'disabled' })
+      await page.screenshot({ path: resolve(artifact, 'module-workers-trends.png'), animations: 'disabled' })
       batchStart = serviceBatches.length
       await page.goto(path)
       await checkList(batchStart)
@@ -327,7 +327,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await checkList(batchStart)
       await Promise.all(pending)
       expect(businessErrors).toEqual([])
-      report.meta_workers = { summary, trends, reload_restored: true, host_navigation: true }
+      report.module_workers = { summary, trends, reload_restored: true, host_navigation: true }
       report.result = 'passed'
       save('complete')
       return

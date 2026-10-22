@@ -1936,45 +1936,66 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     write_evidence(report)
 
 
-def meta_worker_lifecycle(directory, action, node_id):
-    require(acceptance_case() == "meta-workers" and FIXTURE.boundary() == directory,
-            "Meta lifecycle requires the owned Hosted case")
-    require(action in {"start", "stop", "stop-worker"} and canonical_uuid(node_id), "invalid Meta lifecycle input")
-    command = (["bash", "scripts/dev/stop-exact-process.sh", "-meta-worker-1"] if action == "stop-worker"
-               else ["bash", "scripts/dev/"+action+".sh", "-meta" if action == "stop" else "-monitor"])
-    with (directory / ("meta-workers-"+action+".log")).open("a") as output:
+def worker_profile():
+    profile = FIXTURE.WORKER_PROFILES.get(acceptance_case())
+    require(profile is not None, "Worker lifecycle requires a registered worker case")
+    return profile
+
+
+def worker_lifecycle(directory, action, node_id, unit=None):
+    profile = worker_profile()
+    module = profile["module"]
+    require(FIXTURE.boundary() == directory, "Worker lifecycle requires the owned Hosted case")
+    require(action in {"start", "stop", "stop-worker"} and canonical_uuid(node_id), "invalid Worker lifecycle input")
+    if action == "stop-worker":
+        require(unit in profile["replace"], "Worker stop selector outside the current case")
+        command = ["bash", "scripts/dev/stop-exact-process.sh", "-"+unit]
+    else:
+        require(unit is None, "unexpected Worker selector")
+        command = ["bash", "scripts/dev/"+action+".sh", "-"+module]
+        if action == "start": command.append("-monitor")
+    with (directory / (module+"-workers-"+action+".log")).open("a") as output:
         subprocess.run(command, cwd=FIXTURE.ROOT, env=dict(os.environ, ADDP_HOST_NODE_ID=node_id, SKIP_MODTIDY="1"),
                        stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
 
 
-def meta_current_instances(admin, node_id, *, rejected=False):
-    rows = instance_list(admin, module_name="meta", status="up")
-    require(len(rows) == 3 and sum(r["role"] == "worker" for r in rows) == 2
+def worker_current_instances(admin, node_id, *, rejected=False):
+    profile = worker_profile()
+    count = len(profile["ports"])
+    rows = instance_list(admin, module_name=profile["module"], status="up")
+    require(len(rows) == count and sum(r["role"] == "worker" for r in rows) == count-1
             and sum(r["role"] == "backend" for r in rows) == 1
-            and len({r["instance_id"] for r in rows}) == 3, "Meta requires one Backend and two independent Workers")
+            and len({r["instance_id"] for r in rows}) == count, "Worker case requires one Backend and its independent Workers")
     for row in rows:
-        assert_host_binding(row, node_id, rejected=rejected, module_name="meta", role=row["role"])
+        assert_host_binding(row, node_id, rejected=rejected, module_name=profile["module"], role=row["role"])
     return rows
 
 
-def meta_worker_slots(prom, instances):
-    rows = prom.query('addp_process_identity_info{job="addp_nodes",addp_monitor_kind="process_resources",addp_module_name="meta",addp_runtime_role="worker"}')
-    require(len(rows) == 2, "both Meta Worker SDK identities must be sampled")
+def worker_slots(prom, instances):
+    profile = worker_profile()
+    module = profile["module"]
+    rows = prom.query('addp_process_identity_info{job="addp_nodes",addp_monitor_kind="process_resources",addp_module_name="'+module+'",addp_runtime_role="worker"}')
+    require(len(rows) == len(profile["ports"])-1, "all Worker SDK identities must be sampled")
     result = {}
     for row in rows:
         labels = row.get("metric", {})
         instance = labels.get("addp_instance_id")
         require(float(row["value"][1]) == 1 and instance == labels.get("runtime_instance_id")
-                and labels.get("module_name") == "meta" and labels.get("runtime_role") == "worker"
+                and labels.get("module_name") == module and labels.get("runtime_role") == "worker"
                 and instance in {r["instance_id"] for r in instances if r["role"] == "worker"}, "Worker SDK identity differs from System")
-        units = [unit for unit in ("meta-worker-1", "meta-worker-2")
-                 if labels.get("instance") == os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(FIXTURE.META_PROCESS_PORTS[unit])]
+        units = [unit for unit in profile["ports"] if unit != module
+                 if labels.get("instance") == os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(profile["ports"][unit])]
         require(len(units) == 1 and units[0] not in result, "Worker source endpoint duplicated or unknown")
         result[units[0]] = next(r for r in instances if r["instance_id"] == instance)
+        if module == "transfer":
+            runtime_name = "sync" if units[0].startswith("transfer-bounded-worker-") else "continuous_sync"
+            require(result[units[0]].get("metadata", {}).get("runtime_name") == runtime_name,
+                    "Transfer source endpoint belongs to another Worker family")
+    require(len({row["instance_id"] for row in result.values()}) == len(result), "Worker endpoints share one identity")
     return result
 
 
-def meta_trends_ready(admin, workers, evidence):
+def worker_trends_ready(admin, workers, evidence):
     complete = True
     frames = []
     for owner in workers:
@@ -1991,117 +2012,124 @@ def meta_trends_ready(admin, workers, evidence):
     return complete
 
 
-def validate_meta_workers_browser(value, expected, artifacts):
+def validate_workers_browser(value, expected, artifacts):
     require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
             and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "Worker browser incomplete")
     platform_identity(value.get("identity", {}), "platform.system_administrator")
     require(value["identity"]["principal"]["id"] == expected["admin_id"], "Worker browser changed administrator")
-    detail = value.get("meta_workers", {})
+    detail = value.get("module_workers", {})
     require(detail.get("reload_restored") is True and detail.get("host_navigation") is True, "Worker browser navigation incomplete")
-    owners = expected["meta_workers"]["workers"]
+    owners = expected["module_workers"]["workers"]
     batch = detail.get("summary", {})
     require(batch.get("path") == PROCESS_SUMMARIES and set(batch.get("query", {})) == {"instance_ids"}
             and sorted(batch["query"]["instance_ids"].split(',')) == sorted(str(r["id"]) for r in owners), "Worker browser summary expanded scope")
     assert_process_summaries(batch.get("value", {}), owners)
     frames = detail.get("trends", [])
-    require(len(frames) == 2 and {f.get("query", {}).get("instance_id") for f in frames} == {str(r["id"]) for r in owners}, "Worker browser trends incomplete")
+    require(len(frames) == len(owners) and {f.get("query", {}).get("instance_id") for f in frames} == {str(r["id"]) for r in owners}, "Worker browser trends incomplete")
     for frame in frames:
         owner = next(r for r in owners if str(r["id"]) == frame["query"]["instance_id"])
         assert_process_trend_evidence(frame, owner, batch["value"]["data"][0]["policy_version"])
-    for name in ("meta-workers-list.png", "meta-workers-trends.png"):
+    for name in ("module-workers-list.png", "module-workers-trends.png"):
         image = artifacts / name
         require(image.is_file() and image.stat().st_size > 1000 and image.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "Worker browser screenshot missing")
-    return {"result": "passed", "worker_count": 2, "reload_restored": True, "host_navigation": True}
+    return {"result": "passed", "worker_count": len(owners), "reload_restored": True, "host_navigation": True}
 
 
-def run_meta_workers_case(base, directory, admin, admin_identity, machine, denied, report):
-    report["stage"] = "meta-worker-host-declaration"
+def run_workers_case(base, directory, admin, admin_identity, machine, denied, report):
+    profile = worker_profile()
+    module = profile["module"]
+    count = len(profile["ports"])
+    report["stage"] = module+"-worker-host-declaration"
     write_evidence(report)
     peers = current_processes(admin)
-    node_input = {"display_name": "Online Meta Worker host "+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_kind": "virtual",
+    node_input = {"display_name": "Online "+module+" Worker host "+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_kind": "virtual",
                   "addresses": [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], "enabled": True,
-                  "allowed_module_bindings": [{"module_name": "meta", "client_id": "addp-meta"}]}
+                  "allowed_module_bindings": [{"module_name": module, "client_id": "addp-"+module}]}
     node = admin.request("POST", NODES, (201,), node_input).payload
-    require(canonical_uuid(node.get("node_id")) and node.get("version") == 1, "Meta host creation invalid")
-    meta_worker_lifecycle(directory, "stop", node["node_id"])
-    meta_worker_lifecycle(directory, "start", node["node_id"])
-    eventually(lambda: len(instance_list(admin, module_name="meta", status="up")) == 3, "Meta Worker formal registration")
-    rows = meta_current_instances(admin, node["node_id"])
-    require({r["instance_id"] for r in peers} == {r["instance_id"] for r in current_processes(admin)}, "Meta launch changed peer instances")
+    require(canonical_uuid(node.get("node_id")) and node.get("version") == 1, "module host creation invalid")
+    worker_lifecycle(directory, "stop", node["node_id"])
+    worker_lifecycle(directory, "start", node["node_id"])
+    eventually(lambda: len(instance_list(admin, module_name=module, status="up")) == count, "Worker formal registration")
+    rows = worker_current_instances(admin, node["node_id"])
+    require({r["instance_id"] for r in peers} == {r["instance_id"] for r in current_processes(admin)}, "module launch changed peer instances")
     target = admin.request("POST", TARGETS, (201,), {"subject": {"kind": "node", "node_id": node["node_id"]},
                             "monitor_kind": "host_resources", "source": {"type": "node_exporter", "endpoint": "https://"+os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":19100/metrics"}, "enabled": True}).payload
     for client in denied:
         client.request("GET", process_path(rows), (403,))
-        client.request("GET", INSTANCES+"?page=1&page_size=20&module_name=meta&status=up", (403,))
-    eventually(lambda: process_query_ready(admin, rows), "three bound Meta process windows", timeout=130)
+        client.request("GET", INSTANCES+"?page=1&page_size=20&module_name="+module+"&status=up", (403,))
+    eventually(lambda: process_query_ready(admin, rows), "all bound process windows", timeout=130)
     prom = Prometheus(directory)
-    slots = meta_worker_slots(prom, rows)
+    slots = worker_slots(prom, rows)
     source_ports = {r["instance_id"]: FIXTURE.PROCESS_PORTS[r["module_name"]] for r in peers}
-    source_ports.update({r["instance_id"]: FIXTURE.META_PROCESS_PORTS["meta"] for r in rows if r["role"] == "backend"})
-    source_ports.update({owner["instance_id"]: FIXTURE.META_PROCESS_PORTS[unit] for unit, owner in slots.items()})
+    source_ports.update({r["instance_id"]: profile["ports"][module] for r in rows if r["role"] == "backend"})
+    source_ports.update({owner["instance_id"]: profile["ports"][unit] for unit, owner in slots.items()})
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, [*peers, *rows], host_count=1, source_ports=source_ports)
     trends = []
-    eventually(lambda: meta_trends_ready(admin, list(slots.values()), trends), "both current Meta Worker trends")
-    detail = report["meta_workers"] = {"initial_instances": rows, "initial_trends": trends, "same_host": node["node_id"]}
-    pid_paths = {unit: FIXTURE.ROOT / ".dev-pids" / (unit+".pid") for unit in ("meta", "meta-worker-1", "meta-worker-2")}
+    eventually(lambda: worker_trends_ready(admin, list(slots.values()), trends), "all current Worker trends")
+    detail = report["module_workers"] = {"initial_instances": rows, "initial_trends": trends, "same_host": node["node_id"]}
+    pid_paths = {unit: FIXTURE.ROOT / ".dev-pids" / (unit+".pid") for unit in profile["ports"]}
     pids = {unit: path.read_text().strip() for unit, path in pid_paths.items()}
-    old = slots["meta-worker-1"]
-    meta_worker_lifecycle(directory, "stop-worker", node["node_id"])
-    eventually(lambda: instance_list(admin, ids=str(old["id"]))[0]["status"] == "down", "stopped Meta Worker leaves active lease")
-    survivors = instance_list(admin, module_name="meta", status="up")
-    require({r["instance_id"] for r in survivors} == {r["instance_id"] for r in rows if r["id"] != old["id"]}, "stopping one Worker affected its peers")
-    eventually(lambda: process_query_ready(admin, [old, *survivors], inactive=[old["id"]]), "stopped Worker values clear while peers continue")
-    meta_worker_lifecycle(directory, "start", node["node_id"])
-    eventually(lambda: len(instance_list(admin, module_name="meta", status="up")) == 3, "Meta Worker formal registration")
-    rows = meta_current_instances(admin, node["node_id"])
-    require(all(pid_paths[unit].read_text().strip() == pids[unit] for unit in ("meta", "meta-worker-2")), "repair restarted healthy Backend or Worker")
-    eventually(lambda: process_query_ready(admin, rows), "replacement Worker complete CPU window", timeout=130)
-    slots = meta_worker_slots(prom, rows)
-    require(slots["meta-worker-1"]["instance_id"] != old["instance_id"]
-            and instance_timestamp(slots["meta-worker-1"]["process_started_at"]) > instance_timestamp(old["process_started_at"])
-            and slots["meta-worker-2"]["instance_id"] in {r["instance_id"] for r in survivors}, "Worker repair reused old identity or replaced peer")
-    assert_process_summaries(admin.request("GET", process_path([old, *rows]), (200,)).payload, [old, *rows], inactive=[old["id"]])
+    stopped = []
+    for replace_unit in profile["replace"]:
+        old = slots[replace_unit]
+        worker_lifecycle(directory, "stop-worker", node["node_id"], replace_unit)
+        eventually(lambda: instance_list(admin, ids=str(old["id"]))[0]["status"] == "down", "stopped module Worker leaves active lease")
+        survivors = instance_list(admin, module_name=module, status="up")
+        require({r["instance_id"] for r in survivors} == {r["instance_id"] for r in rows if r["id"] != old["id"]}, "stopping one Worker affected its peers")
+        eventually(lambda: process_query_ready(admin, [old, *survivors], inactive=[old["id"]]), "stopped Worker values clear while peers continue")
+        worker_lifecycle(directory, "start", node["node_id"])
+        eventually(lambda: len(instance_list(admin, module_name=module, status="up")) == count, "Worker formal registration")
+        rows = worker_current_instances(admin, node["node_id"])
+        require(all(pid_paths[unit].read_text().strip() == pids[unit] for unit in profile["ports"] if unit != replace_unit), "repair restarted healthy Backend or Worker")
+        eventually(lambda: process_query_ready(admin, rows), "replacement Worker complete CPU window", timeout=130)
+        slots = worker_slots(prom, rows)
+        require(slots[replace_unit]["instance_id"] != old["instance_id"]
+                and instance_timestamp(slots[replace_unit]["process_started_at"]) > instance_timestamp(old["process_started_at"])
+                and {r["instance_id"] for r in survivors}.issubset({r["instance_id"] for r in rows}), "Worker repair reused old identity or replaced peer")
+        assert_process_summaries(admin.request("GET", process_path([old, *rows]), (200,)).payload, [old, *rows], inactive=[old["id"]])
+        stopped.append(old)
+        pids = {unit: path.read_text().strip() for unit, path in pid_paths.items()}
     for disabled in (True, False):
         node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=not disabled, version=node["version"])).payload
-        current = meta_current_instances(admin, node["node_id"], rejected=disabled)
-        require({r["instance_id"] for r in current} == {r["instance_id"] for r in rows}, "host toggle changed Meta process identities")
+        current = worker_current_instances(admin, node["node_id"], rejected=disabled)
+        require({r["instance_id"] for r in current} == {r["instance_id"] for r in rows}, "host toggle changed module process identities")
         assert_process_summaries(admin.request("GET", process_path(current), (200,)).payload, current)
         rows = current
-    detail.update(replacement_instances=rows, stopped_instance=old, peer_pid_unchanged=True, host_toggle_preserved_instances=True)
+    detail.update(replacement_instances=rows, stopped_instances=stopped, peer_pid_unchanged=True, host_toggle_preserved_instances=True)
     repaired_pids = {unit: path.read_text().strip() for unit, path in pid_paths.items()}
-    report["stage"] = "meta-worker-observation-outage"
+    report["stage"] = module+"-worker-observation-outage"
     write_evidence(report)
     try:
         center_action("stop")
         failure = admin.request("GET", process_path(rows), (503, 504)).payload
         require("data" not in failure, "center outage returned old Worker values")
-        observed = meta_current_instances(admin, node["node_id"])
+        observed = worker_current_instances(admin, node["node_id"])
         require({r["instance_id"] for r in observed} == {r["instance_id"] for r in rows}, "center outage changed Worker leases")
-        require(all(path.read_text().strip() == repaired_pids[unit] for unit, path in pid_paths.items()), "center outage restarted Meta processes")
+        require(all(path.read_text().strip() == repaired_pids[unit] for unit, path in pid_paths.items()), "center outage restarted module processes")
     finally:
         center_action("start")
     after = time.time()
     eventually(lambda: process_query_ready(admin, rows, after=after), "fresh Worker samples after center recovery", timeout=130)
     detail["center_outage_preserved_workers"] = True
     workers = [r for r in rows if r["role"] == "worker"]
-    eventually(lambda: meta_trends_ready(admin, workers, trends), "replacement Worker current trends")
+    eventually(lambda: worker_trends_ready(admin, workers, trends), "replacement Worker current trends")
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "admin_id": admin_identity["principal"]["id"],
-                "meta_workers": {"host": node, "workers": workers}}
+                "module_workers": {"module": module, "host": node, "workers": workers}}
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
-    report["stage"] = "console-meta-workers"
+    report["stage"] = "console-"+module+"-workers"
     write_evidence(report)
-    detail["browser"] = validate_meta_workers_browser(execute_resource_browser(artifacts), expected, artifacts)
-    meta_worker_lifecycle(directory, "stop", node["node_id"])
-    require(not instance_list(renew_admin(base, admin_identity["principal"]["id"]), module_name="meta", status="up"), "standard Meta stop left active Worker leases")
-    require(all(not path.exists() for path in pid_paths.values()), "standard Meta stop left unit PID files")
+    detail["browser"] = validate_workers_browser(execute_resource_browser(artifacts), expected, artifacts)
+    worker_lifecycle(directory, "stop", node["node_id"])
+    require(not instance_list(renew_admin(base, admin_identity["principal"]["id"]), module_name=module, status="up"), "standard module stop left active Worker leases")
+    require(all(not path.exists() for path in pid_paths.values()), "standard module stop left unit PID files")
     detail["standard_stop_cleared_units"] = True
     retire_owned_configuration(renew_admin(base, admin_identity["principal"]["id"]), node, target, node_input, report)
 
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -2187,8 +2215,8 @@ def run(base, directory, report):
     for client in [admin, security, *tenant_clients]:
         client.request("GET", DISCOVERY, (403,))
     report["identity_isolation"] = True
-    if selected_case == "meta-workers":
-        run_meta_workers_case(base, directory, admin, admin_identity, machine, [security, machine, *tenant_clients], report)
+    if selected_case in FIXTURE.WORKER_PROFILES:
+        run_workers_case(base, directory, admin, admin_identity, machine, [security, machine, *tenant_clients], report)
         return
     if selected_case == "engine-admission":
         run_engine_admission_case(base,directory,admin,admin_identity,[security,machine,*tenant_clients],report)

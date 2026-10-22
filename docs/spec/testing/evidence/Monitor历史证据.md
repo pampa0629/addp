@@ -374,3 +374,18 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 冻结基线 `7b77919f87ef27201a7d754801e06dafe2c85832`，仅叠加本批前端、测试和规范输入，Node `v24.19.0`。`make test-monitor-frontend` 退出 0，92 项 T1、282 项确定性浏览器 T3 和构建通过；`make test-console-frontend` 退出 0，189 项单测、211 项浏览器和构建通过。新增双语场景覆盖宿主名／运行环境名匹配、前缀及同名登记端点排除、分页、趋势、组合条件、自动刷新草稿隔离、重复参数清除和重置；Console 覆盖名称与 IP 条件下的主机跳转返回、语言切换及重载保持唯一 iframe。`make test-frontend-ci-registration` 通过 20 项回归和 21 个前端登记检查；原批处理在此项启动前因检测到另一浏览器门禁退出，确认该入口只运行静态 Python 校验后单独执行通过，没有终止对方或重复执行有效浏览器结果。现有 Monitor／Console 门禁及路径扩散已覆盖，无需修改 Make 或 workflow。
 
 原始日志 `/tmp/addp-host-name-test-{monitor-frontend,console-frontend,frontend-ci-registration}.log`，输入／日志指纹和成功门禁清理核验见 `/tmp/addp-host-name-final-audit.json`。本批输入与验证快照逐字节一致，标准浏览器输出目录及当次端口租约均已清理；保留截图 `/tmp/addp-host-name-visuals/`，已查看中文窄屏和 Console 页面，说明紧邻控件，双语窄屏无页面横向溢出断言通过。本批仅为本地 T0／T1／T3 和构建证据，未改后端、Swagger、IAM 或部署；未执行真实服务／Hosted T4，不查询云端 CI、不设置定时、不操作个人服务，后续结果等待专门会话回传。
+
+
+## Transfer 两类双 Worker 标准启动与主机绑定验收入口（2026-10-22）
+
+复用 Meta 的唯一启动单元实现，Transfer bounded／continuous 各由部署输入选择 1 或 2 个进程，默认各 1；单实例也使用 `-1` 编号。两类各复用原有二进制，独立 PID、正式日志进程身份、采集端点和 TLS 目录，共用部署声明的实际主机 ID。重复启动保留存活实例，只编译和补回缺失单元；活动缩容、重复／外来 PID、非法副本数及持续同步双副本配固定 Owner 均拒绝。Transfer 局部停止／重启覆盖全部四个 Worker，其他模块保持 PID。已有 continuous 故障验收改为唯一编号 PID，仍核验原二进制、专属部署、UID 和数据库边界；未改 claim、租约／fencing、任务并发度、System 登记协议或 IAM。
+
+`platform-node-metrics` 增加 `transfer-workers`，与 `meta-workers` 共用验收主路径和 Console 浏览器实现：一个 Backend 加四个 Worker 独立登记并关联当次主机，按真实端点／SDK 身份及 `sync`／`continuous_sync` 类型校验来源；分别停止、补回两类中的一个 Worker，检查对等实例、当前趋势、新旧隔离、主机启停、观测中心故障和标准清理。已有 workflow 手工枚举、准入脚本及登记检查同次更新，仍用原预算、身份和零残留要求。这里只接通执行入口，未调度或执行真实 Hosted。
+
+本地最终验证：
+
+- `make test-dev-lifecycle` 退出 0：118 项部署／生命周期单测、59 项 Infra 日志／来源生命周期单测，标准端口与生命周期脚本通过；覆盖新增 Transfer 四 Worker 局部重启、其他模块保留、重启停机前拒绝及缺少第二实例时按共用产物补建。Common schema／repository／projectionstore 测试通过，Security、Meta、Quality、Transfer 的 cmd 入口编译检查通过（`-run '^$'`，不计业务执行测试）。
+- `make test-node-metrics-online-runner` 退出 0：131 项 Runner／夹具／Hosted 编排／登记拒绝回归及 System Metrics 身份夹具 Go 测试通过；浏览器脚本语法检查通过，未运行真实浏览器 T4。
+- `make test-transfer-continuous-online-runner` 退出 0：51 项持续执行 Runner／故障安全／隔离夹具回归及 System Online 身份夹具 Go 测试通过。
+
+首次完整生命周期门禁在新增“第二 Worker 缺失”夹具失败：测试未选中对应 Backend，未进入标准构建阶段，因此没有 events 文件。夹具改为保留 Backend 与第一 Worker、仅缺少第二 Worker后，标准生命周期脚本和完整 `make test-dev-lifecycle` 重新执行通过；未修改产品启动条件或放宽断言。原始日志为 `/tmp/addp-transfer-workers-dev-final.log`、`/tmp/addp-transfer-workers-online-gate.log`、`/tmp/addp-transfer-workers-continuous-gate.log`，输入与日志指纹见 `/tmp/addp-transfer-workers-final-audit.json`。本次只验证本地 T0／T1 与原生临时进程生命周期，不计正式多实例登记／主机绑定 T4、租户同步任务、多 Worker 抢占或 HA 通过。未改个人配置、数据库或运行服务；CI 和 Hosted 结果等专门会话回传，未设置定时任务。

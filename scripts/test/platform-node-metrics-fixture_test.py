@@ -23,29 +23,38 @@ class MetricsFixtureTest(unittest.TestCase):
                         ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
                         ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"))
 
-    def test_meta_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
+    def check_worker_sources(self, case):
         original = FIXTURE.command
         def command(args):
             if args[:4] == ["docker", "network", "inspect", "bridge"]:
                 return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
             return original(args)
-        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE="meta-workers")), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
+        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE=case)), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
             FIXTURE.prepare(self.secret)
         import shlex
         values = {key: shlex.split(value)[0] for key, value in (line.removeprefix('export ').split('=',1) for line in (self.secret/'metrics.env').read_text().splitlines())}
-        self.assertEqual(values['ADDP_DEV_META_WORKER_REPLICAS'], '2')
-        self.assertEqual(values['META_WORKER_CONCURRENCY'], '1')
+        profile = FIXTURE.WORKER_PROFILES[case]
+        for key, value in profile['env'].items():
+            self.assertEqual(values[key], value)
         plan = json.loads(values['ADDP_DEV_PROCESS_METRICS_PLAN'])
-        self.assertEqual(set(plan), {'system','monitor','meta','meta-worker-1','meta-worker-2'})
-        self.assertEqual(values['MONITOR_METRICS_ALLOWED_PORTS'], '19100,19101,19102,19103,19104,19105')
-        for unit in ('meta-worker-1','meta-worker-2'):
-            self.assertEqual(plan[unit]['module_name'], 'meta')
+        self.assertEqual(set(plan), {'system','monitor',*profile['ports']})
+        self.assertEqual(values['MONITOR_METRICS_ALLOWED_PORTS'], ','.join(map(str, [19100,19101,19102,*profile['ports'].values()])))
+        for unit in profile['ports']:
+            if unit == profile['module']: continue
+            self.assertEqual(plan[unit]['module_name'], profile['module'])
             self.assertEqual(plan[unit]['role'], 'worker')
             folder = Path(plan[unit]['tls_dir'])
             self.assertEqual(folder, self.secret/('process-'+unit))
             self.assertEqual({p.name for p in folder.iterdir()}, {'ca.crt','server.crt','server.key'})
             subprocess.run(['openssl','verify','-verify_ip','172.17.0.1','-purpose','sslserver','-CAfile',str(folder/'ca.crt'),str(folder/'server.crt')], check=True, capture_output=True)
-        self.assertNotEqual(plan['meta-worker-1']['listen'],plan['meta-worker-2']['listen'])
+        for key in ('listen','endpoint','tls_dir'):
+            self.assertEqual(len({item[key] for item in plan.values()}), len(plan))
+
+    def test_meta_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
+        self.check_worker_sources('meta-workers')
+
+    def test_transfer_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
+        self.check_worker_sources('transfer-workers')
 
     def test_boundary_refuses_personal_hosts_databases_and_public_secrets(self):
         with patch.dict(os.environ, self.env, clear=True), patch.object(FIXTURE, "ROOT", self.root / "repository"), patch.object(FIXTURE.platform, "system", return_value="Linux"), patch.object(FIXTURE.platform, "machine", return_value="x86_64"):

@@ -24,14 +24,28 @@ sys.modules[SOURCE_SPEC.name] = SOURCE
 SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
-META_PROCESS_PORTS = {"meta": 19103, "meta-worker-1": 19104, "meta-worker-2": 19105}
+WORKER_PROFILES = {
+    "meta-workers": {"module": "meta", "ports": {"meta": 19103, "meta-worker-1": 19104, "meta-worker-2": 19105},
+                     "replace": ["meta-worker-1"],
+                     "env": {"ADDP_DEV_META_WORKER_REPLICAS": "2", "META_WORKER_CONCURRENCY": "1"}},
+    "transfer-workers": {"module": "transfer", "ports": {"transfer": 19103, "transfer-bounded-worker-1": 19104,
+                         "transfer-bounded-worker-2": 19105, "transfer-continuous-worker-1": 19106,
+                         "transfer-continuous-worker-2": 19107},
+                         "replace": ["transfer-bounded-worker-1", "transfer-continuous-worker-1"],
+                         "env": {"ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS": "2",
+                                 "ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS": "2",
+                                 "TRANSFER_BOUNDED_WORKER_CONCURRENCY": "1", "TRANSFER_CONTINUOUS_WORKER_CAPACITY": "1",
+                                 "TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID": ""}},
+}
 
 
 def process_units():
     result = {name: (name, "backend", port) for name, port in PROCESS_PORTS.items()}
-    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "meta-workers":
-        result.update({unit: ("meta", "backend" if unit == "meta" else "worker", port)
-                       for unit, port in META_PROCESS_PORTS.items()})
+    profile = WORKER_PROFILES.get(os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE"))
+    if profile:
+        module = profile["module"]
+        result.update({unit: (module, "backend" if unit == module else "worker", port)
+                       for unit, port in profile["ports"].items()})
     return result
 
 
@@ -149,8 +163,9 @@ def prepare(directory):
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
         "MONITOR_METRICS_CLIENT_KEY_FILE": str(directory / "admission/client.key"),
     }
-    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "meta-workers":
-        values.update(ADDP_DEV_META_WORKER_REPLICAS="2", META_WORKER_CONCURRENCY="1")
+    profile = WORKER_PROFILES.get(os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE"))
+    if profile:
+        values.update(profile["env"])
     if engine_case:
         values["MONITOR_METRICS_ALLOWED_PORTS"] += "," + ",".join(map(str, POSTGRES_PORTS.values()))
         values["ADDP_POSTGRES_METRICS_STATE_DIR"] = str(directory / "postgres-sources")

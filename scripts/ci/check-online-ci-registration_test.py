@@ -828,6 +828,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             original.replace("          - cpu-pressure\n", "          - unbounded-pressure\n"),
             original.replace("          - host-admission\n", ""),
             original.replace("          - meta-workers\n", ""),
+            original.replace("          - transfer-workers\n", ""),
             original.replace("ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}", "ADDP_ONLINE_NODE_METRICS_CASE: regression"),
         ):
             self.workflow.write_text(changed)

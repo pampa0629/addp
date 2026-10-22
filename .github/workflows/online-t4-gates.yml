@@ -92,6 +92,7 @@ on:
           - host-admission
           - engine-admission
           - meta-workers
+          - transfer-workers
 
 permissions:
   contents: read

@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
 # Native Worker launch units; source only, no service or environment mutation.
-addp_meta_worker_units() {
-  case "${ADDP_DEV_META_WORKER_REPLICAS-1}" in
-    1) printf '%s\n' meta-worker-1 ;;
-    2) printf '%s\n' meta-worker-1 meta-worker-2 ;;
-    *) echo 'ADDP_DEV_META_WORKER_REPLICAS must be exactly 1 or 2' >&2; return 1 ;;
+addp_worker_units() {
+  local family="$1" setting count
+  case "$family" in
+    meta-worker) setting=ADDP_DEV_META_WORKER_REPLICAS ;;
+    transfer-bounded-worker) setting=ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS ;;
+    transfer-continuous-worker) setting=ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS ;;
+    *) echo 'Unknown Worker family' >&2; return 1 ;;
   esac
+  count="${!setting-1}"
+  case "$count" in
+    1|2) ;;
+    *) echo "$setting must be exactly 1 or 2" >&2; return 1 ;;
+  esac
+  if [ "$family" = transfer-continuous-worker ] && [ "$count" = 2 ] &&
+      [ -n "${TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID:-}" ]; then
+    echo 'Two continuous Workers require independently generated instance identities; remove TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID' >&2
+    return 1
+  fi
+  printf '%s-1\n' "$family"
+  [ "$count" != 2 ] || printf '%s-2\n' "$family"
 }
 
 addp_worker_binary() {
   case "$1" in
-    meta-worker-[12]) printf '%s\n' meta-worker ;;
+    meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) printf '%s\n' "${1%-*}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
 
-addp_meta_worker_pid_owned() {
-  local pid="$1" root="${PROJECT_ROOT:-$ROOT_DIR}" cwd command_line
+addp_worker_pid_owned() {
+  local pid="$1" binary="$2" root="${PROJECT_ROOT:-$ROOT_DIR}" cwd command_line
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
   command_line=$(ps -p "$pid" -o command= 2>/dev/null) || return 1
   if [ -d "/proc/$pid" ]; then
@@ -26,24 +40,24 @@ addp_meta_worker_pid_owned() {
   fi
   [ "$cwd" = "$root" ] || return 1
   case " $command_line " in
-    *" $root/.dev-bins/addp-meta-worker "*|*" .dev-bins/addp-meta-worker "*|*" ./.dev-bins/addp-meta-worker "*) return 0 ;;
+    *" $root/.dev-bins/addp-$binary "*|*" .dev-bins/addp-$binary "*|*" ./.dev-bins/addp-$binary "*) return 0 ;;
   esac
   return 1
 }
 
-addp_check_meta_worker_inventory() {
-  local path unit pid selected seen=' '
-  selected=$(addp_meta_worker_units) || return 1
+addp_check_worker_inventory() {
+  local family="$1" path unit pid selected seen=' '
+  selected=$(addp_worker_units "$family") || return 1
   selected=" ${selected//$'\n'/ } "
-  for path in .dev-pids/meta-worker*.pid; do
+  for path in .dev-pids/"$family"*.pid; do
     [ -f "$path" ] || continue
     pid=$(cat "$path") || return 1
-    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid Meta Worker PID record' >&2; return 1; }
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid Worker PID record' >&2; return 1; }
     kill -0 "$pid" 2>/dev/null || continue
-    addp_meta_worker_pid_owned "$pid" || { echo 'Meta Worker PID belongs to another process or workspace' >&2; return 1; }
+    addp_worker_pid_owned "$pid" "$family" || { echo 'Worker PID belongs to another process or workspace' >&2; return 1; }
     unit=$(basename "$path" .pid)
-    case "$selected" in *" $unit "*) ;; *) echo 'Running Meta Worker is outside the selected units; stop or restart Meta explicitly' >&2; return 1 ;; esac
-    case "$seen" in *" $pid "*) echo 'Meta Worker units reference the same running PID' >&2; return 1 ;; esac
+    case "$selected" in *" $unit "*) ;; *) echo 'Running Worker is outside the selected units; stop or restart its module explicitly' >&2; return 1 ;; esac
+    case "$seen" in *" $pid "*) echo 'Worker units reference the same running PID' >&2; return 1 ;; esac
     seen="$seen$pid "
   done
 }

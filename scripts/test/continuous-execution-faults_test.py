@@ -138,11 +138,11 @@ class ContinuousFaultsTest(unittest.TestCase):
             def environment(values):
                 (proc / 'environ').write_bytes('\0'.join(f'{k}={v}' for k, v in values.items()).encode())
             environment(good)
-            M.validate_process(proc, root, secret, 'transfer-continuous-worker')
+            M.validate_process(proc, root, secret, 'transfer-continuous-worker-1')
             for key, value in [('POSTGRES_DB', 'addp'), ('ADDP_ONLINE_SECRET_DIR', '/other'), ('ADDP_ONLINE_HOSTED', '0')]:
                 environment({**good, key: value})
                 with self.assertRaises(ValueError):
-                    M.validate_process(proc, root, secret, 'transfer-continuous-worker')
+                    M.validate_process(proc, root, secret, 'transfer-continuous-worker-1')
             environment(good)
             with self.assertRaises(ValueError):
                 M.validate_process(proc, root, secret, 'system')
