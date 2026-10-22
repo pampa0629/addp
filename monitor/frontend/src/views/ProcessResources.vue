@@ -9,6 +9,10 @@
     <template v-else>
       <form class="process-filters" @submit.prevent="filter">
         <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable />
+        <div class="endpoint-filter">
+          <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" aria-describedby="process-address-hint" maxlength="255" clearable />
+          <p id="process-address-hint" class="process-hint">{{ t('monitor.process.addressHint') }}</p>
+        </div>
         <el-select v-model="role" :placeholder="t('monitor.process.role')" :aria-label="t('monitor.process.role')" clearable>
           <el-option v-for="item in processRoles" :key="item" :value="item" :label="t(`monitor.process.roles.${item}`)" />
         </el-select>
@@ -23,6 +27,7 @@
           <p id="collection-config-hint" class="process-hint">{{ t('monitor.process.declarationHint') }}</p>
         </div>
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
+        <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
         <el-button @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
@@ -111,7 +116,7 @@ const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2
   return { metric, rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.process.metrics.${metric.name}`), unit: scale?.unit || t('monitor.resources.units.cores'), precision: 2 }] } }
 }))
 function invalidTrend() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
-const moduleName = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
+const moduleName = ref(''), registeredHost = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
   const numeric = currentResourceValue(point(row, metric))
@@ -142,8 +147,12 @@ async function loadHosts(rows, ticket) {
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
-function filter() { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
-function setScope(scope) { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function filter() { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
+function setScope(scope) { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function resetFilters() {
+  moduleName.value = ''; registeredHost.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
+  return navigate(resolveProcessRoute({ refresh: state.value.refresh }).query)
+}
 function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
 function processErrorKey(error) {
  const key = resourceErrorKey(error)
@@ -165,7 +174,7 @@ async function reload({ automatic = false } = {}) {
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
-  if (!automatic) { moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
+  if (!automatic) { moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
   try {
     const list = await requests.request(config => api.instances(state.value.params, config))
@@ -220,7 +229,7 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispos
 .process-toolbar, .process-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .process-toolbar h2 { flex: 1; }
 .process-filters .el-input, .process-filters .el-select { width: 200px; max-width: 100%; }
-.collection-filter { max-width: 100%; }
+.collection-filter, .endpoint-filter { max-width: 100%; }
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 .el-pagination { margin-top: 16px; }
 .process-trend-chart { display: flex; min-width: 0; }

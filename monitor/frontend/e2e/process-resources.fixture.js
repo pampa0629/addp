@@ -28,7 +28,7 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/platform/module-instances') {
       listCalls.push(Object.fromEntries(url.searchParams))
       const pageNumber = Number(url.searchParams.get('page'))
-      const filtered = rows.filter(row => (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared')))
+      const filtered = rows.filter(row => (!url.searchParams.has('registered_host') || (row.registered_host || '').toLowerCase() === url.searchParams.get('registered_host')) && (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared')))
       body = { data: options.scopes ? filtered.slice((pageNumber - 1) * 20, pageNumber * 20) : pageNumber === 1 ? filtered : [], page: pageNumber, page_size: 20, total: options.scopes || options.workerTypes || options.instances ? filtered.length : 21 }
     } else if (path.startsWith('/api/v1/system/platform/host_nodes/')) {
       const id = path.split('/').at(-1)

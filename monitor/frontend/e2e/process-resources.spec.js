@@ -454,3 +454,62 @@ test('collection filter is explicit, restores in English and leaves the all-inst
   await page.getByRole('button', { name: 'All instances', exact: true }).click()
   await expect(page.getByTestId('process-list')).toContainText('history-0')
 })
+
+
+for (const locale of ['zh-cn', 'en']) test(`registered address filter survives trend and reload, and reset restores current scope (${locale})`, async ({ page }, info) => {
+  const state = await backend(page, { locale, instances: [
+    { id: 1, role: 'backend', registered_host: 'db.internal', module_url: 'http://db.internal:8180' },
+    { id: 2, role: 'backend', registered_host: 'db.internal', module_url: 'http://db.internal:8190' },
+    { id: 3, role: 'backend', registered_host: 'other.internal', runtime_hostname: 'db.internal', module_url: 'http://other.internal:8180' },
+    { id: 4, role: 'worker', registered_host: '', runtime_hostname: 'db.internal', module_url: '', health_check_url: '' }
+  ] })
+  const address = page.getByRole('textbox', { name: locale === 'en' ? 'Registered hostname or IP (exact match)' : '登记主机名或 IP（精确匹配）', exact: true })
+  const search = page.getByRole('button', { name: locale === 'en' ? 'Search' : '搜索', exact: true })
+  const reset = page.getByRole('button', { name: locale === 'en' ? 'Reset' : '重置', exact: true })
+  await page.goto('/service-resources?refresh=off')
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(4)
+  await address.fill('  DB.INTERNAL  ')
+  await search.click()
+  await expect(page).toHaveURL(/registered_host=db.internal/)
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(2)
+  await expect(address).toHaveValue('db.internal')
+  expect(state.listCalls.at(-1).registered_host).toBe('db.internal')
+  await expect.poll(() => state.calls.at(-1)).toBe('1,2')
+  await page.screenshot({ path: info.outputPath(`service-address-${locale}.png`), fullPage: true })
+  await page.getByTestId('process-list').getByRole('button', { name: locale === 'en' ? 'View trend' : '查看趋势', exact: true }).first().click()
+  await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  await expect(address).toHaveValue('db.internal')
+  expect(state.listCalls.at(-1).registered_host).toBe('db.internal')
+  expect(state.trendCalls.at(-1)).not.toHaveProperty('registered_host')
+  await page.locator('.el-dialog__headerbtn').click()
+  await reset.click()
+  await expect(page).toHaveURL(/service-resources\?refresh=off$/)
+  await expect(address).toHaveValue('')
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(4)
+  expect(state.listCalls.at(-1)).toMatchObject({ page: '1', status: 'up', process_metrics_declared: 'true' })
+  expect(state.listCalls.at(-1)).not.toHaveProperty('registered_host')
+  // Same canonical route still clears an unsubmitted draft.
+  await address.fill('not-submitted.internal')
+  await reset.click()
+  await expect(address).toHaveValue('')
+})
+
+test('automatic refresh retains the submitted address and does not apply an address draft', async ({ page }) => {
+  const state = await backend(page, { instances: [{ id: 1, registered_host: 'db.internal' }, { id: 2, registered_host: 'other.internal' }] })
+  await page.clock.install()
+  await page.goto('/service-resources?registered_host=db.internal')
+  await expect(page.getByTestId('process-list')).toContainText('1.50 核')
+  const address = page.getByRole('textbox', { name: '登记主机名或 IP（精确匹配）', exact: true })
+  await address.fill('other.internal')
+  await page.clock.fastForward(15001)
+  await expect.poll(() => state.calls.length).toBe(2)
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+  expect(state.listCalls.at(-1).registered_host).toBe('db.internal')
+  expect(state.calls.at(-1)).toBe('1')
+  await expect(address).toHaveValue('other.internal')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  await expect(page).toHaveURL(/registered_host=other.internal/)
+})

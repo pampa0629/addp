@@ -65,3 +65,20 @@ test('refresh is bounded, canonical, retained with trend scope and never sent to
     assert.deepEqual(resolveProcessRoute({ refresh }).query, {})
   }
 })
+
+
+test('registered endpoint host stays in canonical list scope without leaking into trend queries', () => {
+  const state = resolveProcessRoute({ registered_host: '  DB.INTERNAL  ', page: '2', role: 'backend', instance_id: '7', range: '1h', refresh: 'off' })
+  assert.equal(state.registeredHost, 'db.internal')
+  assert.equal(state.params.registered_host, 'db.internal')
+  assert.equal(state.query.registered_host, 'db.internal')
+  assert.equal(state.changed, true)
+  assert.equal(resolveProcessRoute(state.query).changed, false)
+  assert.equal(processTrendParameters(7, state.range, stamp).registered_host, undefined)
+  for (const registered_host of ['192.168.1.7', '2001:db8::7', 'service.internal']) {
+    assert.equal(resolveProcessRoute({ registered_host }).params.registered_host, registered_host)
+  }
+  for (const registered_host of [null, ['private.example'], {}, 'a'.repeat(256), 'host\nforeign', 'host\u0000', '']) {
+    assert.equal(resolveProcessRoute({ registered_host }).params.registered_host, undefined)
+  }
+})

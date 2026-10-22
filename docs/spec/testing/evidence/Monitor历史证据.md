@@ -287,3 +287,12 @@ T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）�
 曾有一轮生命周期提取夹具缺少启动单元初始化，修正后完整门禁通过；随后一次复验及一次带诊断复验在新增夹具的五秒启动收据等待处失败，当时两个进程仍存活。保留期限并补进程/收据/控制器诊断后，最终串行完整门禁通过；未证明这两次等待失败的唯一原因，不将后续通过追溯为已修复未知环境故障。失败日志 `/tmp/addp-meta-workers-dev-lifecycle-verified.log`、`/tmp/addp-meta-workers-dev-lifecycle-final-check.log`。Online 首轮 123 项及身份 Go 夹具通过；一次并行复验有两项既有引擎 CLI 夹具失败，未计通过，后续结果须按下述最终记录判断。
 
 最终串行 `make test-node-metrics-online-runner` 退出 0：123 项 Python 正反向契约、JS/Bash 语法及 System Metrics 身份 Go 夹具通过，日志 `/tmp/addp-meta-workers-online-runner-final-check.log`；包括新 Meta 单元独立证书/计划、限定标准命令、SDK 来源映射、当前实例 DTO、真实浏览器收据拒绝与清理编排。并行轮引擎 CLI 失败的唯一原因仍未确认，仅增加测试阶段输出诊断，未修改引擎产品、认证、读取期限或清理边界。`make test-workflow-security` 退出 0（原标准 Release workflow 固定版本安全审计），实际 T2 和 Online CI 登记检查均通过；新增 choice 已同步原 Online 受控登记及删除 choice 的拒绝回归。24 项最终输入与成功冻结副本逐字节一致，之后仅更新本证据与后续事项摘要；本次未读、轮询或重跑云端 CI，未设置定时，也未重启个人服务。
+
+
+### 服务监控的登记地址查询与重置
+
+2026-10-22，服务监控补齐按登记端点主机名／IP 精确筛选及一键重置。复用 System 已有 `registered_host`，由服务端在计数、分页前过滤；不按端口、DNS 解析结果、运行环境主机名或承载主机补匹配，也不为无监听端点的 Worker 推断地址。地址沿唯一 URL 保留到分页、刷新和趋势重载，未提交的地址草稿不影响自动刷新；重置清空筛选、页码及趋势，恢复在线且已声明采集的默认范围，保留刷新频率，同一默认 URL 上也清除未提交草稿。无新增 API、Swagger、权限或采集配置，未重启个人服务。
+
+冻结基线 `d75dce1f1f2e345e7686e8d073baad9e8915ef48`，仅叠加本批八项实现／测试／规范输入，使用实际核验为 Node `v24.19.0` 的运行时，沿标准 `make test-monitor-frontend` 最终退出 0：88 项 Node、269 项浏览器及生产构建均通过。新增中英文回归验证同一主机不同端口均匹配、不借用相同宿主名／未登记端点的 Worker、只请求当页摘要、趋势及重载保留地址、重置与未提交草稿隔离；已检查截图 `/tmp/addp-service-address-visuals/service-address-{zh-cn,en}.png`。日志 `/tmp/addp-service-address-frontend-final.log`。首轮 268 项通过、中文新用例因英文关闭按钮名称定位超时而失败；改用同页既有关闭按钮定位后，完整门禁重跑通过，未调整产品时序或等待期限。首轮日志 `/tmp/addp-service-address-frontend.log`。
+
+`make test-frontend-ci-registration` 通过 20 项回归及 21 个受控前端登记检查，日志 `/tmp/addp-service-address-registration.log`；现有 Monitor owner 与 CI 路径自动覆盖，无新增工作流。八项最终输入与成功冻结副本逐文件字节一致，随后仅追加本证据及后续事项摘要。成功浏览器输出目录与端口租约已由标准入口清理；首轮失败证据按标准保留在临时目录。本次为确定性 T1/T3 及构建验证，不计正式身份 Hosted T4，通过结果已交清单维护会话；CI 与已接入的 Meta 专项继续等待专门会话回传，未查询、调度或设置定时任务。
