@@ -86,6 +86,7 @@ type IAMExecutionEngineAccessResponse struct {
 }
 
 type iamExecutionAuthorizationService interface {
+	ResolveSubjectRoles(context.Context, iam.ResolveExecutionSubjectRolesInput) (*execution.SubjectRoles, error)
 	AuthorizeInternalTask(context.Context, iam.AuthorizeInternalTaskInput) (*iam.AuthorizedInternalTask, error)
 	Issue(context.Context, iam.IssueExecutionAuthorizationInput) (*iam.IssuedExecutionAuthorization, error)
 	IssueFromExecution(context.Context, iam.IssueExecutionAuthorizationFromExecutionInput) (*iam.IssuedExecutionAuthorization, error)

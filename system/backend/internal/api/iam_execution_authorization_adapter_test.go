@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/execution"
 	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
@@ -15,6 +16,7 @@ import (
 )
 
 type fakeExecutionAuthorizationService struct {
+	rolesInput                 iam.ResolveExecutionSubjectRolesInput
 	internalInput              iam.AuthorizeInternalTaskInput
 	issueInput                 iam.IssueExecutionAuthorizationInput
 	issueFromExecution         iam.IssueExecutionAuthorizationFromExecutionInput
@@ -161,4 +163,9 @@ func TestIAMExecutionAuthorizationHandlerParsesCurrentLeaseBoundary(t *testing.T
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("partial lease boundary status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
+}
+
+func (s *fakeExecutionAuthorizationService) ResolveSubjectRoles(_ context.Context, input iam.ResolveExecutionSubjectRolesInput) (*execution.SubjectRoles, error) {
+	s.rolesInput = input
+	return &execution.SubjectRoles{RoleKeys: []string{"tenant.data_engineer"}}, nil
 }

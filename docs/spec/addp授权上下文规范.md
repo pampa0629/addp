@@ -83,6 +83,14 @@ Monitor 任务诊断同样由任务 owner 复核当前用户范围；Monitor 功
 
 上述执行结果不等同于写入业务引擎后形成的独立 DataItem；产出数据的初始使用权见 5.5.8。具体执行协议见[登录认证统一要求](addp登录认证的统一要求.md)和[任务体系规范](addp任务体系规范.md)。
 
+#### 执行发起人的当前角色核验
+
+`POST /api/v1/system/execution-authorizations/{id}/subject-roles` 仅供当前 Tenant 的 `addp-develop`、`addp-transfer` 在本模块真实 running 执行中核验发起人的当前角色；沿用 `system.execution_authorization.execute`，不新增用户角色枚举权限。请求只有 execution UUID、正整数 attempt、lease token，不接收主体、Tenant、角色或算法。Develop 的 DuckDB audience 仍由 Develop Owner 核验，Runtime 不取得角色。
+
+System 核对已封存且未撤销、未过期的 user 来源授权，排除 Notebook 和内部任务；从统一执行表核对所属模块、同一授权 ID、Tenant、发起人、Membership、授权版本及当前 attempt／lease。若有 Orchestrator 父执行，还核对同 Tenant、同主体来源和正在运行的父链。旧 attempt 的动态授权不能用于新 attempt。锁定当前身份与执行后读取当前 Tenant 下有效 User Role Assignment（包括没有功能 Permission 的角色）；角色集合取并集，不按优先级排序决策。身份、成员或授权版本失效直接拒绝。
+
+响应仅含绑定的授权／执行／attempt／Owner／主体引用、排序去重的 `role_keys`、`observed_at` 和 `expires_at`；期限不超过授权、执行租约及本次所含角色分配的最早到期点。审计写入后再以数据库当前时间核对期限，响应不得缓存、续期或持久化为角色凭据；Common client 拒绝绑定不一致、畸形响应、重定向和隐式重试。空角色数组是有效的空集合，不推导管理员资格。该事实只用于当次脱敏选项核验，不授予源读取权、原值权或新的执行效果；实际数据访问仍走原有授权链。此接口落地不等同于四个出口已接入角色选项。
+
 ### 5.2.1 内部任务执行授权
 
 `internal_task` 与 Engine Access Scope 互斥，空 accesses 不是许可。当前仅允许 Tenant User 为 Ontology `semantic_projection` 签发，绑定 resource、revision、digest、generation，并核验发布 Permission 和真实 pending execution。仅 `addp-ontology` 可按同一 running attempt／lease 消费；不接受 Notebook、服务定义或 Orchestrator 派生，不返回 Infra 凭据，也不代表投影 ready。Ontology 仍负责业务资源与激活校验。

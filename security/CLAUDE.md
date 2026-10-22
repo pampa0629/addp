@@ -410,3 +410,12 @@ Develop六计算substring/coalesce/case/cast/subquery_alias/union均准备阶段
 保护投影自然到期四出口拒绝、改回长期后的恢复、Security不可达期间实际输出与Owner进程不变、默认保护事务回滚、重启后定义保持继续通过；这里的自然到期不是新增原值授权到期验收。`not_yet_valid`仍只有既有真实PG T2及未来历史用例，没有产品开始时间设置入口，本轮未新增配置或改时钟。21张必需PNG完整并校验尺寸/Hash，另外目视核对Transfer结果阶段拒绝/Monitor同一 `64bb8709-6c05-4436-b7ef-458cdbbc11da`（零读写、保存结果阶段）及Manager五行掩码预览，共目视九图。领域11/11/0、银行卡临时执行资源11/11/0、Mongo任务10/10/0、两组浏览器各2/2/0分别核对，不混合计数；临时策略/基线恢复、Hosted cleanup passed、Infra zero_residuals。归档保留无原值结果断言，本次审计核对当次真实逐值读写断言、报告一致性和截图，未重读已销毁的业务夹具。
 
 审计记录 `/tmp/addp-four-outlet-hosted-39727724444-audit.json`、`/tmp/addp-p145-f0-attempt2-owner-closure.json`、`/tmp/addp-p145-f0-attempt2-artifact-metadata.json`；正式报告/21图在上述attempt2目录，原Job日志 `/tmp/addp-ci-20261022-070005/job-119667747241.log`，首轮npm失败另存 `/tmp/addp-p145-f0-attempt1-job.log`。本次只补新增终态证据，不把此前本地聚合Runner/平台夹具失败改记通过，不扩大为全仓CI、全SQL/引擎/类型/算法/输出、完整角色策略、业务数据静态透明加密或生产/HA认证。原Excel155总述和156动态脱敏仍保持部分实现：SQL改写已有可证明子集，完整按角色匹配/多级策略优先级及静态加密仍有缺口；本轮20格T4通过不消除这些原始要求。没有证据矛盾，无需产品修复或重复运行；结果按AGENTS报P0，只由其维护M列，不设定时、不操作用户本地服务或其他CI。
+
+
+## 执行身份约束的角色事实接口（2026-10-22）
+
+用户确认默认保护不随角色叠加改变，角色仅增加可选方式资格后，已补齐异步执行所需的 System/Common 前置接口：`POST /api/v1/system/execution-authorizations/{id}/subject-roles`。仅同 Tenant 的 Develop/Transfer Owner 可按真实 running execution、授权 ID、attempt 和 lease 核验真实 User 发起人的当前角色；Develop→DuckDB 仍由 Develop 读取，Runtime、其他 Owner、错误 Tenant/主体/成员/版本、失效授权或租约拒绝。Orchestrator 子执行核对父来源；响应只含绑定引用、有效角色键并集、观察时间和上界期限，不返回权限清单、连接或登录 Token，不写业务配置或历史。无功能 Permission 的角色仍参与资格集合；新角色触发 IAM 版本变化时旧执行授权仍拒绝，重新建立当前授权后才读取新集合。原始数据读取与原值审批规则不变，不以本接口授予新的数据效果。
+
+规范见 `docs/spec/addp授权上下文规范.md`“执行发起人的当前角色核验”和数据安全实现规范 7.1.1。实现为 System `execution_subject_roles.go`、API adapter 与 Common `system_execution_subject_roles.go`；沿用现有执行授权权限，无新增迁移、角色权限分配或通用角色枚举 API。角色选项控制面、投影编译、保存查询/服务/传输的选择引用与四出口执行/界面尚未接入；本项不能记为角色脱敏功能完成。
+
+验证：`make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=common GO_ONLY=1` 通过（仅 Go T1）；`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test execution-subject-roles"` 在已核实的 25432/addp_iam_test 通过真实 PostgreSQL T2，无跳过，复用完整 ExecutionAuthorizationService 用例，新增当前角色、无权限角色、自然到期、Owner/租户/身份/租约/父执行边界。前两轮测试夹具分别因变更角色后沿用旧授权、非法成员期限，以及修改不可变角色分配期限而失败；已改为正式新会话/新授权与创建时确定期限后的自然到期，不关闭数据库约束或放宽断言。`make test-system-iam-runner` 27项通过；System Swagger 生成与覆盖检查通过（241个公开路由方法）。标准 IAM T2 默认发现仍覆盖本用例，新增 filter 只用于最小充分本地回归，未新增 CI 路线。日志 `/tmp/p145-role-{system-t1,common-t1,system-t2,runner,swagger}.log`。尚未进行本接口的本地 HTTP/浏览器或 Hosted T4，未重启用户服务、不定时、不跟进 CI；四出口原有逐原因 T4 不作为本接口证据。

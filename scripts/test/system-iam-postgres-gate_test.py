@@ -175,6 +175,14 @@ elif args[:2] != ["volume", "ls"]:
         self.assertEqual(result.returncode, 2)
         self.assertIn("requires --package migration", result.stderr)
 
+    def test_execution_subject_roles_uses_existing_ea_postgres_suite(self):
+        result = self.run_gate(arguments=("--package", "iam", "--test", "execution-subject-roles"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/iam -run ^TestExecutionAuthorizationServiceAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "api", "--test", "execution-subject-roles"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --package iam", result.stderr)
+
     def test_standard_unit_publication_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "standard-platform-units"))
         self.assertEqual(result.returncode, 0, result.stderr)

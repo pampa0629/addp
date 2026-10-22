@@ -41,6 +41,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		CREATE SCHEMA common
 		; CREATE TABLE common.task_executions (
 			execution_id uuid PRIMARY KEY,
+ execution_authorization_id bigint,
 			tenant_id bigint NOT NULL,
 			module text NOT NULL,
 			parent_execution_id uuid,
@@ -164,6 +165,8 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if err != nil || authorized.EngineID != tenantEngineID {
 		t.Fatalf("authorize execution engine access: result=%#v error=%v", authorized, err)
 	}
+
+	testExecutionSubjectRoles(t, ctx, db, issued, consumeAudit, selection.Session.AccessToken)
 
 	parentExecutionID := uuid.New()
 	childExecutionID := uuid.New()
