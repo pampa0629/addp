@@ -13,6 +13,8 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	commonlogger "github.com/addp/common/logger"
+	"github.com/addp/common/middleware/requestid"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/lib/pq"
@@ -578,6 +580,48 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			t, db, negativeAccessTokenID, "addp_dat_oauth_negative", "develop", []string{"workflow.run"}, currentTime,
 		)
 		assertCredentialReason(t, authContextService, ctx, negativeToken, CredentialInvalidContext)
+	})
+
+	t.Run("rejection diagnostics identify actual records without exposing credentials", func(t *testing.T) {
+		fixture := issueDelegatedInvalidationFixture(t, ctx, identityService, membershipService,
+			selectionService, db, currentTime, "rejection-diagnostics")
+		ticket, err := repository.GetResourceAccessTicketAuthSnapshot(ctx, hashOpaqueToken(fixture.Ticket))
+		if err != nil {
+			t.Fatal("read diagnostic ticket fixture")
+		}
+		for _, test := range []struct {
+			kind, credential string
+			id               int64
+			model            any
+		}{
+			// Revoking the source Access Token also revokes its delegated tokens.
+			// Inspect the delegated record before changing that source fixture.
+			{"delegated_access_token", fixture.Token, fixture.DelegatedID, &DelegatedAccessToken{}},
+			{"resource_access_ticket", fixture.Ticket, ticket.CredentialID, &ResourceAccessTicket{}},
+			{"access_token", fixture.Session.AccessToken, fixture.AccessTokenID, &AccessToken{}},
+		} {
+			t.Run(test.kind, func(t *testing.T) {
+				if err := db.Model(test.model).Where("id = ?", test.id).Update("revoked_at", currentTime).Error; err != nil {
+					t.Fatal("revoke diagnostic fixture credential")
+				}
+				var output bytes.Buffer
+				commonlogger.Init(commonlogger.Options{Writer: &output})
+				t.Cleanup(func() { commonlogger.Init(commonlogger.Options{}) })
+				requestCtx := context.WithValue(ctx, requestid.RequestIDKey, "auth-401-request")
+				_, err := authContextService.ResolveAuthContext(requestCtx, test.credential)
+				assertCredentialValidationError(t, err, CredentialInvalidTokenRevoked)
+				record := authContextRejectionRecord(t, &output, CredentialInvalidTokenRevoked)
+				if record["credential_kind"] != test.kind || record["credential_id"] != formatIAMID(test.id) ||
+					record["family_id"] != formatIAMID(fixture.FamilyID) {
+					t.Fatal("rejection references do not identify the stored credential")
+				}
+				for _, secret := range []string{fixture.Session.AccessToken, fixture.Ticket, fixture.Token, hashOpaqueToken(test.credential)} {
+					if strings.Contains(output.String(), secret) {
+						t.Fatal("diagnostic exposed a credential or hash")
+					}
+				}
+			})
+		}
 	})
 
 	assertCredentialReason(t, authContextService, ctx, "invalid", CredentialInvalidFormat)

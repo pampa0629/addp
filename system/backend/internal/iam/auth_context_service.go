@@ -35,6 +35,14 @@ const (
 type CredentialValidationError struct {
 	Reason     CredentialInvalidReason
 	diagnostic *credentialValidationDiagnostic
+	record     *credentialValidationRecord
+}
+
+// Only database record references, never credential values or snapshots.
+type credentialValidationRecord struct {
+	kind         string
+	credentialID int64
+	familyID     int64
 }
 
 // This private value copies only the failed validation's time evidence.
@@ -80,7 +88,9 @@ func (s *AuthContextService) ResolveAuthContext(
 	case strings.HasPrefix(credential, "addp_dat_"):
 		return s.ResolveDelegatedAccessToken(ctx, credential)
 	default:
-		return nil, invalidCredential(CredentialInvalidFormat)
+		err := invalidCredential(CredentialInvalidFormat)
+		logAuthContextRejection(ctx, err)
+		return nil, err
 	}
 }
 
@@ -228,9 +238,13 @@ func (s *AuthContextService) resolveSessionCredential(
 ) (*commonauth.AuthContext, error) {
 	var authContext *commonauth.AuthContext
 	startedAt := time.Now()
+	poolBefore, poolAvailable := s.authContextPoolStats()
+	stageDurations := make(map[string]time.Duration, 7)
 	stage, stageStartedAt := "transaction_begin", startedAt
 	enterStage := func(next string) {
-		stage, stageStartedAt = next, time.Now()
+		now := time.Now()
+		stageDurations[stage] += now.Sub(stageStartedAt)
+		stage, stageStartedAt = next, now
 	}
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
 		enterStage("credential_snapshot")
@@ -368,6 +382,9 @@ func (s *AuthContextService) resolveSessionCredential(
 		s.logAuthContextResolutionFailure(ctx, err, startedAt, stage, stageStartedAt)
 		return nil, err
 	}
+	finished := time.Now()
+	stageDurations[stage] += finished.Sub(stageStartedAt)
+	s.logSlowAuthContextResolution(ctx, startedAt, finished, stageDurations, poolBefore, poolAvailable)
 	return authContext, nil
 }
 
@@ -390,7 +407,7 @@ func resolveFirstPartyAccessTokenSnapshot(
 		return nil, err
 	}
 	if err := validateFirstPartyAccessTokenSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "access_token")
 	}
 	return snapshot, nil
 }
@@ -414,7 +431,7 @@ func resolveUserAccessTokenSnapshot(
 		return nil, err
 	}
 	if err := validateDelegationSourceAccessTokenSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "access_token")
 	}
 	return snapshot, nil
 }
@@ -439,12 +456,12 @@ func resolveAccessTokenSnapshot(
 	}
 	if snapshot.PrincipalType == PrincipalTypeServicePrincipal {
 		if err := validateServiceAccessTokenSnapshot(snapshot); err != nil {
-			return nil, err
+			return nil, withCredentialRecord(err, snapshot, "access_token")
 		}
 		return snapshot, nil
 	}
 	if err := validateDelegationSourceAccessTokenSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "access_token")
 	}
 	return snapshot, nil
 }
@@ -468,7 +485,7 @@ func resolveDelegationSourceAccessTokenSnapshot(
 		return nil, err
 	}
 	if err := validateDelegationSourceAccessTokenSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "access_token")
 	}
 	return snapshot, nil
 }
@@ -492,7 +509,7 @@ func resolveResourceAccessTicketSnapshot(
 		return nil, err
 	}
 	if err := validateResourceAccessTicketSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "resource_access_ticket")
 	}
 	return snapshot, nil
 }
@@ -516,7 +533,7 @@ func resolveDelegatedAccessTokenSnapshot(
 		return nil, err
 	}
 	if err := validateDelegatedAccessTokenSnapshot(snapshot); err != nil {
-		return nil, err
+		return nil, withCredentialRecord(err, snapshot, "delegated_access_token")
 	}
 	return snapshot, nil
 }
@@ -817,6 +834,16 @@ func buildAssignmentScope(row RoleAssignmentPermissionProjection) (commonauth.As
 
 func invalidCredential(reason CredentialInvalidReason) error {
 	return &CredentialValidationError{Reason: reason}
+}
+
+func withCredentialRecord(err error, snapshot *SessionCredentialAuthSnapshot, kind string) error {
+	var validation *CredentialValidationError
+	if snapshot != nil && errors.As(err, &validation) {
+		validation.record = &credentialValidationRecord{
+			kind: kind, credentialID: snapshot.CredentialID, familyID: snapshot.CredentialFamilyID,
+		}
+	}
+	return err
 }
 
 func invalidCredentialContext(snapshot *SessionCredentialAuthSnapshot, condition string) error {

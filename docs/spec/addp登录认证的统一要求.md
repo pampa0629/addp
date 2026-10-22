@@ -136,6 +136,10 @@ Access Token 只能保存在当前 JavaScript 运行时内存中：
 
 Gateway AccessLog 只服务于外部 API Key 请求的性能、缓存和限流统计，不记录 Browser Bearer、Cookie 或公开认证请求。Gateway 不采集任何请求体；Query 参数进入 AccessLog 前必须按敏感字段策略脱敏。System AuditLog 记录认证和授权领域事件，但只允许保存稳定事件事实、实体标识、结果和非敏感原因码，不得保存上述凭据。
 
+System 的统一 AuthContext 校验拒绝凭据时，以 INFO 记录 `iam.auth_context.rejected` 运行日志，复用本次请求的 `request_id` 和固定 `reason` 原因码。查到凭据记录后，附带 `credential_kind`、`credential_id` 和 `family_id`；三种记录类别分别为 `access_token`、`resource_access_ticket`、`delegated_access_token`，对应 System 的 Access Token、Browser Resource Access Ticket、Delegated Access Token 表。内部 ID 使用十进制字符串，只从本次失败实际消费的快照复制，不重新查询、不由令牌内容推导。格式错误或查无记录时不附带记录 ID。
+
+原因码只使用既有凭据校验枚举，区分令牌过期／撤销、来源令牌过期／撤销、Family 过期／撤销、主体或成员关系失效、授权版本不匹配及上下文无效等条件；无法识别的未授权错误统一为 `authentication_required`。日志不包含 Token、Hash、Header、Cookie、原始错误、完整快照或身份详情，不增加审计写入和数据库查询。公开 HTTP 错误继续使用既有认证失败响应，不返回内部原因或记录 ID。该事件覆盖进入 System AuthContext 校验的凭据拒绝，不代表登录、MFA、Refresh 或业务权限拒绝的通用事件；未进入凭据校验的缺失 Bearer 请求没有内部令牌记录可归因。依赖故障继续使用 `iam.auth_context.resolve_failed`，不能混作凭据无效。
+
 ## 三、Browser AuthSession
 
 `common-frontend` 提供唯一 Browser AuthSession 实现。Console 和所有模块前端必须通过共享能力完成：
@@ -229,7 +233,7 @@ BroadcastChannel 和 Refresh Token Family 协调域，不需要在新窗口 URL�
 增加旧 Token 宽限期或业务模块自行刷新来补偿跨 origin 的入口设计。
 
 获取 Web Lock 与接收 BroadcastChannel 消息属于不同的异步步骤。强制刷新获取锁后，应短暂等待
-本次尝试开始之后产生的更新 Token；只有其值不同于本次开始时观察到的 Token、过期时间更晚且
+本次尝试开始之后产生的更新 Token；只有其值不同于本次开始时观察到的 Token 且
 仍可用，才可以合并此次刷新。旧的未过期 Token 或仅重报
 其过期时间的消息不能结束该等待或绕过 System Refresh API。
 

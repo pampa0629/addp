@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonlogger "github.com/addp/common/logger"
 	"github.com/addp/common/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -74,6 +75,109 @@ func authContextDiagnosticRecord(t *testing.T, output *bytes.Buffer, stage, kind
 	return record
 }
 
+func authContextRejectionRecord(t *testing.T, output *bytes.Buffer, reason CredentialInvalidReason) map[string]any {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("expected exactly one rejection record: %v", err)
+	}
+	if record["event"] != "iam.auth_context.rejected" || record["level"] != "INFO" ||
+		record["reason"] != string(reason) || record["request_id"] != "auth-401-request" {
+		t.Fatalf("rejection attribution = %#v", record)
+	}
+	allowed := map[string]bool{}
+	for _, field := range []string{"time", "level", "msg", "event", "request_id", "reason", "credential_kind", "credential_id", "family_id"} {
+		allowed[field] = true
+	}
+	for field := range record {
+		if !allowed[field] {
+			t.Fatalf("unexpected rejection field %q", field)
+		}
+	}
+	if strings.Contains(output.String(), "private-sentinel") || strings.Contains(output.String(), "addp_at_") {
+		t.Fatal("rejection exposed credential or error contents")
+	}
+	return record
+}
+
+func TestAuthContextRejectionDiagnostics(t *testing.T) {
+	for _, reason := range []CredentialInvalidReason{
+		CredentialInvalidFormat, CredentialInvalidNotFound, CredentialInvalidTokenExpired,
+		CredentialInvalidTokenRevoked, CredentialInvalidSourceTokenExpired, CredentialInvalidSourceTokenRevoked,
+		CredentialInvalidFamilyExpired, CredentialInvalidFamilyRevoked, CredentialInvalidPrincipalInactive,
+		CredentialInvalidAuthorizationVersion, CredentialInvalidContext, CredentialInvalidMembershipInactive,
+		CredentialInvalidTenantInactive, CredentialInvalidUnsupportedTokenType,
+	} {
+		t.Run(string(reason), func(t *testing.T) {
+			service, output := authContextDiagnosticFixture(t)
+			ctx := context.WithValue(t.Context(), requestid.RequestIDKey, "auth-401-request")
+			original := invalidCredential(reason)
+			_, err := service.resolveSessionCredential(ctx, func(*Repository) (*SessionCredentialAuthSnapshot, error) {
+				return nil, original
+			}, nil)
+			if err != original || err.Error() != commonapi.ErrUnauthorized.Error() {
+				t.Fatal("rejection diagnostics changed the authentication error")
+			}
+			record := authContextRejectionRecord(t, output, reason)
+			if record["credential_id"] != nil || record["family_id"] != nil || record["credential_kind"] != nil {
+				t.Fatal("rejection fabricated a record that was not loaded")
+			}
+		})
+	}
+	t.Run("unknown format before database access", func(t *testing.T) {
+		service, output := authContextDiagnosticFixture(t)
+		ctx := context.WithValue(t.Context(), requestid.RequestIDKey, "auth-401-request")
+		_, err := service.ResolveAuthContext(ctx, "private-sentinel")
+		if !errors.Is(err, commonapi.ErrUnauthorized) {
+			t.Fatal("invalid credential changed the HTTP error category")
+		}
+		authContextRejectionRecord(t, output, CredentialInvalidFormat)
+	})
+	for _, original := range []error{
+		fmt.Errorf("private-sentinel addp_at_private-sentinel: %w", commonapi.ErrUnauthorized),
+		invalidCredential(CredentialInvalidReason("private-sentinel addp_at_private-sentinel")),
+	} {
+		t.Run("unrecognized cause is redacted", func(t *testing.T) {
+			service, output := authContextDiagnosticFixture(t)
+			ctx := context.WithValue(t.Context(), requestid.RequestIDKey, "auth-401-request")
+			_, err := service.resolveSessionCredential(ctx, func(*Repository) (*SessionCredentialAuthSnapshot, error) {
+				return nil, original
+			}, nil)
+			if err != original {
+				t.Fatal("diagnostic changed the original error")
+			}
+			authContextRejectionRecord(t, output, "authentication_required")
+		})
+	}
+}
+
+func TestAuthContextRejectionCopiesOnlyRecordReferences(t *testing.T) {
+	for _, kind := range []string{"access_token", "resource_access_ticket", "delegated_access_token"} {
+		t.Run(kind, func(t *testing.T) {
+			service, output := authContextDiagnosticFixture(t)
+			ctx := context.WithValue(t.Context(), requestid.RequestIDKey, "auth-401-request")
+			snapshot := &SessionCredentialAuthSnapshot{CredentialID: 42, CredentialFamilyID: 73,
+				FamilyClientID: "private-sentinel", CredentialScopes: []string{"private-sentinel"}}
+			original := withCredentialRecord(invalidCredential(CredentialInvalidTokenRevoked), snapshot, kind)
+			snapshot.CredentialID, snapshot.CredentialFamilyID = 101, 102
+			_, err := service.resolveSessionCredential(ctx, func(*Repository) (*SessionCredentialAuthSnapshot, error) {
+				return nil, original
+			}, nil)
+			if err != original || err.Error() != commonapi.ErrUnauthorized.Error() {
+				t.Fatal("record references changed the public authentication error")
+			}
+			record := authContextRejectionRecord(t, output, CredentialInvalidTokenRevoked)
+			if record["credential_kind"] != kind || record["credential_id"] != "42" || record["family_id"] != "73" {
+				t.Fatal("diagnostic did not retain the original record references")
+			}
+			encoded, marshalErr := json.Marshal(err)
+			if marshalErr != nil || string(encoded) != `{"Reason":"token_revoked"}` {
+				t.Fatal("private record references escaped error serialization")
+			}
+		})
+	}
+}
+
 func TestAuthContextFailureDiagnosticsPreserveErrorsAndPrivacy(t *testing.T) {
 	for _, test := range []struct {
 		name, kind, state string
@@ -107,8 +211,10 @@ func TestAuthContextFailureDiagnosticsPreserveErrorsAndPrivacy(t *testing.T) {
 				t.Fatalf("diagnostics changed the original error: got %v, want %v", err, test.err)
 			}
 			if test.kind == "" {
-				if output.Len() != 0 {
-					t.Fatalf("expected credential rejection should not log an internal failure: %s", output.String())
+				var record map[string]any
+				if err := json.Unmarshal(output.Bytes(), &record); err != nil ||
+					record["event"] != "iam.auth_context.rejected" || record["error_kind"] != nil {
+					t.Fatal("expected credential rejection must not log an internal failure")
 				}
 				return
 			}
