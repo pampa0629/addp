@@ -16,6 +16,7 @@ export async function stableGraphPixels(element, { groups, timeout = 10_000 }) {
     return [...colorProbe.getImageData(0, 0, 1, 1).data].slice(0, 3)
   }
   const palette = groups.map(({ color, fillColor = color }) => ({ color: resolveColor(color), fillColor: resolveColor(fillColor) }))
+  const separateOutline = palette.map(({ color, fillColor }) => color.some((channel, index) => channel !== fillColor[index]))
   let previous = '', stable = 0, last = []
   const deadline = performance.now() + timeout
   while (performance.now() < deadline) {
@@ -40,7 +41,8 @@ export async function stableGraphPixels(element, { groups, timeout = 10_000 }) {
       }
     }
     // Labels can split the outline, and shadow blending can separate it from the fill.
-    // Locate fill cores first, then attribute exact-color pixels to their nearest core.
+    // Ordinary node bounds are the connected fill, excluding disconnected same-color edges.
+    // Only a distinct search outline is attributed to its nearest fill core.
     const cores = []
     for (let i = 0; i < mask.length; i++) {
       if (!mask[i]) continue
@@ -58,7 +60,8 @@ export async function stableGraphPixels(element, { groups, timeout = 10_000 }) {
       const w = (maxX - minX + 1) * rect.width / width, h = (maxY - minY + 1) * rect.height / height
       if (tail >= 40 && w >= 10 && h >= 10 && w / h > 0.7 && w / h < 1.4) {
         cores.push({ group, x: (minX + maxX) / 2, y: (minY + maxY) / 2,
-          minX, minY, maxX, maxY, stroke: [width, height, 0, 0], pixelCount: 0, fillPixelCount: tail })
+          minX, minY, maxX, maxY, stroke: separateOutline[group] ? [width, height, 0, 0] : [minX, minY, maxX, maxY],
+          pixelCount: separateOutline[group] ? 0 : tail, fillPixelCount: tail })
       }
     }
     if (groups.some((group, index) => cores.filter(core => core.group === index).length !== group.count)) { previous = ''; stable = 0; last = []; continue }
@@ -70,7 +73,7 @@ export async function stableGraphPixels(element, { groups, timeout = 10_000 }) {
         const d = (x - core.x) ** 2 + (y - core.y) ** 2
         if (d < distance) { closest = core; distance = d }
       }
-      if (channels[i] & (1 << closest.group)) {
+      if (separateOutline[closest.group] && (channels[i] & (1 << closest.group))) {
         closest.pixelCount++
         const box = closest.stroke
         box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y)
@@ -237,7 +240,9 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
   const root = `/api/v1/graph/graphs/${expected.graph_id}`
   const normalize = values => values.map(({ id, source, target, type }) => ({ id, source, target, type })).sort((a, b) => a.id.localeCompare(b.id))
   const nodeFacts = nodes => nodes.map(node => ({ id: node.id, labels: [...node.labels].sort(), properties: node.properties })).sort((a, b) => a.id.localeCompare(b.id))
-  const reference = expected.nodes
+  // This fixture's ontology explicitly declares name as its display property.
+  // The independent KG reference intentionally contains no browser display DTO.
+  const reference = expected.nodes.map(node => ({ ...node, display_name: node.properties.name }))
   const shapes = expected.shapes
   const requests = [], stages = []
   const record = request => {
@@ -282,6 +287,7 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
     expect(response.status()).toBe(200)
     const result = await response.json()
     expect(nodeFacts(result.nodes)).toEqual(nodeFacts(reference))
+    for (const node of result.nodes) expect(node.display_name).toBe(reference.find(item => item.id === node.id).display_name)
     expect(result.edges).toEqual([])
     let hits = await observe('dense-search', result.nodes, [], { request: response.request().postDataJSON(), http_status: 200 }, true)
     await frame.locator('.search-input').hover()

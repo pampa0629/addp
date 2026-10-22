@@ -1072,6 +1072,8 @@ Graph 实例统一绑定 `engine_id + catalog_path`，路径必须是 Provider �
 
 创建图谱时必须选择 `index_management=managed|external`，创建后不可隐式切换。managed 目标由 Graph 根据本体维护全文索引；Neo4j 仅维护该实例命名前缀，FalkorDB 的 label 共享索引按本体的字段并集合并和重建，移除不再使用的 label 全文索引。external 目标任何全文索引均不可自动创建、追加、删除或重建；预检全部本体搜索定义后，只复用字段完全匹配的原生索引，缺失或冲突明确返回错误。多个实体类型映射同一 FalkorDB label 时，以字段并集维护物理索引，每个搜索定义仍限定自己的字段。索引变更不删除业务节点、关系或属性。相同租户和 Engine 中的同一目标 graph 只能绑定一个知识图谱，避免不同本体争夺共享索引。
 
+Neo4j managed 搜索定义若首标签和属性集合相同，应在当前 Graph 命名前缀内复用同一个物理全文索引，并分别保留完整标签条件；不能因 `CREATE FULLTEXT INDEX IF NOT EXISTS` 未报错就认定每个请求名称都已创建。不同属性集合不可合并，其他前缀索引不进入清理范围。
+
 全文搜索使用原生索引，不能降级为属性 contains 扫描。跨定义合并按节点 ID 去重、取最高分后稳定分页；匹配集合超过 10000 时明确要求收窄查询，不返回伪造总数。FalkorDB 的 GDS、Spatial 和未经验证的高级算法不开放；基于原生 Cypher 验证的基础算法按实际支持能力声明。创建、搜索、构建和浏览的错误必须保留原因，不能以空结果伪装成功。
 
 业务图内部节点/关系排除由 PropertyGraphProvider 的原生视图声明：Neo4j Spatial 内部标签和关系仅在 Neo4j 排除，不能把这些名称变为全局保留词；FalkorDB 中的同名业务数据保持可见。Graph 的结果映射不再重复维护 Neo4j 专属名单。

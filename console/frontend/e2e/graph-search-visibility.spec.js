@@ -2,6 +2,30 @@ import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
 import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from './graph-visual.fixture.js'
 
+test('Graph pixel observer excludes disconnected same-color relationship strokes from node bounds', async ({ page }) => {
+  await page.setContent('<div id="graph"><canvas width="280" height="150"></canvas></div>')
+  const canvas = page.locator('#graph')
+  const color = 'rgb(80, 120, 180)'
+  await canvas.locator('canvas').evaluate((element, color) => {
+    const context = element.getContext('2d')
+    context.fillStyle = context.strokeStyle = color
+    for (const x of [60, 220]) {
+      context.beginPath(); context.arc(x, 75, 16, 0, 2 * Math.PI); context.fill()
+    }
+    context.lineWidth = 2
+    context.beginPath(); context.moveTo(82, 75); context.lineTo(198, 75); context.stroke()
+  }, color)
+  const [frame] = await canvas.evaluate(stableGraphPixels, { groups: [{ count: 2, color }], timeout: 1500 })
+  expect(frame.stableFrames).toBeGreaterThanOrEqual(10)
+  expect(frame.nodes).toHaveLength(2)
+  for (const [index, node] of frame.nodes.entries()) {
+    expect(node.x).toBeCloseTo([59.5, 219.5][index], 0)
+    expect(node.y).toBeCloseTo(74.5, 0)
+    expect(node.box).toEqual(node.fillBox)
+    expect(node.box[2] - node.box[0]).toBeLessThanOrEqual(32)
+  }
+})
+
 for (const replace of [false, true]) {
   test(`Graph search settles to visible clickable nodes (${replace ? 'new' : 'retained'} identities)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -89,7 +113,9 @@ test('Graph multi-label dense search, filter and four layouts preserve every nat
   await page.route('**/api/v1/graph/graphs/7/expand', route => route.fulfill({ json: { nodes, edges } }))
   await page.goto('/graph/graphs/7/browse')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  const result = await denseGraphStages(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes, edges, shapes }, async phase => {
+  // Native KG evidence contains identity/labels/properties, not the browser display DTO.
+  const nativeNodes = nodes.map(({ id, labels, properties }) => ({ id, labels, properties }))
+  const result = await denseGraphStages(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes: nativeNodes, edges, shapes }, async phase => {
     await testInfo.attach(phase + '.png', { body: await page.screenshot(), contentType: 'image/png' })
   })
   await testInfo.attach('graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })

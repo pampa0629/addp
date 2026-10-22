@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
@@ -32,19 +33,19 @@ func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, conn plugin.C
 }
 
 func (p *Neo4jPlugin) SyncGraphSearchIndexes(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath, schema plugin.GraphSearchSchema) ([]plugin.GraphSearchIndex, error) {
-	if err := pg.ValidateSchema(schema); err != nil {
-		return nil, err
-	}
 	run := func(q string, params map[string]interface{}) (*plugin.GraphQueryResult, error) {
 		return p.ExecuteGraphQueryAtPath(ctx, conn, path, q, plugin.QueryOptions{Parameters: params})
+	}
+	return syncGraphSearchIndexes(schema, run)
+}
+
+func syncGraphSearchIndexes(schema plugin.GraphSearchSchema, run func(string, map[string]interface{}) (*plugin.GraphQueryResult, error)) ([]plugin.GraphSearchIndex, error) {
+	if err := pg.ValidateSchema(schema); err != nil {
+		return nil, err
 	}
 	result, err := run("SHOW FULLTEXT INDEXES YIELD name, labelsOrTypes, properties, state, entityType RETURN name, labelsOrTypes, properties, state, entityType", nil)
 	if err != nil {
 		return nil, err
-	}
-	expected := map[string]plugin.GraphSearchIndex{}
-	for _, d := range schema.Indexes {
-		expected[d.Name] = d
 	}
 	existing := map[string]bool{}
 	resolved := append([]plugin.GraphSearchIndex(nil), schema.Indexes...)
@@ -64,6 +65,28 @@ func (p *Neo4jPlugin) SyncGraphSearchIndexes(ctx context.Context, conn plugin.Co
 		}
 		return resolved, nil
 	}
+	// Neo4j permits only one fulltext index for a label/property-set schema.
+	// Logical definitions still retain all labels for the search predicate.
+	physicalKey := func(index plugin.GraphSearchIndex) string {
+		return index.Labels[0] + "\x00" + strings.Join(pg.Set(index.Properties), "\x00")
+	}
+	physical := map[string]plugin.GraphSearchIndex{}
+	for _, index := range schema.Indexes {
+		key := physicalKey(index)
+		if previous, exists := physical[key]; !exists || index.Name < previous.Name {
+			physical[key] = index
+		}
+	}
+	expected := map[string]plugin.GraphSearchIndex{}
+	definitions := make([]plugin.GraphSearchIndex, 0, len(physical))
+	for _, index := range physical {
+		expected[index.Name] = index
+		definitions = append(definitions, index)
+	}
+	sort.Slice(definitions, func(i, j int) bool { return definitions[i].Name < definitions[j].Name })
+	for i := range resolved {
+		resolved[i].Name = physical[physicalKey(resolved[i])].Name
+	}
 	for _, row := range result.Rows {
 		name := fmt.Sprint(row["name"])
 		if !strings.HasPrefix(name, schema.OwnerPrefix) {
@@ -78,7 +101,7 @@ func (p *Neo4jPlugin) SyncGraphSearchIndexes(ctx context.Context, conn plugin.Co
 			return nil, err
 		}
 	}
-	for _, d := range schema.Indexes {
+	for _, d := range definitions {
 		if existing[d.Name] {
 			continue
 		}
