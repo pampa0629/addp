@@ -275,3 +275,8 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 ### D8 下游流长持久化
 
 独立手工 `raster-flow-length-d8-persistence`／`make test-raster-flow-length-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。六条COG链覆盖米制／国际英尺／美制测量英尺已登记方向、DEM→流向→流长、填洼→流向→流长及全无效；七类非法方向／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确length任务失败，查询语言不得改写旧错误。独立逐源路径按横纵对角步数核全像元／mask、米制中心距离和严格终点零，保留原网格／CRS，完整COG验证；严格三方相等正整数大小、精确自动扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘、Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项45项、脚本门禁62项与完整Online登记通过。扩展原栅格脚本总门禁未通过：最后215项中的3个未修改原Raster模拟生命周期用例60秒超时，其他16组子门禁通过，不改原限制、不计整套通过；隔离身份Go T1不计全量IAM。独立Hosted运行及归档审计待验，Linux全量等CI会话回传，不计UI或容量。
+
+
+### D8 汇水分区持久化
+
+独立手工 `raster-drainage-basins-d8-persistence`／`make test-raster-drainage-basins-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。四条已登记多出口方向／DEM接流向／填洼接流向／全无效COG链，七类非法方向（含64位NoData相邻值）／内部伪终点／越界或无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确失败链。独立逐源路径核全像元／mask、出口行列编号、相邻出口不合并、唯一归属与总数守恒；严格三方大小、COG／网格／CRS、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与全部清理。入口、夹具及登记已实现；本地Native新增夹具专项42项（2676筛除，不是新全量）、脚本门禁62项及完整Online登记、Python CI标准登记通过，记录输入无漂移。独立Hosted待实际运行及完整归档审计，不计UI或容量；Linux全量等CI会话回传，原套件／权限／跨模块产品逻辑不变。

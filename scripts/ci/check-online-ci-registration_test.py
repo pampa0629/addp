@@ -294,6 +294,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_flow_accumulation_d8_profile(self.repository,registered)
             target.write_text(original)
 
+    def test_drainage_basins_d8_requires_manual_nfs_full_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-drainage-basins-d8-gate.sh','scripts/test/raster-drainage-basins-d8-persistence-online.py',
+            'business/scripts/online-raster-drainage-basins-d8-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_drainage_basins_d8_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-drainage-basins-d8-persistence'}
+        CHECK.validate_raster_drainage_basins_d8_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-drainage-basins-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-drainage-basins-d8-online-runner'),(paths[2],'test_online_drainage_basins_d8_fixture.py'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[5],'basin_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'basin_conservation_verified'),(paths[4],'basin_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'outlet_order_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'unique_membership_verified'),(paths[5],'empty-basins.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_drainage_basins_d8_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_drainage_basins_d8_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_flow_length_d8_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
