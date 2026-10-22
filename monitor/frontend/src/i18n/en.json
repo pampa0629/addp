@@ -1072,7 +1072,8 @@
       "categories": {
         "log_pipeline": "Log pipeline",
         "resource": "Host resources",
-        "http_quality": "HTTP quality"
+        "http_quality": "HTTP quality",
+        "process_resource": "Service instance resources"
       },
       "refresh": "Refresh",
       "active": "Active",
@@ -1290,6 +1291,25 @@
         "deadlocks": "Full one-minute deadlock rate; missing or reset statistics are not zero-filled.",
         "capacity": "Total size of non-template databases, without tenant attribution."
       }
+    },
+    "processRules": {
+      "title": "Service instance resource rules",
+      "scope": "Evaluate CPU and RSS per running instance. Exit, offline state and missing samples do not resolve alerts. Configure a new rule after a process restart.",
+      "create": "Create instance rule",
+      "edit": "Edit instance rule",
+      "subject": "Service instance",
+      "anchor": "Select service instance",
+      "anchorHint": "Select a current instance with declared metrics. The instance and metric are immutable.",
+      "policyHint": "New rules start disabled. Save conditions before enabling. Active alerts keep their original recovery conditions.",
+      "cpu": "CPU cores used (1 minute)",
+      "memory": "Resident memory (RSS)",
+      "cores": "cores",
+      "cpuHint": "Unit: cores. For example, 1.5 means an average of 1.5 logical cores, not a percentage.",
+      "memoryHint": "Unit: GiB. Resident memory pressure does not establish a memory leak.",
+      "triggerValue": "Trigger threshold",
+      "recoveryValue": "Recovery threshold",
+      "invalid": "Enter a name and positive thresholds. Recovery must be below trigger; durations must be 15–300 seconds in steps of 15.",
+      "conflict": "Rule conflict, duplicate metric, or changed instance identity. Input is preserved; close and refresh to review."
     }
   }
 }

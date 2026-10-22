@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ const (
 // PlatformAlertEvaluation covers exactly one source-owned signal. Missing
 // evaluations are never inferred to mean normal for any other source or subject.
 type PlatformAlertEvaluation struct {
+	ProcessEvidence                                                *models.ProcessAlertEvidence
 	HTTPEvidence                                                   *models.HTTPAlertEvidence
 	ResourceEvidence                                               *models.ResourceAlertEvidence
 	Category, SubjectKind, SubjectID, Signal, InstanceID, Severity string
@@ -42,6 +44,11 @@ func (e PlatformAlertEvaluation) valid() bool {
 	case models.PlatformAlertCategoryResource:
 		id, err := uuid.Parse(e.SubjectID)
 		if e.SubjectKind != models.PlatformAlertSubjectHostNode || err != nil || id.String() != e.SubjectID || e.InstanceID != "" {
+			return false
+		}
+	case models.PlatformAlertCategoryProcess:
+		id, err := strconv.ParseUint(e.SubjectID, 10, 64)
+		if err != nil || id == 0 || strconv.FormatUint(id, 10) != e.SubjectID || e.SubjectKind != models.PlatformAlertSubjectInstance || !resourceRuleUUID(e.Signal) || e.InstanceID == "" || len(e.InstanceID) > 100 || strings.ContainsAny(e.InstanceID, "\r\n\x00") {
 			return false
 		}
 	case models.PlatformAlertCategoryHTTP:
@@ -91,7 +98,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 		incident = models.PlatformAlertIncident{
 			Version: 1, Category: e.Category, SubjectKind: e.SubjectKind, SubjectID: e.SubjectID,
 			Signal: e.Signal, InstanceID: e.InstanceID, Severity: e.Severity,
-			Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence,
+			Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence, ProcessEvidence: e.ProcessEvidence,
 		}
 		if err := tx.Create(&incident).Error; err != nil {
 			return err
@@ -114,7 +121,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 	if eventType == "" {
 		return nil
 	}
-	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence}
+	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now, ResourceEvidence: e.ResourceEvidence, HTTPEvidence: e.HTTPEvidence, ProcessEvidence: e.ProcessEvidence}
 	if err := tx.Create(&event).Error; err != nil {
 		return err
 	}

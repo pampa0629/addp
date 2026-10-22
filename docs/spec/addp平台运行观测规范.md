@@ -413,6 +413,18 @@ Monitor `/platform-alerts` 提供事件、资源规则、通知目标和投递�
 
 唯一规则 API 为 `/api/v1/monitor/platform/resource-alert-rules` 及 `/:id`；页面在平台告警中按权限独立加载页签。主机选择来自当前有权读取的 System 列表，不手填私有端点。主机详情、资源事件与对应时段趋势通过同一主体和 URL 关联；无权时不附带额外数据。
 
+### 服务实例 CPU 与 RSS 超限规则
+
+服务实例规则复用现有平台资源规则权限与 opened/resolved 生命周期，不增加退出结束状态。从 System 当前授权实例列表选择一个实际运行实例，固定其登记 ID、运行实例身份和启动时刻；不按模块名称自动迁移到重启后的新实例。适用于已声明进程采集的 backend、worker、scheduler、ingress；不读取 Tenant 业务数据或扩大后台身份投影。
+
+指标仅为 `process.cpu.core_equivalents`（最近一分钟 CPU 占用核数）和 `process.memory.resident_bytes`（RSS 字节，表单以 GiB 输入）。无配额时不显示使用率，不将 RSS 超限称为内存泄漏。阈值必须显式填写有限正数且恢复值小于触发值，持续时间为 15–300 秒且为 15 秒整数倍；不预填统一业务阈值，新建停用。同一运行实例/指标最多一条规则，总数最多 1,000；实例、启动边界和指标不可修改，名称、条件及启停按 CAS 更新。
+
+后台复用固定进程指标查询、查询预算和私有来源准入，每 15 秒单轮有界评估；CPU 完整一分钟窗口和 RSS 当前值分别核验，连续样本必须不断推进且间隔不超过 16 秒。启用、编辑、评估器重启、来源变化或缺样后重新积累完整窗口。写入前再次核验来源身份、租约、查询策略与规则版本；未接入、离线、退出、缺样、查询失败和暂停均不自动恢复活动事件。已有事件始终使用打开时保存的恢复条件，有活动事件时禁止删除规则。
+
+规则入口为 `/api/v1/monitor/platform/process-resource-alert-rules` 及 `/{id}`，使用既有 `monitor.platform_resource_rule.read/create/update/delete`。事件类别 `process_resource`、主体 `module_instance`，使用登记 ID 及不可变运行实例身份隔离；证据只含公开实例身份、指标、阈值和有界采样统计，不含采集端点或凭据。通知须显式订阅新类别，协议为 `addp.platform-process-resource-alert/v1`，复用唯一事件协调器和事务 outbox；旧订阅及历史不改写。
+
+本批验证由 Monitor Go T1、PostgreSQL T2、前端 T3 与 Swagger 标准入口覆盖；既有 Monitor 路径自动发现覆盖本批，无新增外部依赖。CI 与 Hosted 由专门会话回传，本会话不调度或设置定时；未执行的真实采样验收不得算通过。
+
 ### 7.3 历史、订阅与通知
 
 原位迁移保留历史 ID、时间、投递身份、密文及尝试记录，不改写历史载荷、不重造或重发旧通知。旧通知目标仅订日志，资源类别必须显式选择；规则启用与通知订阅分别管理。

@@ -38,6 +38,7 @@ func SetupRouter(
 	resourceRules *service.ResourceAlertRuleService,
 	httpRules *service.HTTPAlertRuleService,
 	traceService *service.TraceService,
+	processRules *service.ProcessAlertRuleService,
 ) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 
@@ -127,6 +128,12 @@ func SetupRouter(
 	platform.POST("/platform/resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleCreate), platformObservationIdentity(false), ruleHandler.Create)
 	platform.PUT("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleUpdate), platformObservationIdentity(false), ruleHandler.Update)
 	platform.DELETE("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleDelete), platformObservationIdentity(false), ruleHandler.Delete)
+
+	processRuleHandler := &ProcessAlertRuleHandler{service: processRules}
+	platform.GET("/platform/process-resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead), platformObservationIdentity(false), processRuleHandler.List)
+	platform.POST("/platform/process-resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleCreate), platformObservationIdentity(false), processRuleHandler.Create)
+	platform.PUT("/platform/process-resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleUpdate), platformObservationIdentity(false), processRuleHandler.Update)
+	platform.DELETE("/platform/process-resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleDelete), platformObservationIdentity(false), processRuleHandler.Delete)
 
 	targetHandler := NewMonitoringTargetHandler(monitoringTargets)
 	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.List)

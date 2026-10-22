@@ -5,6 +5,7 @@
       <el-button v-if="canRead" :type="state.tab === 'incidents' ? 'primary' : ''" @click="change({ tab: 'incidents' })">{{ t('monitor.platformAlerts.incidents') }}</el-button>
       <el-button v-if="canReadNotifications" :type="state.tab === 'notifications' ? 'primary' : ''" @click="change({ tab: 'notifications' })">{{ t('monitor.platformAlerts.notifications') }}</el-button>
       <el-button v-if="canReadRules" :type="state.tab === 'rules' ? 'primary' : ''" @click="change({ tab: 'rules' })">{{ t('monitor.resourceRules.title') }}</el-button>
+      <el-button v-if="canReadRules" :type="state.tab === 'process-rules' ? 'primary' : ''" @click="change({ tab: 'process-rules' })">{{ t('monitor.processRules.title') }}</el-button>
       <el-button v-if="canReadHTTPRules" :type="state.tab === 'http-rules' ? 'primary' : ''" @click="change({ tab: 'http-rules' })">{{ t('monitor.httpRules.title') }}</el-button>
       <el-button :loading="loading" @click="refresh">{{ t('monitor.platformAlerts.refresh') }}</el-button>
     </div>
@@ -13,7 +14,7 @@
     <section v-if="state.tab === 'incidents' && canRead">
       <div class="alert-toolbar">
         <el-select :model-value="state.category" @update:model-value="value => change({ category: value, page: 1 })" :aria-label="t('monitor.platformAlerts.category')">
-          <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality']" :key="category" :label="categoryLabel(category)" :value="category" />
+          <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality','process_resource']" :key="category" :label="categoryLabel(category)" :value="category" />
         </el-select>
         <el-select :model-value="state.status" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
           <el-option :label="t('monitor.platformAlerts.active')" value="active" /><el-option :label="t('monitor.platformAlerts.allStatuses')" value="" /><el-option v-for="status in ['open','acknowledged','resolved']" :key="status" :label="t(`monitor.platformAlerts.statuses.${status}`)" :value="status" />
@@ -22,9 +23,9 @@
       </div>
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row) || row.category === 'http_quality'" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'process_resource' ? processSignal(row) : row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ processSubject(row) || hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row) || ['http_quality','process_resource'].includes(row.category)" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.severity')" width="100"><template #default="{ row }"><el-tag :type="row.severity === 'critical' ? 'danger' : 'warning'">{{ t(`monitor.platformAlerts.severities.${row.severity}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.status')" width="130"><template #default="{ row }">{{ t(`monitor.platformAlerts.statuses.${row.status}`) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.openedAt')" min-width="160"><template #default="{ row }">{{ date(row.opened_at) }}</template></el-table-column>
@@ -86,8 +87,8 @@
     </section>
     <el-dialog :model-value="Boolean(selectedIncident)" :title="t('monitor.platformAlerts.evidence.title')" width="min(720px, calc(100vw - 32px))" @close="selectedIncident = null">
       <section v-if="selectedIncident" data-testid="resource-alert-evidence">
-        <h3 class="alert-subject">{{ hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
-        <p>{{ selectedIncident.category === 'http_quality' ? httpSignal(selectedIncident) : signalLabel(selectedIncident.signal) }}</p>
+        <h3 class="alert-subject">{{ processSubject(selectedIncident) || hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
+        <p>{{ selectedIncident.category === 'process_resource' ? processSignal(selectedIncident) : selectedIncident.category === 'http_quality' ? httpSignal(selectedIncident) : signalLabel(selectedIncident.signal) }}</p>
         <p v-if="resourceAlertHostID(selectedIncident) && canReadHosts && !hosts[selectedIncident.subject_id]">{{ t('monitor.platformAlerts.evidence.hostUnavailable') }}</p>
         <template v-if="selectedEvidence">
           <p>{{ t('monitor.platformAlerts.evidence.frozen') }}</p>
@@ -102,18 +103,18 @@
             <el-descriptions-item :label="t('monitor.platformAlerts.evidence.evaluatedAt')">{{ evidenceDate(selectedEvidence.evaluated_at) }}</el-descriptions-item>
           </el-descriptions>
         </template>
-        <template v-else-if="selectedHTTPEvidence">
+        <template v-else-if="selectedThresholdEvidence">
           <p>{{ t('monitor.platformAlerts.evidence.frozen') }}</p>
           <el-descriptions :column="1" border data-testid="http-alert-evidence">
-            <el-descriptions-item :label="t('monitor.httpRules.subject')">{{ selectedHTTPEvidence.module_name }} · {{ t(`monitor.http.layers.${selectedHTTPEvidence.role}`) }} · {{ selectedHTTPEvidence.route === null ? t('monitor.http.allRoutes') : `${selectedHTTPEvidence.method} ${selectedHTTPEvidence.route || t('monitor.http.unmatched')}` }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.resourceRules.trigger')">{{ t('monitor.httpRules.above', { value: selectedHTTPEvidence.policy.trigger_value, seconds: selectedHTTPEvidence.policy.trigger_seconds }) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.resourceRules.recovery')">{{ t('monitor.httpRules.below', { value: selectedHTTPEvidence.policy.recovery_value, seconds: selectedHTTPEvidence.policy.recovery_seconds }) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.latest')">{{ number(selectedHTTPEvidence.latest) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.minimum')">{{ number(selectedHTTPEvidence.minimum) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.maximum')">{{ number(selectedHTTPEvidence.maximum) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.samples')">{{ selectedHTTPEvidence.samples }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.sampleWindow')">{{ evidenceDate(selectedHTTPEvidence.sampled_from) }} — {{ evidenceDate(selectedHTTPEvidence.sampled_to) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.evaluatedAt')">{{ evidenceDate(selectedHTTPEvidence.evaluated_at) }}</el-descriptions-item>
+            <el-descriptions-item v-if="!selectedProcessEvidence" :label="t('monitor.httpRules.subject')">{{ selectedThresholdEvidence.module_name }} · {{ t(`monitor.http.layers.${selectedThresholdEvidence.role}`) }} · {{ selectedThresholdEvidence.route === null ? t('monitor.http.allRoutes') : `${selectedThresholdEvidence.method} ${selectedThresholdEvidence.route || t('monitor.http.unmatched')}` }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.resourceRules.trigger')">{{ t('monitor.httpRules.above', { value: thresholdValue(selectedThresholdEvidence.policy.trigger_value), seconds: selectedThresholdEvidence.policy.trigger_seconds }) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.resourceRules.recovery')">{{ t('monitor.httpRules.below', { value: thresholdValue(selectedThresholdEvidence.policy.recovery_value), seconds: selectedThresholdEvidence.policy.recovery_seconds }) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.latest')">{{ thresholdValue(selectedThresholdEvidence.latest) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.minimum')">{{ thresholdValue(selectedThresholdEvidence.minimum) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.maximum')">{{ thresholdValue(selectedThresholdEvidence.maximum) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.samples')">{{ selectedThresholdEvidence.samples }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.sampleWindow')">{{ evidenceDate(selectedThresholdEvidence.sampled_from) }} — {{ evidenceDate(selectedThresholdEvidence.sampled_to) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.evaluatedAt')">{{ evidenceDate(selectedThresholdEvidence.evaluated_at) }}</el-descriptions-item>
           </el-descriptions>
         </template>
         <el-alert v-else :title="t('monitor.platformAlerts.evidence.unavailable')" type="warning" :closable="false" />
@@ -123,7 +124,8 @@
         </div>
       </section>
     </el-dialog>
-    <HTTPAlertRules v-if="state.tab === 'http-rules' && canReadHTTPRules" :key="ruleIdentity" ref="httpRulesPanel" :page="state.http_rule_page" @page="change({ http_rule_page: $event })" />
+    <InstanceAlertRules kind="process" v-if="state.tab === 'process-rules' && canReadRules" :key="ruleIdentity" ref="processRulesPanel" :page="state.process_rule_page" @page="change({ process_rule_page: $event })" />
+    <InstanceAlertRules kind="http" v-if="state.tab === 'http-rules' && canReadHTTPRules" :key="ruleIdentity" ref="httpRulesPanel" :page="state.http_rule_page" @page="change({ http_rule_page: $event })" />
     <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :page="state.rule_page" @page="change({ rule_page: $event })" />
     <el-dialog v-model="destinationOpen" :title="t('monitor.platformAlerts.destination')" width="min(640px, 95vw)" :close-on-click-modal="false">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
@@ -133,7 +135,7 @@
         <el-form-item v-if="destinationDraft.channel === 'webhook'" :label="t('monitor.platformAlerts.url')"><el-input v-model="destinationDraft.url" maxlength="2048" /></el-form-item>
         <el-form-item v-else-if="destinationDraft.channel === 'email'" :label="t('monitor.platformAlerts.recipients')"><el-input v-model="recipientsText" /></el-form-item>
         <el-form-item v-if="destinationDraft.channel !== 'email'" :label="t(destinationDraft.channel === 'wecom' ? 'monitor.platformAlerts.wecomCredential' : 'monitor.platformAlerts.secret')"><el-input v-model="secret" type="password" show-password autocomplete="new-password" /></el-form-item>
-        <el-form-item :label="t('monitor.platformAlerts.sourceCategories')"><el-checkbox-group v-model="destinationDraft.categories"><el-checkbox v-for="category in ['log_pipeline','resource','http_quality']" :key="category" :value="category">{{ t(`monitor.platformAlerts.categories.${category}`) }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item :label="t('monitor.platformAlerts.sourceCategories')"><el-checkbox-group v-model="destinationDraft.categories"><el-checkbox v-for="category in ['log_pipeline','resource','http_quality','process_resource']" :key="category" :value="category">{{ t(`monitor.platformAlerts.categories.${category}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('monitor.platformAlerts.events')"><el-checkbox-group v-model="destinationDraft.event_types"><el-checkbox v-for="event in ['opened','resolved']" :key="event" :value="event">{{ t(`monitor.platformAlerts.eventsLabel.${event}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('monitor.platformAlerts.enabled')"><el-switch v-model="destinationDraft.enabled" /></el-form-item>
       </el-form>
@@ -155,7 +157,8 @@ import { nodeResourcesAPI } from '../api/nodeResources'
 import { formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import ResourceAlertRules from '../components/ResourceAlertRules.vue'
-import HTTPAlertRules from '../components/HTTPAlertRules.vue'
+import InstanceAlertRules from '../components/InstanceAlertRules.vue'
+import { processAlertEvidence, processRuleMetrics, processRuleScale } from '../utils/processRules'
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
@@ -179,9 +182,14 @@ function openHost(row, historical = false) {
   const target = historical ? resourceAlertTrendRoute(row) : { path: `/node-resources/${row.subject_id}`, query: {} }
   if (target) navigateMonitorRoute(router, target)
 }
-const rulesPanel = ref(null), httpRulesPanel = ref(null)
-function refresh() { if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
-const selectedHTTPEvidence = computed(() => httpAlertEvidence(selectedIncident.value))
+const rulesPanel = ref(null), httpRulesPanel = ref(null), processRulesPanel = ref(null)
+function refresh() { if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'process-rules') processRulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
+const selectedProcessEvidence = computed(() => processAlertEvidence(selectedIncident.value))
+const selectedThresholdEvidence = computed(() => selectedProcessEvidence.value || httpAlertEvidence(selectedIncident.value))
+const thresholdValue = value => selectedProcessEvidence.value ? processValue(value,selectedProcessEvidence.value.metric_key) : number(value)
+function processValue(value,key) { return `${number(value / processRuleScale(key))} ${key === 'process.memory.resident_bytes' ? 'GiB' : t('monitor.processRules.cores')}` }
+function processSubject(row) { const e=processAlertEvidence(row); return e ? `${e.module_name} · ${t(`monitor.process.roles.${e.role}`)} · ${e.runtime_instance_id}` : '' }
+function processSignal(row) { const e=processAlertEvidence(row); return e ? t(`monitor.processRules.${processRuleMetrics.find(m=>m.key===e.metric_key)?.name}`) : t('monitor.processRules.title') }
 function httpSignal(row) { const e = httpAlertEvidence(row); return e ? t(`monitor.http.metrics.${httpRuleMetrics.find(metric => metric.key === e.metric_key)?.name}`) : t('monitor.httpRules.title') }
 const ruleIdentity = computed(() => JSON.stringify([auth.authContext, auth.permissions]))
 const incidents = ref([]), total = ref(0), loading = ref(false), busy = ref(false), error = ref('')
@@ -189,7 +197,7 @@ const destinations = ref([]), deliveries = ref({ data: [], total: 0 }), notifica
 const deliveryPage = computed(() => state.value.delivery_page)
 const destinationOpen = ref(false), destinationDraft = ref({ categories: [], recipients: [], event_types: [] }), editingID = ref(0), recipientsText = ref(''), secret = ref(''), editError = ref('')
 const date = value => value ? new Date(value).toLocaleString() : '—'
-const categoryLabel = value => ['log_pipeline', 'resource', 'http_quality'].includes(value) ? t(`monitor.platformAlerts.categories.${value}`) : '—'
+const categoryLabel = value => ['log_pipeline', 'resource', 'http_quality', 'process_resource'].includes(value) ? t(`monitor.platformAlerts.categories.${value}`) : '—'
 const channelLabel = value => value === 'wecom' ? t('monitor.platformAlerts.wecom') : value === 'email' ? t('monitor.platformAlerts.email') : 'Webhook'
 const destinationLabel = row => row.destination_name || t('monitor.platformAlerts.unavailableTarget', { id: row.destination_id })
 const fact = value => t(`monitor.platformAlerts.facts.${value ? 'yes' : 'no'}`)
@@ -214,7 +222,7 @@ function change(patch) {
 }
 function changeDeliveryPage(page) { change({ delivery_page: page }) }
 async function load() {
-  if (['rules','http-rules'].includes(state.value.tab)) return
+  if (['rules','http-rules','process-rules'].includes(state.value.tab)) return
   controller?.abort(); controller = new AbortController(); const own = ++request, lease = epoch
   if (state.value.tab === 'notifications' ? !canReadNotifications.value : !canRead.value) return
   loading.value = true; error.value = ''; notificationError.value = ''; hosts.value = {}; selectedIncident.value = null; incidents.value = []

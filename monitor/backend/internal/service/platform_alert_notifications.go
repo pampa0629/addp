@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"sort"
 	"strings"
@@ -33,7 +34,7 @@ func NewPlatformAlertService(db *gorm.DB, key []byte, allowPrivate bool, webhook
 }
 
 type PlatformAlertDestinationInput struct {
-	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource,http_quality"`
+	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource,http_quality,process_resource"`
 	Version    uint64   `json:"version"`
 	Name       string   `json:"name" binding:"required"`
 	Channel    string   `json:"channel" binding:"required" enums:"webhook,email,wecom"`
@@ -48,7 +49,7 @@ func (n *PlatformAlertService) validate(ctx context.Context, input PlatformAlert
 	if d.Name == "" || len(d.Name) > 100 {
 		return d, ErrLogInvalid
 	}
-	if len(input.Categories) < 1 || len(input.Categories) > 3 {
+	if len(input.Categories) < 1 || len(input.Categories) > 4 {
 		return d, ErrLogInvalid
 	}
 	for _, category := range input.Categories {
@@ -270,6 +271,13 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 		}
 		payload = map[string]any{"schema": "addp.platform-http-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now, "evidence": event.HTTPEvidence}
 	}
+	if incident.Category == models.PlatformAlertCategoryProcess {
+		e := event.ProcessEvidence
+		if incident.Severity != "warning" || e == nil || e.RuleID != incident.Signal || fmt.Sprint(e.AnchorInstanceID) != incident.SubjectID || e.RuntimeInstanceID != incident.InstanceID || !e.Policy.Valid(e.MetricKey) {
+			return ErrLogInvalid
+		}
+		payload = map[string]any{"schema": "addp.platform-process-resource-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "instance_id": incident.InstanceID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now, "evidence": e}
+	}
 	body, _ := json.Marshal(payload)
 	for _, d := range destinations {
 		if !stringListContains(d.EventTypes, event.Type) {
@@ -347,6 +355,9 @@ func (n *PlatformAlertService) send(ctx context.Context, d models.PlatformAlertD
 	}
 	if message.Schema == "addp.platform-resource-alert/v1" {
 		subject = "ADDP platform resource alert"
+	}
+	if message.Schema == "addp.platform-process-resource-alert/v1" {
+		subject = "ADDP service instance resource alert"
 	}
 	if message.Schema == "addp.platform-http-alert/v1" {
 		subject = "ADDP platform HTTP quality alert"

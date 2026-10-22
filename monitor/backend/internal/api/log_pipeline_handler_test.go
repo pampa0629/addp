@@ -71,7 +71,7 @@ func TestLogObservationRequiresPlatformObserverServiceToken(t *testing.T) {
 			defer server.Close()
 			pipeline := service.NewLogPipelineService(nil, "node", nil, nil)
 			notifications := service.NewPlatformAlertService(nil, nil, false, nil, nil, 3, 0, 0, 0)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil, nil, nil, nil, nil)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil, nil, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/log-observations", bytes.NewBufferString(`{}`))
 			req.Header.Set("Authorization", "Bearer addp_at_fixture")
 			req.Header.Set("Content-Type", "application/json")
@@ -97,7 +97,7 @@ func TestPlatformAlertDestinationsRejectEscalatedSubscriptions(t *testing.T) {
 	}))
 	defer server.Close()
 	notifications := service.NewPlatformAlertService(nil, nil, false, nil, nil, 3, 0, 0, 0)
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), service.NewLogPipelineService(nil, "node", nil, nil), notifications, nil, nil, nil, nil, nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), service.NewLogPipelineService(nil, "node", nil, nil), notifications, nil, nil, nil, nil, nil, nil, nil)
 	for _, tc := range []struct {
 		method, path string
 		version      uint64
@@ -172,7 +172,7 @@ func TestPlatformAlertManagementUsesNewExplicitUserPermissions(t *testing.T) {
 			}))
 			defer server.Close()
 			alerts := service.NewPlatformAlertService(nil, nil, false, nil, nil, 3, 0, 0, 0)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, alerts, nil, nil, nil, nil, nil, nil)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, alerts, nil, nil, nil, nil, nil, nil, nil)
 			req := httptest.NewRequest(tc.method, "/api/v1/monitor/platform"+tc.path, bytes.NewBufferString(`{}`))
 			req.Header.Set("Authorization", "Bearer addp_at_fixture")
 			response := httptest.NewRecorder()

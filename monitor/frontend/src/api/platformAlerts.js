@@ -1,6 +1,10 @@
 import client from './client'
 const base = '/monitor/platform'
 export const platformAlertsAPI = {
+  processRules: (page, signal) => client.get(`${base}/process-resource-alert-rules`, { params: { page, page_size: 20 }, signal }),
+  createProcessRule: data => client.post(`${base}/process-resource-alert-rules`, data),
+  updateProcessRule: (id, data) => client.put(`${base}/process-resource-alert-rules/${id}`, data),
+  deleteProcessRule: row => client.delete(`${base}/process-resource-alert-rules/${row.id}`, { data: { version: row.version } }),
   httpRules: (page, signal) => client.get(`${base}/http-alert-rules`, { params: { page, page_size: 20 }, signal }),
   createHTTPRule: data => client.post(`${base}/http-alert-rules`, data),
   updateHTTPRule: (id, data) => client.put(`${base}/http-alert-rules/${id}`, data),

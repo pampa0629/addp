@@ -2,77 +2,21 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
-	"math"
-	"sort"
 	"time"
 
 	commonmodels "github.com/addp/common/models"
-	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/resourcequery"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type httpRuleSources struct {
-	scopes    []resourcequery.ProcessScope
-	instances []string
-	signature string
-	lease     time.Time
-}
-
-func (s *HTTPAlertRuleService) sources(ctx context.Context, rule models.HTTPAlertRule, policyVersion uint64) (httpRuleSources, error) {
-	result := httpRuleSources{}
-	o := s.observations
-	if s.identities == nil || o == nil || o.policy == nil {
-		return result, metricsdiscovery.ErrUnconfigured
-	}
-	before := time.Now().UTC()
-	snapshot, err := s.identities.GetObservabilityIdentities(ctx)
-	if err != nil || snapshot == nil || snapshot.ModuleInstances == nil || len(snapshot.ModuleInstances) > commonmodels.ObservabilityIdentityInstanceLimit || snapshot.ObservedAt.Before(before.Add(-5*time.Second)) || snapshot.ObservedAt.After(time.Now().UTC().Add(5*time.Second)) {
-		return result, metricsdiscovery.ErrIdentityUnavailable
-	}
-	rows := append([]commonmodels.ObservabilityModuleIdentity{}, snapshot.ModuleInstances...)
-	sort.Slice(rows, func(i, j int) bool { return rows[i].InstanceID < rows[j].InstanceID })
-	physical := map[string]bool{}
-	instances := map[string]bool{}
-	for _, r := range rows {
-		if r.ModuleName != rule.ModuleName || r.Role != rule.Role {
-			continue
-		}
-		if !r.LeaseExpiresAt.After(before) || !r.LeaseExpiresAt.After(snapshot.ObservedAt) || r.ProcessMetrics == nil || r.ProcessMetrics.Validate() != nil || r.ProcessStartedAt == nil || r.ProcessStartedAt.IsZero() || r.ProcessStartedAt.After(snapshot.ObservedAt) || instances[r.InstanceID] {
-			return result, metricsdiscovery.ErrIdentityUnavailable
-		}
-		instances[r.InstanceID] = true
-		resolved, err := o.policy.Resolve(ctx, r.ProcessMetrics.Endpoint)
-		if err != nil {
-			return result, err
-		}
-		if physical[resolved.Address] {
-			return result, resourcequery.ErrUnavailable
-		}
-		physical[resolved.Address] = true
-		scope := resourcequery.ProcessScope{ID: uint(len(result.scopes) + 1), ModuleName: r.ModuleName, InstanceID: r.InstanceID, Role: r.Role, Instance: resolved.Address, StartedAt: *r.ProcessStartedAt}
-		if scope.Validate() != nil {
-			return result, metricsdiscovery.ErrIdentityUnavailable
-		}
-		result.scopes = append(result.scopes, scope)
-		result.instances = append(result.instances, r.InstanceID)
-		if result.lease.IsZero() || r.LeaseExpiresAt.Before(result.lease) {
-			result.lease = r.LeaseExpiresAt
-		}
-	}
-	if len(result.scopes) == 0 {
-		return result, metricsdiscovery.ErrUnconfigured
-	}
-	encoded, _ := json.Marshal([]any{policyVersion, result.scopes})
-	result.signature = fmt.Sprintf("%x", sha256.Sum256(encoded))
-	return result, nil
+func (s *HTTPAlertRuleService) sources(ctx context.Context, rule models.HTTPAlertRule, policyVersion uint64) (runtimeAlertSources, error) {
+	return runtimeSources(ctx, s.observations, s.identities, policyVersion, func(r commonmodels.ObservabilityModuleIdentity) bool {
+		return r.ModuleName == rule.ModuleName && r.Role == rule.Role
+	})
 }
 
 func (s *HTTPAlertRuleService) Run(ctx context.Context) {
@@ -113,7 +57,7 @@ func (s *HTTPAlertRuleService) Evaluate(parent context.Context, at time.Time) er
 	}
 	for _, rule := range rules {
 		reason := ""
-		var source httpRuleSources
+		var source runtimeAlertSources
 		var cfg ResourceQueryPolicyResponse
 		var lines []resourcequery.Series
 		if o == nil || backend == nil {
@@ -237,19 +181,19 @@ func aggregateHTTPRuleSeries(rows [][]resourcequery.HTTPObservation, key string)
 		for i := range value.Points {
 			point, requests := value.Points[i], qps.Points[i]
 			target := &result.Points[i]
-			if !point.EvaluatedAt.Equal(target.EvaluatedAt) || !requests.EvaluatedAt.Equal(target.EvaluatedAt) || !validHTTPPoint(requests) {
+			if !point.EvaluatedAt.Equal(target.EvaluatedAt) || !requests.EvaluatedAt.Equal(target.EvaluatedAt) || !validThresholdPoint(requests) {
 				target.Value = nil
 				target.SampledAt = nil
 				target.DataState = "no_data"
 				continue
 			}
-			if i > 0 && validHTTPPoint(qps.Points[i-1]) && !requests.SampledAt.After(*qps.Points[i-1].SampledAt) {
+			if i > 0 && validThresholdPoint(qps.Points[i-1]) && !requests.SampledAt.After(*qps.Points[i-1].SampledAt) {
 				target.Value = nil
 				target.SampledAt = nil
 				target.DataState = "no_data"
 				continue
 			}
-			if key != "http.requests.per_second" && *requests.Value > 0 && !validHTTPPoint(point) {
+			if key != "http.requests.per_second" && *requests.Value > 0 && !validThresholdPoint(point) {
 				target.Value = nil
 				target.SampledAt = nil
 				target.DataState = "no_data"
@@ -281,7 +225,7 @@ func aggregateHTTPRuleSeries(rows [][]resourcequery.HTTPObservation, key string)
 			weight := 0.0
 			for _, observations := range rows {
 				for _, line := range observations[0].Series {
-					if line.MetricKey == "http.requests.per_second" && validHTTPPoint(line.Points[i]) {
+					if line.MetricKey == "http.requests.per_second" && validThresholdPoint(line.Points[i]) {
 						weight += *line.Points[i].Value
 					}
 				}
@@ -298,11 +242,7 @@ func aggregateHTTPRuleSeries(rows [][]resourcequery.HTTPObservation, key string)
 	return []resourcequery.Series{result}, nil
 }
 
-func validHTTPPoint(point resourcequery.Point) bool {
-	return point.DataState == "valid" && point.Value != nil && !math.IsNaN(*point.Value) && !math.IsInf(*point.Value, 0) && *point.Value >= 0 && point.SampledAt != nil && !point.SampledAt.After(point.EvaluatedAt) && point.EvaluatedAt.Sub(*point.SampledAt) <= 60*time.Second
-}
-
-func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTTPAlertRule, source httpRuleSources, cfg ResourceQueryPolicyResponse, series []resourcequery.Series, at time.Time, reason string) error {
+func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTTPAlertRule, source runtimeAlertSources, cfg ResourceQueryPolicyResponse, series []resourcequery.Series, at time.Time, reason string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rule models.HTTPAlertRule
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", old.ID).Take(&rule).Error; errors.Is(err, gorm.ErrRecordNotFound) {
@@ -365,7 +305,7 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 			updates["last_verdict"] = string(verdict)
 			updates["last_error"] = "warming_up"
 			newest := series[0].Points[len(series[0].Points)-1]
-			if validHTTPPoint(newest) {
+			if validThresholdPoint(newest) {
 				updates["window_signature"], updates["window_since"] = source.signature, since
 			} else {
 				updates["last_error"] = "no_data"
@@ -387,49 +327,5 @@ func evaluateHTTPThreshold(series resourcequery.Series, policy models.HTTPThresh
 	if !policy.Valid(series.MetricKey) || series.WindowSeconds != 60 || len(series.Dimensions) != 0 || len(series.Points) < 1 || len(series.Points) > 22 {
 		return result
 	}
-	seconds := policy.TriggerSeconds
-	if active {
-		seconds = policy.RecoverySeconds
-	}
-	duration := time.Duration(seconds) * time.Second
-	if since.IsZero() || at.IsZero() || since.After(at) {
-		return result
-	}
-	expected := at
-	var previousSample time.Time
-	matched := true
-	result.Minimum, result.Maximum = math.Inf(1), math.Inf(-1)
-	for i := len(series.Points) - 1; i >= 0; i-- {
-		point := series.Points[i]
-		if !point.EvaluatedAt.Equal(expected) || !validHTTPPoint(point) || point.SampledAt.Add(-60*time.Second).Before(since) || (!previousSample.IsZero() && (!previousSample.After(*point.SampledAt) || previousSample.Sub(*point.SampledAt) > 16*time.Second)) {
-			return resourcePressureResult{Verdict: PlatformAlertUnknown}
-		}
-		v := *point.Value
-		if series.Unit == "percent" && v > 100 {
-			return resourcePressureResult{Verdict: PlatformAlertUnknown}
-		}
-		if result.Samples == 0 {
-			result.SampledTo = *point.SampledAt
-			result.Latest = v
-		}
-		result.SampledFrom = *point.SampledAt
-		result.Samples++
-		result.Minimum = math.Min(result.Minimum, v)
-		result.Maximum = math.Max(result.Maximum, v)
-		if active {
-			matched = matched && v < policy.RecoveryValue
-		} else {
-			matched = matched && v > policy.TriggerValue
-		}
-		if result.SampledTo.Sub(result.SampledFrom) >= duration {
-			result.Verdict = PlatformAlertRisk
-			if (active && matched) || (!active && !matched) {
-				result.Verdict = PlatformAlertNormal
-			}
-			return result
-		}
-		previousSample = *point.SampledAt
-		expected = expected.Add(-15 * time.Second)
-	}
-	return resourcePressureResult{Verdict: PlatformAlertUnknown}
+	return evaluateThresholdWindow(series, policy.TriggerValue, policy.RecoveryValue, policy.TriggerSeconds, policy.RecoverySeconds, since, at, active, 60*time.Second)
 }

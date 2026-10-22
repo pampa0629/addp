@@ -1857,7 +1857,8 @@
                         "enum": [
                             "log_pipeline",
                             "resource",
-                            "http_quality"
+                            "http_quality",
+                            "process_resource"
                         ],
                         "type": "string",
                         "description": "类别 | Category",
@@ -3822,6 +3823,323 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "monitor.monitoring_target.delete"
+                ]
+            }
+        },
+        "/platform/process-resource-alert-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "查询服务实例资源告警规则 | List service instance resource alert rules",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessAlertRulePage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read"
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProcessAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.create"
+                ]
+            }
+        },
+        "/platform/process-resource-alert-rules/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "实例身份、启动边界与指标不可修改；配置采用版本CAS，活动告警沿用打开时的恢复条件 | Instance identity, start boundary and metric are immutable; updates use version CAS and active alerts retain their opening recovery policy",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "修改服务实例资源告警规则 | Update service instance resource alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProcessAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "删除服务实例资源告警规则 | Delete service instance resource alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProcessAlertRuleVersion"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.delete"
                 ]
             }
         },
@@ -6500,6 +6818,9 @@
                 "opened_at": {
                     "type": "string"
                 },
+                "process_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ProcessAlertEvidence"
+                },
                 "resolved_at": {
                     "type": "string"
                 },
@@ -6526,6 +6847,147 @@
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ProcessAlertEvidence": {
+            "type": "object",
+            "properties": {
+                "anchor_instance_id": {
+                    "type": "integer"
+                },
+                "evaluated_at": {
+                    "type": "string"
+                },
+                "latest": {
+                    "type": "number"
+                },
+                "maximum": {
+                    "type": "number"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "minimum": {
+                    "type": "number"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ProcessThresholdPolicy"
+                },
+                "process_started_at": {
+                    "type": "string"
+                },
+                "query_policy_version": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_version": {
+                    "type": "integer"
+                },
+                "runtime_instance_id": {
+                    "type": "string"
+                },
+                "sampled_from": {
+                    "type": "string"
+                },
+                "sampled_to": {
+                    "type": "string"
+                },
+                "samples": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ProcessAlertRule": {
+            "type": "object",
+            "properties": {
+                "anchor_instance_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "process_started_at": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "runtime_instance_id": {
+                    "type": "string"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ProcessThresholdPolicy": {
+            "type": "object",
+            "properties": {
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
                 }
             }
         },
@@ -7587,7 +8049,8 @@
                         "enum": [
                             "log_pipeline",
                             "resource",
-                            "http_quality"
+                            "http_quality",
+                            "process_resource"
                         ]
                     }
                 },
@@ -7636,6 +8099,75 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProcessAlertRuleInput": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "instance_id",
+                "metric_key",
+                "name",
+                "recovery_seconds",
+                "recovery_value",
+                "trigger_seconds",
+                "trigger_value"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "instance_id": {
+                    "type": "integer"
+                },
+                "metric_key": {
+                    "type": "string",
+                    "enum": [
+                        "process.cpu.core_equivalents",
+                        "process.memory.resident_bytes"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProcessAlertRulePage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.ProcessAlertRule"
                     }
                 },
                 "page": {
@@ -9139,6 +9671,85 @@
                     "description": "Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.",
                     "type": "string"
                 },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ProcessAlertRuleResponse": {
+            "type": "object",
+            "properties": {
+                "anchor_instance_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "process_started_at": {
+                    "type": "string"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "recovery_value": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "runtime_instance_id": {
+                    "type": "string"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "trigger_value": {
+                    "type": "number"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ProcessAlertRuleVersion": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
                 "version": {
                     "type": "integer"
                 }

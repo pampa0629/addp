@@ -6,12 +6,15 @@ const (
 	PlatformAlertCategoryLog        = "log_pipeline"
 	PlatformAlertCategoryResource   = "resource"
 	PlatformAlertCategoryHTTP       = "http_quality"
+	PlatformAlertCategoryProcess    = "process_resource"
+	PlatformAlertSubjectInstance    = "module_instance"
 	PlatformAlertSubjectModule      = "module"
 	PlatformAlertSubjectLogObserver = "log_observer"
 	PlatformAlertSubjectHostNode    = "host_node"
 )
 
 type PlatformAlertIncident struct {
+	ProcessEvidence  *ProcessAlertEvidence  `gorm:"serializer:json;type:jsonb" json:"process_evidence,omitempty"`
 	HTTPEvidence     *HTTPAlertEvidence     `gorm:"serializer:json;type:jsonb" json:"http_evidence,omitempty"`
 	ResourceEvidence *ResourceAlertEvidence `gorm:"serializer:json;type:jsonb" json:"resource_evidence,omitempty"`
 	ID               uint                   `gorm:"primaryKey" json:"id"`
@@ -34,6 +37,7 @@ type PlatformAlertIncident struct {
 func (PlatformAlertIncident) TableName() string { return "monitor.platform_alert_incidents" }
 
 type PlatformAlertEvent struct {
+	ProcessEvidence  *ProcessAlertEvidence  `gorm:"serializer:json;type:jsonb" json:"process_evidence,omitempty"`
 	HTTPEvidence     *HTTPAlertEvidence     `gorm:"serializer:json;type:jsonb" json:"http_evidence,omitempty"`
 	ResourceEvidence *ResourceAlertEvidence `gorm:"serializer:json;type:jsonb" json:"resource_evidence,omitempty"`
 	ID               string                 `gorm:"primaryKey;size:36" json:"id"`

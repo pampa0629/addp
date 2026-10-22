@@ -57,7 +57,7 @@ func resourceAPIRouter(t *testing.T, identity authorization.AuthContext) *gin.En
 	}))
 	t.Cleanup(system.Close)
 	svc := service.NewResourceObservationService(&apiResourcePolicies{row: monitorModels.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, nil, nil, nil, false, nil, service.ProcessObservationDependencies{})
-	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc, nil, nil, nil)
+	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc, nil, nil, nil, nil)
 }
 func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testing.T) {
 	paths := []string{"/platform/process_resource_summaries", "/platform/process_resource_trends", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
