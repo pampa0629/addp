@@ -178,7 +178,7 @@ func scanObjectCatalogPaths(
 		if target.Object != "" {
 			objects, err = readObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
 		} else {
-			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
+			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, true)
 		}
 		if err != nil {
 			failures.Add(rawPath, err)

@@ -55,6 +55,7 @@ func TestObjectModelRelatedRefsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	testObjectModelRelatedRefsPersistSizeAndClaims(t, tx)
+	t.Run("basic nested model discovery", func(t *testing.T) { testBasicObjectModelDiscovery(t, tx) })
 }
 
 func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
@@ -180,6 +181,82 @@ func TestMinIOBasicObjectCompositionAtBucketRootAndPrefix(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+type nestedBasicModelProvider struct {
+	*objectModelStructureSpy
+	entries []plugin.EngineCatalogEntry
+	listed  []plugin.EngineCatalogPath
+}
+
+func (p *nestedBasicModelProvider) Type() string { return "minio" }
+func (p *nestedBasicModelProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	p.listed = append(p.listed, parent)
+	if parent.StringPath() != "addp/discover" {
+		return nil, fmt.Errorf("outside selected prefix: %s", parent.StringPath())
+	}
+	if !opts.Recursive {
+		return []plugin.EngineCatalogEntry{plugin.ObjectPrefixCatalogEntry(parent, "ifc", "addp/discover/ifc/"), plugin.ObjectPrefixCatalogEntry(parent, "3ds", "addp/discover/3ds/")}, nil
+	}
+	return p.entries, nil
+}
+func (p *nestedBasicModelProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	if target.StringPath() == "addp/discover" && target.Segments[len(target.Segments)-1].Term == "prefix" {
+		return &plugin.EngineCatalogEntry{Name: "discover", Path: target, Role: plugin.EngineCatalogRoleBranch, Term: "prefix", Kind: "prefix"}, nil
+	}
+	for _, entry := range p.entries {
+		if reflect.DeepEqual(entry.Path, target) {
+			return &entry, nil
+		}
+	}
+	return nil, fmt.Errorf("not an observed object")
+}
+func TestBasicObjectScanDiscoversNestedModelsWithoutContentEnhancement(t *testing.T) {
+	testBasicObjectModelDiscovery(t, openObjectCatalogScanTestDB(t))
+}
+func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	metaenrich.RegisterItemResolvers()
+	data := structure3DS("texture.png")
+	reader := &nestedBasicModelProvider{objectModelStructureSpy: &objectModelStructureSpy{primary: plugin.ObjectItemPath(9, "addp", "discover/3ds/model.3ds"), data: data}}
+	for _, row := range []struct {
+		key  string
+		size int64
+	}{{"discover/ifc/model.ifc", 908}, {"discover/3ds/model.3ds", int64(len(data))}, {"discover/3ds/texture.png", 73}} {
+		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: row.key[len("discover/"):], Path: plugin.ObjectItemPath(9, "addp", row.key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: "addp/" + row.key, SizeBytes: &row.size}})
+		reader.entries[len(reader.entries)-1].Name = reader.entries[len(reader.entries)-1].Path.Segments[len(reader.entries[len(reader.entries)-1].Path.Segments)-1].Name
+	}
+	original, err := plugin.Get("minio")
+	if err == nil {
+		plugin.Unregister("minio")
+	}
+	plugin.Register(reader)
+	t.Cleanup(func() {
+		plugin.Unregister("minio")
+		if original != nil {
+			plugin.Register(original)
+		}
+	})
+	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), metaRepo.NewScanRepository(db), nil)
+	result, err := runtime.ScanPaths(t.Context(), &commonModels.Engine{ID: 9, Name: "MinIO", EngineType: "minio"}, 1, []string{"addp/discover"}, nil, models.ScannedDepthBasic, false, nil)
+	if err != nil || result.Items != 2 {
+		t.Fatalf("basic nested model discovery: items=%d err=%v", result.Items, err)
+	}
+	if len(reader.listed) != 1 || reader.listed[0].StringPath() != "addp/discover" || reader.ranges == 0 {
+		t.Fatal("discovery scope or structural read missing")
+	}
+	for _, format := range []string{"ifc", "3ds"} {
+		var item models.MetaItem
+		if err := db.Where("engine_id=? AND tenant_id=? AND full_name=?", 9, 1, "addp/discover/"+format+"/model."+format).First(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+		if item.ScannedDepth != "basic" || commonJSON.String(item.Attributes, "item", "format") != format || commonJSON.String(item.Attributes, "item", "data_type") != "model_3d" {
+			t.Fatalf("wrong basic identity: %+v", item)
+		}
+		if format == "3ds" && (commonJSON.Section(item.Attributes, "format_info.3ds")["scan_complete"] != true || len(commonJSON.InterfaceSlice(commonJSON.Section(item.Attributes, "item")["refs"])) != 2) {
+			t.Fatal("basic lost exact object composition")
 		}
 	}
 }
