@@ -18,7 +18,7 @@
 | 主机资源规则 | CPU/内存规则 CRUD、CAS、后台连续窗口评估、未知保护和恢复 | 本地、个人规则操作及采样评估、受控来源与签名通知 T2 已验证；CPU/内存实压闭环 T4 已分别通过；仅覆盖测试阈值与单台 VM，生产 T5 未覆盖 |
 | 引擎与容器专业观测 | Infra/Business 持续只读发现、有界候选读取、单容器 PostgreSQL 批量确认及显式主机关联已实现，无需导出或导入文件；引擎监控显示当前承载主机并可按现有权限直达主机资源，见[正式规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及 4.5 | 来源、事务、权限和页面有确定性验证；两个单容器 PostgreSQL 自动接入 Hosted T4 已通过；独立账号与固定指标来源已接入各自标准启停，个人环境未启用。十二项专业指标、四项摘要、当前数据库容器段趋势与真实页面已实现，T1/T2/T3 有独立通过证据，两个单容器 PostgreSQL 的专业查询、真实页面及来源停止/恢复 Hosted T4 已通过；新增主机导航仍仅 T1/T3，来源准入新增回归的 Linux T2 已在 f09c1ecf9 精确输入通过，见证据专题；不外推当前共享 main。其他引擎、容器资源及集群仍未开放 |
 | 平台 HTTP 接口质量与慢接口 | Common 统一全量采集，Monitor 固定窗口、实例/模板排行及趋势；HTTP 规则、持续慢接口标记、平台事件与 outbox | 本地 T1/T2/T3 已通过，真实请求、历史趋势、告警打开/签名重试/恢复及退出零残留有分项证据；本轮按用户决定不运行 Hosted HTTP 验收。Python 未接入，Tenant 发布服务质量仍归 Service 对象权限 |
-| Trace 与调用拓扑 | 可选 Go 平台 backend/ingress 与 Agent/Copilot Python backend 同步 HTTP Trace，经同一 Alloy 尾采样后进入 Tempo；Monitor 查询及实际 Client/Server 调用边，复用 System 精确日志关联 | 本地分项证据见[二期第一批](../spec/testing/evidence/Monitor历史证据.md#http-追踪二期第一批本地)；普通 5%、单次 Server ≥1 秒优先、72 小时/20 GiB 初值受预算约束。本地两档容量基线已通过：72000 请求、20 条查询均在五秒内，按 100 Span/秒及双份副本外推 72 小时约 10.95 GiB，见[容量证据](../spec/testing/evidence/Monitor历史证据.md#http-追踪隔离容量基线本地)。Python 第二批已接入共享 ASGI/HTTPX 和日志关联，Common Python、Agent/Copilot 标准门禁及真实 Go → Python → Go T2 已通过，见[第二批证据](../spec/testing/evidence/Monitor历史证据.md#http-追踪二期第二批python-本地)；实际 72 小时留存/删除、长期合并、其他 Python Runtime、异步关联、SQL 及正式身份 T4/T5 未覆盖，本轮不运行 Hosted |
+| Trace 与调用拓扑 | 可选 Go 平台 backend/ingress 与 Agent/Copilot Python backend 同步 HTTP Trace，经同一 Alloy 尾采样后进入 Tempo；Monitor 查询及实际 Client/Server 调用边，复用 System 精确日志关联 | 本地分项证据见[二期第一批](../spec/testing/evidence/Monitor历史证据.md#http-追踪二期第一批本地)；普通 5%、单次 Server ≥1 秒优先、72 小时/20 GiB 初值受预算约束。原三 Go HTTP 链的本地两档容量基线已通过：72000 请求、20 条查询均在五秒内，按 100 Span/秒及双份副本外推 72 小时约 10.95 GiB，见[容量证据](../spec/testing/evidence/Monitor历史证据.md#http-追踪隔离容量基线本地)。Python 第二批已接入共享 ASGI/HTTPX 和日志关联，Common Python、Agent/Copilot 标准门禁及真实 Go → Python → Go T2 已通过，见[第二批证据](../spec/testing/evidence/Monitor历史证据.md#http-追踪二期第二批python-本地)；第三批已实现 Common 持久引用与短阶段 Trace Link，首接 Orchestrator → Develop bounded query，真实 Alloy/Tempo 和 Link 目标撤权 T2、本地页面 T3 通过；参见[第三批证据](../spec/testing/evidence/Monitor历史证据.md#执行短阶段与-trace-link二期第三批本地)。实际 72 小时留存/删除、长期合并、其他 Runtime、continuous、SQL 及正式身份 T4/T5 未覆盖，原 HTTP 容量证据不外推至本批，本轮不运行 Hosted |
 | 健康评分、功能热度、泄漏诊断 | 暂缓 | 先确定事实来源和可解释口径，不由资源阈值直接推导 |
 | SSH、环境初始化、防火墙、批量启停及扩容 | 不在首期 | 需要独立操作计划、权限、执行与审计契约 |
 
@@ -28,10 +28,10 @@
 | --- | --- | --- |
 | 1 | 补齐原生宿主与多进程部署覆盖 | Linux VM 单新 Monitor 绑定已验；原生宿主与 Desktop VM 分别声明，多进程按各自实例身份验证，不在线改挂既有实例 |
 | 2 | 补齐原功能表的服务质量、引擎专业指标及容器资源 | PostgreSQL 专业发现、Monitor 读取与页面已落地且正式身份专业 T4 已通过；来源准入新增回归的 Linux T2 已核验 f09c1ecf9 的真实执行与零残留。其他引擎和容器资源先明确对象归属、配额和 OS 支持，复用固定目录与唯一采集链 |
-| 3 | Trace 长时保留验证与后续覆盖 | 两档短测已满足 20 GiB/72 小时容量外推；下一步另定本地长时资源窗口，验证真实过期删除、长期合并增长及查询余量，不能沿用本次四十分钟授权。Agent/Copilot 同步 HTTP 已在第二批接入；其他 Python Runtime、异步关联和 SQL 另批明确传播与授权边界 |
+| 3 | Trace 长时保留验证与后续覆盖 | 两档短测已满足 20 GiB/72 小时容量外推；下一步另定本地长时资源窗口，验证真实过期删除、长期合并增长及查询余量，不能沿用本次四十分钟授权。Agent/Copilot 同步 HTTP 已在第二批接入；第三批 Common 持久关联／Trace Link 与 Orchestrator → Develop bounded query 短阶段已有本地分项证据；优先补正式身份的本地执行、查询与日志闭环，其他 Runtime、continuous、SQL 与长时窗口另批确认 |
 | 4 | 生产发布及受控运维 | 真实平台 T5；SSH/初始化/防火墙/启停另有权限、计划、执行与审计确认 |
 
-Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链和业务执行；异步任务明确关联并创建新运行跨度，不能把长任务硬挂在创建请求下。慢请求保留须证明实际采样策略，随机头部采样不能保证保留全部慢请求。
+Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链和业务执行；异步任务按运行观测规范第三批明确持久关联并创建短阶段独立 Trace，不能把长任务硬挂在创建请求下。慢请求保留须证明实际采样策略，随机头部采样不能保证保留全部慢请求。
 
 受控运维中 ADDP 管理目标、计划、权限与审计，成熟执行设施实施变更。主机登记不默认保存 SSH 密码，采集身份不具备 Shell 权限；Monitor 不提供任意命令执行器，租户 Orchestrator 任务不隐含获得平台主机操作权。
 

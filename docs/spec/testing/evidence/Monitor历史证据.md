@@ -474,3 +474,32 @@ CI `39775896930`／System IAM Job `119824550350` 的原始失败是 `private fie
 05:49–05:53（Asia/Shanghai），在用户确认可操作 Safari 后，用原生 CUA 操作已登录的平台系统管理员及真实 Console `/monitor/platform-alerts?tab=process-rules`。检查器读到页面曾 `document.hidden=true`，随后为 `false`；活动弹窗 `display=block`、`visibility=visible`、遮罩和内容透明度均为 1，动画列表为空，标题坐标的命中检测确为弹窗标题，父层命中 iframe。检查器开启时 iframe 高度约 227 CSS px、弹窗顶部约 34 px，标题仍在可见区域；没有取得样式隐藏、动画卡住或其他元素遮挡的证据。期间工具出现用户操作中止及 ScreenCaptureKit 捕获错误，辅助功能树与截图一度不同步。
 
 窗口恢复前台并关闭检查器后，真实截图清楚显示弹窗与遮罩；随后实际关闭、确认列表恢复、重新打开，以及展开真实实例候选下拉层均正常，截图包含 Monitor／Meta／Transfer／Manager／System 当前候选。保持表单未保存，未创建、启用规则或发送通知。本轮仅补充证据，没有修改产品代码、样式、浏览器设置或重启服务。此前现象与后台窗口／重绘不同步相关的判断得到支持，但未建立 Safari 底层异常的稳定复现，不称为代码根治或全部告警 T4 通过。既有 Chromium 5/5、WebKit 弹窗专项 1/1 是隔离 T3 证据，本次是个人开发环境只读 UI 复核，分别陈述。CI／Hosted 仍等专门会话回传，未查询或调度、未设置定时。
+
+
+### Python Trace 与依赖修复的远端 CI 分项回执（2026-10-23）
+
+本次手动只读核验本专项原始 Job 日志、checkout SHA 和路径选择，没有调度 Hosted、定时或容量。证据清单及原始日志 SHA-256 见 `/tmp/addp-p19-async-trace-investigation-20261023/ci-audit.json`。
+
+- `c05c7048080af98d968a0e6e31437794bdb430b6` 的 [Trace T2 Job 119877525491](https://github.com/pampa0629/addp/actions/runs/39778225752/job/119877525491) 实际执行 `make test-monitor-traces` 并通过；`TestOwnedTracePipeline` 328.64 秒，真实 120 秒尾采样保留失败、慢链及 12/200 普通链，最后明确当次容器、网络、卷和临时文件零残留。日志 SHA-256 `b0b6d3df6a02bc1c90af0f41631ea043fad17b1bf13ae872ceb1fd355e81beb9`。该 Release/T2 workflow 总结失败来自其他专项，本记录只证明本 Job。
+- 同一 `c05c70480` 在 Platform 的 [Common Python](https://github.com/pampa0629/addp/actions/runs/39778225763/job/119822518588)、[Agent offline](https://github.com/pampa0629/addp/actions/runs/39778225763/job/119822519104)、[Copilot Backend](https://github.com/pampa0629/addp/actions/runs/39778225763/job/119822519135) 原始日志均为 `selected=true` 并实际执行：分别 411 passed／48 子测试／1 项可选缺依赖跳过、七场景及子门禁通过、184 passed。可选跳过不计通过；不将该 workflow 的无关失败外推为本专项失败，也不将其总结写为全绿。
+- 依赖准备修复 `673cf8eef7cb776de26a0b04c8dbdc86384becbf` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/39803050868/job/119908856837) 实际完整执行 `make test-platform` 并通过；含 124 项配置／部署、60 项设施生命周期、统一 Backend 准备／指纹及 dev lifecycle／原子构建，末尾 Swagger 覆盖通过。同 run 的 Common Python、Agent、Copilot 三 Job 虽状态 success，原始日志是路径 `selected=false`，属于跳过，不能作为这三项重测通过证据；三项实际执行证据使用上面的 c05 原输入。
+
+由此关闭前两批本专项自动 CI 待核项；不是对后续共享 main、异步第三批、真实身份 T4、真实 72 小时或生产容量的证明。用户重启后的本机只读结果仍沿前节，不重复重启个人服务。
+
+
+### 执行短阶段与 Trace Link（二期第三批，本地）
+
+2026-10-23，按用户确认的边界，先修订术语、观测与执行记录规范，再实现 Common 持久引用和独立短阶段 Trace／Link，首接 Orchestrator → Develop bounded query。入队、领取、派发、终态分别结束，不把 SQL、等待、心跳或整个长任务包进 Span；耗时仍以 execution 为准。不新增表或 Tenant Trace 字段，纯值引用保存在 execution_config／metadata 的保留 namespace；终态业务 metadata 继续原替换／清空语义，只保留权威私有观测字段，不累积旧 outputs／result。阶段成功只在原 owner 外层事务提交后记录；失败提交为 rejected，畸形私有引用停用当次追踪并保留原事实。
+
+Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和实际参与实例一起沿当前 Platform User 逐项重核，数字实例 ID 来自 System，目标撤权拒绝整份结果；不递归拉取，不生成 HTTP 调用边。页面展示阶段、attempt、outcome 与因果链接，按目标起始时刻另发受限查询，撤权清除原详情。采样唯一策略升级 v2：failed／timeout 阶段进入既有失败预算，cancelled／rejected 按普通阶段；HTTP 慢请求口径和 5%／120 秒／10000 待决／100 Span 每秒／70:20:10／72 小时／20 GiB 初值均保持。OTel SDK 环境资源污染由唯一导出投影剥离，不修改进程全局环境。
+
+冻结源码基线 `dfcf4ace806a87c912b7787233d40fcde5f29a14`，仅叠加本批明确路径；输入 SHA-256、日志和最终分项清单位于 `/tmp/addp-p19-execution-trace-20261023/plan.json`、`verification.json`。测试在隔离源码快照执行，PostgreSQL 因标准入口校验容器归属，改用原工作区标准入口，并验证源码指纹、共享连接与并发门禁；未绕过归属检查。共享 main 后续其他会话改动不算该冻结输入的验收。
+
+- T0/T1：`GOMAXPROCS=2 GOFLAGS=-p=2 make test-go` 最终退出 0，22 个 Go 模块含 tidy-diff／CGO 禁用检查通过。Common／Monitor 单 owner 门禁通过；最终 Orchestrator／Develop 分别经 `make test-module MODULE=<owner> GO_ONLY=1` 通过。后续 owner 私有修正另经各自 T1 及 PostgreSQL 验证，未重跑无输入变化的全模块。Common 验证 SDK 所属、独立 root／Context、不可变入口、有界 Link／属性、敏感资源剥离；Develop 真实授权读投影回归确认 Tenant 不泄露 execution_config 私有引用。
+- T2 owner：先执行 `bash scripts/infra/status.sh`，实际共享 PostgreSQL 为 25432、唯一 `addp_test`；`make test-orchestrator-postgres` 与 `make test-develop-postgres` 均通过。最终 Develop metadata 修正后 T1、PostgreSQL 再次通过（后者 13.70 秒）；覆盖入队／领取／派发／终态、租约及事务拒绝、重读引用、伪造剥离、故障恢复、畸形引用和不影响其他 task type。旧实现配新用例稳定失败于“保留旧业务 metadata”，修正后覆盖 omitted／replace／nil／typed nil／空对象／非法类型。中间测试错误要求数据库读回 nil，已按既有 JSONMap 空值归一化为空对象修正，未改变共享存储语义或放松旧结果清除断言。
+- 真实 Trace T2：`GOMAXPROCS=2 GOFLAGS=-p=2 MONITOR_TRACES_PYTHON=/Users/pampa/code/addp/agent/backend/venv/bin/python make test-monitor-traces` 退出 0，Pipeline 328.53 秒；实际 120 秒尾采样保留失败／慢链及 10/200 普通链。首阶段三个生产进程分别导出 204／404／404 Span，队列、丢弃、失败均零；另一个受控进程重读持久检查点，真实 Alloy／Tempo 验证四个独立阶段 root、两条持久 Link、目标单独撤权拒绝、失败短阶段优先及精确终态 Trace／Span 的 Loki 日志。独立采样的 Link 目标允许查无数据，不能宣称完整任务必留存；第四进程未单独汇总上述导出计数。原 Go → Python → Go 五 Span／两边、mTLS、只读代理、Collector 故障恢复继续通过，退出明确当次容器／网络／卷／设施临时文件零残留。父进程 TestOwnedTraceProcess 是受控 child helper，按设计跳过，不计业务通过。
+- 页面 T3：`make test-monitor-frontend` 最终退出 0，98 项确定性测试、295 项 Chromium E2E 与 build 通过；`make test-console-frontend` 189 项确定性测试（29 文件）、218 项 E2E 与 build 通过。此前 Monitor 两次在执行场景前因隔离副本 node_modules 内嵌符号链接导致双 Playwright 实例失败；仅修副本依赖解析后全量通过，没有放宽测试或改产品依赖。T3 为受控 HTTP 夹具，不计真实身份验收。
+- 配置／登记：`make test-dev-lifecycle` 退出 0，124 项配置及 60 项设施生命周期检查、shell／编译检查通过，覆盖唯一 v2 渲染。现有 Make owner 自动发现、T2 注册和路径选择已核；Trace 门禁输入补 Common execution 与新实链 fixture，Develop PostgreSQL 既有 regex 补新回归。三个 go.mod 仅将已有版本转直接依赖，无升级；无新门禁、数据库、构建方式或 workflow。`bash scripts/swagger/gen-swagger.sh monitor`、`bash scripts/swagger/check-route-coverage.sh monitor` 通过，90 个公开方法一致，产物同步。
+- 平台聚合：`make test-platform` 非零。此前本专项需要的配置、依赖／CI 注册、变更选择与安全等子检查通过（T2 注册 22 hosted-service／12 Compose／9 hosted-only／2 owner-managed）；在 Online Raster 既有工具链测试要求 Node 24、当前解释器为 Node 25 时失败，215 项中此项失败。不扩展修复其他专项，不计整套平台通过；末尾授权／Swagger未执行，另以标准 `make test-authorization` 补验最终退出 0，授权与全模块 Swagger 覆盖通过。首次补验隔离快照无 Python venv，Go 授权及全部 Go Swagger 已通过但 Agent/Copilot 覆盖未执行，未计全套通过；仅在副本准备既有 Python 环境后复验，不改用户 venv。
+
+本批只有上述本地 T0/T1/T2/T3 证据，未运行 Hosted、正式身份 T4、容量重跑或真实 72 小时保留／删除，未设置定时或重启个人服务。原 HTTP 两档容量结果不外推新增阶段。其他 Runtime、continuous、SQL Span、Python 异步、长期合并及生产 HA 仍未覆盖，不能将本批记为全链路追踪全部完工；新提交的远端自动 CI 状态另记。

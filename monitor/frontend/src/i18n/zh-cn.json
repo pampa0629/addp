@@ -1209,9 +1209,29 @@
       "slow": "持续慢接口"
     },
     "traces": {
-      "title": "HTTP 调用链",
+      "phase": "阶段",
+      "attempt": "领取轮次",
+      "outcome": "阶段结果",
+      "causalLinks": "因果关联",
+      "noLinks": "无因果关联",
+      "sourceSpan": "来源 Span",
+      "followLink": "查看关联",
+      "phases": {
+        "enqueue": "入队",
+        "claim": "领取",
+        "dispatch": "派发",
+        "terminal": "终态"
+      },
+      "outcomes": {
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "cancelled": "已取消",
+        "rejected": "已拒绝"
+      },
+      "title": "调用链",
       "denied": "当前身份没有调用链读取权限",
-      "coverage": "仅展示采样保留的 HTTP 调用链。空结果可能来自未采样、未完成、过期或采集丢失，不能据此判断没有请求。策略定义版本：1。",
+      "coverage": "展示采样保留的 HTTP 调用链与执行阶段。空结果可能来自未采样、未完成、过期或采集丢失，不能据此判断未执行。策略定义版本：2。",
       "open": "查询调用链",
       "start": "开始时间",
       "end": "结束时间",

@@ -26,7 +26,7 @@ def render(directory, logs):
         if name.endswith('.key') and stat.S_IMODE(f.stat().st_mode) & 0o077:
             raise ValueError('Trace key must be owner-only')
     policy = json.loads((ROOT / 'monitor/backend/internal/tracequery/policy.json').read_text())
-    if (policy.get('version') != 1 or set(policy) != {'version', 'decision_wait_seconds', 'pending_traces',
+    if (policy.get('version') != 2 or set(policy) != {'version', 'decision_wait_seconds', 'pending_traces',
             'normal_percent', 'slow_ms', 'retained_spans_per_second', 'retention_hours'}
             or any(type(v) is not int or v <= 0 for v in policy.values()) or policy['normal_percent'] > 100):
         raise ValueError('Unpublished trace policy definition')
@@ -37,7 +37,7 @@ def render(directory, logs):
         text = text.replace('@' + k + '@', str(v))
     if logs:
         text = (ROOT / 'scripts/infra/runtime-logs.alloy').read_text() + '\n' + text
-    text = '// addp.trace.policy/v1; definition version 1, deployment intent only\n' + text
+    text = '// addp.trace.policy/v2; definition version 2, deployment intent only\n' + text
     fd, temporary = tempfile.mkstemp(prefix='.alloy-', dir=p)
     try:
         with os.fdopen(fd, 'w') as out:

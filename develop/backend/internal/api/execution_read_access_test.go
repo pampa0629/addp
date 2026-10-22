@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
@@ -30,6 +31,8 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 	repo := commonExecution.NewTaskExecutionRepository(db)
 	actor, membership, version, triggered := int64(9), int64(1), int64(1), 9
 	sourceTask := "deleted-definition"
+	traceID := strings.Repeat("a", 32)
+	traceRef := &commonExecution.TraceReference{TraceID: traceID, SpanID: strings.Repeat("b", 16), ModuleName: "develop", Role: "backend", InstanceID: "private-trace-instance", StartedAt: time.Now().UTC()}
 	rows := []commonExecution.TaskExecution{
 		{ExecutionID: "mine", TaskType: "query"},
 		{ExecutionID: "saved", TaskType: "workflow", SourceTaskID: &sourceTask},
@@ -53,6 +56,13 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 		row.IssuedAuthorizationVersion = &version
 		row.ExecutionConfig = map[string]interface{}{"content": map[string]interface{}{"query": "SELECT own_private_snapshot"}}
 		row.Metadata = map[string]interface{}{"result": map[string]interface{}{"rows": []string{"own-result"}}}
+		if err := commonExecution.FreezeEnqueueTrace(row, traceRef); err != nil {
+			t.Fatal(err)
+		}
+		row.Metadata, err = commonExecution.LatestTraceMetadata(row.Metadata, traceRef)
+		if err != nil {
+			t.Fatal(err)
+		}
 		switch row.ExecutionID {
 		case "other":
 			p, by := int64(10), 10
@@ -128,6 +138,11 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 			if strings.Contains(response.Body.String(), "actor_principal_id") || strings.Contains(response.Body.String(), "execution_authorization_id") {
 				t.Fatal("authorization facts leaked")
 			}
+			for _, private := range []string{"observability", "trace_id", "span_id", traceID, "private-trace-instance"} {
+				if strings.Contains(response.Body.String(), private) {
+					t.Fatal("private execution trace association leaked through professional response")
+				}
+			}
 			if test.path == "/executions" || test.path == "/executions/statistics" {
 				var body map[string]interface{}
 				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
@@ -148,6 +163,17 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 			if test.path == "/executions/mine" && test.status == 200 && !strings.Contains(response.Body.String(), "own-result") {
 				t.Fatal("own professional result lost")
 			}
+			if test.path == "/executions/mine" && test.status == 200 && !strings.Contains(response.Body.String(), "SELECT own_private_snapshot") {
+				t.Fatal("private namespace filtering removed the owner's existing business configuration")
+			}
 		})
+	}
+	stored, err := repo.GetByExecutionID(t.Context(), "mine", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := commonExecution.EnqueueTrace(stored)
+	if err != nil || ref == nil || ref.TraceID != traceID {
+		t.Fatal("professional projection changed the persisted private trace fact")
 	}
 }

@@ -363,7 +363,7 @@ func (e *DevExecutor) persistPreparedContentExecution(
 	repo *commonExecution.TaskExecutionRepository,
 	prepared *preparedContentExecution,
 ) error {
-	if err := repo.Create(ctx, prepared.execution); err != nil {
+	if err := createDevelopExecution(ctx, repo, prepared.execution); err != nil {
 		return fmt.Errorf("failed to create execution record: %w", err)
 	}
 	return nil
@@ -1413,7 +1413,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	} else if err := commonExecution.FreezeDisplayLanguage(execution, commoni18n.Language(ctx)); err != nil {
 		return "", err
 	}
-	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
+	if err := createDevelopExecution(ctx, e.taskExecutionRepo, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
 
@@ -1603,7 +1603,7 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	if err := commonExecution.InheritDisplayLanguage(execution, parent); err != nil {
 		return "", err
 	}
-	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
+	if err := createDevelopExecution(ctx, e.taskExecutionRepo, execution); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)
 	}
 	e.notifyPendingExecution()

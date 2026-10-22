@@ -9,6 +9,7 @@ import (
 	"time"
 
 	execution "github.com/addp/common/execution"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/orchestrator/internal/models"
 )
 
@@ -88,21 +89,29 @@ func (e *Executor) Advance(ctx context.Context, lease execution.Lease) error {
 		}
 		result = models.StepResult{Status: "running", Phase: "dispatching", StartedAt: time.Now().UTC()}
 		results[id] = result
-		if err := e.executionService.UpdateStepResults(ctx, lease, results, id); err != nil {
+		dispatchCtx := ctx
+		var stage *httptrace.ExecutionStage
+		if step.Provider == execution.ModuleDevelop && step.TaskType == execution.TaskTypeQuery {
+			dispatchCtx, stage = startExecutionStage(ctx, item, httptrace.PhaseDispatch)
+			defer stage.End(httptrace.OutcomeRejected)
+		}
+		if err := e.executionService.updateStepResults(dispatchCtx, lease, results, id, stage.Reference()); err != nil {
 			return err
 		}
 		params, err := e.resolveTemplateReferences(step.Parameters, results)
 		if err != nil {
+			stage.End(httptrace.OutcomeFailed)
 			return e.failStep(ctx, lease, id, results, result, "orchestrator.execution.binding_invalid")
 		}
 		timeout := time.Duration(step.Timeout) * time.Second
 		if timeout <= 0 {
 			timeout = 5 * time.Minute
 		}
-		submissionContext, cancel := context.WithDeadline(ctx, result.StartedAt.Add(timeout))
+		submissionContext, cancel := context.WithDeadline(dispatchCtx, result.StartedAt.Add(timeout))
 		submitted, err := e.submitTaskProviderStep(submissionContext, step, params, result.StartedAt, item.ExecutionID, item.TriggerType, item.TenantID)
 		cancel()
 		if err != nil {
+			stage.End(httptrace.OutcomeFailed)
 			code := submitted.ErrorCode
 			if code == "" {
 				code = "orchestrator.execution.dispatch_uncertain"
@@ -110,7 +119,13 @@ func (e *Executor) Advance(ctx context.Context, lease execution.Lease) error {
 			return e.failStep(ctx, lease, id, results, submitted, code)
 		}
 		results[id] = submitted
-		return e.executionService.UpdateStepResults(ctx, lease, results, id)
+		err = e.executionService.UpdateStepResults(dispatchCtx, lease, results, id)
+		if err == nil {
+			stage.End(httptrace.OutcomeSuccess)
+		} else {
+			stage.End(httptrace.OutcomeRejected)
+		}
+		return err
 	}
 	return e.executionService.FinishExecution(ctx, lease, "success", "")
 }
@@ -124,14 +139,29 @@ func (e *Executor) failStep(ctx context.Context, lease execution.Lease, id strin
 	result.Duration = result.EndedAt.Sub(result.StartedAt).Milliseconds()
 	results[id] = result
 	// State and terminal event are one transaction; partial failures cannot advance the DAG.
-	return e.executionService.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var stage *httptrace.ExecutionStage
+	err := e.executionService.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		bound := *e.executionService
 		bound.db = tx
+		item, err := bound.OwnedExecution(ctx, lease)
+		if err != nil {
+			return err
+		}
+		stageCtx, started := startExecutionStage(ctx, item, httptrace.PhaseTerminal)
+		stage = started
 		if err := bound.UpdateStepResults(ctx, lease, results, id); err != nil {
 			return err
 		}
-		return bound.FinishExecution(ctx, lease, "failed", code)
+		// Reload the state just written inside this outer transaction so terminal
+		// trace association cannot replace its step results with an older snapshot.
+		item, err = bound.OwnedExecution(ctx, lease)
+		if err != nil {
+			return err
+		}
+		return bound.finishExecution(stageCtx, item, lease, "failed", code, stage.Reference())
 	})
+	endExecutionStage(stage, execution.ExecutionStatusFailed, err)
+	return err
 }
 
 func (e *Executor) observeChild(ctx context.Context, step *models.Step, id string, tenant int) (map[string]interface{}, error) {

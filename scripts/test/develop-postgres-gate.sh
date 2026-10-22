@@ -31,7 +31,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
 fi
 
 go test ./internal/service \
-    -run '^(TestTableResultOwner.*AgainstPostgres|TestQueryFailureDiagnosticsAgainstPostgres|TestQueryResultPersistenceAgainstPostgres|TestWorkflowDisplayLanguageAgainstPostgres)$' \
+    -run '^(TestTableResultOwner.*AgainstPostgres|TestQueryFailureDiagnosticsAgainstPostgres|TestQueryResultPersistenceAgainstPostgres|TestWorkflowDisplayLanguageAgainstPostgres|TestQueryTraceAdmissionAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop-table-result.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop-table-result.log"; then
     echo "Develop table result PostgreSQL gate refuses skipped tests" >&2

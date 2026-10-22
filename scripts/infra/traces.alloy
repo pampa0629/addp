@@ -39,16 +39,18 @@ otelcol.processor.tail_sampling "platform" {
       policy_order = ["failure", "slow", "ordinary"]
       composite_sub_policy {
         name = "failure"
-        type = "boolean_attribute"
-        boolean_attribute { key = "addp.http.server_failure"
-          value = true }
+        type = "ottl_condition"
+        ottl_condition {
+          error_mode = "propagate"
+          span = ["attributes[\"addp.http.server_failure\"] == true or (instrumentation_scope.name == \"addp.execution\" and (attributes[\"addp.execution.outcome\"] == \"failed\" or attributes[\"addp.execution.outcome\"] == \"timeout\"))"]
+        }
       }
       composite_sub_policy {
         name = "slow"
         type = "ottl_condition"
         ottl_condition {
           error_mode = "propagate"
-          span = ["kind == SPAN_KIND_SERVER and end_time_unix_nano - start_time_unix_nano >= @SLOW_MS@000000"]
+          span = ["instrumentation_scope.name == \"addp.http\" and kind == SPAN_KIND_SERVER and end_time_unix_nano - start_time_unix_nano >= @SLOW_MS@000000"]
         }
       }
       composite_sub_policy {

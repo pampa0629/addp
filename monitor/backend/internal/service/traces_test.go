@@ -356,3 +356,57 @@ func TestTraceParallelReadsRecheckCurrentUserBeforeReturningAnyData(t *testing.T
 		t.Fatal("revoked current user received parallel details", err, len(out.Data))
 	}
 }
+
+func TestTraceLinksAuthorizeTargetsAndBindSystemIDWithoutFetchingThem(t *testing.T) {
+	users := &traceUsers{}
+	reads := 0
+	backend := concurrentTraceBackend{ids: concurrentTraceIDs(1), read: func(_ context.Context, id string) (tracequery.Detail, error) {
+		reads++
+		d := concurrentTraceDetail(id)
+		d.Spans[0].Links = []tracequery.Link{{TraceID: strings.Repeat("a", 32), SpanID: strings.Repeat("b", 16), ModuleName: "system", InstanceID: "two", Role: "backend", StartedAt: time.Now().Add(-2 * time.Hour), RuntimeInstanceID: 999}}
+		return d, nil
+	}}
+	s := NewTraceService(users, backend)
+	out, err := s.Query(context.Background(), "user", "token", concurrentTraceQuery(1))
+	if err != nil || reads != 1 || len(out.Data) != 1 || out.Data[0].Spans[0].Links[0].RuntimeInstanceID != 2 {
+		t.Fatal("link did not use current User identity, or recursively fetched target", out, err, reads)
+	}
+	for _, identity := range []tracequery.Link{{ModuleName: "foreign", InstanceID: "two", Role: "backend"}, {ModuleName: "system", InstanceID: "two", Role: "ingress"}, {ModuleName: "system", InstanceID: "missing", Role: "backend"}} {
+		s.backend = concurrentTraceBackend{ids: concurrentTraceIDs(1), read: func(_ context.Context, id string) (tracequery.Detail, error) {
+			d := concurrentTraceDetail(id)
+			d.Spans[0].Links = []tracequery.Link{identity}
+			return d, nil
+		}}
+		out, err := s.Query(context.Background(), "user", "token", concurrentTraceQuery(1))
+		if !errors.Is(err, tracequery.ErrDenied) || len(out.Data) != 0 {
+			t.Fatal("unreadable causal target leaked", out, err)
+		}
+	}
+}
+func TestTraceLinksCountTowardWholeRequestInstanceBudget(t *testing.T) {
+	backend := concurrentTraceBackend{ids: concurrentTraceIDs(1), read: func(_ context.Context, id string) (tracequery.Detail, error) {
+		d := concurrentTraceDetail(id)
+		for i := 1; i < 100; i++ {
+			d.Spans = append(d.Spans, tracequery.Span{Module: "monitor", Instance: fmt.Sprintf("instance-%d", i), Role: "backend"})
+		}
+		d.Spans[0].Links = []tracequery.Link{{ModuleName: "system", InstanceID: "target", Role: "backend"}}
+		return d, nil
+	}}
+	out, err := NewTraceService(&traceUsers{}, backend).Query(context.Background(), "user", "token", concurrentTraceQuery(1))
+	if !errors.Is(err, tracequery.ErrBudget) || len(out.Data) != 0 {
+		t.Fatal("links bypassed whole-request instance budget", out, err)
+	}
+}
+func TestTraceLinkTargetRevocationReturnsNoPriorData(t *testing.T) {
+	users := &traceUsers{}
+	backend := concurrentTraceBackend{ids: concurrentTraceIDs(1), read: func(_ context.Context, id string) (tracequery.Detail, error) {
+		users.deny = true
+		d := concurrentTraceDetail(id)
+		d.Spans[0].Links = []tracequery.Link{{ModuleName: "system", InstanceID: "two", Role: "backend"}}
+		return d, nil
+	}}
+	out, err := NewTraceService(users, backend).Query(context.Background(), "user", "token", concurrentTraceQuery(1))
+	if !errors.Is(err, tracequery.ErrDenied) || len(out.Data) != 0 {
+		t.Fatal("revoked Link target leaked source detail", out, err)
+	}
+}

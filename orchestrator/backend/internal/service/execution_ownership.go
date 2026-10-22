@@ -7,6 +7,8 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	execution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/observability"
+	"github.com/addp/common/httptrace"
 	"github.com/addp/common/models"
 	orchmodels "github.com/addp/orchestrator/internal/models"
 	"gorm.io/gorm"
@@ -16,14 +18,25 @@ import (
 func (s *ExecutionService) ClaimNext(ctx context.Context, owner string, duration time.Duration) (*execution.TaskExecution, *execution.Lease, error) {
 	var item *execution.TaskExecution
 	var lease *execution.Lease
+	var stage *httptrace.ExecutionStage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		item, lease, err = execution.ClaimNext(ctx, tx, execution.ClaimOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, WorkerID: owner, Now: time.Now().UTC(), LeaseDuration: duration})
 		if err != nil || item == nil {
 			return err
 		}
+		stageCtx, started := startExecutionStage(ctx, item, httptrace.PhaseClaim)
+		stage = started
+		metadata := stageMetadata(item.Metadata, stage.Reference())
+		if stage.Reference() != nil {
+			if err := execution.UpdateWithLease(stageCtx, tx, *lease, map[string]interface{}{"metadata": metadata}); err != nil {
+				return err
+			}
+			item.Metadata = metadata
+		}
 		return execution.AppendBoundedEvent(ctx, tx, *lease, execution.EventInput{Kind: "started"})
 	})
+	endExecutionStage(stage, execution.ExecutionStatusSuccess, err)
 	return item, lease, err
 }
 
@@ -44,6 +57,10 @@ func (s *ExecutionService) OwnedPage(ctx context.Context, owner string, after in
 }
 
 func (s *ExecutionService) UpdateStepResults(ctx context.Context, lease execution.Lease, results orchmodels.StepResults, current string) error {
+	return s.updateStepResults(ctx, lease, results, current, nil)
+}
+
+func (s *ExecutionService) updateStepResults(ctx context.Context, lease execution.Lease, results orchmodels.StepResults, current string, ref *observability.TraceReference) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		bound := *s
 		bound.db = tx
@@ -64,6 +81,7 @@ func (s *ExecutionService) UpdateStepResults(ctx context.Context, lease executio
 			metadata = models.JSONMap{}
 		}
 		metadata["step_results"] = data
+		metadata = stageMetadata(metadata, ref)
 		progress := planProgress(plan.Steps, results)
 		fields := map[string]interface{}{"metadata": metadata, "current_step": current, "progress": progress}
 		if err := execution.UpdateWithLease(ctx, tx, lease, fields); err != nil {
@@ -74,12 +92,30 @@ func (s *ExecutionService) UpdateStepResults(ctx context.Context, lease executio
 }
 
 func (s *ExecutionService) FinishExecution(ctx context.Context, lease execution.Lease, status, code string) error {
-	item, err := s.OwnedExecution(ctx, lease)
-	if err != nil {
-		return err
-	}
+	var stage *httptrace.ExecutionStage
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		bound := *s
+		bound.db = tx
+		item, err := bound.OwnedExecution(ctx, lease)
+		if err != nil {
+			return err
+		}
+		stageCtx, started := startExecutionStage(ctx, item, httptrace.PhaseTerminal)
+		stage = started
+		return bound.finishExecution(stageCtx, item, lease, status, code, stage.Reference())
+	})
+	endExecutionStage(stage, status, err)
+	return err
+}
+
+// finishExecution is transaction-local; only the caller that owns the outermost
+// transaction may end its phase after the state and events have committed.
+func (s *ExecutionService) finishExecution(ctx context.Context, item *execution.TaskExecution, lease execution.Lease, status, code string, ref *observability.TraceReference) error {
 	now := time.Now().UTC()
 	fields := map[string]interface{}{"current_step": nil}
+	if ref != nil {
+		fields["metadata"] = stageMetadata(item.Metadata, ref)
+	}
 	if status == execution.ExecutionStatusSuccess {
 		fields["progress"] = 100
 		fields["error_details"] = nil
@@ -95,6 +131,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, lease execution.
 // RecoverExpired never requeues a dispatched orchestration. Child execution facts remain intact.
 func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
+	var stages []*httptrace.ExecutionStage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Now: now, Limit: limit})
 		if err != nil {
@@ -113,16 +150,24 @@ func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, li
 				}
 			}
 			fields := map[string]interface{}{"error_details": executionFailureDetails(code), "current_step": nil}
+			stageCtx, stage := startExecutionStage(ctx, &item, httptrace.PhaseTerminal)
+			stages = append(stages, stage)
+			if ref := stage.Reference(); ref != nil {
+				fields["metadata"] = stageMetadata(item.Metadata, ref)
+			}
 			if item.StartedAt != nil {
 				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
 			}
-			if err := execution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
+			if err := execution.FailExpiredWithEvent(stageCtx, tx, lease, now, fields); err != nil {
 				return err
 			}
 			count++
 		}
 		return nil
 	})
+	for _, stage := range stages {
+		endExecutionStage(stage, execution.ExecutionStatusFailed, err)
+	}
 	return count, err
 }
 
@@ -130,6 +175,8 @@ func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, li
 // System authorization resolution happens before entering this transaction.
 func (s *ExecutionService) CreateScheduled(ctx context.Context, expected *orchmodels.Orchestration, now time.Time, next *time.Time, actor ExecutionActor) (*execution.TaskExecution, error) {
 	var item *execution.TaskExecution
+	ctx, stage := httptrace.StartExecutionStage(ctx, httptrace.PhaseEnqueue, 0, nil, nil)
+	defer stage.End(httptrace.OutcomeRejected)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var orch orchmodels.Orchestration
 		query := tx.Where("id = ? AND tenant_id = ? AND enabled = ? AND schedule = ? AND next_run_at = ? AND next_run_at <= ?", expected.ID, expected.TenantID, true, expected.Schedule, expected.NextRunAt, now)
@@ -146,11 +193,14 @@ func (s *ExecutionService) CreateScheduled(ctx context.Context, expected *orchmo
 			return fmt.Errorf("scheduled orchestration authorization changed")
 		}
 		var err error
-		item, err = createOrchestrationExecution(ctx, tx, &orch, execution.TriggerTypeScheduled, execution.ModuleOrchestrator, nil, actor)
+		item, err = createOrchestrationExecution(ctx, tx, &orch, execution.TriggerTypeScheduled, execution.ModuleOrchestrator, nil, actor, stage)
 		if err != nil {
 			return err
 		}
 		return tx.Model(&orch).Updates(map[string]interface{}{"next_run_at": next}).Error
 	})
+	if err == nil && item != nil {
+		stage.End(httptrace.OutcomeSuccess)
+	}
 	return item, err
 }

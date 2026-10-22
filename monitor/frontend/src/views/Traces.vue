@@ -40,11 +40,22 @@
           <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
           <el-table-column prop="instance_id" :label="t('monitor.http.instance')" min-width="180" show-overflow-tooltip />
           <el-table-column prop="kind" :label="t('monitor.traces.kind')" width="100" />
+          <el-table-column :label="t('monitor.traces.phase')" width="120"><template #default="{ row }">{{ row.phase ? t(`monitor.traces.phases.${row.phase}`) : '—' }}</template></el-table-column>
+          <el-table-column :label="t('monitor.traces.attempt')" width="90"><template #default="{ row }">{{ row.phase ? row.attempt : '—' }}</template></el-table-column>
+          <el-table-column :label="t('monitor.traces.outcome')" width="120"><template #default="{ row }">{{ row.outcome ? t(`monitor.traces.outcomes.${row.outcome}`) : '—' }}</template></el-table-column>
           <el-table-column prop="method" :label="t('monitor.http.method')" width="100" />
           <el-table-column prop="route" :label="t('monitor.http.route')" min-width="180" />
           <el-table-column prop="status" :label="t('monitor.traces.status')" width="90" />
           <el-table-column :label="t('monitor.traces.duration')" min-width="130"><template #default="{ row }">{{ number(row.duration_ms) }}</template></el-table-column>
           <el-table-column v-if="canReadLogs" :label="t('monitor.traces.logs')" width="100"><template #default="{ row }"><el-button link @click="logs(row)">{{ t('monitor.traces.logs') }}</el-button></template></el-table-column>
+        </el-table>
+        <h3>{{ t('monitor.traces.causalLinks') }}</h3>
+        <el-table :data="links" :empty-text="t('monitor.traces.noLinks')" data-testid="trace-links">
+          <el-table-column prop="source_span_id" :label="t('monitor.traces.sourceSpan')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
+          <el-table-column prop="trace_id" :label="t('monitor.traces.traceID')" min-width="260" show-overflow-tooltip />
+          <el-table-column :label="t('monitor.traces.start')" min-width="170"><template #default="{ row }">{{ date(row.started_at) }}</template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="130"><template #default="{ row }"><el-button link @click="followLink(row)">{{ t('monitor.traces.followLink') }}</el-button></template></el-table-column>
         </el-table>
         <h3>{{ t('monitor.traces.relationships') }}</h3>
         <p class="hint">{{ t('monitor.traces.relationshipHint') }}</p>
@@ -67,7 +78,7 @@ import { openConsoleRoute } from '@common-ui'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { useAuthStore } from '../store/auth'
 import { traceAPI } from '../api/traces'
-import { traceRoute, validateTraces } from '../utils/traces'
+import { traceRoute, validateTraces, traceLinkQuery } from '../utils/traces'
 import { validateProcessInstances } from '../utils/processResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, locale } = useI18n()
@@ -80,12 +91,17 @@ const moduleDraft = ref(''), roleDraft = ref('backend'), traceDraft = ref(''), r
 const requests = createLatestRequestScope()
 const selected = computed(() => instances.value.find(v => v.id === state.value?.instanceID))
 const detail = computed(() => state.value?.query.trace_id ? data.value[0] : null)
+const links = computed(() => detail.value?.spans.flatMap(span => span.links.map(link => ({ ...link, source_span_id: span.span_id }))) || [])
 const date = value => new Date(value).toLocaleString(locale.value)
 const number = value => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 3 }).format(value)
 function navigate(query, history = 'replace') { return navigateMonitorRoute(router, { path: '/traces', query: Object.fromEntries(Object.entries(query).filter(([, value]) => value)) }, { history }) }
 function filter() { return navigate({ module_name: moduleDraft.value.trim(), role: roleDraft.value }) }
 function select(row) { const now = new Date(); return navigate({ ...state.value.query, page: undefined, instance_id: String(row.id), trace_id: undefined, start: new Date(now.getTime() - 900000).toISOString(), end: now.toISOString() }, 'push') }
 function search() { if (!rangeDraft.value?.every(value => Number.isFinite(new Date(value).getTime()))) { error.value = 'monitor.traces.invalid'; return }; return navigate({ ...state.value.query, trace_id: traceDraft.value.trim(), start: new Date(rangeDraft.value[0]).toISOString(), end: new Date(rangeDraft.value[1]).toISOString() }) }
+function followLink(link) {
+  if (!canRead.value) return
+  try { return navigate(traceLinkQuery(link), 'push') } catch { error.value = 'monitor.traces.invalid' }
+}
 function logs(span) {
   if (!canReadLogs.value || !detail.value) return
   const to = Math.min(Date.now(), Date.parse(span.end) + 1000)

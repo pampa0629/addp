@@ -36,6 +36,9 @@ func TestOwnedTraceProcess(t *testing.T) {
 	stop := httptrace.StartOptional(module, role)
 	defer stop()
 	router := modulelifecycle.NewRouter()
+	if module == "system" {
+		installOwnedExecutionTraceRoutes(t, router)
+	}
 	router.GET("/health/ready", func(c *gin.Context) { c.JSON(200, httptrace.Snapshot()) })
 	router.GET("/items/:id", func(c *gin.Context) {
 		logger.L().InfoContext(c.Request.Context(), "trace fixture request")
@@ -141,6 +144,8 @@ func TestOwnedTracePipeline(t *testing.T) {
 		}
 		return body.ID
 	}
+	resumed := startOwnedTraceIdentity(t, w, users, &captures, "system", "backend", "", "t2-system-resumed", 4)
+	stages := runOwnedExecutionTraceStages(t, leaf, resumed)
 	from := time.Now().UTC().Add(-time.Second)
 	failure := request("/items/failure")
 	slow := request("/items/slow")
@@ -218,6 +223,7 @@ func TestOwnedTracePipeline(t *testing.T) {
 	if !foundFailure || !foundSlow || ordinary == 0 || ordinary >= 50 {
 		t.Fatalf("sampling outcome failure=%v slow=%v normal=%d last=%v", foundFailure, foundSlow, ordinary, e)
 	}
+	assertOwnedExecutionTraceStages(t, service, users, stages)
 	users.deny = true
 	blocked, e := service.Query(context.Background(), "t2-user", "addp_at_t2_current_user", TraceQuery{InstanceID: 1, ID: failure, Start: from, End: until, Limit: 1})
 	if e == nil || len(blocked.Data) > 0 {
@@ -354,8 +360,11 @@ func TestOwnedTracePipeline(t *testing.T) {
 }
 
 func startOwnedTrace(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, module, role, next string, id uint) string {
-	instance := "t2-" + module
-	address := filepath.Join(w, module+".address")
+	return startOwnedTraceIdentity(t, w, users, captures, module, role, next, "t2-"+module, id)
+}
+
+func startOwnedTraceIdentity(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, module, role, next, instance string, id uint) string {
+	address := filepath.Join(w, instance+".address")
 	deployment, _ := json.Marshal([]httptrace.Deployment{{Module: module, Role: role, Endpoint: os.Getenv("TRACE_T2_OTLP"), TLSDir: filepath.Join(w, "source-tls")}})
 	exe, e := os.Executable()
 	if e != nil {

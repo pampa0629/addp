@@ -573,7 +573,7 @@
         "serviceResources": "Service monitoring",
         "platformAlerts": "Platform alerts",
         "httpQuality": "HTTP quality",
-        "traces": "HTTP traces",
+        "traces": "Traces",
         "engineResources": "Engine monitoring"
       },
       "catalog": {

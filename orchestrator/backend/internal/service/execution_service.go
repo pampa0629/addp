@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/httptrace"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"gorm.io/gorm/clause"
 
@@ -43,6 +44,8 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 		return nil, fmt.Errorf("tenant_id is required")
 	}
 	var execution *commonExecution.TaskExecution
+	ctx, stage := httptrace.StartExecutionStage(ctx, "enqueue", 0, nil, nil)
+	defer stage.End(httptrace.OutcomeRejected)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var orch models.Orchestration
 		query := tx.Where("id = ? AND tenant_id = ?", orchestrationID, tenantID)
@@ -53,13 +56,16 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 			return err
 		}
 		var err error
-		execution, err = createOrchestrationExecution(ctx, tx, &orch, triggerType, source, parentExecutionID, actor)
+		execution, err = createOrchestrationExecution(ctx, tx, &orch, triggerType, source, parentExecutionID, actor, stage)
 		return err
 	})
+	if err == nil && execution != nil {
+		stage.End(httptrace.OutcomeSuccess)
+	}
 	return execution, err
 }
 
-func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models.Orchestration, triggerType, source string, parent *string, actor ExecutionActor) (*commonExecution.TaskExecution, error) {
+func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models.Orchestration, triggerType, source string, parent *string, actor ExecutionActor, stage *httptrace.ExecutionStage) (*commonExecution.TaskExecution, error) {
 	normalized, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return nil, err
@@ -97,6 +103,10 @@ func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models
 		}
 	} else if err := commonExecution.FreezeDisplayLanguage(item, commoni18n.Language(ctx)); err != nil {
 		return nil, err
+	}
+	if ref := stage.Reference(); ref != nil {
+		// Trace association is optional; only this Runtime's real phase can be frozen.
+		_ = commonExecution.FreezeEnqueueTrace(item, ref)
 	}
 	if err := tx.WithContext(ctx).Create(item).Error; err != nil {
 		return nil, err

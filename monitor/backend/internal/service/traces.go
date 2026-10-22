@@ -138,11 +138,20 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 		for _, v := range rows {
 			allowed[v.ModuleName+"/"+v.InstanceID] = v
 		}
-		for _, d := range out.Data {
-			for _, span := range d.Spans {
+		for i := range out.Data {
+			for j := range out.Data[i].Spans {
+				span := &out.Data[i].Spans[j]
 				v, ok := allowed[span.Module+"/"+span.Instance]
 				if !ok || v.Role != span.Role {
 					return tracequery.ErrDenied
+				}
+				for k := range span.Links {
+					link := &span.Links[k]
+					target, ok := allowed[link.ModuleName+"/"+link.InstanceID]
+					if !ok || target.Role != link.Role || target.ID == 0 {
+						return tracequery.ErrDenied
+					}
+					link.RuntimeInstanceID = target.ID
 				}
 			}
 		}
@@ -254,11 +263,17 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			continue
 		}
 		matched := false
+		addInstance := func(instance string) {
+			if !seen[instance] {
+				seen[instance] = true
+				processIDs = append(processIDs, instance)
+			}
+		}
 		for _, v := range d.Spans {
 			matched = matched || (v.Module == anchor.ModuleName && v.Instance == anchor.InstanceID)
-			if !seen[v.Instance] {
-				seen[v.Instance] = true
-				processIDs = append(processIDs, v.Instance)
+			addInstance(v.Instance)
+			for _, link := range v.Links {
+				addInstance(link.InstanceID)
 			}
 		}
 		if len(processIDs) > 100 {

@@ -28,7 +28,7 @@ func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sqlDB.Close() })
-	runExecutionEventCases(t, func(t *testing.T) *gorm.DB {
+	database := func(t *testing.T) *gorm.DB {
 		tx := db.Begin()
 		if tx.Error != nil {
 			t.Fatal(tx.Error)
@@ -48,7 +48,9 @@ func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		return tx
-	})
+	}
+	runExecutionEventCases(t, database)
+	runQueryTraceCases(t, database)
 }
 
 func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {

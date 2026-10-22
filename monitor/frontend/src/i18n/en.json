@@ -1209,9 +1209,29 @@
       "slow": "Sustained slow interface"
     },
     "traces": {
-      "title": "HTTP traces",
+      "phase": "Phase",
+      "attempt": "Claim attempt",
+      "outcome": "Phase outcome",
+      "causalLinks": "Causal links",
+      "noLinks": "No causal links",
+      "sourceSpan": "Source span",
+      "followLink": "Follow link",
+      "phases": {
+        "enqueue": "Enqueue",
+        "claim": "Claim",
+        "dispatch": "Dispatch",
+        "terminal": "Terminal"
+      },
+      "outcomes": {
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "cancelled": "Cancelled",
+        "rejected": "Rejected"
+      },
+      "title": "Traces",
       "denied": "This identity cannot read traces",
-      "coverage": "Only sampled, retained HTTP traces are shown. Empty results may reflect sampling, unfinished requests, expiration or collection loss. Policy definition version: 1.",
+      "coverage": "Sampled, retained HTTP traces and execution stages are shown. Empty results may reflect sampling, unfinished stages, expiration or collection loss. Policy definition version: 2.",
       "open": "Query traces",
       "start": "Start",
       "end": "End",

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "decision_wait_seconds": 120,
   "pending_traces": 10000,
   "normal_percent": 5,

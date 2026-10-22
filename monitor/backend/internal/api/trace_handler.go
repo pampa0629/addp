@@ -100,7 +100,7 @@ func (h TraceHandler) read(c *gin.Context, detail bool) {
 
 // Search godoc
 // @Summary 读取平台实例调用链 | Read platform instance traces
-// @Description 非委托Platform User；System逐请求裁决所有参与实例；仅有界固定查询，采样结果不代表全量或完整调用关系 | Non-delegated Platform User; System authorizes every participant; bounded sampled evidence does not represent complete traffic
+// @Description 非委托Platform User；System逐请求裁决所有参与实例及因果Link目标；仅有界固定查询，采样结果不代表全量或完整调用关系 | Non-delegated Platform User; System authorizes every participant and causal Link target; bounded sampled evidence does not represent complete traffic
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
@@ -124,7 +124,7 @@ func (h TraceHandler) Search(c *gin.Context) { h.read(c, false) }
 
 // Detail godoc
 // @Summary 读取调用链详情与观测调用关系 | Read trace details and observed call relationships
-// @Description 所有跨度重新核验实例读取权，关联ID不授予日志正文权限，缺失父跨度不补造调用边 | Reauthorize all participants; correlation IDs grant no log permission and missing parents create no inferred edges
+// @Description 所有跨度及Link目标重核实例读取权；独立执行阶段与因果Link不生成HTTP调用边，关联ID不授予日志正文权限 | Reauthorize spans and Link targets; execution stages and causal Links do not create HTTP edges or grant log access
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth

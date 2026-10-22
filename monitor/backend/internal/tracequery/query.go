@@ -18,6 +18,7 @@ import (
 	"time"
 
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/execution/observability"
 	"github.com/addp/common/httptrace"
 	collector "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -39,6 +40,11 @@ type Span struct {
 	Instance   string    `json:"instance_id"`
 	Role       string    `json:"role"`
 	Kind       string    `json:"kind"`
+	Scope      string    `json:"scope"`
+	Phase      string    `json:"phase,omitempty"`
+	Attempt    int       `json:"attempt"`
+	Outcome    string    `json:"outcome,omitempty"`
+	Links      []Link    `json:"links"`
 	Method     string    `json:"method"`
 	Route      string    `json:"route"`
 	Status     int       `json:"status"`
@@ -46,6 +52,18 @@ type Span struct {
 	Start      time.Time `json:"start"`
 	End        time.Time `json:"end"`
 	DurationMS float64   `json:"duration_ms"`
+}
+
+// Link is a causal reference, never an inferred HTTP dependency. The numeric
+// runtime ID is attached only after the current User's System authorization.
+type Link struct {
+	TraceID           string    `json:"trace_id"`
+	SpanID            string    `json:"span_id"`
+	ModuleName        string    `json:"module_name"`
+	Role              string    `json:"role"`
+	InstanceID        string    `json:"instance_id"`
+	StartedAt         time.Time `json:"started_at"`
+	RuntimeInstanceID uint      `json:"runtime_instance_id"`
 }
 type Edge struct {
 	FromModule   string `json:"from_module"`
@@ -215,7 +233,8 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 			return result, ErrUpstream
 		}
 		for _, scope := range batch.GetScopeSpans() {
-			if scope.GetScope().GetName() != "addp.http" {
+			scopeName := scope.GetScope().GetName()
+			if scopeName != "addp.http" && scopeName != "addp.execution" {
 				return result, ErrUpstream
 			}
 			for _, span := range scope.GetSpans() {
@@ -228,27 +247,16 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 				if len(result.Spans) >= 1000 {
 					return result, ErrBudget
 				}
-				fields := attrs(span.Attributes)
-				method, route := fields["http.request.method"].GetStringValue(), fields["http.route"].GetStringValue()
-				status := fields["http.response.status_code"].GetIntValue()
-				switch method {
-				case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY", "_OTHER":
-				default:
-					return result, ErrUpstream
+				s := Span{ID: sid, ParentID: parent, Module: module, Instance: instance, Role: role, Scope: scopeName, Links: []Link{}, Start: time.Unix(0, int64(span.StartTimeUnixNano)).UTC(), End: time.Unix(0, int64(span.EndTimeUnixNano)).UTC(), DurationMS: float64(span.EndTimeUnixNano-span.StartTimeUnixNano) / 1e6}
+				var err error
+				if scopeName == "addp.http" {
+					err = decodeHTTP(span, &s)
+				} else {
+					err = decodeExecution(id, span, &s)
 				}
-				if !bounded(route, 1024) || status < 0 || status > 599 || (status > 0 && status < 100) {
-					return result, ErrUpstream
+				if err != nil {
+					return result, err
 				}
-				kind := ""
-				switch span.Kind {
-				case tracepb.Span_SPAN_KIND_SERVER:
-					kind = "server"
-				case tracepb.Span_SPAN_KIND_CLIENT:
-					kind = "client"
-				default:
-					return result, ErrUpstream
-				}
-				s := Span{ID: sid, ParentID: parent, Module: module, Instance: instance, Role: role, Kind: kind, Method: method, Route: route, Status: int(status), Failed: fields["addp.http.server_failure"].GetBoolValue(), Start: time.Unix(0, int64(span.StartTimeUnixNano)).UTC(), End: time.Unix(0, int64(span.EndTimeUnixNano)).UTC(), DurationMS: float64(span.EndTimeUnixNano-span.StartTimeUnixNano) / 1e6}
 				if result.Start.IsZero() || s.Start.Before(result.Start) {
 					result.Start = s.Start
 				}
@@ -271,7 +279,7 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 	roots := 0
 	for _, s := range result.Spans {
 		if s.ParentID == "" {
-			if s.Kind != "server" {
+			if s.Kind != "server" && s.Scope != "addp.execution" {
 				result.Partial = true
 			}
 			roots++
@@ -315,4 +323,130 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 		return result.Spans[i].Start.Before(result.Spans[j].Start)
 	})
 	return result, nil
+}
+
+// Existing HTTP attributes are projected through their established whitelist.
+// Execution instrumentation has a smaller exact contract and accepts no opaque
+// fields or events, so execution identifiers and SQL cannot reach its DTO.
+func decodeHTTP(raw *tracepb.Span, span *Span) error {
+	if len(raw.Links) != 0 || raw.DroppedLinksCount != 0 {
+		return ErrUpstream
+	}
+	fields := attrs(raw.Attributes)
+	span.Method, span.Route = fields["http.request.method"].GetStringValue(), fields["http.route"].GetStringValue()
+	status := fields["http.response.status_code"].GetIntValue()
+	switch span.Method {
+	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY", "_OTHER":
+	default:
+		return ErrUpstream
+	}
+	if !bounded(span.Route, 1024) || status < 0 || status > 599 || (status > 0 && status < 100) {
+		return ErrUpstream
+	}
+	switch raw.Kind {
+	case tracepb.Span_SPAN_KIND_SERVER:
+		span.Kind = "server"
+	case tracepb.Span_SPAN_KIND_CLIENT:
+		span.Kind = "client"
+	default:
+		return ErrUpstream
+	}
+	span.Status, span.Failed = int(status), fields["addp.http.server_failure"].GetBoolValue()
+	return nil
+}
+
+func decodeExecution(id string, raw *tracepb.Span, span *Span) error {
+	if span.Role != "backend" || span.ParentID != "" || len(raw.Attributes) != 3 || raw.DroppedAttributesCount != 0 || len(raw.Events) != 0 || raw.DroppedEventsCount != 0 || len(raw.Links) > 2 || raw.DroppedLinksCount != 0 {
+		return ErrUpstream
+	}
+	fields := map[string]*commonpb.AnyValue{}
+	for _, item := range raw.Attributes {
+		if item == nil || item.Value == nil || fields[item.Key] != nil {
+			return ErrUpstream
+		}
+		switch item.Key {
+		case "addp.execution.phase", "addp.execution.outcome":
+			if _, ok := item.Value.Value.(*commonpb.AnyValue_StringValue); !ok {
+				return ErrUpstream
+			}
+		case "addp.execution.attempt":
+			if _, ok := item.Value.Value.(*commonpb.AnyValue_IntValue); !ok {
+				return ErrUpstream
+			}
+		default:
+			return ErrUpstream
+		}
+		fields[item.Key] = item.Value
+	}
+	span.Phase, span.Outcome = fields["addp.execution.phase"].GetStringValue(), fields["addp.execution.outcome"].GetStringValue()
+	attempt := fields["addp.execution.attempt"].GetIntValue()
+	if attempt < 0 || attempt > int64(^uint(0)>>1) {
+		return ErrUpstream
+	}
+	span.Attempt = int(attempt)
+	var kind tracepb.Span_SpanKind
+	switch span.Phase {
+	case "enqueue":
+		span.Kind, kind = "producer", tracepb.Span_SPAN_KIND_PRODUCER
+		if attempt != 0 {
+			return ErrUpstream
+		}
+	case "claim":
+		span.Kind, kind = "consumer", tracepb.Span_SPAN_KIND_CONSUMER
+	case "dispatch":
+		span.Kind, kind = "producer", tracepb.Span_SPAN_KIND_PRODUCER
+	case "terminal":
+		span.Kind, kind = "internal", tracepb.Span_SPAN_KIND_INTERNAL
+	default:
+		return ErrUpstream
+	}
+	if raw.Kind != kind || (span.Phase != "enqueue" && attempt < 1) {
+		return ErrUpstream
+	}
+	switch span.Outcome {
+	case "success", "failed", "timeout", "cancelled", "rejected":
+	default:
+		return ErrUpstream
+	}
+	span.Failed = span.Outcome == "failed" || span.Outcome == "timeout"
+	if span.Failed != (raw.GetStatus().GetCode() == tracepb.Status_STATUS_CODE_ERROR) {
+		return ErrUpstream
+	}
+	seen := map[string]bool{}
+	for _, item := range raw.Links {
+		if item == nil || len(item.Attributes) != 4 || item.DroppedAttributesCount != 0 || item.TraceState != "" {
+			return ErrUpstream
+		}
+		values := map[string]string{}
+		for _, attr := range item.Attributes {
+			if attr == nil || attr.Value == nil {
+				return ErrUpstream
+			}
+			if _, duplicate := values[attr.Key]; duplicate {
+				return ErrUpstream
+			}
+			value, ok := attr.Value.Value.(*commonpb.AnyValue_StringValue)
+			if !ok {
+				return ErrUpstream
+			}
+			switch attr.Key {
+			case "addp.link.module_name", "addp.link.role", "addp.link.instance_id", "addp.link.started_at":
+			default:
+				return ErrUpstream
+			}
+			values[attr.Key] = value.StringValue
+		}
+		started, err := time.Parse(time.RFC3339Nano, values["addp.link.started_at"])
+		if err != nil || started.UTC().Format(time.RFC3339Nano) != values["addp.link.started_at"] {
+			return ErrUpstream
+		}
+		ref := observability.TraceReference{TraceID: hex.EncodeToString(item.TraceId), SpanID: hex.EncodeToString(item.SpanId), ModuleName: values["addp.link.module_name"], Role: values["addp.link.role"], InstanceID: values["addp.link.instance_id"], StartedAt: started}
+		key := ref.TraceID + "/" + ref.SpanID
+		if ref.Validate() != nil || ref.TraceID == id || seen[key] {
+			return ErrUpstream
+		}
+		seen[key] = true
+		span.Links = append(span.Links, Link{TraceID: ref.TraceID, SpanID: ref.SpanID, ModuleName: ref.ModuleName, Role: ref.Role, InstanceID: ref.InstanceID, StartedAt: started})
+	}
+	return nil
 }

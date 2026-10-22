@@ -364,11 +364,11 @@ Gateway 外部入口重新生成 W3C Trace Context；内部同步 HTTP 传播 tr
 
 2026-10-21 本地两档基线已通过：共 72000 请求，累计 78540 保留 Span 自然落盘，两次二十条完整查询为 4.69／1.97 秒；以较高单位物理成本 226.83 字节/Span、100 Span/秒和双份副本外推 72 小时约 10.95 GiB，低于 16 GiB 判定线。保持 20 GiB／72 小时初值，不扩大采样目标；真实 72 小时留存/删除及长期合并仍待独立窗口验证，详情与共享主机重叠限制见[历史证据](testing/evidence/Monitor历史证据.md#http-追踪隔离容量基线本地)。
 
-首批采样使用 Monitor-owned 不可变版本化定义（版本 1），Infra 生成唯一 Alloy 配置并记录版本；不新增策略编辑/热发布控制面。端点、证书及资源/存储额度归部署输入，不通过环境变量并列维护采样策略。策略变更沿版本发布和门禁，配置意图不等于运行生效或投递确认。Tempo WAL 的时间范围容差由尾采样等待加 180 秒生成（首批 300 秒），覆盖已结束跨度在尾采样、导出和入库期间的延迟；不得沿用恰好 120 秒的默认容差，否则原始时间窗口可能查不到已入库追踪。
+首批采样引入 Monitor-owned 不可变版本化定义（当时版本 1，第三批统一升级为版本 2），Infra 生成唯一 Alloy 配置并记录版本；不新增策略编辑/热发布控制面。端点、证书及资源/存储额度归部署输入，不通过环境变量并列维护采样策略。策略变更沿版本发布和门禁，配置意图不等于运行生效或投递确认。Tempo WAL 的时间范围容差由尾采样等待加 180 秒生成（首批 300 秒），覆盖已结束跨度在尾采样、导出和入库期间的延迟；不得沿用恰好 120 秒的默认容差，否则原始时间窗口可能查不到已入库追踪。
 
 OTLP 使用独立 TLS/认证和部署来源约束，不公开任意写入。查询用独立 monitor.trace.read，限非委托 Platform User，默认现有平台系统管理员；逐请求核验 System 对所涉模块/实例的读取，历史不以当前租约 UP 作为可读条件，不可裁决/无权整份拒绝。日志跳转独立核验 platform.module_log.read，Tenant 不开放平台链路，浏览器不直连 Tempo。
 
-调用关系沿同一有界查询从实际匹配跨度派生，不另存第二份调用事实，显示窗口、采样局限和不完整性；不推导根因、血缘或部署关系。查无 Trace 不能单独判定未采样、过期或丢弃；能力故障与未找到分开。异步任务后续另建 Trace 并通过 Link 关联，不延长创建请求跨度。
+调用关系沿同一有界查询从实际匹配跨度派生，不另存第二份调用事实，显示窗口、采样局限和不完整性；不推导根因、血缘或部署关系。查无 Trace 不能单独判定未采样、过期或丢弃；能力故障与未找到分开。异步任务沿下述第三批契约另建 Trace 并通过 Link 关联，不延长创建请求跨度。
 
 #### Python 同步 HTTP 追踪接入（第二批）
 
@@ -383,6 +383,29 @@ OTLP 使用独立 TLS/认证和部署来源约束，不公开任意写入。查�
 安全属性、资源和状态沿 Go 白名单，不采集 URL/query、正文、Token、用户/租户、SQL 或原始异常文本。共享 `runtime_logging` 唯一 JSON Formatter 只附当前合法非零 request_id/trace_id/span_id，作为现有日志接收和 Loki 结构化元数据；不新增日志出口、索引标签或查询权限。Trace 查询继续由 System 当前 User 核验全部参与实例，关联日志仍需 System 正文权限。
 
 本批在既有 Common Python、Agent/Copilot 标准门禁验证：跨并发上下文、Server/Client 父子、流式取消/写失败、外域重定向剥离、4xx/5xx分类、无敏感数据、关闭与配置失败的Ready隔离、队列/导出/退出边界及实际mTLS/OTLP protobuf接收。新增依赖固定版本并同步锁与消费者准备；Python CI owner/输入登记须同批覆盖。与真实 Alloy/Tempo 的混合语言 T2 证据、正式身份及长时容量分别记录，不以测试替身或短测宣称已通过未执行的验收。
+
+#### 执行短阶段与 Trace Link（第三批）
+
+2026-10-23 用户确认先修订规范和验收标准，再实施本批；仅本地验证，不运行 Hosted、不重跑容量。Common 统一持久关联及 Trace Link；Orchestrator 父编排的入队、领取、终态接入，向 Develop bounded query 的派发及 Develop query 的入队、领取、派发、终态首接。其他下游 Runtime、continuous、SQL Span、Python 异步执行、真实 72 小时保留和生产 HA 均另批；父编排已有阶段不能证明其其他下游已接入。
+
+阶段各自创建独立新 Trace：enqueue 为 PRODUCER，claim 为 CONSUMER，dispatch 为 PRODUCER，terminal 为 INTERNAL，scope 唯一为 `addp.execution`。enqueue 仅 Link 当前正式 Runtime 的真实本地 HTTP Span；后续阶段 Link 持久 enqueue 和最新阶段，去重后最多两个，不从远端自报 SpanContext 或参数构造引用。新 root 只切断 Span parent，原业务 Context 的取消、截止和安全值继续生效。长任务、SQL 执行、等待轮询、租约心跳与后台整轮扫描均不包在这些 Span 内；任务总耗时仍取 execution。
+
+Span 名称由阶段固定生成，唯一阶段属性为 `addp.execution.phase/attempt/outcome`，阶段值 `enqueue/claim/dispatch/terminal`。outcome 固定 `success/failed/timeout/cancelled/rejected`：非 terminal 表示该阶段动作结果；已提交 terminal 才表达任务终态；`rejected` 表示事务未提交或所有权已失效，不表示任务失败。failed/timeout 使用 Error 状态；cancelled/rejected 不推断 HTTP 服务端失败。不记录原始异常文本、SQL／参数／结果、业务 execution UUID 或用户租户身份，日志仅从当前短阶段 Context 关联 trace/span ID。 Go SDK 自动合并的 OTEL_RESOURCE_ATTRIBUTES／OTEL_SERVICE_NAME 也不构成部署身份或属性来源；导出端仅保留正式模块、角色、启动实例三项资源白名单，不修改进程全局环境。
+
+持久引用沿[执行记录与租约规范](tasks/执行记录与租约.md#执行追踪的私有关联)，不新增表或 Tenant 契约。观测更新保留业务 metadata，业务终态显式替换／清空业务 metadata 时保留私有观测 namespace，不保留原本应清除的旧业务结果。Link 只含 target trace/span ID 与 `addp.link.module_name/role/instance_id/started_at` 四个安全属性；目标角色可为正式 backend/ingress，阶段本身只来自 backend。Link 不生成 Client/Server 调用边，也不跨 Trace 累加 duration 或保证整条任务被采样。
+
+采样定义统一发布为 Monitor-owned 版本 2，删除版本 1 当前执行路径，不留双策略。HTTP 失败口径不变；新增 scope 为 addp.execution 且 outcome 为 failed/timeout 的阶段进入同一失败优先预算，cancelled/rejected 按普通阶段采样。慢请求仍仅 `addp.http` SERVER ≥1 秒，不能将长任务耗时当慢 HTTP。普通 5%、120 秒等待、10000 待决、100 Span/秒及 70/20/10 分配、队列 2048、72 小时／20 GiB 初值全部保持；阶段增加会消耗同一预算，原 HTTP 容量短测不构成异步吞吐或保留保证，不因此重跑已禁止的容量基线。
+
+Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span 不接收 Link。执行阶段可独立为 root，不以无 parent 判不完整。每个 Link 目标与实际参与 Span 一起，沿当前 Platform User 的 System 实例读取逐项核验；授权不可裁决、目标身份不匹配或超出预算整份拒绝。目标不必出现在本次 Trace 中，不递归拉取 Link 目标。原 100 实例、1000 Span、2 MiB、5 秒及主体／Monitor／上游并发上限不变；Tenant、Service、Delegated 无新增入口。
+
+平台 DTO 增加 scope、阶段、attempt、outcome 与独立 links；目标数字 runtime_instance_id 仅由本次 System 裁决绑定，不能相信采集自报数字 ID。页面显示阶段与因果 Link，点击目标作为一次新的普通授权查询，按 target.started_at 建立小窗口，不沿来源 Trace 的当前窗口误查数小时前的入口；保留期、未来时刻和原查询窗口约束继续执行。撤权和失败清除旧详情及链接；查无数据仍可能由采样、过期或丢弃造成，不断言未执行。
+
+最小验收（先识别门禁，再实现）：
+
+- T0/T1：`make test-go` 扩散共享 Go 消费者，覆盖严格纯值、无循环依赖、不可变入口／单条最新引用、Context 取消与新 root、幂等结束、两 Link 去重、敏感属性拒绝、无效或关闭不阻业务。Monitor 覆盖两 scope、phase/kind/attempt/outcome、目标身份重核／撤权、整体限额及不递归；`make test-dev-lifecycle` 核验唯一 v2 配置渲染，现有 Platform consistency 自动发现。
+- T2：先 `bash scripts/infra/status.sh`；`make test-orchestrator-postgres`、`make test-develop-postgres` 在唯一 addp_test 使用原 owner 事务，验证持久快照重读、真实 attempt／lease、提交拒绝不造成功、重启后续阶段沿入口 Link、metadata 保留与请求伪造剥离；不改变队列或恢复语义。既有 Release/T2 两 owner Job 自动发现，不新增数据库或测试旁路。
+- T2：`make test-monitor-traces` 继续真实 mTLS／Alloy／Tempo／日志功能链，同时加入短阶段独立 Trace、失败优先、真实 Link 安全查询、缺目标拒绝及全退出零残留；保留真实 120 秒采样，不执行 --capacity。Common execution 及 owner 新测试须纳入现有输入／路径登记，不能仅依文件存在推定 CI 选中。
+- T3：`make test-monitor-frontend` 验证阶段显示、跨窗口 Link 跳转及撤权清除；标准 Monitor Swagger 生成、覆盖检查及文档同步。隔离身份／夹具不计正式身份 T4，所有未运行、失败、跳过项分别记证据，不宣称全域追踪完工。
 
 ## 七、平台告警与通知
 

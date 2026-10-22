@@ -669,6 +669,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | HTTP interface quality | HTTP 接口质量 | 平台实际运行实例在确定窗口内处理 HTTP 请求的数量、服务端失败比例、耗时分布及独立活动请求数。 | 5xx 及超时、取消、写失败或异常中断计服务端失败，同一请求最多一次；4xx 单列，不解析正文推断业务失败。平台共享接口总体归平台运维；租户发布服务的调用统计归 Service 对象授权，二者不混合。 |
 | ingress request rate | 入口请求速率 | Gateway ingress 实例在确定窗口内接收请求的每秒平均数量。 | 与 Backend 处理速率分别解释，不能相加为全局 QPS；活动请求数表示并发，不能由 QPS 代替。 |
 | distributed trace | 分布式追踪 | 由 Trace/Span 与上下文传播描述的一次跨服务调用过程。 | request_id、trace_id 和 execution 身份不互相替代；缺失或采样不能证明没有调用关系。 |
+| execution trace reference | 执行追踪引用 | execution owner 从真实本地 Span 取得并持久保存的有界技术关联值，包含 trace_id、span_id、模块、进程角色、启动实例及开始时刻。 | 不替代 execution 身份、租约或授权；入口引用不可变，最新阶段引用仅保留一条，不进入 Tenant 执行投影。 |
+| trace link | 追踪因果关联 | 一个短阶段 Span 对先前真实 Span 的显式引用，可跨 Trace 表达异步因果。 | 不等于 HTTP Client/Server 调用边；目标仍独立采样、保留和授权，缺失不证明任务未执行。 |
 | trace retention decision | 追踪保留决策 | 收集已结束跨度后，在有界等待和容量内决定是否保留一条追踪。 | 错误和慢请求优先、普通成功概率保留；队列、迟到、限额及故障可能产生缺口，不能承诺全部异常完整保存；与全量 HTTP 质量统计分开。 |
 | observed call relationship | 观测调用关系 | 从明确配置或实际追踪得到的服务、引擎之间的调用关系。 | 注明来源、窗口和覆盖范围；与部署关联、数据血缘分别表达，不能仅凭关系染色确认根因。 |
 

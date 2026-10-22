@@ -5094,7 +5094,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "非委托Platform User；System逐请求裁决所有参与实例；仅有界固定查询，采样结果不代表全量或完整调用关系 | Non-delegated Platform User; System authorizes every participant; bounded sampled evidence does not represent complete traffic",
+                "description": "非委托Platform User；System逐请求裁决所有参与实例及因果Link目标；仅有界固定查询，采样结果不代表全量或完整调用关系 | Non-delegated Platform User; System authorizes every participant and causal Link target; bounded sampled evidence does not represent complete traffic",
                 "produces": [
                     "application/json"
                 ],
@@ -5199,7 +5199,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "所有跨度重新核验实例读取权，关联ID不授予日志正文权限，缺失父跨度不补造调用边 | Reauthorize all participants; correlation IDs grant no log permission and missing parents create no inferred edges",
+                "description": "所有跨度及Link目标重核实例读取权；独立执行阶段与因果Link不生成HTTP调用边，关联ID不授予日志正文权限 | Reauthorize spans and Link targets; execution stages and causal Links do not create HTTP edges or grant log access",
                 "produces": [
                     "application/json"
                 ],
@@ -9090,9 +9090,38 @@
                 }
             }
         },
+        "github_com_addp_monitor_internal_tracequery.Link": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "runtime_instance_id": {
+                    "type": "integer"
+                },
+                "span_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "trace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_tracequery.Span": {
             "type": "object",
             "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
                 "duration_ms": {
                     "type": "number"
                 },
@@ -9108,19 +9137,34 @@
                 "kind": {
                     "type": "string"
                 },
+                "links": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_tracequery.Link"
+                    }
+                },
                 "method": {
                     "type": "string"
                 },
                 "module_name": {
                     "type": "string"
                 },
+                "outcome": {
+                    "type": "string"
+                },
                 "parent_span_id": {
+                    "type": "string"
+                },
+                "phase": {
                     "type": "string"
                 },
                 "role": {
                     "type": "string"
                 },
                 "route": {
+                    "type": "string"
+                },
+                "scope": {
                     "type": "string"
                 },
                 "span_id": {

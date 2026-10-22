@@ -50,10 +50,11 @@ func readExecutionPlan(value models.JSONMap) (*executionPlan, error) {
 	if _, err := commonExecution.DisplayLanguage(&commonExecution.TaskExecution{ExecutionConfig: value}); err != nil {
 		return nil, err
 	}
-	// The execution language is a common snapshot fact, outside the private plan.
+	// Common snapshot facts are outside the private orchestration plan. Invalid
+	// optional tracing cannot invalidate an otherwise valid execution plan.
 	planConfig := make(models.JSONMap, len(value))
 	for key, item := range value {
-		if key != commonExecution.DisplayLanguageKey {
+		if key != commonExecution.DisplayLanguageKey && key != commonExecution.ObservabilityKey {
 			planConfig[key] = item
 		}
 	}

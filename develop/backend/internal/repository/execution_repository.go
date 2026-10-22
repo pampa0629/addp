@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/httptrace"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/gorm"
@@ -90,6 +91,7 @@ func (r *ExecutionRepository) ClaimNext(
 	}
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
+	var stage *httptrace.ExecutionStage
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if taskType != commonExecution.TaskTypeQuery && len(excludedEngineIDs) != 0 {
 			return fmt.Errorf("engine concurrency filter is query-only")
@@ -106,11 +108,21 @@ func (r *ExecutionRepository) ClaimNext(
 		if err != nil || execution == nil {
 			return err
 		}
+		stageCtx, started := queryExecutionStage(ctx, execution, httptrace.PhaseClaim)
+		stage = started
+		if stage.Reference() != nil {
+			metadata := queryStageMetadata(execution.Metadata, stage)
+			if err := commonExecution.UpdateWithLease(stageCtx, tx, *lease, map[string]interface{}{"metadata": metadata}); err != nil {
+				return err
+			}
+			execution.Metadata = metadata
+		}
 		if err := commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"}); err != nil {
 			return err
 		}
 		return updateDevTaskExecutionSummary(tx, execution, commonExecution.ExecutionStatusRunning, now)
 	})
+	endQueryExecutionStage(stage, commonExecution.ExecutionStatusSuccess, err)
 	return execution, lease, err
 }
 
@@ -197,12 +209,27 @@ func (r *ExecutionRepository) CompleteWithLease(
 		execution.Module != commonExecution.ModuleDevelop || !validExecutionTaskType(execution.TaskType) {
 		return fmt.Errorf("Develop execution completion must match its execution lease")
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithEvent(ctx, tx.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, execution.TaskType), lease, status, completedAt, fields); err != nil {
+	var stage *httptrace.ExecutionStage
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stageCtx := ctx
+		if execution.TaskType == commonExecution.TaskTypeQuery {
+			current, err := ownedQueryExecution(ctx, tx, lease)
+			if err != nil {
+				return err
+			}
+			stageCtx, stage = queryExecutionStage(ctx, current, httptrace.PhaseTerminal)
+			fields, err = queryCompletionFields(current.Metadata, fields, stage)
+			if err != nil {
+				return err
+			}
+		}
+		if err := commonExecution.CompleteWithEvent(stageCtx, tx.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, execution.TaskType), lease, status, completedAt, fields); err != nil {
 			return err
 		}
 		return updateDevTaskExecutionSummary(tx, execution, status, completedAt)
 	})
+	endQueryExecutionStage(stage, status, err)
+	return err
 }
 
 // RecoverExpired fails closed. Relation-result queries may already have
@@ -210,6 +237,7 @@ func (r *ExecutionRepository) CompleteWithLease(
 // a fresh target instead of replaying the same execution.
 func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
+	var stages []*httptrace.ExecutionStage
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
 			Module: commonExecution.ModuleDevelop, TaskTypes: executionTaskTypes,
@@ -230,10 +258,15 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 					"message": "Develop execution lease expired; remote effects are not replayed automatically",
 				},
 			}
+			stageCtx, stage := queryExecutionStage(ctx, &item, httptrace.PhaseTerminal)
+			stages = append(stages, stage)
+			if stage.Reference() != nil {
+				fields["metadata"] = queryStageMetadata(item.Metadata, stage)
+			}
 			if item.StartedAt != nil {
 				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
 			}
-			if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpiredWithEvent(stageCtx, tx, lease, now, fields); err != nil {
 				return err
 			}
 			if err := updateDevTaskExecutionSummary(tx, &item, commonExecution.ExecutionStatusFailed, now); err != nil {
@@ -243,6 +276,9 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 		}
 		return nil
 	})
+	for _, stage := range stages {
+		endQueryExecutionStage(stage, commonExecution.ExecutionStatusFailed, err)
+	}
 	return count, err
 }
 

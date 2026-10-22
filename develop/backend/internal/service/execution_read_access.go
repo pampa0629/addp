@@ -94,6 +94,7 @@ func applyScriptExecutionActor(ctx context.Context, execution *commonExecution.T
 
 func professionalExecutionResponse(execution *commonExecution.TaskExecution) *models.ExecutionWithDevTask {
 	config := maps.Clone(execution.ExecutionConfig)
+	delete(config, commonExecution.ObservabilityKey)
 	if inputs, ok := mapValue(config["inputs"]); ok {
 		inputs = maps.Clone(inputs)
 		delete(inputs, "query_source_digest")

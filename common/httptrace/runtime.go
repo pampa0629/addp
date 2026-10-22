@@ -42,6 +42,8 @@ type Deployment struct {
 }
 type Runtime struct {
 	provider *sdk.TracerProvider
+	module   string
+	instance string
 	role     string
 	queue    *processor
 }
@@ -252,10 +254,35 @@ func StartOptional(module, role string) func() {
 }
 
 func newRuntime(module, role, id string, exporter sdk.SpanExporter) *Runtime {
-	q := newProcessor(exporter)
-	tp := sdk.NewTracerProvider(sdk.WithSampler(sdk.AlwaysSample()), sdk.WithResource(resource.NewSchemaless(attribute.String("service.name", module), attribute.String("service.instance.id", id), attribute.String("addp.role", role))), sdk.WithSpanLimits(sdk.SpanLimits{AttributeCountLimit: 32, AttributeValueLengthLimit: 256, EventCountLimit: 0, LinkCountLimit: 8}), sdk.WithSpanProcessor(q))
-	return &Runtime{provider: tp, role: role, queue: q}
+	identity := resource.NewSchemaless(attribute.String("service.name", module), attribute.String("service.instance.id", id), attribute.String("addp.role", role))
+	q := newProcessor(&identityExporter{base: exporter, identity: identity})
+	tp := sdk.NewTracerProvider(sdk.WithSampler(sdk.AlwaysSample()), sdk.WithResource(identity), sdk.WithRawSpanLimits(sdk.SpanLimits{AttributeCountLimit: 32, AttributeValueLengthLimit: 256, EventCountLimit: 0, AttributePerEventCountLimit: 0, LinkCountLimit: 2, AttributePerLinkCountLimit: 4}), sdk.WithSpanProcessor(q))
+	r := &Runtime{provider: tp, module: module, instance: id, role: role, queue: q}
+	return r
 }
+
+// identityExporter is the sole wire-resource boundary. SDK WithResource merges
+// OTEL_RESOURCE_ATTRIBUTES even with an explicit Resource; deployment identity
+// therefore must be projected again without changing SDK/global environment.
+type identityExporter struct {
+	base     sdk.SpanExporter
+	identity *resource.Resource
+}
+type identitySpan struct {
+	sdk.ReadOnlySpan
+	identity *resource.Resource
+}
+
+func (s identitySpan) Resource() *resource.Resource { return s.identity }
+func (e *identityExporter) ExportSpans(ctx context.Context, spans []sdk.ReadOnlySpan) error {
+	projected := make([]sdk.ReadOnlySpan, len(spans))
+	for i, span := range spans {
+		projected[i] = identitySpan{ReadOnlySpan: span, identity: e.identity}
+	}
+	return e.base.ExportSpans(ctx, projected)
+}
+func (e *identityExporter) Shutdown(ctx context.Context) error { return e.base.Shutdown(ctx) }
+
 func tracer() trace.Tracer {
 	if r := current.Load(); r != nil {
 		return r.provider.Tracer("addp.http")

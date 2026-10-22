@@ -237,6 +237,9 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	if mode != "append" && mode != "overwrite" {
 		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("write_mode must be append or overwrite"), "develop.query.runtime_inputs_invalid")
 	}
+	if err := s.queries.RecordQueryDispatch(ctx, execution, lease); err != nil {
+		return err
+	}
 	timeout := devTask.Timeout
 	writeCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -341,6 +344,9 @@ func (s *QueryExecutionService) executeAndComplete(
 	roles, roleErr := s.executor.sqlEngine.executionQueryRoles(ctx, execution, lease, authorization, devTask)
 	if roleErr != nil {
 		return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, roleErr))
+	}
+	if err := s.queries.RecordQueryDispatch(ctx, execution, lease); err != nil {
+		return err
 	}
 	queryCtx, capture := protection.WithQueryCapture(ctx, dataprotection.SubjectReference{Type: "user", ID: strconv.FormatInt(authorization.ActorPrincipalID, 10)})
 	capture.Roles = roles

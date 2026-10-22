@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/httptrace"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
@@ -133,7 +134,7 @@ func (e *Executor) submitTaskProviderStep(ctx context.Context, step *models.Step
 		return result, err
 	}
 	result.ErrorCode = "orchestrator.execution.dispatch_uncertain"
-	httpClient := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	httpClient := &http.Client{Transport: httptrace.Transport(nil, provider.ResolvedBaseURL), Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		result.Status = "failed"
