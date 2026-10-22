@@ -13,6 +13,8 @@ Service 负责查询、图查询和瓦片服务发布，以及第三方服务注
 | Console 页面、注册表单与模块协作 | [管理界面专题](docs/architecture/管理界面与模块协作.md) |
 | 第三方注册、代理、直连与未闭合能力 | [外部服务架构](docs/外部服务架构设计.md) |
 | 查询/要素、瓦片、注册代理的验证方法 | [API 测试指南](docs/API测试指南.md) |
+| 浏览器直连：原始端点、上游认证、CORS 与实际客户端验收 | [原始端点与浏览器直连核对](docs/testing/注册服务与代理.md#原始端点与浏览器直连核对) |
+| 注册代理：Backend/Gateway 入口、消费授权与上游响应验证 | [代理读取与错误](docs/testing/注册服务与代理.md#代理读取与错误) |
 | 标准门禁、运行证据与排障 | [验收方法与排查](docs/testing/验收方法与排查.md) |
 
 ## 🎯 核心功能
@@ -55,7 +57,7 @@ bash scripts/dev/start.sh -service
 
 管理 API 前缀为 `/api/v1/service`，具体方法、路径与 Permission 以[模块契约](CLAUDE.md#核心-api)及 [Service Router](backend/internal/api/router.go)为准。查询/要素、瓦片与注册服务请求统一沿[API 测试指南](docs/API测试指南.md)，不在本页复制请求模板。
 
-注册公开代理单独挂载 `ANY /api/service/registered/proxy/:id/*path`；当前 Gateway 未转发该路径，DTO 中的代理地址不证明统一入口可达，也不继承管理 API 的 Tenant 和 Permission 保证。直连与跨模块验证见[代理读取与错误](docs/testing/注册服务与代理.md#代理读取与错误)。
+注册公开代理单独挂载 `ANY /api/service/registered/proxy/:id/*path`；当前 Gateway 未转发该路径，DTO 中的代理地址不证明统一入口可达，也不继承管理 API 的 Tenant 和 Permission 保证。Backend 直连代理与统一入口的验证见[代理读取与错误](docs/testing/注册服务与代理.md#代理读取与错误)。
 
 ## 🏗️ 数据库设计
 

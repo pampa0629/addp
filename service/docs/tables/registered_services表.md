@@ -29,6 +29,10 @@
 | `created_at` | `time.Time` | 创建时间。 |
 | `updated_at` | `time.Time` | 更新时间。 |
 
+`endpoint_url` 与可选的 `health_check_url` 是持久字段，后者用于专用健康探测，不是另一个消费端点。管理 DTO 的 `endpoint_url` 和 `endpoints.original` 均取自保存的上游端点；`endpoints.proxy` 则由启动时注入的 `cfg.GatewayURL`、代理路径和注册服务 ID 拼接。整个 `endpoints` 是响应投影，不保存为本表的列，也不因投影成功而验证网络或消费授权。
+
+原始地址的展示、浏览器上游认证和 CORS 验收统一见[原始端点与浏览器直连核对](../testing/注册服务与代理.md#原始端点与浏览器直连核对)；代理地址的环境配置来源、Gateway 转发缺口、Backend 直连与公开入口验证统一见[代理读取与错误](../testing/注册服务与代理.md#代理读取与错误)。DTO 返回地址或认证配置提示均不表示浏览器获得上游凭据；各入口须以实际身份和取数结果分别验收。
+
 ## 索引与约束
 
 模型声明的索引：`idx_registered_services_metadata_gin`、`idx_registered_services_status`、`idx_registered_services_tenant`、`idx_registered_services_type`、`unique_registered_service_name`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
