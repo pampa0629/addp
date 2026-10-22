@@ -164,6 +164,9 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 			if e == nil && c.Count == count {
 				return c
 			}
+			if e == nil && c.Count > count {
+				t.Fatalf("archive passed the expected transaction checkpoint: got %d records, expected %d", c.Count, count)
+			}
 			select {
 			case e := <-finished:
 				t.Fatalf("collector exited before checkpoint: %v", e)
@@ -185,33 +188,57 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		}
 	}
 	start(writer)
+	// Conn.Begin does not create an independent transaction on an already
+	// active connection. Keep both transactions on different real backends so
+	// committing b cannot also commit a's earlier row.
+	other, e := pgx.Connect(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer other.Close(context.Background())
+	if other.PgConn().PID() == admin.PgConn().PID() {
+		t.Fatal("commit-order fixture requires two independent PostgreSQL backends")
+	}
 	a, e := admin.Begin(ctx)
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer a.Rollback(context.Background())
-	b, e := admin.Begin(ctx)
+	b, e := other.Begin(ctx)
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer b.Rollback(context.Background())
-	if _, e = a.Exec(ctx, insert, "iam.archive_earlier_id_later_commit"); e != nil {
+	var earlierID, laterID int64
+	if e = a.QueryRow(ctx, insert+" RETURNING id", "iam.archive_earlier_id_later_commit").Scan(&earlierID); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = b.Exec(ctx, insert, "iam.archive_later_id_earlier_commit"); e != nil {
+	if e = b.QueryRow(ctx, insert+" RETURNING id", "iam.archive_later_id_earlier_commit").Scan(&laterID); e != nil {
 		t.Fatal(e)
+	}
+	if earlierID >= laterID {
+		t.Fatal("commit-order fixture did not allocate the earlier ID first")
 	}
 	if e = b.Commit(ctx); e != nil {
 		t.Fatal(e)
 	}
-	wait(initialCount + 1)
+	first := wait(initialCount + 1)
+	last := first.Batches[len(first.Batches)-1]
+	if len(last.Rows) != 1 || *last.Rows[0]["event_name"] != "iam.archive_later_id_earlier_commit" {
+		t.Fatal("first committed batch did not contain only the later ID while the earlier transaction remained open")
+	}
 	if e = p.Collect(ctx, writer, nil); e == nil {
 		t.Fatal("a second collector acquired the active replication slot")
 	}
 	if e = a.Commit(ctx); e != nil {
 		t.Fatal(e)
 	}
-	wait(initialCount + 2)
+	second := wait(initialCount + 2)
+	last = second.Batches[len(second.Batches)-1]
+	if len(last.Rows) != 1 || *last.Rows[0]["event_name"] != "iam.archive_earlier_id_later_commit" {
+		t.Fatal("later commit lost the earlier ID or failed to preserve transaction order")
+	}
+	t.Log("two independent PostgreSQL backends committed the higher ID first while the lower ID stayed uncommitted; both archive checkpoints preserved actual commit order")
 	rolled, e := admin.Begin(ctx)
 	if e != nil {
 		t.Fatal(e)
