@@ -340,3 +340,14 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 首轮 Monitor 为 273 项浏览器通过、两项新用例失败：测试错误要求手动刷新保留未提交草稿，既有行为是手动刷新恢复已提交条件；改为断言选择不提交，并由独立自动刷新用例验证草稿隔离，未改产品交互。标准入口定向两项通过后，完整 Monitor 门禁通过，首轮与定向日志为 `/tmp/addp-service-reason-monitor.log`、`/tmp/addp-service-reason-targeted.log`。首轮 System 在发现运行日志仍引用移走的译名后精确中断当次独立门禁，不计通过；补齐消费者与唯一所有权回归后沿相同入口完整重跑通过，未停止个人服务。初轮日志 `/tmp/addp-service-reason-system.log`，保留中断状态与当时已通过项，不扩大为完整验收。
 
 最终仅为新窄屏截图增加“下拉弹层已关闭”的断言，再沿 `npm run test:e2e -- e2e/process-resources.spec.js --grep 'service stop reasons'` 重跑中英两项退出 0，日志 `/tmp/addp-service-reason-visual-final.log`。已检查稳定截图 `/tmp/addp-service-reason-visuals/service-stop-reason-{zh-cn,en}.png`；18 项最终代码／测试输入与成功验证副本逐字节一致，三项规范及能力摘要同步更新。四组成功浏览器门禁和最终截图专项的输出目录、精确端口租约均独立核对已清理；失败／中断证据按标准保留在临时目录。本批为本地 T0／T1／T3 与构建，不计正式身份 Hosted T4；CI 和 Hosted 等专门会话回传，未查询、调度、设置定时或重启个人服务。
+
+
+### 主机固定窗口探针的准备与执行期限
+
+2026-10-22，专门 CI 会话回传 [6e55a4fad 的 host-resources / Job 119600712786](https://github.com/pampa0629/addp/actions/runs/39708924861/job/119600712786) 实际失败。原始日志 `/tmp/addp-ci-20261022-030015/job-119600712786.log` 显示同一 Python 60 秒包住依赖下载、Go 编译及真实执行：命令从 02:53:52 UTC 开始，约 02:54:46 才进入首项 Go 测试；DiskIO、Disk、Network、HTTP、Process、CPU、Filesystem 七项已通过，FilesystemInodes 开始后被外层终止。不能称测试未启动或产品断言失败。当前源码未有替代修复，现将同一八项选择器改为当次私有目录 `go test -c` 准备最多 180 秒，再直接执行二进制，Go／外层真实执行上限均为原有效 60 秒；保持 count=1、原八项断言、后续故障／告警／清理及 Job 20 分钟。构建失败／超时禁止运行旧产物，执行超时不重试，不改产品公式、窗口或权限。
+
+沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 增加确定性红绿验证：模拟 70 秒冷准备与 8 秒执行，以及构建失败／超时、旧产物拒绝、实际执行超时不重试。原合并计时在配置阶段出现三项失败、一项错误，日志 `/tmp/addp-host-window-budget-red.log`。随后配置回归暴露旧选择器源码约束仍要求单个裸模式字面量，保留唯一选择目录再组合二进制参数后，最终 48 项配置回归全部通过；中间失败日志 `/tmp/addp-host-window-budget-green.log`，未计通过。T2 CI 登记检查通过，现有 Make、原 probe／配置回归的输入登记与三分组 Release 已覆盖，无需新脚本或 workflow。
+
+真实本地 T2 在冻结基线 `a190663c261a7e63ff00885d006138571c41610e` 仅叠加本方三项输入，以 `GOMAXPROCS=2 GOFLAGS=-p=2` 调用同一标准入口，**未通过**，日志 `/tmp/addp-host-window-budget-final.log`。这次编译已独立完成，但首项 DiskIO 的 Docker promtool 调用在既有 30 秒 Context 内未完成（signal killed）；随后 Disk／Network 分别在 3.26／13.82 秒通过，HTTP 开始后达到独立执行的 60 秒上限。与云端的冷准备占用预算分别记录；伴随观测为本机同时运行其他门禁、18 个逻辑核且 load average 51.19／134.64／115.96，尚未证明它是执行变慢的唯一根因，未放宽期限或盲目重复运行。该次初始清理遇到异步一次性 promtool 资源仍占用网络／卷，不能计零残留；仅对精确项目 `addp-metrics-t2-d2a7516da2b74f4ab03fb83404308598` 复用原门禁的 compose／cleanup 函数完成后续清理，独立读取容器、网络、卷均为空，日志 `/tmp/addp-host-window-owned-cleanup-final.log`。首次复用清理因缺少当次 TLS 路径参数而未执行 Compose，补齐清理私有路径后成功；不接触个人服务、配置或其他项目。
+
+三个最终输入与隔离副本逐字节一致；指纹、日志摘要及清理核验记录为 `/tmp/addp-host-window-budget-audit.json`。本轮仅将计时修复和 48 项 T0 回归落地，不计完整本地 T2、原生 Linux 或 Hosted T4 通过；新输入原生 Linux 结果继续由专门 CI 会话回传，没有查询、重跑或设置定时。来信同时附带的 PostgreSQL 来源 `6d42e4621` 三次真实准入成功及退出清零已核对原始日志哈希，与 P0 已记录的更新 `c7ef8ea0e` 三分组通过不冲突，不重跑或重复回填 PG，既有专业 T4 边界保留。

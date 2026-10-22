@@ -140,12 +140,23 @@ rejected(source + '/metrics', source_anonymous)
 rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
-subprocess.run(['go', 'test', './internal/resourcequery', '-run',
-                '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
-               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
-               env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
-               check=True, timeout=60)
+def check_resource_windows():
+    backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
+    binary = WORK / 'resource-windows.test'
+    environment = dict(os.environ, GOWORK='off')
+    selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$'
+    print('Metrics window T2: build test binary (preparation limit 180s)', flush=True)
+    subprocess.run(['go', 'test', '-c', './internal/resourcequery', '-o', str(binary)],
+                   cwd=backend, env=environment, check=True, timeout=180)
+    print('Metrics window T2: execute prepared checks (Go/process limit 60s)', flush=True)
+    subprocess.run([str(binary), '-test.run=' + selection,
+                    '-test.count=1', '-test.timeout=60s', '-test.v'],
+                   cwd=backend / 'internal/resourcequery',
+                   env=dict(environment, ADDP_METRICS_QUERY_INTEGRATION='1'),
+                   check=True, timeout=60)
 
+
+check_resource_windows()
 
 flags = api('status/flags')
 assert flags['storage.tsdb.retention.time'] == '1w', flags

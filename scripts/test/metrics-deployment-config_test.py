@@ -30,6 +30,66 @@ probe_spec.loader.exec_module(postgres_probe)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def resource_window_check(self, work):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(path.read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'check_resource_windows')
+        namespace = {'WORK': work, 'Path': Path, '__file__': str(path), 'os': os, 'subprocess': subprocess}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        return namespace['check_resource_windows']
+
+    def test_cold_resource_window_build_does_not_consume_execution_deadline(self):
+        calls = []
+
+        def run(command, **options):
+            calls.append((command, options))
+            # A cold preparation takes 70s; the eight real checks take 8s.
+            elapsed = 70 if command[0] == 'go' else 8
+            if elapsed > options['timeout']:
+                raise subprocess.TimeoutExpired(command, options['timeout'])
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(subprocess, 'run', side_effect=run):
+            work = Path(directory)
+            self.resource_window_check(work)()
+        self.assertEqual(len(calls), 2)
+        self.assertIn('-c', calls[0][0])
+        self.assertEqual(calls[0][1]['timeout'], 180)
+        self.assertEqual(calls[1][1]['timeout'], 60)
+        self.assertEqual(Path(calls[1][0][0]).parent, work)
+        self.assertIn('-test.timeout=60s', calls[1][0])
+        self.assertIn('-test.count=1', calls[1][0])
+        self.assertIn('-test.run=^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', calls[1][0])
+        self.assertEqual(calls[1][1]['cwd'], ROOT / 'monitor/backend/internal/resourcequery')
+        self.assertTrue(all(options['check'] for _, options in calls))
+        self.assertEqual(calls[1][1]['env']['ADDP_METRICS_QUERY_INTEGRATION'], '1')
+
+    def test_failed_resource_window_build_never_runs_a_stale_binary(self):
+        for failure in [subprocess.CalledProcessError(1, ['go', 'test', '-c']), subprocess.TimeoutExpired(['go', 'test', '-c'], 180)]:
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                (work / 'resource-windows.test').write_text('stale executable')
+                with mock.patch.object(subprocess, 'run', side_effect=failure) as run:
+                    with self.assertRaises(type(failure)):
+                        self.resource_window_check(work)()
+                self.assertEqual(run.call_count, 1)
+                self.assertIn('-c', run.call_args.args[0])
+
+    def test_resource_window_execution_timeout_stays_failed_without_retry(self):
+        calls = []
+
+        def run(command, **options):
+            calls.append(command)
+            if len(calls) == 1:
+                return subprocess.CompletedProcess(command, 0)
+            raise subprocess.TimeoutExpired(command, options['timeout'])
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(subprocess, 'run', side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired) as error:
+                self.resource_window_check(Path(directory))()
+        self.assertEqual(error.exception.timeout, 60)
+        self.assertEqual(len(calls), 2)
+
     def test_cold_admission_build_does_not_consume_the_test_execution_deadline(self):
         calls = []
 
