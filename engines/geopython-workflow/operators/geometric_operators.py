@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import shapely
 from collections import Counter
+from itertools import pairwise
+from math import fsum, hypot
 from numbers import Real
 from typing import List
 from .base import (
@@ -278,7 +280,14 @@ def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDat
             # when a source retraces it or has overlapping multipart members.
             shared = shapely.union_all(lines)
             overlap_geometry = shapely.normalize(shapely.multilinestrings(shapely.get_parts(shared)))
-            length = shapely.length(overlap_geometry)
+            # Hypot avoids squaring finite distances into zero/infinity;
+            # fsum keeps the metric independent of multipart summation order.
+            try:
+                length = fsum(hypot(end[0] - start[0], end[1] - start[1])
+                              for line in overlap_geometry.geoms
+                              for start, end in pairwise(line.coords))
+            except OverflowError as exc:
+                raise ValueError("overlap requires valid lines with finite positive Float64 length") from exc
             if not np.isfinite(length) or length <= 0 or not shapely.is_valid(overlap_geometry):
                 raise ValueError("overlap requires valid lines with finite positive Float64 length")
             left.append(a)

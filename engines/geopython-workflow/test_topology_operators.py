@@ -149,10 +149,12 @@ def test_line_overlap_rejects_nonfinite_output_length():
             line_overlap(frame)
 
 
-def test_line_overlap_rejects_underflowed_length_instead_of_hiding_nonempty_intersection():
-    frame = line_overlap_frame([LineString([(0, 0), (2**-600, 0)])] * 2)
-    with pytest.raises(ValueError, match="finite positive"):
-        line_overlap(frame)
+@pytest.mark.parametrize("length", [2**-600, 1e200])
+def test_line_overlap_retains_representable_lengths_without_squared_distance_underflow_or_overflow(length):
+    frame = line_overlap_frame([LineString([(0, 0), (length, 0)])] * 2)
+    result = line_overlap(frame)
+    assert result.overlap_length.tolist() == [length]
+    assert list(result.geometry.iloc[0].geoms[0].coords) == [(0, 0), (length, 0)]
 
 
 def test_line_overlap_matches_independent_interval_pair_oracle():
