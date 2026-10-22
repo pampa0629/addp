@@ -21,6 +21,24 @@ sys.modules[SPEC.name] = SUITE
 SPEC.loader.exec_module(SUITE)
 
 
+def fake_model_download_proof(model):
+    proof = SUITE.model_download_expectation(model)
+    if 'download_bundle' in proof:
+        proof['download_bundle'].update(size_bytes=1024, sha256='0' * 64)
+    return proof
+
+
+def obj_bundle_bytes():
+    import io, zipfile
+    result = io.BytesIO()
+    files = {'model.obj': b'mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n',
+             'model.mtl': b'newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n',
+             'texture.png': (SCRIPT.parents[2] / 'business/fixtures/manager/addp_online_max_texture.png').read_bytes()}
+    with zipfile.ZipFile(result, 'w', compression=zipfile.ZIP_DEFLATED) as output:
+        for name,raw in files.items(): output.writestr(name,raw)
+    return result.getvalue()
+
+
 def response(status, payload=None, *, raw=b""):
     return SUITE.Response(status, payload if payload is not None else {}, {}, raw)
 
@@ -372,7 +390,7 @@ class FakeGatewayClient:
             if "/fbx/" in locator:
                 return response(200, raw=(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
             if "/obj/" in locator:
-                return response(200, raw=b'mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
+                return SUITE.Response(200, {}, {'content-type':'application/zip'}, obj_bundle_bytes())
         if parsed.path == "/api/v1/manager/tasks" and method == "GET":
             rows = [{"id": model["task_id"], "config": {"source": {"item_fingerprint": model["fingerprint"]}}}
                     for model in self.models.values() if model["task_exists"]]
@@ -644,6 +662,45 @@ class ManagedArtifactPhysicalEvidenceTest(unittest.TestCase):
                 self.assertFalse((Path(directory) / 'manager-artifact-physical-pdf-deleted.json').exists())
 
 
+class ModelBundleDownloadTest(unittest.TestCase):
+    def test_browser_python_binding_checks_the_actual_downloaded_zip(self):
+        import re, subprocess
+        script = (SCRIPT.parents[2] / 'console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js').read_text()
+        code = re.search(r"const code = `([^`]+)`", script).group(1)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'model.zip'
+            path.write_bytes(obj_bundle_bytes())
+            args = ['python3', '-c', code, str(SCRIPT.parents[2]), str(path), json.dumps(SUITE.MESH_SOURCE_FACTS['obj']['download_members'])]
+            node = "import {execFileSync} from 'node:child_process'; process.stdout.write(execFileSync(process.argv[1], JSON.parse(process.argv[2]), {encoding:'utf8'}));"
+            result = subprocess.run(['node', '--input-type=module', '-e', node, args[0], json.dumps(args[1:])], cwd=SCRIPT.parents[2] / 'console/frontend', capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['members'], SUITE.MESH_SOURCE_FACTS['obj']['download_members'])
+
+    def test_logical_obj_bundle_is_verified_without_treating_zip_as_primary(self):
+        import io, zipfile, hashlib
+        files = {'model.obj': b'mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n',
+                 'model.mtl': b'newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n',
+                 'texture.png': (SCRIPT.parents[2] / 'business/fixtures/manager/addp_online_max_texture.png').read_bytes()}
+        expected = {name: {'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()} for name,raw in files.items()}
+        def archive(members):
+            result=io.BytesIO()
+            with zipfile.ZipFile(result, 'w', compression=zipfile.ZIP_DEFLATED) as output:
+                for name,raw in members: output.writestr(name,raw)
+            return result.getvalue()
+        raw=archive(files.items())
+        source={'format':'obj', **SUITE.MESH_SOURCE_FACTS['obj'], 'download_members':expected, 'locator':'fixture'}
+        client=type('Client',(),{'request':lambda *_args: SUITE.Response(200,{}, {'Content-Type':'application/zip'},raw)})()
+        SUITE.verify_source_download(client,source)
+        proof=SUITE.validate_model_bundle(raw,expected)
+        self.assertEqual(proof['members'],expected)
+        self.assertEqual(proof['sha256'],hashlib.sha256(raw).hexdigest())
+        for members in (list(files.items())[:-1], [*files.items(),('extra.txt',b'extra')],
+                        [*files.items(),('model.obj',files['model.obj'])],
+                        [(name,value+b'changed' if name=='texture.png' else value) for name,value in files.items()]):
+            with self.assertRaises(SUITE.SuiteError):SUITE.validate_model_bundle(archive(members),expected)
+        with self.assertRaises(SUITE.SuiteError):SUITE.validate_model_bundle(files['model.obj'],expected)
+
+
 class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def setUp(self):
         def physical(repository, environment, action, request):
@@ -763,14 +820,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v15",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
-                    "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
+                    "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({**fake_model_download_proof(model), **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v15",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -788,7 +845,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "model_generation_requests": 0,
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
-            "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
+            "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **(fake_model_download_proof(model) if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
             "vector_exchange": [{**source, "metadata_verified": True, "ordinary_refresh": True,
                 "reopened": True, "source_unchanged": True, "download_sha256": source["sha256"],
                 "temporary_reset_verified": source["format"] == "topojson", "resource_switch_verified": source["format"] == "topojson",
@@ -1160,9 +1217,10 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             original = client._request
             def changed(method, path, body, headers):
                 if path.startswith("/api/v1/manager/downloads/file?"):
-                    return response(200, raw=b'changed')
+                    return SUITE.Response(200, {}, {'content-type': 'application/zip'}, b'changed')
                 return original(method, path, body, headers)
-            with mock.patch.object(client, "_request", side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, "original source bytes changed"):
+            message = "model source ZIP is invalid or corrupt" if fmt == "obj" else "original source bytes changed"
+            with mock.patch.object(client, "_request", side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, message):
                 SUITE.verify_mesh_source(client, fixture)
 
     def test_colored_fbx_rejects_wrong_identity_bytes_or_existing_resources(self):
@@ -1188,6 +1246,22 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 client._request = changed
                 with self.assertRaises(SUITE.SuiteError):
                     SUITE.prepare_basic_fbx_source(client, 27, "addp-online")
+
+    def test_obj_bundle_browser_proof_rejects_missing_members_and_legacy_schema(self):
+        for phase in ('generation-entry', 'cached-preview'):
+            evidence = {'execution_id':'execution-1','item_id':91,'output_name':'source.copc.laz',
+                'pptx_item_id':92,'pptx_page_count':3,'models':self.browser_models(),'raster':self.browser_raster(),
+                'delimited':self.browser_delimited(),'workbook':self.browser_workbook(),
+                'structured_json':self.browser_structured_json(),'trajectories':self.browser_trajectories(),
+                'vector_exchange':self.browser_vector_exchange(),'phase':phase}
+            report=self.browser_report({'ADDP_ONLINE_TEST_RUN_ID':'run-1'},evidence)
+            for change in (lambda r:r.update(schema_version='addp.manager-internal-artifact-lineage-browser/v14'),
+                    lambda r:r['models'][-1].pop('download_bundle'),
+                    lambda r:r['models'][-1]['download_bundle']['members'].pop('texture.png'),
+                    lambda r:r['models'][-1]['download_bundle'].update(sha256='wrong'),
+                    lambda r:r['models'][-1]['download_bundle'].update(size_bytes=65537)):
+                bad=copy.deepcopy(report);change(bad)
+                with self.assertRaises(SUITE.SuiteError):SUITE.validate_browser_report(bad,run_id='run-1',**evidence)
 
     def test_colored_fbx_browser_proofs_are_required_in_both_phases(self):
         for phase in ("generation-entry", "cached-preview"):
@@ -1874,12 +1948,16 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_WORKBOOK_JSON"]), evidence["workbook"])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_STRUCTURED_JSON"]), evidence["structured_json"])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON"]), evidence["trajectories"])
-                Path(directory, "manager-internal-artifact-lineage-browser-cached-preview.json").write_text(json.dumps(self.browser_report(environment, evidence)))
+                report = self.browser_report(environment, evidence)
+                raw = obj_bundle_bytes()
+                Path(directory, 'model-obj-source-cached-preview.zip').write_bytes(raw)
+                report['models'][-1]['download_bundle'] = SUITE.validate_model_bundle(raw, SUITE.MESH_SOURCE_FACTS['obj']['download_members'])
+                Path(directory, "manager-internal-artifact-lineage-browser-cached-preview.json").write_text(json.dumps(report))
                 return mock.Mock(returncode=0)
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v14")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v15")
 
 
 if __name__ == "__main__":

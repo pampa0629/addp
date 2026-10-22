@@ -1647,7 +1647,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'MODEL_FORMATS MESH_SOURCE_FACTS FBX_BASIC_SOURCE prepare_basic_fbx_source fbx_basic_preview verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources TRAJECTORY_SOURCES trajectory_sources VECTOR_EXCHANGE_SOURCES vector_exchange_sources addp.manager-internal-artifact-lineage/v14 "header_mode" "tested_has_header": False first_record_verified ordinary_refresh_preserved verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging versions = verify_index_source_versions index-source-versions.json addp.index-source-versions/v2 storage in ("nfs", "minio") verify_manager_execution_events addp.manager-execution-events/v1 manager-execution-events.json\n',
+            'MODEL_FORMATS MESH_SOURCE_FACTS FBX_BASIC_SOURCE prepare_basic_fbx_source fbx_basic_preview verify_mesh_source validate_model_bundle download_bundle validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources TRAJECTORY_SOURCES trajectory_sources VECTOR_EXCHANGE_SOURCES vector_exchange_sources addp.manager-internal-artifact-lineage/v15 "header_mode" "tested_has_header": False first_record_verified ordinary_refresh_preserved verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging versions = verify_index_source_versions index-source-versions.json addp.index-source-versions/v2 storage in ("nfs", "minio") verify_manager_execution_events addp.manager-execution-events/v1 manager-execution-events.json\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -1659,7 +1659,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible source_model_loaded verifyBasicColoredFBX basic_preview_source basic_preview: basicPreviewProof vertex_colors_verified model-preview-support.js "
             "model_generation_requests anonymous_refresh_401 failed_business_responses "
-            "addp.manager-internal-artifact-lineage-browser/v14 header_mode: applyHeaderMode(false) verifyHeaderlessPage(20, 6) applyHeaderMode(true) ADDP_ONLINE_MANAGER_DELIMITED_JSON "
+            "addp.manager-internal-artifact-lineage-browser/v15 header_mode: applyHeaderMode(false) verifyHeaderlessPage(20, 6) applyHeaderMode(true) ADDP_ONLINE_MANAGER_DELIMITED_JSON "
             "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256 ADDP_ONLINE_MANAGER_WORKBOOK_JSON verifyWorkbook .container-preview workbook: workbookEvidence unknown_total_verified refresh_preserved_page refresh_preserved_empty_sheet ADDP_ONLINE_MANAGER_STRUCTURED_JSON verifyStructuredJSON structured_json: structuredEvidence content_verified table_verified geometry_verified source_crs source_srid ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON verifyTrajectoryRange trajectories: trajectoryEvidence ADDP_ONLINE_MANAGER_VECTOR_EXCHANGE_JSON verifyVectorExchange vector_exchange: vectorEvidence layer_proofs temporary_reset_verified\n",
             encoding="utf-8",
         )
@@ -1680,6 +1680,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (hosted, "start_online_model3d_runtime", "Hosted profile"),
             (hosted, "bash business/scripts/online-manager-nfs-fixture.sh start", "Hosted profile"),
             (hosted, "bash business/scripts/online-manager-nfs-fixture.sh stop", "Hosted profile"),
+            (owner, "validate_model_bundle", "owner contract"),
+            (owner, "download_bundle", "owner contract"),
             (owner, "verify_content_boundaries", "owner contract"),
             (owner, "boundaries += verify_content_boundaries", "owner contract"),
             (owner, "content-boundaries.json", "owner contract"),
@@ -1726,7 +1728,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "FBX_BASIC_SOURCE", "owner contract"),
             (owner, "prepare_basic_fbx_source", "owner contract"),
             (owner, "fbx_basic_preview", "owner contract"),
-            (owner, "addp.manager-internal-artifact-lineage/v14", "owner contract"),
+            (owner, "addp.manager-internal-artifact-lineage/v15", "owner contract"),
             (owner, '"header_mode"', "owner contract"),
             (owner, '"tested_has_header": False', "owner contract"),
             (owner, "first_record_verified", "owner contract"),
@@ -1745,7 +1747,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (browser, "vertex_colors_verified", "browser contract"),
             (browser, "model-preview-support.js", "browser contract"),
             (browser, ".model-preview", "browser contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v14", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v15", "browser contract"),
             (browser, "header_mode:", "browser contract"),
             (browser, "applyHeaderMode(false)", "browser contract"),
             (browser, "verifyHeaderlessPage(20, 6)", "browser contract"),
@@ -1786,12 +1788,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.check_registration(self.repository)
                 file.write_text(original, encoding="utf-8")
         for file, version, reason in (
-            (owner, "addp.manager-internal-artifact-lineage/v14", "owner contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v14", "browser contract"),
+            (owner, "addp.manager-internal-artifact-lineage/v15", "owner contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v15", "browser contract"),
         ):
             with self.subTest(legacy_version=version):
                 original = file.read_text(encoding="utf-8")
-                file.write_text(original.replace(version, version.replace("/v14", "/v13")), encoding="utf-8")
+                file.write_text(original.replace(version, version.replace("/v15", "/v14")), encoding="utf-8")
                 with self.assertRaisesRegex(CHECK.RegistrationError, reason):
                     CHECK.check_registration(self.repository)
                 file.write_text(original, encoding="utf-8")

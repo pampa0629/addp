@@ -5,6 +5,8 @@ import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/s
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
 const requiredNames = [
@@ -39,16 +41,43 @@ function environment() {
 }
 
 async function verifyOriginalDownload(page, frame, source) {
+  const bundleResponse = source.download_members ? page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/v1/manager/downloads/file' && url.searchParams.get('locator') === source.locator
+  }) : null
+  bundleResponse?.catch(() => {})
   const downloaded = page.waitForEvent('download')
   await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
   const download = await downloaded
   const path = await download.path()
   expect(path).not.toBeNull()
   const bytes = readFileSync(path)
+  if (source.download_members) {
+    const response = await bundleResponse
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toBe('application/zip')
+    expect(download.suggestedFilename()).toBe(`model.${source.format}.zip`)
+    const code = `import sys,json,importlib
+sys.path.insert(0,sys.argv[1])
+owner=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
+with open(sys.argv[2],'rb') as source: raw=source.read(65537)
+print(json.dumps(owner.validate_model_bundle(raw,json.loads(sys.argv[3]))))`
+    const bundle = JSON.parse(execFileSync('python3', ['-c', code,
+      fileURLToPath(new URL('../../../../', import.meta.url)), path, JSON.stringify(source.download_members)],
+      { encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }))
+    const phase = process.env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
+    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `model-${source.format}-source-${phase}.zip`), bytes)
+    return { bytes, checksum: bundle.members[`model.${source.format}`].sha256, bundle }
+  }
   expect(bytes.length).toBe(source.size_bytes)
   const checksum = createHash('sha256').update(bytes).digest('hex')
   expect(checksum).toBe(source.sha256)
   return { bytes, checksum }
+}
+
+async function verifyModelDownload(page, frame, model) {
+  const download = await verifyOriginalDownload(page, frame, model)
+  return { download_sha256: download.checksum, ...(download.bundle ? { download_bundle: download.bundle } : {}) }
 }
 
 async function verifySourceModel(page, frame, model) {
@@ -56,8 +85,7 @@ async function verifySourceModel(page, frame, model) {
   await expect(preview).toBeVisible({ timeout: 60_000 })
   await expect(preview.locator('canvas')).toBeVisible()
   await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
-  const downloaded = await verifyOriginalDownload(page, frame, model)
-  return { source_model_loaded: true, download_sha256: downloaded.checksum }
+  return { source_model_loaded: true, ...await verifyModelDownload(page, frame, model) }
 }
 
 async function verifyBasicColoredFBX(page, source, artifactDir, phase) {
@@ -853,7 +881,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
         await expect(generate).toBeEnabled()
         const sourceProof = model.format === 'obj'
           ? await verifySourceModel(page, modelFrame, model)
-          : model.format === 'fbx' ? { download_sha256: (await verifyOriginalDownload(page, modelFrame, model)).checksum } : {}
+          : model.format === 'fbx' ? await verifyModelDownload(page, modelFrame, model) : {}
         if (!['fbx', 'obj'].includes(model.format)) {
           await expect(modelFrame.locator('.model-preview')).toHaveCount(0)
         }
@@ -895,7 +923,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v14', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v15', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -976,7 +1004,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-preview.png`) })
       gpuDiagnostics.setStage('navigation')
       const sourceProof = ['fbx', 'obj'].includes(model.format)
-        ? { download_sha256: (await verifyOriginalDownload(page, modelFrame, model)).checksum } : {}
+        ? await verifyModelDownload(page, modelFrame, model) : {}
       modelEvidence.push({ ...model, ...(model.format === 'fbx' ? { basic_preview: basicPreviewProof } : {}), model_loaded: true, content_loaded: true, ...sourceProof })
     }
     const delimitedEvidence = []
@@ -1003,7 +1031,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v14',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v15',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,

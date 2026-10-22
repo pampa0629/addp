@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import zipfile
 import json
 import math
 import os
@@ -30,6 +32,11 @@ MODEL_FORMATS = ("dae", "3ds", "ifc", "osgb", "skp", "max", "fbx", "obj")
 MESH_SOURCE_FACTS = {
     "fbx": {"size_bytes": 17200, "sha256": "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8"},
     "obj": {"size_bytes": 97, "sha256": "77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7"},
+}
+MESH_SOURCE_FACTS['obj']['download_members'] = {
+    'model.obj': {'size_bytes': 97, 'sha256': '77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7'},
+    'model.mtl': {'size_bytes': 45, 'sha256': '558c50a6b44f36a364a64f2693e1325eb93a194da4732bd48fa37a9d3c12ed9b'},
+    'texture.png': {'size_bytes': 76, 'sha256': 'c534a94d60fbfc172ceb524df0d232048651a8022b69307120b037b521859b06'},
 }
 # DataItem storage size includes OBJ's 45-byte MTL and 76-byte PNG;
 # source-download size and hash above describe only the primary model file.
@@ -957,8 +964,45 @@ def prepare_basic_fbx_source(client: GatewayClient, engine_id: int, bucket: str)
     return source
 
 
+def validate_model_bundle(raw, expected):
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= 65536 or not expected:
+        raise SuiteError('model source ZIP exceeds its bounded fixture')
+    members = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            entries = archive.infolist()
+            if len(entries) != len(expected) or {entry.filename for entry in entries} != set(expected):
+                raise SuiteError('model source ZIP must contain exactly its confirmed members without duplicates')
+            for entry in entries:
+                facts = expected[entry.filename]
+                if entry.is_dir() or entry.flag_bits & 1 or entry.file_size != facts['size_bytes']:
+                    raise SuiteError('model source ZIP member type, encryption or size changed')
+                with archive.open(entry) as content:
+                    value = content.read(facts['size_bytes'] + 1)
+                actual = {'size_bytes': len(value), 'sha256': hashlib.sha256(value).hexdigest()}
+                if actual != facts:
+                    raise SuiteError('model source ZIP member bytes changed')
+                members[entry.filename] = actual
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, ValueError, OSError) as error:
+        raise SuiteError('model source ZIP is invalid or corrupt') from error
+    return {'members': members, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+
+
+def model_download_expectation(model):
+    proof = {'download_sha256': model['sha256']}
+    if model.get('download_members'):
+        proof['download_bundle'] = {'members': model['download_members']}
+    return proof
+
+
 def verify_source_download(client: GatewayClient, source: dict[str, object]) -> None:
-    raw = client.request("GET", "/api/v1/manager/downloads/file?" + urllib.parse.urlencode({"locator": source["locator"]}), (200,)).raw
+    response = client.request("GET", "/api/v1/manager/downloads/file?" + urllib.parse.urlencode({"locator": source["locator"]}), (200,))
+    raw = response.raw
+    if source.get('download_members'):
+        if {k.lower(): v for k, v in response.headers.items()}.get('content-type') != 'application/zip':
+            raise SuiteError('multi-ref model source must download as application/zip')
+        validate_model_bundle(raw, source['download_members'])
+        return
     if len(raw) != source["size_bytes"] or hashlib.sha256(raw).hexdigest() != source["sha256"]:
         raise SuiteError(f"{source['format']} original source bytes changed")
 
@@ -1622,7 +1666,7 @@ def validate_browser_report(
         raise SuiteError("browser colored FBX source must match the pinned original")
     positive_int(basic.get("item_id"), "colored FBX source item id")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v15",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1640,7 +1684,7 @@ def validate_browser_report(
         "model_generation_requests": 0,
         "raster_generation_requests": 0,
         "raster": {**raster, "range_loaded": True, "map_loaded": True},
-        "models": [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in MESH_SOURCE_FACTS else {})} for model in models],
+        "models": [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **(model_download_expectation(model) if model["format"] in MESH_SOURCE_FACTS else {})} for model in models],
         "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
             "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
@@ -1678,7 +1722,15 @@ def validate_browser_report(
             "schema_version", "phase", "suite", "run_id", "result",
             "model_generation_requests", "browser_warning_errors", "failed_business_responses",
         )}
-        expected["models"] = [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
+        expected["models"] = [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({**model_download_expectation(model), **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
+    for model, observed, wanted in zip(models, payload.get('models', []), expected['models']):
+        if model.get('download_members'):
+            bundle = observed.get('download_bundle', {})
+            if (set(bundle) != {'members', 'size_bytes', 'sha256'} or bundle.get('members') != model['download_members']
+                    or type(bundle.get('size_bytes')) is not int or not 0 < bundle['size_bytes'] <= 65536
+                    or not isinstance(bundle.get('sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', bundle['sha256'])):
+                raise SuiteError('model source ZIP browser proof is incomplete')
+            wanted['download_bundle'] = bundle
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
@@ -1771,8 +1823,16 @@ def run_browser(
         raise SuiteError(f"Manager lineage browser acceptance exited with status {result.returncode}")
     if not report_path.is_file():
         raise SuiteError("Playwright did not write the Manager browser phase report")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    for model in models:
+        if model.get('download_members'):
+            raw = (report_path.parent / f"model-{model['format']}-source-{phase}.zip").read_bytes()
+            bundle = validate_model_bundle(raw, model['download_members'])
+            proofs = [row.get('download_bundle') for row in payload.get('models', []) if row.get('format') == model['format']]
+            if proofs != [bundle]:
+                raise SuiteError('captured model source ZIP differs from its browser proof')
     return validate_browser_report(
-        json.loads(report_path.read_text(encoding="utf-8")),
+        payload,
         run_id=environment["ADDP_ONLINE_TEST_RUN_ID"],
         execution_id=execution_id,
         item_id=item_id,
@@ -2064,7 +2124,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v14",
+            "schema_version": "addp.manager-internal-artifact-lineage/v15",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
