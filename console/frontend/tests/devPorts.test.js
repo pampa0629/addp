@@ -41,17 +41,67 @@ async function waitForVite(url, child, output) {
 }
 
 async function stopProcessGroup(child) {
-  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
-  try { process.kill(-child.pid, 'SIGTERM') } catch { return }
-  const exited = new Promise((resolve) => child.once('exit', resolve))
-  await Promise.race([exited, delay(5000)])
-  if (child.exitCode === null && child.signalCode === null) {
-    try { process.kill(-child.pid, 'SIGKILL') } catch { /* already exited */ }
-    await exited
+  if (!child.pid || (child.stdout.closed && child.stderr.closed)) return
+  // npm can exit before Vite: inherited pipes close after its worker shuts down.
+  let hasClosed = false
+  const closed = new Promise((resolve) => child.once('close', () => {
+    hasClosed = true
+    resolve()
+  }))
+  try { process.kill(-child.pid, 'SIGTERM') } catch (error) {
+    if (error.code !== 'ESRCH') throw error
+  }
+  await Promise.race([closed, delay(5000, undefined, { ref: false })])
+  if (!hasClosed) {
+    try { process.kill(-child.pid, 'SIGKILL') } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
+    await closed
   }
 }
 
 describe('开发端口传递', () => {
+  it('等待启动包装进程退出后的子进程完成清理', async () => {
+    const runtimeDir = await mkdtemp(join(tmpdir(), 'addp-console-stop-'))
+    const cacheFile = join(runtimeDir, 'owned-cache')
+    const worker = `
+      const { writeFileSync, rmSync } = require('node:fs')
+      writeFileSync(process.argv[1], 'owned cache')
+      process.on('SIGTERM', () => setTimeout(() => {
+        rmSync(process.argv[1], { force: true })
+        process.exit(0)
+      }, 200))
+      setInterval(() => {}, 1000)
+      process.send('ready')
+    `
+    const wrapper = spawn(process.execPath, ['-e', `
+      const { spawn } = require('node:child_process')
+      const child = spawn(process.execPath, ['-e', ${JSON.stringify(worker)}, ${JSON.stringify(cacheFile)}], {
+        stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      })
+      process.on('SIGTERM', () => process.exit(0))
+      child.once('message', () => process.stdout.write('ready'))
+    `], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const closed = new Promise(resolve => wrapper.once('close', resolve))
+    try {
+      await new Promise((resolve, reject) => {
+        wrapper.stdout.once('data', resolve)
+        wrapper.once('error', reject)
+        wrapper.once('exit', () => reject(new Error('Wrapper exited before its worker was ready')))
+      })
+      await stopProcessGroup(wrapper)
+      expect(await readdir(runtimeDir)).toEqual([])
+    } finally {
+      if (!wrapper.stdout.closed || !wrapper.stderr.closed) {
+        try { process.kill(-wrapper.pid, 'SIGKILL') } catch (error) {
+          if (error.code !== 'ESRCH') throw error
+        }
+      }
+      await closed
+      await rm(runtimeDir, { recursive: true, force: true })
+    }
+  }, 10000)
+
   it('解析启动脚本传给 iframe 和 API 文档的端口', () => {
     expect(parseDevPorts('console:15170,system:15173')).toEqual({ console: '15170', system: '15173' })
     expect(parseDevPorts('')).toEqual({})
@@ -173,16 +223,27 @@ describe('开发端口传递', () => {
         'addp-console-vite-test', 'addp-system-vite-test',
       ])
       // Both real optimizers must have written only into this test's runtime.
-      await Promise.all(caches.map(name => access(join(runtimeDir, name, 'deps/_metadata.json'))))
+      await expect.poll(async () => Promise.all(caches.map(name =>
+        access(join(runtimeDir, name, 'deps/_metadata.json')).then(() => true, () => false)
+      )), { timeout: 5000 }).toEqual([true, true])
     } finally {
-      socket?.close()
-      await stopProcessGroup(moduleServer)
-      await stopProcessGroup(vite)
-      await new Promise((resolve) => gateway.close(resolve))
       try {
-        expect(await readdir(runtimeDir)).toEqual([])
+        if (socket && socket.readyState !== WebSocket.CLOSED) {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Module HMR socket did not close')), 5000)
+            socket.addEventListener('close', () => { clearTimeout(timeout); resolve() }, { once: true })
+            socket.close()
+          })
+        }
       } finally {
-        await rm(runtimeDir, { recursive: true, force: true })
+        await stopProcessGroup(moduleServer)
+        await stopProcessGroup(vite)
+        await new Promise((resolve) => gateway.close(resolve))
+        try {
+          expect(await readdir(runtimeDir), log).toEqual([])
+        } finally {
+          await rm(runtimeDir, { recursive: true, force: true })
+        }
       }
     }
   }, 45000)
