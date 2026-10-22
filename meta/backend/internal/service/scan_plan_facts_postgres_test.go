@@ -38,7 +38,7 @@ func TestScanPlanFactsAgainstPostgres(t *testing.T) {
 	if err := tx.Exec("DROP SCHEMA IF EXISTS meta CASCADE; CREATE SCHEMA meta").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := execution.EnsureStore(tx); err != nil {
@@ -46,4 +46,5 @@ func TestScanPlanFactsAgainstPostgres(t *testing.T) {
 	}
 	exerciseScanPlanFacts(t, tx)
 	exerciseProductionScanPlanFacts(t, tx)
+	exerciseScanPlanTaskBinding(t, tx)
 }

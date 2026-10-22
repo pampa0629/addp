@@ -2692,11 +2692,9 @@ paths:
       - meta.scan_task.execute
   /runtime/scan-executions/{execution_id}/authorization-facts:
     get:
-      description: 仅 addp-system Tenant Service 可读；200 仅表示计划事实，不是采集许可。不扫描、不读取源、不返回
-        Actor、连接、配置或 Grant。缺少真实冻结引擎版本时返回 409，不用当前版本补齐 | Restricted to addp-system
-        Tenant Service. HTTP 200 contains facts, never an Allow. No scan, source I/O,
-        Actor, connection, raw configuration or Grant. Returns 409 when the frozen
-        engine version is missing; never substitutes the current version
+      description: |-
+        仅 addp-system Tenant Service 可读；200 仅表示计划事实，不是采集许可。不扫描、不读取源、不返回 Actor、连接、配置或 Grant。缺少真实冻结引擎版本时返回 409，不用当前版本补齐 | Restricted to addp-system Tenant Service. HTTP 200 contains facts, never an Allow. No scan, source I/O, Actor, connection, raw configuration or Grant. Returns 409 when the frozen engine version is missing; never substitutes the current version
+        有任务的执行还须逐项匹配真实任务的引擎、深度、读取参数和范围；保留摘要却更换执行配置返回 409。任务已修改返回 needs_refresh，不签发许可 | Task-backed executions must also match the actual task engine, depth, read options and scope. Retaining the digest while changing execution configuration returns 409. A changed task returns needs_refresh, never a permit
       parameters:
       - description: 执行 UUID | Execution UUID
         in: path

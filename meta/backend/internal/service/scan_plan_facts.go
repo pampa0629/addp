@@ -113,6 +113,9 @@ func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID ui
 				}
 				return nil
 			}
+			if !scanExecutionMatchesTask(definition, config, row.TriggerType) {
+				return ErrScanPlanFactsUnavailable
+			}
 		}
 		if err := projectScanSourceScope(ctx, tx, tenantID, row, config, facts); err != nil {
 			return err

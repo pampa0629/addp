@@ -108,6 +108,8 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 新执行从所用 Engine 快照冻结真实版本和类型；有任务的执行还在创建事务中冻结真实功能定义摘要，读取时与当前定义比较，变化后返回 needs_refresh／null scope，不能把旧执行和新任务定义组合成 complete。缓存快照不是许可，System 签发与 Worker 消费仍须核对当前版本。旧执行缺少真实冻结版本或任务功能摘要时返回 409 `meta_scan_plan_facts_unavailable`，要求重建计划，不取当前版本补齐。`read_options` 对象必需，encoding／has_header 可省，显式 null 拒绝，false 保留；整个响应预算为 512 KiB，未知字段、重复字段、缺失必需字段及无效 UTF-8 均拒绝。
 
+有任务的执行不能仅凭摘要相同就视为符合任务定义。事实投影还须逐项核对实际执行的 Engine、扫描深度、force、读取选项和 selector；保留摘要却改变执行配置、注入一次性 item／targets 或私有产出目标时返回同一 409，不返回可授权范围。任务的读取参数只允许正确类型，不能使用宽松转换补救畸形值。现有定时调度可以从任务显式路径集合中减去独立调度的成员，但结果必须非空且全部为原集合的精确成员；不得以路径前缀推断包含关系，或将空集合降为整个引擎。此项只证明冻结执行与当前任务一致，原始路径／ref group 仍须经过可信类型化范围投影，不能因一致性校验通过而获得采集许可。
+
 ### 对象目录归属不变量
 
 对象 item 的父 node 只能由其规范 bucket 内路径决定，与 selector、扫描起点及扫描深度无关。`full_name = 父 node.full_name + "/" + item.name` 必须成立；whole 布局使用逻辑 item 路径的父目录，不能使用内部主文件的父目录。
