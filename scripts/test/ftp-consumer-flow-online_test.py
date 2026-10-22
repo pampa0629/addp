@@ -135,6 +135,7 @@ class FakeSourceIssuer:
             composition = {'format': model['format'], 'refs': [
                 {'target': M.file_target(17, ref['path']), 'role': ref['role'], 'required': ref['required'], 'primary': ref['primary']}
                 for ref in model['composition']]}
+            composition['refs'].sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
             result = {'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': '17',
                       'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'], 'item_type': 'file',
                       'basis_state': 'complete', 'boundary_hash': 'a' * 64, 'observed_at': '2026-10-20T12:00:00Z',
@@ -152,6 +153,7 @@ class FakeSourceIssuer:
             composition = {'format': model['format'], 'refs': [
                 {'target': M.file_target(17, ref['path']), 'role': ref['role'], 'required': ref['required'], 'primary': ref['primary']}
                 for ref in model['composition']]}
+            composition['refs'].sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
             self.grants[body['request_id']] = copy.deepcopy(body)
             return SimpleNamespace(payload={**body, 'engine_id': '17', 'approval_mode': 'independent',
                                            'boundary_hash': body['expected_boundary_hash'], 'file_composition': composition,
@@ -793,6 +795,50 @@ class FTPConsumerTest(unittest.TestCase):
         self.assertEqual(issuer.revoke_statuses, (200,))
         self.assertEqual({path.split('/')[-2] for _, path, _ in issuer.calls if path.endswith('/revoke')},
                          {row['request_id'] for row in receipts})
+
+    def test_model_grants_accept_canonical_padded_dependency_before_primary(self):
+        consumer = FakeClient()
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                  'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+        model = report['models'][1]
+        model['composition'][1]['path'] = 'models/3ds/ tex.png   '
+        issuer = FakeSourceIssuer(report)
+        authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+        facts = authorization.facts(model)
+        refs = facts['boundary']['file_composition']['refs']
+        self.assertEqual([ref['target']['segments'][-1]['name'] for ref in refs],
+                         [' tex.png   ', 'model.3ds'])
+        self.assertEqual([ref['primary'] for ref in refs], [False, True])
+        authorization.grant(model, initialize=False)
+        body = next(body for _, path, body in issuer.calls if path.endswith('/access_grants'))
+        self.assertNotIn('file_composition', body)
+        self.assertEqual(body['catalog_path'], M.file_target(17, model['full_name']))
+        self.assertEqual(body['expected_boundary_hash'], facts['boundary_hash'])
+
+    def test_model_grants_reject_changed_or_noncanonical_padded_system_facts_before_write(self):
+        mutations = [
+            lambda refs: refs.reverse(),
+            lambda refs: refs.pop(0),
+            lambda refs: refs.append(copy.deepcopy(refs[0])),
+            lambda refs: refs[0]['target']['segments'][-1].update(name='tex.png'),
+            lambda refs: refs[0]['target']['segments'][-1].update(name='another.png'),
+            lambda refs: refs[0].update(role='model'),
+            lambda refs: refs[0].update(required=False),
+            lambda refs: refs[0].update(primary=True),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                consumer = FakeClient()
+                report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
+                          'models': M.prepare_models(consumer.items, 17, consumer.model_samples)}
+                model = report['models'][1]
+                model['composition'][1]['path'] = 'models/3ds/ tex.png   '
+                issuer = FakeSourceIssuer(report)
+                issuer.mutate_facts = lambda facts: mutate(facts['boundary']['file_composition']['refs'])
+                authorization = M.ModelSourceAuthorization(issuer, consumer, report)
+                with self.assertRaises(M.SuiteError):
+                    authorization.grant(model)
+                self.assertFalse(any(path.endswith('/access_grants') for _, path, _ in issuer.calls))
 
     def test_model_grants_reject_incomplete_or_expanded_system_facts_before_any_write(self):
         mutations = [lambda facts: facts.update(basis_state='incomplete'),

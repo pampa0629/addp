@@ -478,6 +478,9 @@ class ModelSourceAuthorization:
         facts = self.issuer.request('GET', self.base + f"/data-items/{model['fingerprint']}/authorization-facts", (200,)).payload
         expected_refs = [{'target': file_target(self.engine_id, ref['path']), 'role': ref['role'],
                           'required': ref['required'], 'primary': ref['primary']} for ref in model['composition']]
+        # The fixed fixture's typed targets use the shared boundary's canonical
+        # JSON byte order. Primary is a semantic flag, never an ordering rule.
+        expected_refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
         boundary = {'layout': 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
         require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
