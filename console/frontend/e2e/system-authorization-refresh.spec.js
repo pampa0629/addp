@@ -4,7 +4,7 @@ const authorizationURL = '/system/engines/2?tab=data-authorization'
 const permissions = ['system.engine.read', 'system.engine_access_approval_requirement.read',
   'system.engine_access_approval_requirement.initialize', 'system.engine_catalog.read']
 
-async function setup(page) {
+async function setup(page, { storage = true } = {}) {
   let generation = 0, hold = false, allowed = [...permissions]
   const pending = [], unexpected = [], writes = [], errors = []
   page.on('pageerror', error => errors.push(error.stack || error.message))
@@ -24,7 +24,10 @@ async function setup(page) {
     }
     if (path === '/api/v1/system/engines/2/catalog/children' && request.method() === 'POST') return route.fulfill({ json: { nodes: [] } })
     if (request.method() !== 'GET') writes.push(`${request.method()} ${path}`)
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', capability_groups: ['storage'] }
+    const engine = { id: '2', name: storage ? '授权验证 PostgreSQL' : '无存储工作流', engine_type: storage ? 'postgresql' : 'geopython_workflow',
+      engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online',
+      capabilities: { schema_version: 'engine.capabilities/v1', engine_type: storage ? 'postgresql' : 'geopython_workflow',
+        engine_family: storage ? 'tabular' : 'workflow', ...(storage ? { storage: {} } : { compute: { workflow: { supported: true } } }) } }
     const responses = {
       '/api/v1/system/engines': [engine], '/api/v1/system/engines/2': engine,
       '/api/v1/system/engine-types': [],
@@ -37,7 +40,11 @@ async function setup(page) {
   await page.goto(authorizationURL)
   const iframe = page.locator('iframe.module-iframe')
   const frame = page.frameLocator('iframe.module-iframe')
-  await expect(frame.getByTestId('engine-data-authorization')).toBeVisible()
+  if (storage) await expect(frame.getByTestId('engine-data-authorization')).toBeVisible()
+  else {
+    await expect(page).toHaveURL(/\/system\/engines\/2$/)
+    await expect(frame.getByRole('tab', { name: '基本信息', exact: true })).toBeVisible()
+  }
   const original = page.frames().find(value => value.url().includes('/module-ui/system/'))
   return {
     iframe, frame, original,
@@ -122,5 +129,13 @@ test('normalizes the engine tab only after authorization permissions are really 
   await expect(page).toHaveURL(/\/system\/engines\/2$/)
   await expect(fixture.frame.getByRole('tab', { name: '基本信息', exact: true })).toBeVisible()
   await expect(fixture.frame.getByTestId('engine-data-authorization')).toHaveCount(0)
+  fixture.verifyNoWrites()
+})
+
+test('a declared compute-only engine cannot open authorization through Console', async ({ page }) => {
+  const fixture = await setup(page, { storage: false })
+  await expect(fixture.frame.getByTestId('engine-authorization-open')).toBeDisabled()
+  await expect(fixture.frame.getByTestId('engine-data-authorization')).toHaveCount(0)
+  await expect(fixture.frame.getByRole('tab', { name: '数据授权', exact: true })).toHaveCount(0)
   fixture.verifyNoWrites()
 })
