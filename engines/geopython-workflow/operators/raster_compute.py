@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import heapq
+from collections import deque
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -2546,6 +2547,120 @@ def raster_flow_direction_d8(input_raster, band, elevation_unit):
             path.unlink(missing_ok=True)
 
 
+_D8_ACC_MESSAGES = {
+    'grid': ('D8 汇流累积需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'D8 flow accumulation requires a projected north-up grid with known linear units; reproject explicitly'),
+    'band': ('D8 汇流累积必须显式选择有效的一基方向数据波段', 'D8 flow accumulation requires an explicit valid one-based direction band'),
+    'complex': ('D8 汇流累积不支持复数方向或复数 alpha 波段', 'D8 flow accumulation does not support complex direction or alpha bands'),
+    'alpha': ('D8 汇流累积不能选择 alpha 波段作为方向', 'D8 flow accumulation cannot use an alpha band as direction'),
+    'scale': ('D8 汇流累积前必须显式应用方向 scale/offset', 'D8 flow accumulation requires direction scale/offset to be applied first'),
+    'code': ('D8 汇流累积遇到非法方向码，只允许0、1、2、4、8、16、32、64、128', 'D8 flow accumulation found an invalid direction code; only 0, 1, 2, 4, 8, 16, 32, 64, 128 are allowed'),
+    'terminal': ('D8 汇流累积的有效终点0必须位于图边或有效／无效覆盖边界', 'D8 flow accumulation terminal 0 must be on the image edge or valid/invalid coverage boundary'),
+    'target': ('D8 汇流累积方向必须指向图内有效像元，不能指向图外或无效覆盖', 'D8 flow accumulation direction must target an in-bounds valid pixel, not outside the grid or invalid coverage'),
+    'cycle': ('D8 汇流累积检测到方向循环，整个工作流失败', 'D8 flow accumulation detected a direction cycle; the entire workflow fails'),
+    'overflow': ('D8 汇流累积计数超过Float64精确整数上限2^53−1', 'D8 flow accumulation count exceeds the Float64 exact integer limit 2^53-1'),
+}
+_D8_MAX_EXACT_COUNT = 2**53 - 1
+
+
+def _d8_acc_error(code):
+    return ValueError(_D8_ACC_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_accumulation(directions):
+    """Topological upstream counts (excluding self); never repair the supplied graph."""
+    height, width = directions.shape
+    valid = np.isfinite(directions)
+    if np.any(valid & ~np.isin(directions, [0, *[step[2] for step in _D8_NEIGHBOURS]])):
+        raise _d8_acc_error('code')
+    if np.any((directions == 0) & ~_dem_open_outlets(valid)):
+        raise _d8_acc_error('terminal')
+    downstream = np.full(directions.size, -1, dtype=np.int64)
+    indegree = np.zeros(directions.size, dtype=np.uint8)
+    for dy, dx, code in _D8_NEIGHBOURS:
+        rows, cols = np.nonzero(directions == code)
+        target_rows, target_cols = rows + dy, cols + dx
+        if np.any((target_rows < 0) | (target_rows >= height) | (target_cols < 0) | (target_cols >= width)):
+            raise _d8_acc_error('target')
+        if np.any(~valid[target_rows, target_cols]):
+            raise _d8_acc_error('target')
+        targets = target_rows * width + target_cols
+        downstream[rows * width + cols] = targets
+        # Within one direction targets are unique; a cell has at most eight donors.
+        indegree[targets] += 1
+    counts = np.zeros(directions.size, dtype=np.int64)
+    ready = deque(map(int, np.flatnonzero(valid.ravel() & (indegree == 0))))
+    visited = 0
+    while ready:
+        cell = ready.popleft()
+        visited += 1
+        target = int(downstream[cell])
+        if target < 0:
+            continue
+        # Python integer addition avoids overflow before the exact-output guard.
+        count = int(counts[target]) + int(counts[cell]) + 1
+        if count > _D8_MAX_EXACT_COUNT:
+            raise _d8_acc_error('overflow')
+        counts[target] = count
+        indegree[target] -= 1
+        if indegree[target] == 0:
+            ready.append(target)
+    if visited != int(np.count_nonzero(valid)):
+        raise _d8_acc_error('cycle')
+    result = counts.reshape(directions.shape).astype(np.float64)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_flow_accumulation_d8(input_raster, band):
+    """Count upstream cells on an explicit, validated D8 direction raster."""
+    source = _open(input_raster)
+    try:
+        _projected_north_up_grid(source)
+    except ValueError as error:
+        raise _d8_acc_error('grid') from error
+    try:
+        selected = _band(source, band)
+    except ValueError as error:
+        key = 'complex' if type(band) is int and 1 <= band <= source.RasterCount else 'band'
+        raise _d8_acc_error(key) from error
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise _d8_acc_error('alpha')
+    if selected.GetScale() not in (None, 1) or selected.GetOffset() not in (None, 0):
+        raise _d8_acc_error('scale')
+    for index in range(1, source.RasterCount + 1):
+        candidate = source.GetRasterBand(index)
+        if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
+            raise _d8_acc_error('complex')
+    candidate = selected = None
+    directions = np.full((source.RasterYSize, source.RasterXSize), np.nan)
+    # Classify NoData in the source dtype; Float64 can merge adjacent Int64 codes.
+    for x, y, arrays, masks in _blocks(source, [band], native=True):
+        values = np.where(masks[0], arrays[0], np.nan)
+        height, width = values.shape
+        directions[y:y+height, x:x+width] = values
+    counts = _d8_accumulation(directions)
+    output = destination = None
+    path = None
+    completed = False
+    try:
+        output = _numeric_output(source, 1)
+        path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        for y in range(0, source.RasterYSize, 512):
+            for x in range(0, source.RasterXSize, 512):
+                destination.WriteArray(counts[y:y+512, x:x+512], x, y)
+        destination = None
+        output.FlushCache()
+        output = None
+        result = _raster(path)
+        completed = True
+        return result
+    finally:
+        destination = output = source = None
+        if path is not None and not completed:
+            path.unlink(missing_ok=True)
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
     source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3)
     raw = gdal.DEMProcessing(str(_path()), source, processing,
@@ -2682,6 +2797,7 @@ _SPECS = [
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
+    (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2708,7 +2824,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
-    if name == 'raster_boundary_clean':
+    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8'):
         examples.update({'band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})

@@ -6439,3 +6439,286 @@ def test_dem_d8_unrepresentable_centre_distance_fails_explicitly(language,phrase
     import operators.raster_compute as compute
     with raster_error_language(language),pytest.raises(ValueError,match=phrase):
         compute._d8_directions(np.zeros((2,2)),1.7e308,1.7e308)
+
+
+def _accumulation_walk_oracle(directions):
+    """Independent per-source path walks; no indegree/topological summation."""
+    offsets = {1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    valid = np.isfinite(directions)
+    result = np.where(valid, 0., np.nan)
+    for row, col in np.argwhere(valid):
+        seen = {(int(row), int(col))}
+        while directions[row, col] != 0:
+            dy, dx = offsets[directions[row, col]]
+            row, col = row + dy, col + dx
+            assert 0 <= row < directions.shape[0] and 0 <= col < directions.shape[1]
+            assert valid[row, col] and (row, col) not in seen
+            seen.add((row, col)); result[row, col] += 1
+    assert sum(int(v) + 1 for v in result[directions == 0]) == np.count_nonzero(valid)
+    return result
+
+
+@pytest.mark.parametrize('seed', range(12))
+def test_d8_accumulation_merging_multi_outlet_complete_walk_oracle(tmp_path, seed):
+    import operators.raster_compute as compute
+    rng = np.random.default_rng(seed)
+    directions = np.zeros((9, 11))
+    rows, cols = np.indices(directions.shape)
+    ranks = np.minimum.reduce((rows, cols, 8-rows, 10-cols))
+    offsets = [(-1,-1,32),(-1,0,64),(-1,1,128),(0,-1,16),(0,1,1),(1,-1,8),(1,0,4),(1,1,2)]
+    for row, col in np.argwhere(ranks > 0):
+        choices = [code for dy, dx, code in offsets if ranks[row+dy, col+dx] < ranks[row, col]]
+        directions[row, col] = rng.choice(choices)
+    directions[4,5] = np.nan  # An interior hole creates open terminals around itself.
+    for row,col in np.argwhere(np.isfinite(directions) & (directions != 0)):
+        dy,dx=next((dy,dx) for dy,dx,code in offsets if code==directions[row,col])
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    path = create_raster(tmp_path/'directions.tif', directions, (500000,2,0,3000000,0,-3), 'EPSG:3857')
+    before = path.read_bytes()
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        result = compute.raster_flow_accumulation_d8(source, 1)
+        ds = gdal.Open(str(result.path)); band = ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band), _accumulation_walk_oracle(directions))
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0, np.isfinite(directions))
+        assert ds.GetGeoTransform() == (500000.,2.,0.,3000000.,0.,-3.)
+        assert ds.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetUnitType()=='' and band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert set(source.workspace.iterdir()) == prior | {result.path}
+        band=ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('dy,dx,code',[(-1,-1,32),(-1,0,64),(-1,1,128),(0,-1,16),(0,1,1),(1,-1,8),(1,0,4),(1,1,2)])
+def test_d8_accumulation_all_eight_codes_and_excludes_self(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    actual=compute._d8_accumulation(directions)
+    assert actual[1,1]==0 and actual[1+dy,1+dx]==1
+    np.testing.assert_array_equal(actual,_accumulation_walk_oracle(directions))
+
+
+@pytest.mark.parametrize('directions', [np.array([[1.,1.,0.]]),np.array([[4.],[4.],[0.]]),np.array([[0.]]),np.full((4,5),np.nan)])
+def test_d8_accumulation_chain_singleton_and_all_invalid(tmp_path,directions):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',directions,(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace():
+        result=compute.raster_flow_accumulation_d8(raster_load(source_plan(path)),1)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_accumulation_walk_oracle(directions));ds=None
+
+
+@pytest.mark.parametrize('bad',[-1.,3.,255.,1.5,2**53,float(2**64)])
+@pytest.mark.parametrize('language,phrase',[('zh-cn','非法方向码'),('en','invalid direction code')])
+def test_d8_accumulation_illegal_direction_bilingual_no_private_output(tmp_path,bad,language,phrase):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',np.array([[bad,0.]]),(0,1,0,100,0,-1),'EPSG:3857');before=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match=phrase):compute.raster_flow_accumulation_d8(source,1)
+        assert set(source.workspace.iterdir())==prior
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('case,zh,en',[
+    ('terminal','有效终点0','terminal 0'),('outside','图内有效像元','in-bounds valid pixel'),
+    ('invalid','图内有效像元','in-bounds valid pixel'),('cycle','方向循环','direction cycle'),
+    ('cycle-with-outlet','方向循环','direction cycle'),
+])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_accumulation_invalid_graph_fails_whole_workflow(tmp_path,case,zh,en,language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]])
+    if case=='terminal':directions=np.zeros((3,3))
+    if case=='outside':directions[0,-1]=1
+    if case=='invalid':directions[0,1]=np.nan
+    if case=='cycle':directions=np.array([[1.,16.]])
+    if case=='cycle-with-outlet':directions=np.array([[1.,16.,0.],[64.,64.,0.]])
+    path=create_raster(tmp_path/'directions.tif',directions,(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match=zh if language=='zh-cn' else en):compute.raster_flow_accumulation_d8(source,1)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
+def test_d8_accumulation_requires_explicit_data_band(tmp_path,band):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',np.array([[1.,0.]]),(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='one-based direction band'):
+        compute.raster_flow_accumulation_d8(raster_load(source_plan(path)),band)
+
+
+@pytest.mark.parametrize('case,phrase', [('scale','scale/offset'),('offset','scale/offset'),('alpha','alpha band as direction'),('complex','complex direction'),('complex-alpha','complex direction'),('rotated','projected north-up'),('geographic','projected north-up'),('no-crs','projected north-up'),('south-up','projected north-up')])
+def test_d8_accumulation_admission_grid_and_band_encoding(tmp_path,case,phrase):
+    import operators.raster_compute as compute
+    path=tmp_path/'directions.tif';complex_type=case in ('complex','complex-alpha')
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,3,2 if case=='complex-alpha' else 1,gdal.GDT_CFloat64 if complex_type else gdal.GDT_Float64)
+    ds.SetGeoTransform((0,2,.1 if case=='rotated' else 0,100,0,3 if case=='south-up' else -3))
+    if case!='no-crs':
+        crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if case=='geographic' else 3857);ds.SetProjection(crs.ExportToWkt())
+    ds.GetRasterBand(1).Fill(0)
+    if case=='scale':ds.GetRasterBand(1).SetScale(2)
+    if case=='offset':ds.GetRasterBand(1).SetOffset(1)
+    if case=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match=phrase):
+        compute.raster_flow_accumulation_d8(raster_load(source_plan(path)),1)
+
+
+def test_d8_accumulation_effective_mask_nodata_alpha_nonfinite_and_valid_zero(tmp_path):
+    import operators.raster_compute as compute
+    path=tmp_path/'bands.tif';values=np.zeros((3,7));values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
+    alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
+    mask=np.full(values.shape,255,np.uint8);mask[1,5]=0
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),7,3,3,gdal.GDT_Float64);ds.SetGeoTransform((0,2,0,100,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+    for i,array in enumerate((np.full(values.shape,255.),values,alpha),1):
+        ds.GetRasterBand(i).WriteArray(array);ds.GetRasterBand(i).SetNoDataValue(-9999)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    expected=np.where(np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0),0.,np.nan)
+    with raster_workspace():
+        result=compute.raster_flow_accumulation_d8(raster_load(source_plan(path)),2)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected)
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));ds=None
+
+
+def test_d8_accumulation_exact_count_limit_and_overflow_fail_closed(monkeypatch):
+    import operators.raster_compute as compute
+    assert compute._D8_MAX_EXACT_COUNT==2**53-1
+    # Exercise the production bound at a small reachable graph size, without
+    # claiming a 2^53-cell allocation or capacity acceptance.
+    monkeypatch.setattr(compute,'_D8_MAX_EXACT_COUNT',4)
+    np.testing.assert_array_equal(compute._d8_accumulation(np.array([[1.,1.,1.,1.,0.]])),[[0,1,2,3,4]])
+    for language,phrase in [('zh-cn','精确整数上限'),('en','exact integer limit')]:
+        with raster_error_language(language),pytest.raises(ValueError,match=phrase):
+            compute._d8_accumulation(np.array([[1.,1.,1.,1.,1.,0.]]))
+
+
+@pytest.mark.parametrize('stage',['read','graph','write','metadata'])
+def test_d8_accumulation_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',np.array([[1.,1.,0.]]),(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        def fail(*args,**kwargs):raise RuntimeError('injected accumulation failure')
+        if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
+        if stage=='graph':monkeypatch.setattr(compute,'_d8_accumulation',fail)
+        if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
+        if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
+        with pytest.raises(RuntimeError,match='injected accumulation failure'):compute.raster_flow_accumulation_d8(source,1)
+        assert set(source.workspace.iterdir())==prior
+
+
+def test_d8_accumulation_long_cross_block_cog_full_counts_and_conservation(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    height,width=515,519
+    directions=np.ones((height,width));directions[:,-1]=4;directions[-1,-1]=0
+    expected=np.broadcast_to(np.arange(width),(height,width)).copy();expected[:,-1]=np.arange(1,height+1)*width-1
+    path=create_raster(tmp_path/'directions.tif',directions,(500000,2,0,3000000,0,-3),'EPSG:3857');before=path.read_bytes();target=tmp_path/'accumulation.cog.tif'
+    blocks=compute._blocks;reads=[]
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert all(max(a.shape)<=512 for a in arrays);reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():
+        result=compute.raster_flow_accumulation_d8(raster_load(source_plan(path)),1)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    ds=gdal.Open(str(target));band=ds.GetRasterBand(1);actual=read_band_values(band)
+    np.testing.assert_array_equal(actual,expected);assert int(actual[-1,-1])+1==height*width
+    assert not validate(ds,full_check=True)[1] and band.GetOverviewCount()>0
+    np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.full((height,width),255,np.uint8))
+    for i in range(band.GetOverviewCount()):
+        overview=band.GetOverview(i).ReadAsArray();assert np.all(overview==np.floor(overview))
+    band=ds=None;assert path.read_bytes()==before and (512,512) in reads
+
+
+@pytest.mark.parametrize('case',['saved-direction','dem-direction','fill-direction','empty','cycle'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_accumulation_real_async_save_and_failure_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    values=np.tile(np.arange(11,0,-1,dtype=float),(9,1));directions=np.ones(values.shape);directions[:,-1]=0
+    if case=='fill-direction':values[:]=10;values[1:-1,1:-1]=-2
+    if case=='empty':directions[:]=np.nan
+    if case=='cycle':directions[0,1]=16
+    data=directions if case in ('saved-direction','empty','cycle') else values
+    path=create_raster(tmp_path/'source.tif',data,(0,2,0,100,0,-3),'EPSG:3857');before=path.read_bytes();target=tmp_path/'accumulation.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];parent='source'
+    if case=='fill-direction':
+        tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[parent],'params':{'input_raster':{'$ref':parent},'band':1,'elevation_unit':'metre'}});parent='fill'
+    if case in ('dem-direction','fill-direction'):
+        tasks.append({'id':'direction','operator':'raster_flow_direction_d8','depends_on':[parent],'params':{'input_raster':{'$ref':parent},'band':1,'elevation_unit':'metre'}});parent='direction'
+        directions=_d8_bellman_ford_oracle(_fill_level_reachability_oracle(values) if case=='fill-direction' else values)
+    tasks += [{'id':'accumulate','operator':'raster_flow_accumulation_d8','depends_on':[parent],'params':{'input_raster':{'$ref':parent},'band':1}},
+              {'id':'save','operator':'raster_save','depends_on':['accumulate'],'params':{'input_raster':{'$ref':'accumulate'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_flow_accumulation_d8':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='cycle' else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and path.read_bytes()==before
+    if case=='cycle':
+        assert not target.exists() and ('方向循环' if language=='zh-cn' else 'direction cycle') in status['error']
+    else:
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_accumulation_walk_oracle(directions));ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_flow_accumulation_d8/invoke',json={'params':{}}).status_code==403
+
+
+def test_d8_accumulation_discovery_explicit_direction_band_only():
+    spec=next(item for item in list_operators() if item['id']=='raster_flow_accumulation_d8')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','band'} and all(p['required'] for p in params.values())
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1}
+
+
+def test_d8_accumulation_cross_block_single_long_path_without_recursion():
+    import operators.raster_compute as compute
+    height,width=515,519
+    directions=np.ones((height,width));directions[1::2,:]=16
+    directions[::2,-1]=4;directions[1::2,0]=4;directions[-1,-1]=0
+    expected=np.arange(height*width,dtype=np.float64).reshape(height,width)
+    expected[1::2,:]=expected[1::2,::-1]
+    actual=compute._d8_accumulation(directions)
+    np.testing.assert_array_equal(actual,expected)
+    assert actual[-1,-1]+1==height*width and np.count_nonzero(actual==0)==1
+
+
+def test_d8_accumulation_rejects_mixed_real_data_complex_alpha(monkeypatch):
+    import operators.raster_compute as compute
+    ds=gdal.GetDriverByName('MEM').Create('',3,3,0)
+    ds.AddBand(gdal.GDT_Float64);ds.AddBand(gdal.GDT_CFloat64)
+    ds.SetGeoTransform((0,2,0,100,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+    ds.GetRasterBand(1).Fill(0);ds.GetRasterBand(2).Fill(255);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    monkeypatch.setattr(compute,'_open',lambda _:ds)
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='complex direction or alpha'):
+        compute.raster_flow_accumulation_d8(None,1)
+
+
+@pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
+def test_d8_accumulation_native_nodata_cannot_hide_adjacent_illegal_integer(tmp_path,dtype):
+    import operators.raster_compute as compute
+    path=tmp_path/'integer.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype)
+    ds.SetGeoTransform((0,2,0,100,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+    band=ds.GetRasterBand(1);band.SetNoDataValue(2**53)
+    band.WriteArray(np.array([[2**53,2**53+1,0]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64));band=ds=None
+    with raster_workspace(),raster_error_language('en'):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='invalid direction code'):
+            compute.raster_flow_accumulation_d8(source,1)
+        assert set(source.workspace.iterdir())==prior
