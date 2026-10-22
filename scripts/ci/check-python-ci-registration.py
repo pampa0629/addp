@@ -80,11 +80,38 @@ def step_setting(step: str, name: str) -> str:
     return match.group(1).strip("\"'") if match else ""
 
 
+def validate_topology_capacity(repository: Path) -> list[str]:
+    """Keep the manual matrix separate from ordinary Python/Online gates."""
+    required = {
+        'Makefile': ('test-vector-topology-capacity:', 'test-vector-topology-capacity-runner:',
+                     'test_topology_capacity.py', '@$(MAKE) test-vector-topology-capacity-runner'),
+        '.github/workflows/vector-topology-capacity.yml': ('  workflow_dispatch:',
+                     'run: make test-vector-topology-capacity\n', 'run: make test-vector-topology-capacity-runner',
+                     'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@'),
+        'scripts/test/vector-topology-capacity.py': ('CPUS = 4', 'MEMORY = 2 << 30', 'SECONDS = 180',
+                     "'--memory-swap'", "'--network', 'none'", "'sh', 'container_entrypoint.sh'",
+                     'frame_digest(frame) == before', 'verify_output(case, target)'),
+        'engines/geopython-workflow/test_topology_capacity.py': ('test_topology_capacity_native_oracle_rejects_real_saved_corruption',),
+    }
+    errors = []
+    for name, fragments in required.items():
+        path = repository / name
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            errors.append(f'{name}: manual line topology capacity registration is incomplete')
+    workflow = repository / '.github/workflows/vector-topology-capacity.yml'
+    if workflow.is_file() and re.search(r'(?m)^  (?:push|pull_request|schedule):', workflow.read_text()):
+        errors.append('line topology capacity must be manual only')
+    make = (repository / 'Makefile').read_text() if (repository / 'Makefile').is_file() else ''
+    if 'test-vector-topology-capacity' in (make_dependencies(make, 'test') or []):
+        errors.append('large line capacity must not run in the ordinary test gate')
+    return errors
+
+
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     jobs = workflow_jobs(repository)
     root_dependencies = make_dependencies(makefile, "test") or []
-    errors = []
+    errors = validate_topology_capacity(repository) if (repository / 'engines/geopython-workflow/requirements.txt').is_file() else []
     fastapi_environments = []
     for owner, manifest in discover_python_modules(repository):
         eval_target = f"test-{owner}-eval"

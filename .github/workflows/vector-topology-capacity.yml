@@ -1,0 +1,29 @@
+name: Manual line topology capacity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  topology-capacity:
+    name: Line topology capacity (4 CPU, 2 GiB)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate capacity registration and deterministic runner
+        run: make test-vector-topology-capacity-runner
+      - name: Run manual line capacity gate
+        run: make test-vector-topology-capacity
+      - name: Upload original capacity observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: line-topology-capacity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/addp-topology-capacity-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: error

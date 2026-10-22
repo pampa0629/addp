@@ -139,6 +139,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         "scripts/test/raster-contour-persistence-online.py",
         "scripts/test/raster-workflow-online.py",
         "scripts/test/raster-workflow-capacity-online.py",
+        "scripts/test/vector-topology-capacity.py",
+        "scripts/test/vector-topology-capacity_test.py",
+        "scripts/utils/capacity_resources.py",
     } for path in files):
         affected.add("engines")
 
