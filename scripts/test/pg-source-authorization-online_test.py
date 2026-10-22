@@ -490,6 +490,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertTrue(report['content_changes']['source_baseline_restored'])
 
     def test_latency_statistics_use_nearest_rank_without_discarding_tail(self):
+        self.assertEqual((ONLINE.LOAD_ROUNDS, ONLINE.LOAD_SAMPLES, ONLINE.LOAD_WARMUPS), (3, 100, 10))
         self.assertEqual(ONLINE.latency_statistics(list(range(1, 101))),
                          {'sample_count': 100, 'p50_ms': 50, 'p95_ms': 95, 'min_ms': 1, 'max_ms': 100})
         for invalid in ([], [float('nan')], [float('inf')], [-1], [True]):
@@ -1570,6 +1571,158 @@ class PGBrowserObservationTest(unittest.TestCase):
                         browser.finish()
 
 
+class PGReadLoadTest(unittest.TestCase):
+    def setUp(self):
+        self.server = Server()
+        self.reader = self.server.client('reader')
+        self.lifecycle = ONLINE.Lifecycle(self.server.client('operator'), self.reader, 3, 2, '33', {},
+            self.server.client('outsider'), Mock(), Mock(), 'external-online-consumer', 'private-password')
+        self.paths = [ONLINE.table_path(2, name) for name in ('metric_people', 'pg_initial_disposable')]
+        self.bindings = [(path, {'item_fingerprint': letter * 64, 'boundary_hash': 'b' * 64}, str(index))
+                         for index, (path, letter) in enumerate(zip(self.paths, ('a', 'c')))]
+        for path, facts, command in self.bindings:
+            self.server.grants[command] = dict(request_id=command, catalog_path=path, **facts,
+                recipient_type='user', recipient_id='33', action='read', revocation=None,
+                expires_at='2099-01-01T00:00:00Z')
+        def facts(client, path):
+            return next(dict(value) for target, value, _ in self.bindings if target == path)
+        patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', side_effect=facts).start()
+        for key, value in [('LOAD_ROUNDS', 1), ('LOAD_SAMPLES', 20), ('LOAD_WARMUPS', 2)]:
+            patch.object(ONLINE, key, value).start()
+        self.addCleanup(patch.stopall)
+        self.reads, self.active = [], 0
+        self.lock = ONLINE.threading.Lock()
+        self.fault = None
+        for client in (self.reader, self.lifecycle.outsider):
+            original = client.request
+            def request(method, path, expected, body=None, *, client=client, original=original):
+                if path != READ_CHECK:
+                    return original(method, path, expected, body)
+                self.assertEqual(method, 'POST')
+                self.assertTrue(all(target in self.paths for target in body['targets']))
+                with self.lock:
+                    self.active += 1
+                    self.reads.append((client is self.reader, body))
+                try:
+                    # Permit true thread overlap without globally patching the worker clock.
+                    ONLINE.threading.Event().wait(.002)
+                    allowed = client is self.reader and all(any(row['catalog_path'] == target
+                        and row['revocation'] is None for row in self.server.grants.values()) for target in body['targets'])
+                    payload = {'observed_at': '2026-10-22T00:00:00Z'} if allowed else {'error': 'denied'}
+                    status = 200 if allowed else 403
+                    if client is self.reader and self.fault:
+                        if self.fault == 'transport':
+                            raise ONLINE.SuiteError('private secret diagnostics')
+                        if self.fault == 'wrong_status':
+                            status = 403
+                        if self.fault == 'time':
+                            payload = {'observed_at': '2026-10-22T00:00:00'}
+                        if self.fault == 'shape':
+                            payload['data'] = []
+                        if self.fault == 'credential':
+                            self.reader.token = 'changed-private-token'
+                        if self.fault == 'context':
+                            self.server.version += 1
+                        if self.fault == 'grant':
+                            self.server.grants['0']['expires_at'] = '2098-01-01T00:00:00Z'
+                        if self.fault == 'boundary':
+                            self.bindings[0][1]['boundary_hash'] = 'd' * 64
+                    return SimpleNamespace(status=status, payload=payload)
+                finally:
+                    with self.lock:
+                        self.active -= 1
+            client.request = request
+
+    def test_matrix_uses_real_distinct_targets_and_counts_operations_not_http_calls(self):
+        report = {}
+        before = json.dumps(self.server.grants, sort_keys=True)
+        self.lifecycle.measure_read_load(report, self.bindings)
+        evidence = report['authorization_load']
+        self.assertEqual(evidence['result'], 'passed')
+        self.assertFalse(evidence['audit_observer_enabled'])
+        self.assertEqual([(cell['mode'], cell['concurrency_limit']) for cell in evidence['cells']],
+            [('single_target', 1), ('single_target', 5), ('single_target', 10),
+             ('two_target_batch', 1), ('two_target_batch', 5), ('two_target_batch', 10), ('two_target_separate', 1)])
+        for cell in evidence['cells']:
+            self.assertEqual(cell['sample_count'], 20)
+            row = cell['rounds'][0]
+            self.assertEqual(len(row['requests']), 22)
+            self.assertEqual(sum(sample['warmup'] for sample in row['requests']), 2)
+            self.assertEqual(row['http_attempted_count'], 22 * cell['http_requests_per_operation'])
+            self.assertGreater(row['observed_operations_per_second'], 0)
+            if cell['concurrency_limit'] > 1:
+                self.assertGreater(row['peak_in_flight'], 1)
+        self.assertEqual(self.active, 0)
+        self.assertEqual(json.dumps(self.server.grants, sort_keys=True), before)
+        self.assertTrue(all(call[1] == 'GET' for call in self.server.calls))
+        self.assertNotIn('private', json.dumps(evidence))
+        self.server.grants['0']['revocation'] = {'reason': 'test'}
+        self.lifecycle.require_batch_denied(self.reader, self.paths)
+        self.assertIsNone(self.server.grants['1']['revocation'])
+
+    def test_failure_stops_without_retry_drains_threads_and_preserves_failure(self):
+        for fault in ('transport', 'wrong_status', 'time', 'shape', 'credential', 'context', 'grant', 'boundary'):
+            with self.subTest(fault=fault):
+                self.fault = fault
+                report = {}
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.lifecycle.measure_read_load(report, self.bindings)
+                self.assertEqual(report['authorization_load']['result'], 'failed')
+                self.assertEqual(self.active, 0)
+                self.assertNotIn('private', json.dumps(report))
+                if fault in ('transport', 'wrong_status', 'time', 'shape', 'credential'):
+                    self.assertLessEqual(len(report['authorization_load']['cells'][0]['rounds'][0]['requests']), 1)
+                self.reader.token = 'reader-private-token'
+                self.server.version = 1
+                self.server.grants['0']['expires_at'] = '2099-01-01T00:00:00Z'
+                self.bindings[0][1]['boundary_hash'] = 'b' * 64
+
+    def test_duplicate_item_or_control_mismatch_stops_before_sampling(self):
+        for bindings in ([self.bindings[0], self.bindings[0]],
+                         [self.bindings[0], (self.paths[1], self.bindings[0][1], '1')],
+                         [(*self.bindings[0][:2], 'wrong'), self.bindings[1]]):
+            with self.subTest(bindings=bindings), self.assertRaises(ONLINE.SuiteError):
+                self.lifecycle.measure_read_load({}, bindings)
+        self.assertEqual(self.reads, [])
+
+    def test_concurrent_failure_drains_all_requests_without_later_cells(self):
+        original = self.reader.request
+        def fail_in_second_cell(method, path, expected, body=None):
+            # First cell completes 22 operations; fail only when actual load is concurrent.
+            if path == READ_CHECK and sum(reader for reader, _ in self.reads) >= 22:
+                self.fault = 'transport'
+            return original(method, path, expected, body)
+        self.reader.request = fail_in_second_cell
+        report = {}
+        with self.assertRaises(ONLINE.SuiteError):
+            self.lifecycle.measure_read_load(report, self.bindings)
+        cells = report['authorization_load']['cells']
+        self.assertEqual([cell['concurrency_limit'] for cell in cells], [1, 5])
+        self.assertEqual(cells[0]['result'], 'passed')
+        self.assertGreater(cells[1]['failed_count'], 0)
+        self.assertLessEqual(cells[1]['rounds'][0]['http_attempted_count'], 2)
+        self.assertEqual(self.active, 0)
+
+    def test_budget_and_denial_shape_fail_closed(self):
+        clock = [0]
+        original = self.reader.request
+        def expired(method, path, expected, body=None):
+            response = original(method, path, expected, body)
+            if path == READ_CHECK:
+                clock[0] = 100
+            return response
+        self.reader.request = expired
+        with patch.object(ONLINE.time, 'monotonic', side_effect=lambda: clock[0]), self.assertRaises(ONLINE.SuiteError):
+            self.lifecycle.measure_read_load({}, self.bindings)
+        self.assertEqual(self.active, 0)
+        for payload, status in (({'error': 'denied', 'data': []}, 403),
+                                ({'error': 'denied', 'error_code': 'permission_denied'}, 403),
+                                ({'error': 'denied'}, 200)):
+            with self.subTest(payload=payload, status=status), patch.object(self.lifecycle.outsider, 'request',
+                return_value=SimpleNamespace(status=status, payload=payload)), self.assertRaises(ONLINE.SuiteError):
+                self.lifecycle.require_batch_denied(self.lifecycle.outsider, self.paths)
+
+
 class InitialProductionOnlineTest(unittest.TestCase):
     def setUp(self):
         self.execution = 'b9041a08-785c-48bc-bb12-c0650b720dac'
@@ -1586,6 +1739,9 @@ class InitialProductionOnlineTest(unittest.TestCase):
         self.lifecycle.grant = Mock(return_value=(self.source_command, {'expires_at': self.expiry}))
         self.lifecycle.listing = Mock(side_effect=self.listing)
         self.lifecycle.revoke = Mock(side_effect=self.revoke)
+        self.lifecycle.measure_read_load = Mock(side_effect=lambda report, bindings:
+                                               report.update(authorization_load={}))
+        self.lifecycle.require_batch_denied = Mock()
         self.reader.request.side_effect = self.request
         patch.object(ONLINE, 'item', return_value={'id': 10, 'node_id': 7}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
@@ -1671,6 +1827,11 @@ class InitialProductionOnlineTest(unittest.TestCase):
         self.assertIn(('DELETE', '/api/v1/transfer/task-definitions/91'), self.calls)
         self.assertIn(('GET', '/api/v1/transfer/task-definitions/91'), self.calls)
         self.assertEqual(report['initial_production']['scan_depth'], 'basic')
+        bindings = self.lifecycle.measure_read_load.call_args.args[1]
+        self.assertEqual([(path, command) for path, _, command in bindings],
+                         [(self.lifecycle.path, self.source_command), (self.path, self.command)])
+        self.lifecycle.require_batch_denied.assert_called_once_with(self.reader, [self.lifecycle.path, self.path])
+        self.assertTrue(report['authorization_load']['mixed_withdrawn_batch_denied'])
 
     def test_initial_grant_rejects_wrong_target_origin_source_or_expiry(self):
         for invalid in ({'approval_mode': 'independent'}, {'producer_owner': 'develop'},
@@ -1681,6 +1842,14 @@ class InitialProductionOnlineTest(unittest.TestCase):
             self.bad = invalid
             with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
                 self.lifecycle.production_flow({'checks': []})
+
+    def test_load_failure_keeps_source_and_output_owned_for_final_cleanup(self):
+        self.lifecycle.measure_read_load.side_effect = ONLINE.SuiteError('load failed')
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'load failed'):
+            self.lifecycle.production_flow({'checks': []})
+        self.assertFalse(self.source_revoked or self.output_revoked)
+        self.lifecycle.cleanup()
+        self.assertTrue(self.source_revoked and self.output_revoked)
 
     def test_unknown_start_response_cleanup_recovers_by_owned_task_execution(self):
         original = self.request

@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from pathlib import Path
@@ -48,6 +49,7 @@ PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_
                      'output_withdrawal_denies_read']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
+LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 
 # Deliberately no query text/parameters, credentials, relation data or query plans
 # in the published evidence. Counters belong to the whole disposable instance.
@@ -705,7 +707,13 @@ class Lifecycle:
         target = locator(self.engine, name, output['id'])
         preview(self.reader, target, True, 2)
         preview(self.outsider, target, False)
+        report['phase'] = 'concurrent_and_batch_read_load'
+        self.measure_read_load(report, [(self.path, facts, source_grant),
+                                       (path, output_facts, row['request_id'])])
+        report['phase'] = 'output_source_withdrawal'
         self.revoke(source_grant)
+        self.require_batch_denied(self.reader, [self.path, path])
+        report['authorization_load']['mixed_withdrawn_batch_denied'] = True
         preview(self.reader, locator(self.engine, 'metric_people', source['id']), False)
         preview(self.reader, target, True, 2)
         require(self.listing(history=True, state='active', catalog_path=path) == rows,
@@ -760,6 +768,147 @@ class Lifecycle:
     def revoke(self, command):
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
+
+    def require_batch_denied(self, client, targets):
+        response = client.request('POST', READ_CHECK, (403,), {'targets': targets})
+        require(response.status == 403 and set(response.payload) == {'error'}
+                and isinstance(response.payload.get('error'), str) and bool(response.payload['error']),
+                'batch denial must not expose partial data or substitute another boundary')
+
+    def measure_read_load(self, report, bindings):
+        """Bounded closed-loop HTTP samples, using only already-issued fixture Grants."""
+        result = {'schema_version': 'addp.authorization-load/v1', 'result': 'failed',
+                  'measurement': 'gateway_client_http_and_json_roundtrip', 'unit': 'ms',
+                  'principal_id': self.recipient, 'same_principal': True,
+                  'endpoint': READ_CHECK, 'quantile_method': 'nearest_rank',
+                  'budget_seconds': 90, 'request_timeout_seconds': self.reader.timeout,
+                  'audit_observer_enabled': False, 'round_count': LOAD_ROUNDS,
+                  'samples_per_round': LOAD_SAMPLES, 'warmups_per_round': LOAD_WARMUPS,
+                  'targets': [{'catalog_path': path, 'item_fingerprint': facts['item_fingerprint'],
+                               'boundary_hash': facts['boundary_hash'], 'grant_id': command}
+                              for path, facts, command in bindings], 'cells': []}
+        report['authorization_load'] = result
+        require(len(bindings) == 2 and bindings[0][0] != bindings[1][0]
+                and bindings[0][1]['item_fingerprint'] != bindings[1][1]['item_fingerprint'],
+                'load comparison requires two distinct DataItems')
+        deadline = time.monotonic() + 90
+        tokens = (self.reader.token, self.operator.token, self.outsider.token)
+
+        def guard():
+            require(time.monotonic() < deadline, 'read load exceeded its budget')
+            require((self.reader.token, self.operator.token, self.outsider.token) == tokens,
+                    'read load credentials changed')
+
+        def snapshot():
+            guard()
+            principal, _ = identity(self.reader, self.tenant, READER_PERMISSIONS)
+            require(principal == self.recipient, 'read load principal changed')
+            context = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
+            observations = [context]
+            for path, facts, command in bindings:
+                current = REGISTRATION.read_exact_record_authorization_facts(self.operator, path)
+                require(all(current.get(key) == facts.get(key) for key in ('item_fingerprint', 'boundary_hash')),
+                        'read load Meta boundary changed')
+                history = self.listing(history=True, state='active', catalog_path=path)
+                require(history.get('total') == 1 and len(history.get('data', [])) == 1,
+                        'read load requires exactly its original Grant per target')
+                grant = history['data'][0]
+                require(all(grant.get(key) == value for key, value in {
+                    'request_id': command, 'catalog_path': path, 'recipient_type': 'user',
+                    'recipient_id': self.recipient, 'action': 'read', 'revocation': None,
+                    'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash']}.items()),
+                    'read load Grant binding changed')
+                observations += [history, {key: value for key, value in current.items() if key != 'observed_at'}]
+            guard()
+            return json.dumps(observations, sort_keys=True)
+
+        baseline = snapshot()
+        targets = [path for path, _, _ in bindings]
+        self.require_batch_denied(self.outsider, targets)
+        result['outsider_batch_denied'] = True
+        modes = [('single_target', [[targets[0]]]), ('two_target_batch', [targets]),
+                 ('two_target_separate', [[targets[0]], [targets[1]]])]
+        for mode, groups in modes:
+            for concurrency in ((1,) if mode == 'two_target_separate' else (1, 5, 10)):
+                require(snapshot() == baseline, 'read load control drifted before a cell')
+                cell = {'mode': mode, 'concurrency_limit': concurrency, 'target_count': len({
+                    json.dumps(path, sort_keys=True) for group in groups for path in group}),
+                    'http_requests_per_operation': len(groups), 'rounds': [], 'failed_count': 0}
+                result['cells'].append(cell)
+                for round_number in range(1, LOAD_ROUNDS + 1):
+                    row = {'round': round_number, 'requests': [], 'http_attempted_count': 0,
+                           'peak_in_flight': 0, 'failed_count': 0}
+                    cell['rounds'].append(row)
+                    stop, lock = threading.Event(), threading.Lock()
+                    active = 0
+
+                    def operation(index, warmup):
+                        nonlocal active
+                        if stop.is_set():
+                            return
+                        began = time.perf_counter_ns()
+                        wall_start = time.time_ns()
+                        entered = False
+                        try:
+                            guard()
+                            with lock:
+                                active += 1
+                                entered = True
+                                row['peak_in_flight'] = max(row['peak_in_flight'], active)
+                            for group in groups:
+                                guard()
+                                if stop.is_set():
+                                    return
+                                with lock:
+                                    row['http_attempted_count'] += 1
+                                response = self.reader.request('POST', READ_CHECK, (200,), {'targets': group})
+                                payload = response.payload
+                                require(response.status == 200 and set(payload) == {'observed_at'},
+                                        'invalid read load response shape')
+                                observed = datetime.fromisoformat(payload['observed_at'].replace('Z', '+00:00'))
+                                require(observed.tzinfo is not None and observed.year > 1970,
+                                        'invalid read load observation time')
+                            guard()
+                            sample = {'index': index, 'warmup': warmup, 'started_unix_ns': wall_start,
+                                      'finished_unix_ns': time.time_ns(),
+                                      'duration_ms': (time.perf_counter_ns() - began) / 1000000}
+                            with lock:
+                                row['requests'].append(sample)
+                        except Exception:
+                            stop.set()
+                            with lock:
+                                row['failed_count'] += 1
+                        finally:
+                            if entered:
+                                with lock:
+                                    active -= 1
+
+                    # Drain every in-flight request before any control read or rule cleanup.
+                    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                        list(pool.map(lambda index: operation(index, True), range(LOAD_WARMUPS)))
+                        measured_start = time.perf_counter_ns()
+                        if not stop.is_set():
+                            list(pool.map(lambda index: operation(index, False), range(LOAD_SAMPLES)))
+                        row['wall_ms'] = (time.perf_counter_ns() - measured_start) / 1000000
+                    cell['failed_count'] += row['failed_count']
+                    require(not stop.is_set(), 'read load request failed; no retry performed')
+                    measured = [sample['duration_ms'] for sample in row['requests'] if not sample['warmup']]
+                    require(len(measured) == LOAD_SAMPLES and len(row['requests']) == LOAD_SAMPLES + LOAD_WARMUPS
+                            and row['http_attempted_count'] == (LOAD_SAMPLES + LOAD_WARMUPS) * len(groups)
+                            and 1 <= row['peak_in_flight'] <= concurrency
+                            and (concurrency == 1 or row['peak_in_flight'] > 1),
+                            'incomplete read load or no observed concurrency')
+                    row.update(latency_statistics(measured))
+                    require(row['wall_ms'] > 0, 'invalid read load wall clock')
+                    row['observed_operations_per_second'] = LOAD_SAMPLES * 1000 / row['wall_ms']
+                require(snapshot() == baseline, 'read load identity, rules or facts drifted')
+                cell.update(latency_statistics([sample['duration_ms'] for row in cell['rounds']
+                    for sample in row['requests'] if not sample['warmup']]))
+                for quantile in ('p50_ms', 'p95_ms'):
+                    values = [row[quantile] for row in cell['rounds']]
+                    cell['round_' + quantile.removesuffix('_ms') + '_range_ms'] = [min(values), max(values)]
+                cell['result'] = 'passed'
+        result.update(result='passed', unchanged_identity_rules_boundary=True)
 
     def measure_read_latency(self, report, facts, command):
         """Observe one existing Grant; never prepare or repair authorization here."""
