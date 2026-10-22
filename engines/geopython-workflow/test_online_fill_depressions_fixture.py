@@ -12,6 +12,8 @@ def fill_depressions_persistence(tmp_path_factory):
     scene=importlib.import_module('scripts.test.raster-fill-depressions-persistence-online')
     from workflow_engine import execute_workflow
     root=tmp_path_factory.mktemp('fill_depressions-export');(root/'outputs').mkdir()
+    # The real NFS lifecycle always creates this ownership marker.
+    (root/'.addp-online-owner').write_text('fill-depressions-123-1')
     initial=module.seed(root)
     for name in module.TARGETS:
         definition=scene.definition({n:n for n in module.SOURCES},'parent',name)
@@ -55,7 +57,7 @@ def test_fill_depressions_persistence_real_gdal_three_cog_chains_and_complete_pi
 
 
 
-@pytest.mark.parametrize('corruption',['value','one_unit','seam','invalid_center','mask','crs','grid','dtype','nodata','scale','unit','overviews','sidecar','source_sidecar','missing','extra'])
+@pytest.mark.parametrize('corruption',['value','one_unit','seam','invalid_center','mask','crs','grid','dtype','nodata','scale','unit','overviews','sidecar','source_sidecar','missing_owner','missing','extra'])
 def test_fill_depressions_persistence_oracle_rejects_corruption(fill_depressions_persistence,tmp_path,corruption):
     import shutil
     import numpy as np
@@ -84,6 +86,7 @@ def test_fill_depressions_persistence_oracle_rejects_corruption(fill_depressions
         ds=None;alternate.replace(path)
     elif corruption=='sidecar':(root/'outputs'/'filled.cog.tif.aux.xml').write_text('unexpected')
     elif corruption=='source_sidecar':(root/'dem.tif.aux.xml').write_text('unexpected')
+    elif corruption=='missing_owner':(root/'.addp-online-owner').unlink()
     elif corruption=='missing':path.unlink()
     else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))

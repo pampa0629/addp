@@ -25,7 +25,13 @@ class FixtureError(RuntimeError):
 
 
 def command(args, **kwargs):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=120, **kwargs).stdout.strip()
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True, timeout=120, **kwargs).stdout.strip()
+    except subprocess.CalledProcessError as error:
+        # Keep the worker's actual verification failure; stdout and stdin may
+        # contain fixture state and are deliberately excluded from diagnostics.
+        detail = (error.stderr or '').strip()[-4000:] or 'no stderr diagnostic'
+        raise FixtureError(f'fixture command failed (exit {error.returncode}): {detail}') from error
 
 
 if sys.argv[1:2] != ['--worker']:
@@ -164,7 +170,9 @@ def verify(root, names):
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
     if len(set(names))!=len(names) or any(name not in TARGETS for name in names):
         raise FixtureError('invalid exact raster DEM filling target inventory')
-    if sorted(p.name for p in root.iterdir())!=sorted([*SOURCES,'outputs']):
+    # NFSExport.owned_root validates this lifecycle marker against the run ID
+    # before invoking the worker. It is required inventory, never a sidecar.
+    if sorted(p.name for p in root.iterdir())!=sorted([*SOURCES,'outputs','.addp-online-owner']):
         raise FixtureError('unexpected source sidecar or temporary file')
     if sorted(p.name for p in (root/'outputs').iterdir())!=sorted(names):
         raise FixtureError('unexpected output, sidecar or temporary file')
