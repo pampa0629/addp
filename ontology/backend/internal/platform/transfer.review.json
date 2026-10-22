@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "543e2accd2b24976a68b44195a2893cc6ad363a3",
-      "sha256": "54937a824c18ec14b20cf70b0c262e119bceea0cef4df21fb9b738713aab5e95",
+      "commit": "c0153c89a23b988bc5788e6476cd61c9ab73558e",
+      "sha256": "b413377dc81dc5a9e9b83a7c4cd67e8460abdc86bb2e429bf95487e24b65ff5e",
       "use": {
-        "zh-cn": "任务／执行、写入策略、预检权限与三态；replace需实例、插件声明及Provider，unsupported优先于unknown，写后只扫目标表。核对表头与写前字段检查：动态reader使用同格式Describe并复用当前结果，保留Meta类型。encoded执行仍未建模；native创建保持停止态，不执行、调度或扫描。",
-        "en": "Task/execution, apply policy and read-only tri-state checks. Replace needs registered/plugin delete support and Provider; unsupported precedes unknown. Post-write scans target only. Reviewed headers and pre-write schema checks: dynamic readers use the same format Describe and reuse current-call results, preserving Meta types. Encoded execution remains unmodeled; native creation stays stopped, without execution, schedules or scans."
+        "zh-cn": "任务/执行与预检权限及三态；replace需实例、插件及Provider，unsupported优先，写后仅扫目标表。表头/动态reader复用当前同格式Describe并保留Meta类型；已纳管native运行前按同投影核对实时结构，未纳管不加Catalog读取。以上执行行为不扩展停止态native创建，仍不执行、调度或扫描，encoded执行未建模。",
+        "en": "Task/execution and read-only tri-state precheck; replace needs instance/plugin delete support and Provider, unsupported precedes unknown. Post-write scans target only. Headers/dynamic readers reuse same-format Describe results, preserving Meta types. Managed native execution checks live schema against the same projection; unmanaged reads add no catalog access. Execution details do not expand stopped native creation: no execution, schedules or scans; encoded execution remains unmodeled."
       }
     },
     {

@@ -1,4 +1,5 @@
 import importlib.util
+import ast
 import json
 import os
 import sys
@@ -1549,6 +1550,10 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'fixture-token',
         }
         for unavailable in (False, True):
+            scenario_report = FourOutletReasonMatrixTest().report()
+            mongo_report = scenario_report.pop('mongodb_algorithms')
+            mongo_report['enrollment_id'] = 'mongo-enrollment'
+            scenario_report.update(identity={'principal_id': '7'}, fixture={'security_enrollment_id': 'enrollment'})
             with (
                 self.subTest(unavailable=unavailable),
                 patch.dict(os.environ, environment, clear=True),
@@ -1559,8 +1564,9 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                 patch.object(ONLINE, 'wait_for_manager_search_ready', create=True) as initial_readiness,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
-                patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}, 'bank_card_metadata': {'refusal_causes': {name: {'execution_id': name} for name in ('not_ready', 'operation_unsupported', 'schema_mismatch')}}}) as scenario,
-                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': [], 'enrollment_id': 'mongo-enrollment'}),
+                patch.object(ONLINE, 'run_scenario', return_value=scenario_report) as scenario,
+                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value=mongo_report) as mongo,
+                patch.object(ONLINE, 'protection_reason_matrix', wraps=ONLINE.protection_reason_matrix) as matrix,
                 patch.object(ONLINE, 'result_browser_context', return_value={'fixture': 'result'}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}),
                 patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
@@ -1574,6 +1580,8 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                 order.attach_mock(prepare, 'prepare')
                 order.attach_mock(targets, 'targets')
                 order.attach_mock(scenario, 'scenario')
+                order.attach_mock(mongo, 'mongo')
+                order.attach_mock(matrix, 'matrix')
                 readiness.return_value = {'same_item_verified': True}
                 if unavailable:
                     readiness.side_effect = ONLINE.SuiteError('protected field not searchable')
@@ -1583,6 +1591,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                 else:
                     def launch(*args):
                         readiness.assert_called_once()
+                        self.assertEqual(scenario_report['protection_reason_matrix']['coverage_counts'], {'runtime': 20, 'protocol_only': 8})
                         context = args[3]
                         self.assertEqual(context["principal_id"], "7")
                         self.assertEqual(context["result_protection"], {"fixture": "result"})
@@ -1594,8 +1603,10 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                         return self.report()
                     browser.side_effect = launch
                     self.assertEqual(ONLINE.main(), 0)
-                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'initial_readiness', 'prepare', 'targets', 'scenario'])
+                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'initial_readiness', 'prepare', 'targets', 'scenario', 'mongo', 'matrix'])
                     self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source', 'node_id': 12}, 'email'))
+                matrix.assert_called_once_with(scenario_report)
+                self.assertIs(scenario_report['mongodb_algorithms'], mongo_report)
 
     def report(self):
         return {
@@ -2534,6 +2545,24 @@ class UnreadySourceFixtureTest(unittest.TestCase):
 
 
 class FourOutletReasonMatrixTest(unittest.TestCase):
+    def test_matrix_has_one_final_report_owner_after_evidence_collection(self):
+        owners = [function.name for function in ast.walk(ast.parse(SCRIPT.read_text()))
+                  if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  for node in ast.walk(function)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id == 'protection_reason_matrix']
+        self.assertEqual(owners, ['main'])
+
+    def test_missing_or_empty_mongodb_evidence_cannot_complete_matrix(self):
+        for evidence in (None, {}, {'cases': []}):
+            report = self.report()
+            if evidence is None:
+                del report['mongodb_algorithms']
+            else:
+                report['mongodb_algorithms'] = evidence
+            with self.subTest(evidence=evidence), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.protection_reason_matrix(report)
+
     def proof(self, reason, owner):
         if owner in ('manager', 'service'):
             return {'http_status': 403, 'error_code': 'security_protection_required' if owner == 'manager' else 'data_protection_required', 'result_absent': True}

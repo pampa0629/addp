@@ -2069,7 +2069,11 @@ def protection_reason_matrix(report: Mapping[str, object]) -> dict[str, object]:
     runtime("protection_computed_output_unsupported", "develop", computed["cases"]["substring"])
     runtime("protection_computed_output_unsupported", "service", computed["service_refusal"])
     runtime("protection_computed_output_unsupported", "transfer", computed["transfer_refusal"])
-    mongo = report["mongodb_algorithms"]["cases"][0]
+    mongodb = _object(report.get("mongodb_algorithms"), "required MongoDB acceptance evidence")
+    mongo_cases = _array(mongodb.get("cases"), "required MongoDB acceptance cases")
+    if not mongo_cases:
+        raise SuiteError("reason matrix requires actual MongoDB acceptance cases")
+    mongo = _object(mongo_cases[0], "MongoDB acceptance case")
     runtime("protection_lineage_unverified", "develop", mongo["query_boundaries"])
     derived = mongo["derived_transfer_denied"]
     runtime("protection_lineage_unverified", "transfer", {**derived,
@@ -2683,7 +2687,6 @@ def run_scenario(
             "deleted_resources": 5 + len(task_ids),
             "residual_resources": 0,
         }
-        result["protection_reason_matrix"] = protection_reason_matrix(result)
     except BaseException as error:
         scenario_error = error
     try:
@@ -2940,6 +2943,7 @@ def main() -> int:
     )
     report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
         mongodb_transfer_targets, time.monotonic() + timeout, timeout)
+    report["protection_reason_matrix"] = protection_reason_matrix(report)
     source_item = find_item(client, source_engine_id,
                             f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
     # Projection changes and owned-resource cleanup queue external index purges.
