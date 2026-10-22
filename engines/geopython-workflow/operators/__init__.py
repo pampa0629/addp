@@ -14,7 +14,7 @@ from .io_operators import load, save
 from .geometric_operators import (
     buffer, intersection, union, centroid, difference,
     simplify, convex_hull, envelope, dissolve, polygonize, check_geometry, repair_geometry, snap_geometry,
-    check_polygon_overlap, check_polygon_gap, check_dangling_points
+    check_polygon_overlap, check_polygon_gap, check_dangling_points, check_line_overlap
 )
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
@@ -226,6 +226,7 @@ __all__ = [
     'check_polygon_overlap',
     'check_polygon_gap',
     'check_dangling_points',
+    'check_line_overlap',
 
     # 空间关系算子
     'contains',

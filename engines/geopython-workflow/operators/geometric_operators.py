@@ -244,17 +244,62 @@ def _source_identifiers(input_gdf: gpd.GeoDataFrame, id_field: str) -> pd.Series
     return ids
 
 
-def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
-    """Report degree-one planar network endpoints with all original source IDs."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
+def _require_nonempty_valid_lines(geometry: gpd.GeoSeries) -> None:
     if geometry.isna().any() or not geometry.geom_type.isin(["LineString", "MultiLineString"]).all():
         raise ValueError("input_gdf requires non-null LineString or MultiLineString geometries")
     parts = shapely.get_parts(geometry.array)
     if (shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any()
             or not shapely.is_valid(geometry.array).all()):
-        raise ValueError("input_gdf requires non-empty valid lines; repair explicitly before checking endpoints")
+        raise ValueError("input_gdf requires non-empty valid lines; repair explicitly before checking")
+
+
+def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report positive-length intersections of distinct feature pairs, without editing sources."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    left, right, lengths, overlaps = [], [], [], []
+    tree = shapely.STRtree(geometry.array)
+    for a, shape in enumerate(geometry.array):
+        candidates = tree.query(shape)
+        for b in np.sort(candidates[candidates > a]):
+            pending = [shapely.intersection(shape, geometry.array[b])]
+            lines = []
+            while pending:
+                part = pending.pop()
+                if part.geom_type == "LineString" and not part.is_empty:
+                    lines.append(part)
+                elif part.geom_type in {"MultiLineString", "GeometryCollection"}:
+                    pending.extend(part.geoms)
+            if not lines:
+                continue
+            # Set union counts a shared location once within this pair, even
+            # when a source retraces it or has overlapping multipart members.
+            shared = shapely.union_all(lines)
+            overlap_geometry = shapely.normalize(shapely.multilinestrings(shapely.get_parts(shared)))
+            length = shapely.length(overlap_geometry)
+            if not np.isfinite(length) or length <= 0 or not shapely.is_valid(overlap_geometry):
+                raise ValueError("overlap requires valid lines with finite positive Float64 length")
+            left.append(a)
+            right.append(b)
+            lengths.append(length)
+            overlaps.append(overlap_geometry)
+    return gpd.GeoDataFrame(
+        {"source_id_a": ids.iloc[left].reset_index(drop=True),
+         "source_id_b": ids.iloc[right].reset_index(drop=True),
+         "overlap_length": pd.Series(lengths, dtype="float64")},
+        geometry=gpd.GeoSeries(overlaps, crs=geometry.crs),
+    )
+
+
+def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report degree-one planar network endpoints with all original source IDs."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    parts = shapely.get_parts(geometry.array)
 
     # Use the same exact noding as polygonize; coincident/reversed edges count
     # once, while the two ends of a closed edge both contribute to its degree.
@@ -451,6 +496,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
+    name="check_line_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="线叠检查", brief_description="逐对提取不同线要素的精确重合段，保留双方来源和长度",
+    execution_modes=["workflow"], effects=["read"],
+    overview="检查单个线图层不同要素之间的正长度交集；包含、反向重复和不同顶点分段同样报告。"
+             "只报告几何事实，不判断业务错误或修改源线。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个线图层", notes="有效有限二维 LineString/MultiLineString，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id_a/source_id_b/overlap_length/MultiLineString，保留来源类型和源 CRS", is_default=True)],
+    use_cases=["定位部分重合或完全重复的线及双方来源", "检查反向重复线和共线段后由业务确认"],
+    notes=["每对按源行位置只输出一次，多段归入一行，每对同一位置长度只计一次", "三条共同重合的线逐对输出三行，长度总和不是全图层去重长度", "长度采用源投影水平单位，不换算米、不忽略微小重合", "点接触不报；不设容差、不检查单要素内部重复、不自动修复或改写源", "不扩展 Quality 规则，保存另接 save；索引及结果驻内存，不承诺固定容量"],
+    workflow_example={"id": "check_line_overlaps", "operator": "check_line_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
 
 CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
     name="check_dangling_points", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1080,4 +1141,5 @@ OPERATORS = dict([
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
+    register_operator(CHECK_LINE_OVERLAP_METADATA, check_line_overlap),
 ])
