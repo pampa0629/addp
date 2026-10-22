@@ -228,7 +228,7 @@ func rejectOwnerManagedBatchDomains(tx *gorm.DB, tenantID int64, entries []model
 		entry := entryByID[source.CatalogEntryID]
 		if (source.SourceModule == models.SourceModuleModel &&
 			(entry.EntryType == models.EntryTypeBusinessEntity || entry.EntryType == models.EntryTypeLogicalModel)) ||
-			(source.SourceModule == models.SourceModuleStandard && entry.EntryType == models.EntryTypeMetric && source.SourceType == models.SourceTypeMetric) {
+			(source.SourceModule == models.SourceModuleStandard && models.IsStandardSourceType(source.SourceType)) {
 			return ErrBatchGovernanceUnsupportedEntry
 		}
 	}

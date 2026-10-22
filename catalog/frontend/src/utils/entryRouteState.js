@@ -1,5 +1,5 @@
 const ALLOWED_SOURCE_STATUSES = new Set(['active', 'missing'])
-const ALLOWED_ENTRY_TYPES = new Set(['data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application'])
+const ALLOWED_ENTRY_TYPES = new Set(['data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application', 'glossary', 'element', 'code_set', 'standard_document'])
 const ALLOWED_VIEWS = new Set(['governance', 'inventory'])
 const ALLOWED_GOVERNANCE_STATUSES = new Set(['discovered', 'curated', 'certified', 'deprecated'])
 const ALLOWED_VISIBILITIES = new Set(['inventory', 'department', 'tenant'])

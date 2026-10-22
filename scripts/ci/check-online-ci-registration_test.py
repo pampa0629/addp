@@ -17,6 +17,28 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_catalog_overview_requires_cleanup_permissions_and_browser_contract(self):
+        source = SCRIPT.parents[2]
+        paths = ("scripts/test/online-host-gate.sh", "scripts/test/catalog-domain-overview-online.py",
+                 "scripts/test/catalog-domain-overview-online_test.py", "console/frontend/e2e/catalog-domain-overview.spec.js", "Makefile")
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        registered = {"catalog-domain-overview"}
+        CHECK.validate_catalog_domain_overview_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN"),
+                                   (paths[1], "reference_element_unchanged"),
+                                   (paths[2], "test_cleanup_attempts_all_exact_resources_and_reports_failure"),
+                                   (paths[3], "catalog-domain-overview"),
+                                   (paths[4], "$(MAKE) test-catalog-domain-online-runner")):
+            target = self.repository / relative
+            original = target.read_text()
+            target.write_text(original.replace(fragment, "omitted"))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_catalog_domain_overview_profile(self.repository, registered)
+            target.write_text(original)
+
     def test_disk_pressure_requires_owned_ext4_exact_rejection_recovery_and_cleanup(self):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',

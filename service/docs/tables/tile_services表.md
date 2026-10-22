@@ -55,6 +55,8 @@
 | GET | `/wmts/:serviceName` | WMTS 协议入口。 |
 | GET | `/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol` | OGC Tiles 瓦片入口。 |
 
+表中管理 API 与协议根路径是不同入口；管理 API 可达不证明瓦片协议已由根 Nginx 转发。直连、统一公开入口及当前转发缺口见[入口专题](../architecture/瓦片发布与缓存.md#元数据链接与公开入口)，分别按[公开入口验证](../testing/瓦片协议.md#元数据链接与公开入口核对)留证。
+
 本模型没有 `DeletedAt`；Repository 使用物理删除，不提供恢复接口。删除仅面向 Service 定义，不删除业务源表或源 PMTiles 文件。图层删除行为及级联约束的声明差异见[图层约束](tile_service_layers表.md#索引与约束)，不能把历史 SQL 自动当作当前库的约束证据。
 
 ## 实现依据

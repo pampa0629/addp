@@ -61,6 +61,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/monitor/alerts': [tenant('monitor.alert_rule.read', 'monitor.alert_incident.read')],
   '/monitor/notifications': [tenant('monitor.notification_destination.read', 'monitor.notification_delivery.read')],
   '/catalog/entries': [tenant('catalog.entry.read')],
+  '/catalog/domains': [tenant('catalog.entry.read')],
   '/catalog/governance/coverage': [tenant('catalog.inventory.read', 'catalog.entry.read')],
   '/catalog/governance/tasks': [tenant('catalog.entry.read', 'catalog.entry.update')],
   '/catalog/me/entries': [tenant('catalog.entry.read')],

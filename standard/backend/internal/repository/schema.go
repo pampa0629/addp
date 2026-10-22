@@ -93,7 +93,7 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateMetricDefinitionData(tx); err != nil {
 			return err
 		}
-		if err := migrateStandardCatalogMetricChanges(tx); err != nil {
+		if err := migrateStandardCatalogChanges(tx); err != nil {
 			return err
 		}
 		if err := simplifyStandardDefinitions(tx); err != nil {
@@ -405,125 +405,6 @@ func migrateMetricDefinitionData(db *gorm.DB) error {
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
 			return fmt.Errorf("migrate MetricDefinition data: %w", err)
-		}
-	}
-	return nil
-}
-
-func migrateStandardCatalogMetricChanges(db *gorm.DB) error {
-	if db.Dialector.Name() != "postgres" {
-		return nil
-	}
-	statements := []string{
-		`CREATE INDEX IF NOT EXISTS idx_standard_catalog_changes_tenant_id
-			ON standard.catalog_resource_changes (tenant_id, id)`,
-		`CREATE INDEX IF NOT EXISTS idx_standard_catalog_changes_source
-			ON standard.catalog_resource_changes (tenant_id, source_type, source_identity, id DESC)`,
-		`INSERT INTO standard.catalog_resource_changes (
-			tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
-		)
-		SELECT
-			metric.tenant_id,
-			'metric',
-			metric.id,
-			'upsert',
-			metric.version,
-			jsonb_strip_nulls(jsonb_build_object(
-				'name', revision.name,
-				'code', metric.code,
-				'object_kind', 'metric',
-				'metric_type', revision.metric_type,
-				'metric_status', revision.status,
-				'lifecycle_state', metric.lifecycle_state,
-				'scope_type', metric.scope_type,
-				'domain_id', CASE WHEN metric.owner_domain_id IS NULL THEN NULL ELSE metric.owner_domain_id::TEXT END,
-				'category_id', CASE WHEN metric.category_id IS NULL THEN NULL ELSE metric.category_id::TEXT END,
-				'unit_id', CASE WHEN revision.unit_id IS NULL THEN NULL ELSE revision.unit_id::TEXT END
-			)),
-			COALESCE(metric.updated_at, metric.created_at, NOW())
-		FROM standard.metric_definitions AS metric
-		LEFT JOIN LATERAL (
-			SELECT r.* FROM standard.metric_definition_revisions r
-			WHERE r.metric_definition_id=metric.id
-			ORDER BY CASE r.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, r.revision_no DESC LIMIT 1
-		) revision ON TRUE
-		WHERE NOT EXISTS (
-			SELECT 1 FROM standard.data_migrations WHERE version = 2026090401
-		)
-		ORDER BY metric.id`,
-		`INSERT INTO standard.data_migrations (version, name)
-		VALUES (2026090401, 'catalog_metric_definition_change_feed_v2')
-		ON CONFLICT (version) DO NOTHING`,
-		`CREATE OR REPLACE FUNCTION standard.capture_metric_catalog_change()
-		RETURNS TRIGGER
-		LANGUAGE plpgsql
-		AS $function$
-		DECLARE
-			changed standard.metric_definitions%ROWTYPE;
-			revision standard.metric_definition_revisions%ROWTYPE;
-		BEGIN
-			changed := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
-			IF TG_OP <> 'DELETE' THEN
-				SELECT r.* INTO revision FROM standard.metric_definition_revisions r
-				WHERE r.metric_definition_id=changed.id
-				ORDER BY CASE r.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, r.revision_no DESC LIMIT 1;
-			END IF;
-			INSERT INTO standard.catalog_resource_changes (
-				tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
-			) VALUES (
-				changed.tenant_id,
-				'metric',
-				changed.id,
-				CASE WHEN TG_OP = 'DELETE' THEN 'missing' ELSE 'upsert' END,
-				changed.version,
-				jsonb_strip_nulls(jsonb_build_object(
-					'name', revision.name,
-					'code', changed.code,
-					'object_kind', 'metric',
-					'metric_type', revision.metric_type,
-					'metric_status', revision.status,
-					'lifecycle_state', changed.lifecycle_state,
-					'scope_type', changed.scope_type,
-					'domain_id', CASE WHEN changed.owner_domain_id IS NULL THEN NULL ELSE changed.owner_domain_id::TEXT END,
-					'category_id', CASE WHEN changed.category_id IS NULL THEN NULL ELSE changed.category_id::TEXT END,
-					'unit_id', CASE WHEN revision.unit_id IS NULL THEN NULL ELSE revision.unit_id::TEXT END
-				)),
-				NOW()
-			);
-			RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
-		END;
-		$function$`,
-		`DROP TRIGGER IF EXISTS trg_standard_metric_catalog_change ON standard.metric_definitions`,
-		`CREATE TRIGGER trg_standard_metric_catalog_change
-		AFTER INSERT OR UPDATE OR DELETE ON standard.metric_definitions
-		FOR EACH ROW EXECUTE FUNCTION standard.capture_metric_catalog_change()`,
-		`INSERT INTO standard.catalog_resource_changes (
-			tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
-		)
-		SELECT metric.tenant_id, 'metric', metric.id, 'upsert', metric.version,
-			jsonb_strip_nulls(jsonb_build_object(
-				'name', revision.name, 'code', metric.code, 'object_kind', 'metric',
-				'metric_type', revision.metric_type, 'metric_status', revision.status,
-				'lifecycle_state', metric.lifecycle_state, 'scope_type', metric.scope_type,
-				'domain_id', CASE WHEN metric.owner_domain_id IS NULL THEN NULL ELSE metric.owner_domain_id::TEXT END,
-				'category_id', CASE WHEN metric.category_id IS NULL THEN NULL ELSE metric.category_id::TEXT END,
-				'unit_id', CASE WHEN revision.unit_id IS NULL THEN NULL ELSE revision.unit_id::TEXT END
-			)), NOW()
-		FROM standard.metric_definitions metric
-		LEFT JOIN LATERAL (
-			SELECT r.* FROM standard.metric_definition_revisions r
-			WHERE r.metric_definition_id = metric.id
-			ORDER BY CASE r.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, r.revision_no DESC LIMIT 1
-		) revision ON TRUE
-		WHERE NOT EXISTS (SELECT 1 FROM standard.data_migrations WHERE version = 2026092701)
-		ORDER BY metric.id`,
-		`INSERT INTO standard.data_migrations (version, name)
-		VALUES (2026092701, 'catalog_metric_scope_snapshot')
-		ON CONFLICT (version) DO NOTHING`,
-	}
-	for _, statement := range statements {
-		if err := db.Exec(statement).Error; err != nil {
-			return fmt.Errorf("migrate Standard catalog Metric changes: %w", err)
 		}
 	}
 	return nil

@@ -42,7 +42,7 @@ type EntryFacets struct {
 }
 
 type EntryTypeFacet struct {
-	EntryType string `json:"entry_type" enums:"data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application"`
+	EntryType string `json:"entry_type" enums:"data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application,glossary,element,code_set,standard_document"`
 	Count     int64  `json:"count"`
 }
 
@@ -228,7 +228,7 @@ func (s *EntryService) entryTypeFacetCounts(ctx context.Context, tenantID int64,
 	}
 	order := []string{
 		"data_item", "business_entity", "logical_model", "metric",
-		"data_service", "development_artifact", "data_application",
+		"data_service", "development_artifact", "data_application", "glossary", "element", "code_set", "standard_document",
 	}
 	result := make([]EntryTypeFacet, 0, len(counts))
 	for _, entryType := range order {

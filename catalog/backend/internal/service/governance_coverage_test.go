@@ -81,12 +81,12 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 	for _, dimension := range result.Dimensions {
 		dimensions[dimension.Key] = dimension
 	}
-	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessDefinition], 1, 3, 33.33)
+	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessDefinition], 2, 3, 66.67)
 	assertCoverageDimension(t, dimensions[CoverageDimensionPrimaryDomain], 3, 3, 100)
 	assertCoverageDimension(t, dimensions[CoverageDimensionAccountableDepartment], 2, 3, 66.67)
 	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessOwner], 1, 3, 33.33)
 	assertCoverageDimension(t, dimensions[CoverageDimensionDataSteward], 1, 3, 33.33)
-	assertCoverageDimension(t, dimensions[CoverageDimensionGlossary], 1, 3, 33.33)
+	assertCoverageDimension(t, dimensions[CoverageDimensionGlossary], 1, 2, 50)
 	componentCoverage := dimensions[CoverageDimensionComponentStandardMapping]
 	assertCoverageDimension(t, componentCoverage, 1, 1, 100)
 	if componentCoverage.NotApplicable != 2 || modelEntry.ID == metaEntry.ID {

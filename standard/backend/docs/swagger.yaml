@@ -1,5 +1,54 @@
 basePath: /api/v1/standard
 definitions:
+  domainreference.Evidence:
+    properties:
+      owner_module:
+        type: string
+      position:
+        type: string
+      relation_kind:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_revision_id:
+        type: string
+      resource_type:
+        type: string
+      revision_id:
+        type: string
+      state:
+        type: string
+    type: object
+  domainreference.Page:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/domainreference.Reference'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  domainreference.Reference:
+    properties:
+      evidence:
+        items:
+          $ref: '#/definitions/domainreference.Evidence'
+        type: array
+      evidence_truncated:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    type: object
   execution.ReadGrant:
     properties:
       own_ad_hoc:
@@ -2877,7 +2926,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 拉取 Standard Metric 目录资源变化 | Pull Standard Metric catalog resource changes
+      summary: 拉取 Standard 五类标准 目录资源变化 | Pull Standard standard catalog resource changes
       tags:
       - Catalog Integration
       x-addp-auth-mode: permission
@@ -5101,6 +5150,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.element.publish
+  /elements/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（element） | List domain standard references (element)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
   /execution-read-scope:
     get:
       produces:
@@ -5730,6 +5836,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.glossary.publish
+  /glossaries/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（glossary） | List domain standard references (glossary)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
   /measurement-categories:
     get:
       produces:
@@ -6573,6 +6736,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.metric.publish
+  /metrics/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（metric） | List domain standard references (metric)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
   /references/candidates:
     get:
       description: 仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Domain、Glossary
@@ -6710,11 +6930,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 按请求顺序动态解析 1 到 200 个 Metric 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog
-        服务消费 | Dynamically resolve 1 to 200 Metric references in request order; cross-tenant
-        and missing references both return found=false; Catalog service only
+      description: 按请求顺序动态解析 1 到 200 个五类标准引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog
+        服务消费 | Dynamically resolve 1 to 200 standard references in request order;
+        cross-tenant and missing references both return found=false; Catalog service
+        only
       parameters:
-      - description: Metric 目录引用 | Metric catalog references
+      - description: 标准目录引用 | Standard catalog references
         in: body
         name: request
         required: true
@@ -6753,7 +6974,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 解析 Standard Metric 目录引用 | Resolve Standard Metric catalog references
+      summary: 解析 Standard 五类标准 目录引用 | Resolve Standard standard catalog references
       tags:
       - Catalog Integration
       x-addp-auth-mode: permission

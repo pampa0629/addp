@@ -10,11 +10,11 @@ import { isSynchronizedIframeRoute, splitConsoleRoute } from '../src/utils/conso
 import { searchIndex } from '../src/config/searchIndex'
 
 describe('Console navigation bridge', () => {
-  it('keeps one Catalog browse entry for resource and domain discovery', () => {
+  it('separates Catalog domain overview from contextual resource browsing', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).toContain("index: '/catalog/entries'")
-    expect(configSource).not.toContain("index: '/catalog/domains'")
-    expect(searchIndex('业务域', key => key, ['catalog.entry.read'], 'tenant').map(item => item.route)).toContain('/catalog/entries')
+    expect(configSource).toContain("index: '/catalog/domains'")
+    expect(searchIndex('业务域', key => key, ['catalog.entry.read'], 'tenant').map(item => item.route)).toContain('/catalog/domains')
   })
 
   it('removes retired Standard collection entry points', () => {

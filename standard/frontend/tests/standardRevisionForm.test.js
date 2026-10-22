@@ -137,7 +137,7 @@ describe('Standard management revision display', () => {
     consumers.push('components/DocumentPanel')
     for (const name of consumers) {
       const source = readFileSync(new URL(`../src/${name}.vue`, import.meta.url), 'utf8')
-      expect(source).toContain('getStandardDisplayRevision')
+      expect(source).toMatch(/getStandard(?:Display|Route)Revision/)
       expect(source).not.toMatch(/draft_revision\s*\|\|/)
       expect(source).not.toMatch(/history(?:\.value)?\??\.?(?:\[0\])/)
     }

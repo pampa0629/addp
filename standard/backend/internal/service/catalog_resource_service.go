@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/domainreference"
 	"github.com/addp/standard/internal/models"
 )
 
@@ -20,8 +21,9 @@ const (
 var ErrInvalidCatalogResourceRequest = errors.New("invalid catalog resource request")
 
 type CatalogResourceRepository interface {
+	ListDomainStandardReferences(context.Context, int64, int64, string, int, int) (*domainreference.Page, error)
 	ListChanges(context.Context, int64, int64, int) ([]models.CatalogResourceChangeRow, error)
-	ListMetrics(context.Context, int64, []int64) ([]models.MetricDefinitionAggregate, error)
+	ListResources(context.Context, int64, []models.CatalogReference) ([]models.CatalogReferenceResolution, error)
 }
 
 type CatalogResourceService struct{ repository CatalogResourceRepository }
@@ -73,66 +75,38 @@ func (s *CatalogResourceService) Resolve(ctx context.Context, tenantID int64, re
 	if tenantID <= 0 || s == nil || s.repository == nil || len(references) == 0 || len(references) > maxCatalogReferences {
 		return nil, ErrInvalidCatalogResourceRequest
 	}
-	ids := make([]int64, len(references))
-	for index, reference := range references {
-		if reference.SourceType != models.CatalogSourceTypeMetric {
+	for _, reference := range references {
+		if !models.ValidCatalogSourceType(reference.SourceType) {
 			return nil, ErrInvalidCatalogResourceRequest
 		}
-		id, err := parseCanonicalPositiveID(reference.SourceIdentity)
-		if err != nil {
+		if _, err := parseCanonicalPositiveID(reference.SourceIdentity); err != nil {
 			return nil, ErrInvalidCatalogResourceRequest
 		}
-		ids[index] = id
 	}
-	metrics, err := s.repository.ListMetrics(ctx, tenantID, ids)
+	resources, err := s.repository.ListResources(ctx, tenantID, references)
 	if err != nil {
 		return nil, err
 	}
-	metricByID := make(map[int64]models.MetricDefinitionAggregate, len(metrics))
-	for _, metric := range metrics {
-		metricByID[metric.ID] = metric
+	byKey := map[string]models.CatalogReferenceResolution{}
+	for _, resource := range resources {
+		byKey[resource.SourceType+":"+resource.SourceIdentity] = resource
 	}
 	results := make([]models.CatalogReferenceResolution, 0, len(references))
-	for index, reference := range references {
-		result := models.CatalogReferenceResolution{SourceType: reference.SourceType, SourceIdentity: reference.SourceIdentity}
-		if metric, exists := metricByID[ids[index]]; exists {
-			result.Found, result.Status, result.Version = true, metric.LifecycleState, metric.Version
-			if revision := displayMetricRevision(metric); revision != nil {
-				result.Status = revision.Status
-			}
-			result.Summary = metricCatalogSummary(metric)
-			result.DetailPath = "/standard/metrics/" + reference.SourceIdentity
+	for _, reference := range references {
+		result, ok := byKey[reference.SourceType+":"+reference.SourceIdentity]
+		if !ok {
+			result = models.CatalogReferenceResolution{SourceType: reference.SourceType, SourceIdentity: reference.SourceIdentity}
 		}
 		results = append(results, result)
 	}
 	return &models.ResolveCatalogReferencesResponse{Results: results}, nil
 }
 
-func metricCatalogSummary(metric models.MetricDefinitionAggregate) map[string]any {
-	result := map[string]any{
-		"name": metric.Code, "code": metric.Code, "object_kind": "metric",
-		"lifecycle_state": metric.LifecycleState, "scope_type": metric.ScopeType,
-	}
-	if revision := displayMetricRevision(metric); revision != nil {
-		result["name"], result["metric_type"], result["metric_status"] = revision.Name, revision.MetricType, revision.Status
-		if revision.UnitID != nil {
-			result["unit_id"] = strconv.FormatInt(*revision.UnitID, 10)
-		}
-	}
-	if metric.OwnerDomainID != nil {
-		result["domain_id"] = strconv.FormatInt(*metric.OwnerDomainID, 10)
-	}
-	if metric.CategoryID != nil {
-		result["category_id"] = strconv.FormatInt(*metric.CategoryID, 10)
-	}
-	return result
-}
-
 func displayMetricRevision(metric models.MetricDefinitionAggregate) *models.MetricDefinitionRevision {
-	if metric.DraftRevision != nil {
-		return metric.DraftRevision
+	if metric.CurrentRevision != nil {
+		return metric.CurrentRevision
 	}
-	return metric.CurrentRevision
+	return metric.LatestRevision
 }
 
 func parseCanonicalPositiveID(value string) (int64, error) {

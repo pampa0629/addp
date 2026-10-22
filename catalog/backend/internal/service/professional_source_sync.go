@@ -352,8 +352,11 @@ func professionalEntryType(sourceModule, sourceType string) string {
 		return models.EntryTypeBusinessEntity
 	case sourceModule == models.SourceModuleModel && sourceType == models.SourceTypeLogicalTable:
 		return models.EntryTypeLogicalModel
-	case sourceModule == models.SourceModuleStandard && sourceType == models.SourceTypeMetric:
-		return models.EntryTypeMetric
+	case sourceModule == models.SourceModuleStandard && models.IsStandardSourceType(sourceType):
+		if sourceType == models.SourceTypeDocument {
+			return models.EntryTypeStandardDocument
+		}
+		return sourceType
 	case sourceModule == models.SourceModuleService && sourceType == models.SourceTypeQueryService:
 		return models.EntryTypeDataService
 	case sourceModule == models.SourceModuleDevelop && sourceType == models.SourceTypeDevTask:

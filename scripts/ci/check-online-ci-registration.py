@@ -3161,6 +3161,25 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
             raise RegistrationError("administrator governance lifecycle missing: " + fragment)
 
 
+def validate_catalog_domain_overview_profile(repository: Path, registered: set[str]) -> None:
+    if "catalog-domain-overview" not in registered:
+        return
+    required = {
+        "scripts/test/online-host-gate.sh": ("catalog-domain-overview)", "ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN", "ADDP_ONLINE_CATALOG_REFERENCE_ELEMENT_ID"),
+        "scripts/test/catalog-domain-overview-online.py": ("reader_inventory_denied", "stable_source_identities", "reference_element_unchanged", "catalog_history", "finally:"),
+        "scripts/test/catalog-domain-overview-online_test.py": ("test_partial_fixture_failure_cleans_created_domain_and_leaves_reference_read_only", "test_cleanup_attempts_all_exact_resources_and_reports_failure"),
+        "console/frontend/e2e/catalog-domain-overview.spec.js": ("catalog-domain-overview", "inventory", "governance"),
+        "Makefile": ("test-catalog-domain-online-runner", "$(MAKE) test-catalog-domain-online-runner"),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file():
+            raise RegistrationError("Catalog domain overview requires " + relative)
+        content = path.read_text(encoding="utf-8")
+        if any(fragment not in content for fragment in fragments):
+            raise RegistrationError("Catalog domain overview profile is incomplete: " + relative)
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -3175,6 +3194,7 @@ def check_registration(repository: Path) -> None:
         raise RegistrationError(
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
+    validate_catalog_domain_overview_profile(repository, registered)
     validate_highgo_profile(repository, registered)
     validate_metric_engine_variant(repository, registered)
     validate_pg_authorization_profile(repository, registered)

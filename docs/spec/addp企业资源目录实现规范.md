@@ -1,13 +1,13 @@
 # ADDP 企业资源目录实现规范
 
-版本：v1.14-draft
-更新日期：2026-10-09
+版本：v1.15-draft
+更新日期：2026-10-22
 
 本文定义 Catalog 模块的身份、数据、变化、API、权限、搜索和运行契约。概念边界见 [企业资源目录体系图](../concepts/addp企业资源目录体系图.md)。
 
 ## 一、适用范围与原则
 
-第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果；第六阶段接入 Workbench 已首次发布的 Data Application。Quality 摘要只通过 owner 公开契约动态读取，不扩展为新的 CatalogEntry 类型或 Catalog 事实副本；统一 Workspace 经跨模块评估确认当前不新增，不预建模块、实体或 `workspace_id`。
+第一阶段以 Meta DataItem 为自动来源，并开放 Standard Domain、Glossary Term、Element 的基础关联；第二阶段接入 Model Entity 与 LogicalTable；第三阶段接入 Standard Metric；第四阶段接入 Service QueryService；第五阶段接入经过筛选的 Develop 可复用开发成果；第六阶段接入 Workbench 已首次发布的 Data Application；Standard 业务术语、数据元、码值集与标准文档现统一按稳定身份接入，和既有指标使用同一变化源。Quality 摘要只通过 owner 公开契约动态读取，不扩展为新的 CatalogEntry 类型或 Catalog 事实副本；统一 Workspace 经跨模块评估确认当前不新增，不预建模块、实体或 `workspace_id`。
 
 实现必须遵守：
 
@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `id` | UUID PK | 企业目录稳定身份 |
 | `tenant_id` | 非空、索引 | Tenant 隔离事实，不接受调用方提交 |
-| `entry_type` | `data_item` / `business_entity` / `logical_model` / `metric` / `data_service` / `development_artifact` / `data_application` | 企业目录对象类型 |
+| `entry_type` | `data_item` / `business_entity` / `logical_model` / `metric` / `data_service` / `development_artifact` / `data_application` / `glossary` / `element` / `code_set` / `standard_document` | 企业目录对象类型 |
 | `entry_status` | `active` / `merged` | 目录记录是否仍为规范身份 |
 | `merged_into_entry_id` | nullable UUID | `merged` 墓碑指向的规范条目 |
 | `recommended_successor_entry_id` | nullable UUID | 弃用条目可选指向的推荐继任 CatalogEntry |
@@ -53,7 +53,7 @@
 | `id` | UUID PK |
 | `tenant_id` / `catalog_entry_id` | 非空；只引用 Catalog 自身表 |
 | `source_module` | `meta` / `model` / `standard` / `service` / `develop` / `workbench`；后续由规范显式扩展 |
-| `source_type` | `data_item` / `entity` / `logical_table` / `metric` / `query_service` / `dev_task` / `data_application` |
+| `source_type` | `data_item` / `entity` / `logical_table` / `metric` / `query_service` / `dev_task` / `data_application` / `glossary` / `element` / `code_set` / `document` |
 | `source_identity` | Meta DataItem fingerprint，Model / Standard / Service / Develop 公开正整数 ID 的规范十进制字符串，或 Workbench Data Application 规范小写 UUID |
 | `source_status` | `active` / `missing` |
 | `source_version` | owner 变化源给出的可排序单调版本字符串 |
@@ -68,7 +68,7 @@
 - 同一 Tenant 的 `{source_module, source_type, source_identity}` 最多一个当前有效绑定；
 - 一个 `active` CatalogEntry 最多一个当前 `active` SourceBinding；
 - 历史绑定可以同 identity 多条，但只能一条当前有效；
-- `observed_snapshot` 只包含列表、搜索、来源失效解释所需的最后观察摘要。Meta 来源可以包含名称、类型、引擎 ID、Meta Item ID、结构摘要、扫描深度和必要展示字段；Model 来源只包含名称、编码、对象种类、专业生命周期、逻辑模型角色、分层和必要的 owner 引用 ID；Standard Metric 来源只包含名称、编码、指标类型、专业状态、生命周期和必要的 Domain、Category、Unit 引用 ID；Service QueryService 来源只包含标题、服务名、服务状态、配置类型、访问模式和必要的 Engine 引用 ID；Develop DevTask 来源只包含名称、说明、开发类型、专业状态和必要的 Engine 引用 ID；Workbench Data Application 来源只包含当前发布 Revision 的名称、说明、专业发布状态、Revision Number 和规范运行路径。不得复制完整 attributes、EntityAttribute、LogicalField、指标定义、公式、派生配置、服务 SQL、协议配置、输出契约、Consumer Descriptor、Develop `content`、查询文本、工作流 DAG、参数、执行配置、Data Application Component、页面布局、参数绑定、Revision 快照、关系、物化配置或内容数据；当前专业详情通过 owner 批量解析 API 动态读取。
+- `observed_snapshot` 只包含列表、搜索、来源失效解释所需的最后观察摘要。Meta 来源可以包含名称、类型、引擎 ID、Meta Item ID、结构摘要、扫描深度和必要展示字段；Model 来源只包含名称、编码、对象种类、专业生命周期、逻辑模型角色、分层和必要的 owner 引用 ID；Standard 五类来源只包含名称、编码、对象类型、展示修订 ID/号/状态、是否当前生效、专业定义完整标记、适用范围、生命周期和必要的 Domain、Category、Unit 引用 ID；Service QueryService 来源只包含标题、服务名、服务状态、配置类型、访问模式和必要的 Engine 引用 ID；Develop DevTask 来源只包含名称、说明、开发类型、专业状态和必要的 Engine 引用 ID；Workbench Data Application 来源只包含当前发布 Revision 的名称、说明、专业发布状态、Revision Number 和规范运行路径。不得复制完整 attributes、EntityAttribute、LogicalField、指标定义、公式、派生配置、服务 SQL、协议配置、输出契约、Consumer Descriptor、Develop `content`、查询文本、工作流 DAG、参数、执行配置、Data Application Component、页面布局、参数绑定、Revision 快照、关系、物化配置或内容数据；当前专业详情通过 owner 批量解析 API 动态读取。
 
 `observed_snapshot` 是带 `source_version` 与 `observed_at` 的可重建投影，不是专业事实备份：Catalog 不允许编辑其中字段，owner 当前响应永远权威，且该摘要不能用于恢复 owner 数据。owner 不可达或来源已经删除时，Catalog 可以继续展示最后观察摘要并明确其观察时间，但不得把它表述为当前事实。
 
@@ -97,7 +97,7 @@
 | CatalogEntry → Glossary Term | 多对多 |
 | CatalogComponent → ElementRevision（StandardMapping） | 每个组件最多一个当前已审核映射；候选可有多条，审核时必须收敛 |
 
-`curated` 及以上 CatalogEntry 通常必须有一个有效 primary Domain。唯一例外是 Standard MetricDefinition 的 `scope_type=platform|tenant_common` 且 owner 未声明 `domain_id`：其“公共且无专属归属域”是明确的专业事实，允许编目，不算待归类。`scope_type=domain` 的指标、Model Entity / LogicalTable 及其他条目仍须有主业务域。Meta DataItem 的 primary Domain 是 Catalog 关联；Model Entity / LogicalTable 和 Standard MetricDefinition 的 primary Domain 是 owner 当前 `domain_id`。Catalog 不因缺少主域而给 owner 管理的对象另建人工主域。Catalog 对自身持有的 Domain、Glossary 和 StandardMapping 通过 Standard owner 契约验证同一 Tenant、对象存在且生命周期允许引用；Standard 名称可进入搜索投影，但不成为 Catalog 权威字段。
+`curated` 及以上 CatalogEntry 通常必须有一个有效 primary Domain。唯一例外是 Standard 五类标准的 `scope_type=platform|tenant_common` 且 owner 未声明 `domain_id`：其“公共且无专属归属域”是明确的专业事实，允许编目，不算待归类。`scope_type=domain` 的五类标准、Model Entity / LogicalTable 及其他条目仍须有主业务域。Meta DataItem 的 primary Domain 是 Catalog 关联；Model Entity / LogicalTable 和 Standard 五类标准的 primary Domain 是 owner 当前 `domain_id`。Catalog 不因缺少主域而给 owner 管理的对象另建人工主域。Catalog 对自身持有的 Domain、Glossary 和 StandardMapping 通过 Standard owner 契约验证同一 Tenant、对象存在且生命周期允许引用；Standard 名称可进入搜索投影，但不成为 Catalog 权威字段。
 
 StandardMapping 是独立、可审核、可并发编辑的关系事实，不是 CatalogEntry 聚合中的无身份数组项。至少保存 `id + tenant_id + catalog_entry_id + component_id + element_id + element_revision_id + source + confidence + evidence + review_status + version`：
 
@@ -114,7 +114,7 @@ CatalogEntry 详情读取 StandardMapping 时，映射身份、审核状态和�
 
 Model 自身保存的 Entity / LogicalTable `domain_id`、属性或字段冻结的 `element_revision_id`、MetricImplementation 及建模关系是参与审批、设计和物化的专业内生关系，仍由 Model 权威维护，不复制为 Catalog 人工语义关联。Catalog 动态读取并以“Model 声明的专业关系”展示；Model 已声明主业务域时，它构成该 Model 来源条目的有效 primary Domain，Catalog 不接受另一条冲突的人工 primary Domain。修改这类关系必须进入 Model 唯一写路径。
 
-Standard MetricDefinition 的业务定义、统计口径、专业状态、`domain_id`、分类、计量单位和语义依赖全部由 Standard 权威维护；具体粒度、来源、连接、过滤和可执行表达式由 Model MetricImplementation 权威维护。Catalog 不复制这些专业事实，也不允许保存冲突的人工 primary Domain；修改必须进入对应 owner 的唯一写路径。
+Standard 五类标准的业务定义、统计口径、专业状态、`domain_id`、分类、计量单位和语义依赖全部由 Standard 权威维护；具体粒度、来源、连接、过滤和可执行表达式由 Model MetricImplementation 权威维护。Catalog 不复制这些专业事实，也不允许保存冲突的人工 primary Domain；修改必须进入对应 owner 的唯一写路径。
 
 ### 3.2 责任关系
 
@@ -275,7 +275,7 @@ discovered ⇄ curated ⇄ certified
            deprecated ←────┘
 ```
 
-- `discovered → curated`：业务名称、说明、适用时有效的 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；Standard 公共指标无专属域时遵守 3.1 节唯一例外；
+- `discovered → curated`：业务名称、说明、适用时有效的 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；Standard 公共标准无专属域时遵守 3.1 节唯一例外；
 - `curated → discovered`：唯一表示“撤销编目”。它不是普通字段编辑或任意状态回退，而是把误编目或不再具备完整业务治理事实的条目原子恢复为自动发现状态；请求必须同时清空 Catalog 自有业务名称、业务说明、Domain、Glossary、责任和推荐继任关系，并把可见性恢复为 `inventory`。来源绑定、CatalogEntry 稳定身份、专业 owner 事实、独立 StandardMapping、版本和审计历史必须保留；StandardMapping 如需撤回，必须走自身审核生命周期，不能隐藏在条目更新中；
 - `curated → certified`：需要独立认证权限和认证审计；认证只确认当前 CatalogEntry 聚合版本和当前已审核 StandardMapping 集合，不允许在同一请求中改变业务名称、说明、语义关联、责任、映射或可见性；
 - `certified → curated`：唯一表示“撤销认证”。必须具有认证权限并填写原因，只改变治理状态并完整保留当前编目事实；撤销后使用普通编目更新完成修订，再由同一路径重新认证；
@@ -317,17 +317,19 @@ Catalog `GET /domains` 仅对 `catalog.entry.read` 开放，动态使用 `addp-c
 
 资源盘点视图的业务域导航可以提供“待归类”虚拟入口，但它不是 Standard Domain、没有稳定 Domain ID，也不进入 `/entries/facets` 的 Domain 候选。该入口唯一映射到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing` 的权威治理缺口查询；进入时清除名称搜索、已选业务域及其下游责任部门和资源类型，退出后恢复普通目录导航。缺口视图不得继续把“待归类”表现为导航父节点，避免把治理状态误装成企业分类事实。
 
-### 4.4 业务域上下文中的专业内容
+### 4.4 业务域总览与资源浏览
 
-业务域上下文与资源浏览统一在 `/entries`，不提供另一套业务域资源页面。未选域时展示筛选与权威分页列表；选域后展示定义、层级与资源类型入口，零资源域仍可选。默认收拢的“本域专业内容”展开后按需读取，切域时清除旧观察，迟到响应不得覆盖当前域。
+资源浏览 `/entries` 保持“带业务域上下文的资源浏览”：域定义、精确域分面和权威分页列表；专业对象不再通过旁置 Standard 列表重复计数。Catalog 独立页面 `/domains?domain_id=<id>&view=governance|inventory` 是唯一业务域总览，复用 Standard 业务域选择和目录查询。默认 governance，inventory 需要盘点权限；精确域不包含子域，零资源域仍可选。
 
-- Standard 术语、数据元与指标分别使用当前 User Token 和各自读取 Permission，按 `scope_type=domain` 与精确 `owner_domain_id` 分页查询。数量使用各自 owner 的 `total`，包括其当前可读生命周期对象，不等同已发布数或 CatalogEntry 数量。
-- Model 实体、逻辑模型已有 CatalogEntry，只在目录类型入口和权威列表计数；专业内容区提供保留精确域筛选的 owner 导航，不重复列出或计数。
-- Quality 规则、方案及 `open` 问题按其公开列表的精确 `owner_domain_id` 和各自读取 Permission 查询。该归属表示 Quality 治理责任，不证明被检查数据属于本域，也不表示域内数据质量评分；不得用全局 Overview 代替。
-- 专业内容数字只使用所选精确业务域和各自专业权限，不随 Catalog 查看范围、责任部门、名称或类型筛选变化；Catalog 类型数仍使用 4.3 的分面口径。界面必须分别说明两种范围。
-- 公共且无专属归属域的定义不并入本域；父域不隐含子域。同域共现不构成依赖关系，关系必须来自 owner 证据或已审核映射。专业详情跳转还须满足 Console 对应路由权限。
+总览通过 `GET /domains/:id/overview?view=` 读取 Catalog 自有类型计数、治理状态分布及权限允许时的域级覆盖率，不持久化总览表。统计、资源浏览下钻和覆盖率缺口查询共用同一视图、域与可见性规则。公共无归属域标准不计入本域负责资源，合法公共归属不记作待归类。`GET /governance/coverage` 和缺口下钻支持相同精确 `primary_domain_id`。
 
-各 owner 的权限不足、不可用、加载和空态独立显示；缺少权限不发起专业查询，不使用 Catalog Service 身份代查，不复制专业定义或 Quality 投影，不阻断 Catalog 列表。域级治理覆盖率、全量关系图和关联资产统计不在此契约内，须先定义查询、权限、适用对象和跨域计数口径。
+本域引用的外部标准按 Catalog、Model、Standard 三个事实来源分别分页展示，不提供跨 owner 相加的总数。只读当前明确保存的一跳引用；按目标稳定身份去重，保留使用方、引用位置、确定修订及证据 owner；每目标最多返回 100 个位置，超出时显式 evidence_truncated，不把截断结果声明为全部证据。Catalog 使用当前视图中可见主域条目的术语关联和已审核 StandardMapping；Model 使用当前域实体属性、逻辑字段、指标实现的明确标准引用，区分草稿与冻结修订；Standard 使用当前生效修订（无生效修订时最高修订）的术语数据元、数据元码值集、指标定义中明确保存的指标依赖（当前不保留已删除的指标数据元映射）。文档来源证据表达“定义依据”，不冒充标准采用。未读取、权限不足、不可用和零结果独立表达。目录身份解析仅为当前可见目标返回最小适用范围与归属域；引用目标属于本域时不计为外部标准，公共或其他域对象保留。owner 分页总数表示本域全部明确引用目标数，页面不把它标成外部标准总数；每页过滤同域目标，空页仍可继续翻页，无法解析目标单列为未确认。
+
+Catalog 提供 `GET /domain_standard_references?domain_id=&view=&page=&page_size=`；Model 提供 `GET /entities|logical-tables|metric-implementations/standard_references?domain_id=&page=&page_size=`；Standard 提供 `GET /glossaries|elements|metrics/standard_references?domain_id=&page=&page_size=`，分别使用引用方类型的读取权限。这些 API 返回只读分页引用事实，Catalog 不存专业关系表、不递归推导依赖。专业详情和 Model/Standard/Quality 引用查询使用当前 User Token，按实际对象类型所需权限分别准入；不借用 Catalog 服务身份。Quality 规则、方案、open 问题仍按精确 `owner_domain_id` 及各自权限动态展示，仅表示治理责任，不表达域内数据评分；专业编辑、审核发布、执行和问题办理均导航到唯一 owner。
+
+Standard 五类标准的名称、定义、范围、主业务域、修订与发布只归 Standard。Catalog 更新不得提交其名称/说明副本或人工主域；目录责任、可见性与治理状态仍归 Catalog，不从创建/发布人猜测责任，不从标准发布自动完成编目/认证。Standard 专业定义按其自身必填规范判断；名称与定义完整证据保存在最小观察投影，完整正文动态读取。标准文档描述可选，不因缺少可选描述产生虚假治理缺口。五类标准的术语关联覆盖率记为不适用，不要求自关联；无真实 CatalogComponent 的标准不进入落标分母。
+
+已有指标人工名称和说明须在活动副本清除前，逐条将完整原值、条目版本和来源绑定存入 `catalog.audit_events` 的一次性迁移事件；同事务清除副本、推进版本并排队重建搜索。保留原始文本，不截断、不改写历史审计，不把人工说明合并进 Standard 定义。缺失或冲突来源身份等无法明确归属的情况阻断该迁移并人工确认，不建立兼容读取路径。
 
 ## 五、Meta DataItem 可恢复变化契约
 
@@ -424,29 +426,15 @@ POST /api/v1/model/runtime/catalog-references/resolve
 
 Catalog 的来源绑定和最后观察摘要保证企业身份稳定、离线列表与失效解释；Model 完整详情及专业内生关系保持动态引用。Model 不可达只使当前专业详情标记为不可解析并延迟后台同步，不影响 Catalog Alive、Ready、业务编目事实或已建立目录身份。
 
-### 5.5 Standard Metric 专业资源变化与动态引用
+### 5.5 Standard 五类专业资源变化与动态引用
 
-Standard Metric 采用稳定身份与不可变修订；修订状态统一为 `draft|in_review|published|withdrawn`，只要指标已经正式持久化，就自动建立 `metric` CatalogEntry。动态引用响应的 `status` 表达所展示修订的状态（优先待维护修订，否则当前修订），稳定身份的生命周期独立保留在摘要 `lifecycle_state` 中。客户端只接受上述修订状态，不保留旧 `approved|deprecated` 校验路线。Standard 专业状态不改写 Catalog 治理状态，初始条目仍使用 `discovered + inventory`。
+Standard 的 Glossary、Element、CodeSet、Document、MetricDefinition 稳定身份分别对应 `glossary|element|code_set|standard_document|metric` CatalogEntry；来源类型使用 `glossary|element|code_set|document|metric`。首次正式持久化即建档，包括草稿；修订、码值项、文件、提炼候选不创建另一个企业身份。Standard 文档与 Meta 文件是不同专业对象，不按文件名合并。
 
-Standard 在 Metric 聚合根创建、版本推进或删除的同一数据库事务中，通过 PostgreSQL trigger 追加 owner-local、append-only `standard.catalog_resource_changes`。指标数据元映射和依赖关系写入必须与 Metric 版本推进处于同一事务，因此只监听 Metric 聚合根；不得在 Service 层增加向 Catalog 的同步双写。
+沿用唯一 `standard.catalog_resource_changes` append-only 变化源、`standard.catalog_resource_changes/v1` 和 `GET /api/v1/standard/catalog-resources/changes`。身份及影响摘要的修订/子项变化在 owner 事务内捕获；无 Service 层同步双写。迁移给存量五类对象补发最小摘要，既有指标来源与 Catalog checkpoint 不重置。按事件 ID 单调版本消费，幂等重放、失败不推进检查点、来源独立重试，不把 Standard 作为 Catalog Ready 依赖。
 
-Catalog 使用 `addp-catalog` Tenant Service Access Token 和不可委派、不可定制的 `standard.catalog.read` 拉取：
+`POST /api/v1/standard/runtime/catalog-references/resolve` 按顺序解析 1–200 个精确类型+稳定 ID，跨 Tenant 与不存在均 found=false。该 API 仅允许 addp-catalog 服务及 standard.catalog.read，响应仅含最小目录摘要与专业详情路径。语义校验 `/references/resolve` 仍独立。完整定义、修订详情、下载与专业关系由当前 User Token 到 Standard 判权。
 
-```http
-GET /api/v1/standard/catalog-resources/changes?after_cursor={opaque}&limit=200
-```
-
-响应 Schema 固定为 `standard.catalog_resource_changes/v1`，变化项固定 `source_type=metric`，`source_identity` 使用公开正整数 ID 的规范十进制字符串，`operation=upsert|missing`。最小观察摘要须包含 `scope_type`；有 owner 主业务域时包含 `domain_id`，无专属主域时不伪造空 ID。首次迁移必须回填所有现存 Metric；此后摘要契约补充字段时，Standard 用同一 append-only 变化源为存量指标补发事件，由 Catalog 依单调事件 ID 正常追赶，不直接修改 Catalog 来源表。变化历史不设保留窗口，Standard、Model 和 Meta 各自使用独立 Catalog checkpoint，任一来源不可达都不能阻塞其他来源或 Catalog Ready。
-
-当前 Metric 摘要通过唯一批量动态解析接口读取：
-
-```http
-POST /api/v1/standard/runtime/catalog-references/resolve
-```
-
-请求包含 1 到 200 个 `{source_type=metric, source_identity}`，响应按请求顺序返回 `found`、当前专业状态、资源版本、最小摘要和 `/standard/metrics/{id}` 详情路径。跨 Tenant 与不存在统一 `found=false`。接口只允许 `addp-catalog` Service Client 与 `standard.catalog.read`；现有 `/references/resolve` 继续只承担 Domain、Glossary、Element 业务语义关联校验，两类契约不得合并。
-
-Catalog 的动态详情以 Standard 当前响应为权威；Standard 暂不可达或 Metric 已删除时，Catalog 只以 `unavailable` / `missing` 明确展示最后观察摘要，不把投影表述成当前指标事实。
+摘要及动态解析统一优先当前生效修订；无生效修订时展示最高修订，并标记非当前生效。发布状态与生效状态分开；冻结引用始终精确展示原修订。时间自然跨过生效边界时，动态读取按请求时点重算；最后观察摘要、计数和搜索保留观察时点语义，不冒充实时有效事实。摘要包括 `definition_complete`，按各类型自身必填规范产生，不复制正文。标准生命周期和目录治理状态正交，撤回不自动弃用、删除只将来源标为 missing 并保留历史。
 
 ### 5.6 Service QueryService 专业资源变化与动态引用
 
@@ -538,7 +526,7 @@ GET /api/v1/standard/metrics/{id}/relations?limit=100
 - Model LogicalTable：`model.logical_table.entity`、`model.logical_table.fk|join`、`model.logical_table.supports_metric`；
 - Standard Metric：`standard.metric.base_metric`、`standard.metric.dependency`。
 
-指标数据元映射、Domain、分类、单位等仍在 owner 当前专业详情中展示；它们不是当前 CatalogEntry 来源类型，因此本阶段不伪造目录节点。后续只有对应对象正式进入企业目录，或明确需要保留非目录专业节点时，才扩展本契约。
+数据元、术语、码值集和标准文档已进入目录，专业关系节点可按精确来源身份解析到当前可见条目；Domain、分类和单位继续作为专业上下文。域级采用读取不改变一跳图的证据所有权。
 
 这些路由只接受当前 User Access Token，并分别校验 Model Entity / EntityRelation / LogicalModel 或 Standard Metric 的读取权限。Catalog Frontend 直接调用 owner；Catalog Backend 不代理，不使用 `model.catalog.read`、`standard.catalog.read` 等机器权限替代用户权限，也不持久化响应。Owner 不可达、无权限或主体不存在只改变当前关系卡片状态，不影响 Catalog 启动、Ready、条目详情及其他 owner 卡片。
 
@@ -563,12 +551,12 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 
 | 维度 | 适用分母 | 覆盖判定 |
 | --- | --- | --- |
-| `business_definition` | 全部 active 条目 | 业务名称和业务说明均非空 |
-| `primary_domain` | 除 `scope_type=platform|tenant_common` 且无 owner `domain_id` 的 Standard MetricDefinition 外的 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id`；公共指标记为不适用，不进入“待归类”缺口 |
+| `business_definition` | 全部 active 条目 | Standard 五类使用 owner 最后观察的 definition_complete，其余业务名称和业务说明均非空 |
+| `primary_domain` | 除 `scope_type=platform|tenant_common` 且无 owner `domain_id` 的 Standard 五类标准稳定身份外的 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id`；公共标准记为不适用，不进入“待归类”缺口 |
 | `accountable_department` | 全部 active 条目 | 至少存在一个 active 责任部门 |
 | `business_owner` | 全部 active 条目 | 至少存在一个 active 业务责任人 |
 | `data_steward` | 全部 active 条目 | 至少存在一个 active 数据管理员 |
-| `glossary` | 全部 active 条目 | 至少关联一个 Catalog 自有 Glossary Term |
+| `glossary` | 除 Standard 五类来源外的 active 条目 | 至少关联一个 Catalog 自有 Glossary Term |
 | `component_standard_mapping` | 至少有一个 active CatalogComponent 的条目 | 该条目的全部 active CatalogComponent 都有一个已审核 StandardMapping |
 
 责任覆盖率必须使用 `accountable_department`、`business_owner`、`data_steward` 三个原子维度，不保留同时要求三项完整的复合 `accountability` 维度。`curated` 状态仍由 4.1 节聚合写路径同时校验三项责任；治理状态表示整体准入结果，覆盖率维度则负责准确指出需要处置的具体缺口。`glossary` 是观察维度，不作为 `curated` 的必备状态条件；`component_standard_mapping` 对没有 CatalogComponent 的专业条目标记为不适用，不能用全体条目作为分母制造虚假低覆盖率。覆盖率只说明企业目录治理完整度，不说明底层数据质量、内容授权、Owner 专业模型完整度或资产发布资格。
@@ -691,7 +679,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 资源盘点中的用户操作称“批量分配”，弹窗明确说明只支持主业务域或责任部门的单项分配。该命令不完成业务编目、不推进认证或弃用状态，也不自动生成责任治理任务；不得用泛化的“批量治理”文案暗示上述能力。
 
-Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。
+Model `business_entity|logical_model` 与 Standard 五类标准的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。
 
 列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口参数组合不满足 5.12 节约束时返回 `400`。
 

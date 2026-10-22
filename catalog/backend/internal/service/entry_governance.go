@@ -202,9 +202,7 @@ func validateGovernanceUpdate(
 }
 
 func validateCertificationRequirements(tx *gorm.DB, tenantID int64, entry models.Entry) error {
-	if entry.BusinessName == nil || strings.TrimSpace(*entry.BusinessName) == "" ||
-		entry.BusinessDescription == nil || strings.TrimSpace(*entry.BusinessDescription) == "" ||
-		!oneOf(entry.Visibility, models.VisibilityDepartment, models.VisibilityTenant) {
+	if !oneOf(entry.Visibility, models.VisibilityDepartment, models.VisibilityTenant) {
 		return ErrCertificationRequirementsNotMet
 	}
 
@@ -215,6 +213,15 @@ func validateCertificationRequirements(tx *gorm.DB, tenantID int64, entry models
 		return fmt.Errorf("lock Catalog certification source: %w", err)
 	}
 	if source.SourceStatus != models.SourceStatusActive {
+		return ErrCertificationRequirementsNotMet
+	}
+
+	if source.SourceModule == models.SourceModuleStandard {
+		complete, _ := source.ObservedSnapshot["definition_complete"].(bool)
+		if !complete {
+			return ErrCertificationRequirementsNotMet
+		}
+	} else if entry.BusinessName == nil || strings.TrimSpace(*entry.BusinessName) == "" || entry.BusinessDescription == nil || strings.TrimSpace(*entry.BusinessDescription) == "" {
 		return ErrCertificationRequirementsNotMet
 	}
 

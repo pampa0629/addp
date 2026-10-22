@@ -54,6 +54,8 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	)
 	api.GET("/entries", readPermission, handler.ListEntries)
 	api.GET("/domains", readPermission, handler.ListDomainOverviews)
+	api.GET("/domains/:id/overview", readPermission, handler.GetDomainResourceOverview)
+	api.GET("/domain_standard_references", readPermission, handler.ListDomainStandardReferences)
 	api.GET("/entries/facets", readPermission, handler.ListEntryFacets)
 	api.POST("/entries/resolve-sources", readPermission, handler.ResolveSourceEntries)
 	api.POST("/entries/batch_governance", batchGovernancePermission, handler.BatchGovernanceEntries)

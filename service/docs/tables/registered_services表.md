@@ -23,7 +23,7 @@
 | `auth_config` | `JSONB` | 上游认证参数，JSONB；当前写入与读取路径未接入字段加解密。 |
 | `health_check_url` | `string` | 可选的专用健康检查地址。 |
 | `last_checked_at` | `*time.Time` | 最近一次健康检查的时间，可为空。 |
-| `status` | `string` | 服务状态；模型声明默认 active，具体执行资格由消费入口校验。 |
+| `status` | `string` | active / inactive / error 的持久管理状态，模型默认 active；当前公开代理不按此字段校验消费资格。 |
 | `error_message` | `string` | 服务错误信息。 |
 | `created_by` | `uint` | 创建人引用；不据此自动授予权限。 |
 | `created_at` | `time.Time` | 创建时间。 |
@@ -40,22 +40,15 @@
 ## 类型、元数据与上游认证
 
 - 当前服务类型为 WMS、WFS、WMTS、OGC API、XYZ 和 REST；没有 `data_api` 类型。接入类型不等于对协议所有版本或能力已完成验收。
-- 只有 OGC 类型且显式开启 `auto_refresh_metadata` 时，创建后才异步刷新；保存成功不保证图层已齐备，异步失败不回滚已创建服务，可通过管理入口显式重试。
+- 创建后异步刷新、手动与定时刷新使用不同的状态处理；统一见[注册与元数据刷新](../数据库架构.md#注册与元数据刷新)。保存成功不保证图层齐备，异步失败不回滚已创建服务，也不自动写 error；需要重试时使用管理刷新入口。
 - `metadata` 保存能力文档及解析结果；具体图层处理见[注册服务图层](registered_service_layers表.md#解析与刷新)。REST / XYZ 不自动解析任意 API 文档，也不承诺通用版本/端点数组结构。
-- 当前普通 DTO 返回 `auth_type` 与 `has_auth_config`，不返回 `auth_config` 正文；仍返回 `endpoint_url`。这不代表上游地址隐藏，也不代表数据库凭据已经加密。
+- 当前普通 DTO 返回 auth_type 与 has_auth_config，不返回 auth_config 正文；has_auth_config 只表示配置对象非空，不是完整性或有效性校验。endpoint_url 仍会返回，JSONB 存储也没有因此加密。
 
-| `auth_type` | 当前参数与用途 |
-| --- | --- |
-| `none` | 不装配上游认证。 |
-| `basic` | `username`、`password`，构造 Basic Authorization。 |
-| `bearer` | `token`，构造 Bearer Authorization。 |
-| `api_key` | `key`、`name`、`location`；header 或 query 指定上游参数位置。 |
-
-当前创建/更新直接保存认证配置，JSONB 编解码仅做 JSON 序列化，读取后直接用于上游调用。字段加解密、密钥使用与轮换没有在该链路接通；敏感存储保护仍待确认。它与 System 的 APIConsumerCredential 认证是两个边界。
+Basic、Bearer、API Key 的唯一参数与装配说明见[上游认证配置](../数据库架构.md#上游认证配置)，包括 Header 覆盖、Query 追加、配置缺失时的行为，以及更新配置的替换/保留语义。存储加密、TLS、重定向与日志保护分别验证，不能将凭据成功发给上游当作保护已闭合；验收范围见[上游认证矩阵](../testing/注册服务与代理.md#上游认证矩阵)。
 
 ## 健康、管理与消费
 
-健康检查与元数据刷新由 Service 的平台级运行配置控制，默认 Cron 分别为 `0 * * * *`、`0 2 * * *`，不是不可变频率。当前定时检查按 Tenant 串行处理 active 服务；手动检查可核验指定服务，单次健康请求超时 10 秒。健康结果 healthy/unhealthy/error 与持久状态不同：尝试回写 active/error 和检查时间，不把超时自动写成 inactive，也不保证所有状态回写失败均被上抛。
+健康探测结果与本表的持久状态分别表达上游请求结果和管理记录，均不构成公开代理消费授权。探测条件、10 秒超时、定时范围、状态与时间的分步回写，以及手动检查对 inactive 的影响，统一见[健康检查与定时刷新](../数据库架构.md#健康检查与定时刷新)；不能从健康接口 HTTP 200 推导上游健康或状态已持久化。
 
 管理操作使用当前 Tenant AuthContext 及精确 `service.external_registration.*` Permission；`created_by` 记录来源，不自动授予权限。当前管理列表只读取 `search/page/limit`；Handler 未读取 `service_type/status` 过滤参数，不能因模型有相应字段或 Repository 有方法就声明该 HTTP 能力已开放。搜索与列表共用入口，不保留第二条 registry search 路线。
 

@@ -582,7 +582,8 @@
         "myEntries": "My Catalog",
         "collections": "Collaboration Collections",
         "tasks": "Responsibility Governance Queue",
-        "coverage": "Governance Coverage"
+        "coverage": "Governance Coverage",
+        "domains": "Business domain overview"
       },
       "asset": {
         "label": "Asset Management",

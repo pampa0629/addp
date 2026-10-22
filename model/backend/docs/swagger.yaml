@@ -73,6 +73,55 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  domainreference.Evidence:
+    properties:
+      owner_module:
+        type: string
+      position:
+        type: string
+      relation_kind:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_revision_id:
+        type: string
+      resource_type:
+        type: string
+      revision_id:
+        type: string
+      state:
+        type: string
+    type: object
+  domainreference.Page:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/domainreference.Reference'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  domainreference.Reference:
+    properties:
+      evidence:
+        items:
+          $ref: '#/definitions/domainreference.Evidence'
+        type: array
+      evidence_truncated:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    type: object
   execution.DiagnosticStep:
     properties:
       duration:
@@ -3233,6 +3282,55 @@ paths:
       x-addp-required-permissions:
       - model.entity.create
       - model.entity_relation.create
+  /entities/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（entity） | List domain standard references (entity)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.read
   /entity-relations:
     get:
       parameters:
@@ -4975,6 +5073,55 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.logical_model.update
+  /logical-tables/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（logical_table） | List domain standard references (logical_table)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
   /metric-implementations:
     get:
       parameters:
@@ -5416,6 +5563,56 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.metric_implementation.offline
+  /metric-implementations/standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 查询无效 | Invalid query
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 无权查看 | Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询业务域标准引用（metric_implementation） | List domain standard references
+        (metric_implementation)
+      tags:
+      - Domain References
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.metric_implementation.read
   /runtime/catalog-references/resolve:
     post:
       consumes:

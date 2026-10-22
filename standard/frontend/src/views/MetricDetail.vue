@@ -20,10 +20,10 @@
 </template>
 
 <script setup>
-import { getStandardDisplayRevision as displayRevision } from '../utils/standardRevision'
-import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
+import { getStandardDisplayRevision as displayRevision, getStandardRouteRevision } from '../utils/standardRevision'
+import { BusinessDomainSelect, buildBusinessDomainOptions, createLatestRequestCoordinator } from '@common-ui'
 import UnitSelect from '../components/UnitSelect.vue'
-import {computed,onMounted,reactive,ref,watch} from 'vue'
+import {computed,onBeforeUnmount,reactive,ref,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
@@ -42,7 +42,23 @@ const identityEditable=computed(()=>canUpdate.value&&metric.value.lifecycle_stat
 const scopeLabel=scope=>scope?t(standardScopeLabelKey(scope)):'-',typeLabel=type=>type?t(`standard.metric.${type}`):'-',statusLabel=status=>status?t(`standard.revision.status.${status}`):'-',statusType=status=>({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[status]||'info')
 const buildTree=(list,parent=null)=>list.filter(item=>(item.parent_id||null)===parent).map(item=>({...item,children:buildTree(list,item.id)})),categoryTree=computed(()=>buildTree(categories.value))
 const setRevision=value=>{Object.keys(revision).forEach(key=>delete revision[key]);Object.assign(revision,structuredClone(value||{}));dependencyIDs.value=(revision.dependencies||[]).map(item=>item.dependency_definition_id)}
-const load=async()=>{loading.value=true;try{const [aggregate,history,domainRows,categoryRows,unitRows,candidates]=await Promise.all([metricAPI.get(route.params.id),metricAPI.listRevisions(route.params.id),domainAPI.list(),metricCategoryAPI.list(),unitAPI.list(),metricAPI.list({page_size:500})]);metric.value=aggregate;metric.value.tags||=[];revisions.value=history||[];domains.value=buildBusinessDomainOptions(domainRows||[]);categories.value=categoryRows||[];units.value=unitRows||[];dependencyCandidates.value=candidates.data||[];setRevision(displayRevision(aggregate));markSaved()}catch(error){ElMessage.error(getStandardErrorMessage(error,t,'standard.common.loadFailed'));goBack()}finally{loading.value=false}}
+const detailRequests = createLatestRequestCoordinator()
+const detailTarget = () => JSON.stringify([route.params.id, route.query.revision_id])
+const load = async () => {
+ const request = detailRequests.begin(detailTarget())
+ const identity = route.params.id, requestedRevision = route.query.revision_id
+ loading.value = true
+ try {
+  const [aggregate,history,domainRows,categoryRows,unitRows,candidates] = await Promise.all([metricAPI.get(identity),metricAPI.listRevisions(identity),domainAPI.list(),metricCategoryAPI.list(),unitAPI.list(),metricAPI.list({page_size:500})])
+  if (!detailRequests.isCurrent(request, detailTarget())) return
+  const selected = await getStandardRouteRevision(aggregate, requestedRevision, revisionID => metricAPI.getRevision(identity, revisionID))
+  if (!detailRequests.isCurrent(request, detailTarget())) return
+  metric.value=aggregate;metric.value.tags||=[];revisions.value=history||[];domains.value=buildBusinessDomainOptions(domainRows||[]);categories.value=categoryRows||[];units.value=unitRows||[];dependencyCandidates.value=candidates.data||[];setRevision(selected);markSaved()
+ } catch(error) {
+  if (!detailRequests.isCurrent(request, detailTarget())) return
+  setRevision(null);ElMessage.error(getStandardErrorMessage(error,t,'standard.common.loadFailed'));goBack()
+ } finally { if (detailRequests.isCurrent(request, detailTarget())) loading.value=false }
+}
 const goBack=()=>navigateStandardRoute(router,'/metrics')
 const saveIdentity=async()=>{if(requiresOwnerDomain(metric.value.scope_type)&&!metric.value.owner_domain_id){ElMessage.warning(t('standard.common.ownerDomainRequired'));return};savingIdentity.value=true;try{metric.value=await metricAPI.update(metric.value.id,{version:metric.value.version,category_id:metric.value.category_id,...buildStandardOwnership(metric.value.scope_type,metric.value.owner_domain_id),tags:metric.value.tags||[]});markSaved('identity');ElMessage.success(t('standard.common.saveSuccess'))}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}finally{savingIdentity.value=false}}
 const revisionPayload=()=>({version:metric.value.version,metric_type:revision.metric_type,name:revision.name,definition:revision.definition,statistical_caliber:revision.statistical_caliber,semantic_formula:revision.semantic_formula||'',unit_id:revision.unit_id||null,dependencies:revision.metric_type==='atomic'?[]:dependencyIDs.value.map(metric_definition_id=>({metric_definition_id,relation_kind:revision.metric_type==='derived'?'base':'component'})),change_summary:revision.change_summary,effective_from:revision.effective_from||null,effective_to:revision.effective_to||null})
@@ -51,9 +67,10 @@ const {isDirty,markSaved}=useUnsavedChanges({state:editableState})
 const reviewHint=computed(()=>isDirty.value?t('standard.revision.saveBeforeReview'):!revision.effective_from?t('standard.revision.effectiveFromRequired'):'')
 const saveRevision=async()=>{if(revision.metric_type==='derived'&&dependencyIDs.value.length!==1){ElMessage.warning(t('standard.metric.derivedDependencyRequired'));return};if(revision.metric_type==='composite'&&!dependencyIDs.value.length){ElMessage.warning(t('standard.metric.compositeDependencyRequired'));return};saving.value=true;const pendingIdentity=editableState.value.identity;try{const aggregate=await metricAPI.updateRevision(metric.value.id,revision.id,revisionPayload());metric.value={...aggregate,...pendingIdentity};setRevision(aggregate.draft_revision);markSaved('revision');revisions.value=revisions.value.map(item=>item.id===revision.id?aggregate.draft_revision:item);ElMessage.success(t('standard.common.saveSuccess'))}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}finally{saving.value=false}}
 const act=async action=>{if(isDirty.value||saving.value||savingIdentity.value){ElMessage.warning(t('standard.common.saveBeforeAction'));return}if(action==='submit'&&!revision.effective_from){ElMessage.warning(t('standard.revision.effectiveFromRequired'));return}try{metric.value=await metricAPI[`${action}Revision`](metric.value.id,revision.id,metric.value.version);ElMessage.success(t('standard.common.operationSuccess'));await load()}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}}
-const newDraft=()=>{if(isDirty.value){ElMessage.warning(t('standard.common.saveBeforeAction'));return}draftSummary.value='';draftDialog.value=true},createDraft=async()=>{if(!draftSummary.value.trim()){ElMessage.warning(t('standard.revision.changeSummaryRequired'));return};try{metric.value=await metricAPI.createRevision(metric.value.id,{version:metric.value.version,change_summary:draftSummary.value.trim()});draftDialog.value=false;await load()}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}},selectRevision=item=>{if(isDirty.value){ElMessage.warning(t('standard.common.saveBeforeAction'));return}setRevision(item);markSaved()}
+const newDraft=()=>{if(isDirty.value){ElMessage.warning(t('standard.common.saveBeforeAction'));return}draftSummary.value='';draftDialog.value=true},createDraft=async()=>{if(!draftSummary.value.trim()){ElMessage.warning(t('standard.revision.changeSummaryRequired'));return};try{metric.value=await metricAPI.createRevision(metric.value.id,{version:metric.value.version,change_summary:draftSummary.value.trim()});draftDialog.value=false;await navigateStandardRoute(router,{path:route.path,query:{...route.query,revision_id:String(metric.value.draft_revision.id)}},{history:'replace'})}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}},selectRevision=item=>{if(isDirty.value){ElMessage.warning(t('standard.common.saveBeforeAction'));return}navigateStandardRoute(router,{path:`/metrics/${route.params.id}`,query:{...route.query,revision_id:String(item.id)}})}
 watch(()=>metric.value.scope_type,scope=>{if(!requiresOwnerDomain(scope)&&metric.value)metric.value.owner_domain_id=null})
-onMounted(load)
+watch(()=>[route.params.id,route.query.revision_id],load,{immediate:true})
+onBeforeUnmount(() => detailRequests.invalidate())
 </script>
 
 <style scoped>.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header,.header-left,.actions,.card-header,.history-row{display:flex;align-items:center}.page-header,.card-header,.history-row{justify-content:space-between}.page-header{margin-bottom:16px}.header-left,.actions{gap:10px;flex-wrap:wrap}.section{margin-bottom:16px}.review-hint{margin-bottom:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}</style>

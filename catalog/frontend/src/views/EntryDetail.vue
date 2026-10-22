@@ -76,7 +76,8 @@
             <el-tag :type="governanceTagType(entry.governance_status)">{{ t(`catalog.status.governance.${entry.governance_status}`) }}</el-tag>
           </div>
         </div>
-        <p v-if="entry.business_description" class="description">{{ entry.business_description }}</p>
+        <StandardDefinitionSummary v-if="entry.source?.source_module === 'standard'" :source="entry.source" />
+        <p v-else-if="entry.business_description" class="description">{{ entry.business_description }}</p>
       </el-card>
 
       <el-card v-if="!editing && activeDetailTab === 'relations' && entry.recommended_successor_entry_id" shadow="never" class="successor-card">
@@ -471,9 +472,9 @@
       <el-card v-if="!editing && activeDetailTab === 'curation'" shadow="never" class="owner-card">
         <template #header><strong>{{ t('catalog.entry.catalogFacts') }}</strong></template>
         <el-descriptions :column="2" border>
-          <el-descriptions-item :label="t('catalog.entry.businessName')">{{ entry.business_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.businessName')">{{ entry.source?.source_module === 'standard' ? entry.display_name : entry.business_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entries.governanceStatus')">{{ t(`catalog.status.governance.${entry.governance_status}`) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.edit.businessDescription')" :span="2">{{ entry.business_description || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.edit.businessDescription')" :span="2"><span v-if="entry.source?.source_module === 'standard'">{{ t('catalog.standardDefinition.owned') }}</span><span v-else>{{ entry.business_description || '-' }}</span></el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entries.visibility')">{{ t(`catalog.status.visibility.${entry.visibility}`) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entry.version')">{{ entry.version }}</el-descriptions-item>
         </el-descriptions>
@@ -578,6 +579,8 @@
 </template>
 
 <script setup>
+import StandardDefinitionSummary from '../components/StandardDefinitionSummary.vue'
+import { catalogEntryTypeLabel } from '../utils/catalogResourceTypes'
 import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -691,7 +694,7 @@ const rebindFormComplete = computed(() => Boolean(
 ))
 const ownerManagedDomain = computed(() => (
   (entry.value?.source?.source_module === 'model' && ['business_entity', 'logical_model'].includes(entry.value?.entry_type)) ||
-  (entry.value?.source?.source_module === 'standard' && entry.value?.entry_type === 'metric')
+  (entry.value?.source?.source_module === 'standard')
 ))
 const ownerDomainID = computed(() => {
   if (!ownerManagedDomain.value) return ''
@@ -710,7 +713,7 @@ const primaryDomainName = computed(() => {
     return t('catalog.entry.domainUnavailable')
   }
   const summary = entry.value?.source_resolution?.summary || entry.value?.source?.observed_snapshot || {}
-  if (entry.value?.entry_type === 'metric' && ['platform', 'tenant_common'].includes(summary.scope_type)) return t('catalog.entry.publicScope')
+  if (entry.value?.source?.source_module === 'standard' && ['platform', 'tenant_common'].includes(summary.scope_type)) return t('catalog.entry.publicScope')
   return '-'
 })
 const accountableDepartmentName = computed(() => responsibilityReferenceName('accountable_department'))
@@ -743,7 +746,7 @@ const ownerSummaryItems = computed(() => {
     ['table_type', 'ownerTableType'],
     ['layer', 'ownerLayer'],
     ['metric_type', 'ownerMetricType'],
-    ['metric_status', 'ownerMetricStatus'],
+    ['revision_status', 'ownerMetricStatus'],
     ['lifecycle_state', 'ownerLifecycleState'],
     ['domain_id', 'ownerDomain'],
     ['category_id', 'ownerMetricCategory'],
@@ -1356,10 +1359,7 @@ async function openQualityDetail() {
   await openConsoleRoute(path)
 }
 
-function entryTypeLabel(entryType) {
-  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact', data_application: 'dataApplication' }[entryType] || 'dataItem'
-  return t(`catalog.entryType.${key}`)
-}
+function entryTypeLabel(type) { return catalogEntryTypeLabel(type, t) }
 
 function sourceTagType(status) {
   return status === 'active' ? 'success' : 'danger'

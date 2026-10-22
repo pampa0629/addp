@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
@@ -31,21 +32,41 @@ func (r *CatalogResourceRepository) ListChanges(ctx context.Context, tenantID, a
 	return rows, nil
 }
 
-func (r *CatalogResourceRepository) ListMetrics(ctx context.Context, tenantID int64, ids []int64) ([]models.MetricDefinitionAggregate, error) {
-	rows := make([]models.MetricDefinitionAggregate, 0, len(ids))
-	if len(ids) == 0 {
-		return rows, nil
-	}
-	metricRepo := NewMetricRepository(r.db.WithContext(ctx))
-	for _, id := range ids {
-		item, err := metricRepo.GetAggregate(id, tenantID)
-		if errors.Is(err, commonapi.ErrNotFound) {
+// ListResources uses the same aggregate readers as Standard's professional pages.
+func (r *CatalogResourceRepository) ListResources(ctx context.Context, tenantID int64, references []models.CatalogReference) ([]models.CatalogReferenceResolution, error) {
+	results := make([]models.CatalogReferenceResolution, 0, len(references))
+	db := r.db.WithContext(ctx)
+	for _, reference := range references {
+		id, err := strconv.ParseInt(reference.SourceIdentity, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		var item any
+		switch reference.SourceType {
+		case "metric":
+			item, err = NewMetricRepository(db).GetAggregate(id, tenantID)
+		case "glossary":
+			item, err = NewGlossaryRepository(db).GetAggregate(id, tenantID)
+		case "element":
+			item, err = NewElementRepository(db).GetAggregate(id, tenantID)
+		case "code_set":
+			item, err = NewCodeSetRepository(db).GetAggregate(id, tenantID)
+		case "document":
+			item, err = NewDocumentRepository(db).GetAggregate(id, tenantID)
+		default:
+			return nil, fmt.Errorf("unsupported Standard catalog type")
+		}
+		if errors.Is(err, commonapi.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("resolve Standard catalog metric %d: %w", id, err)
+			return nil, err
 		}
-		rows = append(rows, *item)
+		result, err := models.ProjectCatalogResource(reference.SourceType, item)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
 	}
-	return rows, nil
+	return results, nil
 }

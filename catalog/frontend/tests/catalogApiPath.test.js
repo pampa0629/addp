@@ -11,9 +11,8 @@ const client = vi.hoisted(() => ({
 vi.mock('../src/api/client', () => ({ default: client }))
 
 import { batchGovernance, createStandardMapping, deleteStandardMapping, exportEntryDataDictionary, getEntry, getEntryDataDictionary, getGovernanceCoverage, listDomainOverviews, listEntries, listEntryFacets, listMyProjectGroups, listReferenceCandidates, listStandardMappingRevisionOptions, replaceMyEntryMarks, resolveSourceEntries, reviewStandardMapping, updateEntryGovernance, updateStandardMapping } from '../src/api/catalog'
-import { getMeasurementUnit, listDomainElements, listDomainGlossaries, listDomainMetrics, listMetricCategories } from '../src/api/standard'
+import { getMeasurementUnit, listMetricCategories } from '../src/api/standard'
 import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules } from '../src/api/quality'
-import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
 import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
@@ -135,19 +134,6 @@ describe('catalog frontend API paths', () => {
   it('reads domain overviews through Catalog, not Standard user APIs', async () => {
     await listDomainOverviews()
     expect(client.get).toHaveBeenCalledWith('/catalog/domains')
-  })
-
-  it('reads domain-owned professional definitions directly from Standard with exact pagination', async () => {
-    const params = domainStandardQuery('42', 2)
-    await listDomainGlossaries(params)
-    await listDomainElements(params)
-    await listDomainMetrics(params)
-    expect(params).toEqual({ scope_type: 'domain', owner_domain_id: '42', page: 2, page_size: 5 })
-    expect(client.get.mock.calls).toEqual([
-      ['/standard/glossaries', { params }],
-      ['/standard/elements', { params }],
-      ['/standard/metrics', { params }]
-    ])
   })
 
   it('reads domain-owned quality governance directly from Quality with the current user client', async () => {

@@ -181,24 +181,7 @@
         <span v-if="!facetsError && domainTypeSummaries.length === 0">{{ t('catalog.entries.domainContext.empty') }}</span>
       </div>
       <p class="domain-context-note">{{ t('catalog.entries.domainContext.countScope') }}</p>
-      <div v-if="selectedDomain" class="domain-professional-toggle">
-        <el-button
-          data-testid="catalog-domain-professional-toggle"
-          text
-          type="primary"
-          :aria-expanded="professionalOpen"
-          aria-controls="catalog-domain-professional-content"
-          @click="professionalOpen = !professionalOpen"
-        >
-          {{ t('catalog.entries.domainContext.professionalContent') }} · {{ t(`catalog.entries.domainContext.${professionalOpen ? 'collapse' : 'expand'}`) }}
-        </el-button>
-      </div>
-      <DomainProfessionalSummary
-        v-if="selectedDomain && professionalOpen"
-        id="catalog-domain-professional-content"
-        :domain-id="filters.primary_domain_id"
-        :refresh-token="professionalRefreshToken"
-      />
+      <el-button v-if="selectedDomain" data-testid="catalog-domain-overview-link" link type="primary" @click="navigateConsoleModuleRoute(router, 'catalog', { path: '/domains', query: { domain_id: filters.primary_domain_id, view: filters.view } })">{{ t('catalog.domainOverview.open') }}</el-button>
     </el-card>
 
     <el-card shadow="never" class="filter-card">
@@ -275,7 +258,7 @@
           <template #default="{ row }">{{ entryTypeLabel(row.entry_type) }}</template>
         </el-table-column>
         <el-table-column v-if="filters.view === 'governance'" prop="business_description" :label="t('catalog.edit.businessDescription')" min-width="300" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.business_description || '-' }}</template>
+          <template #default="{ row }"><el-link v-if="standardResourcePresentation(row.entry_type, row.source_identity)" :disabled="!authStore.hasPermission(standardResourcePresentation(row.entry_type, row.source_identity).permission)" type="primary" @click="openStandardDefinition(row)">{{ t('catalog.standardDefinition.open') }}</el-link><span v-else>{{ row.business_description || '-' }}</span></template>
         </el-table-column>
         <el-table-column v-if="filters.view === 'inventory'" prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130">
           <template #default="{ row }"><el-tag :type="sourceTagType(row.source_status)">{{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}</el-tag></template>
@@ -389,12 +372,14 @@
 </template>
 
 <script setup>
+import { catalogEntryTypeLabel } from '../utils/catalogResourceTypes'
+import { standardResourcePresentation } from '../utils/standardResourcePresentation'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
-import { BusinessDomainSelect, businessDomainReferenceOptions, navigateConsoleModuleRoute } from '@common-ui'
+import { BusinessDomainSelect, businessDomainReferenceOptions, navigateConsoleModuleRoute, allowsConsoleRoute, openConsoleRoute } from '@common-ui'
 import { batchGovernance, listDomainOverviews, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
@@ -407,7 +392,6 @@ import {
 } from '../utils/entryNavigation'
 import { buildEntryListQuery, isCanonicalEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
 import { domainBrowseOptions } from '../utils/domainBrowseContext'
-import DomainProfessionalSummary from '../components/DomainProfessionalSummary.vue'
 import {
   BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT,
   BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN,
@@ -435,8 +419,6 @@ const facetsError = ref(false)
 const domainTree = ref(null)
 const domainsLoading = ref(false)
 const domainsError = ref(false)
-const professionalRefreshToken = ref(0)
-const professionalOpen = ref(false)
 const entryTable = ref(null)
 const selectedEntries = ref([])
 const batchDialogVisible = ref(false)
@@ -521,10 +503,11 @@ function optionsWithSelectedEntryType(options, selectedEntryType) {
   return result
 }
 
-function entryTypeLabel(entryType) {
-  const key = { data_item: 'dataItem', business_entity: 'businessEntity', logical_model: 'logicalModel', metric: 'metric', data_service: 'dataService', development_artifact: 'developmentArtifact', data_application: 'dataApplication' }[entryType] || 'dataItem'
-  return t(`catalog.entryType.${key}`)
+function openStandardDefinition(row) {
+ const config = standardResourcePresentation(row.entry_type, row.source_identity)
+ if (config && allowsConsoleRoute(config.detailPath, authStore.contextType, authStore.permissions)) openConsoleRoute(config.detailPath)
 }
+function entryTypeLabel(type) { return catalogEntryTypeLabel(type, t) }
 
 function facetOptionLabel(option) {
   return `${option.name} (${option.count || 0})`
@@ -683,7 +666,6 @@ async function clearCoverageGap() {
 
 async function refreshPage() {
   loadedFacetKey = ''
-  professionalRefreshToken.value += 1
   await Promise.all([loadEntries(), loadFacets(true), loadDomains()])
 }
 

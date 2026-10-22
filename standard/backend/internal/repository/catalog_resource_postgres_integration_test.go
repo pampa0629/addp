@@ -51,7 +51,7 @@ func TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 		t.Fatal(replayTx.Error)
 	}
 	defer replayTx.Rollback()
-	if err := replayTx.Exec("DELETE FROM standard.data_migrations WHERE version = ?", 2026092701).Error; err != nil {
+	if err := replayTx.Exec("DELETE FROM standard.data_migrations WHERE version = ?", 2026102201).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := Migrate(replayTx); err != nil {
@@ -91,7 +91,7 @@ func TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 2 || changes[0].Operation != "upsert" || changes[0].Snapshot["name"] != "Catalog metric current" || changes[1].Operation != "missing" {
+	if len(changes) != 3 || changes[0].Operation != "upsert" || changes[0].Snapshot["name"] != "Catalog metric current" || changes[1].Operation != "upsert" || changes[2].Operation != "missing" || changes[2].Snapshot["name"] != "Catalog metric current" {
 		t.Fatalf("lifecycle changes = %#v", changes)
 	}
 }

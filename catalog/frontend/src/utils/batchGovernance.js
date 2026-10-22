@@ -2,7 +2,7 @@ export const BATCH_GOVERNANCE_MAX_ENTRIES = 200
 export const BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN = 'assign_primary_domain'
 export const BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT = 'assign_accountable_department'
 
-const ownerManagedPrimaryDomainTypes = new Set(['business_entity', 'logical_model', 'metric'])
+const ownerManagedPrimaryDomainTypes = new Set(['business_entity', 'logical_model', 'metric', 'glossary', 'element', 'code_set', 'standard_document'])
 
 export function unsupportedPrimaryDomainEntries(rows = []) {
   return rows.filter(row => ownerManagedPrimaryDomainTypes.has(row?.entry_type))

@@ -29,7 +29,7 @@ const docTemplate = `{
                 "tags": [
                     "Catalog Integration"
                 ],
-                "summary": "拉取 Standard Metric 目录资源变化 | Pull Standard Metric catalog resource changes",
+                "summary": "拉取 Standard 五类标准 目录资源变化 | Pull Standard standard catalog resource changes",
                 "parameters": [
                     {
                         "type": "string",
@@ -2675,6 +2675,93 @@ const docTemplate = `{
                 ]
             }
         },
+        "/elements/standard_references": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Domain References"
+                ],
+                "summary": "查询业务域标准引用（element） | List domain standard references (element)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确业务域 ID | Exact domain ID",
+                        "name": "domain_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数，上限100 | Page size, max 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domainreference.Page"
+                        }
+                    },
+                    "400": {
+                        "description": "查询无效 | Invalid query",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权查看 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.read"
+                ]
+            }
+        },
         "/elements/{id}": {
             "get": {
                 "security": [
@@ -3606,6 +3693,93 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.glossary.create"
+                ]
+            }
+        },
+        "/glossaries/standard_references": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Domain References"
+                ],
+                "summary": "查询业务域标准引用（glossary） | List domain standard references (glossary)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确业务域 ID | Exact domain ID",
+                        "name": "domain_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数，上限100 | Page size, max 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domainreference.Page"
+                        }
+                    },
+                    "400": {
+                        "description": "查询无效 | Invalid query",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权查看 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.read"
                 ]
             }
         },
@@ -4943,6 +5117,93 @@ const docTemplate = `{
                 ]
             }
         },
+        "/metrics/standard_references": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Domain References"
+                ],
+                "summary": "查询业务域标准引用（metric） | List domain standard references (metric)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确业务域 ID | Exact domain ID",
+                        "name": "domain_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数，上限100 | Page size, max 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domainreference.Page"
+                        }
+                    },
+                    "400": {
+                        "description": "查询无效 | Invalid query",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权查看 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            }
+        },
         "/metrics/{id}": {
             "get": {
                 "security": [
@@ -5897,7 +6158,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按请求顺序动态解析 1 到 200 个 Metric 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 Metric references in request order; cross-tenant and missing references both return found=false; Catalog service only",
+                "description": "按请求顺序动态解析 1 到 200 个五类标准引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 standard references in request order; cross-tenant and missing references both return found=false; Catalog service only",
                 "consumes": [
                     "application/json"
                 ],
@@ -5907,10 +6168,10 @@ const docTemplate = `{
                 "tags": [
                     "Catalog Integration"
                 ],
-                "summary": "解析 Standard Metric 目录引用 | Resolve Standard Metric catalog references",
+                "summary": "解析 Standard 五类标准 目录引用 | Resolve Standard standard catalog references",
                 "parameters": [
                     {
-                        "description": "Metric 目录引用 | Metric catalog references",
+                        "description": "标准目录引用 | Standard catalog references",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6419,6 +6680,81 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "domainreference.Evidence": {
+            "type": "object",
+            "properties": {
+                "owner_module": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_revision_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "domainreference.Page": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domainreference.Reference"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "domainreference.Reference": {
+            "type": "object",
+            "properties": {
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domainreference.Evidence"
+                    }
+                },
+                "evidence_truncated": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {

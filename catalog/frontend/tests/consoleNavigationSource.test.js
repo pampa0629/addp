@@ -4,18 +4,14 @@ import { describe, expect, it } from 'vitest'
 const read = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')
 
 describe('Catalog cross-module navigation bridge', () => {
-  it('loads domain-owned professional sections only inside the expanded domain card', () => {
+  it('keeps professional content exclusively in the independent overview', () => {
     const source = read('catalog/frontend/src/views/EntryList.vue')
-    const cardStart = source.indexOf('data-testid="catalog-domain-context"')
-    const toggle = source.indexOf('data-testid="catalog-domain-professional-toggle"', cardStart)
-    const summary = source.indexOf('<DomainProfessionalSummary', toggle)
-    const cardEnd = source.indexOf('</el-card>', summary)
-    expect(cardStart).toBeGreaterThan(0)
-    expect(toggle).toBeGreaterThan(cardStart)
-    expect(summary).toBeGreaterThan(toggle)
-    expect(cardEnd).toBeGreaterThan(summary)
-    expect(source).toContain('v-if="selectedDomain && professionalOpen"')
-    expect(source).not.toContain('<DomainStandardSummary')
+    expect(source).toContain('catalog-domain-overview-link')
+    expect(source).not.toContain('DomainProfessionalSummary')
+    expect(source).not.toContain('professionalOpen')
+    const overview = read('catalog/frontend/src/views/DomainOverview.vue')
+    expect(overview).toContain('<DomainQualitySummary')
+    expect(overview).toContain('catalog-domain-reference-summary')
   })
 
   it('uses the shared Console navigation source in every Catalog owner link', () => {
@@ -25,7 +21,7 @@ describe('Catalog cross-module navigation bridge', () => {
     expect(sharedNavigation).toMatch(/source = 'addp-module'/)
 
     for (const path of [
-      'catalog/frontend/src/components/DomainProfessionalSummary.vue',
+      'catalog/frontend/src/components/DomainQualitySummary.vue',
       'catalog/frontend/src/views/EntryDetail.vue'
     ]) {
       const source = read(path)

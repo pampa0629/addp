@@ -85,6 +85,7 @@ class OnlineGateTest(unittest.TestCase):
                 "highgo-consumer-flow",
                 "gaussdb-consumer-flow",
                 "starrocks-consumer-flow",
+                "catalog-domain-overview",
                 "enterprise-catalog-publishing",
                 "kingbase-consumer-flow",
                 "manager-internal-artifact-lineage",

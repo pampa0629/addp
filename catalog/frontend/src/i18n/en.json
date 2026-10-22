@@ -6,7 +6,11 @@
       "initializeBoundary": "Explicitly initialize Catalog business approval only if this table has no requirement. A failed query does not establish absence. Existing configuration is never overwritten; insufficient permission is rejected. This does not grant data access.",
       "invalidInitialization": "Select a valid sharing confirmation and enter an initialization reason.",
       "title": "Business authorization",
-      "workspace": { "create": "Approve data use", "handling": "Process access authorization", "records": "Approval and handling records" },
+      "workspace": {
+        "create": "Approve data use",
+        "handling": "Process access authorization",
+        "records": "Approval and handling records"
+      },
       "workspaceHelp": {
         "create": "The business owner specifies who may use this data item, for what purpose and for how long. After approval, continue to access authorization for system verification and issuance.",
         "handling": "A qualified handler selects an approval and submits it. The system verifies and issues read access to the specified recipient. Business owners with handling qualification may continue themselves.",
@@ -20,11 +24,19 @@
       "continueHandling": "Next: process access authorization",
       "noRequests": "You have no authorization handling records",
       "resolveBeforeSwitch": "Submission is in progress or the original outcome is uncertain. Query the original record or retry with the same parameters before switching views.",
-      "stateLabel": { "pending": "Unresolved", "accepted": "Accepted", "closed": "Closed" },
+      "stateLabel": {
+        "pending": "Unresolved",
+        "accepted": "Accepted",
+        "closed": "Closed"
+      },
       "boundary": "The business owner confirms sharing, a qualified handler submits it, and the system verifies and issues read-only access. Catalog visibility and handling qualification do not grant data read access.",
       "progressTitle": "Progress of the selected record",
       "nextStep": "Next: ",
-      "phases": { "confirmation": "Approve data use", "handling": "Process access authorization", "issuance": "System issuance" },
+      "phases": {
+        "confirmation": "Approve data use",
+        "handling": "Process access authorization",
+        "issuance": "System issuance"
+      },
       "progress": {
         "awaitingConfirmation": "Awaiting business owner approval of data use",
         "chooseConfirmation": "Select a business approval to process",
@@ -100,7 +112,15 @@
       "handlingResult": "Request outcome",
       "viewRequestDetail": "View details",
       "technicalDetails": "Technical information",
-      "recordResult": {"processing": "Outcome awaiting confirmation", "issuing": "Accepted, not yet issued", "issued": "Authorization issued", "duplicate": "Existing authorization; no duplicate issued", "expired": "Issuance window ended without issuance", "closed": "Closed", "unavailable": "Outcome unavailable"},
+      "recordResult": {
+        "processing": "Outcome awaiting confirmation",
+        "issuing": "Accepted, not yet issued",
+        "issued": "Authorization issued",
+        "duplicate": "Existing authorization; no duplicate issued",
+        "expired": "Issuance window ended without issuance",
+        "closed": "Closed",
+        "unavailable": "Outcome unavailable"
+      },
       "historyTitle": "My access authorization requests",
       "requestID": "Request ID",
       "queryResult": "View handling result",
@@ -114,7 +134,11 @@
       "currentSelected": "The business approval you just viewed is selected.",
       "alreadyApproved": "✓ Business approved",
       "matchingApproval": "A business approval already exists for this recipient, boundary and validity. No duplicate approval is needed.",
-      "candidateState": { "existing": "✓ Grant exists", "absent": "Awaiting fulfillment", "unknown": "Grant status not verified" },
+      "candidateState": {
+        "existing": "✓ Grant exists",
+        "absent": "Awaiting fulfillment",
+        "unknown": "Grant status not verified"
+      },
       "setupTitle": "First-use configuration (not a data access grant)",
       "selectDecision": "Select a business approval for this data item",
       "observeRequirement": "Recheck approval requirement and existing grants",
@@ -200,8 +224,17 @@
       "empty": "No field standard mappings yet",
       "loadFailed": "Failed to load standard candidates",
       "saveFailed": "Mapping operation failed; refresh and retry",
-      "states": { "proposed": "Proposed", "approved": "Approved", "rejected": "Rejected", "withdrawn": "Withdrawn" },
-      "sources": { "manual": "Manual", "copilot": "Copilot", "legacy": "Legacy migration" }
+      "states": {
+        "proposed": "Proposed",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "withdrawn": "Withdrawn"
+      },
+      "sources": {
+        "manual": "Manual",
+        "copilot": "Copilot",
+        "legacy": "Legacy migration"
+      }
     },
     "entries": {
       "title": "Enterprise Catalog",
@@ -689,7 +722,8 @@
         "primaryDomain": "primary domain",
         "accountableDepartment": "accountable department",
         "businessOwner": "business owner",
-        "dataSteward": "data steward"
+        "dataSteward": "data steward",
+        "ownerDefinition": "The Standard definition is incomplete"
       },
       "deprecationReason": "Deprecation reason",
       "recommendedSuccessor": "Recommended successor (optional)",
@@ -768,7 +802,8 @@
       "subject": {
         "department": "Department",
         "user": "User"
-      }
+      },
+      "standardDefinitionHint": "Names and definitions are maintained in Standard. Maintain catalog responsibilities, visibility and governance here."
     },
     "governance": {
       "reason": "Governance reason",
@@ -857,7 +892,11 @@
       "metric": "Metric",
       "dataService": "Data service",
       "developmentArtifact": "Development artifact",
-      "dataApplication": "Data Application"
+      "dataApplication": "Data Application",
+      "glossary": "Business glossary",
+      "element": "Data element",
+      "codeSet": "Code set",
+      "standardDocument": "Standard document"
     },
     "status": {
       "source": {
@@ -879,6 +918,71 @@
         "active": "Active",
         "merged": "Merged"
       }
+    },
+    "domainOverview": {
+      "title": "Business domain overview",
+      "open": "Open domain overview",
+      "resources": "Resources owned by this domain",
+      "selectDomain": "Select a business domain",
+      "scope": "Counts include discoverable catalog entries in the current view assigned to this exact domain, excluding child domains.",
+      "governance": "Catalog governance",
+      "externalStandards": "External standards referenced by this domain",
+      "referencesScope": "Each evidence owner is paginated separately; counts are not added across owners. Only explicit one-hop references are shown. Local targets are omitted; pagination includes local references. Ownership uses the last catalog observation.",
+      "forbidden": "You cannot read this reference category",
+      "loading": "Loading references…",
+      "unavailable": "References are currently unavailable",
+      "retry": "Retry",
+      "pageEmpty": "No identifiable external standards on this page. More pages may be available.",
+      "noReferences": "No explicit references of this kind",
+      "targetUnavailable": "The referenced target is not discoverable or its ownership is unavailable",
+      "openAdopted": "Open definition / adopted revision",
+      "ownership": {
+        "external": "Other domain",
+        "public": "Common standard",
+        "unavailable": "Unresolved"
+      },
+      "groups": {
+        "catalog": "Catalog semantics and approved mappings",
+        "modelEntities": "Entity data element references",
+        "modelTables": "Logical model data element references",
+        "modelMetrics": "Metric implementation definition references",
+        "standardGlossaries": "Glossary data element associations",
+        "standardElements": "Element code set references",
+        "standardMetrics": "Metric definition dependencies"
+      },
+      "states": {
+        "draft": "Draft",
+        "in_review": "In review",
+        "published": "Published",
+        "withdrawn": "Withdrawn",
+        "approved": "Approved",
+        "discovered": "Discovered",
+        "curated": "Curated",
+        "certified": "Certified",
+        "deprecated": "Deprecated"
+      },
+      "relations": {
+        "glossary": "Glossary association",
+        "mapping": "Approved standard mapping",
+        "entityElement": "Entity attribute element",
+        "tableElement": "Logical field element",
+        "metricDefinition": "Metric implementation definition",
+        "glossaryElement": "Glossary element association",
+        "elementCodeSet": "Element code set",
+        "metricDependency": "Metric dependency"
+      },
+      "moreEvidence": "The first 100 reference locations are shown. Open the source module for complete usage."
+    },
+    "standardDefinition": {
+      "owned": "Standard owns the definition, shown above.",
+      "open": "Open standard definition",
+      "empty": "No description has been provided.",
+      "loading": "Loading the standard definition…",
+      "forbidden": "You cannot read this standard definition.",
+      "missing": "The standard source is missing; catalog history is retained.",
+      "unavailable": "The standard definition is currently unavailable.",
+      "current": "Currently effective",
+      "notCurrent": "Not currently effective"
     }
   }
 }

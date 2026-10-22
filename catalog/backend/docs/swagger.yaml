@@ -237,6 +237,55 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  domainreference.Evidence:
+    properties:
+      owner_module:
+        type: string
+      position:
+        type: string
+      relation_kind:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_revision_id:
+        type: string
+      resource_type:
+        type: string
+      revision_id:
+        type: string
+      state:
+        type: string
+    type: object
+  domainreference.Page:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/domainreference.Reference'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  domainreference.Reference:
+    properties:
+      evidence:
+        items:
+          $ref: '#/definitions/domainreference.Evidence'
+        type: array
+      evidence_truncated:
+        type: boolean
+      source_identity:
+        type: string
+      source_type:
+        type: string
+    type: object
   github_com_addp_catalog_internal_models.AuditEvent:
     properties:
       actor_id:
@@ -490,6 +539,10 @@ definitions:
         - query_service
         - dev_task
         - data_application
+        - glossary
+        - element
+        - code_set
+        - document
         type: string
     type: object
   github_com_addp_catalog_internal_service.CollectionDetail:
@@ -658,6 +711,31 @@ definitions:
       name:
         type: string
       parent_id:
+        type: string
+    type: object
+  github_com_addp_catalog_internal_service.DomainResourceOverview:
+    properties:
+      coverage:
+        $ref: '#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverage'
+      domain_id:
+        example: ""
+        type: string
+      entry_types:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.EntryTypeFacet'
+        type: array
+      governance_statuses:
+        items:
+          $ref: '#/definitions/github_com_addp_catalog_internal_service.GovernanceStatusCoverage'
+        type: array
+      observed_at:
+        type: string
+      total_entries:
+        type: integer
+      view:
+        enum:
+        - governance
+        - inventory
         type: string
     type: object
   github_com_addp_catalog_internal_service.EntryDetail:
@@ -850,6 +928,10 @@ definitions:
         - data_service
         - development_artifact
         - data_application
+        - glossary
+        - element
+        - code_set
+        - standard_document
         type: string
     type: object
   github_com_addp_catalog_internal_service.GovernanceCoverage:
@@ -1263,6 +1345,10 @@ definitions:
         $ref: '#/definitions/github_com_addp_catalog_internal_service.EntrySummary'
       found:
         type: boolean
+      owner_domain_id:
+        type: string
+      scope_type:
+        type: string
       source_identity:
         type: string
       source_module:
@@ -1283,6 +1369,10 @@ definitions:
         - query_service
         - dev_task
         - data_application
+        - glossary
+        - element
+        - code_set
+        - document
         type: string
     type: object
   github_com_addp_catalog_internal_service.SourceEntryResolutionResult:
@@ -1989,6 +2079,70 @@ paths:
       - catalog.entry.read
       - catalog.collection.read
       - catalog.collection.update
+  /domain_standard_references:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: query
+        name: domain_id
+        required: true
+        type: string
+      - default: governance
+        description: 查看范围 | View
+        enum:
+        - governance
+        - inventory
+        in: query
+        name: view
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数，上限100 | Page size, max 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domainreference.Page'
+        "400":
+          description: 无效查询 | Invalid query
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询业务域目录标准引用 | List domain catalog standard references
+      tags:
+      - Catalog Entries
+      x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - catalog.inventory.read
+      x-addp-required-permissions:
+      - catalog.entry.read
   /domains:
     get:
       description: 使用 Catalog 运行身份动态读取 Standard 当前业务域，只公开名称、编码、定义和层级；不授予 Standard
@@ -2007,7 +2161,8 @@ paths:
         "401":
           description: 未认证 | Unauthorized
           schema:
-            additionalProperties: true
+            additionalProperties:
+              type: string
             type: object
         "403":
           description: 权限不足 | Forbidden
@@ -2025,6 +2180,60 @@ paths:
       tags:
       - Catalog
       x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.read
+  /domains/{id}/overview:
+    get:
+      parameters:
+      - description: 精确业务域 ID | Exact domain ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: governance
+        description: 查看范围 | View
+        enum:
+        - governance
+        - inventory
+        in: query
+        name: view
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_catalog_internal_service.DomainResourceOverview'
+        "400":
+          description: 无效查询 | Invalid query
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未认证 | Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 权限不足 | Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询业务域目录总览 | Get domain catalog overview
+      tags:
+      - Catalog Entries
+      x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - catalog.inventory.read
       x-addp-required-permissions:
       - catalog.entry.read
   /entries:
@@ -2052,6 +2261,11 @@ paths:
         - metric
         - data_service
         - development_artifact
+        - data_application
+        - glossary
+        - element
+        - code_set
+        - standard_document
         in: query
         name: entry_type
         type: string
@@ -3552,6 +3766,10 @@ paths:
         - data_service
         - development_artifact
         - data_application
+        - glossary
+        - element
+        - code_set
+        - standard_document
         in: query
         name: entry_type
         type: string
@@ -3646,6 +3864,11 @@ paths:
       description: 直接聚合 Catalog 当前权威事实并按适用对象计算分母，不读取持久化覆盖率投影 | Aggregate current authoritative
         Catalog facts with applicability-aware denominators and no persisted coverage
         projection
+      parameters:
+      - description: 精确主业务域 | Exact primary domain
+        in: query
+        name: primary_domain_id
+        type: string
       produces:
       - application/json
       responses:

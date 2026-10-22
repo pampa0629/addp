@@ -457,7 +457,7 @@ func validEntryType(entryType string) bool {
 		models.EntryTypeDataItem,
 		models.EntryTypeBusinessEntity,
 		models.EntryTypeLogicalModel,
-		models.EntryTypeMetric,
+		models.EntryTypeMetric, models.EntryTypeGlossary, models.EntryTypeElement, models.EntryTypeCodeSet, models.EntryTypeStandardDocument,
 		models.EntryTypeDataService,
 		models.EntryTypeDevelopmentArtifact,
 		models.EntryTypeDataApplication,
@@ -589,6 +589,11 @@ func (s *EntryService) Get(ctx context.Context, tenantID int64, access EntryAcce
 	}
 	if source.SourceModule != models.SourceModuleMeta {
 		detail.SourceResolution = s.resolveProfessionalSource(ctx, tenantID, source)
+		if source.SourceModule == models.SourceModuleStandard && detail.SourceResolution != nil && detail.SourceResolution.Status == "current" {
+			if name, ok := detail.SourceResolution.Summary["name"].(string); ok {
+				detail.DisplayName = name
+			}
+		}
 	} else {
 		detail.QualitySummary = s.resolveQualitySummary(ctx, tenantID, source)
 	}

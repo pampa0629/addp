@@ -1,106 +1,95 @@
 # Service 数据服务模块
 
-> 数据服务和 OGC 空间服务发布中心
+Service 负责查询、图查询和瓦片服务发布，以及第三方服务注册与代理。服务定义和最终业务授权归 Service；Engine、身份与注册表等共享职责见[模块契约](CLAUDE.md)。
 
 ## 📖 文档说明
 
-- **README.md** (本文件) - 快速入门和功能概览
-- **[CLAUDE.md](./CLAUDE.md)** - 详细技术文档，包含架构设计、开发指南、API 详解和注意事项
+本页提供启动、验证和专题导航，具体契约在对应文档维护：
+
+| 阅读目的 | 入口 |
+| --- | --- |
+| 对象职责、查询来源、指标修订与瓦片架构 | [核心概念与架构](docs/service核心概念和架构设计.md) |
+| 当前 API、Permission 与开发约束 | [模块契约](CLAUDE.md#核心-api) |
+| Console 页面、注册表单与模块协作 | [管理界面专题](docs/architecture/管理界面与模块协作.md) |
+| 第三方注册、代理、直连与未闭合能力 | [外部服务架构](docs/外部服务架构设计.md) |
+| 查询/要素、瓦片、注册代理的验证方法 | [API 测试指南](docs/API测试指南.md) |
+| 标准门禁、运行证据与排障 | [验收方法与排查](docs/testing/验收方法与排查.md) |
 
 ## 🎯 核心功能
 
-- **外部服务注册**: 管理 OGC 服务（WMS/WFS/WMTS）、REST API 等第三方数据服务
-- **数据查询服务**: 统一的数据查询 API，支持多源数据查询
-- **服务健康检查**: 定时检测注册服务可用性，自动更新服务状态
-- **服务元数据管理**: 自动获取并缓存 OGC GetCapabilities 响应
+- 查询服务支持表、SQL、联邦及确定指标修订等来源；协议、输出契约和授权范围见[查询发布与执行](docs/architecture/查询发布与执行.md)。
+- 瓦片服务维护动态/静态图层与发布配置，使用方式见[瓦片指南](docs/瓦片服务使用指南.md)。
+- 第三方注册保存上游端点、认证配置及能力解析值。创建、刷新、健康结果和代理消费分别成立，不从保存成功推导图层完整或消费授权已接通，详见[注册服务流程](docs/数据库架构.md#写入与读取流程)。
 
 ## 🚀 快速开始
 
 ### 方式 1: 开发模式（推荐）
 
+先按[部署与开发指南](../docs/guide/addp部署和开发步骤.md)准备根配置和依赖，再从项目根目录执行：
+
 ```bash
-# 启动基础设施
+# 确认实际 Infra 状态与端口，再启动所需设施
+bash scripts/infra/status.sh
 bash scripts/infra/up.sh
 
-# 启动 Service 模块
+# 启动 Service 及脚本选择的依赖
 bash scripts/dev/start.sh -service
 ```
 
-- 后端: http://localhost:8086
-- 通过 Gateway: http://localhost:8000/api/service/
+启动范围沿[模块选择指南](../scripts/docs/模块选择启动指南.md)，Engine Runtime 不随 `-service` 隐式启动；业务需要的 Runtime 须显式选择并满足对应引擎要求。页面从 Console 进入，实际访问地址以标准脚本输出和 `.dev-state/ports.env` 为准，端口规则见[端口规范](../docs/spec/addp端口分配.md)。
+
+需要应用代码变更时，由用户在自己的终端执行 `./scripts/dev/restart.sh -service`；仅测试或构建无需重启，预检、失败与进程归属边界沿[开发生命周期说明](../scripts/dev/README.md)。
 
 ### 方式 2: Docker 部署
 
-```bash
-cd service
-docker-compose up -d
-```
+容器部署使用根应用栈和已构建镜像；从项目根目录按场景选择标准入口，不在模块目录单独启动 Compose：
+
+| 场景 | 入口与说明 |
+| --- | --- |
+| 本地容器部署 | `bash scripts/local/start.sh`，准备与生命周期见[Local 指南](../scripts/local/README.md) |
+| 生产部署 | `bash scripts/prod/start.sh`，初始化、公开地址与发布流程见[Prod 指南](../scripts/prod/README.md) |
+
+镜像平台、Registry 与版本按[Build 指南](../scripts/build/README.md#build-imagessh)准备；依赖、启动范围和健康检查沿上述入口，不从容器启动成功推导业务链路已验收。
 
 ## 📋 主要 API 端点
 
-```
-服务注册: POST/GET/PUT/DELETE /api/service/registry/services
-服务刷新: POST /api/service/registry/services/:id/refresh
-健康检查: POST /api/service/registry/services/:id/health
-服务目录: GET /api/service/catalog
-数据查询: POST /api/service/data/query
-服务代理: GET /api/service/proxy/:id/*path
-```
+管理 API 前缀为 `/api/v1/service`，具体方法、路径与 Permission 以[模块契约](CLAUDE.md#核心-api)及 [Service Router](backend/internal/api/router.go)为准。查询/要素、瓦片与注册服务请求统一沿[API 测试指南](docs/API测试指南.md)，不在本页复制请求模板。
 
-完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
+注册公开代理单独挂载 `ANY /api/service/registered/proxy/:id/*path`；当前 Gateway 未转发该路径，DTO 中的代理地址不证明统一入口可达，也不继承管理 API 的 Tenant 和 Permission 保证。直连与跨模块验证见[代理读取与错误](docs/testing/注册服务与代理.md#代理读取与错误)。
 
 ## 🏗️ 数据库设计
 
-**Schema**: `service`
+Service 使用 PostgreSQL 的 `service` schema。完整模型、表清单和迁移归属见[数据库架构](docs/数据库架构.md#模块与表清单)；第三方注册对应：
 
-| 表名 | 说明 |
-|-----|------|
-| `external_services` | 注册的外部服务（WMS、WFS 等），支持租户隔离 |
-| `external_service_layers` | 外部服务的图层信息（几何类型、坐标系、边界框等） |
-
-详细字段定义请查看 [CLAUDE.md#关键架构](./CLAUDE.md#关键架构)
+| 表 | 说明 |
+| --- | --- |
+| `service.registered_services` | [第三方端点、认证配置、健康与持久状态](docs/tables/registered_services表.md) |
+| `service.registered_service_layers` | [上游解析的图层、CRS、BBox 与 TileMatrixSet 边界](docs/tables/registered_service_layers表.md) |
 
 ## 🔐 安全特性
 
-- **租户隔离**: 所有服务按租户 ID 隔离
-- **认证**: 所有 API 端点需要 JWT token 认证
-- **API Key 加密**: 外部服务的敏感信息加密存储
-- **HTTPS 优先**: 建议使用 HTTPS 协议连接外部服务
+- **管理认证**：注册管理使用 Bearer Tenant AuthContext 与精确 Permission；公开代理是独立边界，不能推导所有入口已登录认证或按租户隔离，见[访问边界](docs/数据库架构.md#管理面与公开代理)。
+- **上游凭据**：Basic、Bearer、API Key 用于向第三方装配认证，不授予调用者消费权；参数与更新语义见[上游认证配置](docs/数据库架构.md#上游认证配置)。
+- **凭据保护**：DTO 不返回 auth_config 正文，但 JSONB 存储尚无字段加密；has_auth_config 只表示配置非空。TLS、重定向及 URL/响应/日志保护须按[认证矩阵](docs/testing/注册服务与代理.md#上游认证矩阵)分别验证。
 
 ## 🐛 常见问题
 
-### 如何注册外部 OGC 服务？
+- 注册第三方 OGC 服务、刷新能力和验证上游认证：沿[注册服务与代理](docs/testing/注册服务与代理.md)，使用可清理配置及受控上游，不复制旧字段或固定端口样例。
+- 手动健康检查：先读[健康检查与定时刷新](docs/数据库架构.md#健康检查与定时刷新)，再按[健康结果与状态回写核对](docs/testing/注册服务与代理.md#健康结果与状态回写核对)区分上游结果、数据库回写和公开代理消费。
+
+## 验证
+
+从项目根目录运行 Service 标准门禁：
 
 ```bash
-curl -X POST http://localhost:8086/api/service/registry/services \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "示例 WMS 服务",
-    "service_type": "wms",
-    "url": "https://example.com/wms",
-    "auth_type": "none"
-  }'
+make test-module MODULE=service
 ```
 
-详细示例请查看 [CLAUDE.md#场景-1-注册外部-ogc-服务](./CLAUDE.md#场景-1注册外部-ogc-服务)
-
-### 如何手动触发健康检查？
-
-```bash
-curl -X POST http://localhost:8086/api/service/registry/services/:id/health \
-  -H "Authorization: Bearer <token>"
-```
-
-更多问题请查看 [CLAUDE.md](./CLAUDE.md)
+该入口选择已登记的 T0–T3；快速 Go T1、PostgreSQL 集成、前端及跨模块运行的范围见[验收方法与排查](docs/testing/验收方法与排查.md#标准入口与证据)，层级与 CI 要求沿[测试与验收规范](../docs/spec/addp测试与验收规范.md)。健康就绪、HTTP 200、字段回读或模拟上游成功不代替真实授权、地图与完整业务链路验收；未运行、失败或跳过项分别记录，不计为通过。
 
 ## 📚 相关文档
 
-- **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发工作流、场景示例）
-- **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置分层与管理能力规范
-- **[system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（获取数据库连接信息）
-
----
-
-Copyright © 2025 ADDP Team
+- [开发原则](../docs/spec/addp开发原则.md)：开发与唯一实现约束。
+- [API 设计规范](../docs/spec/addp-API设计规范.md)、[Swagger 指南](../docs/spec/addp-Swagger集成指南.md)：API 与接口文档维护。
+- [配置规范](../docs/spec/addp配置介绍.md)、[技术栈规约](../docs/spec/addp技术栈规约.md)：配置归属与依赖版本。
+- [统一认证规范](../docs/spec/addp登录认证的统一要求.md)：身份、凭据与日志保护。

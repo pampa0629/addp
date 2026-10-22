@@ -84,6 +84,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 表模式 QueryService 的直接查询必须从发布快照的输出契约枚举完整源字段，不得生成 `SELECT *`；请求选择字段仍由结构化查询计划在外层收窄。这样 PreparedQuery 可以证明完整输出血缘，并对被抑制或遮盖的字段执行统一保护。
 - 联邦 SQL 发布时冻结实际引用的 Source Engine ID 并纳入 `dependency_hash`。每次请求由 Service 基于发布快照签发 `service_definition` Execution Authorization，独立 DuckDB Runtime 消费授权并取得连接；Service 不链接 DuckDB 原生库。
 - 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。
+- 查询服务血缘统一见[发布血缘同步边界](docs/architecture/查询发布与执行.md#发布血缘同步边界)：当前仅同步具有源 item 身份和依赖摘要的快照；投递失败、周期重试及分层验收按专题核对，不以重放运行证明完整血缘或真实链路已通过。
 - 静态二维瓦片发布只接受 Meta 已识别、位于 Business 存储的 `data_type=media + format=pmtiles + layout=single` item。发布配置保存 ResourceLocator 和 PMTiles v3 依赖快照，运行时通过 System engine provider Range Read，不接受裸路径、URL 或 Manager infra `storage_ref`。
 - 三维瓦片不并入二维瓦片服务。3D Tiles / S3M 后续使用独立“三维场景服务”入口和服务类型。
 - 公开访问端点要在 Handler 内检查服务的 public/private 权限，避免绕过认证。
@@ -93,25 +94,27 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 
 ## 开发与验证
 
+启动、访问地址和重启入口沿[模块 README](README.md)及[模块选择指南](../scripts/docs/模块选择启动指南.md)。实际地址以标准启动输出和 `.dev-state/ports.env` 为准，不固定请求 localhost:8086；需要启动或重启时按根 AGENTS.md 由用户操作，仅测试或构建无需重启。
+
+从项目根目录运行标准模块门禁：
+
 ```bash
-bash scripts/dev/start.sh -service
-bash scripts/dev/restart.sh -service
-curl http://localhost:8086/health/ready
+make test-module MODULE=service
 ```
 
-常用日志：
+API 样例先完成[公共准备](docs/API测试指南.md#公共准备)，再进入对应协议专题；Go T1、PostgreSQL、前端与跨模块运行的验证范围统一见[验收方法与排查](docs/testing/验收方法与排查.md#标准入口与证据)。健康就绪、单次请求或模拟上游不代替实际业务验收，未运行、失败或跳过项不计为通过。
 
-- `logs/service-backend.log`
+运行日志按实例可信来源和权限查询，沿[失败定位](docs/testing/验收方法与排查.md#失败定位)与[运行日志规范](../docs/spec/addp模块服务运行日志规范.md)核对，不将固定模块文件当作所有部署的日志来源。
 
 ## 相关文档
 
-- `service/docs/数据库架构.md`
-- `service/docs/service核心概念和架构设计.md`
-- `service/docs/外部服务架构设计.md`
-- `service/docs/瓦片服务使用指南.md`
-- `service/docs/API测试指南.md`
-- `service/docs/tables/`
-- `gateway/docs/gateway架构说明.md`
+- [数据库架构](docs/数据库架构.md)：当前表、模型与存储边界。
+- [核心概念和架构](docs/service核心概念和架构设计.md)：服务对象与专题归属。
+- [外部服务架构](docs/外部服务架构设计.md)：注册、代理与直连边界。
+- [瓦片使用指南](docs/瓦片服务使用指南.md)：发布、客户端与排查。
+- [API 测试指南](docs/API测试指南.md)：当前样例、公共准备与验收范围。
+- [表说明](docs/tables/)：当前表字段与管理入口。
+- [Gateway 架构](../gateway/docs/gateway架构说明.md)：统一路由与消费凭据边界。
 
 ## 前端公开路由
 
@@ -129,5 +132,3 @@ curl http://localhost:8086/health/ready
 - `frontend/e2e/navigation.html` 复用正式 App、Layout 和路由表，由 Console 浏览器门禁验证嵌入及独立访问的五个菜单入口、目录内部跳转、刷新和历史恢复；API 响应由测试拦截。
 - 注册表单的真实 iframe 离页回归由 Console 的 `registered-service-unsaved.spec.js` 执行，复用上述正式页面夹具，覆盖字段/关键词/认证草稿、内部及宿主导航、历史、刷新、创建与更新的失败保留和成功清除。HTTP 写请求全部模拟，不写业务数据库。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
-
-查询服务血缘通过现有 Meta 发布接口同步人类可读的 `Title`（`service_name`）及 `UpdatedAt`（`service_updated_at`）。Service 启动后及每分钟按主键分页重放 owner 发布事实，补齐名称并重试失败投递；非 active 状态同步空依赖。Meta 关闭旧版本当前投影，保留历史观察，并拒绝过期通知。不得借用仅面向 Catalog 的 resolver 权限。此契约由 Service T1、Meta T1 和 Meta PostgreSQL lifecycle migration 门禁验证。

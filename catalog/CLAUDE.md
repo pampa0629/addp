@@ -40,7 +40,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - 共享目标只通过 `common/client.MetaClient.ReadAuthorizationFacts` 按稳定指纹读取 Meta 最小授权事实；Catalog 使用自身 `addp-catalog` Tenant Service 凭据，不冒用 System 身份。不再用祖先链、Meta 行号或完整详情重建授权边界；非 complete、畸形或身份不一致的事实拒绝办理，不回退旧路线。当前仍保留 System 引擎状态核验；业务决定与办理绑定持久保存数据项指纹及批准边界摘要，System 的 Grant 独立核验并引用同一绑定。旧 native 测试确认及办理通过 owner 事务迁移清理，其他目录及通用审计保留。
 - 业务决定的确认人授权版本是当时审计事实，不因无关角色调整自动作废；首次受理由 System 实时核验原账号／Membership 和当前确认权限，Catalog 保证原业务负责人责任关系及来源依据仍有效。同账号重新接任不能复活旧决定；原办理请求仍严格绑定办理人授权版本。不得让普通历史读取重新要求确认人资格，也不得把内部资格测试当成真实 OAuth 双服务 Online T4 已通过。
-- `/entries` 的业务域上下文用 `catalog.entry.read` 动态发现 Standard Domain 的名称、编码、定义和层级，仅投影本次响应；独立前端业务域页已删除，Standard / Model 专业详情仍由 owner 对当前 User Token 判权，不能以 Catalog 运行身份代查。
+- `/entries` 的业务域上下文用 `catalog.entry.read` 动态发现 Standard Domain 的名称、编码、定义和层级，仅投影本次响应；独立业务域总览复用同一目录计数，Standard / Model 专业详情仍由 owner 对当前 User Token 判权，不能以 Catalog 运行身份代查。
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。
 - 首次保存有效 `business_owner` 即建立过业务责任，不等待完成编目。内部 nullable `business_responsibility_established` 只表达历史依据：新建为 false，责任写入同事务置 true，旧历史不足为 NULL；不得因撤销编目、移交、失效或来源变化重置，也不接受请求方编辑。保存责任不隐式切换 System 批准方式，不把历史依据单独当作精确源资源的授权依据。批准方式须显式配置，无配置或服务失联不自动放行。
@@ -50,7 +50,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 旧 `component_element_associations` 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。
 - 不提供 DataItem CatalogEntry 的手工创建和删除 API。
 - Model Entity / LogicalTable 的专业内生 Domain、Element、Metric 和建模关系归 Model，Catalog 不建立可编辑副本。
-- Standard Metric 的定义、公式、状态、Domain、分类、单位、数据元映射和依赖关系归 Standard，Catalog 不建立可编辑副本。
+- Standard 五类标准的名称、定义、修订、状态、Domain、分类、单位和语义依赖归 Standard，Catalog 不建立可编辑副本。
 - Service QueryService 的 SQL、发布快照、协议、输出契约、Consumer Descriptor、运行状态和端点归 Service，Catalog 不建立可编辑副本；QueryService 没有 owner Domain，primary Domain 仍归 Catalog。
 - Develop 只为已持久化的 `query|workflow` DevTask 建立 `development_artifact`；`script` / Notebook、即时查询、execution、运行结果和 ToolApproval 不进入企业目录。DevTask 内容、DAG、参数、Engine 绑定与执行契约归 Develop，Catalog 只保存最小可重建观察摘要并动态解析当前详情。
 - Quality 评分、Issue 和 execution 历史不是 CatalogEntry，不进入 Catalog 存储或搜索投影。只对 Meta PostgreSQL table DataItem 使用 owner 提供的 `engine_id + schema_name + table_name` 按需动态解析，不拆分 `full_name` 猜测定位。
@@ -58,3 +58,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 数据字典是 Catalog 联邦读模型：只对 active Meta DataItem 组合 Meta 当前物理字段、Catalog 权威且已审核的 StandardMapping 与其中冻结的 Standard ElementRevision，不落表、不使用已观察摘要或动态“当前版本”伪造标准事实。
 - 数据字典导出是上述联邦读模型的一次同步 JSON 捕获：服务端重新解析并返回带生成时点和 SHA-256 ETag 的附件，不保存导出任务、文件或第二份事实；批量发布与长期托管不属于该接口。
 - Catalog 不提供泛化 `CatalogRelation` 或可配置关系类型；当前唯一自有跨条目关系是弃用条目的可选推荐继任项，只通过治理子资源 `PUT /entries/:id/governance` 维护，使用 CatalogEntry 聚合版本；普通编目更新不得读写它。推荐继任保持两个独立企业身份，不等同 `merged`。
+
+## 业务域总览与五类标准接入
+
+2026-10-22 确认：Standard 五类标准统一按稳定身份进入企业目录，专业定义和修订唯一归 Standard，Catalog 不维护可编辑名称/定义副本。Catalog 业务域总览独立于资源浏览；Catalog、Model、Standard 的域级标准引用只读接口使用各自本地事实，精确域、一跳、按目标去重并保留证据；当前 User 权限判定，不复制专业关系或改写冻结修订。完整契约以 `docs/spec/addp企业资源目录实现规范.md` 4.4、5.5 节为准。

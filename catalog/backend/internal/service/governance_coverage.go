@@ -33,14 +33,14 @@ const (
 		  AND source.catalog_entry_id = entries.id
 		  AND source.is_current = TRUE
 		  AND source.source_module = 'standard'
-		  AND source.source_type = 'metric'
+		  AND source.source_type IN ('metric','element','glossary','code_set','document')
 		  AND source.observed_snapshot ->> 'scope_type' IN ('platform', 'tenant_common')
 		  AND COALESCE(source.observed_snapshot ->> 'domain_id', '') = ''
 	)`
-	coverageBusinessDefinitionPredicate = `(
-		entries.business_name IS NOT NULL AND TRIM(entries.business_name) <> ''
-		AND entries.business_description IS NOT NULL AND TRIM(entries.business_description) <> ''
-	)`
+	coverageStandardSourcePredicate     = `EXISTS (SELECT 1 FROM catalog.source_bindings definition_source WHERE definition_source.tenant_id=entries.tenant_id AND definition_source.catalog_entry_id=entries.id AND definition_source.is_current=TRUE AND definition_source.source_module='standard')`
+	coverageGlossaryApplicablePredicate = `NOT (` + coverageStandardSourcePredicate + `)`
+	coverageBusinessDefinitionPredicate = `((NOT (` + coverageStandardSourcePredicate + `) AND entries.business_name IS NOT NULL AND TRIM(entries.business_name)<>'' AND entries.business_description IS NOT NULL AND TRIM(entries.business_description)<>'') OR EXISTS (SELECT 1 FROM catalog.source_bindings definition_source WHERE definition_source.tenant_id=entries.tenant_id AND definition_source.catalog_entry_id=entries.id AND definition_source.is_current=TRUE AND definition_source.source_module='standard' AND definition_source.observed_snapshot->'definition_complete'='true'))`
+
 	coveragePrimaryDomainPredicate = `(
 		EXISTS (
 			SELECT 1 FROM catalog.semantic_associations semantic
@@ -109,7 +109,7 @@ func coveragePredicateFor(dimension string) (governanceCoveragePredicate, bool) 
 	case CoverageDimensionDataSteward:
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageResponsibilityPredicate(models.ResponsibilityRoleDataSteward)}, true
 	case CoverageDimensionGlossary:
-		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageGlossaryPredicate}, true
+		return governanceCoveragePredicate{applicable: coverageGlossaryApplicablePredicate, covered: "(" + coverageGlossaryApplicablePredicate + ") AND (" + coverageGlossaryPredicate + ")"}, true
 	case CoverageDimensionComponentStandardMapping:
 		return governanceCoveragePredicate{applicable: coverageComponentApplicablePredicate, covered: coverageComponentStandardMappingPredicate}, true
 	default:
@@ -145,8 +145,8 @@ type GovernanceCoverage struct {
 	Dimensions         []GovernanceCoverageDimension `json:"dimensions"`
 }
 
-func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64, access EntryAccess) (*GovernanceCoverage, error) {
-	if tenantID <= 0 {
+func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64, access EntryAccess, domainIDs ...int64) (*GovernanceCoverage, error) {
+	if tenantID <= 0 || len(domainIDs) > 1 || (len(domainIDs) == 1 && domainIDs[0] < 0) {
 		return nil, ErrInvalidPage
 	}
 	if !access.Inventory {
@@ -165,6 +165,7 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		BusinessOwnerCovered            int64
 		DataStewardCovered              int64
 		GlossaryCovered                 int64
+		GlossaryApplicable              int64
 		ComponentApplicable             int64
 		ComponentStandardMappingCovered int64
 	}
@@ -189,13 +190,18 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS business_owner_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS data_steward_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS glossary_covered,
+ COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS glossary_applicable,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS component_applicable,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS component_standard_mapping_covered`,
 		businessDefinition.covered, primaryDomain.applicable, primaryDomain.covered, accountableDepartment.covered,
-		businessOwner.covered, dataSteward.covered, glossary.covered,
+		businessOwner.covered, dataSteward.covered, glossary.covered, glossary.applicable,
 		componentMapping.applicable, componentMapping.covered,
 	)
-	if err := s.visibleEntriesQuery(ctx, tenantID, access).
+	query := s.visibleEntriesQuery(ctx, tenantID, access)
+	if len(domainIDs) == 1 {
+		query = applyPrimaryDomainFilter(query, domainIDs[0])
+	}
+	if err := query.
 		Where("entries.entry_status = ?", models.EntryStatusActive).
 		Select(selectExpression).Scan(&aggregate).Error; err != nil {
 		return nil, fmt.Errorf("aggregate Catalog governance coverage: %w", err)
@@ -217,7 +223,7 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		coverageDimension(CoverageDimensionAccountableDepartment, aggregate.AccountableDepartmentCovered, total, total),
 		coverageDimension(CoverageDimensionBusinessOwner, aggregate.BusinessOwnerCovered, total, total),
 		coverageDimension(CoverageDimensionDataSteward, aggregate.DataStewardCovered, total, total),
-		coverageDimension(CoverageDimensionGlossary, aggregate.GlossaryCovered, total, total),
+		coverageDimension(CoverageDimensionGlossary, aggregate.GlossaryCovered, aggregate.GlossaryApplicable, total),
 		coverageDimension(CoverageDimensionComponentStandardMapping, aggregate.ComponentStandardMappingCovered, aggregate.ComponentApplicable, total),
 	}
 

@@ -57,6 +57,9 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateBusinessResponsibilityEvidence(tx); err != nil {
 			return err
 		}
+		if err := migrateStandardDefinitionOwnership(tx); err != nil {
+			return err
+		}
 		if err := applyConstraints(tx); err != nil {
 			return err
 		}
@@ -168,7 +171,7 @@ func applyConstraints(db *gorm.DB) error {
 			BEFORE UPDATE OF business_responsibility_established ON catalog.entries
 			FOR EACH ROW EXECUTE FUNCTION catalog.preserve_business_responsibility_establishment()`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_type`,
-		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_type CHECK (entry_type IN ('data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application'))`,
+		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_type CHECK (entry_type IN ('data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application', 'glossary', 'element', 'code_set', 'standard_document'))`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_status`,
 		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_status CHECK (entry_status IN ('active', 'merged'))`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_governance_status`,
@@ -201,7 +204,7 @@ func applyConstraints(db *gorm.DB) error {
 		`ALTER TABLE catalog.source_bindings ADD CONSTRAINT ck_catalog_source_shape CHECK (
 			(source_module = 'meta' AND source_type = 'data_item' AND char_length(btrim(source_identity)) > 0)
 			OR (source_module = 'model' AND source_type IN ('entity', 'logical_table') AND source_identity ~ '^[1-9][0-9]*$')
-			OR (source_module = 'standard' AND source_type = 'metric' AND source_identity ~ '^[1-9][0-9]*$')
+			OR (source_module = 'standard' AND source_type IN ('metric','glossary','element','code_set','document') AND source_identity ~ '^[1-9][0-9]*$')
 			OR (source_module = 'service' AND source_type = 'query_service' AND source_identity ~ '^[1-9][0-9]*$')
 			OR (source_module = 'develop' AND source_type = 'dev_task' AND source_identity ~ '^[1-9][0-9]*$')
 			OR (source_module = 'workbench' AND source_type = 'data_application' AND source_identity ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')

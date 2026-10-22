@@ -17,6 +17,7 @@ const routes = [
     redirect: '/entries',
     meta: { requiresAuth: true },
     children: [
+      { path: 'domains', name: 'DomainOverview', component: () => import('../views/DomainOverview.vue'), meta: { requiresAuth: true, requiredPermission: 'catalog.entry.read' } },
       {
         path: 'entries',
         name: 'EntryList',

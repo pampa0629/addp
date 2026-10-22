@@ -92,6 +92,10 @@ func SetupRouter(
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
+	domainReferenceHandler := NewDomainStandardReferenceHandler(entitySvc)
+	api.GET("/entities/standard_references", permission("model.entity.read"), domainReferenceHandler.ListEntity)
+	api.GET("/logical-tables/standard_references", permission("model.logical_model.read"), domainReferenceHandler.ListLogicalTable)
+	api.GET("/metric-implementations/standard_references", permission("model.metric_implementation.read"), domainReferenceHandler.ListMetricImplementation)
 
 	{
 		provider := api.Group("/task-provider")

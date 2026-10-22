@@ -442,6 +442,10 @@ SUITES: Mapping[str, Suite] = {
             ("security", "SECURITY_URL"),
         ),
     ),
+    "catalog-domain-overview": Suite(
+        command=(sys.executable, "-m", "scripts.test.catalog-domain-overview-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("standard", "STANDARD_URL"), ("model", "MODEL_URL"), ("catalog", "CATALOG_URL")),
+    ),
     "enterprise-catalog-publishing": Suite(
         command=(sys.executable, "scripts/test/enterprise-catalog-publishing-online.py"),
         services=(

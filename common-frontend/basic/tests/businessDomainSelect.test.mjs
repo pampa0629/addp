@@ -51,5 +51,5 @@ test('business domain options have one renderer across consuming modules', () =>
       if (source.includes('<BusinessDomainSelect')) consumers++
     }
   }
-  assert.equal(consumers, 20)
+  assert.equal(consumers, 21)
 })

@@ -6,7 +6,11 @@
       "initializeBoundary": "若本表尚未配置批准要求，可显式初始化为 Catalog 业务批准。查询失败不代表配置不存在；已有配置不会被覆盖，权限不足时会拒绝。此操作不授予数据访问。",
       "invalidInitialization": "请选择有效共享确认并填写初始化原因。",
       "title": "业务授权",
-      "workspace": { "create": "批准数据使用", "handling": "办理访问授权", "records": "批准与办理记录" },
+      "workspace": {
+        "create": "批准数据使用",
+        "handling": "办理访问授权",
+        "records": "批准与办理记录"
+      },
       "workspaceHelp": {
         "create": "业务负责人确定谁可以使用本数据项、用途和期限。批准后，继续办理访问授权，系统核验并签发读取权限。",
         "handling": "有办理资格的人员选择业务批准并提交，系统核验后向指定接收方签发读取权限。业务负责人也具备办理资格时，可以本人继续办理。",
@@ -20,11 +24,19 @@
       "continueHandling": "下一步：办理访问授权",
       "noRequests": "暂无本人的授权办理记录",
       "resolveBeforeSwitch": "正在提交或原命令结果尚未确定。请先查询原记录或同参重试，确认结果后再切换。",
-      "stateLabel": { "pending": "待核清", "accepted": "已受理", "closed": "已关闭" },
+      "stateLabel": {
+        "pending": "待核清",
+        "accepted": "已受理",
+        "closed": "已关闭"
+      },
       "boundary": "先由业务负责人确认共享，再由授权办理人提交，系统核验后签发只读授权。目录可见和办理资格都不等于可以读取数据。",
       "progressTitle": "所选记录的办理进度",
       "nextStep": "下一步：",
-      "phases": { "confirmation": "批准数据使用", "handling": "办理访问授权", "issuance": "系统签发" },
+      "phases": {
+        "confirmation": "批准数据使用",
+        "handling": "办理访问授权",
+        "issuance": "系统签发"
+      },
       "progress": {
         "awaitingConfirmation": "待业务负责人批准数据使用",
         "chooseConfirmation": "请选择要办理的业务批准",
@@ -100,7 +112,15 @@
       "handlingResult": "办理结果",
       "viewRequestDetail": "查看详情",
       "technicalDetails": "技术信息",
-      "recordResult": {"processing": "结果待确认", "issuing": "已受理，尚未签发", "issued": "已签发授权", "duplicate": "已有授权，本次未重复签发", "expired": "签发窗口已结束，未签发", "closed": "已关闭", "unavailable": "暂未取得可靠结果"},
+      "recordResult": {
+        "processing": "结果待确认",
+        "issuing": "已受理，尚未签发",
+        "issued": "已签发授权",
+        "duplicate": "已有授权，本次未重复签发",
+        "expired": "签发窗口已结束，未签发",
+        "closed": "已关闭",
+        "unavailable": "暂未取得可靠结果"
+      },
       "historyTitle": "我的访问授权办理记录",
       "requestID": "请求编号",
       "queryResult": "查看办理结果",
@@ -114,7 +134,11 @@
       "currentSelected": "已选中刚才查看的业务批准。",
       "alreadyApproved": "✓ 已业务批准",
       "matchingApproval": "相同接收方、授权边界与期限已有业务批准，无需重复批准。",
-      "candidateState": { "existing": "✓ 已有授权", "absent": "待办理", "unknown": "授权状态待核查" },
+      "candidateState": {
+        "existing": "✓ 已有授权",
+        "absent": "待办理",
+        "unknown": "授权状态待核查"
+      },
       "setupTitle": "首次使用配置（不是数据访问授权）",
       "selectDecision": "选择本数据项的业务批准",
       "observeRequirement": "重新核查批准要求与已有授权",
@@ -200,8 +224,17 @@
       "empty": "尚无字段标准映射",
       "loadFailed": "加载标准候选失败",
       "saveFailed": "映射操作失败，请刷新后重试",
-      "states": { "proposed": "待审核", "approved": "已审核", "rejected": "已驳回", "withdrawn": "已撤回" },
-      "sources": { "manual": "人工", "copilot": "Copilot", "legacy": "历史迁移" }
+      "states": {
+        "proposed": "待审核",
+        "approved": "已审核",
+        "rejected": "已驳回",
+        "withdrawn": "已撤回"
+      },
+      "sources": {
+        "manual": "人工",
+        "copilot": "Copilot",
+        "legacy": "历史迁移"
+      }
     },
     "entries": {
       "title": "企业资源目录",
@@ -689,7 +722,8 @@
         "primaryDomain": "主业务域",
         "accountableDepartment": "责任部门",
         "businessOwner": "业务责任人",
-        "dataSteward": "数据管理员"
+        "dataSteward": "数据管理员",
+        "ownerDefinition": "Standard 专业定义尚不完整"
       },
       "deprecationReason": "弃用原因",
       "recommendedSuccessor": "推荐继任项（可选）",
@@ -768,7 +802,8 @@
       "subject": {
         "department": "部门",
         "user": "用户"
-      }
+      },
+      "standardDefinitionHint": "名称和定义由 Standard 维护；此处维护目录责任、可见性及治理状态。"
     },
     "governance": {
       "reason": "治理原因",
@@ -857,7 +892,11 @@
       "metric": "指标",
       "dataService": "数据服务",
       "developmentArtifact": "开发成果",
-      "dataApplication": "数据应用"
+      "dataApplication": "数据应用",
+      "glossary": "业务术语",
+      "element": "数据元",
+      "codeSet": "码值集",
+      "standardDocument": "标准文档"
     },
     "status": {
       "source": {
@@ -879,6 +918,71 @@
         "active": "有效",
         "merged": "已合并"
       }
+    },
+    "domainOverview": {
+      "title": "业务域总览",
+      "open": "查看业务域总览",
+      "resources": "本域负责的资源",
+      "selectDomain": "请选择业务域",
+      "scope": "仅统计当前查看范围中精确归属本域且您可发现的目录资源，不包含子域。",
+      "governance": "目录治理情况",
+      "externalStandards": "本域引用的外部标准",
+      "referencesScope": "按引用来源分别分页，不合计为全域总数。仅展示明确的一跳引用；本域自身标准不重复列出。分页包含本域引用，目标归属按目录最后观察信息识别。",
+      "forbidden": "无权查看此类引用",
+      "loading": "正在读取引用…",
+      "unavailable": "当前无法读取引用",
+      "retry": "重试",
+      "pageEmpty": "本页没有可识别的外部标准，可继续翻页。",
+      "noReferences": "本域暂无此类明确引用",
+      "targetUnavailable": "引用目标当前不可发现或归属信息不可用",
+      "openAdopted": "查看标准定义／采用修订",
+      "ownership": {
+        "external": "其他业务域",
+        "public": "公共标准",
+        "unavailable": "当前不可确认"
+      },
+      "groups": {
+        "catalog": "目录语义与已审核落标",
+        "modelEntities": "业务实体的数据元引用",
+        "modelTables": "逻辑模型的数据元引用",
+        "modelMetrics": "指标实现的定义引用",
+        "standardGlossaries": "业务术语的数据元关联",
+        "standardElements": "数据元的码值集引用",
+        "standardMetrics": "指标定义的依赖"
+      },
+      "states": {
+        "draft": "草稿",
+        "in_review": "审核中",
+        "published": "已发布",
+        "withdrawn": "已撤回",
+        "approved": "已审批",
+        "discovered": "已发现",
+        "curated": "已编目",
+        "certified": "已认证",
+        "deprecated": "已弃用"
+      },
+      "relations": {
+        "glossary": "关联术语",
+        "mapping": "已审核落标",
+        "entityElement": "实体属性采用数据元",
+        "tableElement": "逻辑字段采用数据元",
+        "metricDefinition": "指标实现采用定义",
+        "glossaryElement": "术语关联数据元",
+        "elementCodeSet": "数据元引用码值集",
+        "metricDependency": "指标依赖"
+      },
+      "moreEvidence": "仅展开前 100 个引用位置，请到来源模块查看完整使用情况。"
+    },
+    "standardDefinition": {
+      "owned": "专业定义由 Standard 维护，见上方标准定义。",
+      "open": "查看标准定义",
+      "empty": "该对象未填写说明。",
+      "loading": "正在读取标准定义…",
+      "forbidden": "没有查看此标准定义的权限。",
+      "missing": "标准来源当前不存在，目录历史仍保留。",
+      "unavailable": "标准定义当前不可用。",
+      "current": "当前生效",
+      "notCurrent": "当前未生效"
     }
   }
 }

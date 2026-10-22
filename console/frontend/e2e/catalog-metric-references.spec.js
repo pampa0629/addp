@@ -44,6 +44,7 @@ async function openMetric(page, { deniedPermission, failedReference } = {}) {
     if (path === `/api/v1/catalog/me/entries/${entryID}/marks`) {
       return route.fulfill({ json: { favorite: false, following: false } })
     }
+    if (path === '/api/v1/standard/metrics/4') return route.fulfill({ json: { id: '4', latest_revision: { id: '41', revision_no: 1, name: '目录引用名称展示验收指标', definition: 'Standard 权威定义', status: 'draft' } } })
     if (path === '/api/v1/standard/metrics/4/relations') {
       return route.fulfill({ json: { nodes: [], edges: [] } })
     }

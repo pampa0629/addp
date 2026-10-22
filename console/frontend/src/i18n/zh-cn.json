@@ -582,7 +582,8 @@
         "myEntries": "我的目录",
         "collections": "协作集合",
         "tasks": "责任治理队列",
-        "coverage": "治理覆盖率"
+        "coverage": "治理覆盖率",
+        "domains": "业务域总览"
       },
       "asset": {
         "label": "资产管理",

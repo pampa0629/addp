@@ -768,6 +768,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-catalog-domain-online-runner
 	@$(MAKE) test-workflow-runtime-health-online-runner
 	@$(MAKE) test-starrocks-online-runner
 	@$(MAKE) test-ftp-online-runner
@@ -1246,3 +1247,9 @@ test-monitor-traces: ## 隔离验证 HTTP Trace 传播、真实尾采样、Tempo
 .PHONY: build-audit-archive test-system-audit-archive
 test-system-audit-archive: ## 仅 GitHub Hosted 独占 PostgreSQL 与对象存储的审计归档协议验收
 	@bash scripts/test/system-audit-archive-gate.sh
+
+.PHONY: test-catalog-domain-online-runner
+test-catalog-domain-online-runner: ## 验证业务域总览 Online 契约、隔离清理与 CI 注册
+	@python3 -m unittest scripts/test/catalog-domain-overview-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_catalog_overview_requires_cleanup_permissions_and_browser_contract
+	@node --check console/frontend/e2e/catalog-domain-overview.spec.js
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

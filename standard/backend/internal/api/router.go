@@ -74,6 +74,11 @@ func SetupRouter(
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
+	domainReferenceHandler := NewDomainStandardReferenceHandler(catalogResourceSvc)
+	api.GET("/glossaries/standard_references", permission("standard.glossary.read"), domainReferenceHandler.ListGlossary)
+	api.GET("/elements/standard_references", permission("standard.element.read"), domainReferenceHandler.ListElement)
+	api.GET("/metrics/standard_references", permission("standard.metric.read"), domainReferenceHandler.ListMetric)
+
 	mCats := api.Group("/measurement-categories")
 	{
 		mCats.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListCategories)

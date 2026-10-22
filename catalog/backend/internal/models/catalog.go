@@ -12,6 +12,10 @@ const (
 	EntryTypeBusinessEntity      = "business_entity"
 	EntryTypeLogicalModel        = "logical_model"
 	EntryTypeMetric              = "metric"
+	EntryTypeGlossary            = "glossary"
+	EntryTypeElement             = "element"
+	EntryTypeCodeSet             = "code_set"
+	EntryTypeStandardDocument    = "standard_document"
 	EntryTypeDataService         = "data_service"
 	EntryTypeDevelopmentArtifact = "development_artifact"
 	EntryTypeDataApplication     = "data_application"
@@ -38,6 +42,10 @@ const (
 	SourceTypeEntity          = "entity"
 	SourceTypeLogicalTable    = "logical_table"
 	SourceTypeMetric          = "metric"
+	SourceTypeGlossary        = "glossary"
+	SourceTypeElement         = "element"
+	SourceTypeCodeSet         = "code_set"
+	SourceTypeDocument        = "document"
 	SourceTypeQueryService    = "query_service"
 	SourceTypeDevTask         = "dev_task"
 	SourceTypeDataApplication = "data_application"
@@ -298,3 +306,11 @@ type AuditEvent struct {
 }
 
 func (AuditEvent) TableName() string { return "catalog.audit_events" }
+
+func IsStandardSourceType(kind string) bool {
+	switch kind {
+	case SourceTypeMetric, SourceTypeGlossary, SourceTypeElement, SourceTypeCodeSet, SourceTypeDocument:
+		return true
+	}
+	return false
+}

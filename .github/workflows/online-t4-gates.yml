@@ -14,6 +14,7 @@ on:
           - consumer-engine-recovery
           - hdfs-spark-consumer-flow
           - elasticsearch-consumer-flow
+          - catalog-domain-overview
           - enterprise-catalog-publishing
           - kingbase-consumer-flow
           - manager-internal-artifact-lineage

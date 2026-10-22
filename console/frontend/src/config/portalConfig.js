@@ -321,6 +321,7 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.catalog.label', icon: Collection,
     items: [
       { index: '/catalog/entries', icon: List, label: 'console.menus.catalog.entries' },
+      { index: '/catalog/domains', icon: DataAnalysis, label: 'console.menus.catalog.domains', permissions: ['catalog.entry.read'] },
       { index: '/catalog/me/entries', icon: Collection, label: 'console.menus.catalog.myEntries', permissions: ['catalog.entry.read'] },
       { index: '/catalog/collections', icon: FolderOpened, label: 'console.menus.catalog.collections', permissions: ['catalog.collection.read'] },
       { index: '/catalog/governance/tasks', icon: Warning, label: 'console.menus.catalog.tasks', permissions: ['catalog.entry.update'] },

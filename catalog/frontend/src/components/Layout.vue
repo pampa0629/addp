@@ -32,6 +32,7 @@
             <el-icon><List /></el-icon>
             <span>{{ t('catalog.layout.entries') }}</span>
           </el-menu-item>
+          <el-menu-item v-if="canEnter('/domains')" index="/domains"><el-icon><DataAnalysis /></el-icon><span>{{ t('catalog.domainOverview.title') }}</span></el-menu-item>
           <el-menu-item v-if="canEnter('/me/entries')" index="/me/entries">
             <el-icon><UserFilled /></el-icon>
             <span>{{ t('catalog.layout.myCatalog') }}</span>

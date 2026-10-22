@@ -31,13 +31,18 @@
 
 ## 几何、范围与能力
 
-- `layer_name` 是上游标识，如 WMS 的 LAYERS 名称；`display_name` 是显示标题，不用它反向定位上游图层。
-- `geometry_type` 是字符串，没有当前模型强制的几何类型枚举；可能出现 Point、MultiPoint、LineString、MultiLineString、Polygon、MultiPolygon、GeometryCollection 或未知/空值。WMS 创建图层当前写 Unknown，WFS/WMTS 并未普遍填入确定几何类型，不能根据图层名字推断 Point。
-- `crs` 保存解析得到的坐标系；WMS/WFS 的单值不代表已持久化完整 supported_crs 列表。WMTS 依赖 TileMatrixSet，空 CRS 不等于默认 WGS84。
-- `bbox` 按协议保存对象；WMS 常使用 west/east/south/north，WMTS 使用 minx/miny/maxx/maxy，当前解析值可能是字符串。没有统一的 type/crs/coordinates 包装或保证全部是四个数值。
-- WMS `metadata` 保存解析的 queryable 和 styles；WMTS 保存 tile_matrix_set 等事实。当前 WFS 路径不保证执行 DescribeFeatureType，也不保证生成 properties/output_formats，不能把示意 JSON 当作固定协议。
+本表及 DTO 保存解析值，不执行坐标转换或地图验证。`layer_name` 是上游标识，`display_name` 只用于显示；WMS 新建图层的 geometry_type 为 Unknown，WFS / WMTS 新建时为空，不能据图层名、范围或类型字符串推导已取得要素几何。
 
-边界框形状示例（不是整个图层 DTO）：
+| 协议 | 当前结构化保存值 | 独有约束与未验证范围 |
+| --- | --- | --- |
+| WMS | `crs` 为当前正则块中首个匹配的 CRS/SRS 文本；bbox 优先取 EX_GeographicBoundingBox，回退匹配 LatLonBoundingBox，保存 west/east/south/north 字符串；metadata 保存 queryable、styles | 不构成完整 supported_crs 列表或父子图层继承解析；地理范围与单值 CRS 独立提取，不能将 bbox 直接当作该 CRS 下的 GetMap BBOX。样式和 queryable 标记也不证明渲染或查询已验收 |
+| WFS | `crs` 读取 DefaultCRS；LowerCorner / UpperCorner 各取前两个分量，bbox 保存 minx/miny/maxx/maxy 字符串 | 未建立完整的其他 CRS/旧版字段映射；角点提取未保留所属边界框的 CRS 与轴序信息，不能直接认定 bbox 使用 DefaultCRS。当前刷新不执行 DescribeFeatureType，不生成完整属性和输出格式契约 |
+| WMTS | 新建图层的 crs 为空；bbox 从匹配的 BoundingBox 角点保存 minx/miny/maxx/maxy 字符串；metadata.tile_matrix_set 为图层块内首个匹配的 TileMatrixSet 标识 | 标识不是完整网格定义，未结构化解析 SupportedCRS、各级矩阵、比例尺、原点、瓦片/矩阵尺寸、限界及 ResourceURL。更新既有行时不写 crs，原值可能保留；空值或旧值均不能作为当前网格坐标系已验证的证据 |
+| OGC API / REST / XYZ | 当前不由刷新流程为本表生成对应图层；OGC API 的 collections 响应保存在父服务 metadata | 不能从父 metadata、注册类型或端点字符串推导已建立图层 CRS、范围或瓦片网格契约 |
+
+CRS 文本按解析结果保存，不统一归一化为 EPSG 编号，也不保证命名空间、协议版本或 CRS 继承均已识别。BBox 没有统一的 type/crs/coordinates 包装；当前仅复制字符串，不校验数值、上下界、轴序或坐标转换。字段缺失时不补成 EPSG:4326、EPSG:3857、全球范围或默认 TileMatrixSet。
+
+边界框形状示例（不是整个图层 DTO，也不是已验证的请求参数）：
 
 ```json
 {
@@ -46,7 +51,7 @@
 }
 ```
 
-多坐标系、范围和样式按上游实际能力使用，不猜测缺失值，也不承诺任意样式配置已接入前端渲染。
+原始 capabilities_xml 或 collections 的保存不等于已结构化理解全部能力。实际地图验证须使用对应上游的协议版本、图层、坐标系、范围、样式和网格；字段回读、健康检查及刷新成功均不能替代该验证，具体检查见[注册图层能力核对](../testing/注册服务与代理.md#注册图层能力核对)。
 
 ## 解析与刷新
 
@@ -56,13 +61,15 @@
 
 | 上游类型 | 当前保存行为 |
 | --- | --- |
-| WMS | 更新服务元数据，删除旧图层后逐条创建新图层；失败可能留下部分结果。 |
-| WFS | 解析 GetCapabilities 的 FeatureType，按 layer_name 更新或新增；不保证移除上游已经消失的旧行。 |
-| WMTS | 按 Identifier 更新或新增图层及 TileMatrixSet 信息；不保证清理已经消失的旧行。 |
-| OGC API | 当前保存 collections 到父服务 metadata，不保证为每个 collection 创建本表记录。 |
-| REST / XYZ | 不由当前 OGC 刷新逻辑自动产生图层。 |
+| WMS | 先写父服务 metadata，再删除全部旧图层并逐条创建；删除失败上抛，单行创建失败只记日志并继续。旧图层 ID 不保证保留；解析为空时也会进入删除流程，可能留下空表或部分新行。 |
+| WFS | 先写 metadata，再按 FeatureType 名称匹配 layer_name 更新或新增；不删除上游已经消失的旧行。图层查询错误被忽略，单行写入错误只记日志，不保证图层集合与上游一致。 |
+| WMTS | 先写 metadata，再按 Identifier 更新或新增图层及 TileMatrixSet；查询、单行写入与旧行清理的限制同 WFS。 |
+| OGC API | JSON 解码后将 collections 响应保存到父服务 metadata；不创建或同步本表图层，也不校验完整 collections 业务结构。 |
+| REST / XYZ | 不由当前 OGC 刷新逻辑产生图层；手动刷新被拒绝。 |
 
-注册与刷新不是覆盖所有行的一次性事务；部分图层更新错误只记日志，不保证一次成功响应意味着全部图层已经写入。刷新可能将既有行的 enabled 重新置为 true，不能据禁用状态宣称已建立不会被刷新的灰度发布策略。
+XML 路径未将零解析结果统一判为错误；上游返回 200 或日志中的 extracted/found 数量不证明 XML 完整有效，也不等于成功持久化行数。WMS 单行创建及 WFS / WMTS 单行创建、更新失败后，刷新方法仍可能返回 nil。
+
+刷新不是覆盖父服务与所有图层的一次性事务。WMS 新建行、WFS / WMTS 更新或新增行均设置 enabled=true，不能据原禁用标记宣称刷新会保留禁用状态；并发刷新也没有本流程的锁或快照保证。入口差异、非原子更新和最终服务状态回写统一见[注册与元数据刷新](../数据库架构.md#注册与元数据刷新)，不能从 HTTP 200、active 或 metadata.refreshed_at 推导图层完整。
 
 ## 读取、状态与入口
 

@@ -52,7 +52,7 @@ export function professionalResourceKey(resource) {
 }
 
 export function professionalNodesToSourceReferences(nodes, limit = 200) {
-  const supported = new Set(['model:entity', 'model:logical_table', 'standard:metric'])
+  const supported = new Set(['model:entity', 'model:logical_table', 'standard:metric', 'standard:element', 'standard:glossary', 'standard:code_set', 'standard:document'])
   const seen = new Set()
   const references = []
   for (const node of Array.isArray(nodes) ? nodes : []) {

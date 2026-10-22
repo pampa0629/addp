@@ -414,7 +414,7 @@ func TestStandardMetricUsesOwnerDomainAndDynamicCurrentSummary(t *testing.T) {
 		{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 	}
 	result, err := service.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
-		Version: 1, BusinessName: &name, BusinessDescription: &description,
+		Version:          1,
 		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Responsibilities: responsibilities,
 	}, UpdateEntryActor{Type: "user", ID: "99"})
@@ -443,7 +443,6 @@ func TestStandardSharedMetricCanBeCuratedAndCertifiedWithoutInventedPrimaryDomai
 	if err := db.Save(&binding).Error; err != nil {
 		t.Fatal(err)
 	}
-	name, description := "Shared metric", "A common metric available across domains"
 	responsibilities := []ResponsibilityInput{
 		{Role: models.ResponsibilityRoleAccountableDepartment, SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: 30},
 		{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
@@ -451,7 +450,7 @@ func TestStandardSharedMetricCanBeCuratedAndCertifiedWithoutInventedPrimaryDomai
 	}
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	result, err := service.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
-		Version: entry.Version, BusinessName: &name, BusinessDescription: &description,
+		Version:          entry.Version,
 		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Responsibilities: responsibilities,
 	}, UpdateEntryActor{Type: "user", ID: "99"})
@@ -651,7 +650,7 @@ func createModelCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64, domainID
 func createMetricCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64, domainID string) models.Entry {
 	t.Helper()
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
-	snapshot := map[string]interface{}{"name": "Order amount"}
+	snapshot := map[string]interface{}{"name": "Order amount", "definition_complete": true}
 	if domainID != "" {
 		snapshot["domain_id"] = domainID
 	}

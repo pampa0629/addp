@@ -516,7 +516,7 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 // @Produce json
 // @Param view query string false "目录视图，默认 governance | Catalog view, governance by default" Enums(governance,inventory)
 // @Param search query string false "名称搜索 | Name search"
-// @Param entry_type query string false "目录对象类型 | Catalog entry type" Enums(data_item,business_entity,logical_model,metric,data_service,development_artifact)
+// @Param entry_type query string false "目录对象类型 | Catalog entry type" Enums(data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application,glossary,element,code_set,standard_document)
 // @Param source_status query string false "来源状态 | Source status" Enums(active,missing)
 // @Param source_identity query string false "来源 owner 的精确稳定身份；第一阶段为 Meta fingerprint | Exact stable owner identity; Meta fingerprint in the first release"
 // @Param governance_status query string false "治理状态 | Governance status" Enums(discovered,curated,certified,deprecated)
@@ -615,6 +615,7 @@ func (h *Handler) ResolveSourceEntries(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["catalog.entry.read","catalog.inventory.read"]
+// @Param primary_domain_id query string false "精确主业务域 | Exact primary domain"
 // @Router /governance/coverage [get]
 // @Security BearerAuth
 func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
@@ -624,7 +625,12 @@ func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
 		return
 	}
 	h.sync.ObserveTenant(tenantID)
-	result, err := h.entries.GetGovernanceCoverage(c.Request.Context(), tenantID, entryAccess(c))
+	domainID, err := parseOptionalCanonicalPositiveInt64(c.Query("primary_domain_id"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return
+	}
+	result, err := h.entries.GetGovernanceCoverage(c.Request.Context(), tenantID, entryAccess(c), domainID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -640,7 +646,7 @@ func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
 // @Param view query string false "目录视图，默认 governance | Catalog view, governance by default" Enums(governance,inventory)
 // @Param primary_domain_id query string false "已选主业务域稳定 ID；约束责任部门、资源类型和来源引擎统计 | Selected primary Domain stable ID; constrains Department, entry type, and source Engine counts"
 // @Param accountable_department_id query string false "已选责任部门稳定 ID；约束资源类型和来源引擎统计 | Selected accountable Department stable ID; constrains entry type and source Engine counts"
-// @Param entry_type query string false "已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine counts" Enums(data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application)
+// @Param entry_type query string false "已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine counts" Enums(data_item,business_entity,logical_model,metric,data_service,development_artifact,data_application,glossary,element,code_set,standard_document)
 // @Success 200 {object} service.EntryFacets "权限感知引用分面 | Permission-aware reference facets"
 // @Failure 400 {object} map[string]interface{} "请求参数无效 | Invalid request"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"

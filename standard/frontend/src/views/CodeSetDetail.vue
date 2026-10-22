@@ -231,9 +231,9 @@
 </template>
 
 <script setup>
-import { getStandardDisplayRevision } from '../utils/standardRevision'
-import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { getStandardRouteRevision } from '../utils/standardRevision'
+import { BusinessDomainSelect, buildBusinessDomainOptions, createLatestRequestCoordinator } from '@common-ui'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -319,23 +319,32 @@ function setRevision(value) {
   revision.items ||= []
 }
 
+const detailRequests = createLatestRequestCoordinator()
+const detailTarget = () => JSON.stringify([route.params.id, route.query.revision_id])
 async function load() {
+  const request = detailRequests.begin(detailTarget())
+  const identity = route.params.id, requestedRevision = route.query.revision_id
   loading.value = true
   try {
     const [aggregate, history] = await Promise.all([
-      codeSetAPI.get(route.params.id),
-      codeSetAPI.listRevisions(route.params.id)
+      codeSetAPI.get(identity),
+      codeSetAPI.listRevisions(identity)
     ])
+    if (!detailRequests.isCurrent(request, detailTarget())) return
+    const selected = await getStandardRouteRevision(aggregate, requestedRevision, revisionID => codeSetAPI.getRevision(identity, revisionID))
+    if (!detailRequests.isCurrent(request, detailTarget())) return
     codeSet.value = aggregate
     codeSet.value.tags ||= []
     revisions.value = history || []
-    setRevision(getStandardDisplayRevision(aggregate))
+    setRevision(selected)
     markSaved()
   } catch (error) {
+    if (!detailRequests.isCurrent(request, detailTarget())) return
+    setRevision(null)
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))
     goBack()
   } finally {
-    loading.value = false
+    if (detailRequests.isCurrent(request, detailTarget())) loading.value = false
   }
 }
 
@@ -450,11 +459,11 @@ async function newDraft() {
         inputErrorMessage: t('standard.revision.changeSummaryRequired')
       }
     )
-    await codeSetAPI.createRevision(codeSet.value.id, {
+    const aggregate = await codeSetAPI.createRevision(codeSet.value.id, {
       version: codeSet.value.version,
       change_summary: value.trim()
     })
-    await load()
+    await navigateStandardRoute(router, { path: route.path, query: { ...route.query, revision_id: String(aggregate.draft_revision.id) } }, { history: 'replace' })
   } catch (error) {
     if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t))
   }
@@ -549,13 +558,14 @@ function replacementLabel(replacementItemID) {
   return item ? `${item.label} (${item.code})` : `#${replacementItemID}`
 }
 
-const selectRevision = item => { if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }; setRevision(item); markSaved() }
+const selectRevision = item => { if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }; navigateStandardRoute(router, { path: `/code-sets/${route.params.id}`, query: { ...route.query, revision_id: String(item.id) } }) }
 const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
 
-watch(() => route.params.id, () => {
+watch(() => [route.params.id, route.query.revision_id], () => {
   load()
   loadDomains()
 }, { immediate: true })
+onBeforeUnmount(() => detailRequests.invalidate())
 </script>
 
 <style scoped>

@@ -72,6 +72,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.alerts',      module: 'monitor', route: '/monitor/alerts',     keywords: ['告警', '风险', 'alert', 'incident'] },
   { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
   // 企业资源目录
+  { labelKey: 'console.menus.catalog.domains', module: 'catalog', route: '/catalog/domains', keywords: ['业务域总览', '业务域资源', '标准引用', 'domain overview', 'business domain'] },
   { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业资源目录', '企业资源', '业务元数据', '业务域', '按域查看', 'catalog', 'enterprise catalog', 'inventory', 'domain'] },
   { labelKey: 'console.menus.catalog.myEntries', module: 'catalog', route: '/catalog/me/entries', keywords: ['我的目录', '收藏', '关注', 'my catalog', 'favorites', 'following'] },
   { labelKey: 'console.menus.catalog.collections', module: 'catalog', route: '/catalog/collections', keywords: ['目录集合', '项目集合', '协作', 'catalog collection', 'project group'] },

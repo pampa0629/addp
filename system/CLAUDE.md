@@ -14,7 +14,7 @@ Standard 平台计量目录：000212 将既有 `standard.unit.*` Permission 扩�
 
 > Enterprise Catalog（企业资源目录）由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
 
-> 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；首期 schema 普通表 single 已接入，文件布局与其他消费入口尚未覆盖；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
+> 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；PG 普通表及 FTP IFC／3DS 精确文件组成的已验收范围、其他入口和格式的剩余边界统一见 `docs/spec/addp授权上下文规范.md` 第九节及其验收证据索引。System IAM 不接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。业务确认／办理分工、共享期限及责任移交以该规范 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
 PG 新成果初始授权的内部准备消费 Transfer 不可变实际 ReadSet，逐项核验来源／目标引擎版本及 Meta 完整边界；当前源规则、执行 IAM 和目标批准／办理／Grant／Deny 历史在同一只读快照观察，不签发或冻结期限，不把未知来源、已解除限制或空历史解释为首次新建证明。正式签发在准备之后沿唯一 Grant 写入链执行，只以已证明的新建提交为资格，不要求跨库保持原物理对象。标准验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test production-sources"`；新增 exercise 也由默认 engineaccess 门禁自动发现，使用独立操作预算，不延长已有测试的资格期限。
 

@@ -11,6 +11,8 @@ Gateway 提供统一入口、System 注册表驱动的模块代理，以及 API 
 | `/api/gquery/:serviceName` | 旧有图查询入口 | 由 Service 判断 |
 | `/ogc/*`、`/wmts/*`、`/tiles/*` | 服务协议入口 | 由 Service 判断 |
 
+表中协议路径为 Gateway 路由组概览；瓦片端点与入口边界统一见[Service 专题](../service/docs/architecture/瓦片发布与缓存.md#元数据链接与公开入口)。仓库根 Nginx 尚未转发 `/wmts`、`/tiles`、`/ogc/tiles` 协议路径；直连 Gateway 成功不代表统一公开入口可用，验收见[瓦片协议入口核对](docs/gateway运维手册.md#瓦片协议入口核对)。
+
 API Consumer Credential 使用 `X-API-Key: addp_api_*`。它不是 User、Service Principal、Tenant Service Account 或 OAuth Client，不能访问 `/api/v1/*`。
 
 ## 开发

@@ -11,7 +11,9 @@ export function buildEntryEditForm(entry) {
   const ownerManagedSemantics = ['model', 'standard'].includes(entry?.source?.source_module)
   return {
     version: Number(entry?.version || 0),
-    businessName: entry?.business_name || '',
+    businessName: entry?.source?.source_module === 'standard' ? (entry?.source_resolution?.summary?.name || entry?.display_name || '') : entry?.business_name || '',
+    standardDefinition: entry?.source?.source_module === 'standard',
+    standardDefinitionComplete: Boolean((entry?.source_resolution?.summary || entry?.source?.observed_snapshot)?.definition_complete),
     businessDescription: entry?.business_description || '',
     governanceStatus: entry?.governance_status || 'discovered',
     visibility: entry?.visibility || 'inventory',
@@ -46,9 +48,10 @@ export function withRequiredResponsibilityRows(form) {
 
 export function requiredCurationGaps(form) {
   const gaps = []
-  if (!String(form.businessName || '').trim()) gaps.push('businessName')
-  if (!String(form.businessDescription || '').trim()) gaps.push('businessDescription')
+  if (!form.standardDefinition && !String(form.businessName || '').trim()) gaps.push('businessName')
+  if (!form.standardDefinition && !String(form.businessDescription || '').trim()) gaps.push('businessDescription')
   if (!hasEffectivePrimaryDomain(form)) gaps.push('primaryDomain')
+  if (form.standardDefinition && !form.standardDefinitionComplete) gaps.push('ownerDefinition')
   return [...gaps, ...requiredResponsibilityGaps(form)]
 }
 
@@ -68,8 +71,8 @@ export function requiredResponsibilityGaps(form) {
 export function buildUpdatePayload(form) {
   const payload = {
     version: Number(form.version),
-    business_name: nullableTrimmed(form.businessName),
-    business_description: nullableTrimmed(form.businessDescription),
+    business_name: form.standardDefinition ? null : nullableTrimmed(form.businessName),
+    business_description: form.standardDefinition ? null : nullableTrimmed(form.businessDescription),
     governance_status: form.governanceStatus,
     visibility: form.visibility,
     domains: form.domains.map(item => ({ id: String(item.id).trim(), role: item.role })),

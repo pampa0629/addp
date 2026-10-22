@@ -160,7 +160,7 @@ func validateStandardCatalogChanges(response *StandardCatalogResourceChangesResp
 }
 
 func validStandardCatalogReference(reference StandardCatalogReference) bool {
-	if reference.SourceType != "metric" {
+	if reference.SourceType != "metric" && reference.SourceType != "glossary" && reference.SourceType != "element" && reference.SourceType != "code_set" && reference.SourceType != "document" {
 		return false
 	}
 	id, err := strconv.ParseInt(reference.SourceIdentity, 10, 64)

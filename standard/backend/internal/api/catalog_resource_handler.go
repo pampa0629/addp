@@ -19,8 +19,8 @@ func NewCatalogResourceHandler(catalogResourceService *service.CatalogResourceSe
 	return &CatalogResourceHandler{service: catalogResourceService}
 }
 
-// ListChanges 返回当前 Tenant 可重放的 Standard Metric 变化。
-// @Summary 拉取 Standard Metric 目录资源变化 | Pull Standard Metric catalog resource changes
+// ListChanges 返回当前 Tenant 可重放的 Standard 五类标准 变化。
+// @Summary 拉取 Standard 五类标准 目录资源变化 | Pull Standard standard catalog resource changes
 // @Description 按不透明游标返回 Metric 的最小摘要变化，仅供 Catalog 服务消费 | Return Metric minimal-summary changes by opaque cursor for the Catalog service only
 // @Tags Catalog Integration
 // @Produce json
@@ -58,12 +58,12 @@ func (h *CatalogResourceHandler) ListChanges(c *gin.Context) {
 }
 
 // ResolveReferences 动态解析当前 Tenant 的 Metric 专业摘要。
-// @Summary 解析 Standard Metric 目录引用 | Resolve Standard Metric catalog references
-// @Description 按请求顺序动态解析 1 到 200 个 Metric 引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 Metric references in request order; cross-tenant and missing references both return found=false; Catalog service only
+// @Summary 解析 Standard 五类标准 目录引用 | Resolve Standard standard catalog references
+// @Description 按请求顺序动态解析 1 到 200 个五类标准引用；跨 Tenant 与不存在统一 found=false，仅供 Catalog 服务消费 | Dynamically resolve 1 to 200 standard references in request order; cross-tenant and missing references both return found=false; Catalog service only
 // @Tags Catalog Integration
 // @Accept json
 // @Produce json
-// @Param request body models.ResolveCatalogReferencesRequest true "Metric 目录引用 | Metric catalog references"
+// @Param request body models.ResolveCatalogReferencesRequest true "标准目录引用 | Standard catalog references"
 // @Success 200 {object} models.ResolveCatalogReferencesResponse
 // @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"

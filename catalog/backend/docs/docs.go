@@ -376,6 +376,101 @@ const docTemplate = `{
                 ]
             }
         },
+        "/domain_standard_references": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Entries"
+                ],
+                "summary": "查询业务域目录标准引用 | List domain catalog standard references",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确业务域 ID | Exact domain ID",
+                        "name": "domain_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "governance",
+                            "inventory"
+                        ],
+                        "type": "string",
+                        "default": "governance",
+                        "description": "查看范围 | View",
+                        "name": "view",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数，上限100 | Page size, max 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domainreference.Page"
+                        }
+                    },
+                    "400": {
+                        "description": "无效查询 | Invalid query",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
         "/domains": {
             "get": {
                 "security": [
@@ -405,7 +500,9 @@ const docTemplate = `{
                         "description": "未认证 | Unauthorized",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "403": {
@@ -424,6 +521,87 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/domains/{id}/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Entries"
+                ],
+                "summary": "查询业务域目录总览 | Get domain catalog overview",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确业务域 ID | Exact domain ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "governance",
+                            "inventory"
+                        ],
+                        "type": "string",
+                        "default": "governance",
+                        "description": "查看范围 | View",
+                        "name": "view",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.DomainResourceOverview"
+                        }
+                    },
+                    "400": {
+                        "description": "无效查询 | Invalid query",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
                 "x-addp-required-permissions": [
                     "catalog.entry.read"
                 ]
@@ -468,7 +646,12 @@ const docTemplate = `{
                             "logical_model",
                             "metric",
                             "data_service",
-                            "development_artifact"
+                            "development_artifact",
+                            "data_application",
+                            "glossary",
+                            "element",
+                            "code_set",
+                            "standard_document"
                         ],
                         "type": "string",
                         "description": "目录对象类型 | Catalog entry type",
@@ -746,7 +929,11 @@ const docTemplate = `{
                             "metric",
                             "data_service",
                             "development_artifact",
-                            "data_application"
+                            "data_application",
+                            "glossary",
+                            "element",
+                            "code_set",
+                            "standard_document"
                         ],
                         "type": "string",
                         "description": "已选资源类型；约束来源引擎统计 | Selected entry type; constrains source Engine counts",
@@ -2636,6 +2823,14 @@ const docTemplate = `{
                     "Catalog Governance"
                 ],
                 "summary": "查询目录治理覆盖率 | Get catalog governance coverage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确主业务域 | Exact primary domain",
+                        "name": "primary_domain_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "资源盘点治理覆盖率 | Inventory governance coverage",
@@ -4327,6 +4522,81 @@ const docTemplate = `{
                 "FieldTypeGeometry"
             ]
         },
+        "domainreference.Evidence": {
+            "type": "object",
+            "properties": {
+                "owner_module": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_revision_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "domainreference.Page": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domainreference.Reference"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "domainreference.Reference": {
+            "type": "object",
+            "properties": {
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domainreference.Evidence"
+                    }
+                },
+                "evidence_truncated": {
+                    "type": "boolean"
+                },
+                "source_identity": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_catalog_internal_models.AuditEvent": {
             "type": "object",
             "properties": {
@@ -4701,7 +4971,11 @@ const docTemplate = `{
                         "metric",
                         "query_service",
                         "dev_task",
-                        "data_application"
+                        "data_application",
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "document"
                     ]
                 }
             }
@@ -4954,6 +5228,43 @@ const docTemplate = `{
                 },
                 "parent_id": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.DomainResourceOverview": {
+            "type": "object",
+            "properties": {
+                "coverage": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceCoverage"
+                },
+                "domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "entry_types": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryTypeFacet"
+                    }
+                },
+                "governance_statuses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.GovernanceStatusCoverage"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "total_entries": {
+                    "type": "integer"
+                },
+                "view": {
+                    "type": "string",
+                    "enum": [
+                        "governance",
+                        "inventory"
+                    ]
                 }
             }
         },
@@ -5240,7 +5551,11 @@ const docTemplate = `{
                         "metric",
                         "data_service",
                         "development_artifact",
-                        "data_application"
+                        "data_application",
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "standard_document"
                     ]
                 }
             }
@@ -5843,6 +6158,12 @@ const docTemplate = `{
                 "found": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
                 "source_identity": {
                     "type": "string"
                 },
@@ -5866,7 +6187,11 @@ const docTemplate = `{
                         "metric",
                         "query_service",
                         "dev_task",
-                        "data_application"
+                        "data_application",
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "document"
                     ]
                 }
             }

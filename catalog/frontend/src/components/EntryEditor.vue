@@ -39,7 +39,7 @@
       <el-row :gutter="16">
         <el-col :xs="24" :md="16">
           <el-form-item :label="t('catalog.entry.businessName')" required>
-            <el-input v-model="form.businessName" maxlength="200" show-word-limit :placeholder="t('catalog.edit.businessNamePlaceholder')" />
+            <el-input :readonly="form.standardDefinition" v-model="form.businessName" maxlength="200" show-word-limit :placeholder="t('catalog.edit.businessNamePlaceholder')" />
             <div v-if="entry.display_name" class="field-hint">{{ t('catalog.edit.sourceNameHint', { name: entry.display_name }) }}</div>
           </el-form-item>
         </el-col>
@@ -57,9 +57,10 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item :label="t('catalog.edit.businessDescription')" required>
+      <el-form-item v-if="!form.standardDefinition" :label="t('catalog.edit.businessDescription')" required>
         <el-input v-model="form.businessDescription" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('catalog.edit.businessDescriptionPlaceholder')" />
       </el-form-item>
+      <el-alert v-if="form.standardDefinition" type="info" :closable="false" :title="t('catalog.edit.standardDefinitionHint')" />
       <section class="edit-section">
         <div class="section-title">
           <div>

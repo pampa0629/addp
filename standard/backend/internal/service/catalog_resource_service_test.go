@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/domainreference"
 	"github.com/addp/standard/internal/models"
 )
 
@@ -17,8 +18,16 @@ func (s *catalogResourceRepositoryStub) ListChanges(context.Context, int64, int6
 	return s.changes, nil
 }
 
-func (s *catalogResourceRepositoryStub) ListMetrics(context.Context, int64, []int64) ([]models.MetricDefinitionAggregate, error) {
-	return s.metrics, nil
+func (s *catalogResourceRepositoryStub) ListResources(_ context.Context, _ int64, _ []models.CatalogReference) ([]models.CatalogReferenceResolution, error) {
+	rows := []models.CatalogReferenceResolution{}
+	for _, metric := range s.metrics {
+		row, err := models.ProjectCatalogResource("metric", metric)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 func TestCatalogResourceServiceListsOpaqueVersionedMetricChanges(t *testing.T) {
@@ -64,4 +73,8 @@ func TestCatalogResourceServiceRejectsNonCanonicalMetricIdentity(t *testing.T) {
 			t.Fatalf("identity %q accepted", identity)
 		}
 	}
+}
+
+func (s *catalogResourceRepositoryStub) ListDomainStandardReferences(context.Context, int64, int64, string, int, int) (*domainreference.Page, error) {
+	return &domainreference.Page{Data: []domainreference.Reference{}}, nil
 }

@@ -72,14 +72,15 @@ type ResponsibilityInput struct {
 }
 
 type UpdateEntryInput struct {
-	Version             int64                 `json:"version" binding:"required,gt=0" minimum:"1"`
-	BusinessName        *string               `json:"business_name"`
-	BusinessDescription *string               `json:"business_description"`
-	GovernanceStatus    string                `json:"governance_status" binding:"required" enums:"discovered,curated"`
-	Visibility          string                `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
-	Domains             []DomainLinkInput     `json:"domains"`
-	GlossaryIDs         []int64               `json:"glossary_ids"`
-	Responsibilities    []ResponsibilityInput `json:"responsibilities"`
+	standardDefinitionComplete bool
+	Version                    int64                 `json:"version" binding:"required,gt=0" minimum:"1"`
+	BusinessName               *string               `json:"business_name"`
+	BusinessDescription        *string               `json:"business_description"`
+	GovernanceStatus           string                `json:"governance_status" binding:"required" enums:"discovered,curated"`
+	Visibility                 string                `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
+	Domains                    []DomainLinkInput     `json:"domains"`
+	GlossaryIDs                []int64               `json:"glossary_ids"`
+	Responsibilities           []ResponsibilityInput `json:"responsibilities"`
 }
 
 type UpdateEntryActor struct {
@@ -133,6 +134,9 @@ func (s *EntryService) Update(
 			"tenant_id = ? AND catalog_entry_id = ? AND is_current = ?", tenantID, id, true,
 		).First(&source).Error; err != nil {
 			return fmt.Errorf("lock Catalog source binding: %w", err)
+		}
+		if source.SourceModule == models.SourceModuleStandard {
+			input.standardDefinitionComplete, _ = source.ObservedSnapshot["definition_complete"].(bool)
 		}
 		ownerDomainRequirementMet, err := validateOwnerSemanticInput(entry.EntryType, source, input)
 		if err != nil {
@@ -370,7 +374,7 @@ func validateCurationTransition(current string, input UpdateEntryInput, ownerDom
 		return ErrInvalidEntryUpdate
 	}
 	if input.GovernanceStatus != models.GovernanceStatusDiscovered {
-		if input.BusinessName == nil || input.BusinessDescription == nil {
+		if !input.standardDefinitionComplete && (input.BusinessName == nil || input.BusinessDescription == nil) {
 			return ErrCurationRequirementsNotMet
 		}
 		primaryDomains := 0
@@ -403,6 +407,9 @@ func isWithdrawnCurationShape(input UpdateEntryInput) bool {
 }
 
 func validateOwnerSemanticInput(entryType string, source models.SourceBinding, input UpdateEntryInput) (bool, error) {
+	if source.SourceModule == models.SourceModuleStandard && (input.BusinessName != nil || input.BusinessDescription != nil) {
+		return false, ErrInvalidEntryUpdate
+	}
 	ownerManaged := ownerManagesPrimaryDomain(entryType, source)
 	if !ownerManaged {
 		return false, nil
@@ -424,7 +431,7 @@ func ownerDomainRequirementSatisfied(entryType string, source models.SourceBindi
 	if !valid || owned {
 		return owned, valid
 	}
-	if source.SourceModule == models.SourceModuleStandard && entryType == models.EntryTypeMetric {
+	if source.SourceModule == models.SourceModuleStandard && models.IsStandardSourceType(source.SourceType) {
 		scope, _ := source.ObservedSnapshot["scope_type"].(string)
 		return scope == "platform" || scope == "tenant_common", true
 	}
@@ -434,7 +441,7 @@ func ownerDomainRequirementSatisfied(entryType string, source models.SourceBindi
 func ownerManagesPrimaryDomain(entryType string, source models.SourceBinding) bool {
 	return (source.SourceModule == models.SourceModuleModel &&
 		(entryType == models.EntryTypeBusinessEntity || entryType == models.EntryTypeLogicalModel)) ||
-		(source.SourceModule == models.SourceModuleStandard && entryType == models.EntryTypeMetric && source.SourceType == models.SourceTypeMetric)
+		(source.SourceModule == models.SourceModuleStandard && models.IsStandardSourceType(source.SourceType))
 }
 
 func observedOwnerPrimaryDomain(source models.SourceBinding) (bool, bool) {

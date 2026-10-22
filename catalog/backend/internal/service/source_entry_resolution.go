@@ -15,14 +15,16 @@ const maxSourceEntryReferences = 200
 
 type CatalogSourceReference struct {
 	SourceModule   string `json:"source_module" enums:"meta,model,standard,service,develop,workbench"`
-	SourceType     string `json:"source_type" enums:"data_item,entity,logical_table,metric,query_service,dev_task,data_application"`
+	SourceType     string `json:"source_type" enums:"data_item,entity,logical_table,metric,query_service,dev_task,data_application,glossary,element,code_set,document"`
 	SourceIdentity string `json:"source_identity"`
 }
 
 type SourceEntryResolution struct {
 	CatalogSourceReference
-	Found bool          `json:"found"`
-	Entry *EntrySummary `json:"entry,omitempty"`
+	OwnerDomainID string        `json:"owner_domain_id,omitempty"`
+	ScopeType     string        `json:"scope_type,omitempty"`
+	Found         bool          `json:"found"`
+	Entry         *EntrySummary `json:"entry,omitempty"`
 }
 
 type SourceEntryResolutionResult struct {
@@ -68,11 +70,15 @@ func (s *EntryService) ResolveSourceEntries(ctx context.Context, tenantID int64,
 		return nil, fmt.Errorf("resolve Catalog source entries: %w", err)
 	}
 	byReference := make(map[string]EntrySummary, len(rows))
+	scopes := map[string][2]string{}
 	for _, row := range rows {
 		displayName, _ := row.ObservedSnapshot["name"].(string)
 		if row.BusinessName != nil && strings.TrimSpace(*row.BusinessName) != "" {
 			displayName = *row.BusinessName
 		}
+		domain, _ := row.ObservedSnapshot["domain_id"].(string)
+		scope, _ := row.ObservedSnapshot["scope_type"].(string)
+		scopes[sourceReferenceKey(row.SourceModule, row.SourceType, row.SourceIdentity)] = [2]string{domain, scope}
 		engineID, _ := numericInt64(row.ObservedSnapshot["engine_id"])
 		byReference[sourceReferenceKey(row.SourceModule, row.SourceType, row.SourceIdentity)] = EntrySummary{
 			Entry: row.Entry, DisplayName: displayName, SourceStatus: row.SourceStatus,
@@ -86,6 +92,8 @@ func (s *EntryService) ResolveSourceEntries(ctx context.Context, tenantID int64,
 			entryCopy := entry
 			resolution.Found = true
 			resolution.Entry = &entryCopy
+			scope := scopes[sourceReferenceKey(reference.SourceModule, reference.SourceType, reference.SourceIdentity)]
+			resolution.OwnerDomainID, resolution.ScopeType = scope[0], scope[1]
 		}
 		results = append(results, resolution)
 	}
@@ -98,7 +106,7 @@ func validCatalogSourceReference(reference CatalogSourceReference) bool {
 	}
 	validPair := (reference.SourceModule == models.SourceModuleMeta && reference.SourceType == models.SourceTypeDataItem) ||
 		(reference.SourceModule == models.SourceModuleModel && (reference.SourceType == models.SourceTypeEntity || reference.SourceType == models.SourceTypeLogicalTable)) ||
-		(reference.SourceModule == models.SourceModuleStandard && reference.SourceType == models.SourceTypeMetric) ||
+		(reference.SourceModule == models.SourceModuleStandard && models.IsStandardSourceType(reference.SourceType)) ||
 		(reference.SourceModule == models.SourceModuleService && reference.SourceType == models.SourceTypeQueryService) ||
 		(reference.SourceModule == models.SourceModuleDevelop && reference.SourceType == models.SourceTypeDevTask) ||
 		(reference.SourceModule == models.SourceModuleWorkbench && reference.SourceType == models.SourceTypeDataApplication)

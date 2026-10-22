@@ -256,6 +256,52 @@ const narrowVisualPages = visualPages.filter(([, , name]) => (
 const themeVisualPages = narrowVisualPages
 const themeVisualModes = ['dark', 'blue', 'purple']
 
+for (const [path, identity, revisionID] of [['metrics', '51', '509'], ['code-sets', '31', '309']]) {
+ test(`opens the exact adopted revision for ${path} after reload`, async ({ page }) => {
+  await installMockBackend(page)
+  const historical = { id: Number(revisionID), revision_no: 1, name: 'Historical adopted definition', status: 'withdrawn', metric_type: 'atomic', definition: 'Frozen definition', items: [], dependencies: [] }
+  await page.route(`**/api/v1/standard/${path}/${identity}/revisions/${revisionID}`, route => fulfillJSON(route, historical))
+  await page.goto(`/${path}/${identity}?revision_id=${revisionID}`)
+  await expect(page.getByRole('heading', { name: historical.name, exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: historical.name, exact: true })).toBeVisible()
+ })
+ test(`opens a new draft created from an adopted revision for ${path}`, async ({ page }) => {
+  await installMockBackend(page)
+  const historical = { id: Number(revisionID), revision_no: 1, name: 'Adopted definition', status: 'published', metric_type: 'atomic', definition: 'Frozen definition', items: [], dependencies: [] }
+  let aggregate = { id: Number(identity), code: 'revision_reference', version: 1, scope_type: 'domain', owner_domain_id: 2, origin: 'tenant', lifecycle_state: 'active', tags: [], current_revision: historical, latest_revision: historical, draft_revision: null, has_publication_history: true }
+  await page.route(`**/api/v1/standard/${path}/${identity}`, route => fulfillJSON(route, aggregate))
+  await page.route(`**/api/v1/standard/${path}/${identity}/revisions`, route => {
+   if (route.request().method() === 'POST') {
+    const draft = { ...historical, id: Number(revisionID) + 1, revision_no: 2, status: 'draft', name: 'New draft', change_summary: 'Revise adopted definition' }
+    aggregate = { ...aggregate, version: 2, draft_revision: draft, draft_revision_id: draft.id, latest_revision: draft }
+    return fulfillJSON(route, aggregate, 201)
+   }
+   return fulfillJSON(route, [historical, ...(aggregate.draft_revision ? [aggregate.draft_revision] : [])])
+  })
+  await page.route(`**/api/v1/standard/${path}/${identity}/revisions/*`, route => {
+   const id = new URL(route.request().url()).pathname.split('/').at(-1)
+   return fulfillJSON(route, String(aggregate.draft_revision?.id) === id ? aggregate.draft_revision : historical)
+  })
+  await page.goto(`/${path}/${identity}?revision_id=${revisionID}`)
+  await expect(page.getByRole('heading', { name: historical.name, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '创建新草稿', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox').fill('Revise adopted definition')
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`revision_id=${Number(revisionID) + 1}$`))
+  await expect(page.getByRole('heading', { name: 'New draft', exact: true })).toBeVisible()
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+ })
+ test(`rejects an unavailable adopted revision for ${path} without showing the draft`, async ({ page }) => {
+  await installMockBackend(page)
+  await page.route(`**/api/v1/standard/${path}/${identity}/revisions/${revisionID}`, route => fulfillJSON(route, { error: 'Revision unavailable' }, 404))
+  await page.goto(`/${path}/${identity}?revision_id=${revisionID}`)
+  await expect(page).toHaveURL(new RegExp(`/${path}($|\\?)`))
+  await expect(page.locator('.el-message--error')).toBeVisible()
+ })
+}
+
 test('unit-only access lands on units and denies direct domain navigation', async ({ page }) => {
   await installMockBackend(page, { permissions: ['standard.unit.read'] })
   await page.goto('/')
@@ -2753,6 +2799,10 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === '/api/v1/standard/code-sets/31') return fulfillJSON(route, codeSetAggregate)
     if (path === '/api/v1/standard/code-sets/31/revisions') return fulfillJSON(route, fixtureRevisions(codeSetAggregate))
+    if (request.method() === 'GET' && /^\/api\/v1\/standard\/code-sets\/31\/revisions\/\d+$/.test(path)) {
+      const revision = fixtureRevisions(codeSetAggregate).find(item => String(item.id) === path.split('/').at(-1))
+      return fulfillJSON(route, revision || { error: 'Revision unavailable' }, revision ? 200 : 404)
+    }
     if (path === '/api/v1/standard/code-sets/31/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, unitCategories)
     if (path === '/api/v1/standard/units') {
@@ -2779,6 +2829,10 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/metrics/51/revisions') {
       const metric = metrics.find(item => item.id === 51)
       return fulfillJSON(route, fixtureRevisions(metric))
+    }
+    if (request.method() === 'GET' && /^\/api\/v1\/standard\/metrics\/51\/revisions\/\d+$/.test(path)) {
+      const revision = fixtureRevisions(metrics.find(item => item.id === 51)).find(item => String(item.id) === path.split('/').at(-1))
+      return fulfillJSON(route, revision || { error: 'Revision unavailable' }, revision ? 200 : 404)
     }
     if (path === '/api/v1/standard/metrics/51/documents') {
       metricDocumentListRequests += 1
