@@ -8,7 +8,7 @@ import (
 )
 
 func TestArchiveConfigKeepsCollectorAndReaderCredentialsSeparate(t *testing.T) {
-	c := Config{Mode: "auditor", SourceID: testSourceID, Endpoint: "https://audit.example", Region: "us-east-1", Bucket: "audit", AccessKey: "fixture", SecretKey: "fixture-secret", RetentionDays: 30, Actor: testActor}
+	c := Config{Mode: "auditor", SourceID: testSourceID, Endpoint: "https://audit.example", Region: "us-east-1", Bucket: "audit", AccessKey: "fixture", SecretKey: "fixture-secret", RetentionDays: 365, Actor: testActor, Root: Ref{rootKey(testSourceID), "fixture-version", digest([]byte("fixture"))}}
 	if e := c.Validate(); e != nil {
 		t.Fatal(e)
 	}

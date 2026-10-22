@@ -40,7 +40,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return auditarchive.ErrUnknown
 	}
 	action := args[0]
-	if action != "init" && action != "collect" && action != "verify" && action != "query" {
+	if action != "init" && action != "collect" && action != "verify" && action != "query" && action != "plan" {
 		return auditarchive.ErrUnknown
 	}
 	flags := flag.NewFlagSet("audit-archive", flag.ContinueOnError)
@@ -69,11 +69,20 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	case "init":
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		if e = c.PostgreSQL().Initialize(ctx, store); e != nil {
+		root, initErr := c.PostgreSQL().Initialize(ctx, store)
+		if initErr != nil {
+			e = initErr
 			return e
 		}
-		return json.NewEncoder(out).Encode(map[string]string{"state": "initialized", "source_id": c.SourceID})
+		return json.NewEncoder(out).Encode(struct {
+			State  string           `json:"state"`
+			Source string           `json:"source_id"`
+			Root   auditarchive.Ref `json:"root"`
+		}{"initialized", c.SourceID, root})
 	case "collect":
+		if !c.RootValid() {
+			return auditarchive.ErrUnknown
+		}
 		return c.PostgreSQL().Collect(ctx, store, func(chain *auditarchive.Chain) {
 			// Last event age is not replication lag: an idle source may have no events.
 			delay := chain.ArchivedAt.Sub(chain.LastCommitAt).Milliseconds()
@@ -92,10 +101,18 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 				Checkpoint *auditarchive.Chain `json:"checkpoint"`
 			}{"archived", "unknown", state, delay, chain})
 		})
+	case "plan":
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		plan, e := auditarchive.PlanExpiry(ctx, store, c.Root)
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(out).Encode(plan)
 	default:
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		chain, rows, e := auditarchive.QueryArchive(ctx, store, store, c.SourceID, c.Actor, c.RetentionDays, auditarchive.Query{TenantID: *tenant, EventName: *event}, action == "verify")
+		chain, rows, e := auditarchive.QueryArchive(ctx, store, store, c.Root, c.Actor, c.RetentionDays, auditarchive.Query{TenantID: *tenant, EventName: *event}, action == "verify")
 		if e != nil {
 			return e
 		}
@@ -103,6 +120,6 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			State      string              `json:"state"`
 			Checkpoint *auditarchive.Chain `json:"checkpoint"`
 			Rows       []auditarchive.Row  `json:"rows,omitempty"`
-		}{"verified", chain, rows})
+		}{"verified_retained_scope", chain, rows})
 	}
 }

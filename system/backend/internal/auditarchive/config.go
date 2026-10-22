@@ -29,6 +29,7 @@ type Config struct {
 	Slot          string `json:"slot"`
 	Publication   string `json:"publication"`
 	Actor         string `json:"actor"`
+	Root          Ref    `json:"root"`
 }
 
 func ReadConfig(path string) (Config, error) {
@@ -66,7 +67,10 @@ func (c Config) Validate() error {
 		return e
 	}
 	u, e := url.Parse(c.Endpoint)
-	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || c.Region == "" || c.AccessKey == "" || c.SecretKey == "" || c.Bucket == "" || c.RetentionDays < 1 || c.RetentionDays > 36500 {
+	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || c.Region == "" || c.AccessKey == "" || c.SecretKey == "" || c.Bucket == "" || c.RetentionDays < minRetentionDays || c.RetentionDays > 36500 {
+		return ErrUnknown
+	}
+	if c.Root != (Ref{}) && !c.RootValid() {
 		return ErrUnknown
 	}
 	switch c.Mode {
@@ -84,6 +88,9 @@ func (c Config) Validate() error {
 			return ErrUnknown
 		}
 	case "auditor":
+		if !c.Root.valid() || c.Root.Key != rootKey(c.SourceID) {
+			return ErrUnknown
+		}
 		u, e := uuid.Parse(c.Actor)
 		if e != nil || u.String() != c.Actor || c.PostgresDSN != "" || c.Slot != "" || c.Publication != "" {
 			return ErrUnknown
@@ -107,5 +114,7 @@ func (c Config) Store() (*S3Store, error) {
 }
 
 func (c Config) PostgreSQL() PostgreSQL {
-	return PostgreSQL{DSN: c.PostgresDSN, SourceID: c.SourceID, Slot: c.Slot, Publication: c.Publication, RetentionDays: c.RetentionDays}
+	return PostgreSQL{DSN: c.PostgresDSN, SourceID: c.SourceID, Slot: c.Slot, Publication: c.Publication, RetentionDays: c.RetentionDays, Root: c.Root}
 }
+
+func (c Config) RootValid() bool { return c.Root.valid() && c.Root.Key == rootKey(c.SourceID) }

@@ -70,9 +70,9 @@ def statement(actions,resources,condition=None):
 def policy(name,statements):
     (root/(name+'.json')).write_text(json.dumps({'Version':'2012-10-17','Statement':statements}))
 listing=statement(['s3:ListBucketVersions'],[base],{'StringLike':{'s3:prefix':[source+'*']}})
-read=statement(['s3:GetObjectVersion','s3:GetObjectRetention'],[base+'/'+source+'*'])
-policy('writer',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention'],[base+'/'+source+'*'])])
-policy('reader',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention','s3:GetObjectVersion','s3:GetObjectRetention'],[base+'/'+queries+'*'])])
+read=statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+source+'*'])
+policy('writer',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention','s3:PutObjectLegalHold'],[base+'/'+source+'*'],{'StringEqualsIfExists':{'s3:object-lock-legal-hold':'ON'}})])
+policy('reader',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention','s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+queries+'*'])])
 PY
 for identity in writer reader; do
     docker exec -i "$S3_ID" mc admin policy create owned "audit-$identity-policy" /dev/stdin < "$WORK_DIR/$identity.json" >/dev/null

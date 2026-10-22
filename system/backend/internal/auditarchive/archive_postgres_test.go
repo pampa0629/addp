@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal(e)
 	}
 	pgURL.User = url.UserPassword("archive_collector", "owned-collector-test")
-	p := PostgreSQL{DSN: pgURL.String(), SourceID: testSourceID, Slot: "audit_slot", Publication: "audit_publication", RetentionDays: 1}
+	p := PostgreSQL{DSN: pgURL.String(), SourceID: testSourceID, Slot: "audit_slot", Publication: "audit_publication", RetentionDays: 365, testPartLimit: 1}
 	newStore := func(user, secret string) *S3Store {
 		client, e := minio.New(os.Getenv("ADDP_AUDIT_S3_TEST_ENDPOINT"), &minio.Options{Creds: credentials.NewStaticV4(user, secret, ""), Secure: false, Region: "us-east-1", MaxRetries: 1})
 		if e != nil {
@@ -59,6 +60,13 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		}
 		return &S3Store{Client: client, Bucket: "audit-disposable"}
 	}
+	duringSnapshot, e := pgx.Connect(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer duringSnapshot.Close(context.Background())
+	var writeDuringSnapshot, snapshotCommitted atomic.Bool
+	writeDuringSnapshot.Store(true)
 	var loseResponse, unavailable, droppedSuccessfulPUT atomic.Bool
 	backendURL, e := url.Parse("http://" + os.Getenv("ADDP_AUDIT_S3_TEST_ENDPOINT"))
 	if e != nil {
@@ -75,6 +83,14 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		conn.Close()
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/data/") && writeDuringSnapshot.Swap(false) {
+			if _, e := duringSnapshot.Exec(ctx, `INSERT INTO system.audit_logs(event_name,result,risk_level,module_name,details) VALUES('iam.archive_during_snapshot','succeeded','high','system','{}')`); e != nil {
+				t.Error("could not commit concurrent snapshot fixture")
+				closeHTTP(w)
+				return
+			}
+			snapshotCommitted.Store(true)
+		}
 		if r.Method == http.MethodPut && unavailable.Load() {
 			closeHTTP(w)
 			return
@@ -111,17 +127,23 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	// Published migrations can legitimately append catalog governance audit
 	// events. Archive and preserve them; never assume a freshly migrated audit
 	// table is empty or delete those facts to make a fixture count pass.
+	if _, e = admin.Exec(ctx, `INSERT INTO system.audit_logs(event_name,result,risk_level,module_name,details,user_agent) SELECT 'iam.archive_baseline_bulk','succeeded','high','system','{}',repeat('x',2048) FROM generate_series(1,6000)`); e != nil {
+		t.Fatal(e)
+	}
 	var initialCount int
 	if e = admin.QueryRow(ctx, `SELECT count(*) FROM system.audit_logs`).Scan(&initialCount); e != nil {
 		t.Fatal(e)
 	}
-	if e = p.Initialize(ctx, writer); e != nil {
+	rootRef, initErr := p.Initialize(ctx, writer)
+	if initErr != nil {
+		e = initErr
 		t.Fatal("consistent snapshot initialization", e)
 	}
-	if e = p.Initialize(ctx, writer); e == nil {
+	p.Root = rootRef
+	if _, e = p.Initialize(ctx, writer); e == nil {
 		t.Fatal("silently replaced an existing baseline")
 	}
-	baseline, e := Load(ctx, reader, testSourceID)
+	baseline, e := Load(ctx, reader, rootRef, true, nil)
 	if e != nil {
 		t.Fatal("baseline not verified", e)
 	}
@@ -129,6 +151,17 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatalf("baseline count = %d, source snapshot count = %d", baseline.Count, initialCount)
 	}
 	t.Logf("consistent baseline preserved all %d source audit records, including migration events", initialCount)
+	if !snapshotCommitted.Load() {
+		t.Fatal("did not actually commit during the exported snapshot")
+	}
+	if _, e = Load(ctx, reader, rootRef, true, func(r Row, _ bool) error {
+		if *r["event_name"] == "iam.archive_during_snapshot" {
+			return ErrConflict
+		}
+		return nil
+	}); e != nil {
+		t.Fatal("baseline leaked a post-snapshot commit", e)
+	}
 	// REPLICATION is not SUPERUSER, and the collector must not mutate source facts.
 	collector, e := pgx.Connect(ctx, p.DSN)
 	if e != nil {
@@ -160,7 +193,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		tick := time.NewTicker(50 * time.Millisecond)
 		defer tick.Stop()
 		for {
-			c, e := Load(ctx, reader, testSourceID)
+			c, e := Load(ctx, reader, rootRef, true, nil)
 			if e == nil && c.Count == count {
 				return c
 			}
@@ -188,6 +221,9 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		}
 	}
 	start(writer)
+	wait(initialCount + 1)
+	initialCount++
+	t.Log("a real independent commit during segmented snapshot upload was absent from the baseline and recovered exactly once by the same logical slot")
 	// Conn.Begin does not create an independent transaction on an already
 	// active connection. Keep both transactions on different real backends so
 	// committing b cannot also commit a's earlier row.
@@ -223,7 +259,22 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal(e)
 	}
 	first := wait(initialCount + 1)
-	last := first.Batches[len(first.Batches)-1]
+	readLatest := func(c *Chain) Part {
+		t.Helper()
+		if len(c.Active.Parts) == 0 {
+			t.Fatal("missing active part")
+		}
+		b, _, e := readRef(ctx, reader, c.Active.Parts[len(c.Active.Parts)-1].Ref, false)
+		if e != nil {
+			t.Fatal(e)
+		}
+		var part Part
+		if e = decode(b, &part); e != nil {
+			t.Fatal(e)
+		}
+		return part
+	}
+	last := readLatest(first)
 	if len(last.Rows) != 1 || *last.Rows[0]["event_name"] != "iam.archive_later_id_earlier_commit" {
 		t.Fatal("first committed batch did not contain only the later ID while the earlier transaction remained open")
 	}
@@ -234,7 +285,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal(e)
 	}
 	second := wait(initialCount + 2)
-	last = second.Batches[len(second.Batches)-1]
+	last = readLatest(second)
 	if len(last.Rows) != 1 || *last.Rows[0]["event_name"] != "iam.archive_earlier_id_later_commit" {
 		t.Fatal("later commit lost the earlier ID or failed to preserve transaction order")
 	}
@@ -253,13 +304,15 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal(e)
 	}
 	c := wait(initialCount + 3)
-	for _, batch := range c.Batches {
-		for _, r := range batch.Rows {
-			if *r["event_name"] == "iam.archive_rolled_back" {
-				t.Fatal("archived an uncommitted event")
-			}
+	if _, e = Load(ctx, reader, rootRef, true, func(r Row, _ bool) error {
+		if *r["event_name"] == "iam.archive_rolled_back" {
+			return ErrConflict
 		}
+		return nil
+	}); e != nil {
+		t.Fatal("archived a rollback", e)
 	}
+	_ = c
 	shutdown()
 	if !droppedSuccessfulPUT.Load() {
 		t.Fatal("did not observe and withhold a real successful S3 PUT response")
@@ -281,7 +334,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal("outage did not stop collector")
 	}
 	stop()
-	before, e := Load(ctx, reader, testSourceID)
+	before, e := Load(ctx, reader, rootRef, true, nil)
 	if e != nil || before.Count != initialCount+3 {
 		t.Fatal("failed upload advanced archive", e)
 	}
@@ -303,29 +356,28 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
  ALTER TABLE system.audit_logs ENABLE TRIGGER trg_audit_logs_prevent_update_delete;`); e != nil {
 		t.Fatal(e)
 	}
-	if _, rows, e := QueryArchive(ctx, reader, reader, testSourceID, testActor, 1, Query{EventName: "iam.archive_baseline"}, false); e != nil || len(rows) != 1 {
+	if _, rows, e := QueryArchive(ctx, reader, reader, rootRef, testActor, 365, Query{EventName: "iam.archive_baseline"}, false); e != nil || len(rows) != 1 {
 		t.Fatal("source DBA changed independently archived facts", e)
 	}
 	t.Log("business database owner bypassed the local trigger and changed the source row; independent versioned evidence retained the original event")
 
-	if _, rows, e := QueryArchive(ctx, reader, reader, testSourceID, testActor, 1, Query{EventName: "iam.archive_outage"}, false); e != nil || len(rows) != 1 {
+	if _, rows, e := QueryArchive(ctx, reader, reader, rootRef, testActor, 365, Query{EventName: "iam.archive_outage"}, false); e != nil || len(rows) != 1 {
 		t.Fatal("independent query/access audit", e)
 	}
-	if _, rows, e := QueryArchive(ctx, reader, reader, testSourceID, "948d2bb7-8071-4a85-83b8-873f5c8e1fd7", 1, Query{}, false); e == nil || rows != nil {
+	if _, rows, e := QueryArchive(ctx, reader, reader, rootRef, "948d2bb7-8071-4a85-83b8-873f5c8e1fd7", 365, Query{}, false); e == nil || rows != nil {
 		t.Fatal("reader impersonated another query-log identity")
 	}
-	key, _ := batchKey(testSourceID, 0)
-	if _, e = reader.Create(ctx, key, []byte(`{}`), time.Now().Add(time.Hour)); e == nil {
+	key := partKey(testSourceID, 0, 0)
+	if _, e = reader.Create(ctx, key, []byte(`{}`), time.Now().Add(366*24*time.Hour), false); e == nil {
 		t.Fatal("audit reader wrote original facts")
 	}
-	if _, e = writer.Create(ctx, "queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(24*time.Hour)); e == nil {
+	if _, e = writer.Create(ctx, "queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour), false); e == nil {
 		t.Fatal("collector wrote query history")
 	}
-	versions, e := root.Versions(ctx, key)
-	if e != nil || len(versions) != 1 {
+	v, e := exact(ctx, root, key)
+	if e != nil {
 		t.Fatal(e)
 	}
-	v := versions[0]
 	if e = root.Client.RemoveObject(ctx, root.Bucket, key, minio.RemoveObjectOptions{VersionID: v.ID, GovernanceBypass: true}); e == nil {
 		t.Fatal("root deleted a COMPLIANCE version")
 	}
@@ -342,17 +394,26 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if e = p.Collect(ctx, writer, nil); e == nil {
 		t.Fatal("missing slot silently recreated")
 	}
+	plan, e := PlanExpiry(ctx, reader, rootRef)
+	if e != nil || len(plan.Objects) != 0 || plan.Authorization {
+		t.Fatal("read-only plan accepted current protected data", e)
+	}
+	off := minio.LegalHoldDisabled
+	if e = writer.Client.PutObjectLegalHold(ctx, writer.Bucket, rootRef.Key, minio.PutObjectLegalHoldOptions{VersionID: rootRef.Version, Status: &off}); e == nil {
+		t.Fatal("collector released the root hold")
+	}
+	t.Log("segmented baseline exceeded 8 MiB in one exported snapshot; pinned root and sealed checkpoints retained legal holds; read-only expiry plan selected no protected objects and collector could not release the root hold")
 	// A privileged storage administrator can create a new version; verification
 	// must detect the shadow rather than trusting an unversioned latest object.
 	data, until, e := root.Read(ctx, v)
 	if e != nil {
 		t.Fatal(e)
 	}
-	opts := minio.PutObjectOptions{Mode: minio.Compliance, RetainUntilDate: until, DisableMultipart: true}
+	opts := minio.PutObjectOptions{Mode: minio.Compliance, RetainUntilDate: until.Until, DisableMultipart: true}
 	if _, e = root.Client.PutObject(ctx, root.Bucket, key, bytes.NewReader(data), int64(len(data)), opts); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = Load(ctx, reader, testSourceID); e == nil {
+	if _, e = Load(ctx, reader, rootRef, true, nil); e == nil {
 		t.Fatal("shadow version accepted as original evidence")
 	}
 	t.Log("missing replication slot remained unknown without reinitialization; a real shadow object version invalidated the chain")

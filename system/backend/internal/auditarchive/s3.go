@@ -9,55 +9,64 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-// S3Store never provisions buckets or changes retention policies. Those belong
-// to the independently controlled deployment, not to the collector process.
+// S3Store never provisions buckets, deletes objects or releases legal holds.
 type S3Store struct {
 	Client *minio.Client
 	Bucket string
 }
 
-func (s *S3Store) Create(ctx context.Context, key string, data []byte, until time.Time) (string, error) {
+func (s *S3Store) Create(ctx context.Context, key string, data []byte, until time.Time, hold bool) (string, error) {
 	if len(data) > MaxObjectBytes {
 		return "", ErrBudget
 	}
 	opts := minio.PutObjectOptions{ContentType: "application/json", Mode: minio.Compliance, RetainUntilDate: until, DisableMultipart: true}
+	if hold {
+		opts.LegalHold = minio.LegalHoldEnabled
+	}
 	opts.SetMatchETagExcept("*")
-	v, err := s.Client.PutObject(ctx, s.Bucket, key, bytes.NewReader(data), int64(len(data)), opts)
-	return v.VersionID, err
+	v, e := s.Client.PutObject(ctx, s.Bucket, key, bytes.NewReader(data), int64(len(data)), opts)
+	return v.VersionID, e
 }
-
-func (s *S3Store) Read(ctx context.Context, v Version) ([]byte, time.Time, error) {
+func (s *S3Store) Read(ctx context.Context, v Version) ([]byte, Protection, error) {
 	if v.ID == "" || v.ID == "null" {
-		return nil, time.Time{}, ErrUnknown
+		return nil, Protection{}, ErrUnknown
 	}
-	mode, until, err := s.Client.GetObjectRetention(ctx, s.Bucket, v.Key, v.ID)
-	if err != nil || mode == nil || *mode != minio.Compliance || until == nil {
-		return nil, time.Time{}, ErrUnknown
+	mode, until, e := s.Client.GetObjectRetention(ctx, s.Bucket, v.Key, v.ID)
+	if e != nil || mode == nil || *mode != minio.Compliance || until == nil {
+		return nil, Protection{}, ErrUnknown
 	}
-	o, err := s.Client.GetObject(ctx, s.Bucket, v.Key, minio.GetObjectOptions{VersionID: v.ID})
-	if err != nil {
-		return nil, time.Time{}, ErrUnknown
+	hold, e := s.Client.GetObjectLegalHold(ctx, s.Bucket, v.Key, minio.GetObjectLegalHoldOptions{VersionID: v.ID})
+	if e != nil || hold == nil {
+		return nil, Protection{}, ErrUnknown
+	}
+	o, e := s.Client.GetObject(ctx, s.Bucket, v.Key, minio.GetObjectOptions{VersionID: v.ID})
+	if e != nil {
+		return nil, Protection{}, ErrUnknown
 	}
 	defer o.Close()
-	data, err := io.ReadAll(io.LimitReader(o, MaxObjectBytes+1))
-	if err != nil || len(data) > MaxObjectBytes {
-		return nil, time.Time{}, ErrUnknown
+	b, e := io.ReadAll(io.LimitReader(o, MaxObjectBytes+1))
+	if e != nil || len(b) > MaxObjectBytes {
+		return nil, Protection{}, ErrUnknown
 	}
-	return data, *until, nil
+	return b, Protection{*until, *hold == minio.LegalHoldEnabled}, nil
 }
-
-func (s *S3Store) Versions(ctx context.Context, prefix string) ([]Version, error) {
+func (s *S3Store) Extend(ctx context.Context, v Version, until time.Time) error {
+	mode := minio.Compliance
+	return s.Client.PutObjectRetention(ctx, s.Bucket, v.Key, minio.PutObjectRetentionOptions{VersionID: v.ID, Mode: &mode, RetainUntilDate: &until})
+}
+func (s *S3Store) Walk(ctx context.Context, prefix string, visit func(Version) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var versions []Version
 	for o := range s.Client.ListObjects(ctx, s.Bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true, WithVersions: true}) {
 		if o.Err != nil {
-			return nil, ErrUnknown
+			return ErrUnknown
 		}
-		versions = append(versions, Version{Key: o.Key, ID: o.VersionID, DeleteMarker: o.IsDeleteMarker})
-		if len(versions) > MaxChainObjects {
-			return nil, ErrBudget
+		if e := visit(Version{o.Key, o.VersionID, o.IsDeleteMarker, o.LastModified}); e != nil {
+			return e
 		}
 	}
-	return versions, nil
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	return nil
 }

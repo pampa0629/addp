@@ -16,12 +16,14 @@ import (
 type PostgreSQL struct {
 	DSN, SourceID, Slot, Publication string
 	RetentionDays                    int
+	Root                             Ref
+	testPartLimit                    int
 }
 
 func (p PostgreSQL) connect(ctx context.Context) (*pgconn.PgConn, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if !identifier(p.Slot) || !identifier(p.Publication) || p.RetentionDays < 1 || p.RetentionDays > 36500 {
+	if !identifier(p.Slot) || !identifier(p.Publication) || p.RetentionDays < minRetentionDays || p.RetentionDays > 36500 {
 		return nil, ErrUnknown
 	}
 	if _, e := sourcePrefix(p.SourceID); e != nil {
@@ -93,102 +95,111 @@ func (p PostgreSQL) sql(ctx context.Context) (*pgx.Conn, error) {
 
 // Initialize is explicit and one-shot. It leaves a failed slot for operator
 // investigation rather than silently resetting an unknown source history.
-func (p PostgreSQL) Initialize(ctx context.Context, store Store) error {
+func (p PostgreSQL) initialize(ctx context.Context, store Store) (Ref, error) {
 	prefix, e := sourcePrefix(p.SourceID)
 	if e != nil {
-		return e
+		return Ref{}, e
 	}
-	versions, e := store.Versions(ctx, prefix)
-	if e != nil || len(versions) != 0 {
-		return ErrConflict
+	exists := false
+	e = store.Walk(ctx, prefix, func(Version) error { exists = true; return ErrConflict })
+	if e != nil || exists {
+		return Ref{}, ErrConflict
 	}
 	sql, e := p.sql(ctx)
 	if e != nil {
-		return e
+		return Ref{}, e
 	}
 	defer sql.Close(context.Background())
 	c, e := p.connect(ctx)
 	if e != nil {
-		return e
+		return Ref{}, e
 	}
 	defer c.Close(context.Background())
 	source, e := identify(ctx, c, p)
 	if e != nil {
-		return e
+		return Ref{}, e
 	}
 	results, e := c.Exec(ctx, `CREATE_REPLICATION_SLOT `+p.Slot+` LOGICAL pgoutput EXPORT_SNAPSHOT`).ReadAll()
 	if e != nil || len(results) != 1 || len(results[0].Rows) != 1 || len(results[0].Rows[0]) < 3 {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
 	r := results[0].Rows[0]
 	lsn, e := parseLSN(string(r[1]))
 	if e != nil {
-		return e
+		return Ref{}, e
 	}
 	snapshot := string(r[2])
 	if len(snapshot) == 0 || len(snapshot) > 128 || strings.ContainsAny(snapshot, "'\\\x00") {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
 	tx, e := sql.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if e != nil {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
 	defer tx.Rollback(context.Background())
 	if _, e = tx.Exec(ctx, `SET TRANSACTION SNAPSHOT '`+snapshot+`'`); e != nil {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
 	rows, e := tx.Query(ctx, `SELECT * FROM system.audit_logs ORDER BY id`)
 	if e != nil {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
-	var events []Row
-	size := 0
+	w := newWriter(store, source, p.RetentionDays, &segment{Baseline: true, BeforeLSN: lsn, EndLSN: lsn})
+	if p.testPartLimit > 0 {
+		w.partLimit = p.testPartLimit
+	}
 	for rows.Next() {
 		r := Row{}
 		raw := rows.RawValues()
 		fields := rows.FieldDescriptions()
-		size += len(fields) * 32
 		for i, v := range raw {
 			if v == nil {
 				r[fields[i].Name] = nil
 			} else {
 				s := string(v)
 				r[fields[i].Name] = &s
-				size += len(v)
 			}
 		}
-		if size > MaxObjectBytes/2 {
+		if e = w.add(ctx, []Row{r}, lsn, time.Time{}); e != nil {
 			rows.Close()
-			return ErrBudget
+			return Ref{}, e
 		}
-		events = append(events, r)
 	}
 	e = rows.Err()
 	rows.Close()
 	if e != nil {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
 	if e = tx.Commit(ctx); e != nil {
-		return ErrUnknown
+		return Ref{}, ErrUnknown
 	}
-	now := time.Now().UTC().Truncate(time.Second)
-	_, e = Save(ctx, store, Batch{Format: format, Source: source, EndLSN: lsn, ArchivedAt: now, CommitAt: now, RetentionDays: p.RetentionDays, Rows: events})
-	return e
+	if e = w.flush(ctx); e != nil {
+		return Ref{}, e
+	}
+	baseline, e := w.seal(ctx)
+	if e != nil {
+		return Ref{}, e
+	}
+	return put(ctx, store, rootKey(p.SourceID), Root{format, source, baseline, lsn}, time.Now().UTC().Add(time.Duration(p.RetentionDays)*24*time.Hour+retentionMargin), true)
+}
+
+func (p PostgreSQL) Initialize(ctx context.Context, store Store) (Ref, error) {
+	if p.Root.valid() {
+		return Ref{}, ErrConflict
+	}
+	return p.initialize(ctx, store)
 }
 
 // Collect runs until cancellation or an integrity/transport error. It never
 // retries a write, recreates a slot, or modifies business data automatically.
 func (p PostgreSQL) Collect(ctx context.Context, store Store, onCheckpoint func(*Chain)) error {
 	loadCtx, loadCancel := context.WithTimeout(ctx, 2*time.Minute)
-	chain, e := Load(loadCtx, store, p.SourceID)
+	chain, e := Load(loadCtx, store, p.Root, false, nil)
 	loadCancel()
 	if e != nil {
 		return e
 	}
-	if len(chain.Batches) >= MaxChainObjects {
-		return ErrBudget
-	}
-	if p.RetentionDays < chain.Batches[len(chain.Batches)-1].RetentionDays {
+	if chain.Source.ID != p.SourceID {
 		return ErrUnknown
 	}
 	sql, e := p.sql(ctx)
@@ -227,6 +238,38 @@ func (p PostgreSQL) Collect(ctx context.Context, store Store, onCheckpoint func(
 	if _, ok := m.(*pgproto3.CopyBothResponse); !ok {
 		return ErrUnknown
 	}
+	w := newWriter(store, source, p.RetentionDays, chain.Active)
+	if p.testPartLimit > 0 {
+		w.partLimit = p.testPartLimit
+	}
+	baseCount := chain.Count
+	update := func() {
+		chain.Count = baseCount + w.confirmedCount
+		chain.EndLSN = w.current.EndLSN
+		chain.Last = w.current.Previous
+		if len(w.current.Parts) > 0 {
+			chain.Tail = w.current.Parts[len(w.current.Parts)-1].Ref
+		} else {
+			chain.Tail = chain.Last
+		}
+		chain.Segments = w.current.Sequence
+		chain.ArchivedAt = w.now()
+		chain.LastCommitAt = w.lastCommitAt
+		if onCheckpoint != nil {
+			onCheckpoint(chain)
+		}
+	}
+	emit := func() error {
+		before := w.confirmedCount
+		if e := w.flush(ctx); e != nil {
+			return e
+		}
+		if w.confirmedCount > before {
+			update()
+		}
+		return nil
+	}
+
 	d := decoder{}
 	for {
 		if ctx.Err() != nil {
@@ -235,7 +278,17 @@ func (p PostgreSQL) Collect(ctx context.Context, store Store, onCheckpoint func(
 		if e = feedback(c, chain.EndLSN); e != nil {
 			return ErrUnknown
 		}
-		readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		timeout := 10 * time.Second
+		if len(w.rows) > 0 {
+			timeout = time.Until(w.lastFlush.Add(5 * time.Second))
+			if timeout <= 0 {
+				if e = emit(); e != nil {
+					return e
+				}
+				continue
+			}
+		}
+		readCtx, cancel := context.WithTimeout(ctx, timeout)
 		m, e = c.ReceiveMessage(readCtx)
 		cancel()
 		if e != nil {
@@ -243,6 +296,9 @@ func (p PostgreSQL) Collect(ctx context.Context, store Store, onCheckpoint func(
 				return ctx.Err()
 			}
 			if pgconn.Timeout(e) {
+				if e = emit(); e != nil {
+					return e
+				}
 				continue
 			}
 			return ErrUnknown
@@ -268,33 +324,14 @@ func (p PostgreSQL) Collect(ctx context.Context, store Store, onCheckpoint func(
 				if committed == nil || committed.EndLSN <= chain.EndLSN {
 					continue
 				}
-				if len(chain.Batches) >= MaxChainObjects {
-					return ErrBudget
-				}
-				b := Batch{Format: format, Source: source, Sequence: uint64(len(chain.Batches)), Previous: chain.LastSHA, EndLSN: committed.EndLSN, ArchivedAt: time.Now().UTC().Truncate(time.Second), CommitAt: committed.At, RetentionDays: p.RetentionDays, Rows: committed.Rows}
-				encoded, e := encodeBatch(b)
-				if e != nil {
+				previous := w.confirmedCount
+				if e = w.add(ctx, committed.Rows, committed.EndLSN, committed.At); e != nil {
 					return e
 				}
-				if chain.Bytes+len(encoded) > MaxChainBytes {
-					return ErrBudget
+				if w.confirmedCount > previous {
+					update()
 				}
-				saveCtx, saveCancel := context.WithTimeout(ctx, 30*time.Second)
-				sha, e := Save(saveCtx, store, b)
-				saveCancel()
-				if e != nil {
-					return e
-				}
-				chain.Bytes += len(encoded)
-				chain.Batches = append(chain.Batches, b)
-				chain.LastSHA = sha
-				chain.EndLSN = b.EndLSN
-				chain.Count += len(b.Rows)
-				chain.ArchivedAt = b.ArchivedAt
-				chain.LastCommitAt = b.CommitAt
-				if onCheckpoint != nil {
-					onCheckpoint(chain)
-				}
+
 			default:
 				return ErrUnknown
 			}
