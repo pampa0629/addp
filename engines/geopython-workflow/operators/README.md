@@ -47,7 +47,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 17 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_overlap` |
+| 矢量处理 | 几何处理 | 18 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_overlap`、`check_line_self_overlap` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -69,6 +69,10 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 ## 拓扑构面
 
 `polygonize` 从线网提取闭合面，面结果 `result` 与余线诊断 `diagnostics` 可分别连接 `save`。输入限制、交点打断与去重、孔洞、诊断含义和内存边界统一见[拓扑构面契约](../../../docs/spec/workflow/矢量算子契约.md#拓扑构面契约)。
+
+## 线内自叠
+
+`check_line_self_overlap` 检查同一个线要素内部的重复走线和部件间重合，每源汇总去重后报告来源、线和长度，只检查不修复。重复次数、点交集和保存边界见[线内自叠契约](../../../docs/spec/workflow/矢量算子契约.md#线内自叠契约)。
 
 ## 线叠检查
 

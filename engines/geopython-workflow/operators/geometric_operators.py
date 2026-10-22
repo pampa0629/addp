@@ -255,6 +255,67 @@ def _require_nonempty_valid_lines(geometry: gpd.GeoSeries) -> None:
         raise ValueError("input_gdf requires non-empty valid lines; repair explicitly before checking")
 
 
+def _normalized_line_overlap(intersections):
+    """Keep only shared line positions and measure their union once."""
+    lines = []
+    for intersection in intersections:
+        pending = [intersection]
+        while pending:
+            part = pending.pop()
+            if part.geom_type == "LineString" and not part.is_empty:
+                lines.append(part)
+            elif part.geom_type in {"MultiLineString", "GeometryCollection"}:
+                pending.extend(part.geoms)
+    if not lines:
+        return None
+    shared = shapely.union_all(lines)
+    geometry = shapely.normalize(shapely.multilinestrings(shapely.get_parts(shared)))
+    # Hypot avoids squared-distance under/overflow; fsum keeps the metric
+    # independent of multipart summation order. Repeated positions count once.
+    try:
+        length = fsum(hypot(end[0] - start[0], end[1] - start[1])
+                      for line in geometry.geoms for start, end in pairwise(line.coords))
+    except OverflowError as exc:
+        raise ValueError("overlap requires valid lines with finite positive Float64 length") from exc
+    if not np.isfinite(length) or length <= 0 or not shapely.is_valid(geometry):
+        raise ValueError("overlap requires valid lines with finite positive Float64 length")
+    return geometry, length
+
+
+def check_line_self_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report positions traversed more than once within each original feature."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    sources, lengths, overlaps = [], [], []
+    for row, shape in enumerate(geometry.array):
+        # Preserve every occurrence until AFTER comparing segments. Adjacent
+        # segments may retrace each other; identical segments must not be deduped.
+        segments = [shapely.LineString([start, end])
+                    for part in shapely.get_parts(shape)
+                    for start, end in pairwise(part.coords) if start != end]
+        tree = shapely.STRtree(segments)
+
+        def intersections():
+            for a, segment in enumerate(segments):
+                candidates = tree.query(segment)
+                for b in np.sort(candidates[candidates > a]):
+                    yield shapely.intersection(segment, segments[b])
+
+        shared = _normalized_line_overlap(intersections())
+        if shared is not None:
+            overlap_geometry, length = shared
+            sources.append(row)
+            lengths.append(length)
+            overlaps.append(overlap_geometry)
+    return gpd.GeoDataFrame(
+        {"source_id": ids.iloc[sources].reset_index(drop=True),
+         "overlap_length": pd.Series(lengths, dtype="float64")},
+        geometry=gpd.GeoSeries(overlaps, crs=geometry.crs),
+    )
+
+
 def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report positive-length intersections of distinct feature pairs, without editing sources."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -266,30 +327,10 @@ def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDat
     for a, shape in enumerate(geometry.array):
         candidates = tree.query(shape)
         for b in np.sort(candidates[candidates > a]):
-            pending = [shapely.intersection(shape, geometry.array[b])]
-            lines = []
-            while pending:
-                part = pending.pop()
-                if part.geom_type == "LineString" and not part.is_empty:
-                    lines.append(part)
-                elif part.geom_type in {"MultiLineString", "GeometryCollection"}:
-                    pending.extend(part.geoms)
-            if not lines:
+            shared = _normalized_line_overlap([shapely.intersection(shape, geometry.array[b])])
+            if shared is None:
                 continue
-            # Set union counts a shared location once within this pair, even
-            # when a source retraces it or has overlapping multipart members.
-            shared = shapely.union_all(lines)
-            overlap_geometry = shapely.normalize(shapely.multilinestrings(shapely.get_parts(shared)))
-            # Hypot avoids squaring finite distances into zero/infinity;
-            # fsum keeps the metric independent of multipart summation order.
-            try:
-                length = fsum(hypot(end[0] - start[0], end[1] - start[1])
-                              for line in overlap_geometry.geoms
-                              for start, end in pairwise(line.coords))
-            except OverflowError as exc:
-                raise ValueError("overlap requires valid lines with finite positive Float64 length") from exc
-            if not np.isfinite(length) or length <= 0 or not shapely.is_valid(overlap_geometry):
-                raise ValueError("overlap requires valid lines with finite positive Float64 length")
+            overlap_geometry, length = shared
             left.append(a)
             right.append(b)
             lengths.append(length)
@@ -505,6 +546,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+CHECK_LINE_SELF_OVERLAP_METADATA = OperatorMetadata(
+    name="check_line_self_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="线内自叠", brief_description="检查单个线要素内部重复经过的线段，每源汇总去重，只检查不修复",
+    execution_modes=["workflow"], effects=["read"],
+    overview="提取原始路径折返、重复走线和同一多部件要素内部的正长度重合。"
+             "每个有自叠的来源输出一行，重复次数不增加重合长度，不改变源线。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个线图层", notes="有效有限二维 LineString/MultiLineString，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id/overlap_length/MultiLineString，每源一行，保留来源类型和 CRS", is_default=True)],
+    use_cases=["定位同一条线路的折返与重复走线", "检查同一多部件要素内部重复覆盖的线段"],
+    notes=["每源所有重合位置去重后只计一次长度，不统计经过次数或内部段编号", "只检查同一要素内部；跨要素重合使用线叠检查", "点自交、普通闭环接点和零长度段不报，不设容差或忽略微小重合", "长度采用源投影水平单位，不换算米，不自动删线或生成质量结论", "保存另接 save；每源索引及候选驻内存，极端重复路径候选可平方增长，不承诺固定容量"],
+    workflow_example={"id": "self_overlaps", "operator": "check_line_self_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_id"}, "depends_on": ["load"]},
+)
 
 CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
     name="check_line_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1151,4 +1208,5 @@ OPERATORS = dict([
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
     register_operator(CHECK_LINE_OVERLAP_METADATA, check_line_overlap),
+    register_operator(CHECK_LINE_SELF_OVERLAP_METADATA, check_line_self_overlap),
 ])

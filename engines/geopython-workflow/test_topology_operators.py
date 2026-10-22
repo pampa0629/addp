@@ -219,6 +219,182 @@ def test_line_overlap_invalid_identity_fails_before_save(tmp_path):
     assert not (tmp_path / "invalid-result.gpkg").exists()
 
 
+def self_overlap(frame, id_field="route_key"):
+    return get_operator("check_line_self_overlap")(input_gdf=frame, id_field=id_field)
+
+
+@pytest.mark.parametrize("geometry, expected", [
+    (LineString([(0, 0), (4, 0), (0, 0)]), MultiLineString([[(0, 0), (4, 0)]])),
+    (LineString([(0, 0), (4, 0), (1, 0)]), MultiLineString([[(1, 0), (4, 0)]])),
+    (LineString([(0, 0), (0, 0), (4, 0), (4, 0), (0, 0)]), MultiLineString([[(0, 0), (4, 0)]])),
+    (MultiLineString([[(0, 0), (4, 0)], [(3, 0), (1, 0)], [(1, 0), (3, 0)]]), MultiLineString([[(1, 0), (3, 0)]])),
+    (MultiLineString([[(0, 0), (4, 0)], [(2, 0), (6, 0)], [(0, 2), (4, 2)], [(2, 2), (6, 2)], [(6, 0), (7, 1)]]), MultiLineString([[(2, 0), (4, 0)], [(2, 2), (4, 2)]])),
+    (LineString([(0, 0), (2, 0), (2, 2), (0, 2), (0, 0), (2, 0)]), MultiLineString([[(0, 0), (2, 0)]])),
+])
+def test_line_self_overlap_reports_original_retracing_and_multipart_positions(geometry, expected):
+    result = self_overlap(line_overlap_frame([geometry], ["路线甲"]))
+    assert result.columns.tolist() == ["source_id", "overlap_length", "geometry"]
+    assert result.source_id.tolist() == ["路线甲"]
+    assert result.geometry.iloc[0].geom_type == "MultiLineString"
+    assert result.geometry.iloc[0].equals(expected)
+    assert result.overlap_length.tolist() == [expected.length]
+
+
+@pytest.mark.parametrize("geometry", [
+    LineString([(0, 0), (1, 0), (2, 0)]),
+    LineString([(0, 0), (0, 0), (2, 0)]),
+    LineString([(0, 0), (2, 2), (0, 2), (2, 0)]),
+    LineString([(0, 0), (2, 0), (2, 2), (0, 2), (0, 0)]),
+    MultiLineString([[(0, 0), (2, 0)], [(1, 0), (1, 1)], [(2, 0), (3, 0)]]),
+    MultiLineString([[(0, 0), (2, 0)], [(0, 2**-40), (2, 2**-40)]]),
+])
+def test_line_self_overlap_ignores_points_closed_seams_zero_segments_and_near_lines(geometry):
+    assert self_overlap(line_overlap_frame([geometry])).empty
+
+
+def test_line_self_overlap_does_not_compare_different_features():
+    frame = line_overlap_frame([LineString([(0, 0), (4, 0)])] * 2)
+    assert self_overlap(frame).empty
+    assert line_overlap(frame).overlap_length.tolist() == [4]
+
+
+@pytest.mark.parametrize("visits", [2, 3, 7])
+def test_line_self_overlap_metric_is_independent_of_visits_direction_and_vertex_sampling(visits):
+    coarse = MultiLineString([[(0, 0), (4, 0)]] * visits)
+    sampled = MultiLineString([[(4, 0), (3, 0), (1, 0), (0, 0)]] * visits)
+    for geometry in [coarse, sampled, shapely.reverse(sampled)]:
+        result = self_overlap(line_overlap_frame([geometry]))
+        assert result.overlap_length.tolist() == [4]
+        assert result.geometry.iloc[0].equals(LineString([(0, 0), (4, 0)]))
+    a = self_overlap(line_overlap_frame([sampled])).geometry.iloc[0]
+    b = self_overlap(line_overlap_frame([shapely.reverse(sampled)])).geometry.iloc[0]
+    assert a.wkb == b.wkb
+
+
+@pytest.mark.parametrize("crs", ["EPSG:3857", "EPSG:2263"])
+@pytest.mark.parametrize("length", [2**-40, 1e-200, 1e200])
+def test_line_self_overlap_preserves_finite_lengths_and_source_units(crs, length):
+    result = self_overlap(line_overlap_frame([LineString([(0, 0), (length, 0), (0, 0)])], crs=crs))
+    assert result.overlap_length.tolist() == [length]
+    assert result.crs.to_string() == crs
+    assert list(result.geometry.iloc[0].geoms[0].coords) == [(0, 0), (length, 0)]
+
+
+@pytest.mark.parametrize("ids", [pd.Series(["丙", "甲", "乙"], dtype="string"), pd.Series([90, 3, 12], dtype="Int64")])
+def test_line_self_overlap_preserves_identity_order_schema_and_source(ids):
+    frame = line_overlap_frame([LineString([(0, 0), (2, 0), (0, 0)]), LineString([(0, 0), (1, 0)]),
+                                LineString([(0, 2), (1, 2), (0, 2)])], ids)
+    frame.index = [8, 8, 1]
+    before = frame.copy(deep=True)
+    result = self_overlap(frame)
+    assert result.source_id.tolist() == ids.iloc[[0, 2]].tolist()
+    assert result.source_id.dtype == ids.dtype
+    assert result.crs == frame.crs and result.overlap_length.tolist() == [2, 1]
+    assert_geodataframe_equal(frame, before)
+    for source in [frame.iloc[:0], frame.iloc[[1]]]:
+        output = self_overlap(source)
+        assert output.empty and output.source_id.dtype == ids.dtype
+        assert output.overlap_length.dtype == "float64" and output.crs == frame.crs
+        assert output.columns.tolist() == result.columns.tolist()
+
+
+@pytest.mark.parametrize("ids", [[None, "b"], ["a", "a"], [" ", "b"], [[1], [2]]])
+def test_line_self_overlap_rejects_invalid_ids(ids):
+    with pytest.raises(ValueError, match="identifier"):
+        self_overlap(line_overlap_frame([LineString([(0, 0), (1, 0)])] * 2, ids))
+
+
+@pytest.mark.parametrize("field", [None, "", "missing", "boundary"])
+def test_line_self_overlap_requires_explicit_id(field):
+    with pytest.raises(ValueError, match="id_field"):
+        self_overlap(line_overlap_frame([LineString([(0, 0), (1, 0)])]), field)
+
+
+@pytest.mark.parametrize("crs", [None, "EPSG:4326"])
+def test_line_self_overlap_rejects_nonprojected_crs(crs):
+    with pytest.raises(ValueError, match="projected CRS"):
+        self_overlap(line_overlap_frame([], crs=crs))
+
+
+@pytest.mark.parametrize("geometry", [None, LineString(), Point(0, 0), box(0, 0, 1, 1),
+    LineString([(0, 0), (0, 0)]), LineString([(0, 0, 1), (1, 0, 2)]),
+    shapely.from_wkt("LINESTRING M (0 0 1, 1 0 2)"), LineString([(0, 0), (np.inf, 1)])])
+def test_line_self_overlap_rejects_unsupported_geometry(geometry):
+    with pytest.raises(ValueError):
+        self_overlap(line_overlap_frame([geometry]))
+
+
+def test_line_self_overlap_rejects_nonfinite_total_length():
+    frame = line_overlap_frame([MultiLineString([[(0, 0), (1e308, 0)], [(1e308, 0), (0, 0)],
+                                                  [(0, 2), (1e308, 2)], [(1e308, 2), (0, 2)]])])
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="finite positive Float64"):
+            self_overlap(frame)
+
+
+def test_line_self_overlap_matches_independent_integer_coverage_oracle():
+    # Half-open integer cells give independent exact coverage counts. No GEOS
+    # overlay or production function is used to construct the expected union.
+    intervals = [(0, 5), (3, 8), (8, 6), (10, 12), (12, 10), (20, 21)]
+    expected_cells = [x for x in range(21) if sum(min(a, b) <= x < max(a, b) for a, b in intervals) >= 2]
+    source = MultiLineString([[(a, 0), (b, 0)] for a, b in intervals])
+    result = self_overlap(line_overlap_frame([source]))
+    assert result.overlap_length.tolist() == [len(expected_cells)]
+    geometry = result.geometry.iloc[0]
+    for x in range(21):
+        assert geometry.covers(Point(x + .5, 0)) == (x in expected_cells)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_line_self_overlap_workflow_native_save_reload_and_discovery(tmp_path, empty):
+    import api_server
+    from osgeo import ogr
+    tiny = 2**-40
+    source = line_overlap_frame([LineString([(0, 0), (4, 0), (1, 0)]),
+        MultiLineString([[(0, 10), (tiny, 10)], [(tiny, 10), (0, 10)]])], ["往返", "微线"])
+    if empty:
+        source = line_overlap_frame([LineString([(0, 0), (4, 0)])], ["正常"])
+    source.to_file(tmp_path / "source.gpkg", layer="routes", driver="GPKG")
+    original = (tmp_path / "source.gpkg").read_bytes()
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
+        {"id": "check", "operator": "check_line_self_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "self-overlaps.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+    ]
+    result = execute_workflow({"tasks": tasks})
+    assert result["status"] == "success", result.get("error")
+    dataset = ogr.Open(str(tmp_path / "self-overlaps.gpkg"))
+    layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == (0 if empty else 2)
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    assert [field.name for field in layer.schema] == ["source_id", "overlap_length"]
+    # Empty GeoDataFrames carry a geometry dtype, not a concrete subtype.
+    # The existing save path preserves fields/CRS and declares generic geometry.
+    assert layer.GetGeomType() == (ogr.wkbUnknown if empty else ogr.wkbMultiLineString)
+    if not empty:
+        expected = [("往返", 3, [(1, 0), (4, 0)]), ("微线", tiny, [(0, 10), (tiny, 10)])]
+        for feature, (identity, length, points) in zip(layer, expected):
+            geometry = feature.GetGeometryRef()
+            assert feature.GetField("source_id") == identity and feature.GetField("overlap_length") == length
+            assert geometry.GetGeometryName() == "MULTILINESTRING" and geometry.IsValid()
+            assert geometry.GetGeometryCount() == 1 and geometry.Length() == length
+            assert [p[:2] for p in geometry.GetGeometryRef(0).GetPoints()] == points
+    dataset = None
+    assert (tmp_path / "source.gpkg").read_bytes() == original
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_line_self_overlap")
+        assert op["display_name"] == "线内自叠" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+        assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("id_field", "param", True)]
+        assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
+        assert client.post("/api/operators/check_line_self_overlap/invoke", json={"params": {}}).status_code == 403
+    tasks[1]["params"]["id_field"] = "missing_id"
+    tasks[2]["params"]["path"] = "rejected.gpkg"
+    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    assert not (tmp_path / "rejected.gpkg").exists()
+
+
 def polygonize(frame):
     return get_operator("polygonize")(input_gdf=frame)
 
