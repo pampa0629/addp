@@ -12,4 +12,3 @@ export function resolveRoleDescription(role, t, te) {
   const fallbackKey = role?.role_key ? `roles.${role.role_key}.description` : ''
   return fallbackKey && te(fallbackKey) ? t(fallbackKey) : ''
 }
-
