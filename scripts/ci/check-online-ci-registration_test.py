@@ -370,7 +370,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'business/scripts/online-vector-topology-fixture.py', 'scripts/utils/online_nfs_fixture.py',
             'console/frontend/e2e/online/vector-topology-persistence.spec.js', 'system/backend/cmd/online-test-fixture/main.go',
             'engines/geopython-workflow/test_topology_operators.py',
-            'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js')
+            'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js',
+            'manager/frontend/e2e/geometry-preview-coordinate.js')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -381,7 +382,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[3], '--suite vector-topology-persistence'), (paths[4], 'triggered_by'), (paths[7], 'browserAPIFromResponse('),
             (paths[5], 'validate_features'), (paths[5], 'SNAP_EXPECTED'), (paths[5], 'verify_snap'), (paths[5], 'archive_physical_evidence'), (paths[7], 'graph, preview'), (paths[4], 'snap_geometry'), (paths[4], 'check_polygon_overlap'), (paths[4], 'check_polygon_gap'), (paths[4], 'check_dangling_points'), (paths[4], 'dangling_expected'), (paths[4], 'dangling_input'), (paths[5], 'verify_dangling'), (paths[5], 'dangling_expected_features'), (paths[5], 'dangling-input.gpkg'), (paths[5], 'dangling.gpkg'), (paths[7], 'dangling_expected'), (paths[7], "source_id:feature.get('source_id')"), (paths[7], "geometry.type).toBe('Point')"), (paths[7], '[evidence.sources[7].id]'), (paths[4], 'gap_coverage'), (paths[5], 'verify_gap'), (paths[5], 'gap_expected_features'), (paths[5], 'gap-input.gpkg'), (paths[5], 'gap-coverage.gpkg'), (paths[5], 'gaps.gpkg'), (paths[7], 'gap_expected'), (paths[7], 'gapRings'), (paths[7], 'gap_area'), (paths[7], '[evidence.sources[5].id, evidence.sources[6].id]'), (paths[4], 'post_browser_physical'), (paths[5], 'verify_overlap'), (paths[5], 'overlap_expected_features'), (paths[7], 'overlap_expected'), (paths[7], 'rendered'), (paths[4], 'validate_failed_snap'), (paths[4], 'collapsed_snap_diagnostic'), (paths[4], 'topology-snap-failure.json'), (paths[4], 'scan_ids(client)'), (paths[7], 'decodePreviewEWKB'), (paths[7], 'snapCoordinates'), (paths[7], 'failed_execution_id'), (paths[5], 'validate_repaired'), (paths[4], 'repair_geometry'), (paths[7], 'row.after_valid'), (paths[7], 'topology-source-lineage-raw.json'), (paths[6], 'root_squash'), (paths[7], 'getImageData'),
             (paths[7], 'toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))'),
-            (paths[7], "getProjection().getCode() !== 'EPSG:3857'"), (paths[10], 'webMercatorPreviewCoordinate'),
+            (paths[7], "getProjection().getCode() !== 'EPSG:3857'"), (paths[12], 'webMercatorPreviewCoordinate'),
             (paths[11], 'display projection round trip exactly'),
             (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle')):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))

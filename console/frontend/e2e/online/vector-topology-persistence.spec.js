@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { decodePreviewEWKB, webMercatorPreviewCoordinate } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
+import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
+import { webMercatorPreviewCoordinate } from '../../../../manager/frontend/e2e/geometry-preview-coordinate.js'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })

@@ -368,7 +368,7 @@ class TopologyOnlineTest(unittest.TestCase):
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { webMercatorPreviewCoordinate } from './manager/frontend/e2e/geometry-preview-support.js'
+import { webMercatorPreviewCoordinate } from './manager/frontend/e2e/geometry-preview-coordinate.js'
 const source = fs.readFileSync('console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
 const start = source.indexOf("    if (output.port === 'dangling') {", source.indexOf('const table = frame.locator'))
 const end = source.indexOf("    if (output.port === 'gaps') {",start)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { decodePreviewEWKB, webMercatorPreviewCoordinate } from '../e2e/geometry-preview-support.js'
+import { decodePreviewEWKB } from '../e2e/geometry-preview-support.js'
+import { webMercatorPreviewCoordinate } from '../e2e/geometry-preview-coordinate.js'
 
 describe('scope-table geometry HTTP transport', () => {
   it('decodes the Hosted KML Point Z bytes without changing axes or dropping elevation', () => {
