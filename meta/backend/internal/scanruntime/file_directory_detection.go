@@ -6,10 +6,10 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-// FTP is the only admitted model-structure route in this slice. Other
+// FTP and NFS share the admitted model-structure route. Other
 // engines and known-item refresh keep their existing depth and scope semantics.
-func ftpModelStructureReader(resource *commonModels.Engine, reader plugin.ContentReadableProvider, depth string) plugin.ContentReadableProvider {
-	if resource != nil && resource.EngineType == "ftp" && (depth == scanflow.ScanDepthBasic || depth == scanflow.ScanDepthDeep) {
+func modelStructureReader(resource *commonModels.Engine, reader plugin.ContentReadableProvider, depth string) plugin.ContentReadableProvider {
+	if resource != nil && (resource.EngineType == "ftp" || resource.EngineType == "nfs") && (depth == scanflow.ScanDepthBasic || depth == scanflow.ScanDepthDeep) {
 		return reader
 	}
 	return nil

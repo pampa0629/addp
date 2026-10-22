@@ -84,7 +84,7 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		plan.order = append(plan.order, path)
 		plan.progress.Operation("identifying", path)
 		detectionReader := scanflow.ContentReaderForDepth(reader, depth)
-		structureReader := ftpModelStructureReader(resource, reader, depth)
+		structureReader := modelStructureReader(resource, reader, depth)
 		if isRoot {
 			candidates := scanflow.FileCatalogNonExclusiveCandidateSet(resource.ID, path, d.files, d.subdirs)
 			candidates.StructureReader = structureReader

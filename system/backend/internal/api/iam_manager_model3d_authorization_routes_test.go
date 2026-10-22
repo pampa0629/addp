@@ -408,7 +408,7 @@ func TestManagerModel3DHTTPDoesNotLeakDomainErrorsOrInvalidReceipts(t *testing.T
 				case "wrong version":
 					result.Engine.Version = 6
 				case "wrong type":
-					result.Engine.EngineType = "nfs"
+					result.Engine.EngineType = "minio"
 				case "inactive":
 					result.Engine.LifecycleState = "inactive"
 				case "deleted":

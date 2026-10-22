@@ -577,7 +577,7 @@ const docTemplate = `{
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "签发 Manager FTP 模型 GLB 执行授权 | Issue Manager FTP model GLB execution authorization",
+                "summary": "签发 Manager FTP/NFS 模型 GLB 执行授权 | Issue Manager FTP/NFS model GLB execution authorization",
                 "parameters": [
                     {
                         "description": "执行 UUID 与有效期秒数，默认900、最大3600；正文上限512 KiB，无query，拒绝未知或重复字段 | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query, unknown or duplicate fields",
@@ -1119,7 +1119,7 @@ const docTemplate = `{
                 "summary": "检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage for Manager preview",
                 "parameters": [
                     {
-                        "description": "1 至 200 个完整读取目标；受管 FTP 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP model results require same-decision expected_source and ordinary User; no query parameters",
+                        "description": "1 至 200 个完整读取目标；受管 FTP/NFS 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP/NFS model results require same-decision expected_source and ordinary User; no query parameters",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4010,7 +4010,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照 FTP 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete file composition and current source rules. Return the same-snapshot FTP connection for this guarded source I/O only; never cache or persist",
+                "description": "仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照 FTP/NFS 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete file composition and current source rules. Return the same-snapshot FTP/NFS connection for this guarded source I/O only; never cache or persist",
                 "consumes": [
                     "application/json"
                 ],
@@ -4020,7 +4020,7 @@ const docTemplate = `{
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "复核 Manager FTP 模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager FTP model execution",
+                "summary": "复核 Manager FTP/NFS 模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager FTP/NFS model execution",
                 "parameters": [
                     {
                         "type": "string",

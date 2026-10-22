@@ -249,7 +249,7 @@ func TestGLBFTPRecreatedTaskRequiresOverwriteAndProtectsThePreviousResult(t *tes
 	if err := commonExecution.ApplyUserOrigin(commonExecution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext("7", "31", nil)), item); err != nil {
 		t.Fatal(err)
 	}
-	item.ExecutionConfig = commonModels.JSONMap{"config_version": models.Model3DGLBFTPConfigVersion, "source": commonModels.JSONMap{"item_fingerprint": "glb-fp"}}
+	item.ExecutionConfig = commonModels.JSONMap{"config_version": models.Model3DGLBFileConfigVersion, "source": commonModels.JSONMap{"item_fingerprint": "glb-fp"}}
 	snapshot, err := repo.TaskConfigSnapshot(t.Context(), newTask.ID, 7)
 	if err != nil {
 		t.Fatal(err)

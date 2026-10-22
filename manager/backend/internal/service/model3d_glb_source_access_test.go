@@ -32,7 +32,7 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: "ftp", Version: 5, LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: commonModels.ConnectionInfo{"host": "fixture.invalid", "password": "fixture-only"}}
 	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": "3ds"}, "result": map[string]any{"storage_ref": "previous", "file_name": "model.glb"}, "options": map[string]any{"number": json.Number("9007199254740993")}})
 	executionID := uuid.NewString()
-	frozen, err := freezeFTPModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, executionID, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, executionID, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +77,12 @@ func TestGLBSourceAccessUsesOfficialSDKForEachExactReadAndCheckpoint(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversion, err := decodeFTPModel3DGLBConversion(raw)
+	conversion, err := decodeFileModel3DGLBConversion(raw)
 	if err != nil || guard.ValidateConversion(conversion) != nil {
 		t.Fatal("same raw conversion did not match")
 	}
 	for _, field := range []string{"version", "source", "result", "options"} {
-		changed, _ := decodeFTPModel3DGLBConversion(raw)
+		changed, _ := decodeFileModel3DGLBConversion(raw)
 		switch field {
 		case "version":
 			changed.ConfigVersion = "unknown"

@@ -56,7 +56,7 @@ func (s *Model3DGLBTaskService) sourceEngineForSnapshot(ctx context.Context, sna
 	if engine.EngineType == "" || engine.EngineType != strings.ToLower(strings.TrimSpace(engine.EngineType)) {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
-	if engine.EngineType == "ftp" && engine.TenantID == nil {
+	if commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) && engine.TenantID == nil {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	return engine, nil
@@ -83,4 +83,8 @@ func validateModel3DGLBClaim(ctx context.Context, item *commonExecution.TaskExec
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	return nil
+}
+
+func managedModel3DFileSource(engineType, format string) bool {
+	return engineType == "ftp" || engineType == "nfs" && (format == "ifc" || format == "3ds")
 }

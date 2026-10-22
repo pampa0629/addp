@@ -129,7 +129,7 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 
 文件系统的 item 叶子类型固定为 `file`。文件内容可以是表格、文档、媒体或容器；这些语义进入 `attributes.item.data_type` 和 `type_info.<data_type>`，不把文件系统中的 `item_type` 改写为 `table`。
 
-**NFS 物理路径转换公式**：`物理路径 = "/" + full_name`
+**NFS 导出根内路径表示**：`"/" + full_name` 表示导出根内坐标。Provider 的读取按原始路径分段相对导出根句柄执行 LOOKUP，核验后以同一文件句柄执行 Facts、READ 或 READDIRPLUS，不拼接宿主机挂载路径。
 
 | full_name | 物理路径 |
 |-----------|---------|
@@ -545,7 +545,7 @@ HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCa
 
 - 每个 Engine Instance 绑定一个管理根目录。WebHDFS 端点、原生 HDFS RPC 地址或 nameservice、管理根目录和认证配置属于连接事实，不进入 `full_name`、ResourceLocator 或指纹输入。
 - 显性 root 使用引擎实例名称，`full_name=""`；根目录下普通文件可以直接成为 leaf。业务路径保留根目录内的原始名称，例如管理根为 `/addp` 时，`/addp/samples/orders.parquet` 的 `full_name` 为 `samples/orders.parquet`，locator 业务 path 为 `samples/orders.parquet`，`item_type=file`。
-- 只有经过根目录边界检查的目录和普通文件进入 Catalog；拒绝穿越根目录的路径，不把符号链接作为普通文件或可递归目录。列举、路径解析、事实查询与内容读取必须使用同一边界。
+- 只有经过根目录边界检查的目录和普通文件进入 Catalog；拒绝穿越根目录的路径，不把符号链接作为普通文件或可递归目录。列举、路径解析、事实查询与内容读取必须使用同一边界。 NFS 首期拒绝所有符号链接（含导出根内链接）、特殊文件及类型不明的目标；逐级以 NFSv3 原生类型核验目录与普通文件，Facts、列举和读取使用核验后的文件句柄，不在检查后重新按路径打开。文件句柄仅为本次 I/O 事实，不改变 DataItem 身份或授权摘要；不承诺多个文件的原子快照。
 - 管理根目录是平台资源命名空间边界，不能替代引擎原生认证、权限或集群网络隔离。
 
 WebHDFS `LISTSTATUS_BATCH` 分页使用固定 Hadoop 3.5.0 实际协议字段 `startafter`，不同时发送 `startAfter` 别名。跨页校验归入独占 HDFS T2；不能因默认小样本恰好一页而省略分页契约。具体协议实现与测试入口见[引擎插件规范](addp引擎插件接口规范.md)及[HDFS/Spark 标准验证](../../engines/spark-workflow/README.md#运行测试)。

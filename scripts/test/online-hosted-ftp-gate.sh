@@ -14,6 +14,7 @@ stop_online_fixture() {
     run_logged docker logs addp-ftp-model3d-runtime > "$ADDP_ONLINE_ARTIFACT_DIR/model3d-runtime.log" || cleanup_status=1
   fi
   remove_online_product_container addp-ftp-model3d-runtime || cleanup_status=1
+  run_logged python3 -B -m scripts.test.online-file-model-nfs-fixture stop || cleanup_status=1
   run_logged python3 business/ftp/admission.py stop || cleanup_status=1
   for evidence in facts cleanup readiness-initial ftp-samples ftp-model-samples; do
     [ ! -f "$ADDP_ONLINE_SECRET_DIR/$evidence.json" ] || cp "$ADDP_ONLINE_SECRET_DIR/$evidence.json" "$ADDP_ONLINE_ARTIFACT_DIR/ftp-$evidence.json"
@@ -47,6 +48,10 @@ run_logged bash scripts/build/build-images.sh --verify --jobs 1 \
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged python3 business/ftp/admission.py start
+run_logged python3 -B -m scripts.test.online-file-model-nfs-fixture start
+ADDP_NFS_TEST_EXPORT="$(cat "$ADDP_ONLINE_SECRET_DIR/ftp-root")/data"
+export ADDP_NFS_TEST_EXPORT
+run_logged make test-common-nfs-integration
 application_owned=1
 for start_target in -security -meta -manager; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
@@ -58,5 +63,8 @@ source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/ftp-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
 export ADDP_ONLINE_FTP_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/ftp-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
+source "$ENGINE_RESULT_ENV"
+export ADDP_ONLINE_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

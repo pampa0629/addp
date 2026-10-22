@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	commonexecution "github.com/addp/common/execution"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
@@ -34,7 +35,7 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 		return 0, commonapi.ErrForbidden
 	}
 	file := len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile
-	if file && engine.EngineType != "ftp" {
+	if file && !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) {
 		return 0, commonapi.ErrForbidden
 	}
 	wanted, err := shared.EncodeSharingTarget(path)

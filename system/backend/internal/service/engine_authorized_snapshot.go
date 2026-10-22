@@ -2,6 +2,7 @@ package service
 
 import (
 	commonapi "github.com/addp/common/api"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/models"
 )
 
@@ -9,7 +10,7 @@ import (
 // root. The caller must have qualified this exact Engine in its authoritative
 // transaction. No lookup, connection test, policy fallback or cache is used.
 func (s *EngineService) DecryptAuthorizedExecutionSnapshot(engine *models.Engine) (*models.Engine, error) {
-	if s == nil || engine == nil || engine.ID == 0 || engine.TenantID == nil || *engine.TenantID == 0 || engine.Version <= 0 || engine.EngineType != "ftp" || engine.LifecycleState != models.EngineLifecycleActive || engine.DeletedAt != nil {
+	if s == nil || engine == nil || engine.ID == 0 || engine.TenantID == nil || *engine.TenantID == 0 || engine.Version <= 0 || !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.LifecycleState != models.EngineLifecycleActive || engine.DeletedAt != nil {
 		return nil, commonapi.ErrForbidden
 	}
 	connection, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)

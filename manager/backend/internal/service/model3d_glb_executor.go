@@ -77,10 +77,10 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	if req.Task == nil {
 		return nil, errors.New("model 3d GLB generation task is required")
 	}
-	if req.Config.ConfigVersion != "" && req.Config.ConfigVersion != managerModels.Model3DGLBFTPConfigVersion {
+	if req.Config.ConfigVersion != "" && req.Config.ConfigVersion != managerModels.Model3DGLBFileConfigVersion {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
-	ftpConfig := req.Config.ConfigVersion == managerModels.Model3DGLBFTPConfigVersion
+	fileConfig := req.Config.ConfigVersion == managerModels.Model3DGLBFileConfigVersion
 	operatorName, sourceFormat, err := model3DGLBOperatorForFormat(req.Config.Source.Format)
 	if err != nil {
 		return nil, err
@@ -89,15 +89,15 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	if err != nil {
 		return nil, err
 	}
-	if (ftpConfig || req.SourceAuthorization != nil) && engine.EngineType != "ftp" {
+	if (fileConfig || req.SourceAuthorization != nil) && !managedModel3DFileSource(engine.EngineType, sourceFormat) {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
-	if engine.EngineType == "ftp" {
-		if !ftpConfig || req.SourceAuthorization == nil {
+	if managedModel3DFileSource(engine.EngineType, sourceFormat) {
+		if !fileConfig || req.SourceAuthorization == nil {
 			return nil, ErrModel3DGLBSourceAuthorizationRequired
 		}
 		var result *Model3DGLBExecutionResult
-		err = e.withFTPModel3DSource(ctx, req, engine, func(ctx context.Context, sourcePlan workflowaccess.Source, sourceFacts commonModels.JSONMap) error {
+		err = e.withFileModel3DSource(ctx, req, engine, func(ctx context.Context, sourcePlan workflowaccess.Source, sourceFacts commonModels.JSONMap) error {
 			var invokeErr error
 			result, invokeErr = e.buildModel3DGLBWithSource(ctx, req, operatorName, sourceFormat, sourcePlan, sourceFacts)
 			return invokeErr
@@ -115,8 +115,8 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 }
 
 func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Context, req Model3DGLBExecutionRequest, operatorName, sourceFormat string, sourcePlan workflowaccess.Source, sourceFacts commonModels.JSONMap) (output *Model3DGLBExecutionResult, buildErr error) {
-	ftpSource := req.Config.ConfigVersion == managerModels.Model3DGLBFTPConfigVersion
-	if ftpSource {
+	fileSource := req.Config.ConfigVersion == managerModels.Model3DGLBFileConfigVersion
+	if fileSource {
 		if req.SourceAuthorization == nil {
 			return nil, ErrModel3DGLBSourceAuthorizationRequired
 		}
@@ -192,7 +192,7 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 		sourcePlan = workflowaccess.Source{Kind: workflowaccess.KindFile, Format: "osgb", Access: intermediateAccess}
 	}
 	writeMode := workflowaccess.WriteModeReplace
-	if ftpSource {
+	if fileSource {
 		writeMode = workflowaccess.WriteModeCreate
 	}
 	accessPlan, err := workflowaccess.New(
@@ -205,7 +205,7 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 	if err != nil {
 		return nil, fmt.Errorf("build model 3d GLB access plan: %w", err)
 	}
-	if ftpSource {
+	if fileSource {
 		if err := req.SourceAuthorization.ValidateConversion(req.Config); err != nil {
 			return nil, err
 		}
@@ -214,7 +214,7 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 		}
 	}
 	options := req.Config.Options
-	if !ftpSource {
+	if !fileSource {
 		options = req.Config.Options.Clone()
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
@@ -236,13 +236,13 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 	}
 
 	facts := operatorInvokeJSONFacts(invokeResult)
-	if ftpSource {
-		if err := validateFTPModel3DGLBPublication(invokeResult, info.Size, bucket, objectName); err != nil {
+	if fileSource {
+		if err := validateFileModel3DGLBPublication(invokeResult, info.Size, bucket, objectName); err != nil {
 			return nil, err
 		}
 	}
 	sizeBytes := info.Size
-	if !ftpSource {
+	if !fileSource {
 		sizeBytes = firstPositiveInt64(info.Size, jsonInt64(facts["size_bytes"]), req.Config.Source.SourceSizeBytes)
 	}
 	result := &Model3DGLBExecutionResult{
@@ -279,7 +279,7 @@ func (e *ManagerModel3DGLBExecutor) buildModel3DGLBWithSource(ctx context.Contex
 	if sgmStage != nil {
 		result.Metadata["sgm_conversion"] = sgmStage
 	}
-	if ftpSource {
+	if fileSource {
 		if err := req.SourceAuthorization.BeforePublish(ctx); err != nil {
 			return nil, err
 		}
@@ -305,7 +305,7 @@ func (e *ManagerModel3DGLBExecutor) lookupModel3DSourceEngine(ctx context.Contex
 }
 
 func (e *ManagerModel3DGLBExecutor) prepareSourceForEngine(ctx context.Context, engine *commonModels.Engine, source Model3DGLBSourceConfig, sourceFormat string) (workflowaccess.Source, commonModels.JSONMap, error) {
-	if engine == nil || engine.EngineType == "ftp" {
+	if engine == nil || managedModel3DFileSource(engine.EngineType, sourceFormat) {
 		return workflowaccess.Source{}, nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)

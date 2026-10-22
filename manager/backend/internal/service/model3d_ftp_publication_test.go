@@ -16,7 +16,7 @@ func ftpModelPublicationFixture() *plugin.OperatorInvokeResult {
 }
 
 func TestFTPModelPublicationRequiresMatchingPhysicalObjectAndReceipt(t *testing.T) {
-	if err := validateFTPModel3DGLBPublication(ftpModelPublicationFixture(), 512, "manager", "model3d/execution/model.glb"); err != nil {
+	if err := validateFileModel3DGLBPublication(ftpModelPublicationFixture(), 512, "manager", "model3d/execution/model.glb"); err != nil {
 		t.Fatal(err)
 	}
 	for _, fault := range []string{"nil", "empty-response", "missing-status", "failure", "no-execution", "contradictory-error", "contradictory-code", "empty-physical", "short-physical", "missing-publish", "wrong-ref", "wrong-uri", "wrong-size", "fractional-size", "wrong-bucket", "old-object", "wrong-publish-uri", "mounted-path", "wrong-content-type", "wrong-count", "fractional-count", "wrong-bytes", "missing-bytes"} {
@@ -73,7 +73,7 @@ func TestFTPModelPublicationRequiresMatchingPhysicalObjectAndReceipt(t *testing.
 			case "missing-bytes":
 				delete(publish, "uploaded_bytes")
 			}
-			if err := validateFTPModel3DGLBPublication(result, size, "manager", "model3d/execution/model.glb"); err == nil {
+			if err := validateFileModel3DGLBPublication(result, size, "manager", "model3d/execution/model.glb"); err == nil {
 				t.Fatal("unproven target publication accepted")
 			}
 		})

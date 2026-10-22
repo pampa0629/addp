@@ -31,7 +31,7 @@ func glbPublishedReadFixture(t *testing.T) (*models.Model3DGLB, *commonModels.En
 	}
 	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": "3ds"}, "result": map[string]any{"storage_ref": "old", "file_name": "model.glb"}, "options": map[string]any{}})
 	id := uuid.NewString()
-	frozen, err := freezeFTPModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, id, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, id, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func glbPublishedReadFixture(t *testing.T) (*models.Model3DGLB, *commonModels.En
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, _ := decodeFTPModel3DGLBConversion(raw)
+	config, _ := decodeFileModel3DGLBConversion(raw)
 	return &models.Model3DGLB{ID: 19, TenantID: 7, ItemID: &source.ItemID, ItemFingerprint: source.ItemFingerprint, Locator: source.ItemLocator, SourceEngineID: 33, SourceFormat: "3ds", Status: "ready", StorageRef: config.Result.StorageRef, Metadata: commonModels.JSONMap{"model3d_output_owner": "manager_execution", "model3d_source_scope": scope}}, engine, item
 }
 
@@ -151,6 +151,7 @@ func TestGLBReadRejectsTicketsChangedCompositionAndEngineBeforePermissionCall(t 
 				engine.Version++
 			case "engine changed to nfs":
 				engine.EngineType = "nfs"
+				engine.Version++
 			case "engine changed to minio":
 				engine.EngineType = "minio"
 			case "no current consumer":

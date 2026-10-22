@@ -648,6 +648,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install disposable NFS source dependencies
+        run: sudo apt-get update && sudo apt-get install -y nfs-kernel-server nfs-common
+
       - name: Validate Hosted FTP readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}

@@ -10,8 +10,8 @@ import (
 
 // A successful HTTP call is not a publication receipt. Match the real product
 // response to this execution's exact target and the independent object stat.
-func validateFTPModel3DGLBPublication(result *plugin.OperatorInvokeResult, actualSize int64, bucket, object string) error {
-	reject := errors.New("FTP model GLB publication does not match the execution target")
+func validateFileModel3DGLBPublication(result *plugin.OperatorInvokeResult, actualSize int64, bucket, object string) error {
+	reject := errors.New("file model GLB publication does not match the execution target")
 	if result == nil || result.Status != "success" || result.ExecutionID == "" || result.Error != "" || result.ErrorCode != "" || actualSize <= 0 || bucket == "" || object == "" {
 		return reject
 	}

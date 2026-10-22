@@ -133,3 +133,11 @@ func TestManagerModel3DScopeStrictWireAndUnsupportedVariants(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
+	raw := model3DTestRaw(t, `{}`)
+	raw = json.RawMessage(strings.Replace(string(raw), ManagerModel3DConfigVersion, "model3d-glb-ftp-config/v1", 1))
+	if scope, err := NewManagerModel3DReadScope(raw, "10", "7", "5", model3DTestComposition(t)); err == nil || scope != nil {
+		t.Fatal("legacy frozen configuration accepted")
+	}
+}

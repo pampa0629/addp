@@ -98,7 +98,7 @@ func TestIntegrationPostgresManagerGLBIsolatedOutputPublication(t *testing.T) {
 	if err := commonExecution.ApplyUserOrigin(actorCtx, replacementExecution); err != nil {
 		t.Fatal(err)
 	}
-	replacementExecution.ExecutionConfig = commonModels.JSONMap{"config_version": models.Model3DGLBFTPConfigVersion, "source": commonModels.JSONMap{"item_fingerprint": "glb-fp"}}
+	replacementExecution.ExecutionConfig = commonModels.JSONMap{"config_version": models.Model3DGLBFileConfigVersion, "source": commonModels.JSONMap{"item_fingerprint": "glb-fp"}}
 	replacementSnapshot, err := repo.TaskConfigSnapshot(t.Context(), replacement.ID, tenantID)
 	if err != nil {
 		t.Fatal(err)

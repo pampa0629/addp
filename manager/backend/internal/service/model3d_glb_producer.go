@@ -33,7 +33,7 @@ func (s *Model3DGLBTaskService) sourceCandidate(ctx context.Context, tenant uint
 }
 
 // Classify with System before creating pending. A caller cannot opt out by
-// omitting an FTP marker or claiming a different engine_type in task config.
+// omitting a file-source marker or claiming a different engine_type in task config.
 func (s *Model3DGLBTaskService) freezeSourceExecution(ctx context.Context, snapshot *repository.Model3DGLBTaskSnapshot, item *commonExecution.TaskExecution, credential string) (bool, error) {
 	var keys map[string]json.RawMessage
 	if json.Unmarshal(snapshot.Config, &keys) != nil {
@@ -45,7 +45,15 @@ func (s *Model3DGLBTaskService) freezeSourceExecution(ctx context.Context, snaps
 		}
 	}
 	engine, err := s.sourceEngineForSnapshot(ctx, snapshot)
-	if err != nil || engine.EngineType != "ftp" {
+	var header struct {
+		Source struct {
+			Format string `json:"format"`
+		} `json:"source"`
+	}
+	if json.Unmarshal(snapshot.Config, &header) != nil {
+		return false, ErrModel3DGLBSourceAuthorizationRequired
+	}
+	if err != nil || !managedModel3DFileSource(engine.EngineType, header.Source.Format) {
 		return false, err
 	}
 	if s.sourceIssuer == nil || s.sourceConsumer == nil || s.sourceMeta == nil {
@@ -54,7 +62,7 @@ func (s *Model3DGLBTaskService) freezeSourceExecution(ctx context.Context, snaps
 	if credential == "" {
 		return true, ErrModel3DGLBSourceAuthorizationRequired
 	}
-	config, err := decodeFTPModel3DGLBConversion(snapshot.Config)
+	config, err := decodeFileModel3DGLBConversion(snapshot.Config)
 	if err != nil {
 		return true, err
 	}
@@ -62,7 +70,7 @@ func (s *Model3DGLBTaskService) freezeSourceExecution(ctx context.Context, snaps
 	if err != nil {
 		return true, err
 	}
-	item.ExecutionConfig, err = freezeFTPModel3DGLBConfig(snapshot, engine, candidate, item.ExecutionID, s.bucket)
+	item.ExecutionConfig, err = freezeFileModel3DGLBConfig(snapshot, engine, candidate, item.ExecutionID, s.bucket)
 	return true, err
 }
 

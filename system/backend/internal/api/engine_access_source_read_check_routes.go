@@ -60,7 +60,7 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标；受管 FTP 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP model results require same-decision expected_source and ordinary User; no query parameters"
+// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标；受管 FTP/NFS 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP/NFS model results require same-decision expected_source and ordinary User; no query parameters"
 // @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻，不授予访问权 | Observation time without granting access"
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
 // @x-addp-auth-mode "permission"

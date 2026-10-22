@@ -219,8 +219,8 @@ func EnrichSingleModel3DItem(
 		item.Model3D = info.Model3D.Clone()
 		metaitem.ApplyModel3DInfo(attrs, item, info.Spatial)
 	}
-	if sourceEngine != nil && sourceEngine.EngineType == "ftp" && formatType == format.Format3DS {
-		// FTP composition is owned by the bounded structural observation. A
+	if sourceEngine != nil && (sourceEngine.EngineType == "ftp" || sourceEngine.EngineType == "nfs") && formatType == format.Format3DS {
+		// File composition is owned by the bounded structural observation. A
 		// successful full summary cannot upgrade an incomplete or absent one,
 		// or replace exact declarations during a known-item deep refresh.
 		delete(info.FormatInfo, "texture_refs")

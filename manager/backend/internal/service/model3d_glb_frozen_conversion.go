@@ -25,12 +25,12 @@ type model3DGLBFrozenHeader struct {
 	Composition   *authorizationfacts.FileCompositionBoundary `json:"source_composition"`
 }
 
-func freezeFTPModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engine *commonModels.Engine, candidate *model3DGLBSourceCandidate, executionID, bucket string) (commonModels.JSONMap, error) {
+func freezeFileModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engine *commonModels.Engine, candidate *model3DGLBSourceCandidate, executionID, bucket string) (commonModels.JSONMap, error) {
 	reject := ErrModel3DGLBSourceAuthorizationRequired
-	if snapshot == nil || snapshot.TaskID == 0 || snapshot.Version == 0 || snapshot.TenantID == 0 || engine == nil || engine.EngineType != "ftp" || engine.Version <= 0 || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || candidate == nil || candidate.composition == nil || candidate.composition.Validate(engine.ID) != nil {
+	if snapshot == nil || snapshot.TaskID == 0 || snapshot.Version == 0 || snapshot.TenantID == 0 || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.Version <= 0 || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || candidate == nil || candidate.composition == nil || candidate.composition.Validate(engine.ID) != nil {
 		return nil, reject
 	}
-	conversion, err := decodeFTPModel3DGLBConversion(snapshot.Config)
+	conversion, err := decodeFileModel3DGLBConversion(snapshot.Config)
 	if err != nil || conversion.Source.SourceEngineID != engine.ID {
 		return nil, reject
 	}
@@ -58,7 +58,7 @@ func freezeFTPModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engi
 		return nil, reject
 	}
 	result["storage_ref"], result["file_name"] = target.StorageRef, target.FileName
-	config["config_version"] = models.Model3DGLBFTPConfigVersion
+	config["config_version"] = models.Model3DGLBFileConfigVersion
 	config["owner_task"] = map[string]string{"id": strconv.FormatUint(uint64(snapshot.TaskID), 10), "version": strconv.FormatUint(uint64(snapshot.Version), 10)}
 	config["source_engine_version"] = strconv.FormatInt(engine.Version, 10)
 	config["source_composition"] = candidate.composition.Clone()
@@ -67,7 +67,7 @@ func freezeFTPModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engi
 
 func decodeModel3DGLBFrozenHeader(raw json.RawMessage) (*model3DGLBFrozenHeader, error) {
 	var header model3DGLBFrozenHeader
-	if json.Unmarshal(raw, &header) != nil || header.Version != models.Model3DGLBFTPConfigVersion || header.Composition == nil {
+	if json.Unmarshal(raw, &header) != nil || header.Version != models.Model3DGLBFileConfigVersion || header.Composition == nil {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	for _, value := range []string{header.OwnerTask.ID, header.OwnerTask.Version, header.EngineVersion} {
@@ -86,7 +86,7 @@ func decodeModel3DGLBFrozenHeader(raw json.RawMessage) (*model3DGLBFrozenHeader,
 // Read the signed conversion values directly from SQL JSON. JSONMap.Clone and
 // the editable task normalizer are deliberately absent: either could round
 // large option integers or rewrite the already frozen source/result values.
-func decodeFTPModel3DGLBConversion(raw json.RawMessage) (Model3DGLBExecutionConfig, error) {
+func decodeFileModel3DGLBConversion(raw json.RawMessage) (Model3DGLBExecutionConfig, error) {
 	var wire struct {
 		ConfigVersion string `json:"config_version"`
 		Source        struct {

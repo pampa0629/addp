@@ -106,7 +106,7 @@ func TestManagerModel3DClientRejectsForeignStaleOrExpandedObservations(t *testin
 		"tenant":     func(r *ManagerModel3DAccessObservation) { id := uint(4); r.Engine.TenantID = &id },
 		"shared":     func(r *ManagerModel3DAccessObservation) { r.Engine.TenantID = nil },
 		"version":    func(r *ManagerModel3DAccessObservation) { r.Engine.Version++ },
-		"kind":       func(r *ManagerModel3DAccessObservation) { r.Engine.EngineType = "nfs" },
+		"kind":       func(r *ManagerModel3DAccessObservation) { r.Engine.EngineType = "minio" },
 		"deleted":    func(r *ManagerModel3DAccessObservation) { now := time.Now(); r.Engine.DeletedAt = &now },
 		"inactive":   func(r *ManagerModel3DAccessObservation) { r.Engine.LifecycleState = "deleting" },
 		"connection": func(r *ManagerModel3DAccessObservation) { r.Engine.ConnectionInfo = nil },

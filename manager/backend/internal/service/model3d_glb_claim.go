@@ -25,18 +25,21 @@ func (s *Model3DGLBTaskService) prepareClaim(ctx context.Context, task *models.M
 	}
 	var marker struct {
 		Version string `json:"config_version"`
+		Source  struct {
+			Format string `json:"format"`
+		} `json:"source"`
 	}
 	if json.Unmarshal(raw, &marker) != nil {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
-	if engine.EngineType != "ftp" {
+	if !managedModel3DFileSource(engine.EngineType, marker.Source.Format) {
 		if marker.Version != "" || execution.ExecutionAuthorizationID != nil {
 			return nil, ErrModel3DGLBSourceAuthorizationRequired
 		}
 		task.Config = execution.ExecutionConfig.Clone()
 		return nil, nil
 	}
-	config, err := decodeFTPModel3DGLBConversion(raw)
+	config, err := decodeFileModel3DGLBConversion(raw)
 	if err != nil {
 		return nil, err
 	}

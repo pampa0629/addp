@@ -19,6 +19,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	ftpPlugin "github.com/addp/common/engine/plugins/ftp"
+	_ "github.com/addp/common/engine/plugins/nfs"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -30,12 +31,15 @@ import (
 
 type ftpModelReadSpy struct {
 	*ftpPlugin.FTPPlugin
+	engineType   string
 	mu           sync.Mutex
 	t            *testing.T
 	files        map[string][]byte
 	facts, opens []string
 	closes       int
 }
+
+func (s *ftpModelReadSpy) Type() string { return s.engineType }
 
 func (s *ftpModelReadSpy) DescribeEngineCatalogFacts(_ context.Context, info plugin.ConnectionInfo, target plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	s.checkConnection(info)
@@ -98,7 +102,7 @@ func (ftpModelServiceTokens) PlatformToken(context.Context) (string, error) {
 	return "", errors.New("platform credential forbidden")
 }
 
-func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpModelReadSpy) bool) (context.Context, Model3DGLBExecutionRequest, *commonModels.Engine, *ftpModelReadSpy, *atomic.Int32) {
+func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied func(*ftpModelReadSpy) bool) (context.Context, Model3DGLBExecutionRequest, *commonModels.Engine, *ftpModelReadSpy, *atomic.Int32) {
 	t.Helper()
 	source, item := model3DGLBCandidateFixture(format)
 	item.Fingerprint = commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
@@ -107,20 +111,20 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 	if err != nil {
 		t.Fatal(err)
 	}
-	spy := &ftpModelReadSpy{FTPPlugin: &ftpPlugin.FTPPlugin{}, t: t, files: map[string][]byte{item.FullName: []byte("ifc input")}}
+	spy := &ftpModelReadSpy{FTPPlugin: &ftpPlugin.FTPPlugin{}, engineType: engineType, t: t, files: map[string][]byte{item.FullName: []byte("ifc input")}}
 	if format == "3ds" {
 		spy.files[item.FullName] = threeDSStagingInput("TEST.PNG")
 		spy.files["models/TEST.PNG"] = []byte("actual texture")
 	}
-	original, err := plugin.Get("ftp")
+	original, err := plugin.Get(engineType)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugin.Unregister("ftp")
+	plugin.Unregister(engineType)
 	plugin.Register(spy)
-	t.Cleanup(func() { plugin.Unregister("ftp"); plugin.Register(original) })
+	t.Cleanup(func() { plugin.Unregister(engineType); plugin.Register(original) })
 	tenant := uint(7)
-	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, Version: 5, EngineType: "ftp", LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: commonModels.ConnectionInfo{"host": "127.0.0.1", "port": 2121, "user": "readonly", "security": "plain", "password": "classification-must-not-be-used"}}
+	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, Version: 5, EngineType: engineType, LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: commonModels.ConnectionInfo{"host": "127.0.0.1", "port": 2121, "user": "readonly", "security": "plain", "password": "classification-must-not-be-used"}}
 	calls := &atomic.Int32{}
 	var expectedScope *commonExecution.ManagerModel3DReadScope
 	var expectedExecution, expectedToken string
@@ -156,12 +160,12 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 	execution := &commonExecution.TaskExecution{ExecutionID: executionID, TenantID: 7, Module: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Source: commonExecution.ModuleManager, TriggerType: commonExecution.TriggerTypeManual, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(17), ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, Status: commonExecution.ExecutionStatusRunning, Attempt: 1, TriggeredBy: &actor, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires, LeaseExpiresAt: &expires, LeaseToken: &token, LeaseOwner: &owner}
 	ctx := commonExecution.ContextWithLease(t.Context(), commonExecution.Lease{ExecutionID: executionID, TenantID: 7, Attempt: 1, Token: token, Owner: owner})
 	raw, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": source.SourceEngineID, "item_id": source.ItemID, "item_fingerprint": source.ItemFingerprint, "format": source.Format}, "result": map[string]any{"storage_ref": "previous-owned", "file_name": "model.glb"}, "options": map[string]any{"integer": json.Number("9007199254740993")}})
-	frozen, err := freezeFTPModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}, engine, candidate, executionID, "manager")
+	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: raw}, engine, candidate, executionID, "manager")
 	if err != nil {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(frozen)
-	config, err := decodeFTPModel3DGLBConversion(encoded)
+	config, err := decodeFileModel3DGLBConversion(encoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,13 +178,43 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 	return ctx, Model3DGLBExecutionRequest{Task: &models.Model3DGLBTask{ID: 17, TenantID: 7}, ExecutionID: executionID, Config: config, SourceAuthorization: auth, inputOwner: &recordingModel3DStagingOwner{}}, engine, spy, calls
 }
 
+func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpModelReadSpy) bool) (context.Context, Model3DGLBExecutionRequest, *commonModels.Engine, *ftpModelReadSpy, *atomic.Int32) {
+	return fileModelAuthorizedFixture(t, "ftp", format, denied)
+}
+
+func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
+	for _, format := range []string{"ifc", "3ds"} {
+		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
+			t.Run(format+"/"+fault, func(t *testing.T) {
+				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, "nfs", format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
+				if fault == "changed-declaration" && format == "3ds" {
+					spy.files["models/model.3ds"] = threeDSStagingInput("OTHER.PNG")
+				}
+				store := &stagingModelStore{}
+				called := false
+				err := stagingModelExecutor(store).withFileModel3DSource(ctx, request, engine, func(_ context.Context, source workflowaccess.Source, audit commonModels.JSONMap) error {
+					called = true
+					if source.Access.Method != workflowaccess.MethodObjectStore || audit["engine_type"] != "nfs" {
+						t.Fatal("NFS bypassed exact staging")
+					}
+					return nil
+				})
+				rejected := fault == "revoked" || fault == "changed-declaration" && format == "3ds"
+				if (err != nil) != rejected || called == rejected || len(store.objects) != 0 {
+					t.Fatalf("err=%v called=%v residual=%d", err, called, len(store.objects))
+				}
+			})
+		}
+	}
+}
+
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
 	for _, format := range []string{"ifc", "3ds"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
 			consumed := false
-			err := stagingModelExecutor(store).withFTPModel3DSource(ctx, request, engine, func(_ context.Context, source workflowaccess.Source, audit commonModels.JSONMap) error {
+			err := stagingModelExecutor(store).withFileModel3DSource(ctx, request, engine, func(_ context.Context, source workflowaccess.Source, audit commonModels.JSONMap) error {
 				consumed = true
 				if source.Access.Method != workflowaccess.MethodObjectStore || source.Format != format || len(store.objects) != len(spy.files) {
 					t.Fatal("incomplete or wrong staging plan")
@@ -244,7 +278,7 @@ func TestFTPModelSourceRevocationAndChangedReferencesStopBeforeStaging(t *testin
 			case "changed-option":
 				request.Config.Options["integer"] = json.Number("9007199254740992")
 			}
-			err := stagingModelExecutor(store).withFTPModel3DSource(ctx, request, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error { consumed = true; return nil })
+			err := stagingModelExecutor(store).withFileModel3DSource(ctx, request, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error { consumed = true; return nil })
 			maxFacts := 1
 			if fault == "empty-required-texture" {
 				maxFacts = 2
@@ -267,7 +301,7 @@ func TestAuthorizedFTPModelConversionFailureCleansAllPreparedInputs(t *testing.T
 	store := &stagingModelStore{}
 	conversionFailure := errors.New("conversion rejected the prepared model")
 	invoked := false
-	err := stagingModelExecutor(store).withFTPModel3DSource(ctx, request, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error {
+	err := stagingModelExecutor(store).withFileModel3DSource(ctx, request, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error {
 		invoked = true
 		if len(store.objects) != 2 {
 			t.Fatal("conversion saw an incomplete source")

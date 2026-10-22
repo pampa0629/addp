@@ -85,7 +85,7 @@ func structure3DS(ref string) []byte {
 
 func TestFTPBasicCompositionRuntime(t *testing.T) {
 	for _, mode := range []string{"directory", "refs"} {
-		t.Run(mode, func(t *testing.T) { testFTPBasicComposition(t, openObjectCatalogScanTestDB(t), mode) })
+		t.Run(mode, func(t *testing.T) { testFileBasicComposition(t, openObjectCatalogScanTestDB(t), mode, "ftp") })
 	}
 }
 
@@ -130,40 +130,42 @@ func TestFTPBasicCompositionAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	for _, mode := range []string{"directory", "refs"} {
-		t.Run(mode, func(t *testing.T) {
-			tx := db.Begin()
-			if tx.Error != nil {
-				t.Fatal(tx.Error)
-			}
-			t.Cleanup(func() { tx.Rollback() })
-			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
-				t.Fatal(err)
-			}
-			testFTPBasicComposition(t, tx, mode)
-			testFTPDeepComposition(t, tx, mode)
-		})
+	for _, kind := range []string{"ftp", "nfs"} {
+		for _, mode := range []string{"directory", "refs"} {
+			t.Run(kind+"/"+mode, func(t *testing.T) {
+				tx := db.Begin()
+				if tx.Error != nil {
+					t.Fatal(tx.Error)
+				}
+				t.Cleanup(func() { tx.Rollback() })
+				if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+					t.Fatal(err)
+				}
+				testFileBasicComposition(t, tx, mode, kind)
+				testFileDeepComposition(t, tx, mode, kind)
+			})
+		}
 	}
 }
 
-func testFTPBasicComposition(t *testing.T, db *gorm.DB, mode string) {
+func testFileBasicComposition(t *testing.T, db *gorm.DB, mode, kind string) {
 	t.Helper()
-	p := &ftpStructureFixture{filesystemScanTestProvider: filesystemScanTestProvider{entriesByPath: map[string][]plugin.EngineCatalogEntry{"models": {}}, contentByPath: map[string]string{}}}
+	p := &ftpStructureFixture{engineType: kind, filesystemScanTestProvider: filesystemScanTestProvider{entriesByPath: map[string][]plugin.EngineCatalogEntry{"models": {}}, contentByPath: map[string]string{}}}
 	rangeProvider := &ftpRangeStructureFixture{p}
-	previous, previousErr := plugin.Get("ftp")
+	previous, previousErr := plugin.Get(kind)
 	plugin.Register(rangeProvider)
 	t.Cleanup(func() {
-		plugin.Unregister("ftp")
+		plugin.Unregister(kind)
 		if previousErr == nil {
 			plugin.Register(previous)
 		}
 	})
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	engine := &commonModels.Engine{ID: 26, EngineType: "ftp"}
+	engine := &commonModels.Engine{ID: 26, EngineType: kind}
 	var originalID uint
 	var originalFingerprint string
 	preservedDeep := false
@@ -263,7 +265,7 @@ func testFTPBasicComposition(t *testing.T, db *gorm.DB, mode string) {
 }
 
 func TestBasicModelStructureDoesNotExpandOtherEngines(t *testing.T) {
-	for _, kind := range []string{"nfs", "s3"} {
+	for _, kind := range []string{"s3"} {
 		t.Run(kind, func(t *testing.T) {
 			p := &ftpRangeStructureFixture{&ftpStructureFixture{engineType: kind, data: structure3DS("A.PNG"),
 				filesystemScanTestProvider: filesystemScanTestProvider{entriesByPath: map[string][]plugin.EngineCatalogEntry{
@@ -315,30 +317,30 @@ func fullSummary3DS(ref string) []byte {
 
 func TestFTPDeepCompositionRuntime(t *testing.T) {
 	for _, mode := range []string{"directory", "refs"} {
-		t.Run(mode, func(t *testing.T) { testFTPDeepComposition(t, openObjectCatalogScanTestDB(t), mode) })
+		t.Run(mode, func(t *testing.T) { testFileDeepComposition(t, openObjectCatalogScanTestDB(t), mode, "ftp") })
 	}
 }
 
-func testFTPDeepComposition(t *testing.T, db *gorm.DB, mode string) {
+func testFileDeepComposition(t *testing.T, db *gorm.DB, mode, kind string) {
 	t.Helper()
-	p := &ftpRangeStructureFixture{&ftpStructureFixture{allowSequential: true,
+	p := &ftpRangeStructureFixture{&ftpStructureFixture{engineType: kind, allowSequential: true,
 		filesystemScanTestProvider: filesystemScanTestProvider{entriesByPath: map[string][]plugin.EngineCatalogEntry{}, contentByPath: map[string]string{}}}}
 	var imageBytes bytes.Buffer
 	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
 		t.Fatal(err)
 	}
 	p.contentByPath["models/A.PNG"] = imageBytes.String()
-	previous, previousErr := plugin.Get("ftp")
+	previous, previousErr := plugin.Get(kind)
 	plugin.Register(p)
 	t.Cleanup(func() {
-		plugin.Unregister("ftp")
+		plugin.Unregister(kind)
 		if previousErr == nil {
 			plugin.Register(previous)
 		}
 	})
 	repo := metaRepo.NewScanRepository(db)
 	runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	engine := &commonModels.Engine{ID: 26, EngineType: "ftp"}
+	engine := &commonModels.Engine{ID: 26, EngineType: kind}
 	read := func() models.MetaItem {
 		t.Helper()
 		var item models.MetaItem
@@ -445,5 +447,15 @@ func testFTPDeepComposition(t *testing.T, db *gorm.DB, mode string) {
 	}
 	if p.sequential == 0 {
 		t.Fatal("deep regression never opened complete content")
+	}
+}
+
+func TestNFSBasicAndDeepCompositionRuntime(t *testing.T) {
+	for _, mode := range []string{"directory", "refs"} {
+		t.Run(mode, func(t *testing.T) {
+			db := openObjectCatalogScanTestDB(t)
+			testFileBasicComposition(t, db, mode, "nfs")
+			testFileDeepComposition(t, db, mode, "nfs")
+		})
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -237,7 +236,7 @@ func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionI
 	if err != nil {
 		return nil, err
 	}
-	return p.readFile(ctx, connInfo, filePath, true)
+	return p.readFile(ctx, connInfo, filePath)
 }
 
 func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -302,10 +301,14 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 	}
 
 	// 规范化路径
-	dirPath := normalizePath(parent.StringPath())
+	dirPath := parent.StringPath()
 
 	entry.mu.Lock()
-	entries, err := entry.target.ReadDirPlus(dirPath)
+	_, handle, err := resolveNFSRead(ctx, entry.reader, dirPath, gonfs.NF3Dir)
+	var entries []*gonfs.EntryPlus
+	if err == nil {
+		entries, err = entry.reader.ListHandle(ctx, handle)
+	}
 	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
@@ -316,7 +319,7 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 
 	for _, entry := range entries {
 		name := entry.FileName
-		if name == "." || name == ".." {
+		if !validNFSReadName(name) || !entry.Attr.IsSet || (entry.Attr.Attr.Type != gonfs.NF3Reg && entry.Attr.Attr.Type != gonfs.NF3Dir) {
 			continue
 		}
 		fullPath := joinPath(dirPath, name)
@@ -337,35 +340,19 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 	return nodes, nil
 }
 
-// nfsReadTarget uses the pinned client's Open, which already resolves the path.
-type nfsReadTarget interface {
-	Lookup(string) (os.FileInfo, []byte, error)
-	Open(string) (*gonfs.File, error)
-}
-
-func openNFSReadFile(ctx context.Context, target nfsReadTarget, mu *sync.Mutex, path string, withSize bool) (*nfsFileReadCloser, error) {
+// Opening resolves and checks every component once, then binds the exact handle.
+func openNFSReadFile(ctx context.Context, target nfsReadProtocol, mu *sync.Mutex, path string) (*nfsFileReadCloser, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	size := int64(-1)
-	// Only full content streams need a known size for SeekEnd. Ranges seek
-	// from the beginning; another Lookup would repeat Open's path traversal.
-	if withSize {
-		if info, _, err := target.Lookup(path); err == nil {
-			size = info.Size()
-		}
-	}
-	rc, err := target.Open(path)
+	info, handle, err := resolveNFSRead(ctx, target, path, gonfs.NF3Reg)
 	if err != nil {
 		return nil, err
 	}
-	return &nfsFileReadCloser{ReadCloser: rc, mu: mu, size: size}, nil
+	return &nfsFileReadCloser{ReadCloser: &nfsHandleStream{ctx: ctx, protocol: target, handle: handle}, mu: mu, size: info.Size()}, nil
 }
 
 // readFile 流式读取文件内容
-func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string, withSize bool) (io.ReadCloser, error) {
+func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -380,8 +367,8 @@ func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
-	filePath := normalizePath(path)
-	rc, err := openNFSReadFile(ctx, entry.target, &entry.mu, filePath, withSize)
+	filePath := path
+	rc, err := openNFSReadFile(ctx, entry.reader, &entry.mu, filePath)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -393,7 +380,7 @@ func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo
 }
 
 func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.ConnectionInfo, path string, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	rc, err := p.readFile(ctx, connInfo, path, false)
+	rc, err := p.readFile(ctx, connInfo, path)
 	if err != nil {
 		return nil, err
 	}
@@ -425,9 +412,9 @@ func (p *NFSPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.C
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
-	filePath := normalizePath(path)
+	filePath := path
 	entry.mu.Lock()
-	info, _, err := entry.target.Lookup(filePath)
+	info, _, err := resolveNFSRead(ctx, entry.reader, filePath, gonfs.NF3Reg)
 	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
@@ -582,6 +569,9 @@ func normalizePath(path string) string {
 
 // joinPath 拼接路径
 func joinPath(dir, name string) string {
+	if dir == "" {
+		return name
+	}
 	if dir == "/" {
 		return "/" + name
 	}

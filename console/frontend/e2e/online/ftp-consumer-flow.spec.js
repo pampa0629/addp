@@ -252,7 +252,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       return
     }
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted FTP' })).toHaveCount(1)
+    await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: expected.source_engine_type === 'nfs' ? 'Hosted NFS' : 'Hosted FTP' })).toHaveCount(1)
     const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'examples' })
     await expect(examples).toHaveCount(1)
     const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')

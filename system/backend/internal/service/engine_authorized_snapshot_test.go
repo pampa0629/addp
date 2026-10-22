@@ -24,11 +24,17 @@ func TestAuthorizedExecutionSnapshotDoesNotRefetchOrMutate(t *testing.T) {
 	if engine.ConnectionInfo["host"] != "ftp.invalid" {
 		t.Fatal("projection mutated stored snapshot")
 	}
-	for _, kind := range []string{"nfs", "minio", "postgresql"} {
+	nfs := *engine
+	nfs.EngineType = "nfs"
+	nfs.ConnectionInfo = models.ConnectionInfo{"server": "localhost", "export_path": "/exports/fixture"}
+	if decoded, err := svc.DecryptAuthorizedExecutionSnapshot(&nfs); err != nil || decoded == nil || decoded.EngineType != "nfs" {
+		t.Fatalf("NFS snapshot: %v", err)
+	}
+	for _, kind := range []string{"minio", "postgresql"} {
 		copy := *engine
 		copy.EngineType = kind
 		if got, err := svc.DecryptAuthorizedExecutionSnapshot(&copy); err == nil || got != nil {
-			t.Fatal("non-FTP snapshot decoded")
+			t.Fatal("unadmitted snapshot decoded")
 		}
 	}
 	copy := *engine

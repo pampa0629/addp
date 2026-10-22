@@ -429,6 +429,15 @@ test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provi
 test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
 
+.PHONY: test-common-nfs-integration
+test-common-nfs-integration: ## Hosted 独占 NFSv3 实库：普通文件、范围读取与软链接拒绝
+	@test -n "$$ADDP_NFS_TEST_EXPORT"
+	@cd common && ADDP_NFS_INTEGRATION=1 GOWORK=off go test ./engine/plugins/nfs -run "^TestIntegrationNFS" -count=1 -v
+
+.PHONY: test-common-nfs-unit
+test-common-nfs-unit: ## NFS 普通文件、软链接拒绝与句柄绑定读取回归
+	@cd common && GOWORK=off go test ./engine/plugins/nfs -count=1
+
 .PHONY: test-common-ftp test-common-ftp-unit
 test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
@@ -441,7 +450,7 @@ test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与�
 
 .PHONY: test-ftp-online-runner
 test-ftp-online-runner: ## FTP 普通 User 页面验收与 Hosted 隔离生命周期回归
-	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-gate_test.py
+	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-file-model-nfs-fixture_test.py scripts/test/online-gate_test.py
 	@node --check console/frontend/e2e/online/ftp-consumer-flow.spec.js
 	@bash -n scripts/test/online-hosted-ftp-gate.sh
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

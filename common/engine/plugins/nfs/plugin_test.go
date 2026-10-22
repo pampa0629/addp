@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -181,91 +179,118 @@ func TestNFSWriteCloseStillCommits(t *testing.T) {
 }
 
 type testNFSReadTarget struct {
-	info           os.FileInfo
-	lookups, opens int
-	openErr        error
-	paths          []string
+	types       map[string]uint32
+	lookups     int
+	paths       []string
+	readHandles []string
+	lookupErr   error
 }
 
-func (s *testNFSReadTarget) Lookup(path string) (os.FileInfo, []byte, error) {
+func (s *testNFSReadTarget) Root() []byte { return []byte("root") }
+func (s *testNFSReadTarget) Attr([]byte) (*gonfs.Fattr, error) {
+	return &gonfs.Fattr{Type: gonfs.NF3Dir}, nil
+}
+func (s *testNFSReadTarget) LookupAt(parent []byte, name string) (*gonfs.Fattr, []byte, error) {
 	s.lookups++
-	s.paths = append(s.paths, path)
-	return s.info, nil, nil
+	p := name
+	if string(parent) != "root" {
+		p = string(parent) + "/" + name
+	}
+	s.paths = append(s.paths, p)
+	if s.lookupErr != nil {
+		return nil, nil, s.lookupErr
+	}
+	kind := s.types[p]
+	return &gonfs.Fattr{Type: kind, Filesize: 6}, []byte(p), nil
 }
-
-func (s *testNFSReadTarget) Open(path string) (*gonfs.File, error) {
-	s.opens++
-	// Model the pinned client's Open path resolution, not an additional Stat.
-	_, _, _ = s.Lookup(path)
-	if s.openErr != nil {
-		return nil, s.openErr
+func (s *testNFSReadTarget) ReadHandle(handle []byte, offset uint64, p []byte) (int, error) {
+	s.readHandles = append(s.readHandles, string(handle))
+	if offset >= 6 {
+		return 0, io.EOF
 	}
-	return &gonfs.File{}, nil
+	n := copy(p, "abcdef"[offset:])
+	if int(offset)+n == 6 {
+		return n, io.EOF
+	}
+	return n, nil
 }
-
-func TestNFSRangeOpenOnlyResolvesEachRequestedPathOnce(t *testing.T) {
-	target := &testNFSReadTarget{}
-	mu := &sync.Mutex{}
-	for i := 0; i < 8192; i++ {
-		reader, err := openNFSReadFile(context.Background(), target, mu, "3d/sample.ply", false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		offset := int64(200 + i*56)
-		if pos, err := reader.Seek(offset, io.SeekStart); err != nil || pos != offset {
-			t.Fatalf("range seek = %d, %v", pos, err)
-		}
-		if err := reader.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if target.opens != 8192 || target.lookups != 8192 {
-		t.Fatalf("opens=%d lookups=%d; want 8192 each", target.opens, target.lookups)
-	}
-	for _, path := range target.paths {
-		if path != "3d/sample.ply" {
-			t.Fatalf("path changed to %q", path)
-		}
-	}
+func (s *testNFSReadTarget) ListHandle(context.Context, []byte) ([]*gonfs.EntryPlus, error) {
+	return nil, nil
 }
-
-func TestNFSContentOpenRetainsSizeForSeekEnd(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "content")
-	if err := os.WriteFile(path, []byte("abcdef"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
+func TestNFSRangeOpenBindsValidatedHandle(t *testing.T) {
+	target := &testNFSReadTarget{types: map[string]uint32{"3d": gonfs.NF3Dir, "3d/sample.ply": gonfs.NF3Reg}}
+	reader, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "3d/sample.ply")
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := &testNFSReadTarget{info: info}
-	reader, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "content", true)
+	// A path replacement after open must not cause another path lookup.
+	target.types["3d/sample.ply"] = gonfs.NF3Lnk
+	data, err := io.ReadAll(reader)
+	if err != nil || string(data) != "abcdef" {
+		t.Fatalf("read=%q,%v", data, err)
+	}
+	if target.lookups != 2 || len(target.readHandles) == 0 || target.readHandles[0] != "3d/sample.ply" {
+		t.Fatalf("unexpected I/O: %+v", target)
+	}
+}
+func TestNFSContentOpenRetainsSizeForSeekEnd(t *testing.T) {
+	target := &testNFSReadTarget{types: map[string]uint32{"content": gonfs.NF3Reg}}
+	reader, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "content")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reader.Close()
 	if pos, err := reader.Seek(-2, io.SeekEnd); err != nil || pos != 4 {
-		t.Fatalf("content seek end = %d, %v", pos, err)
+		t.Fatalf("seek=%d,%v", pos, err)
 	}
-	if target.lookups != 2 || target.opens != 1 {
-		t.Fatalf("content opens=%d lookups=%d", target.opens, target.lookups)
+	if target.lookups != 1 {
+		t.Fatalf("lookups=%d", target.lookups)
 	}
 }
-
+func TestNFSReadRejectsLinksSpecialUnknownAndPathAliases(t *testing.T) {
+	for _, kind := range []uint32{0, gonfs.NF3Lnk, gonfs.NF3FIFO, gonfs.NF3Sock, gonfs.NF3Blk, gonfs.NF3Chr} {
+		for _, ancestor := range []bool{false, true} {
+			target := &testNFSReadTarget{types: map[string]uint32{"dir": gonfs.NF3Dir, "dir/file": gonfs.NF3Reg}}
+			if ancestor {
+				target.types["dir"] = kind
+			} else {
+				target.types["dir/file"] = kind
+			}
+			if _, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "dir/file"); err == nil {
+				t.Fatalf("accepted kind=%d ancestor=%v", kind, ancestor)
+			}
+			if len(target.readHandles) != 0 {
+				t.Fatal("rejected path was read")
+			}
+		}
+	}
+	for _, name := range []string{"/file", "../file", "dir/../file", "dir/./file", "dir//file", "file/", "file\x00"} {
+		target := &testNFSReadTarget{types: map[string]uint32{"dir": gonfs.NF3Dir, "file": gonfs.NF3Reg}}
+		if _, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, name); err == nil {
+			t.Fatalf("accepted %q", name)
+		}
+	}
+	for _, name := range []string{" file ", " ", "%20", "中文"} {
+		target := &testNFSReadTarget{types: map[string]uint32{name: gonfs.NF3Reg}}
+		if _, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, name); err != nil {
+			t.Fatalf("rejected exact name %q: %v", name, err)
+		}
+	}
+}
 func TestNFSOpenCancellationAndErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	target := &testNFSReadTarget{}
-	if _, err := openNFSReadFile(ctx, target, &sync.Mutex{}, "content", false); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled open = %v", err)
+	if _, err := openNFSReadFile(ctx, target, &sync.Mutex{}, "content"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-	if target.opens != 0 || target.lookups != 0 {
-		t.Fatal("canceled open performed remote work")
+	if target.lookups != 0 {
+		t.Fatal("canceled open did I/O")
 	}
 	denied := errors.New("access denied")
-	target.openErr = denied
-	if _, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "content", false); !errors.Is(err, denied) {
-		t.Fatalf("open error lost: %v", err)
+	target.lookupErr = denied
+	if _, err := openNFSReadFile(context.Background(), target, &sync.Mutex{}, "content"); !errors.Is(err, denied) {
+		t.Fatal(err)
 	}
 }
 

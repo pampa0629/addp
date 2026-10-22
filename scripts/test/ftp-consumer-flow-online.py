@@ -651,6 +651,8 @@ def verify_denied_generation(client, report, kind, reason):
 
 
 def owned_ftp_fixture():
+    if os.environ.get("ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE", "ftp") == "nfs":
+        return import_module("scripts.test.online-file-model-nfs-fixture").owned_root()
     root = Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR'))
     require(not root.is_symlink() and root.resolve() == Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR')).resolve()
             and root.is_dir() and not root.stat().st_mode & 0o077,
@@ -933,19 +935,20 @@ def prepare_models(items, engine_id, samples):
     return result
 
 
-def run(client, tenant_id, engine_id, samples, model_samples, timeout):
+def run(client, tenant_id, engine_id, samples, model_samples, timeout, source_type="ftp"):
+    require(source_type in {"ftp", "nfs"}, "unadmitted file model source")
     require(tenant_id > 1, 'FTP Online requires a nondefault disposable Tenant')
     API.validate_user_identity(client, tenant_id, PERMISSIONS)
     API.wait_manager_read_boundary(client, engine_id, time.monotonic() + min(timeout, 120))
     context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
     selectors = client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload
     selected = [entry for entry in selectors if entry.get('id') == engine_id]
-    require(len(selected) == 1 and selected[0].get('engine_type') == 'ftp' and 'connection_info' not in selected[0],
+    require(len(selected) == 1 and selected[0].get('engine_type') == source_type and 'connection_info' not in selected[0],
             'FTP must be in the ordinary User catalog without credentials')
     capabilities = selected[0].get('capabilities', {})
     store = capabilities.get('storage', {}).get('store', {})
     require(capabilities.get('engine_family') == 'file' and store.get('stream_read') is True and
-            store.get('range_read') is True and not store.get('stream_write') and not store.get('delete'),
+            store.get('range_read') is True and (source_type == 'nfs' or (not store.get('stream_write') and not store.get('delete'))),
             'FTP must declare only the admitted read capabilities')
     endpoint = f'/api/v1/system/engines/{engine_id}/catalog/children'
     roots = client.request('POST', endpoint, (200,), {'path': {'version': 'catalog.path/v1', 'segments': []}}).payload['nodes']
@@ -980,7 +983,7 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout):
             'FTP acceptance requires all three formats')
     return {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'), 'engine_id': engine_id,
             'tenant_id': tenant_id, 'principal_id': str(context['principal']['id']),
-            'scan_execution_id': execution_id, 'model_scan_execution_id': model_scan, 'samples': result,
+            'source_engine_type': source_type, 'scan_execution_id': execution_id, 'model_scan_execution_id': model_scan, 'samples': result,
             'models': prepare_models(items, engine_id, model_samples)}
 
 
@@ -1099,15 +1102,8 @@ def save_completed_phase(report, phase):
         json.dumps({'completed_phase': phase, 'observations': report}, ensure_ascii=False, indent=2))
 
 
-def main():
-    require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1', 'FTP suite requires the Hosted Online entry')
-    tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
-    engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_FTP_ENGINE_ID'), 'engine')
-    timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
-    samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-samples.json').read_text())
-    model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
-    client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
-    report = run(client, tenant, engine, samples, model_samples, timeout)
+def run_profile(client, tenant, engine, samples, model_samples, timeout, source_type):
+    report = run(client, tenant, engine, samples, model_samples, timeout, source_type)
     report['ifc_product_profile'] = verify_ifc_product_profile(Path(__file__).resolve().parents[2],
         Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')))
     save_completed_phase(report, 'source_facts_and_ifc_profile')
@@ -1145,7 +1141,33 @@ def main():
     report['deleted_models'] = delete_owned_models(client, report)
     save_completed_phase(report, 'model_deletion')
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+def main():
+    require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1', 'FTP suite requires the Hosted Online entry')
+    tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
+    engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_FTP_ENGINE_ID'), 'engine')
+    timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
+    samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-samples.json').read_text())
+    model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
+    client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
+    root_artifacts = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+    report = run_profile(client, tenant, engine, samples, model_samples, timeout, 'ftp')
+    nfs_engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_NFS_ENGINE_ID'), 'NFS engine')
+    require(nfs_engine != engine, 'FTP and NFS must use distinct actual Engines')
+    nfs_models = json.loads((Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR')) / 'nfs-model-samples.json').read_text())
+    nfs_artifacts = root_artifacts / 'nfs'
+    nfs_artifacts.mkdir()
+    try:
+        os.environ['ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE'] = 'nfs'
+        os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(nfs_artifacts)
+        report['nfs_profile'] = run_profile(client, tenant, nfs_engine, samples, nfs_models, timeout, 'nfs')
+    finally:
+        os.environ.pop('ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE', None)
+        os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(root_artifacts)
+    (root_artifacts / 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
 
 
 if __name__ == '__main__':

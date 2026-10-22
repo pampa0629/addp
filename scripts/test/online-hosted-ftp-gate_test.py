@@ -19,6 +19,15 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
             with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('ftp-fixture:'+sys.argv[1]+'\\n')
             if os.environ.get('ADDP_TEST_FIXTURE_FAIL')==sys.argv[1]:sys.exit(1)
         ''')
+        self.host._write_repository_script('scripts/test/online-file-model-nfs-fixture.py', """
+            import os,sys
+            from pathlib import Path
+            action=sys.argv[1]
+            with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('nfs-fixture:'+action+'\\n')
+            if action=='start':
+                Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'ftp-root').write_text('/tmp/owned-nfs-fixture')
+            if os.environ.get('ADDP_TEST_NFS_FIXTURE_FAIL')==action:sys.exit(1)
+        """)
         # Retain the shared identity fixture while enforcing the existing
         # System-owned readiness observation before any consumer is exported.
         identity=(self.host.bin/'go').read_text()
@@ -29,7 +38,10 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
         self.host._executable('make','''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
-            [ "$ADDP_ONLINE_CONSUMER_ENGINE_ID" = 17 ] &&
+            if [ "$1" = test-common-nfs-integration ]; then
+              [ -n "$ADDP_NFS_TEST_EXPORT" ] && [ "${ADDP_TEST_NFS_PROTOCOL_FAIL:-0}" != 1 ]; exit $?
+            fi
+            [ "${ADDP_ONLINE_CONSUMER_ENGINE_ID:-17}" = 17 ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
@@ -77,11 +89,11 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
         trace=self.host.trace.read_text()
         order=['docker-run:addp-ftp-online-registry','build:','infra-up','ftp-fixture:start','start:-security','start:-meta','start:-manager','docker-run:addp-ftp-model3d-runtime','--suite ftp-consumer-flow',
             '--wait-protection-owners manager',
-            'register:ftp-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
+            'register:ftp-engine.json','register:ftp-nfs-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
             'application-stop','docker-rm:addp-ftp-model3d-runtime','ftp-fixture:stop','docker-rm:addp-ftp-online-registry','infra-down']
         positions=[trace.index(step) for step in order]
         self.assertEqual(positions,sorted(positions))
-        self.assertEqual(trace.count('register:'),1)
+        self.assertEqual(trace.count('register:'),2)
         self.assertNotIn('start:-transfer',trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())

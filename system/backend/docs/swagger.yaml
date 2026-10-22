@@ -6106,7 +6106,7 @@ paths:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 签发 Manager FTP 模型 GLB 执行授权 | Issue Manager FTP model GLB execution
+      summary: 签发 Manager FTP/NFS 模型 GLB 执行授权 | Issue Manager FTP/NFS model GLB execution
         authorization
       tags:
       - 执行授权 | Execution Authorization
@@ -6421,9 +6421,9 @@ paths:
         当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted
         成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。Manager 必须提供 Provider 证明的完整读取集合、完成本地 Security 保护并执行同一 PreparedQuery；本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. Manager must supply the Provider-proven complete read set, apply local Security protection and execute the same PreparedQuery. This endpoint accesses neither the source nor Catalog
       parameters:
-      - description: 1 至 200 个完整读取目标；受管 FTP 模型结果须提交同次 expected_source 且仅限普通 User，不支持
-          query 参数 | 1 to 200 complete read targets; managed FTP model results require
-          same-decision expected_source and ordinary User; no query parameters
+      - description: 1 至 200 个完整读取目标；受管 FTP/NFS 模型结果须提交同次 expected_source 且仅限普通 User，不支持
+          query 参数 | 1 to 200 complete read targets; managed FTP/NFS model results
+          require same-decision expected_source and ordinary User; no query parameters
         in: body
         name: request
         required: true
@@ -8435,10 +8435,10 @@ paths:
       consumes:
       - application/json
       description: 仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照
-        FTP 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine
-        execution permission. Verify the actual running attempt, lease, configuration,
+        FTP/NFS 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with
+        machine execution permission. Verify the actual running attempt, lease, configuration,
         task and engine versions, complete file composition and current source rules.
-        Return the same-snapshot FTP connection for this guarded source I/O only;
+        Return the same-snapshot FTP/NFS connection for this guarded source I/O only;
         never cache or persist
       parameters:
       - description: 规范正整数授权ID | Canonical positive authorization ID
@@ -8488,8 +8488,8 @@ paths:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 复核 Manager FTP 模型执行的当前完整来源权限 | Recheck current complete source permissions
-        for Manager FTP model execution
+      summary: 复核 Manager FTP/NFS 模型执行的当前完整来源权限 | Recheck current complete source
+        permissions for Manager FTP/NFS model execution
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission

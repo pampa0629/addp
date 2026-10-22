@@ -19,11 +19,11 @@ import (
 	managerModels "github.com/addp/manager/internal/models"
 )
 
-// withFTPModel3DSource is the source I/O adapter for the System-bound Manager
+// withFileModel3DSource is the source I/O adapter for the System-bound Manager
 // authorization object. It has no directory enumeration or alternate locator.
-func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, req Model3DGLBExecutionRequest, engine *commonModels.Engine, consume func(context.Context, workflowaccess.Source, commonModels.JSONMap) error) error {
+func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, req Model3DGLBExecutionRequest, engine *commonModels.Engine, consume func(context.Context, workflowaccess.Source, commonModels.JSONMap) error) error {
 	auth := req.SourceAuthorization
-	if e == nil || req.Task == nil || req.Config.ConfigVersion != managerModels.Model3DGLBFTPConfigVersion || auth == nil || req.inputOwner == nil || consume == nil || engine == nil || engine.EngineType != "ftp" || engine.ID != req.Config.Source.SourceEngineID || engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
+	if e == nil || req.Task == nil || req.Config.ConfigVersion != managerModels.Model3DGLBFileConfigVersion || auth == nil || req.inputOwner == nil || consume == nil || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.ID != req.Config.Source.SourceEngineID || engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if err := auth.ValidateConversion(req.Config); err != nil {
@@ -57,18 +57,18 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 	}
 	factsProvider, ok := registered.(plugin.EngineCatalogFactsProvider)
 	if !ok {
-		return errors.New("FTP model input requires exact file facts")
+		return errors.New("file model input requires exact file facts")
 	}
 	readerProvider, ok := registered.(plugin.ContentReadableProvider)
 	if !ok {
-		return errors.New("FTP model input requires content reads")
+		return errors.New("file model input requires content reads")
 	}
 	currentInfo := func(ctx context.Context, target plugin.EngineCatalogPath) (plugin.ConnectionInfo, error) {
 		current, err := auth.BeforeSourceRead(ctx, target)
 		if err != nil {
 			return nil, err
 		}
-		if current == nil || current.ID != engine.ID || current.EngineType != "ftp" || current.Version <= 0 || engineaccess.EnsureAvailable(current) != nil || current.TenantID == nil || *current.TenantID != req.Task.TenantID {
+		if current == nil || current.ID != engine.ID || current.EngineType != engine.EngineType || current.Version <= 0 || engineaccess.EnsureAvailable(current) != nil || current.TenantID == nil || *current.TenantID != req.Task.TenantID {
 			return nil, ErrModel3DGLBSourceAuthorizationRequired
 		}
 		return plugin.ConnectionInfo(current.ConnectionInfo), nil
@@ -80,10 +80,10 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 		}
 		facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, info, target, plugin.EngineCatalogFactsOptions{})
 		if err != nil {
-			return 0, fmt.Errorf("inspect exact FTP model input: %w", err)
+			return 0, fmt.Errorf("inspect exact file model input: %w", err)
 		}
 		if facts == nil || facts.Kind != plugin.EngineCatalogKindFile || !reflect.DeepEqual(facts.Path, target) || facts.Storage == nil || facts.Storage.SizeBytes == nil || facts.Storage.Path != target.StringPath() || *facts.Storage.SizeBytes <= 0 || *facts.Storage.SizeBytes == math.MaxInt64 {
-			return 0, errors.New("FTP model input facts do not describe a nonempty authorized file")
+			return 0, errors.New("file model input facts do not describe a nonempty authorized file")
 		}
 		return *facts.Storage.SizeBytes, nil
 	}
@@ -100,7 +100,7 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 			return nil, err
 		}
 		if stream == nil {
-			return nil, errors.New("FTP model input reader is missing")
+			return nil, errors.New("file model input reader is missing")
 		}
 		// Recheck after opening the native stream, immediately before staging can
 		// write its contents to Infra. A rejected stream is always closed.
@@ -140,7 +140,7 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 		}
 		name := strings.Join(names, "/")
 		if !validModel3DStagingPath(name) {
-			return "", errors.New("FTP model input has an invalid relative path")
+			return "", errors.New("file model input has an invalid relative path")
 		}
 		return name, nil
 	}
@@ -187,6 +187,6 @@ func (e *ManagerModel3DGLBExecutor) withFTPModel3DSource(ctx context.Context, re
 		if err := auth.Checkpoint(ctx); err != nil {
 			return err
 		}
-		return consume(ctx, source, commonModels.JSONMap{"engine_id": engine.ID, "engine_type": "ftp", "access_method": workflowaccess.MethodObjectStore, "item_locator": req.Config.Source.ItemLocator, "file_count": len(files)})
+		return consume(ctx, source, commonModels.JSONMap{"engine_id": engine.ID, "engine_type": engine.EngineType, "access_method": workflowaccess.MethodObjectStore, "item_locator": req.Config.Source.ItemLocator, "file_count": len(files)})
 	})
 }

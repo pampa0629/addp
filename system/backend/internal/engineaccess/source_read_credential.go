@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"context"
+	commonexecution "github.com/addp/common/execution"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
@@ -73,7 +74,7 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 			if err != nil {
 				return err
 			}
-			if engine.EngineType != "ftp" || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
+			if !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
 				return commonapi.ErrForbidden
 			}
 		}

@@ -23,7 +23,7 @@ import (
 // Reuses the formal file Grant fixture and current User session. Meta and the
 // connection decoder are controlled projections, not physical FTP content I/O.
 func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Service, tenantID int64, user userProvenance, credential string, operator Actor, engineID uint, facts authorizationfacts.AuthorizationFacts) {
-	t.Run("Manager FTP model source execution authorization", func(t *testing.T) {
+	t.Run("Manager file model source execution authorization", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 		defer cancel()
 		repo := iam.NewRepository(db)

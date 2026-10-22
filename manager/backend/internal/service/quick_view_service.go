@@ -1232,6 +1232,9 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 	if err != nil {
 		return err
 	}
+	if readyGLB != nil && managedModel3DFileSource(engineType, model3D.Format) && !repository.Model3DGLBUsesExecutionOutput(readyGLB) {
+		readyGLB = nil
+	}
 	if readyGLB != nil {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable

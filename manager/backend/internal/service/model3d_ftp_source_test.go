@@ -18,14 +18,14 @@ func TestModel3DFTPConfigCannotFallThroughAfterEngineTypeChange(t *testing.T) {
 		authorization             bool
 	}{
 		{"unknown config", "model3d-glb-ftp-config/other", "nfs", 0, false},
-		{"frozen FTP changed to NFS", models.Model3DGLBFTPConfigVersion, "nfs", 1, false},
-		{"frozen FTP changed to MinIO", models.Model3DGLBFTPConfigVersion, "minio", 1, false},
+		{"frozen FTP changed to NFS", models.Model3DGLBFileConfigVersion, "nfs", 1, false},
+		{"frozen FTP changed to MinIO", models.Model3DGLBFileConfigVersion, "minio", 1, false},
 		{"orphan FTP authorization changed to NFS", "", "nfs", 1, true},
 		{"noncanonical uppercase FTP", "", "FTP", 1, false},
 		{"noncanonical padded FTP", "", " ftp ", 1, false},
 		{"missing engine type", "", "", 1, false},
 		{"real FTP missing marker", "", "ftp", 1, false},
-		{"real FTP missing authorization", models.Model3DGLBFTPConfigVersion, "ftp", 1, false},
+		{"real FTP missing authorization", models.Model3DGLBFileConfigVersion, "ftp", 1, false},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			lookups := 0

@@ -17,7 +17,7 @@ func TestFTPModelGLBQueueRequiresBoundCurrentAuthorization(t *testing.T) {
 			repo, item := pendingGLBAuthorizationFixture(t, db, now.Add(-3*time.Minute))
 			id := int64(51)
 			expires := now.Add(time.Minute)
-			config := commonModels.JSONMap{"config_version": models.Model3DGLBFTPConfigVersion}
+			config := commonModels.JSONMap{"config_version": models.Model3DGLBFileConfigVersion}
 			fields := map[string]interface{}{"execution_config": config, "execution_authorization_id": id, "authorization_expires_at": expires}
 			switch name {
 			case "unbound":

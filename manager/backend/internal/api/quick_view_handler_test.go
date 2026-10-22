@@ -42,7 +42,7 @@ func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
 		case "/api/v1/system/engines/26":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 26, "tenant_id": 7, "engine_type": "nfs", "lifecycle_state": "active", "connection_status": "online"})
 		case "/api/v1/meta/items/77":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 77, "engine_id": 26, "tenant_id": 7, "item_type": "file", "name": "building.ifc", "full_name": "models/building.ifc", "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "format": "ifc", "layout": "single"}, "storage": map[string]interface{}{"total_size": 1024}}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 77, "engine_id": 26, "tenant_id": 7, "item_type": "file", "name": "building.fbx", "full_name": "models/building.fbx", "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "format": "fbx", "layout": "single"}, "storage": map[string]interface{}{"total_size": 1024}}})
 		default:
 			t.Errorf("unexpected owner request: %s", r.URL.Path)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -55,7 +55,7 @@ func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
 	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
-	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.ifc?type=file&item_id=77","action":"generate_model_3d_glb"}`)
+	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.fbx?type=file&item_id=77","action":"generate_model_3d_glb"}`)
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -74,7 +74,7 @@ func TestQuickViewModel3DGLBActionRejectsMissingActorBeforeOwnerWork(t *testing.
 	handler := &QuickViewHandler{}
 	router := gin.New()
 	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
-	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.ifc?type=file&item_id=77","action":"generate_model_3d_glb"}`)
+	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.fbx?type=file&item_id=77","action":"generate_model_3d_glb"}`)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -141,8 +141,8 @@ func TestRebindManagedQuickViewTaskRejectsActiveBinding(t *testing.T) {
 		TenantID: 7, Name: "active", Enabled: true,
 		Config: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
-				"item_locator":     "addp://engine/26/path/models/building.ifc?type=file&item_id=77",
-				"source_engine_id": uint(26), "item_fingerprint": "active-fingerprint", "item_id": uint(77), "format": "ifc",
+				"item_locator":     "addp://engine/26/path/models/building.fbx?type=file&item_id=77",
+				"source_engine_id": uint(26), "item_fingerprint": "active-fingerprint", "item_id": uint(77), "format": "fbx",
 			},
 			"result": commonModels.JSONMap{},
 		},
@@ -169,8 +169,8 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
 	taskSvc := newGLBTaskServiceWithNFSFacts(repo)
-	locator := "addp://engine/26/path/models/building.ifc?type=file&item_id=77"
-	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.ifc")
+	locator := "addp://engine/26/path/models/building.fbx?type=file&item_id=77"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.fbx")
 	task := &models.Model3DGLBTask{
 		TenantID: 7,
 		Name:     "GLB quick-view action confirmation",
@@ -178,7 +178,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 		Config: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
 				"item_locator": locator, "source_engine_id": uint(26),
-				"item_fingerprint": fingerprint, "item_id": uint(77), "format": "ifc",
+				"item_fingerprint": fingerprint, "item_id": uint(77), "format": "fbx",
 			},
 			"result": commonModels.JSONMap{},
 		},
@@ -188,7 +188,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 	result := &models.Model3DGLB{
 		TenantID: 7, ItemFingerprint: fingerprint, TaskID: &task.ID,
-		Locator: locator, SourceEngineID: 26, SourceFormat: "ifc",
+		Locator: locator, SourceEngineID: 26, SourceFormat: "fbx",
 		StorageRef: "managed-result", Status: models.Model3DGLBStatusReady,
 		Metadata: commonModels.JSONMap{},
 	}
@@ -202,7 +202,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 	source := service.QuickViewSource{
 		EngineID: 26,
-		Model3D:  &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 1024},
+		Model3D:  &service.Model3DGLBSource{Format: "fbx", SourceSizeBytes: 1024},
 	}
 
 	ctx := commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "31", nil))
@@ -428,7 +428,7 @@ func TestQuickViewCapabilityJSONCarriesBackendStateControls(t *testing.T) {
 	capability := service.QuickViewCapability{
 		TenantID:          7,
 		ItemFingerprint:   "fp-ifc",
-		Locator:           "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10988",
+		Locator:           "addp://engine/26/path/3d/ifc/building.fbx?type=file&item_id=10988",
 		SourceKind:        service.QuickViewSourceKindModel3D,
 		CanUseQuickView:   false,
 		PreferredMode:     models.PreviewModeBasicPreview,
@@ -486,7 +486,7 @@ func TestModel3DGLBTaskConfigFromQuickViewUsesCapabilityIdentity(t *testing.T) {
 	capability := &service.QuickViewCapability{
 		TenantID:        7,
 		ItemFingerprint: "fp-ifc",
-		Locator:         "addp://engine/26/path/3d/ifc/building.ifc?type=file&item_id=10441",
+		Locator:         "addp://engine/26/path/3d/ifc/building.fbx?type=file&item_id=10441",
 		SourceKind:      service.QuickViewSourceKindModel3D,
 	}
 	source := service.QuickViewSource{
@@ -666,13 +666,13 @@ func TestQuickViewGeneratedConfigsAreAcceptedByOwningTaskServices(t *testing.T) 
 	})
 
 	t.Run("model 3d GLB", func(t *testing.T) {
-		locator := "addp://engine/26/path/3d/models/building.ifc?type=file&item_id=77"
+		locator := "addp://engine/26/path/3d/models/building.fbx?type=file&item_id=77"
 		config, err := model3DGLBTaskConfigFromQuickView(
 			&service.QuickViewCapability{
 				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindModel3D,
-				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "3d/models/building.ifc"),
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "3d/models/building.fbx"),
 			},
-			service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 4096}},
+			service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "fbx", SourceSizeBytes: 4096}},
 		)
 		if err != nil {
 			t.Fatalf("build config: %v", err)

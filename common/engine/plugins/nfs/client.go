@@ -21,6 +21,7 @@ type poolKey struct {
 type poolEntry struct {
 	mount     *gonfs.Mount
 	target    *gonfs.Target
+	reader    nfsReadProtocol
 	createdAt time.Time
 	mu        sync.Mutex
 }
@@ -54,7 +55,13 @@ func getOrCreateMount(server, exportPath string) (*poolEntry, error) {
 		return nil, err
 	}
 
+	reader, err := newNFSRPCReader(target)
+	if err != nil {
+		_ = mount.Close()
+		return nil, err
+	}
 	pool[key] = &poolEntry{
+		reader:    reader,
 		mount:     mount,
 		target:    target,
 		createdAt: time.Now(),

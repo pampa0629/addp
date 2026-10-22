@@ -11,7 +11,12 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-const ManagerModel3DConfigVersion = "model3d-glb-ftp-config/v1"
+const ManagerModel3DConfigVersion = "model3d-glb-file-config/v1"
+
+// ManagerModel3DSourceEngineType restricts the admitted file-source adapters.
+func ManagerModel3DSourceEngineType(engineType string) bool {
+	return engineType == "ftp" || engineType == "nfs"
+}
 
 // ManagerModel3DReadScope is a frozen boundary, not a credential or Allow.
 // System independently proves the pending config, engine and source rights.
@@ -23,7 +28,7 @@ type ManagerModel3DReadScope struct {
 	FileComposition  authorizationfacts.FileCompositionBoundary `json:"file_composition"`
 }
 
-var errManagerModel3DScope = errors.New("invalid frozen FTP model3d source scope")
+var errManagerModel3DScope = errors.New("invalid frozen file model3d source scope")
 
 // NewManagerModel3DReadScope binds every raw conversion value and verifies the
 // shared wrapper; private conversion options remain the Manager owner's facts.

@@ -41,7 +41,7 @@ func (s *Model3DGLBTaskService) CheckResultRead(ctx context.Context, result *mod
 	if err != nil {
 		return err
 	}
-	if engine.EngineType != "ftp" {
+	if !managedModel3DFileSource(engine.EngineType, result.SourceFormat) {
 		if repository.Model3DGLBUsesExecutionOutput(result) {
 			return ErrModel3DGLBSourceAuthorizationRequired
 		}

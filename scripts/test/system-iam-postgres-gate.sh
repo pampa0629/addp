@@ -33,7 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
-            echo "FTP file composition Grant/current read: --package engineaccess --test file-composition" >&2
+            echo "FTP/NFS file composition Grant/current read: --package engineaccess --test file-composition" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
@@ -200,7 +200,7 @@ case "$TEST_FILTER" in
         ;;
     manager-source)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-source requires --package engineaccess" >&2; exit 2; }
-        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(current_complete_source_read_rules|file_composition_source_grants)$/^(Manager_complete_source_execution_authorization|Manager_FTP_model_source_execution_authorization)$'
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(current_complete_source_read_rules|file_composition_source_grants)$/^(Manager_complete_source_execution_authorization|ftp|nfs)$'
         ;;
     engine-deployments)
         case "$PACKAGE_FILTER" in

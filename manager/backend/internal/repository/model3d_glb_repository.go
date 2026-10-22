@@ -90,7 +90,7 @@ func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID
 			return err
 		}
 		var active int64
-		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'config_version' = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, *commonExecution.NewSourceTaskIDFromUint(id), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, models.Model3DGLBFTPConfigVersion).Count(&active).Error; err != nil {
+		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'config_version' = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, *commonExecution.NewSourceTaskIDFromUint(id), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, models.Model3DGLBFileConfigVersion).Count(&active).Error; err != nil {
 			return err
 		}
 		if active != 0 {
@@ -122,7 +122,7 @@ func (r *Model3DGLBRepository) ClaimExecution(
 			if err := verifyModel3DGLBTaskSnapshot(ctx, tx, snapshot); err != nil {
 				return err
 			}
-			if execution.ExecutionConfig["config_version"] == models.Model3DGLBFTPConfigVersion {
+			if execution.ExecutionConfig["config_version"] == models.Model3DGLBFileConfigVersion {
 				source, _ := jsonMap(execution.ExecutionConfig["source"])
 				if task.SemanticKey == "" || firstString(source, "item_fingerprint") != task.SemanticKey {
 					return commonAPI.ErrConflict

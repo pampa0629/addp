@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	Model3DGLBFTPConfigVersion = commonExecution.ManagerModel3DConfigVersion
-	Model3DGLBStatusBuilding   = "building"
-	Model3DGLBStatusReady      = "ready"
-	Model3DGLBStatusFailed     = "failed"
-	Model3DGLBStatusDeleted    = "deleted"
+	Model3DGLBFileConfigVersion = commonExecution.ManagerModel3DConfigVersion
+	Model3DGLBStatusBuilding    = "building"
+	Model3DGLBStatusReady       = "ready"
+	Model3DGLBStatusFailed      = "failed"
+	Model3DGLBStatusDeleted     = "deleted"
 )
 
 type Model3DGLBTask = TaskDefinition

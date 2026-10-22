@@ -1,5 +1,7 @@
 import { buildLocator } from '@common-ui/types/resourceLocator'
 
+const isFileModelEngine = kind => kind === 'ftp' || kind === 'nfs'
+
 // Shared ResourceTreePicker currently models Engine IDs as safe JS numbers.
 // Reject an unrepresentable ID before browsing; never select a rounded target.
 export function safePickerEngineID(id) {
@@ -18,14 +20,14 @@ export function isApprovalTable(node) {
 
 export function isApprovalSelection(node) {
   const entry = node?.metadata?.catalog_entry
-  return isApprovalTarget(node) || (node?.metadata?.approval_engine_type !== 'ftp' && entry?.role === 'branch' && entry.path?.segments?.length > 1)
+  return isApprovalTarget(node) || (!isFileModelEngine(node?.metadata?.approval_engine_type) && entry?.role === 'branch' && entry.path?.segments?.length > 1)
 }
 
 export const isApprovalTarget = node => isApprovalTable(node) || isApprovalModel(node)
 
 export function isApprovalModel(node) {
   const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
-  return node?.metadata?.approval_engine_type === 'ftp' && entry?.role === 'leaf' && entry.term === 'file' && entry.kind === 'file' &&
+  return isFileModelEngine(node?.metadata?.approval_engine_type) && entry?.role === 'leaf' && entry.term === 'file' && entry.kind === 'file' &&
     entry.path?.version === 'catalog.path/v1' && leaf?.term === 'file' && leaf.kind === 'file' && /\.(ifc|3ds)$/i.test(leaf.name)
 }
 

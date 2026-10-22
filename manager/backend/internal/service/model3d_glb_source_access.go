@@ -46,7 +46,7 @@ func newModel3DGLBSourceAuthorization(ctx context.Context, client *commonClient.
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	lease, _ := commonExecution.LeaseFromContext(ctx)
-	conversion, err := decodeFTPModel3DGLBConversion(raw)
+	conversion, err := decodeFileModel3DGLBConversion(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (a *Model3DGLBSourceAuthorization) consume(ctx context.Context) (*commonMod
 	}
 	engine := observation.Engine
 	primary, err := a.scope.FileComposition.PrimaryTarget()
-	if err != nil || engine == nil || engine.EngineType != "ftp" || engine.ID != primary.EngineID || engine.TenantID == nil || int(*engine.TenantID) != lease.TenantID ||
+	if err != nil || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.ID != primary.EngineID || engine.TenantID == nil || int(*engine.TenantID) != lease.TenantID ||
 		strconv.FormatInt(engine.Version, 10) != a.scope.EngineVersion || engineaccess.EnsureAvailable(engine) != nil {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
