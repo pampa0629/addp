@@ -1189,7 +1189,7 @@
           "pending": "尚未核对"
         },
         "addSelection": "加入本次授权清单",
-        "snapshotOnly": "普通表可逐项选择或从 schema 展开，最多 200 项，不包含视图和未来新增表。FTP／NFS 仅选择 IFC／3DS 模型主文件，核对完整组成后整体授权；目录仅供浏览，不单独授权纹理。",
+        "snapshotOnly": "普通表可逐项选择或从 schema 展开，最多 200 项，不包含视图和未来新增表。FTP／NFS 支持 IFC／3DS／DAE 模型主文件，MinIO 支持 IFC／3DS 模型主对象。核对完整组成后整体授权；目录、桶和前缀仅供浏览，不单独授权纹理。",
         "remove": "移除",
         "newTarget": "尚未选择批准方式",
         "catalogUnavailable": "业务批准需要可用的 Catalog 及条目读取权限；当前不能创建业务批准安排。已有业务批准不会自动改为直接批准。",
@@ -1213,7 +1213,7 @@
         "mode": "批准方式",
         "version": "版本",
         "reason": "配置原因",
-        "pickTable": "选择普通表或 FTP／NFS 模型数据项",
+        "pickTable": "选择普通表或已支持的模型数据项",
         "selectMode": "请选择批准方式",
         "saveMode": "保存批准方式",
         "tableOnly": "浏览资源不代表读取获权。仅办理基础识别完整的数据项，不包括整个库、目录或未来新增的数据项。",
