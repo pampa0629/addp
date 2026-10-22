@@ -125,6 +125,14 @@
 			>
 				{{ t('system.engine.actions.restore') }}
 			</el-button>
+            <el-button
+              v-else-if="row.engine_origin === 'extension'"
+              size="small"
+              type="warning"
+              data-testid="engine-disable-open"
+              :disabled="!canDisableEngine(row)"
+              @click="openDisableEngine(row)"
+            >{{ t('system.engine.actions.disable') }}</el-button>
 			<el-button
 				v-else
               size="small"
@@ -161,6 +169,29 @@
     </el-card>
 
     <!-- 新增/编辑对话框 -->
+    <el-dialog
+      v-model="disableVisible"
+      :title="t('system.engine.disable.title')"
+      width="min(520px, calc(100vw - 32px))"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!disableBusy"
+      :show-close="!disableBusy"
+      data-testid="engine-disable-dialog"
+    >
+      <p>{{ t('system.engine.disable.confirm', { name: disableTarget?.name }) }}</p>
+      <p>{{ t('system.engine.disable.effect') }}</p>
+      <el-alert v-if="disableError" :title="t(`system.engine.disable.${disableError}`)" type="warning" :closable="false" />
+      <template #footer>
+        <el-button :disabled="disableBusy" @click="disableVisible = false">{{ t('system.engine.actions.cancel') }}</el-button>
+        <el-button v-if="disableNeedsRefresh" data-testid="engine-disable-refresh" :loading="disableBusy" @click="refreshDisableEngine">
+          {{ t('system.engine.disable.refresh') }}
+        </el-button>
+        <el-button type="warning" data-testid="engine-disable-confirm" :loading="disableBusy" :disabled="disableNeedsRefresh || !canDisableEngine(disableTarget)" @click="submitDisableEngine">
+          {{ t('system.engine.actions.disable') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
@@ -738,6 +769,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
 import { createEngineFilters, filterEngineList, getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
+import { canDisableExtensionEngine, disabledEngineReadbackMatches } from '../utils/engineLifecycle'
 import { hasEngineAddressChanged, switchStorageEngineType } from '../utils/engineForm'
 import { compareEngineTypePopularity } from '../utils/engineTypeOrdering'
 import { useAuthStore } from '../store/auth'
@@ -755,7 +787,7 @@ const router = useRouter()
 
 const allEngines = ref([])
 const loading = ref(false)
-let engineListRequestInFlight = false
+let engineListRequestInFlight = null
 const currentPage = ref(1)
 const pageSize = ref(10)
 const engineFilters = ref(createEngineFilters())
@@ -767,6 +799,12 @@ watch([total, pageSize], () => {
   const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value))
   currentPage.value = Math.min(currentPage.value, lastPage)
 })
+const disableVisible = ref(false)
+const disableTarget = ref(null)
+const disableBusy = ref(false)
+const disableNeedsRefresh = ref(false)
+const disableError = ref('')
+
 const deletionDialogVisible = ref(false)
 const deletionEngine = ref(null)
 const deletionAssessment = ref(null)
@@ -1297,25 +1335,96 @@ const syncSelectedEngineProjection = (response) => {
   selectedEngine.value = { ...selectedEngine.value, ...latestProjection }
 }
 
-const loadEngines = async ({ silent = false } = {}) => {
-  if (engineListRequestInFlight) return false
-  engineListRequestInFlight = true
+const loadEngines = ({ silent = false } = {}) => {
+  if (engineListRequestInFlight) return Promise.resolve(false)
   if (!silent) loading.value = true
-  try {
-    const response = await enginesAPI.list()
-    if (!Array.isArray(response)) {
-      throw new TypeError('System engine list response must be an array')
+  engineListRequestInFlight = (async () => {
+    try {
+      const response = await enginesAPI.list()
+      if (!Array.isArray(response)) throw new TypeError('System engine list response must be an array')
+      allEngines.value = response
+      syncSelectedEngineProjection(response)
+      return true
+    } catch {
+      if (!silent) ElMessage.error(t('system.engine.msg.loadFailed'))
+      return false
+    } finally {
+      if (!silent) loading.value = false
+      engineListRequestInFlight = null
     }
-    allEngines.value = response
-    syncSelectedEngineProjection(response)
-    return true
-  } catch (error) {
-    if (!silent) ElMessage.error(t('system.engine.msg.loadFailed'))
-    console.error(error)
-    return false
+  })()
+  return engineListRequestInFlight
+}
+
+const canDisableEngine = engine => canDisableExtensionEngine(engine, authStore.hasPermission('system.engine.update'))
+
+const openDisableEngine = engine => {
+  if (!canDisableEngine(engine)) return
+  // Freeze the user's observed version; background polling cannot advance this baseline.
+  disableTarget.value = { id: engine.id, name: engine.name, version: engine.version, engine_origin: engine.engine_origin, lifecycle_state: engine.lifecycle_state }
+  disableError.value = ''
+  disableNeedsRefresh.value = false
+  disableVisible.value = true
+}
+
+const readDisableEngine = async () => {
+  // Drain any older poll before starting the canonical list readback.
+  if (engineListRequestInFlight) await engineListRequestInFlight
+  const [loaded, detail] = await Promise.all([loadEngines({ silent: true }), enginesAPI.getById(disableTarget.value.id)])
+  const listed = allEngines.value.find(engine => String(engine.id) === String(disableTarget.value.id))
+  if (!loaded || !detail || String(detail.id) !== String(disableTarget.value.id)) throw new Error('Engine readback failed')
+  return { detail, listed }
+}
+
+const completeDisableEngine = () => {
+  disableVisible.value = false
+  ElMessage.success(t('system.engine.disable.success'))
+}
+
+const refreshDisableEngine = async () => {
+  if (disableBusy.value) return
+  disableBusy.value = true
+  try {
+    const { detail, listed } = await readDisableEngine()
+    if (disabledEngineReadbackMatches(disableTarget.value, detail, listed)) {
+      completeDisableEngine()
+      return
+    }
+    if (!canDisableEngine(detail) || detail.version < disableTarget.value.version || !listed || listed.version !== detail.version || listed.lifecycle_state !== detail.lifecycle_state) throw new Error('Engine readback is not actionable')
+    // Only this explicit read establishes a new confirmation baseline.
+    disableTarget.value = { id: detail.id, name: detail.name, version: detail.version, engine_origin: detail.engine_origin, lifecycle_state: detail.lifecycle_state }
+    disableNeedsRefresh.value = false
+    disableError.value = ''
+  } catch {
+    disableNeedsRefresh.value = true
+    disableError.value = 'readFailed'
   } finally {
-    if (!silent) loading.value = false
-    engineListRequestInFlight = false
+    disableBusy.value = false
+  }
+}
+
+const submitDisableEngine = async () => {
+  if (disableBusy.value || disableNeedsRefresh.value || !canDisableEngine(disableTarget.value)) return
+  disableBusy.value = true
+  disableError.value = ''
+  // Any uncertain write outcome requires an explicit read, never an automatic retry.
+  disableNeedsRefresh.value = true
+  let written = false
+  try {
+    const target = disableTarget.value
+    const response = await enginesAPI.update(target.id, { version: target.version, lifecycle_state: 'disabled' })
+    written = true
+    if (!disabledEngineReadbackMatches(target, response, response) || response.version <= target.version) throw new Error('Invalid engine update response')
+    disableTarget.value = { ...target, version: response.version }
+    allEngines.value = allEngines.value.map(engine => String(engine.id) === String(target.id) ? { ...engine, version: response.version, lifecycle_state: response.lifecycle_state } : engine)
+    syncSelectedEngineProjection([response])
+    const { detail, listed } = await readDisableEngine()
+    if (!disabledEngineReadbackMatches({ ...target, version: response.version }, detail, listed)) throw new Error('Engine disable not confirmed')
+    completeDisableEngine()
+  } catch (error) {
+    disableError.value = written ? 'readFailed' : error.response?.data?.error_code === 'resource_version_conflict' ? 'conflict' : 'failed'
+  } finally {
+    disableBusy.value = false
   }
 }
 

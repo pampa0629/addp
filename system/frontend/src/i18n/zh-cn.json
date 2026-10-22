@@ -1299,7 +1299,8 @@
         "cleanupAndDelete": "清理并删除",
         "testConnection": "测试连接",
         "save": "保存",
-        "cancel": "取消"
+        "cancel": "取消",
+        "disable": "停用"
       },
       "dialog": {
         "add": "新建引擎",
@@ -1772,6 +1773,16 @@
       },
       "typeNames": {
         "highgo": "瀚高（HighGo）"
+      },
+      "disable": {
+        "title": "停用扩展引擎",
+        "confirm": "确认停用“{name}”？",
+        "effect": "停用后禁止新的绑定和执行，已有引用保留；此操作不会停止引擎进程。",
+        "refresh": "重新读取并核对",
+        "success": "引擎已停用，列表与详情已确认",
+        "conflict": "引擎已被修改，请重新读取并核对后再确认。",
+        "failed": "停用请求未确认，请重新读取并核对当前状态。",
+        "readFailed": "无法确认最新状态，请重新读取并核对。"
       }
     },
     "apiConsumer": {

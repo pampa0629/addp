@@ -477,6 +477,8 @@ frontend/src/
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 
+扩展引擎提供独立“停用”入口（含内置扩展引擎），只消费既有 `system.engine.update` 权限并提交观察到的 `version` 与 `lifecycle_state=disabled`；不开放名称、连接配置等登记字段编辑，不停止 Runtime 进程。版本冲突或请求结果不确定时保留确认框，禁止自动重试或补版本；操作者须显式重新读取并核对，再次确认。成功提示以列表及详情的只读读回均为停用为准，旧轮询先完成再读回，保留当前筛选。实际管理范围仍由后端校验。
+
 引擎管理筛选分为能力（存储／计算）、来源（通用／扩展）、注册方式（全部／注册／内置）和生命周期（启用／停用／清理中／已删除）四个独立维度。多选维度内取并集，维度间取交集，任一多选维度空选即无结果；能力以实例 `capabilities.storage/compute` 声明是否存在为准，同一实例可同时匹配两类，不按引擎名称或注册分组猜测。默认选择全部能力、全部来源、全部注册方式及除已删除以外的生命周期。首次加载、手动刷新、既有状态轮询及操作成功后的刷新均读取完整清单，保留当前筛选；筛选变更回到第一页，刷新后按筛选结果收敛页码，总数取筛选结果长度。共享 API 的后台过滤能力继续服务其他消费者，本页只使用上述固定读取范围。
 
 ### Service Runtime（Service Access Token + 精确 Permission）

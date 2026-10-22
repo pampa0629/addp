@@ -1299,7 +1299,8 @@
         "cleanupAndDelete": "Clean up and delete",
         "testConnection": "Test Connection",
         "save": "Save",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "disable": "Disable"
       },
       "dialog": {
         "add": "New Engine",
@@ -1772,6 +1773,16 @@
       },
       "typeNames": {
         "highgo": "HighGo"
+      },
+      "disable": {
+        "title": "Disable extension engine",
+        "confirm": "Disable “{name}”?",
+        "effect": "Disabling prevents new bindings and executions and preserves existing references. It does not stop the engine process.",
+        "refresh": "Reload and review",
+        "success": "Engine disabled; list and details verified",
+        "conflict": "The engine has changed. Reload and review before confirming again.",
+        "failed": "The disable request could not be confirmed. Reload and review its current state.",
+        "readFailed": "The latest state could not be verified. Reload and review."
       }
     },
     "apiConsumer": {
