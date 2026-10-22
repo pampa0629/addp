@@ -192,7 +192,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_six_saves_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_seven_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -231,11 +231,16 @@ def test_hosted_topology_physical_oracle_accepts_real_six_saves_and_rejects_corr
         {'id': 'gap', 'operator': 'check_polygon_gap', 'params': {'input_gdf': {'$ref': 'gap_input'}, 'coverage_gdf': {'$ref': 'gap_coverage'}}, 'depends_on': ['gap_input','gap_coverage']},
         {'id': 'save_gaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'gap'}, 'connection_info': connection, 'path': 'outputs/gaps.gpkg', 'mode': 'fail'}, 'depends_on': ['gap']},
     ])
+    tasks.extend([
+        {'id':'dangling_input','operator':'load','params':{'connection_info':connection,'path':'dangling-input.gpkg'},'depends_on':[]},
+        {'id':'dangling','operator':'check_dangling_points','params':{'input_gdf':{'$ref':'dangling_input'},'id_field':'route_key'},'depends_on':['dangling_input']},
+        {'id':'save_dangling','operator':'save','params':{'input_df':{'$ref':'dangling'},'connection_info':connection,'path':'outputs/dangling.gpkg','mode':'fail'},'depends_on':['dangling']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -321,6 +326,30 @@ def test_hosted_topology_physical_oracle_accepts_real_six_saves_and_rejects_corr
         feature.SetField('source_name','foreign-source');layer.SetFeature(feature);dataset=None
         with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
         path.write_bytes(original)
+    path=tmp_path/'outputs/dangling.gpkg';original=path.read_bytes()
+    for problem in ('source_id','fid_as_id','coordinate','tiny','count','duplicate','order','crs'):
+        dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0)
+        if problem=='crs':dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='count':layer.DeleteFeature(17)
+        elif problem in ('duplicate','order'):
+            first,second=layer.GetFeature(1),layer.GetFeature(2);shape=first.GetGeometryRef().Clone()
+            if problem=='order':first.SetGeometry(second.GetGeometryRef());assert layer.SetFeature(first)==0
+            second.SetGeometry(shape);assert layer.SetFeature(second)==0
+        else:
+            feature=layer.GetFeature(14 if problem=='tiny' else 1)
+            if problem in ('source_id','fid_as_id'):feature.SetField('source_id','闭环' if problem=='source_id' else '1')
+            else:
+                geometry=feature.GetGeometryRef();point=ogr.Geometry(ogr.wkbPoint)
+                point.AddPoint_2D(251 if problem=='tiny' else geometry.GetX()+.25,geometry.GetY());feature.SetGeometry(point)
+            assert layer.SetFeature(feature)==0
+        dataset=None
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+        path.write_bytes(original)
+    path=tmp_path/'dangling-input.gpkg';original=path.read_bytes()
+    dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0);feature=layer.GetFeature(1)
+    feature.SetField('route_key','foreign-source');assert layer.SetFeature(feature)==0;dataset=None
+    with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+    path.write_bytes(original)
     baseline = fixture.worker('verify', tmp_path)
     failed_tasks = [task.copy() for task in tasks if task['id'] in ('snap_input','snap_reference','snap','save_snapped')]
     failed_tasks[2]['params']['tolerance'] = 1.25

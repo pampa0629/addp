@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'dangling.gpkg':
+        return m.dangling_expected_features()
     if name == 'gaps.gpkg':
         return m.gap_expected_features()
     if name == 'overlaps.gpkg':
@@ -162,3 +164,24 @@ class TopologyFixtureTest(unittest.TestCase):
             for ring in row['geometry']['coordinates']:
                 vertices=ring[:-1];vertices=list(reversed(vertices[1:]+vertices[:1]));ring[:]=vertices+[vertices[0]]
         m.validate_gap_features(rows)
+
+
+    def test_dangling_oracle_checks_original_ids_order_duplicates_and_exact_points(self):
+        original=m.dangling_expected_features();self.assertEqual(len(original),17)
+        m.validate_dangling_features(original);m.validate_dangling_features(m.dangling_source_features(),source=True)
+        self.assertEqual([row['properties']['source_id'] for row in original].count('重甲'),2)
+        self.assertEqual([row['properties']['source_id'] for row in original].count('重乙'),2)
+        for mutate in (
+            lambda rows:rows.pop(),lambda rows:rows.reverse(),
+            lambda rows:rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows:rows[0]['properties'].update(source_id=1),
+            lambda rows:rows[0]['properties'].update(source_id='闭环'),
+            lambda rows:rows[0]['properties'].update(note='copied'),
+            lambda rows:rows[0]['geometry'].update(type='MultiPoint'),
+            lambda rows:rows[0]['geometry']['coordinates'].append(1),
+            lambda rows:rows[0]['geometry']['coordinates'].__setitem__(0,True),
+            lambda rows:rows[0]['geometry']['coordinates'].__setitem__(0,float('nan')),
+            lambda rows:rows[13]['geometry']['coordinates'].__setitem__(0,251),
+        ):
+            rows=copy.deepcopy(original);mutate(rows)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_dangling_features(rows)

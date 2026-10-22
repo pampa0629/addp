@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned Hosted topology, repair, snapping, overlap and gap physical oracles."""
+"""Owned Hosted topology, repair, snapping, polygon and endpoint physical oracles."""
 import hashlib
 import json
 import math
@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,82 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def dangling_source_features():
+    rows = [('孤线',[[200,0],[202,0]]), ('链甲',[[210,0],[211,0]]), ('链乙',[[211,0],[212,0]]),
+            ('干线',[[220,0],[224,0]]), ('支线',[[222,0],[222,2]]),
+            ('闭环',rectangle(230,0,232,2)), ('重甲',[[240,0],[242,0]]), ('重乙',[[242,0],[240,0]]),
+            ('微甲',[[250,0],[251,0]]), ('微乙',[[251+2**-40,0],[252,0]]),
+            ('多部',[[[260,0],[261,0]],[[261,0],[262,0]],[[261,0],[260,0]]]),
+            ('叠内',[[240.5,0],[241.5,0]])]
+    return [{'properties':{'route_key':identifier,'note':f'original-{index}'},
+             'geometry':{'type':'MultiLineString' if identifier=='多部' else 'LineString','coordinates':coordinates}}
+            for index,(identifier,coordinates) in enumerate(rows)]
+
+
+def dangling_expected_features():
+    # Explicit endpoints with original IDs; do not compute expected topology.
+    rows = [('孤线',[(200,0),(202,0)]), ('链甲',[(210,0)]), ('链乙',[(212,0)]),
+            ('干线',[(220,0),(224,0)]), ('支线',[(222,2)]),
+            ('重甲',[(240,0),(242,0)]), ('重乙',[(240,0),(242,0)]),
+            ('微甲',[(250,0),(251,0)]), ('微乙',[(251+2**-40,0),(252,0)]), ('多部',[(260,0),(262,0)])]
+    return [{'properties':{'source_id':identifier},'geometry':{'type':'Point','coordinates':list(point)}}
+            for identifier,points in rows for point in points]
+
+
+def validate_dangling_features(features, source=False):
+    expected=dangling_source_features() if source else dangling_expected_features()
+    if len(features)!=len(expected):raise FixtureError('dangling source/result count differs')
+    for actual,wanted in zip(features,expected):
+        if actual!=wanted:raise FixtureError('dangling original source IDs, order, attributes or exact XY differ')
+        geometry=actual['geometry'];kind=geometry.get('type');coordinates=geometry.get('coordinates')
+        if kind=='Point':canonical([coordinates])
+        elif kind=='LineString':canonical(coordinates)
+        elif kind=='MultiLineString':
+            for part in coordinates:canonical(part)
+        else:raise FixtureError('dangling geometry type differs')
+
+
+def seed_dangling(path):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    dataset=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=dataset.CreateLayer(path.stem,crs,ogr.wkbUnknown)
+    for name in ('route_key','note'):layer.CreateField(ogr.FieldDefn(name,ogr.OFTString))
+    for row in dangling_source_features():
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed dangling source')
+    dataset=None
+
+
+def verify_dangling(path, source=False):
+    from osgeo import ogr,osr
+    dataset=ogr.Open(str(path),0)
+    if dataset is None or dataset.GetLayerCount()!=1:raise FixtureError('expected one dangling GeoPackage layer')
+    layer=dataset.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('dangling CRS differs')
+    fields=['route_key','note'] if source else ['source_id'];schema=layer.GetLayerDefn()
+    if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields
+        or any(schema.GetFieldDefn(i).GetType()!=ogr.OFTString for i in range(schema.GetFieldCount()))):
+        raise FixtureError('dangling source ID/attribute schema differs')
+    features=[]
+    for feature in layer:
+        geometry=feature.GetGeometryRef()
+        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():raise FixtureError('dangling geometry invalid or non-XY')
+        kind=geometry.GetGeometryName()
+        if kind=='POINT':shape={'type':'Point','coordinates':[geometry.GetX(),geometry.GetY()]}
+        elif kind=='LINESTRING':shape={'type':'LineString','coordinates':[list(point[:2]) for point in geometry.GetPoints()]}
+        elif kind=='MULTILINESTRING':shape={'type':'MultiLineString','coordinates':[
+            [list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
+        else:raise FixtureError('dangling source/result geometry type differs')
+        features.append({'properties':{name:feature.GetField(name) for name in fields},'geometry':shape})
+    validate_dangling_features(features,source)
+    result={**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
+            'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
+    dataset=None
+    return result
 
 
 def gap_source_features(coverage=False):
@@ -331,6 +407,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'dangling.gpkg':
+        return validate_dangling_features(features)
     if name == 'gaps.gpkg':
         return validate_gap_features(features)
     if name == 'overlaps.gpkg':
@@ -365,6 +443,7 @@ def worker(action, root):
         seed_overlap(root / 'overlap-input.gpkg')
         seed_gap(root / 'gap-input.gpkg')
         seed_gap(root / 'gap-coverage.gpkg', coverage=True)
+        seed_dangling(root / 'dangling-input.gpkg')
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -381,8 +460,12 @@ def worker(action, root):
     verify_overlap(root / 'overlap-input.gpkg', source=True)
     verify_gap(root / 'gap-input.gpkg', source=False)
     verify_gap(root / 'gap-coverage.gpkg', source=True)
+    verify_dangling(root / 'dangling-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'dangling.gpkg':
+            results[name] = verify_dangling(path)
+            continue
         if name == 'gaps.gpkg':
             results[name] = verify_gap(path)
             continue
