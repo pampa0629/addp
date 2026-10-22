@@ -613,10 +613,20 @@ for (const locale of ['zh-cn', 'en']) test(`service stop reasons preserve System
     ...Array.from({ length: 23 }, (_, index) => ({ id: index + 3, status: 'down', stop_reason: 'lease_expired', stopped_at: '2026-10-22T10:30:00Z', process_metrics_declared: index !== 22 })),
     { id: 26, status: 'down', stop_reason: 'future_reason', stopped_at: '2026-10-22T10:30:00Z' }
   ] })
+  let filteredSummaryReceived = false, releaseFilteredSummary
+  const filteredSummaryHeld = new Promise(resolve => { releaseFilteredSummary = resolve })
+  await page.route('**/api/v1/monitor/platform/process_resource_summaries?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('instance_ids') === '2' && !filteredSummaryReceived) {
+      filteredSummaryReceived = true
+      await filteredSummaryHeld
+    }
+    await route.fallback()
+  })
   await page.setViewportSize({ width: 390, height: 900 })
   await page.goto('/service-resources?status=all&time_basis=offline&refresh=off&page=2')
   const reason = page.locator('.process-filters .el-select').filter({ has: page.locator(`input[aria-label="${en ? 'Stop Reason' : '下线原因'}"]`) })
   await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(4)
+  await expect.poll(() => state.calls.at(-1)).toBe('22,23,24,26')
   const previous = state.listCalls.length
   await reason.click()
   await page.getByRole('option', { name: graceful, exact: true }).click()
@@ -626,7 +636,14 @@ for (const locale of ['zh-cn', 'en']) test(`service stop reasons preserve System
   await page.getByRole('button', { name: search, exact: true }).click()
   await expect(page).toHaveURL(url => url.searchParams.get('stop_reason') === 'graceful' && url.searchParams.get('status') === 'all' && url.searchParams.get('time_basis') === 'offline' && !url.searchParams.has('page'))
   await expect(page.getByTestId('process-stop-reason')).toHaveText([graceful])
-  expect(state.calls.at(-1)).toBe('2')
+  await expect.poll(() => filteredSummaryReceived).toBe(true)
+  // System rows are intentionally visible before the separate resource request
+  // reaches its fixture. A rendered stop reason is not that request's barrier.
+  expect(state.calls.at(-1)).toBe('22,23,24,26')
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toContainText(['mac-process-2'])
+  await expect(page.getByTestId('process-list').locator('strong')).toHaveText(['—', '—', '—'])
+  releaseFilteredSummary()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
   expect(state.trendCalls).toHaveLength(0)
   await expect(page.getByRole('button', { name: en ? 'View trend' : '查看趋势', exact: true })).toBeDisabled()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
