@@ -39,6 +39,10 @@ other = "记录数据服务发布产生的血缘事实"
 
 [meta.scan.execution_not_found]
 other = "执行不存在"
+
+[meta.scan.task_not_found]
+other = "扫描任务不存在"
+
 [meta.scan.execution_read_failed]
 other = "无法读取扫描执行记录"
 

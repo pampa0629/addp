@@ -732,6 +732,60 @@ definitions:
       read_set:
         $ref: '#/definitions/plugin.QueryReadSet'
     type: object
+  execution.MetaCollectionAccessObservation:
+    properties:
+      execution_id:
+        type: string
+      execution_plan_digest:
+        type: string
+      observed_at:
+        type: string
+      qualification_id:
+        type: string
+    type: object
+  execution.MetaCollectionAccessRequest:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      execution_plan_digest:
+        type: string
+      lease_token:
+        type: string
+    type: object
+  execution.MetaScanReadOptions:
+    properties:
+      encoding:
+        type: string
+      has_header:
+        type: boolean
+    type: object
+  execution.MetaScanTaskFacts:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      force:
+        type: boolean
+      read_options:
+        $ref: '#/definitions/execution.MetaScanReadOptions'
+      scan_depth:
+        enum:
+        - basic
+        - deep
+        type: string
+      schema_version:
+        type: string
+      scope_kind:
+        enum:
+        - engine
+        type: string
+      task_definition_digest:
+        type: string
+      task_id:
+        type: string
+    type: object
   execution.ReadGrant:
     properties:
       own_ad_hoc:
@@ -1021,6 +1075,47 @@ definitions:
         - independent
         type: string
       requirement_version:
+        example: ""
+        type: string
+    type: object
+  github_com_addp_system_internal_engineaccess.MetaCollectionQualification:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      engine_version:
+        example: ""
+        type: string
+      expires_at:
+        type: string
+      granted_at:
+        type: string
+      granted_by_principal_id:
+        example: ""
+        type: string
+      id:
+        type: string
+      purpose:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_principal_id:
+        example: ""
+        type: string
+      revoked_reason:
+        type: string
+      scan_depth:
+        type: string
+      scope_kind:
+        type: string
+      status:
+        type: string
+      task_definition_digest:
+        type: string
+      task_id:
+        example: ""
+        type: string
+      version:
         example: ""
         type: string
     type: object
@@ -2845,6 +2940,19 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_system_internal_models.EngineRasterQuota'
         type: array
+    type: object
+  internal_api.ApproveMetaCollectionRequest:
+    properties:
+      command_id:
+        type: string
+      expected_task_definition_digest:
+        type: string
+      expires_at:
+        type: string
+      purpose:
+        type: string
+      task_id:
+        type: string
     type: object
   internal_api.CreateEngineAccessDelegationRequest:
     properties:
@@ -4764,6 +4872,13 @@ definitions:
         type: string
     required:
     - reason
+    type: object
+  internal_api.RevokeMetaCollectionRequest:
+    properties:
+      reason:
+        type: string
+      version:
+        type: string
     type: object
   internal_api.RuntimeEngineRegistrationRequest:
     properties:
@@ -8204,6 +8319,264 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.delete
+  /engines/{id}/meta_collection_qualifications:
+    get:
+      description: 持久状态不代表当前任务可执行；Worker 仍逐次核验任务、引擎版本、期限和租约 | Persistent state is
+        not an execution Allow; Workers recheck the task, Engine version, expiry and
+        lease
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询采集资格与历史 | List collection qualifications and history
+      tags:
+      - 元数据采集资格 | Metadata Collection Qualifications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.meta_collection_qualification.read
+    post:
+      consumes:
+      - application/json
+      description: 独立审批 Permission 与当前引擎管理资格取交集。首期仅 PG 整个引擎 basic；System 反查 Meta 当前任务摘要并冻结当前引擎版本，需明确用途和到期时间。重复执行不重新审批、不续期；同命令只恢复原历史，不恢复撤销。既有任务不自动获批，不创建数据
+        Grant | Requires approval permission and current engine management scope.
+        Initially supports PG entire-engine basic tasks. System reads Meta's current
+        task digest and freezes its own Engine version, purpose and explicit expiry.
+        Repeated execution needs no new approval and never renews expiry; identical
+        commands recover history without restoring revocation. Existing tasks are
+        not auto-approved; no data Grant is issued
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 任务摘要、用途和期限 | Task digest, purpose and expiry
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ApproveMetaCollectionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批准 basic 采集任务 | Approve a basic collection task
+      tags:
+      - 元数据采集资格 | Metadata Collection Qualifications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.meta_collection_qualification.approve
+  /engines/{id}/meta_collection_qualifications/{qualification_id}:
+    delete:
+      consumes:
+      - application/json
+      description: 当前权限、引擎管理资格及版本均须有效。撤销保留历史，不删除成果、不撤销用户数据 Grant，期限已过记录只读 | Requires
+        current permission, engine management scope and matching version. Keeps history
+        without deleting outputs or revoking user data Grants. Expired records are
+        read-only
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 资格 UUID | Qualification UUID
+        in: path
+        name: qualification_id
+        required: true
+        type: string
+      - description: 版本和原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RevokeMetaCollectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销采集资格 | Revoke a collection qualification
+      tags:
+      - 元数据采集资格 | Metadata Collection Qualifications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.meta_collection_qualification.revoke
+  /engines/{id}/meta_collection_task_facts/{task_id}:
+    get:
+      description: 当前 Tenant User 需采集资格读取 Permission 与引擎管理资格；通过统一 MetaClient 只读当前任务，不运行扫描或发放内容权限
+        | Requires current collection-read permission and engine management qualification.
+        Reads current task facts through MetaClient without scanning or granting content
+        access
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 任务 ID | Task ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.MetaScanTaskFacts'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核对待批准的采集任务 | Inspect a collection task before approval
+      tags:
+      - 元数据采集资格 | Metadata Collection Qualifications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.meta_collection_qualification.read
   /engines/{id}/restore:
     post:
       consumes:
@@ -12489,6 +12862,61 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_initial_grant.execute
+  /runtime/meta_collection_checks:
+    post:
+      consumes:
+      - application/json
+      description: 固定 addp-meta Tenant Service；System 独立核验当前机器身份、Common 执行与 lease、Meta
+        计划和任务摘要及资格期限。200 仅为当次观察，不是可缓存凭据；重试和后续读取重新核验 | Restricted to addp-meta Tenant
+        Service. Independently checks current machine identity, canonical Common execution
+        and lease, Meta plan/task digest and qualification expiry. HTTP 200 is a current
+        observation, never a cacheable credential; retries and subsequent reads recheck
+      parameters:
+      - description: 执行和租约 | Execution and lease
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/execution.MetaCollectionAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.MetaCollectionAccessObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核验当前 Meta basic 采集资格 | Check current Meta basic collection access
+      tags:
+      - 元数据采集资格 | Metadata Collection Qualifications
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.meta_collection_qualification.execute
   /runtime/module-log-source-observations:
     post:
       consumes:

@@ -9,6 +9,9 @@ import (
 )
 
 func RootBranchEntries(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.EngineCatalogEntry, error) {
+	if err := CheckCollectionRead(ctx, resource); err != nil {
+		return nil, err
+	}
 	catalogProvider, ok := p.(plugin.EngineCatalogProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement EngineCatalogProvider", resource.EngineType)

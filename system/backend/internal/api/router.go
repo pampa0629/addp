@@ -138,6 +138,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	var metaFacts engineaccess.AuthorizationFactsReader
+	var metaScanFacts engineaccess.MetaScanFactsReader
 	if err := RegisterIAMManagerProfileAuthorizationRoutes(api, runtime, &IAMManagerProfileAuthorizationHandler{
 		service: iam.NewManagerProfileAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
 	}); err != nil {
@@ -157,12 +158,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			panic("invalid System fulfillment credential configuration")
 		}
 		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
-		metaFacts = commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
+		metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
+		metaFacts, metaScanFacts = metaClient, metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
 	}
 	if err := RegisterEngineAccessAuthorizationFactsRoutes(api, runtime, &EngineAccessAuthorizationFactsHandler{service: authorizationFactsService}); err != nil {
+		panic(err)
+	}
+	if err := RegisterMetaCollectionRoutes(api, runtime, &MetaCollectionHandler{service: engineaccess.NewService(engineaccess.NewRepository(db), nil).WithMetaScanFactsReader(metaScanFacts)}); err != nil {
 		panic(err)
 	}
 	if err := RegisterEngineAccessFulfillmentAcceptanceRoutes(api, runtime, &EngineAccessFulfillmentAcceptanceHandler{service: fulfillmentService}); err != nil {

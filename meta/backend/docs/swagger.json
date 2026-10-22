@@ -2024,6 +2024,93 @@
                 ]
             }
         },
+        "/runtime/scan-tasks/{task_id}/authorization-facts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-system Tenant Service；只读当前任务功能配置，不创建执行、访问 System 或读取源。首期仅支持整个引擎的显式任务范围；其他 selector 返回 409，不扩大范围。引擎版本由 System 独立冻结；200 不表示采集已批准 | Restricted to addp-system Tenant Service. Reads current task configuration without creating an execution, calling System or opening a source. Initially supports explicit entire-engine tasks only; other selectors return 409 without scope expansion. System independently freezes the Engine version. HTTP 200 is not approval",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "查询当前采集任务事实 | Read current collection task facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务 ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前任务最小事实 | Minimal current task facts",
+                        "schema": {
+                            "$ref": "#/definitions/execution.MetaScanTaskFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.task_provider.read"
+                ]
+            }
+        },
         "/runtime/transfer-productions/{execution_id}/basic-scan": {
             "post": {
                 "security": [
@@ -3520,6 +3607,43 @@
                         "exact",
                         "full"
                     ]
+                }
+            }
+        },
+        "execution.MetaScanTaskFacts": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "force": {
+                    "type": "boolean"
+                },
+                "read_options": {
+                    "$ref": "#/definitions/execution.MetaScanReadOptions"
+                },
+                "scan_depth": {
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "deep"
+                    ]
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "scope_kind": {
+                    "type": "string",
+                    "enum": [
+                        "engine"
+                    ]
+                },
+                "task_definition_digest": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
                 }
             }
         },

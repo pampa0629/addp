@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 138
+manifest_version: 139
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -802,6 +802,9 @@ roles:
       - system.engine_access_grant.read
       - system.engine_access_grant.revoke
       - system.engine_catalog.read
+      - system.meta_collection_qualification.approve
+      - system.meta_collection_qualification.read
+      - system.meta_collection_qualification.revoke
   - key: tenant.geopython_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.geopython_runtime.name
@@ -962,6 +965,7 @@ roles:
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
+      - system.meta_collection_qualification.execute
       - transfer.production_receipt.read
   - key: tenant.model3d_runtime
     role_type: tenant_builtin
@@ -1219,6 +1223,7 @@ roles:
     permissions:
       - catalog.sharing_fulfillment.read
       - meta.authorization_facts.read
+      - meta.task_provider.read
       - transfer.production_receipt.read
   - key: tenant.transfer_runtime
     role_type: tenant_builtin

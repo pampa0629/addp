@@ -60,6 +60,8 @@ Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使
 
 ## Meta 扫描分层约定
 
+集中治理 `ScanTask` 首期只允许已由 System 明确批准的 PG entire-engine basic：Worker 绑定原始计划摘要与当前 lease，经统一 `SystemServiceClient.CheckMetaCollection` 在首次执行、根目录及每个 schema 枚举前重核。无资格、撤销、到期、任务／引擎配置变化或依赖不可用不得打开下一次源 I/O；首次拒绝写失败终态。定义在排队或运行中删除时仍须结束原 execution，不重建任务摘要，不使缺失定义阻塞队列。深度与其他 selector 未支持时拒绝，不降级。独立交互和可信成果补扫不借用此资格。任务事实只从真实配置投影给固定 System Runtime，不连接源或把事实 200 当 Allow。标准 Meta Go 与 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 覆盖本期事实和失败路径；完整真实拓扑另需 T4，不从既有数据授权验收外推。
+
 Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
 ### 当前主线状态

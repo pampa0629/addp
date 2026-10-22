@@ -151,6 +151,10 @@ func mapError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.ConstraintName {
+		case "meta_collection_qualification_overlap":
+			return ErrMetaCollectionChanged
+		case "meta_collection_qualification_expiry":
+			return ErrExpiry
 		case "engine_access_deny_release_expiry":
 			return ErrDenyReleaseExpired
 		case "engine_access_deny_expiry":

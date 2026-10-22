@@ -33,6 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
+            echo "Meta PG basic task qualification: --package engineaccess|migration --test meta-collection" >&2
             echo "FTP/NFS file composition Grant/current read: --package engineaccess --test file-composition" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
@@ -201,6 +202,13 @@ case "$TEST_FILTER" in
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(initial_production_observes_actual_sources_and_persistent_target_history_without_issuing|initial_production_grant_terminal_lifecycle)$'
+        ;;
+    meta-collection)
+        case "$PACKAGE_FILTER" in
+            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^meta_collection_qualification$' ;;
+            migration) test_pattern='^TestMetaCollectionQualification(Runtime|Approval)ForwardMigrationAgainstPostgres$' ;;
+            *) echo "meta-collection requires --package engineaccess or migration" >&2; exit 2 ;;
+        esac
         ;;
     file-composition)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "file-composition requires --package engineaccess" >&2; exit 2; }

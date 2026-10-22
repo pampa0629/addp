@@ -719,6 +719,7 @@
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
+          "meta_collection_qualification": "Metadata Collection Qualification",
           "enrollment": "Data Protection Enrollment",
           "entity": "Business Entity",
           "entity_relation": "Entity Relation",

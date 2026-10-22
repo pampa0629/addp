@@ -245,6 +245,18 @@ elif args[:2] != ["volume", "ls"]:
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("file-composition requires --package engineaccess", rejected.stderr)
 
+    def test_meta_collection_filter_covers_qualification_and_forward_migration(self):
+        for package, pattern in (
+            ("engineaccess", "^TestFulfillmentArbitrationAgainstPostgres$/^meta_collection_qualification$"),
+            ("migration", "^TestMetaCollectionQualification(Runtime|Approval)ForwardMigrationAgainstPostgres$"),
+        ):
+            result = self.run_gate(arguments=("--package", package, "--test", "meta-collection"))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"./internal/{package} -run {pattern}", (self.root / "trace-1").read_text())
+        rejected = self.run_gate(arguments=("--package", "iam", "--test", "meta-collection"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("meta-collection requires --package engineaccess or migration", rejected.stderr)
+
     def test_manager_source_filter_covers_both_purposes_and_no_other_package(self):
         result = self.run_gate(arguments=("--package", "engineaccess", "--test", "manager-source"))
         self.assertEqual(result.returncode, 0, result.stderr)

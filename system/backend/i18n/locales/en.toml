@@ -505,3 +505,23 @@ other = "Emergency request state, version or authorization changed. Recheck the 
 
 [system.audit_archive.failed]
 other = "Audit archive could not be verified or persisted. No result is confirmed. Check the independent audit deployment."
+[system.meta_collection.unavailable]
+other = "Collection task facts are temporarily unavailable; try again later"
+[system.meta_collection.changed]
+other = "The collection configuration changed, is unsupported, or already has an active qualification; inspect the current task and qualification history"
+[permissions.system.meta_collection_qualification.approve.name]
+other = "Approve metadata collection qualification"
+[permissions.system.meta_collection_qualification.approve.description]
+other = "Explicitly approve a task configuration, purpose and expiry within the current engine management scope without granting personal data access"
+[permissions.system.meta_collection_qualification.read.name]
+other = "Read metadata collection qualifications"
+[permissions.system.meta_collection_qualification.read.description]
+other = "Inspect collection task facts and qualification history within the current management scope"
+[permissions.system.meta_collection_qualification.revoke.name]
+other = "Revoke metadata collection qualification"
+[permissions.system.meta_collection_qualification.revoke.description]
+other = "Revoke an active collection qualification while retaining history and existing data authorizations"
+[permissions.system.meta_collection_qualification.execute.name]
+other = "Check metadata collection execution qualification"
+[permissions.system.meta_collection_qualification.execute.description]
+other = "Allow only the Meta runtime to check current qualification against the real execution plan and active lease"

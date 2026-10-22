@@ -27,6 +27,26 @@ import (
 // @x-addp-required-permissions ["meta.task_provider.read"]
 // @Router /runtime/scan-executions/{execution_id}/authorization-facts [get]
 func (h *Handler) GetScanPlanFacts(c *gin.Context) {
+	h.readScanFacts(c, false)
+}
+
+// GetScanTaskFacts godoc
+// @Summary 查询当前采集任务事实 | Read current collection task facts
+// @Description 仅 addp-system Tenant Service；只读当前任务功能配置，不创建执行、访问 System 或读取源。首期仅支持整个引擎的显式任务范围；其他 selector 返回 409，不扩大范围。引擎版本由 System 独立冻结；200 不表示采集已批准 | Restricted to addp-system Tenant Service. Reads current task configuration without creating an execution, calling System or opening a source. Initially supports explicit entire-engine tasks only; other selectors return 409 without scope expansion. System independently freezes the Engine version. HTTP 200 is not approval
+// @Tags Meta Runtime
+// @Produce json
+// @Security BearerAuth
+// @Param task_id path string true "任务 ID | Task ID"
+// @Success 200 {object} execution.MetaScanTaskFacts "当前任务最小事实 | Minimal current task facts"
+// @Failure 400,401,403,404,409,500,503 {object} map[string]interface{} "查询失败 | Query failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.task_provider.read"]
+// @Router /runtime/scan-tasks/{task_id}/authorization-facts [get]
+func (h *Handler) GetScanTaskFacts(c *gin.Context) {
+	h.readScanFacts(c, true)
+}
+
+func (h *Handler) readScanFacts(c *gin.Context, task bool) {
 	c.Header("Cache-Control", "no-store")
 	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || c.Request.ContentLength != 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, metai18n.MsgAuthorizationFactsInvalid), "error_code": "meta_scan_plan_facts_invalid"})
@@ -36,7 +56,13 @@ func (h *Handler) GetScanPlanFacts(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, metai18n.MsgScanPlanFactsUnavailable), "error_code": "meta_scan_plan_facts_unavailable"})
 		return
 	}
-	facts, err := h.executionService.GetScanPlanFacts(c.Request.Context(), commonAuth.GetTenantID(c), c.Param("execution_id"))
+	var facts any
+	var err error
+	if task {
+		facts, err = h.executionService.GetScanTaskFacts(c.Request.Context(), commonAuth.GetTenantID(c), c.Param("task_id"))
+	} else {
+		facts, err = h.executionService.GetScanPlanFacts(c.Request.Context(), commonAuth.GetTenantID(c), c.Param("execution_id"))
+	}
 	if err != nil {
 		status, message, code := http.StatusInternalServerError, metai18n.MsgScanPlanFactsReadFailed, "meta_scan_plan_facts_unavailable"
 		switch {
@@ -44,6 +70,9 @@ func (h *Handler) GetScanPlanFacts(c *gin.Context) {
 			status, message, code = http.StatusBadRequest, metai18n.MsgAuthorizationFactsInvalid, "meta_scan_plan_facts_invalid"
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			status, message, code = http.StatusNotFound, metai18n.MsgScanExecutionNotFound, "meta_scan_execution_not_found"
+			if task {
+				message, code = metai18n.MsgScanTaskNotFound, "meta_scan_task_not_found"
+			}
 		case errors.Is(err, service.ErrScanPlanFactsUnavailable):
 			status, message = http.StatusConflict, metai18n.MsgScanPlanFactsUnavailable
 		}

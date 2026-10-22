@@ -94,9 +94,11 @@ System 负责当前采集资格及源读取裁决；Meta 不以服务连接、�
 - 新产物先凭可信实际产出事实做精确 basic，再由 System 裁决读取授权；内容 deep 必须获权。覆盖、追加、同名重建、扫描新增行不推导首次产出资格；临时执行结果不伪造为业务 DataItem。
 - deep 申请不能在缺权时静默降为 basic 并报成功。采集与结果读取分别控制，样本、正文及含业务值的派生结果不进入普通目录或通用执行诊断。
 
-上述资格接入尚未形成完整实现，不把当前范围解析当作已完成授权。实现验证至少覆盖：精确项不读取兄弟／未来项；完整范围合法新项可采集而越界／外部依赖拒绝；basic 不触发内容采样或哈希；deep 缺权、撤权、过期、错 Tenant／attempt 拒绝且不打开源；核验后计划变化拒绝；集中采集不增授操作人预览／下载权限；新产物身份、授权与 deep 状态分别反馈。复用受影响 owner 的 Go T1、PostgreSQL T2 及真实 Online 标准入口，不以规范落地宣称这些门禁已通过。
+首期集中采集的后端契约仅覆盖 PG entire-engine basic `ScanTask`，不把范围解析当作已批准。System 以唯一资格表保存任务／配置摘要、引擎版本、用途、期限与撤销；Worker 经固定 `addp-meta` Service 的 `POST /api/v1/system/runtime/meta_collection_checks` 核验当前 Common execution／lease 与 Meta 事实。初始核验以及根目录、每个 schema 枚举前均重新核验，拒绝先于 Provider 调用；初始拒绝写入失败终态，不等待租约过期。交互扫描、可信成果补扫不借用这项资格，deep 与其他 selector 尚未接入。复用受影响 owner 的 Go T1、PostgreSQL T2 及真实 Online 标准入口分别验收，不以规范落地或局部门禁代替完整真实运行验收。
 
 ### 冻结扫描计划事实契约
+
+批准具体采集任务前，System 通过同一 MetaClient 的 `ReadScanTaskFacts` 读取 `GET /api/v1/meta/runtime/scan-tasks/{task_id}/authorization-facts`，使用相同的固定 `addp-system` Tenant Service 与 `meta.task_provider.read`。该接口只读真实任务，不要求创建或执行扫描，也不调用 System、Provider 或获取源连接。`meta.scan_task_facts/v1` 只返回任务 ID、功能定义摘要、Engine ID、范围类型、请求深度、force 和读取选项；不返回原始配置、来源人或凭据。引擎当前版本归 System，在批准时独立冻结。首期此接口只投影整个引擎的任务声明，原始 path／ref group 等尚未证明的 selector 返回 409，不能降为整个引擎。深度字段只是当前任务请求，不是已批准深度。任务事实与执行事实使用相同功能摘要算法；200 均不表示 Allow。
 
 System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/runtime/scan-executions/{execution_id}/authorization-facts`，使用当前 Tenant 的独立 `addp-system` Service 凭据及既有 `meta.task_provider.read`。接口不接受 query、请求体、Actor 或附加 selector；响应 `Cache-Control: no-store`。200 只表示事实投影，不能代替 System 的采集资格批准、授权签发或 Worker 消费。客户端只发一次请求，不跟随重定向或隐式重试，不传播错误体、凭据及连接。
 

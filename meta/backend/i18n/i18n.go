@@ -20,6 +20,7 @@ const (
 	MsgScanProvenanceDenied          = "meta.scan.provenance_denied"
 	MsgScanProvenanceUnavailable     = "meta.scan.provenance_unavailable"
 	MsgScanExecutionNotFound         = "meta.scan.execution_not_found"
+	MsgScanTaskNotFound              = "meta.scan.task_not_found"
 	MsgScanPlanFactsUnavailable      = "meta.scan.plan_facts_unavailable"
 	MsgScanPlanFactsReadFailed       = "meta.scan.plan_facts_read_failed"
 	MsgScanExecutionReadFailed       = "meta.scan.execution_read_failed"

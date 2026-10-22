@@ -39,6 +39,14 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
+			if absent, err := scanTaskDefinitionAbsent(tx, execution.TenantID, taskID); err != nil {
+				return err
+			} else if absent {
+				// A deleted definition must not strand its pending execution.
+				// The owner check will deny it before source dispatch and record
+				// the failed attempt without recreating a task summary.
+				return nil
+			}
 			return fmt.Errorf("meta task %d summary no longer matches execution %s", taskID, execution.ExecutionID)
 		}
 		return nil
@@ -158,7 +166,18 @@ func updateScanTaskSummary(tx *gorm.DB, execution *commonExecution.TaskExecution
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
+		if absent, err := scanTaskDefinitionAbsent(tx, execution.TenantID, taskID); err != nil {
+			return err
+		} else if absent {
+			return nil
+		}
 		return fmt.Errorf("meta task %d summary no longer matches execution %s", taskID, execution.ExecutionID)
 	}
 	return nil
+}
+
+func scanTaskDefinitionAbsent(tx *gorm.DB, tenantID int, taskID uint) (bool, error) {
+	var count int64
+	err := tx.Model(&models.ScanTask{}).Where("tenant_id=? AND id=?", tenantID, taskID).Count(&count).Error
+	return count == 0, err
 }

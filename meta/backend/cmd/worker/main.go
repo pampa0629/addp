@@ -61,6 +61,7 @@ func main() {
 		defer redisClient.Close()
 	}
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
+	executionService.SetCollectionAuthorizationClient(systemClient)
 
 	hostname, _ := os.Hostname()
 	workerInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())

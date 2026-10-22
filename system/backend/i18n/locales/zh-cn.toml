@@ -505,3 +505,23 @@ other = "应急请求状态、版本或授权条件已变化，请重新核对�
 
 [system.audit_archive.failed]
 other = "审计归档未能核验或持久化，结果未确认。请检查独立审计部署。"
+[system.meta_collection.unavailable]
+other = "暂时无法核验采集任务事实，请稍后重试"
+[system.meta_collection.changed]
+other = "采集配置已变化、尚不支持或已有有效资格，请核对当前任务与资格记录"
+[permissions.system.meta_collection_qualification.approve.name]
+other = "批准元数据采集资格"
+[permissions.system.meta_collection_qualification.approve.description]
+other = "在当前引擎管理范围内明确批准任务采集配置、用途及期限，不授予个人数据读取权"
+[permissions.system.meta_collection_qualification.read.name]
+other = "读取元数据采集资格"
+[permissions.system.meta_collection_qualification.read.description]
+other = "核对管理范围内的采集任务事实及资格历史"
+[permissions.system.meta_collection_qualification.revoke.name]
+other = "撤销元数据采集资格"
+[permissions.system.meta_collection_qualification.revoke.description]
+other = "撤销指定的有效采集资格并保留历史，不修改数据授权"
+[permissions.system.meta_collection_qualification.execute.name]
+other = "核验元数据采集执行资格"
+[permissions.system.meta_collection_qualification.execute.description]
+other = "仅 Meta 服务按真实执行计划及有效租约核验当前采集资格"

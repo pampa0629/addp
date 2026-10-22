@@ -39,6 +39,10 @@ other = "Record service publication lineage facts"
 
 [meta.scan.execution_not_found]
 other = "Execution not found"
+
+[meta.scan.task_not_found]
+other = "Scan task not found"
+
 [meta.scan.execution_read_failed]
 other = "Unable to read scan executions"
 

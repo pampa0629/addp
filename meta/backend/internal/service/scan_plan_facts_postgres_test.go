@@ -44,7 +44,9 @@ func TestScanPlanFactsAgainstPostgres(t *testing.T) {
 	if err := execution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
 	}
+	exerciseCollectionDeniedAttempt(t, tx)
 	exerciseScanPlanFacts(t, tx)
 	exerciseProductionScanPlanFacts(t, tx)
 	exerciseScanPlanTaskBinding(t, tx)
+	exerciseScanTaskFacts(t, tx)
 }

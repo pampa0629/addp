@@ -326,6 +326,14 @@ System 启动顺序固定为：
 
 ## 十一、管理端信息架构
 
+### Meta basic 采集资格
+
+`000234_meta_collection_qualifications` 新增独立的 `system.meta_collection_qualifications`。它不是源数据 Grant 或第二套 Meta ACL：同 Tenant／Engine／ScanTask 的批准冻结任务功能摘要和引擎版本，保存用途、明确期限、审批人及授权版本；配置及原期限不可变，只允许当前有效记录显式撤销，保留历史，不物理删除。同一任务的有效时间段不能重叠，服务与存储约束共用事务级任务锁，不依赖额外 PostgreSQL 扩展。
+
+迁移只向既有引擎授权管理员角色发布 `system.meta_collection_qualification.approve/read/revoke`，向既有 Meta Runtime 发布不可委托且不可租户定制的 `execute`，向既有 System Runtime 增授 `meta.task_provider.read` 以读取固定的 Meta 任务／执行事实接口（TaskProvider 原入口仍只接受 Orchestrator，不能因此被 System 冒用）；不新增账号角色分配，不批准旧任务，不触碰源 Grant／Deny。角色发布沿既有触发器推进授权版本并撤销受影响 Refresh Token Family。外键具备前导索引。
+
+人类入口统一为 `GET /engines/{id}/meta_collection_task_facts/{task_id}`、`GET/POST /engines/{id}/meta_collection_qualifications` 和 `DELETE /engines/{id}/meta_collection_qualifications/{qualification_id}`；各自 Permission 与当前引擎管理范围取交集。机器只通过 `POST /runtime/meta_collection_checks` 消费当次观察，不接受自报任务摘要或主体作为事实。所有路径相对 `/api/v1/system`，请求／结果均不可缓存。首期只支持 PG entire-engine basic，不为 deep 或未支持 selector 兜底。标准定向存储验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"`；原默认门禁同样自动发现。
+
 System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
 
 | 页面 | Platform Context | Tenant Context |

@@ -8,4 +8,5 @@ import (
 
 func registerScanPlanFactsRoute(api *gin.RouterGroup, h *Handler) {
 	api.GET("/runtime/scan-executions/:execution_id/authorization-facts", commonAuth.MustNewServiceClientGuard("addp-system"), commonAuth.MustNewPermissionGuard(authorization.PermissionMetaTaskProviderRead), h.GetScanPlanFacts)
+	api.GET("/runtime/scan-tasks/:task_id/authorization-facts", commonAuth.MustNewServiceClientGuard("addp-system"), commonAuth.MustNewPermissionGuard(authorization.PermissionMetaTaskProviderRead), h.GetScanTaskFacts)
 }

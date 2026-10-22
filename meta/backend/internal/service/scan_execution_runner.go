@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,6 +44,18 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	if _, err := format.HeaderModeFromOptions(exec.ExecutionConfig); err != nil {
 		return err
 	}
+	collectionCtx, err := s.bindCollectionRead(ctx, exec, lease)
+	if err != nil {
+		// A denied/dependency-failed check is an explicit failed attempt, not a
+		// running execution waiting for lease recovery. No source was opened.
+		completedAt := time.Now()
+		var durationMs int64
+		if exec.StartedAt != nil {
+			durationMs = completedAt.Sub(*exec.StartedAt).Milliseconds()
+		}
+		return errors.Join(err, s.completeExecutionWithFailure(ctx, exec, nil, execConfig.StorageType, err, completedAt, durationMs))
+	}
+	ctx = collectionCtx
 
 	start := time.Now()
 	if exec.StartedAt != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 // scanTables 扫描Schema下的所有表。
@@ -183,6 +184,9 @@ func (s *DatabaseRuntime) listTables(
 	scanCatalog databaseScanCatalog,
 	schemaName string,
 ) ([]datatype.TableInfo, error) {
+	if err := scanresource.CheckCollectionRead(ctx, resource); err != nil {
+		return nil, err
+	}
 	parentPath := plugin.TabularNamespacePath(resource.ID, scanCatalog.namespaceTerm, schemaName)
 	nodes, err := scanCatalog.catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), parentPath, plugin.ListOptions{})
 	if err != nil {

@@ -719,6 +719,7 @@
           "engine_access_deny": "源读取拒绝规则",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
+          "meta_collection_qualification": "元数据采集资格",
           "enrollment": "数据保护纳管",
           "entity": "业务实体",
           "entity_relation": "实体关系",

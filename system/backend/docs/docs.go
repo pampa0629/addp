@@ -3660,6 +3660,378 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/meta_collection_qualifications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "持久状态不代表当前任务可执行；Worker 仍逐次核验任务、引擎版本、期限和租约 | Persistent state is not an execution Allow; Workers recheck the task, Engine version, expiry and lease",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据采集资格 | Metadata Collection Qualifications"
+                ],
+                "summary": "查询采集资格与历史 | List collection qualifications and history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.meta_collection_qualification.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "独立审批 Permission 与当前引擎管理资格取交集。首期仅 PG 整个引擎 basic；System 反查 Meta 当前任务摘要并冻结当前引擎版本，需明确用途和到期时间。重复执行不重新审批、不续期；同命令只恢复原历史，不恢复撤销。既有任务不自动获批，不创建数据 Grant | Requires approval permission and current engine management scope. Initially supports PG entire-engine basic tasks. System reads Meta's current task digest and freezes its own Engine version, purpose and explicit expiry. Repeated execution needs no new approval and never renews expiry; identical commands recover history without restoring revocation. Existing tasks are not auto-approved; no data Grant is issued",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据采集资格 | Metadata Collection Qualifications"
+                ],
+                "summary": "批准 basic 采集任务 | Approve a basic collection task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "任务摘要、用途和期限 | Task digest, purpose and expiry",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ApproveMetaCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.meta_collection_qualification.approve"
+                ]
+            }
+        },
+        "/engines/{id}/meta_collection_qualifications/{qualification_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前权限、引擎管理资格及版本均须有效。撤销保留历史，不删除成果、不撤销用户数据 Grant，期限已过记录只读 | Requires current permission, engine management scope and matching version. Keeps history without deleting outputs or revoking user data Grants. Expired records are read-only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据采集资格 | Metadata Collection Qualifications"
+                ],
+                "summary": "撤销采集资格 | Revoke a collection qualification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "资格 UUID | Qualification UUID",
+                        "name": "qualification_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本和原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevokeMetaCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.MetaCollectionQualification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.meta_collection_qualification.revoke"
+                ]
+            }
+        },
+        "/engines/{id}/meta_collection_task_facts/{task_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant User 需采集资格读取 Permission 与引擎管理资格；通过统一 MetaClient 只读当前任务，不运行扫描或发放内容权限 | Requires current collection-read permission and engine management qualification. Reads current task facts through MetaClient without scanning or granting content access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据采集资格 | Metadata Collection Qualifications"
+                ],
+                "summary": "核对待批准的采集任务 | Inspect a collection task before approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务 ID | Task ID",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/execution.MetaScanTaskFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.meta_collection_qualification.read"
+                ]
+            }
+        },
         "/engines/{id}/restore": {
             "post": {
                 "security": [
@@ -9990,6 +10362,85 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/meta_collection_checks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 addp-meta Tenant Service；System 独立核验当前机器身份、Common 执行与 lease、Meta 计划和任务摘要及资格期限。200 仅为当次观察，不是可缓存凭据；重试和后续读取重新核验 | Restricted to addp-meta Tenant Service. Independently checks current machine identity, canonical Common execution and lease, Meta plan/task digest and qualification expiry. HTTP 200 is a current observation, never a cacheable credential; retries and subsequent reads recheck",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据采集资格 | Metadata Collection Qualifications"
+                ],
+                "summary": "核验当前 Meta basic 采集资格 | Check current Meta basic collection access",
+                "parameters": [
+                    {
+                        "description": "执行和租约 | Execution and lease",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/execution.MetaCollectionAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/execution.MetaCollectionAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.meta_collection_qualification.execute"
+                ]
+            }
+        },
         "/runtime/module-log-source-observations": {
             "post": {
                 "security": [
@@ -16250,6 +16701,88 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.MetaCollectionAccessObservation": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_plan_digest": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "qualification_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.MetaCollectionAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_plan_digest": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.MetaScanReadOptions": {
+            "type": "object",
+            "properties": {
+                "encoding": {
+                    "type": "string"
+                },
+                "has_header": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "execution.MetaScanTaskFacts": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "force": {
+                    "type": "boolean"
+                },
+                "read_options": {
+                    "$ref": "#/definitions/execution.MetaScanReadOptions"
+                },
+                "scan_depth": {
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "deep"
+                    ]
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "scope_kind": {
+                    "type": "string",
+                    "enum": [
+                        "engine"
+                    ]
+                },
+                "task_definition_digest": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -16680,6 +17213,65 @@ const docTemplate = `{
                     ]
                 },
                 "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.MetaCollectionQualification": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "engine_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "granted_at": {
+                    "type": "string"
+                },
+                "granted_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "revoked_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "revoked_reason": {
+                    "type": "string"
+                },
+                "scan_depth": {
+                    "type": "string"
+                },
+                "scope_kind": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_definition_digest": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "version": {
                     "type": "string",
                     "example": ""
                 }
@@ -19340,6 +19932,26 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRasterQuota"
                     }
+                }
+            }
+        },
+        "internal_api.ApproveMetaCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "command_id": {
+                    "type": "string"
+                },
+                "expected_task_definition_digest": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
                 }
             }
         },
@@ -22267,6 +22879,17 @@ const docTemplate = `{
             ],
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RevokeMetaCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }

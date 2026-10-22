@@ -169,7 +169,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	confirmation, _ := newOperator(t, time.Hour)
 	confirmationRole, err := iam.NewTenantRoleService(identity, testDatabaseClock(t, db)).CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: "custom.fulfillment_confirmation", Name: "Explicit business confirmation fixture",
-		PermissionKeys: []string{"catalog.entry.read", "catalog.sharing_decision.create"},
+		PermissionKeys:   []string{"catalog.entry.read", "catalog.sharing_decision.create"},
 		ActorPrincipalID: user.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +205,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	if _, err := change(newRequest().Path, approvalModeCatalog, 0, verified); err != nil {
 		t.Fatal(err)
 	}
+	exerciseMetaCollectionQualifications(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
 	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
 		operator, _ := newOperator(t, time.Hour)
