@@ -393,7 +393,7 @@ repository, temporary = map(Path, sys.argv[1:])
 root = (temporary / 'scoped-restart').resolve()
 dev = root / 'scripts/dev'
 dev.mkdir(parents=True)
-for name in ('restart.sh', 'stop.sh', 'ports.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh'):
+for name in ('restart.sh', 'stop.sh', 'ports.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh', 'worker-units.sh'):
     shutil.copy2(repository / 'scripts/dev' / name, dev / name)
 (root / 'scripts/utils').mkdir()
 (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
@@ -434,10 +434,10 @@ child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2], sys.argv[3]]
 Path('frontend-child.pid').write_text(str(child.pid))
 while True: time.sleep(1)
 ''')
-names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker')
+names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2')
 ports = {}
 for name in names:
-    if name.endswith('worker'):
+    if 'worker' in name:
         continue
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -454,7 +454,7 @@ from pathlib import Path
 root = Path(__file__).parent
 ports = json.loads((root / 'ports.json').read_text())
 selected = [arg[1:] for arg in sys.argv[1:]]
-for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker'):
+for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'):
     module = name.split('-')[0]
     if module not in selected: continue
     pidfile = root / '.dev-pids' / (name + '.pid')
@@ -531,7 +531,7 @@ try:
         assert snapshot() == before, 'preflight failure stopped existing services'
         ready()
     for args, selected in ((['-asset', '-asset'], {'asset', 'asset-frontend'}),
-                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker'})):
+                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'})):
         before = snapshot()
         if 'asset' in selected:
             # A stale selected PID referencing another live module must never kill that module.
@@ -615,7 +615,7 @@ for name, args, failure in cases:
     root = temporary / ('restart-' + name)
     dev = root / 'scripts/dev'
     dev.mkdir(parents=True)
-    for filename in ('restart.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh'):
+    for filename in ('restart.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh', 'worker-units.sh'):
         shutil.copy2(repository / 'scripts/dev' / filename, dev / filename)
     (dev / 'ports.sh').write_text('addp_dev_load_saved_ports() { :; }\n')
     (root / '.env').write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
@@ -2156,7 +2156,7 @@ launcher=fixture/'.dev-bins/addp-runtime-log'
 launcher.write_text('#!/bin/bash\n[ "$1" = launch ] || exit 11\n[ "$2" = --module ] || exit 12\n[ "$4" = --role ] && [ "$5" = worker ] || exit 13\n[ "$6" = -- ] || exit 14\nshift 6\nexec "$@"\n')
 launcher.chmod(0o755)
 # Fast module must launch before the unrelated slow Backend becomes ready.
-body='PROJECT_ROOT='+__import__('shlex').quote(str(fixture))+'''\nset -e
+body='source '+__import__('shlex').quote(str(root/'scripts/dev/worker-units.sh'))+'\nPROJECT_ROOT='+__import__('shlex').quote(str(fixture))+'''\nset -e
 require_started_process() { [ "$2" != dead ]; }
 check_service_running() { return 0; }
 curl() { case "$*" in *:1111/*) return 0;; *:2222/*) [ -f slow-ready ];; *) return 1;; esac; }
@@ -2227,11 +2227,12 @@ helper = helper.group(0) if helper else ''
 services = ('duckdb', 'manager', 'meta', 'transfer', 'orchestrator', 'develop',
             'service', 'monitor', 'standard', 'model', 'quality', 'security',
             'asset', 'catalog', 'ontology', 'workbench', 'portal', 'graph', 'inference')
-workers = ('meta-worker', 'quality-worker', 'security-worker',
+workers = ('meta-worker-1', 'quality-worker', 'security-worker',
            'transfer-bounded-worker', 'transfer-continuous-worker')
 all_names = set(services + workers)
 base = r'''
 set -eu
+META_WORKER_UNITS=(meta-worker-1)
 YELLOW= GREEN= RED= NC=
 cd "$CASE_ROOT"
 source "$BUILD_SCRIPT"
@@ -2253,10 +2254,10 @@ build_transfer_continuous_worker() { record_build transfer-continuous-worker; }
 cases = (
     ('all-running', all_names, all_names, set(), '', ''),
     ('all-stopped', all_names, set(), all_names, '', ''),
-    ('missing-worker', {'meta', 'meta-worker'}, {'meta'}, {'meta-worker'}, '', ''),
-    ('missing-backend', {'meta', 'meta-worker'}, {'meta-worker'}, {'meta'}, '', ''),
-    ('port-conflict', {'meta', 'meta-worker'}, {'meta-worker'}, set(), 'meta', ''),
-    ('build-failure', {'meta', 'meta-worker'}, set(), {'meta', 'meta-worker'}, '', 'meta'),
+    ('missing-worker', {'meta', 'meta-worker-1'}, {'meta'}, {'meta-worker-1'}, '', ''),
+    ('missing-backend', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, {'meta'}, '', ''),
+    ('port-conflict', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, set(), 'meta', ''),
+    ('build-failure', {'meta', 'meta-worker-1'}, set(), {'meta', 'meta-worker-1'}, '', 'meta'),
 )
 for mode, selected, running, expected, conflict, failed_build in cases:
     workspace = temporary/('build-process-state-'+mode)
@@ -2266,7 +2267,8 @@ for mode, selected, running, expected, conflict, failed_build in cases:
         if not flag.startswith('START_'):
             continue
         name = flag.removeprefix('START_').removesuffix('_BACKEND').lower().replace('_', '-')
-        flags.append(f'{flag}={"true" if name in selected else "false"}')
+        unit_name = 'meta-worker-1' if name == 'meta-worker' else name
+        flags.append(f'{flag}={"true" if unit_name in selected else "false"}')
     ports = {name: str(20000 + index) for index, name in enumerate(sorted(set(
         re.findall(r'\$\{?([A-Z_]+PORT)', source))))}
     script = base+'\n'+'\n'.join(flags)+'\n'+helper+'\n'+phase+'\ntouch completed\n'
@@ -2276,7 +2278,7 @@ for mode, selected, running, expected, conflict, failed_build in cases:
         capture_output=True, text=True, timeout=10)
     events = [line.split('|') for line in (workspace/'events').read_text().splitlines()]
     builds = [event[1] for event in events if event[0] == 'build']
-    assert sorted(builds) == sorted(expected), (mode, builds, expected, result.stdout, result.stderr)
+    assert sorted(builds) == sorted('meta-worker' if n == 'meta-worker-1' else n for n in expected), (mode, builds, expected, result.stdout, result.stderr)
     assert (result.returncode != 0) == bool(conflict or failed_build), (mode, result.stdout, result.stderr)
     assert (workspace/'completed').exists() == (not conflict and not failed_build), mode
     checks = {event[1]: event[2] for event in events if event[0] == 'check'}

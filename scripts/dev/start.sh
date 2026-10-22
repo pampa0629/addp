@@ -85,6 +85,11 @@ if [ -f ".env" ]; then
     set +a
 fi
 
+source "${SCRIPT_DIR}/worker-units.sh"
+meta_units=$(addp_meta_worker_units) || exit 1
+META_WORKER_UNITS=()
+while IFS= read -r unit; do META_WORKER_UNITS+=("$unit"); done <<< "$meta_units"
+
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export DOCUMENT_WORKFLOW_PORT="${DOCUMENT_WORKFLOW_PORT:-8105}"
@@ -595,6 +600,10 @@ else
 fi
 echo ""
 
+if [ "$START_META_WORKER" = true ]; then
+  addp_check_meta_worker_inventory || exit 1
+fi
+
 # ============================================================
 # 服务运行状态检查函数
 # ============================================================
@@ -655,6 +664,9 @@ check_service_running() {
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile" 2>/dev/null)
     if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+      case "$service_name" in
+        meta-worker-[12]) addp_meta_worker_pid_owned "$pid" || { echo 'Meta Worker PID ownership changed' >&2; exit 1; } ;;
+      esac
       if [ -n "$port" ] && declare -F addp_dev_owned_listener >/dev/null; then
         echo "✗ ${service_name} PID 文件中的进程仍在运行，但没有监听分配端口 ${port}" >&2
         exit 1
@@ -1113,7 +1125,14 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_META_WORKER" = true ]; then
-    build_if_service_stopped "meta-worker" "" build_worker "meta" "meta/backend" &
+    (
+      for unit in "${META_WORKER_UNITS[@]}"; do
+        if check_service_running "$unit" ""; then
+          build_worker "meta" "meta/backend"
+          break
+        fi
+      done
+    ) &
     BUILD_PIDS+=($!)
   fi
 
@@ -1155,7 +1174,7 @@ fi
 start_module_workers() (
   local module="$1" backend_pid="$2" port="$3"
   shift 3
-  local attempt=0 worker pid
+  local attempt=0 worker binary pid
   while true; do
     require_started_process "$module" "$backend_pid" || return 1
     if curl -fsS --max-time 2 "http://localhost:${port}/health/ready" >/dev/null 2>&1; then
@@ -1171,7 +1190,8 @@ start_module_workers() (
   done
   for worker in "$@"; do
     if check_service_running "$worker" ""; then
-      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" "$worker" "$module" worker "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-${worker}" &
+      binary=$(addp_worker_binary "$worker")
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" "$worker" "$module" worker "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-${binary}" &
       pid=$!
       echo "$pid" > ".dev-pids/${worker}.pid"
       echo "  ✓ ${worker} 已启动，所属 Backend 已就绪 (PID: $pid)"
@@ -1411,7 +1431,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 每个模块独立等待自己的 Backend，就绪后启动该模块 Worker。
   if [ "$START_META_WORKER" = true ]; then
-    start_module_workers meta "$META_PID" "$META_BACKEND_PORT" meta-worker &
+    start_module_workers meta "$META_PID" "$META_BACKEND_PORT" "${META_WORKER_UNITS[@]}" &
     WORKER_START_PIDS+=($!)
   fi
   if [ "$START_QUALITY_WORKER" = true ]; then
@@ -1643,7 +1663,15 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 fi
 # 等待所有模块的 Worker 启动任务；父进程从正式 PID 文件回收身份。
 addp_wait_for_parallel_tasks "Worker 启动" "${WORKER_START_PIDS[@]}" || exit 1
-for worker_spec in "meta-worker|$START_META_WORKER|META_WORKER_PID" "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID" "transfer-bounded-worker|$START_TRANSFER_BOUNDED_WORKER|TRANSFER_BOUNDED_WORKER_PID" "transfer-continuous-worker|$START_TRANSFER_CONTINUOUS_WORKER|TRANSFER_CONTINUOUS_WORKER_PID"; do
+if [ "$START_META_WORKER" = true ]; then
+  META_WORKER_PID=''
+  for unit in "${META_WORKER_UNITS[@]}"; do
+    worker_pid=$(cat ".dev-pids/${unit}.pid")
+    META_WORKER_PID="${META_WORKER_PID:+$META_WORKER_PID,}$worker_pid"
+    BACKEND_STARTS+=("$unit:$worker_pid")
+  done
+fi
+for worker_spec in "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID" "transfer-bounded-worker|$START_TRANSFER_BOUNDED_WORKER|TRANSFER_BOUNDED_WORKER_PID" "transfer-continuous-worker|$START_TRANSFER_CONTINUOUS_WORKER|TRANSFER_CONTINUOUS_WORKER_PID"; do
   IFS='|' read -r worker_name worker_selected worker_pid_var <<< "$worker_spec"
   if [ "$worker_selected" = true ]; then
     worker_pid=$(cat ".dev-pids/${worker_name}.pid")

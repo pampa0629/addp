@@ -23,6 +23,30 @@ class MetricsFixtureTest(unittest.TestCase):
                         ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
                         ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"))
 
+    def test_meta_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
+        original = FIXTURE.command
+        def command(args):
+            if args[:4] == ["docker", "network", "inspect", "bridge"]:
+                return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
+            return original(args)
+        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE="meta-workers")), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
+            FIXTURE.prepare(self.secret)
+        import shlex
+        values = {key: shlex.split(value)[0] for key, value in (line.removeprefix('export ').split('=',1) for line in (self.secret/'metrics.env').read_text().splitlines())}
+        self.assertEqual(values['ADDP_DEV_META_WORKER_REPLICAS'], '2')
+        self.assertEqual(values['META_WORKER_CONCURRENCY'], '1')
+        plan = json.loads(values['ADDP_DEV_PROCESS_METRICS_PLAN'])
+        self.assertEqual(set(plan), {'system','monitor','meta','meta-worker-1','meta-worker-2'})
+        self.assertEqual(values['MONITOR_METRICS_ALLOWED_PORTS'], '19100,19101,19102,19103,19104,19105')
+        for unit in ('meta-worker-1','meta-worker-2'):
+            self.assertEqual(plan[unit]['module_name'], 'meta')
+            self.assertEqual(plan[unit]['role'], 'worker')
+            folder = Path(plan[unit]['tls_dir'])
+            self.assertEqual(folder, self.secret/('process-'+unit))
+            self.assertEqual({p.name for p in folder.iterdir()}, {'ca.crt','server.crt','server.key'})
+            subprocess.run(['openssl','verify','-verify_ip','172.17.0.1','-purpose','sslserver','-CAfile',str(folder/'ca.crt'),str(folder/'server.crt')], check=True, capture_output=True)
+        self.assertNotEqual(plan['meta-worker-1']['listen'],plan['meta-worker-2']['listen'])
+
     def test_boundary_refuses_personal_hosts_databases_and_public_secrets(self):
         with patch.dict(os.environ, self.env, clear=True), patch.object(FIXTURE, "ROOT", self.root / "repository"), patch.object(FIXTURE.platform, "system", return_value="Linux"), patch.object(FIXTURE.platform, "machine", return_value="x86_64"):
             self.assertEqual(FIXTURE.boundary(), self.secret)
@@ -419,7 +443,7 @@ else: sys.exit(19)
     def cli(self, action, success=True):
         result = subprocess.run([sys.executable, str(self.repo / "scripts/test/platform-node-metrics-fixture.py"), action],
                                 cwd=self.root, env=self.env, capture_output=True, text=True, timeout=15)
-        if success: self.assertEqual(result.returncode, 0, result.stderr)
+        if success: self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else: self.assertNotEqual(result.returncode, 0)
         return result
 
@@ -437,8 +461,8 @@ else: sys.exit(19)
 
     def test_real_cli_cleanup_after_partial_start_refuses_foreign_components(self):
         (self.root / "fail-up").touch()
-        self.cli("engine-up", success=False)
-        self.assertTrue((self.secret / "engine-source-owner.json").exists())
+        result = self.cli("engine-up", success=False)
+        self.assertTrue((self.secret / "engine-source-owner.json").exists(), result.stdout + result.stderr)
         self.assertTrue((self.root / "docker-state").exists())
         self.env["GITHUB_RUN_ATTEMPT"] = "2"
         self.cli("engine-down", success=False)

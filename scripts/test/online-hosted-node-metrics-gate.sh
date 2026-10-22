@@ -7,8 +7,8 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
 ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
 case "$ADDP_ONLINE_NODE_METRICS_CASE" in
-  regression|complete-comparison|cpu-pressure|host-admission|engine-admission) export ADDP_ONLINE_NODE_METRICS_CASE ;;
-  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission or engine-admission' >&2; exit 2 ;;
+  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission or meta-workers' >&2; exit 2 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()

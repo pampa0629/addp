@@ -24,6 +24,17 @@ sys.modules[SOURCE_SPEC.name] = SOURCE
 SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
+META_PROCESS_PORTS = {"meta": 19103, "meta-worker-1": 19104, "meta-worker-2": 19105}
+
+
+def process_units():
+    result = {name: (name, "backend", port) for name, port in PROCESS_PORTS.items()}
+    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "meta-workers":
+        result.update({unit: ("meta", "backend" if unit == "meta" else "worker", port)
+                       for unit, port in META_PROCESS_PORTS.items()})
+    return result
+
+
 POSTGRES_PORTS = {"infra": 19401, "business": 19402}
 
 
@@ -66,10 +77,11 @@ def prepare(directory):
     if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local:
         raise ValueError("Hosted metrics requires its native private Docker bridge gateway")
     engine_case = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "engine-admission"
-    for port in (9444, 19100, *PROCESS_PORTS.values(), *(POSTGRES_PORTS.values() if engine_case else ())):
+    units = process_units()
+    for port in (9444, 19100, *(entry[2] for entry in units.values()), *(POSTGRES_PORTS.values() if engine_case else ())):
         with socket.socket() as sock:
             sock.bind((address, port))
-    for name in ("center-tls", "node-tls", "deployment", "control", "admission", "process-system", "process-monitor"):
+    for name in ("center-tls", "node-tls", "deployment", "control", "admission", *("process-"+unit for unit in units)):
         (directory / name).mkdir(mode=0o755)
 
     def ca(name):
@@ -93,7 +105,7 @@ def prepare(directory):
 
     (directory / "query").mkdir(mode=0o700)
     center, control, source = ca("center-ca"), ca("control-ca"), ca("source-ca")
-    for folder, issuer in (("center-tls", center), ("node-tls", source), ("process-system", source), ("process-monitor", source)):
+    for folder, issuer in (("center-tls", center), ("node-tls", source), *(("process-"+unit, source) for unit in units)):
         (directory / folder / "ca.crt").write_bytes(Path(str(issuer)+".crt").read_bytes())
         certificate(issuer, directory / folder, "server", True)
     if engine_case:
@@ -128,15 +140,17 @@ def prepare(directory):
         "MONITOR_PROMETHEUS_CA_FILE": str(directory / "query/ca.crt"),
         "MONITOR_PROMETHEUS_CLIENT_CERT_FILE": str(directory / "query/client.crt"),
         "MONITOR_PROMETHEUS_CLIENT_KEY_FILE": str(directory / "query/client.key"),
-        "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": ",".join(map(str, (19100, *PROCESS_PORTS.values()))),
+        "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": ",".join(map(str, (19100, *(entry[2] for entry in units.values())))),
         "ADDP_DEV_PROCESS_METRICS_PLAN": json.dumps({
-            module: {"module_name": module, "role": "backend", "listen": address+":"+str(port),
-             "endpoint": "https://"+address+":"+str(port)+"/metrics", "tls_dir": str(directory / ("process-"+module))}
-            for module, port in PROCESS_PORTS.items()}, separators=(",", ":")),
+            unit: {"module_name": module, "role": role, "listen": address+":"+str(port),
+             "endpoint": "https://"+address+":"+str(port)+"/metrics", "tls_dir": str(directory / ("process-"+unit))}
+            for unit, (module, role, port) in units.items()}, separators=(",", ":")),
         "MONITOR_METRICS_CA_FILE": str(directory / "admission/ca.crt"),
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
         "MONITOR_METRICS_CLIENT_KEY_FILE": str(directory / "admission/client.key"),
     }
+    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "meta-workers":
+        values.update(ADDP_DEV_META_WORKER_REPLICAS="2", META_WORKER_CONCURRENCY="1")
     if engine_case:
         values["MONITOR_METRICS_ALLOWED_PORTS"] += "," + ",".join(map(str, POSTGRES_PORTS.values()))
         values["ADDP_POSTGRES_METRICS_STATE_DIR"] = str(directory / "postgres-sources")

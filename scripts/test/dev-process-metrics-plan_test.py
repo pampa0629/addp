@@ -22,7 +22,7 @@ class ProcessMetricsPlanTest(unittest.TestCase):
     def setUp(self):
         self.plan = {
             "meta": deployment("meta", "backend", 19104),
-            "meta-worker": deployment("meta", "worker", 19106),
+            "meta-worker-1": deployment("meta", "worker", 19106),
             "transfer-bounded-worker": deployment("transfer", "worker", 19107),
             "transfer-continuous-worker": deployment("transfer", "worker", 19108),
         }
@@ -33,8 +33,8 @@ class ProcessMetricsPlanTest(unittest.TestCase):
             result = LAUNCH.select_deployment(self.raw, unit, entry["module_name"], entry["role"])
             self.assertEqual(json.loads(result), [entry])
         self.assertEqual(LAUNCH.select_deployment(self.raw, "monitor", "monitor", "backend"), "")
-        self.assertEqual(LAUNCH.select_deployment("", "meta-worker", "meta", "worker"), "")
-        self.assertEqual(LAUNCH.select_deployment("{}", "meta-worker", "meta", "worker"), "")
+        self.assertEqual(LAUNCH.select_deployment("", "meta-worker-1", "meta", "worker"), "")
+        self.assertEqual(LAUNCH.select_deployment("{}", "meta-worker-1", "meta", "worker"), "")
 
     def test_future_same_type_units_do_not_share_a_deployment(self):
         # Selection can isolate units; this does not add replica startup.

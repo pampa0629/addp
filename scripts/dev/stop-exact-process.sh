@@ -18,7 +18,7 @@ if [ "${1:-}" = "--force" ]; then
   force=1
   shift
 fi
-[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh [--force] -system|-manager|-gateway"
+[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh [--force] -system|-manager|-gateway|-meta-worker-1|-meta-worker-2"
 
 case "$1" in
   -system)
@@ -28,6 +28,10 @@ case "$1" in
   -manager)
     module=manager
     expected_command='\.dev-bins/addp-manager([[:space:]]|$)'
+    ;;
+  -meta-worker-1|-meta-worker-2)
+    module="${1#-}"
+    expected_command='\.dev-bins/addp-meta-worker([[:space:]]|$)'
     ;;
   -gateway)
     module=gateway

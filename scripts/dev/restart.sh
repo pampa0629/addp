@@ -160,6 +160,9 @@ echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译�
 echo ""
 
 # 全量先停止；局部在所选 Go 模块的 Swagger 检查通过后停止。
+source "${SCRIPT_DIR}/worker-units.sh"
+addp_meta_worker_units >/dev/null || exit 1
+
 # 所有依赖准备交由停止后的 start.sh 执行，避免改写活动 Runtime。
 STOP_ARGS=()
 if [ "$RESTART_ALL" = true ]; then

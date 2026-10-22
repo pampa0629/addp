@@ -68,6 +68,7 @@ addp_dev_saved_port() {
 # 运行进程名称到领域模块的唯一映射，用于局部生命周期范围。
 addp_dev_process_module() {
   case "$1" in
+    meta-worker-[12]) echo meta ;;
     transfer-bounded-worker|transfer-continuous-worker) echo transfer ;;
     jupyter-api-server) echo jupyter ;;
     raster-mosaic-runtime) echo manager ;;

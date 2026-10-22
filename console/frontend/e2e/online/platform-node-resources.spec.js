@@ -273,6 +273,65 @@ test('platform node resources through real Console password MFA and Monitor ifra
       save('complete')
       return
     }
+    if (expected.meta_workers) {
+      save('meta-worker-resources-and-host')
+      const { workers, host } = expected.meta_workers
+      const path = '/monitor/service-resources?module_name=meta&role=worker&refresh=off'
+      const checkList = async (after) => {
+        await expect(monitor.getByTestId('process-list')).toBeVisible()
+        await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(2)
+        for (const owner of workers) await expect(monitor.getByTestId('process-list')).toContainText(owner.instance_id)
+        await expect.poll(async () => {
+          await Promise.all(pending)
+          return serviceBatches.slice(after).some(item => item.query.instance_ids?.split(',').sort().join(',') === workers.map(row => String(row.id)).sort().join(','))
+        }).toBe(true)
+        const batch = serviceBatches.slice(after).filter(item => item.query.instance_ids?.split(',').sort().join(',') === workers.map(row => String(row.id)).sort().join(',')).at(-1)
+        const values = validateProcessSummaries(batch.value, workers)
+        for (const owner of workers) {
+          expect(values.get(owner.id).node_id).toBe(host.node_id)
+          expect(values.get(owner.id).series.every(line => line.points[0].data_state === 'valid')).toBe(true)
+        }
+        return batch
+      }
+      let batchStart = serviceBatches.length
+      await page.goto(path)
+      await checkList(batchStart)
+      batchStart = serviceBatches.length
+      await page.reload()
+      const summary = await checkList(batchStart)
+      await page.screenshot({ path: resolve(artifact, 'meta-workers-list.png'), animations: 'disabled' })
+      const trends = []
+      for (const owner of workers) {
+        await page.goto(path + '&instance_id=' + owner.id)
+        await expect(monitor.getByTestId('process-trend')).toContainText(owner.instance_id)
+        for (const metric of ['cpu', 'memory']) await expect(monitor.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
+        await expect.poll(async () => {
+          await Promise.all(pending)
+          return serviceTrends.some(item => item.query.instance_id === String(owner.id))
+        }).toBe(true)
+        const trend = serviceTrends.filter(item => item.query.instance_id === String(owner.id)).at(-1)
+        validateProcessTrend(trend.value, owner, trend.query)
+        for (const line of trend.value.series) expect(line.points.some(point => point.data_state === 'valid')).toBe(true)
+        trends.push(trend)
+      }
+      await page.screenshot({ path: resolve(artifact, 'meta-workers-trends.png'), animations: 'disabled' })
+      batchStart = serviceBatches.length
+      await page.goto(path)
+      await checkList(batchStart)
+      await monitor.getByTestId('process-host').getByRole('button', { name: host.display_name, exact: true }).first().click()
+      await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${host.node_id}$`))
+      await expect(monitor.getByRole('heading', { name: host.display_name, exact: true })).toBeVisible()
+      batchStart = serviceBatches.length
+      await page.goBack()
+      await expect(page).toHaveURL(url => matchesRedirectURL(url, new URL(path, process.env.CONSOLE_URL)))
+      await checkList(batchStart)
+      await Promise.all(pending)
+      expect(businessErrors).toEqual([])
+      report.meta_workers = { summary, trends, reload_restored: true, host_navigation: true }
+      report.result = 'passed'
+      save('complete')
+      return
+    }
     if (expected.binding) {
       save('bound-service-host-navigation')
       const { host, instance, target } = expected.binding

@@ -89,6 +89,7 @@ on:
           - cpu-pressure
           - host-admission
           - engine-admission
+          - meta-workers
 
 permissions:
   contents: read

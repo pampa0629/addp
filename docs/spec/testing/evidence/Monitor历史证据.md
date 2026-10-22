@@ -274,3 +274,16 @@ T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）�
 冻结基线 `6d42e4621f2bed671814c11eb365fcde4064f301`，只叠加本方测试输入。首次完整 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality` 已通过新增三进程查询，但被旧 HTTP 夹具的两进程数量限制拒绝，不计整项通过；日志 `/tmp/addp-same-role-workers-t2-initial.log`，失败退出后独立确认项目 `addp-metrics-t2-aa424071344545babdb1d19ee508ad7a` 的容器、网络和卷均为零。同步 HTTP 查询与告警两处夹具约束后，同一标准完整分组退出 0：45 项配置回归、固定窗口检查、三进程与双 Worker 身份拒绝、HTTP 查询/告警/通知/恢复、依次停源与对等进程保持均通过。日志 `/tmp/addp-same-role-workers-t2.log`，项目 `addp-metrics-t2-67bc578dfb73485783ae7aabde6f5d87` 的容器/网络/卷及门禁内部临时目录清零，另读三类资源均为空。五项最终测试输入与成功冻结副本逐字节一致；T2 CI 登记检查通过，既有目录登记与 Release 分组已覆盖，不新增 Make/workflow 路线。
 
 本次是 Docker Desktop 上的 Linux SDK／真实 Prometheus／Monitor 查询 T2，未执行真实 System 多 Worker 登记与宿主绑定、业务 Worker 副本启动或原生 macOS 拓扑 T4，不把局部通过扩大为这些范围。既有 PostgreSQL 专业 Hosted 证据不变；本批云端结果继续等待专门 CI 会话回传，不自行轮询、重跑或设定时，也未重启个人服务。
+
+
+### Meta 双 Worker 标准启动与登记绑定专项
+
+2026-10-22，按用户确认范围补齐原生 Meta 的唯一编号启动路径：`ADDP_DEV_META_WORKER_REPLICAS` 默认 `1`、仅接受 `1/2`，两个单元共用同一 Worker 产物，各自独立 PID、进程身份和可选指标/TLS；任务并发仍是每进程独立配置。标准启动复用健康单元、只补缺失单元，活动缩容及外来/重复 PID 拒绝；模块停止和局部重启覆盖全部选中 Worker。未改变 Common 登记、System 首次主机声明、Monitor 授权、IAM 或业务任务调度。首次应用需部署方先停止旧 Meta，再使用标准入口启动；个人服务与配置未切换。
+
+同一 `platform-node-metrics` 增加 `meta-workers` Hosted 专项：真实一 Backend／双 Worker 登记和同主机绑定，独立端点及当前段资源/趋势，精确停止一个 Worker 后由标准入口补回且健康实例保持，主机启停、中心故障与新样恢复，正式密码/MFA的真实 Console 双实例趋势及主机导航，最后配置退役和整套部署清零。身份、权限与 1800 秒场景／60 分钟 Job 预算均沿原路线；不执行租户任务、加压或读取租户业务。该专项尚未实际调度执行，不能计为真实 Meta 登记/绑定 T4 通过，也不覆盖原生 macOS、跨主机、容器副本、任务竞争或 HA。
+
+本地验证使用冻结基线 `016f606ee18892a20a0497308f681ca03f69e994`，只叠加本批 24 项实现、规范与测试输入，避免共享工作区其他会话 WIP。最终 `make test-dev-lifecycle` 退出 0：100 项启动/配置测试、59 项 Infra 生命周期回归、完整 Bash 生命周期/局部重启及 Common schema/repository/projectionstore 回归通过，四模块 server/worker 命令包编译通过。新增四项测试使用真实原生 Python 进程夹具执行生产 Worker 启动和精确停止入口，覆盖逐实例指标/主机输入、复用、只补缺失、缩容/重复/外来 PID 拒绝；它们不是正式 Meta Go Worker 登记或页面 T4。日志 `/tmp/addp-meta-workers-dev-lifecycle-receipts.log`。
+
+曾有一轮生命周期提取夹具缺少启动单元初始化，修正后完整门禁通过；随后一次复验及一次带诊断复验在新增夹具的五秒启动收据等待处失败，当时两个进程仍存活。保留期限并补进程/收据/控制器诊断后，最终串行完整门禁通过；未证明这两次等待失败的唯一原因，不将后续通过追溯为已修复未知环境故障。失败日志 `/tmp/addp-meta-workers-dev-lifecycle-verified.log`、`/tmp/addp-meta-workers-dev-lifecycle-final-check.log`。Online 首轮 123 项及身份 Go 夹具通过；一次并行复验有两项既有引擎 CLI 夹具失败，未计通过，后续结果须按下述最终记录判断。
+
+最终串行 `make test-node-metrics-online-runner` 退出 0：123 项 Python 正反向契约、JS/Bash 语法及 System Metrics 身份 Go 夹具通过，日志 `/tmp/addp-meta-workers-online-runner-final-check.log`；包括新 Meta 单元独立证书/计划、限定标准命令、SDK 来源映射、当前实例 DTO、真实浏览器收据拒绝与清理编排。并行轮引擎 CLI 失败的唯一原因仍未确认，仅增加测试阶段输出诊断，未修改引擎产品、认证、读取期限或清理边界。`make test-workflow-security` 退出 0（原标准 Release workflow 固定版本安全审计），实际 T2 和 Online CI 登记检查均通过；新增 choice 已同步原 Online 受控登记及删除 choice 的拒绝回归。24 项最终输入与成功冻结副本逐字节一致，之后仅更新本证据与后续事项摘要；本次未读、轮询或重跑云端 CI，未设置定时，也未重启个人服务。
