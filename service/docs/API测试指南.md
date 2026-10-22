@@ -9,6 +9,7 @@
 | 阅读目的 | 文档 |
 | --- | --- |
 | REST 请求、格式、游标、Features 发现与失败分支 | [查询与要素协议](testing/查询与要素协议.md) |
+| Features 链接地址来源、直连与公开 HTTPS 入口 | [Features 公开入口核对](testing/查询与要素协议.md#元数据链接与公开入口核对) |
 | 发布血缘的实际同步范围、失败重试与完整链路验收 | [发布血缘同步边界](architecture/查询发布与执行.md#发布血缘同步边界) |
 | WMTS 元数据、XYZ / OGC Tiles、MVT 和空瓦片 | [瓦片协议](testing/瓦片协议.md) |
 | 瓦片直连、根 Nginx 与公开 HTTPS 入口及元数据链接 | [入口边界](architecture/瓦片发布与缓存.md#元数据链接与公开入口)、[公开入口验证](testing/瓦片协议.md#元数据链接与公开入口核对) |
@@ -33,9 +34,18 @@
 SERVICE_TEST_DIR=$(mktemp -d)
 ```
 
-瓦片样例直接在 `SERVICE_API_BASE` 后拼接协议根路径；该变量只填本轮实际入口的 origin，不含 `/api/v1/service` 等管理 API 前缀。不能仅凭 Console 可访问就选用根 Nginx origin；当前协议转发缺口与直连、公开入口的证据边界沿[入口专题](architecture/瓦片发布与缓存.md#元数据链接与公开入口)及上述公开入口验证核对。
+`SERVICE_API_BASE` 只填本轮所测入口的完整 origin（scheme、host、实际端口），不含 `/api/v1/service`、`/module-ui/service` 等路径；样例自行追加管理或协议路径。报告须注明入口类型，不把下列地址混为同一个后端：
 
-User Access Token 是 System 签发的 opaque Token，浏览器沿共享 AuthSession 在内存使用，不能采用 JWT 样例、URL Token 或 localStorage 令牌方案。管理面还须对应 `service.definition.*` 或 `service.external_registration.*` Permission；公开、私有、跨 Tenant 和 API Consumer 是不同用例，公开服务的匿名测试应省略 Authorization Header。身份规则见[统一认证规范](../../docs/spec/addp登录认证的统一要求.md)。
+| 入口 | 请求经过的范围与证据边界 |
+| --- | --- |
+| Service Backend 直连 | 直接访问 Service 路由与 Handler；不覆盖 Gateway 或外层代理。 |
+| Gateway 直连 | 经 Gateway 已挂载路由转发 Service；不能推导 Console 或公开 HTTPS 入口已接通。 |
+| Service 前端开发代理 | 请求先到 Service Vite，再按匹配规则转发 Gateway；它不是 Backend 地址，直接打开页面还可能跳转到 Console，须记录最终 origin。 |
+| Console 统一入口 | 开发时由 Console Vite 接收根路径请求，不继承 Service Vite 的协议代理；产品部署须另查根 Nginx 与外层 HTTPS 代理。页面可访问不代表协议可用。 |
+
+开发转发差异统一见[开发代理与 Console 统一入口](testing/查询与要素协议.md#开发代理与-console-统一入口)，DTO、页面地址及 REST 预览的区别见[管理 DTO 与页面端点核对](testing/查询与要素协议.md#管理-dto-与页面端点核对)。原始链接与公开地址分别按[Features](testing/查询与要素协议.md#元数据链接与公开入口核对)、[瓦片](testing/瓦片协议.md#元数据链接与公开入口核对)专题验收，保留当前协议转发缺口；直连或手工拼接成功不证明原始链接和公开 HTTPS 可达，未接通、失败、未运行分别记录。注册代理样例另用 `SERVICE_BACKEND_BASE` 直连 Backend，其与管理入口、生成代理地址和 Gateway 转发的区别见[代理读取与错误](testing/注册服务与代理.md#代理读取与错误)，不把管理 API 可用计为代理消费已接通。
+
+User Access Token 是 System 签发的 opaque Token，浏览器沿共享 AuthSession 在内存使用，不能采用 JWT 样例、URL Token 或 localStorage 令牌方案。管理面还须对应 `service.definition.*` 或 `service.external_registration.*` Permission；公开、私有、跨 Tenant 和 API Consumer 是不同用例，公开服务的匿名测试应省略 Authorization Header。身份规则见[统一认证规范](../../docs/spec/addp登录认证的统一要求.md)。curl 不继承浏览器 AuthSession，须按用例显式携带或省略凭据；代理可达不授予权限。REST 的 API Consumer 用例与 User Bearer 分开，不能推广到 Features，详见[协议认证与失败用例](testing/查询与要素协议.md#权限与失败用例)；证据只记录身份类型，不保存令牌。
 
 HTTP 示例使用 curl；读取 JSON 中真实 ID/游标的步骤使用 jq。选择有代表性的表/SQL/指标来源及空间/非空间、动态/静态瓦片和受控上游，参数、范围和格式来自发布契约。示例只给出请求方法与应核对内容，不记录现场测试通过结论。
 

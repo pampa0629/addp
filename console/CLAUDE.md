@@ -10,7 +10,7 @@ Console 是 ADDP 的统一前端入口，负责登录、全局导航、主题/�
 
 - 前端：Vue 3 + Vue Router + Pinia + Element Plus。
 - 开发首选端口：`5170`，启动脚本解析后的实际端口由 `CONSOLE_FE_PORT` 传入。
-- 开发代理：`/api` 统一代理到启动时解析出的 Gateway 端口。
+- 开发代理：`/api` 统一代理到启动时解析出的 Gateway 端口。Console 当前没有 `/ogc` 代理，不能从 Service Vite 的局部配置或 REST 预览成功推导 Features 统一入口可用；地址来源、身份和验收边界统一见 [Service 开发代理专题](../service/docs/testing/查询与要素协议.md#开发代理与-console-统一入口)。
 - 模块 iframe 与独立界面统一使用当前 origin 的 `/module-ui/{frontend}/`；开发代理由 `common-frontend` 的 `createModuleFrontendProxies()` 统一生成，模块配置使用 `withModuleFrontend()`，直接打开模块开发端口先跳转到同源入口。
 
 ## 重要目录
