@@ -10,6 +10,9 @@ const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'tab
 const ftpRootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
 const ftpDirectoryPath = { ...ftpRootPath, segments: [...ftpRootPath.segments, { term: 'directory', kind: 'directory', name: 'Models' }] }
 const ftpFilePath = name => ({ ...ftpRootPath, segments: [...ftpDirectoryPath.segments, { term: 'file', kind: 'file', name }] })
+const minioRootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'service', kind: 'service', name: '' }] }
+const minioBucketPath = { ...minioRootPath, segments: [...minioRootPath.segments, { term: 'bucket', kind: 'bucket', name: 'Models' }] }
+const minioObjectPath = name => ({ ...minioRootPath, segments: [...minioBucketPath.segments, { term: 'object', kind: 'object', name }] })
 function filterGrants(items, query) {
   const search = query.get('table_search')?.toLowerCase(), kind = query.get('recipient_type'), recipient = query.get('recipient_id')
   const exact = query.get('catalog_path') && JSON.parse(query.get('catalog_path')), state = query.get('state')
@@ -52,7 +55,11 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, requirementPath = tablePath, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false, ftp = '' } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, requirementPath = tablePath, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false, ftp = '', sourceType = 'ftp' } = {}) {
+  const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
+  const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
+  const modelPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
+  const modelKind = sourceType === 'minio' ? 'object' : 'file'
   const writes = [], reads = []
   let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: requirementPath }] : []
   let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
@@ -80,12 +87,12 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       reads.push(request.url())
       const fingerprint = path.split('/').at(-2)
       if (ftp) {
-        const primary = ftpFilePath(`model.${ftp}`), candidate = createHash('sha256').update(`2:Models/model.${ftp}`).digest('hex')
+        const primary = modelPath(`model.${ftp}`), candidate = createHash('sha256').update(`2:Models/model.${ftp}`).digest('hex')
         if (fingerprint !== candidate) return reply({ error: 'Not a model DataItem', error_code: 'authorization_target_not_found' }, 404)
-        return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: 'file',
+        return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: modelKind,
           full_name: `Models/model.${ftp}`, basis_state: factsState, boundary_hash: factsState === 'complete' ? 'c'.repeat(64) : null,
           boundary: factsState === 'complete' ? { layout: 'single', file_composition: { format: ftp, refs: [
-            ...(['3ds', 'dae'].includes(ftp) ? [{ target: ftpFilePath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
+            ...(['3ds', 'dae'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
             { target: primary, role: 'model', required: true, primary: true }
           ] } } : null })
       }
@@ -195,9 +202,9 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/catalog/children')) {
       reads.push(path)
       const segments = request.postDataJSON().path.segments
-      if (ftp) return reply({ nodes: !segments.length ? [{ name: '', path: ftpRootPath, term: 'root', kind: 'root', role: 'branch' }] : segments.length === 1 ?
-        [{ name: 'Models', path: ftpDirectoryPath, term: 'directory', kind: 'directory', role: 'branch' }] :
-        [`model.${ftp}`, 'TEST.PNG', 'unrelated.obj'].map(name => ({ name, path: ftpFilePath(name), term: 'file', kind: 'file', role: 'leaf' })) })
+      if (ftp) return reply({ nodes: !segments.length ? [{ name: '', path: modelRoot, term: modelRoot.segments.at(-1).term, kind: modelRoot.segments.at(-1).kind, role: 'branch' }] : segments.length === 1 ?
+        [{ name: 'Models', path: modelBranch, term: modelBranch.segments.at(-1).term, kind: modelBranch.segments.at(-1).kind, role: 'branch' }] :
+        [`model.${ftp}`, 'TEST.PNG', 'unrelated.obj'].map(name => ({ name, path: modelPath(name), term: modelKind, kind: modelKind, role: 'leaf' })) })
       if (!segments.length) return reply({ nodes: [{ name: '', path: rootPath, term: 'server', kind: 'server', role: 'branch' }] })
       if (segments.length === 1) return reply({ nodes: [{ name: 'outdoor', path: schemaPath, term: 'schema', kind: 'namespace', role: 'branch' }] })
       if (segments.length === 2) return reply({ nodes: [
@@ -207,7 +214,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       ] })
       throw new Error('Unexpected leaf browse')
     }
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: ftp ? 'ftp' : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: ftp ? sourceType : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
@@ -830,8 +837,9 @@ async function selectFTPModel(page, format) {
   await page.locator('.resource-tree-select__panel').getByRole('button', { name: new RegExp(`model\\.${format}`) }).click()
   await page.getByTestId('approval-add-selection').click()
 }
-for (const format of ['ifc', '3ds', 'dae']) test(`FTP ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
-  const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format })
+for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
+  const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })
+  const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
   await page.getByTestId('approval-mode').click()
@@ -848,7 +856,7 @@ for (const format of ['ifc', '3ds', 'dae']) test(`FTP ${format} uses one full Da
   await confirmGrant(page)
   await expect(page.getByTestId('engine-source-grants')).toContainText('只读授权已签发')
   expect(writes).toHaveLength(1)
-  expect(writes[0].body).toMatchObject({ catalog_path: ftpFilePath(`model.${format}`), item_fingerprint: createHash('sha256').update(`2:Models/model.${format}`).digest('hex'), expected_boundary_hash: 'c'.repeat(64), initialize_approval: true, action: 'read', recipient_id: '33' })
+  expect(writes[0].body).toMatchObject({ catalog_path: expectedPath(`model.${format}`), item_fingerprint: createHash('sha256').update(`2:Models/model.${format}`).digest('hex'), expected_boundary_hash: 'c'.repeat(64), initialize_approval: true, action: 'read', recipient_id: '33' })
   expect(writes[0].body.file_composition).toBeUndefined()
   const filter = page.getByTestId('source-grant-table-filter')
   await filter.press('ArrowDown')
@@ -857,7 +865,7 @@ for (const format of ['ifc', '3ds', 'dae']) test(`FTP ${format} uses one full Da
   await picker.getByRole('treeitem', { name: `model.${format}`, exact: true }).click()
   await expect(page.getByTestId('source-grant-exact-filter')).toBeVisible()
   await expect.poll(() => reads.filter(url => url.includes('catalog_path=')).length).toBeGreaterThan(0)
-  expect(JSON.parse(new URL(reads.filter(url => url.includes('catalog_path=')).at(-1)).searchParams.get('catalog_path'))).toEqual(ftpFilePath(`model.${format}`))
+  expect(JSON.parse(new URL(reads.filter(url => url.includes('catalog_path=')).at(-1)).searchParams.get('catalog_path'))).toEqual(expectedPath(`model.${format}`))
   await page.getByTestId('account-grant-expand').click()
   await page.getByTestId('source-grant-revoke').click()
   await page.getByTestId('source-grant-revoke-reason').fill('Fixture verification complete')
@@ -865,10 +873,10 @@ for (const format of ['ifc', '3ds', 'dae']) test(`FTP ${format} uses one full Da
   await expect(page.getByTestId('source-grant-list')).toContainText('当前筛选下没有授权记录')
   expect(writes).toHaveLength(2)
   expect(writes[1].path).toMatch(/\/access_grants\/[^/]+\/revoke$/)
-  await page.screenshot({ path: testInfo.outputPath(`ftp-${format}-revoked.png`), fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath(`${sourceType}-${format}-revoked.png`), fullPage: true })
 })
-test('FTP directory and texture navigation never becomes a selection or write', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, ftp: '3ds' })
+for (const sourceType of ['ftp', 'minio']) test(`${sourceType} branch and texture navigation never becomes a selection or write`, async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, ftp: '3ds', sourceType })
   await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
   const input = page.getByTestId('approval-resource-input')
   await input.press('ArrowDown')

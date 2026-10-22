@@ -19,6 +19,7 @@ type ObjectCatalogCompositeDetectionError struct {
 func DetectObjectCatalogCompositeItems(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
+	structureReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	resources []scanresource.StorageResource,
@@ -55,12 +56,13 @@ func DetectObjectCatalogCompositeItems(
 
 	for _, groupKey := range groupKeys {
 		group := scanresource.UnclaimedObjectResources(groups[groupKey], skipPaths)
-		if len(group) < 2 {
+		if len(group) == 0 || (len(group) < 2 && structureReader == nil) {
 			continue
 		}
 		bucket, prefix := scanresource.SplitObjectCompositeGroupKey(groupKey)
 		candidates := ContentCandidateSet{
 			DirPath:              prefix,
+			StructureReader:      structureReader,
 			Files:                scanresource.StorageResourcesToFileRefs(scanresource.ObjectResourcesByParentPrefix(group)[groupKey]),
 			RecursiveFiles:       scanresource.StorageResourcesToFileRefs(group),
 			EngineCatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
@@ -86,7 +88,7 @@ func DetectObjectCatalogCompositeItems(
 			if detected == nil {
 				continue
 			}
-			if prefix == "" && detected.Layout != format.LayoutMulti {
+			if prefix == "" && detected.Layout != format.LayoutMulti && !(detected.Layout == format.LayoutSingle && detected.Format == "3ds" && structureReader != nil) {
 				continue
 			}
 			for _, path := range detected.RefFilePaths() {

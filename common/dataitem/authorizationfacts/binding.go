@@ -117,7 +117,7 @@ func PrimaryCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) 
 	if path.EngineID == 0 || uint64(path.EngineID) > math.MaxInt64 {
 		return "", errors.New("invalid primary candidate engine")
 	}
-	if len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile {
+	if len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermObject) {
 		if err := validateFileCompositionTarget(path); err != nil {
 			return "", err
 		}

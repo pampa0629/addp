@@ -86,7 +86,7 @@ func bindManagerModel3DRequest(c *gin.Context, dst any, allowed ...string) error
 }
 
 // Issue godoc
-// @Summary 签发 Manager FTP/NFS 模型 GLB 执行授权 | Issue Manager FTP/NFS model GLB execution authorization
+// @Summary 签发 Manager 精确组成模型 GLB 执行授权 | Issue Manager exact-composition model GLB execution authorization
 // @Description 仅当前普通第一方或 OAuth API User，按精确 pending execution 反查任务版本、完整配置和 Meta 文件组成，并核现行源规则。不接受自报身份或来源，不返回连接或凭据 | Current ordinary first-party or OAuth API User only. Resolve task version, complete configuration and Meta file composition from the exact pending execution and check current source rules. No caller-supplied identity or source, connections or credentials
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
@@ -136,8 +136,8 @@ func (h *IAMManagerModel3DAuthorizationHandler) Issue(c *gin.Context) {
 }
 
 // Authorize godoc
-// @Summary 复核 Manager FTP/NFS 模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager FTP/NFS model execution
-// @Description 仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照 FTP/NFS 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete file composition and current source rules. Return the same-snapshot FTP/NFS connection for this guarded source I/O only; never cache or persist
+// @Summary 复核 Manager 精确组成模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager exact-composition model execution
+// @Description 仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整模型组成及现行源规则。返回当次同快照 FTP/NFS/MinIO 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete model composition and current source rules. Return the same-snapshot FTP/NFS/MinIO connection for this guarded source I/O only; never cache or persist
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
 // @Produce json
@@ -194,7 +194,7 @@ func (h *IAMManagerModel3DAuthorizationHandler) Authorize(c *gin.Context) {
 	engine := observed.Engine
 	primary, _ := expected.FileComposition.PrimaryTarget()
 	version, _ := strconv.ParseInt(expected.EngineVersion, 10, 64)
-	if engine.ID != primary.EngineID || engine.TenantID == nil || *engine.TenantID != tenant || engine.Version != version || !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
+	if engine.ID != primary.EngineID || engine.TenantID == nil || *engine.TenantID != tenant || engine.Version != version || !commonexecution.ManagerModel3DSourceComposition(engine.EngineType, &expected.FileComposition) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		respondExecutionAuthorizationError(c, errors.New("inconsistent Manager model3d observation"))
 		return
 	}

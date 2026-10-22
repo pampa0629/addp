@@ -90,7 +90,7 @@ func (c *SystemServiceClient) CheckManagerModel3DAccess(ctx context.Context, id 
 	version, _ := strconv.ParseInt(request.SourceReadScope.EngineVersion, 10, 64)
 	engine := response.Engine
 	if response.ObservedAt.IsZero() || engine == nil || engine.ID != primary.EngineID || engine.TenantID == nil || *engine.TenantID != *c.tenantID ||
-		engine.Version != version || !execution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
+		engine.Version != version || !execution.ManagerModel3DSourceComposition(engine.EngineType, &request.SourceReadScope.FileComposition) || engine.LifecycleState != "active" || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		return nil, errors.New("invalid current file engine access observation")
 	}
 	return &response, nil

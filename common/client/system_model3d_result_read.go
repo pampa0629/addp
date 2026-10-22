@@ -24,7 +24,7 @@ func (s *ManagerModel3DExpectedSource) Validate() error {
 		return ErrManagerPreviewReadDenied
 	}
 	primary, err := s.FileComposition.PrimaryTarget()
-	if err != nil || primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile || (s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
+	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile && (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject || s.FileComposition.Format == "dae")) || (s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
 		return ErrManagerPreviewReadDenied
 	}
 	return nil

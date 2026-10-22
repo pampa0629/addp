@@ -1,12 +1,17 @@
 package scanruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/meta/internal/scanflow"
 	"io"
 	"log/slog"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -122,6 +127,59 @@ func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
 		var active int64
 		if err := db.Model(&models.MetaItem{}).Where("tenant_id = ? AND engine_id = ?", 1, 9).Count(&active).Error; err != nil || active != 1 {
 			t.Fatalf("active items=%d err=%v; claimed MTL/texture must be removed", active, err)
+		}
+	}
+}
+
+type objectModelStructureSpy struct {
+	objectCatalogScanTestProvider
+	primary plugin.EngineCatalogPath
+	data    []byte
+	ranges  int
+}
+
+func (p *objectModelStructureSpy) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("basic scan must not open content or dependencies")
+}
+func (p *objectModelStructureSpy) OpenRange(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	if !reflect.DeepEqual(target, p.primary) || opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(p.data)) {
+		return nil, fmt.Errorf("range escaped typed primary")
+	}
+	p.ranges++
+	return io.NopCloser(bytes.NewReader(p.data[opts.Offset : opts.Offset+opts.Length])), nil
+}
+func TestMinIOBasicObjectCompositionAtBucketRootAndPrefix(t *testing.T) {
+	for _, prefix := range []string{"", "models/", "models/models/"} {
+		for _, withTexture := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%v", prefix, withTexture), func(t *testing.T) {
+				data := structure3DS("A.PNG")
+				if !withTexture {
+					data = make([]byte, 6)
+					binary.LittleEndian.PutUint16(data, 0x4d4d)
+					binary.LittleEndian.PutUint32(data[2:], 6)
+				}
+				reader := &objectModelStructureSpy{primary: plugin.ObjectItemPath(9, "addp", prefix+"model.3ds"), data: data}
+				resources := []scanresource.StorageResource{objectResourceForTest(9, "addp", prefix+"model.3ds", int64(len(data)), "")}
+				if withTexture {
+					resources = append(resources, objectResourceForTest(9, "addp", prefix+"A.PNG", 8, ""))
+				}
+				claims, items, warnings := scanflow.DetectObjectCatalogCompositeItems(t.Context(), reader, reader, nil, 9, resources, false)
+				if len(warnings) != 0 || len(items) != 1 || reader.ranges == 0 {
+					t.Fatalf("items=%v warnings=%v ranges=%d", items, warnings, reader.ranges)
+				}
+				plan, ok := scanresource.PlanObjectCompositeItem(9, items[0], "object")
+				if !ok || plan.FullName != "addp/"+prefix+"model.3ds" || commonJSON.Section(plan.Attributes, "format_info.3ds")["scan_complete"] != true {
+					t.Fatalf("bad persisted object facts: %+v", plan)
+				}
+				if len(plan.DataItem.RefList) != len(resources) || !claims[prefix+"model.3ds"] {
+					t.Fatal("exact model composition missing")
+				}
+				for _, ref := range plan.DataItem.RefList {
+					if ref.Path != "addp/"+prefix+"model.3ds" && ref.Path != "addp/"+prefix+"A.PNG" {
+						t.Fatalf("unqualified or extra ref %s", ref.Path)
+					}
+				}
+			})
 		}
 	}
 }

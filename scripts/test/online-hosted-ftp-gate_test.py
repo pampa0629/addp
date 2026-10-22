@@ -28,6 +28,11 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
                 Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'ftp-root').write_text('/tmp/owned-nfs-fixture')
             if os.environ.get('ADDP_TEST_NFS_FIXTURE_FAIL')==action:sys.exit(1)
         """)
+        self.host._write_repository_script('scripts/test/online-file-model-minio-fixture.py', """
+            import os,sys
+            with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('minio-fixture:'+sys.argv[1]+'\\n')
+            if os.environ.get('ADDP_TEST_MINIO_FIXTURE_FAIL')==sys.argv[1]:sys.exit(1)
+        """)
         # Retain the shared identity fixture while enforcing the existing
         # System-owned readiness observation before any consumer is exported.
         identity=(self.host.bin/'go').read_text()
@@ -89,18 +94,18 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
         trace=self.host.trace.read_text()
         order=['docker-run:addp-ftp-online-registry','build:','infra-up','ftp-fixture:start','start:-security','start:-meta','start:-manager','docker-run:addp-ftp-model3d-runtime','--suite ftp-consumer-flow',
             '--wait-protection-owners manager',
-            'register:ftp-engine.json','register:ftp-nfs-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
+            'register:ftp-engine.json','register:ftp-nfs-engine.json','register:ftp-minio-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
             'application-stop','docker-rm:addp-ftp-model3d-runtime','ftp-fixture:stop','docker-rm:addp-ftp-online-registry','infra-down']
         positions=[trace.index(step) for step in order]
         self.assertEqual(positions,sorted(positions))
-        self.assertEqual(trace.count('register:'),2)
+        self.assertEqual(trace.count('register:'),3)
         self.assertNotIn('start:-transfer',trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
 
     def test_failure_at_each_owned_stage_still_cleans_platform_and_fixture(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL':'start'},{'ADDP_TEST_IDENTITY_FAIL':'1'},
-                      {'ADDP_TEST_PROTECTION_WAIT_FAIL':'1'},
+                      {'ADDP_TEST_PROTECTION_WAIT_FAIL':'1'},{'ADDP_TEST_MINIO_FIXTURE_FAIL':'start'},
                       {'ADDP_TEST_REGISTRATION_FAIL':'1'},{'ADDP_TEST_SUITE_FAIL':'1'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)

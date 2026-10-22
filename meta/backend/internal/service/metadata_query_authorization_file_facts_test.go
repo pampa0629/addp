@@ -46,9 +46,22 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, format := range []string{"ifc", "3ds", "dae"} {
-		t.Run(format, func(t *testing.T) {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}} {
+		format := fixture.format
+		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
+			if fixture.kind == "object" {
+				if err := db.Model(&models.MetaNode{}).Where("engine_id = ? AND node_type = ?", item.EngineID, "root").Update("node_type", "service").Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&models.MetaNode{}).Where("engine_id = ? AND node_type = ?", item.EngineID, "dir").Update("node_type", "bucket").Error; err != nil {
+					t.Fatal(err)
+				}
+				item.ItemType = "object"
+				if err := db.Model(&item).Update("item_type", "object").Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			s := NewMetadataQueryService(db)
 			facts, err := s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
 			if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete {

@@ -30,7 +30,13 @@ func TestAuthorizedExecutionSnapshotDoesNotRefetchOrMutate(t *testing.T) {
 	if decoded, err := svc.DecryptAuthorizedExecutionSnapshot(&nfs); err != nil || decoded == nil || decoded.EngineType != "nfs" {
 		t.Fatalf("NFS snapshot: %v", err)
 	}
-	for _, kind := range []string{"minio", "postgresql"} {
+	minio := *engine
+	minio.EngineType = "minio"
+	minio.ConnectionInfo = models.ConnectionInfo{"endpoint": "127.0.0.1:9002", "access_key": secret, "secret_key": secret}
+	if got, err := svc.DecryptAuthorizedExecutionSnapshot(&minio); err != nil || got.ConnectionInfo["secret_key"] != "disposable-secret" {
+		t.Fatalf("MinIO snapshot: %v", err)
+	}
+	for _, kind := range []string{"s3", "postgresql"} {
 		copy := *engine
 		copy.EngineType = kind
 		if got, err := svc.DecryptAuthorizedExecutionSnapshot(&copy); err == nil || got != nil {

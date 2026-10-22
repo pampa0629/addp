@@ -63,7 +63,7 @@ func TestBasicWholeBoundaryUsesCatalogRules(t *testing.T) {
 		t.Fatalf("list-only whole detection = %#v", result)
 	}
 	resources := []scanresource.StorageResource{objectResourceForTest(26, "bucket", files[0].Path, 1, "parquet"), objectResourceForTest(26, "bucket", files[1].Path, 1, "parquet")}
-	claims, items, warnings := scanflow.DetectObjectCatalogCompositeItems(context.Background(), nil, nil, 26, resources, false)
+	claims, items, warnings := scanflow.DetectObjectCatalogCompositeItems(context.Background(), nil, nil, nil, 26, resources, false)
 	if len(warnings) != 0 || len(items) != 1 || items[0].Item.Layout != "whole" || len(claims) != 2 {
 		t.Fatalf("object list-only whole detection: items=%#v claims=%v warnings=%v", items, claims, warnings)
 	}

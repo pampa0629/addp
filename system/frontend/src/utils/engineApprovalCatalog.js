@@ -1,6 +1,6 @@
 import { buildLocator } from '@common-ui/types/resourceLocator'
 
-const isFileModelEngine = kind => kind === 'ftp' || kind === 'nfs'
+const isFileModelEngine = kind => kind === 'ftp' || kind === 'nfs' || kind === 'minio'
 
 // Shared ResourceTreePicker currently models Engine IDs as safe JS numbers.
 // Reject an unrepresentable ID before browsing; never select a rounded target.
@@ -27,8 +27,11 @@ export const isApprovalTarget = node => isApprovalTable(node) || isApprovalModel
 
 export function isApprovalModel(node) {
   const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
-  return isFileModelEngine(node?.metadata?.approval_engine_type) && entry?.role === 'leaf' && entry.term === 'file' && entry.kind === 'file' &&
-    entry.path?.version === 'catalog.path/v1' && leaf?.term === 'file' && leaf.kind === 'file' && /\.(ifc|3ds|dae)$/i.test(leaf.name)
+  const engineType = node?.metadata?.approval_engine_type
+  const term = engineType === 'minio' ? 'object' : 'file'
+  const suffix = engineType === 'minio' ? /\.(ifc|3ds)$/i : /\.(ifc|3ds|dae)$/i
+  return isFileModelEngine(engineType) && entry?.role === 'leaf' && entry.term === term && entry.kind === term &&
+    entry.path?.version === 'catalog.path/v1' && leaf?.term === term && leaf.kind === term && suffix.test(leaf.name)
 }
 
 // A namespace is a discovery shortcut, never an authorization target.

@@ -122,3 +122,34 @@ test('DAE approval binds the full model and texture set and rejects an incomplet
   await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.refs[1].target = filePath('../outside.PNG'); return facts }))
   await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.format = 'obj'; return facts }))
 })
+
+const objectPath = (name = 'Model.3DS', bucket = 'models') => ({ engine_id: 33, version: 'catalog.path/v1', segments: [
+  {term:'service',kind:'service',name:''}, {term:'bucket',kind:'bucket',name:bucket},
+  {term:'prefix',kind:'prefix',name:'scene'}, {term:'object',kind:'object',name}
+] })
+const objectFacts = (candidate, format='3ds') => ({...fileFacts(candidate),item_type:'object',boundary:{layout:'single',file_composition:{format,refs:[
+  {target:objectPath('model.'+format),role:'model',required:true,primary:true},
+  ...(format === 'ifc' ? [] : [{target:objectPath(' tex.png   '),role:'texture',required:true,primary:false}])
+]}}})
+test('object model binding preserves bucket, prefix and names and never accepts wider or mixed targets', async () => {
+  for (const format of ['ifc','3ds']) {
+    const target = objectPath('model.'+format)
+    const candidate = Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`33:models/scene/model.${format}`))).toString('hex')
+    const binding = await observeNativeApprovalBinding(target, async (_,fp) => {assert.equal(fp,candidate);return objectFacts(fp,format)})
+    assert.equal(binding.file_composition.format,format)
+    assert.equal(approvedBoundaryFields(target,binding).item_fingerprint,candidate)
+    assert.throws(() => serializeEngineApprovalInitialization({...target,engine_id:'33'},'catalog','no bucket approval',binding))
+  }
+  const mutations = [
+    f => {f.item_type='file'},
+    f => {f.boundary.file_composition.refs[1].target=objectPath('tex.png','other')},
+    f => {f.boundary.file_composition.refs[1].target=filePath('tex.png')},
+    f => {f.boundary.file_composition.refs[1].target.segments[2].name='outside'},
+    f => {f.boundary.file_composition.refs[1].target.segments.pop()},
+    f => {f.boundary.file_composition.refs[1].target.segments[3].name='../tex.png'}
+  ]
+  for (const change of mutations) await assert.rejects(observeNativeApprovalBinding(objectPath('model.3ds'), async (_,fp) => {const f=objectFacts(fp);change(f);return f}))
+  await assert.rejects(observeNativeApprovalBinding(objectPath('model.dae'), async (_,fp)=>objectFacts(fp,'dae')))
+  const bucket = objectPath();bucket.segments.splice(2)
+  await assert.rejects(readNativeApprovalFacts(bucket,()=>{throw new Error('bucket must not reach facts')}))
+})

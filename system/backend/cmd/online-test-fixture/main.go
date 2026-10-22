@@ -91,7 +91,7 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
-	case "ftp-consumer-flow":
+	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
 		return append(append([]string{}, sourceInitializerPermissions...),
 			"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
 	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow":

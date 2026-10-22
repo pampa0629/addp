@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -22,9 +23,17 @@ import (
 
 func glbPublishedReadFixture(t *testing.T) (*models.Model3DGLB, *commonModels.Engine, *commonModels.MetaItem) {
 	t.Helper()
+	return glbPublishedReadFixtureForEngine(t, "ftp")
+}
+func glbPublishedReadFixtureForEngine(t *testing.T, engineType string) (*models.Model3DGLB, *commonModels.Engine, *commonModels.MetaItem) {
+	t.Helper()
 	source, item := model3DGLBCandidateFixture("3ds")
+	if engineType == "minio" {
+		item.ItemType = "object"
+		source.ItemLocator = resourcetree.LocatorFromFullName(item.EngineID, engineType, item.ItemType, item.FullName, &item.ID).ToURI()
+	}
 	tenant := uint(7)
-	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: "ftp", Version: 5, LifecycleState: "active", ConnectionStatus: "online"}
+	engine := &commonModels.Engine{ID: 33, TenantID: &tenant, EngineType: engineType, Version: 5, LifecycleState: "active", ConnectionStatus: "online"}
 	candidate, err := model3DGLBCandidateFromMeta(7, source, item)
 	if err != nil {
 		t.Fatal(err)
@@ -47,9 +56,15 @@ func glbPublishedReadFixture(t *testing.T) (*models.Model3DGLB, *commonModels.En
 // Meta changes after Manager's local comparison. A primary-only System Allow
 // for the new boundary must never authorize the previously generated boundary.
 func TestGLBResultReadBindsSystemDecisionToGeneratedComposition(t *testing.T) {
+	testGLBResultReadForEngine(t, "ftp")
+}
+func TestMinIOGLBResultReadBindsSystemDecisionToGeneratedComposition(t *testing.T) {
+	testGLBResultReadForEngine(t, "minio")
+}
+func testGLBResultReadForEngine(t *testing.T, engineType string) {
 	for _, outcome := range []string{"same source", "composition A to B", "engine version changed", "grant revoked", "old strict server"} {
 		t.Run(outcome, func(t *testing.T) {
-			result, engine, item := glbPublishedReadFixture(t)
+			result, engine, item := glbPublishedReadFixtureForEngine(t, engineType)
 			generated, _ := model3DGLBPublishedScope(result)
 			primary, _ := generated.FileComposition.PrimaryTarget()
 			calls := 0
@@ -161,5 +176,16 @@ func TestGLBReadRejectsTicketsChangedCompositionAndEngineBeforePermissionCall(t 
 				t.Fatalf("%s err=%v", name, err)
 			}
 		})
+	}
+}
+
+func TestOldMinIOGLBRequiresRegeneration(t *testing.T) {
+	result, engine, item := glbPublishedReadFixtureForEngine(t, "minio")
+	delete(result.Metadata, "model3d_source_scope")
+	svc := NewModel3DGLBTaskService(nil)
+	svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: engine})
+	svc.sourceMeta = glbMetaDetailFixture{item}
+	if err := svc.CheckResultRead(t.Context(), result, "addp_at_current_human", true); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+		t.Fatal("old MinIO artifact acquired fabricated scope", err)
 	}
 }

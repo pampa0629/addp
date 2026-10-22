@@ -252,17 +252,18 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       return
     }
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: expected.source_engine_type === 'nfs' ? 'Hosted NFS' : 'Hosted FTP' })).toHaveCount(1)
-    const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'examples' })
+    await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: ({ ftp: 'Hosted FTP', nfs: 'Hosted NFS', minio: 'Hosted MinIO' })[expected.source_engine_type || 'ftp'] })).toHaveCount(1)
+    const scanScope = expected.source_engine_type === 'minio' ? 'model-source' : 'examples'
+    const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: scanScope })
     await expect(examples).toHaveCount(1)
     const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
     await examples.getByRole('button', { name: /^(重新扫描|Rescan)$/i }).click()
     const dialog = meta.getByRole('dialog', { name: /^(确认扫描范围与深度|Confirm scan scope and depth)$/i })
     await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText('examples')
+    await expect(dialog).toContainText(scanScope)
     await dialog.getByRole('button', { name: /^(确认并开始扫描|Confirm and start scan)$/i }).click()
     const response = await submitted
-    expect(response.request().postDataJSON().catalog_paths).toEqual(['examples'])
+    expect(response.request().postDataJSON().catalog_paths).toEqual([scanScope])
     const scan = await json(response, 'FTP UI scan')
     await expect.poll(async () => {
       const execution = await json(await api.get(`/api/v1/meta/executions/${encodeURIComponent(scan.execution_id)}`), 'FTP UI execution')
@@ -305,7 +306,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       downloads.push(Object.fromEntries(['format', 'item_id', 'size', 'sha256'].map(key => [key, sample[key]])))
     }
     const models = []
-    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae'])
+    expect(expected.models.map(model => model.format)).toEqual(expected.source_engine_type === 'minio' ? ['ifc', '3ds'] : ['ifc', '3ds', 'dae'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,

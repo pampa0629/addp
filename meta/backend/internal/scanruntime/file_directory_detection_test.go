@@ -13,7 +13,7 @@ func TestModelStructureReadIsBasicForAdmittedFileSourcesOnly(t *testing.T) {
 	for _, kind := range []string{"ftp", "nfs", "minio", "", "NFS"} {
 		for _, depth := range []string{"basic", "deep", "", "none"} {
 			got := modelStructureReader(&commonModels.Engine{EngineType: kind}, reader, depth)
-			want := (kind == "ftp" || kind == "nfs") && (depth == "basic" || depth == "deep")
+			want := (kind == "ftp" || kind == "nfs" || kind == "minio") && (depth == "basic" || depth == "deep")
 			if (got != nil) != want {
 				t.Fatalf("kind=%q depth=%q reader=%v", kind, depth, got)
 			}

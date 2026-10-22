@@ -67,7 +67,11 @@ func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveIn
 		return nil, fmt.Errorf("model structure requires native range access")
 	}
 	target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
-	if !reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path)) {
+	exact := reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path))
+	if formatType == format.Format3DS && len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
+		exact = reflect.DeepEqual(target, plugin.ObjectItemPath(input.EngineID, target.Segments[1].Name, file.Path))
+	}
+	if !exact {
 		return nil, fmt.Errorf("model structure requires the exact typed primary file")
 	}
 	provider, err := format.GetModel3DCompositionProvider(formatType)

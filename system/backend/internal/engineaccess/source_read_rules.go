@@ -245,7 +245,8 @@ SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
                       AND e.id = target.engine_id AND e.lifecycle_state = 'active'
-                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))) THEN 'target_unavailable'
+                      AND (target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
+                      AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')) THEN 'target_unavailable'
      WHEN EXISTS (SELECT 1 FROM matched_denies d WHERE d.position = target.position) THEN 'explicit_deny'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason

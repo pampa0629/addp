@@ -2006,5 +2006,40 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v15")
 
 
+class MinIOExactModelGrantPreparationTest(unittest.TestCase):
+    def test_only_migrated_objects_are_granted_and_partial_failure_is_cleaned(self):
+        from importlib import import_module
+        owner = import_module('scripts.test.ftp-consumer-flow-online')
+        environment = scenario_environment('/tmp')
+        environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] = 'issuer-only'
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                consumer = mock.Mock()
+                consumer.request.return_value = response(200, {'principal':{'id':'51'}})
+                issuer = mock.Mock()
+                grants = mock.Mock()
+                if failed:
+                    grants.grant.side_effect = [None, RuntimeError('second grant rejected')]
+                with mock.patch.object(SUITE,'wait_for_meta_scan') as scan, \
+                     mock.patch.object(SUITE,'GatewayClient',return_value=issuer), \
+                     mock.patch.object(SUITE,'find_fixture_item',return_value={'fingerprint':'f'*64}), \
+                     mock.patch.object(owner,'ModelSourceAuthorization',return_value=grants) as factory:
+                    if failed:
+                        with self.assertRaisesRegex(RuntimeError,'second grant'):
+                            SUITE.prepare_minio_model_grants(consumer,environment)
+                        grants.cleanup.assert_called_once()
+                    else:
+                        self.assertIs(SUITE.prepare_minio_model_grants(consumer,environment),grants)
+                        grants.cleanup.assert_not_called()
+                    self.assertEqual(scan.call_args.args[1],27)
+                    self.assertIs(factory.call_args.args[0],issuer)
+                    self.assertIs(factory.call_args.args[1],consumer)
+                    self.assertEqual(factory.call_args.kwargs,{'source_type':'minio','consumer_permissions':SUITE.REQUIRED_PERMISSIONS})
+                    rows = [call.args[0] for call in grants.grant.call_args_list]
+                    self.assertEqual([row['format'] for row in rows],['ifc','3ds'])
+                    self.assertEqual([row['full_name'] for row in rows],['addp-online/model3d/ifc/model.ifc','addp-online/model3d/3ds/model.3ds'])
+                    self.assertEqual([ref['path'] for ref in rows[1]['composition']],['addp-online/model3d/3ds/model.3ds','addp-online/model3d/3ds/texture.png'])
+
+
 if __name__ == "__main__":
     unittest.main()

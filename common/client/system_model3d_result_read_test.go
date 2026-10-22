@@ -121,3 +121,32 @@ func TestManagerModel3DResultReadRejectsTicketsDelegatesAndMalformedExpectedSour
 		t.Fatalf("missing composition accepted: %v", err)
 	}
 }
+
+func TestManagerModel3DExpectedObjectSource(t *testing.T) {
+	for _, format := range []string{"ifc", "3ds", "dae"} {
+		t.Run(format, func(t *testing.T) {
+			refs := []authorizationfacts.FileCompositionRef{{Target: plugin.ObjectItemPath(33, "models", "scene/model."+format), Role: "model", Required: true, Primary: true}}
+			if format != "ifc" {
+				refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(33, "models", "scene/ Original.PNG "), Role: "texture", Required: true})
+			}
+			composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := ManagerModel3DExpectedSource{EngineVersion: "5", FileComposition: *composition}
+			if (source.Validate() == nil) != (format != "dae") {
+				t.Fatalf("unexpected object format admission: %s", format)
+			}
+			if format == "3ds" {
+				for i := range source.FileComposition.Refs {
+					if !source.FileComposition.Refs[i].Primary {
+						source.FileComposition.Refs[i].Target = plugin.ObjectItemPath(33, "other", "scene/ Original.PNG ")
+					}
+				}
+				if source.Validate() == nil {
+					t.Fatal("cross-bucket composition accepted")
+				}
+			}
+		})
+	}
+}

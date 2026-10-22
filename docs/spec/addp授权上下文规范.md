@@ -109,13 +109,17 @@ System 核对已封存且未撤销、未过期的 user 来源授权，排除 Not
 
 固定签发与消费入口分别为 `auth/execution-authorizations/manager-profiles` 和 `execution-authorizations/{id}/manager-profile-accesses`。签发只接受 execution 与有限 TTL，消费只返回不可缓存的当次观察时刻，不返回连接或通用许可；共享 DTO／校验归 `common/execution`，客户端不自动重试、不跟随重定向。精确字段见 [System Swagger](../../system/backend/docs/swagger.yaml)，实现与验证范围见 [IAM 数据模型规范](../../system/docs/IAM数据模型与迁移规范.md)。
 
-### 5.2.3 FTP／NFS 单体模型快显执行授权
+### 5.2.3 精确组成模型快显执行授权
 
-已验收接入范围为真实 FTP、NFS 引擎的 IFC／3DS 单体 GLB 生成，二者共用精确组成、执行授权与受控暂存链。NFS 仅通过 Provider 读取已核验的普通文件，删除这两个格式的宿主挂载路径直传入口；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 已于 2026-10-22 确认沿同一路线扩展（基础扫描完整 XML 上限 64 MiB，仅认领明确 PNG/JPEG，组成变化重新批准），实现及真实运行结果须独立登记；其余 NFS 格式、MinIO 尚未迁移，不据此宣称已受本链控制。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
+已验收接入范围为真实 FTP、NFS 引擎的 IFC／3DS 单体 GLB 生成，二者共用精确组成、执行授权与受控暂存链。NFS 仅通过 Provider 读取已核验的普通文件，删除这两个格式的宿主挂载路径直传入口；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 已于 2026-10-22 确认沿同一路线扩展（基础扫描完整 XML 上限 64 MiB，仅认领明确 PNG/JPEG，组成变化重新批准），实现及真实运行结果须独立登记；MinIO 的 IFC／3DS 按同一契约接入；其余 NFS／MinIO 格式不在本轮迁移范围。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
+
+MinIO 保留 `service → bucket → prefix → object` 的真实目录类型，组成绑定主对象与 Meta 基础扫描确认的精确依赖对象，不把对象伪装成 file。IFC 仅含主对象；3DS 通过同一格式 Provider 读取主对象结构声明，既不列举授权范围外的前缀，也不读取贴图内容来发现组成。桶根模型、完整 refs 采集与前缀采集沿用同一规则；不完整、变化或无法精确表示的组成拒绝授权。System 仅准入 MinIO IFC／3DS 主对象，桶与前缀不能作为模型批准目标。
+
+Manager 在每次源读取前以当前执行授权取得精确对象连接并通过 Provider 读取，暂存到本 execution 独占的 Infra 输入后调用 Model3D；Business MinIO 凭据不得传给 Runtime。MinIO IFC／3DS 删除旧来源直传／整前缀复制路径；缺少正式冻结来源的旧产物拒绝读取并要求重新生成，不补造历史授权。临时输入沿用成功、失败、取消和租约失效的清理规则。该契约绑定当前组成及读取资格，不提供对象历史版本授权或多对象一致性快照。
 
 Manager 在真实 pending 行可领取之前，冻结 `model3d-glb-file-config/v1` 配置：保留完整原始 `source`／`result`／`options` 与转换字段，增加 `config_version`、`owner_task={id,version}`、`source_engine_version` 与 `source_composition`。ID／版本采用规范十进制字符串，任务配置取同一 SQL 快照；结果是当前 execution 的独占对象，不提前覆盖旧快显。`common/execution.ManagerModel3DReadScope` 保存完整原始 JSON 的 `config_digest`、`owner_task_id`、`owner_task_version`、`engine_version` 与 `file_composition`。摘要输入不超过 512 KiB，只规范 JSON 键序／空白，保留精确数值并拒绝重复键；不能经过 `JSONMap` 浮点往返或把摘要自身嵌入配置。逐文件大小在消费后作为本 attempt 的 I/O 完整性事实取得，不回写已冻结配置，也不进入授权边界摘要。
 
-固定签发入口为 `POST auth/execution-authorizations/manager-model3d-glb`，当前 User 只提交原 execution UUID 和最长 3600 秒 TTL；System 从真实 pending、任务标识／版本、完整配置及独立 Meta 事实取证，再核验当前源规则。重复核清只恢复原 execution 的原授权与原期限，不另造 UUID、续期或复活。消费为 `POST execution-authorizations/{id}/manager-model3d-glb-accesses`，仅当前 Tenant 的 `addp-manager` Service 可提交同一 execution、attempt、lease token 与完整 scope；重核当前来源、权限、Grant／Deny、期限、配置、组成和 Engine 聚合版本。响应只含 `observed_at` 及当次核验的同 ID、同版本 FTP／NFS Engine，连接仅在本次调用栈用于精确 Facts／Open，不保存到配置、结果、日志，不在消费后另取可能不同版本的连接。客户端不跟随重定向、不隐式重放 POST、不缓存许可；服务未接通、返回畸形或任何核验失败均不能打开源内容。
+固定签发入口为 `POST auth/execution-authorizations/manager-model3d-glb`，当前 User 只提交原 execution UUID 和最长 3600 秒 TTL；System 从真实 pending、任务标识／版本、完整配置及独立 Meta 事实取证，再核验当前源规则。重复核清只恢复原 execution 的原授权与原期限，不另造 UUID、续期或复活。消费为 `POST execution-authorizations/{id}/manager-model3d-glb-accesses`，仅当前 Tenant 的 `addp-manager` Service 可提交同一 execution、attempt、lease token 与完整 scope；重核当前来源、权限、Grant／Deny、期限、配置、组成和 Engine 聚合版本。响应只含 `observed_at` 及当次核验的同 ID、同版本的准入 Engine，连接仅在本次调用栈用于精确 Facts／Open，不保存到配置、结果、日志，不在消费后另取可能不同版本的连接。客户端不跟随重定向、不隐式重放 POST、不缓存许可；服务未接通、返回畸形或任何核验失败均不能打开源内容。
 
 Manager 的配置／签发绑定／可领取发布和最终结果切换各自保持 owner 事务原子性，不跨模块持锁。未知签发结果只在原 pending 核清：同一同步栈、同一 User Bearer、总预算一分钟内至多显式核清一次原 UUID；明确拒绝不重试，仍未知只关闭自己未绑定的 pending，不保存 Bearer 或新建后台补偿。每次源 I/O、转换返回和发布前使用同一冻结计划重核；发布失败不替换原有效结果。EA 不是已完成快显的读取凭据：FTP／NFS 受管快显的实际内容读取须以当前 Human Bearer，在同一次 System 裁决中匹配生成时完整 file composition 和 Engine 版本与当前事实；不以两次本地预检查拼成许可，不要求生成任务仍存在或重用终态 EA，不用 Resource Ticket 绕过。capability 仍遵循 Manager 共用契约，仅陈述资源／组成／结果事实，返回 URL 不授予内容访问权。共享类型／SDK 可先固定供消费方编译，但正式 System 路由、持久化、owner 接线与真实 FTP 验收分别记进展，不以契约存在宣称权限闭环。
 

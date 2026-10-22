@@ -570,7 +570,7 @@
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "签发 Manager FTP/NFS 模型 GLB 执行授权 | Issue Manager FTP/NFS model GLB execution authorization",
+                "summary": "签发 Manager 精确组成模型 GLB 执行授权 | Issue Manager exact-composition model GLB execution authorization",
                 "parameters": [
                     {
                         "description": "执行 UUID 与有效期秒数，默认900、最大3600；正文上限512 KiB，无query，拒绝未知或重复字段 | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query, unknown or duplicate fields",
@@ -4419,7 +4419,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照 FTP/NFS 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete file composition and current source rules. Return the same-snapshot FTP/NFS connection for this guarded source I/O only; never cache or persist",
+                "description": "仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整模型组成及现行源规则。返回当次同快照 FTP/NFS/MinIO 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with machine execution permission. Verify the actual running attempt, lease, configuration, task and engine versions, complete model composition and current source rules. Return the same-snapshot FTP/NFS/MinIO connection for this guarded source I/O only; never cache or persist",
                 "consumes": [
                     "application/json"
                 ],
@@ -4429,7 +4429,7 @@
                 "tags": [
                     "执行授权 | Execution Authorization"
                 ],
-                "summary": "复核 Manager FTP/NFS 模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager FTP/NFS model execution",
+                "summary": "复核 Manager 精确组成模型执行的当前完整来源权限 | Recheck current complete source permissions for Manager exact-composition model execution",
                 "parameters": [
                     {
                         "type": "string",

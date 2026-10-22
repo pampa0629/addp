@@ -61,7 +61,7 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 	if json.Unmarshal(grant.CatalogPath, &primary) != nil {
 		return commonapi.ErrBadRequest
 	}
-	file := len(primary.Segments) > 0 && primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile
+	file := len(primary.Segments) > 0 && (primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile || primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject)
 	if file || len(grant.FileComposition) != 0 {
 		var composition authorizationfacts.FileCompositionBoundary
 		if !file || grant.ApprovalMode != approvalModeIndependent || json.Unmarshal(grant.FileComposition, &composition) != nil {

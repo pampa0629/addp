@@ -25,7 +25,7 @@ import (
 func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -36,17 +36,27 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if err := db.Table("system.engines").Create(&engine).Error; err != nil {
 					t.Fatal(err)
 				}
-				primary := plugin.FileItemPath(engine.ID, "models/scene."+format)
+				targetFor := func(name string) plugin.EngineCatalogPath {
+					if kind == "minio" {
+						return plugin.ObjectItemPath(engine.ID, "models", name)
+					}
+					return plugin.FileItemPath(engine.ID, "models/"+name)
+				}
+				itemType := "file"
+				if kind == "minio" {
+					itemType = "object"
+				}
+				primary := targetFor("scene." + format)
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
 					composition, err := authorizationfacts.NewFileCompositionBoundary(format, []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
-						{Target: plugin.FileItemPath(engine.ID, "models/"+texture), Role: "texture", Required: true},
+						{Target: targetFor(texture), Role: "texture", Required: true},
 					})
 					if err != nil {
 						t.Fatal(err)
 					}
 					facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
-						EngineID: engine.ID, ItemType: "file", FullName: primary.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, primary.StringPath()),
+						EngineID: engine.ID, ItemType: itemType, FullName: primary.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, primary.StringPath()),
 						BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}}
 					hash, err := facts.ComputeBoundaryHash()
 					if err != nil {

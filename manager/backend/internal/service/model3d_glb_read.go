@@ -51,7 +51,7 @@ func (s *Model3DGLBTaskService) CheckResultRead(ctx context.Context, result *mod
 		return commonClient.ErrManagerPreviewCredentialRejected
 	}
 	scope, err := model3DGLBPublishedScope(result)
-	if err != nil || strconv.FormatInt(engine.Version, 10) != scope.EngineVersion {
+	if err != nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, &scope.FileComposition) || strconv.FormatInt(engine.Version, 10) != scope.EngineVersion {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if result.ItemID == nil {

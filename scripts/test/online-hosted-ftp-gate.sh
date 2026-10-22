@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=ftp-consumer-flow
-HOSTED_FIXTURE_CONTAINERS=(addp-ftp-model3d-runtime addp-ftp-online-registry)
+HOSTED_FIXTURE_CONTAINERS=(addp-ftp-model3d-runtime addp-ftp-online-registry addp-ftp-model-source)
 HOSTED_FIXTURE_IMAGES=(127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
 stop_online_fixture() {
   local cleanup_status=0 evidence image
@@ -15,6 +15,8 @@ stop_online_fixture() {
   fi
   remove_online_product_container addp-ftp-model3d-runtime || cleanup_status=1
   run_logged python3 -B -m scripts.test.online-file-model-nfs-fixture stop || cleanup_status=1
+  run_logged python3 -B -m scripts.test.online-file-model-minio-fixture stop || cleanup_status=1
+  [ ! -f "$ADDP_ONLINE_SECRET_DIR/minio-cleanup.json" ] || cp "$ADDP_ONLINE_SECRET_DIR/minio-cleanup.json" "$ADDP_ONLINE_ARTIFACT_DIR/minio-cleanup.json"
   run_logged python3 business/ftp/admission.py stop || cleanup_status=1
   for evidence in facts cleanup readiness-initial ftp-samples ftp-model-samples; do
     [ ! -f "$ADDP_ONLINE_SECRET_DIR/$evidence.json" ] || cp "$ADDP_ONLINE_SECRET_DIR/$evidence.json" "$ADDP_ONLINE_ARTIFACT_DIR/ftp-$evidence.json"
@@ -49,6 +51,7 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged python3 business/ftp/admission.py start
 run_logged python3 -B -m scripts.test.online-file-model-nfs-fixture start
+run_logged python3 -B -m scripts.test.online-file-model-minio-fixture start
 ADDP_NFS_TEST_EXPORT="$(cat "$ADDP_ONLINE_SECRET_DIR/ftp-root")/data"
 export ADDP_NFS_TEST_EXPORT
 run_logged make test-common-nfs-integration
@@ -66,5 +69,8 @@ export ADDP_ONLINE_FTP_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/ftp-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
 export ADDP_ONLINE_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/ftp-minio-engine.json" --output "$ENGINE_RESULT_ENV"
+source "$ENGINE_RESULT_ENV"
+export ADDP_ONLINE_MINIO_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

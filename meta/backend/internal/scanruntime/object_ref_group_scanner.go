@@ -96,6 +96,7 @@ func scanObjectRefGroups(
 		}
 
 		candidates := scanflow.ObjectRefGroupCandidateSet(resource.ID, bucket, objectPath, resources)
+		candidates.StructureReader = modelStructureReader(resource, contentReader, scanDepth)
 		detection, err := scanflow.ResolveContentCandidates(ctx, scanflow.ContentReaderForDepth(contentReader, scanDepth), connInfo, resource.ID, candidates)
 		if err != nil {
 			return result, err

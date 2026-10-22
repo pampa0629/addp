@@ -55,7 +55,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		scanState.record(chain, scanPathPrefix, includeBucketScan)
 	}
 	var compositeWarnings []scanflow.ObjectCatalogCompositeDetectionError
-	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(ctx, readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
+	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(ctx, readableProvider, modelStructureReader(resource, readableProvider, scanDepth), connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 		addFailure(strings.Trim(strings.Join([]string{warning.Bucket, warning.Prefix}, "/"), "/"), warning.Err)

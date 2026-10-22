@@ -19,10 +19,12 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	ftpPlugin "github.com/addp/common/engine/plugins/ftp"
+	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/nfs"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -52,7 +54,11 @@ func (s *ftpModelReadSpy) DescribeEngineCatalogFacts(_ context.Context, info plu
 		return nil, errors.New("exact model file absent")
 	}
 	size := int64(len(data))
-	return &plugin.EngineCatalogFacts{Path: target, Kind: plugin.EngineCatalogKindFile, Storage: &plugin.EngineCatalogStorageFacts{Path: name, SizeBytes: &size}}, nil
+	kind := plugin.EngineCatalogKindFile
+	if s.engineType == "minio" {
+		kind = plugin.EngineCatalogKindObject
+	}
+	return &plugin.EngineCatalogFacts{Path: target, Kind: kind, Storage: &plugin.EngineCatalogStorageFacts{Path: name, SizeBytes: &size}}, nil
 }
 func (s *ftpModelReadSpy) OpenContent(_ context.Context, info plugin.ConnectionInfo, target plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	s.checkConnection(info)
@@ -105,6 +111,11 @@ func (ftpModelServiceTokens) PlatformToken(context.Context) (string, error) {
 func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied func(*ftpModelReadSpy) bool) (context.Context, Model3DGLBExecutionRequest, *commonModels.Engine, *ftpModelReadSpy, *atomic.Int32) {
 	t.Helper()
 	source, item := model3DGLBCandidateFixture(format)
+	if engineType == "minio" {
+		item.ItemType = "object"
+		loc := resourcetree.LocatorFromFullName(item.EngineID, engineType, item.ItemType, item.FullName, &item.ID)
+		source.ItemLocator = loc.ToURI()
+	}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
 	source.ItemFingerprint = item.Fingerprint
 	candidate, err := model3DGLBCandidateFromMeta(7, source, item)
@@ -186,11 +197,16 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 	return fileModelAuthorizedFixture(t, "ftp", format, denied)
 }
 
-func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
+func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactModelSource(t, "nfs") }
+func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
+func testExactModelSource(t *testing.T, engineType string) {
 	for _, format := range []string{"ifc", "3ds", "dae"} {
+		if engineType == "minio" && format == "dae" {
+			continue
+		}
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
-				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, "nfs", format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
+				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
 				if fault == "changed-declaration" && format != "ifc" {
 					if format == "dae" {
 						spy.files["models/model.dae"] = []byte(daeStagingInput("OTHER.PNG"))
@@ -202,8 +218,30 @@ func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
 				called := false
 				err := stagingModelExecutor(store).withFileModel3DSource(ctx, request, engine, func(_ context.Context, source workflowaccess.Source, audit commonModels.JSONMap) error {
 					called = true
-					if source.Access.Method != workflowaccess.MethodObjectStore || audit["engine_type"] != "nfs" {
-						t.Fatal("NFS bypassed exact staging")
+					if source.Access.Method != workflowaccess.MethodObjectStore || audit["engine_type"] != engineType ||
+						source.Access.Endpoint != "127.0.0.1:19000" || source.Access.AccessKey != "infra-test-key" || source.Access.SecretKey != "infra-test-secret" || source.Access.Bucket != "manager" {
+						t.Fatal("runtime input did not use the execution-owned Infra source")
+					}
+					if len(store.objects) != len(spy.files) {
+						t.Fatal("staging included missing or extra source objects")
+					}
+					for name, data := range spy.files {
+						found := false
+						for key, value := range store.objects {
+							if strings.HasSuffix(key, "/"+strings.TrimPrefix(name, "models/")) && value == string(data) {
+								found = true
+							}
+						}
+						if !found {
+							t.Fatalf("staged input differs from authorized object %s", name)
+						}
+					}
+					raw, _ := json.Marshal(struct {
+						Source workflowaccess.Source
+						Audit  commonModels.JSONMap
+					}{source, audit})
+					if strings.Contains(string(raw), "current-consumption-connection") || strings.Contains(string(raw), "classification-must-not-be-used") {
+						t.Fatal("Business credential reached Runtime")
 					}
 					return nil
 				})

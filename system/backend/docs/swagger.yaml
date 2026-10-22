@@ -6276,8 +6276,8 @@ paths:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 签发 Manager FTP/NFS 模型 GLB 执行授权 | Issue Manager FTP/NFS model GLB execution
-        authorization
+      summary: 签发 Manager 精确组成模型 GLB 执行授权 | Issue Manager exact-composition model
+        GLB execution authorization
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission
@@ -8892,12 +8892,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整文件组成及现行源规则。返回当次同快照
-        FTP/NFS 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service with
-        machine execution permission. Verify the actual running attempt, lease, configuration,
-        task and engine versions, complete file composition and current source rules.
-        Return the same-snapshot FTP/NFS connection for this guarded source I/O only;
-        never cache or persist
+      description: 仅固定 addp-manager Tenant Service 与机器执行 Permission；核验真实 running attempt、租约、配置、任务和引擎版本、完整模型组成及现行源规则。返回当次同快照
+        FTP/NFS/MinIO 连接，只供本次受控源 I/O，不缓存或落库 | Only fixed addp-manager Tenant Service
+        with machine execution permission. Verify the actual running attempt, lease,
+        configuration, task and engine versions, complete model composition and current
+        source rules. Return the same-snapshot FTP/NFS/MinIO connection for this guarded
+        source I/O only; never cache or persist
       parameters:
       - description: 规范正整数授权ID | Canonical positive authorization ID
         in: path
@@ -8946,8 +8946,8 @@ paths:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 复核 Manager FTP/NFS 模型执行的当前完整来源权限 | Recheck current complete source
-        permissions for Manager FTP/NFS model execution
+      summary: 复核 Manager 精确组成模型执行的当前完整来源权限 | Recheck current complete source permissions
+        for Manager exact-composition model execution
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission

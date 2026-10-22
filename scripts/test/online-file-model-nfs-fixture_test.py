@@ -60,10 +60,10 @@ class NFSModelFixtureTest(unittest.TestCase):
     def test_both_profiles_are_required_and_keep_separate_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
-            for name in ('ftp-samples.json','ftp-model-samples.json','nfs-model-samples.json'):
+            for name in ('ftp-samples.json','ftp-model-samples.json','nfs-model-samples.json','minio-samples.json','minio-model-samples.json'):
                 (root/name).write_text('[]')
             environment={'ADDP_ONLINE_TEST':'1','ADDP_ONLINE_HOSTED':'1',
-                'ADDP_ONLINE_TEST_TENANT_ID':'7','ADDP_ONLINE_FTP_ENGINE_ID':'17','ADDP_ONLINE_NFS_ENGINE_ID':'18',
+                'ADDP_ONLINE_TEST_TENANT_ID':'7','ADDP_ONLINE_FTP_ENGINE_ID':'17','ADDP_ONLINE_NFS_ENGINE_ID':'18','ADDP_ONLINE_MINIO_ENGINE_ID':'19',
                 'ADDP_FTP_ADMISSION_DIR':directory,'ADDP_ONLINE_SECRET_DIR':directory,
                 'ADDP_ONLINE_ARTIFACT_DIR':directory,'GATEWAY_URL':'http://localhost',
                 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'synthetic'}
@@ -76,6 +76,6 @@ class NFSModelFixtureTest(unittest.TestCase):
                 FTP.main()
                 self.assertEqual(os.environ['ADDP_ONLINE_ARTIFACT_DIR'],directory)
                 self.assertNotIn('ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE',os.environ)
-            self.assertEqual(observations,[(17,'ftp',directory),(18,'nfs',str(root/'nfs'))])
+            self.assertEqual(observations,[(17,'ftp',directory),(18,'nfs',str(root/'nfs')),(19,'minio',str(root/'minio'))])
             report=json.loads((root/'ftp-consumer-flow.json').read_text())
             self.assertEqual(report['nfs_profile'],{'engine_id':18,'source_engine_type':'nfs'})

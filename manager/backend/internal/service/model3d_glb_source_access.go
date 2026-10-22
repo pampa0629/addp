@@ -130,7 +130,7 @@ func (a *Model3DGLBSourceAuthorization) consume(ctx context.Context) (*commonMod
 	}
 	engine := observation.Engine
 	primary, err := a.scope.FileComposition.PrimaryTarget()
-	if err != nil || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.ID != primary.EngineID || engine.TenantID == nil || int(*engine.TenantID) != lease.TenantID ||
+	if err != nil || engine == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, &a.scope.FileComposition) || engine.ID != primary.EngineID || engine.TenantID == nil || int(*engine.TenantID) != lease.TenantID ||
 		strconv.FormatInt(engine.Version, 10) != a.scope.EngineVersion || engineaccess.EnsureAvailable(engine) != nil {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}

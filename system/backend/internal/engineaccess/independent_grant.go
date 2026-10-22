@@ -113,7 +113,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 }
 
 func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) bool {
-	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection || segment.Kind == engineplugin.EngineCatalogKindFile)
+	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection || segment.Kind == engineplugin.EngineCatalogKindFile || segment.Kind == engineplugin.EngineCatalogKindObject)
 }
 
 func sameIndependentGrant(a, b *sourceGrant) bool {

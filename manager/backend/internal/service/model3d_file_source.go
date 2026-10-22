@@ -34,15 +34,19 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	composition := auth.Composition()
-	if composition == nil || composition.Validate(engine.ID) != nil || (composition.Format != "ifc" && composition.Format != "3ds" && composition.Format != "dae") || composition.Format != req.Config.Source.Format {
+	if composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, composition) || (composition.Format != "ifc" && composition.Format != "3ds" && composition.Format != "dae") || composition.Format != req.Config.Source.Format {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	primary, err := composition.PrimaryTarget()
 	if err != nil {
 		return err
 	}
+	sourceType, sourceKind := resourcetree.TypeFile, plugin.EngineCatalogKindFile
+	if engine.EngineType == "minio" {
+		sourceType, sourceKind = resourcetree.TypeObject, plugin.EngineCatalogKindObject
+	}
 	loc, err := resourcetree.ParseURI(req.Config.Source.ItemLocator)
-	if err != nil || loc.EngineID != engine.ID || (loc.ItemID != nil && *loc.ItemID != req.Config.Source.ItemID) || loc.Type != resourcetree.TypeFile || strings.Join(loc.Path, "/") != primary.StringPath() || commonModels.GenerateItemFingerprint(engine.ID, primary.StringPath()) != req.Config.Source.ItemFingerprint {
+	if err != nil || loc.EngineID != engine.ID || (loc.ItemID != nil && *loc.ItemID != req.Config.Source.ItemID) || loc.Type != sourceType || strings.Join(loc.Path, "/") != primary.StringPath() || commonModels.GenerateItemFingerprint(engine.ID, primary.StringPath()) != req.Config.Source.ItemFingerprint {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if composition.Format == "ifc" && len(composition.Refs) != 1 {
@@ -82,7 +86,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return 0, fmt.Errorf("inspect exact file model input: %w", err)
 		}
-		if facts == nil || facts.Kind != plugin.EngineCatalogKindFile || !reflect.DeepEqual(facts.Path, target) || facts.Storage == nil || facts.Storage.SizeBytes == nil || facts.Storage.Path != target.StringPath() || *facts.Storage.SizeBytes <= 0 || *facts.Storage.SizeBytes == math.MaxInt64 {
+		if facts == nil || facts.Kind != sourceKind || !reflect.DeepEqual(facts.Path, target) || facts.Storage == nil || facts.Storage.SizeBytes == nil || facts.Storage.Path != target.StringPath() || *facts.Storage.SizeBytes <= 0 || *facts.Storage.SizeBytes == math.MaxInt64 {
 			return 0, errors.New("file model input facts do not describe a nonempty authorized file")
 		}
 		return *facts.Storage.SizeBytes, nil

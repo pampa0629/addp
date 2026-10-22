@@ -3,12 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
-	commonexecution "github.com/addp/common/execution"
+	pathpkg "path"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/models"
 )
@@ -34,8 +36,9 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 	if engine.ID != path.EngineID || engine.TenantID == nil || int64(*engine.TenantID) != tenantID || engine.LifecycleState != models.EngineLifecycleActive {
 		return 0, commonapi.ErrForbidden
 	}
-	file := len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile
-	if file && !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) {
+	file := len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)
+	if file && (!commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), ".")) ||
+		(engine.EngineType == "minio") != (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)) {
 		return 0, commonapi.ErrForbidden
 	}
 	wanted, err := shared.EncodeSharingTarget(path)
@@ -47,7 +50,7 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 		return 0, engineaccess.ErrIndependentGrantSourceUnavailable
 	}
 	if entry == nil || entry.Role != engineplugin.EngineCatalogRoleLeaf ||
-		(entry.Kind != engineplugin.EngineCatalogKindTable && entry.Kind != engineplugin.EngineCatalogKindCollection && !(file && entry.Kind == engineplugin.EngineCatalogKindFile)) || entry.Term != entry.Kind {
+		(entry.Kind != engineplugin.EngineCatalogKindTable && entry.Kind != engineplugin.EngineCatalogKindCollection && !(file && (entry.Kind == engineplugin.EngineCatalogKindFile || entry.Kind == engineplugin.EngineCatalogKindObject))) || entry.Term != entry.Kind {
 		return 0, commonapi.ErrBadRequest
 	}
 	actual, actualErr := shared.EncodeSharingTarget(entry.Path)

@@ -450,7 +450,7 @@ test-common-ftp: test-common-ftp-unit ## 独占官方 FTP/FTPS 协议准入与�
 
 .PHONY: test-ftp-online-runner
 test-ftp-online-runner: ## FTP 普通 User 页面验收与 Hosted 隔离生命周期回归
-	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-file-model-nfs-fixture_test.py scripts/test/online-gate_test.py
+	@python3 -m unittest scripts/test/ftp-consumer-flow-online_test.py scripts/test/online-hosted-ftp-gate_test.py scripts/test/online-file-model-nfs-fixture_test.py scripts/test/online-file-model-minio-fixture_test.py scripts/test/online-gate_test.py
 	@node --check console/frontend/e2e/online/ftp-consumer-flow.spec.js
 	@bash -n scripts/test/online-hosted-ftp-gate.sh
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

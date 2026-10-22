@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
@@ -51,7 +52,10 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 			primary, _ := modelScope.FileComposition.PrimaryTarget()
 			version, _ := strconv.ParseInt(modelScope.EngineVersion, 10, 64)
 			var engine models.Engine
-			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND tenant_id=? AND version=? AND engine_type IN ('ftp','nfs') AND lifecycle_state='active' AND deleted_at IS NULL", primary.EngineID, request.TenantID, version).Take(&engine).Error; err != nil {
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND tenant_id=? AND version=? AND engine_type IN ('ftp','nfs','minio') AND lifecycle_state='active' AND deleted_at IS NULL", primary.EngineID, request.TenantID, version).Take(&engine).Error; err != nil {
+				return nil, commonapi.ErrForbidden
+			}
+			if !commonexecution.ManagerModel3DSourceComposition(engine.EngineType, &modelScope.FileComposition) {
 				return nil, commonapi.ErrForbidden
 			}
 			stored = &engine

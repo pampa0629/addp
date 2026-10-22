@@ -13,9 +13,36 @@ import (
 
 const ManagerModel3DConfigVersion = "model3d-glb-file-config/v1"
 
-// ManagerModel3DSourceEngineType restricts the admitted file-source adapters.
+// ManagerModel3DSourceEngineType restricts the admitted source adapters.
 func ManagerModel3DSourceEngineType(engineType string) bool {
-	return engineType == "ftp" || engineType == "nfs"
+	return engineType == "ftp" || engineType == "nfs" || engineType == "minio"
+}
+
+// ManagerModel3DSourceFormat is the single admission rule for conversion routes.
+func ManagerModel3DSourceFormat(engineType, format string) bool {
+	switch engineType {
+	case "ftp", "nfs":
+		return format == "ifc" || format == "3ds" || format == "dae"
+	case "minio":
+		return format == "ifc" || format == "3ds"
+	default:
+		return false
+	}
+}
+
+// ManagerModel3DSourceComposition also proves the native catalog shape. Engine
+// identity alone must never let a file scope authorize an object or vice versa.
+func ManagerModel3DSourceComposition(engineType string, composition *authorizationfacts.FileCompositionBoundary) bool {
+	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) {
+		return false
+	}
+	primary, err := composition.PrimaryTarget()
+	if err != nil {
+		return false
+	}
+	term := primary.Segments[len(primary.Segments)-1].Term
+	return (engineType == "minio" && term == plugin.EngineCatalogTermObject) ||
+		((engineType == "ftp" || engineType == "nfs") && term == plugin.EngineCatalogTermFile)
 }
 
 // ManagerModel3DReadScope is a frozen boundary, not a credential or Allow.
@@ -70,7 +97,8 @@ func (s *ManagerModel3DReadScope) Validate() error {
 		return errManagerModel3DScope
 	}
 	primary, err := s.FileComposition.PrimaryTarget()
-	if err != nil || primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile ||
+	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile &&
+		(primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject || s.FileComposition.Format == "dae")) ||
 		(s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
 		return errManagerModel3DScope
 	}

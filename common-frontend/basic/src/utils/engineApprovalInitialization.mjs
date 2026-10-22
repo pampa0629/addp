@@ -22,7 +22,7 @@ export function serializeEngineApprovalInitialization(target, mode, reason, bind
 // Protocol validation only. Owner facts are always fetched by the caller;
 // neither a browser candidate fingerprint nor a tree selection proves access.
 export function approvedBoundaryFields(target, binding) {
-  const file = target?.segments?.at(-1)?.term === 'file'
+  const file = ['file', 'object'].includes(target?.segments?.at(-1)?.term)
   const path = file ? fileCompositionPrimary(binding?.file_composition) : binding?.native_target
   if (!/^[0-9a-f]{64}$/.test(binding?.item_fingerprint || '') || !/^[0-9a-f]{64}$/.test(binding?.boundary_hash || '') ||
       (file ? binding?.native_target !== undefined : binding?.file_composition !== undefined) || !samePath(path, target)) {
@@ -37,11 +37,14 @@ function samePath(left, right) {
     Array.isArray(left.segments) && left.segments.length === right.segments?.length &&
     left.segments.every((part, index) => ['term', 'kind', 'name'].every(key => part?.[key] === right.segments[index]?.[key]))
 }
-function filePath(path) {
+function modelPath(path) {
   if (path?.version !== 'catalog.path/v1' || !Number.isSafeInteger(Number(path.engine_id)) || Number(path.engine_id) <= 0 ||
       !Array.isArray(path.segments) || path.segments.length < 2 || path.segments.length > 64) return false
+  const object = path.segments.at(-1)?.term === 'object'
+  if (object && path.segments.length < 3) return false
   return path.segments.every((part, index) => {
-    const term = index === 0 ? 'root' : index === path.segments.length - 1 ? 'file' : 'directory'
+    const term = object ? (index === 0 ? 'service' : index === 1 ? 'bucket' : index === path.segments.length - 1 ? 'object' : 'prefix') :
+      (index === 0 ? 'root' : index === path.segments.length - 1 ? 'file' : 'directory')
     return part?.term === term && part.kind === term && typeof part.name === 'string' &&
       (index === 0 ? part.name === '' : part.name && part.name !== '.' && part.name !== '..' &&
         part.name.isWellFormed() && !/[/\\\p{Cc}]/u.test(part.name) && new TextEncoder().encode(part.name).length <= 4096)
@@ -56,12 +59,13 @@ function fileCompositionPrimary(composition) {
   const seen = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
   if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== 'model') return boundaryError()
   const target = primary[0].target
-  if (!filePath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
+  if (!modelPath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
+  if ((target.segments.at(-1).term === 'object' && composition.format === 'dae') || (composition.format === 'ifc' && composition.refs.length !== 1)) return boundaryError()
   const parent = target.segments.slice(0, -1)
   for (const ref of composition.refs) {
     if (!ref || Object.keys(ref).sort().join(',') !== 'primary,required,role,target' || typeof ref.required !== 'boolean' ||
-        typeof ref.primary !== 'boolean' || !/^[a-z0-9_]{1,64}$/.test(ref.role) || !filePath(ref.target) ||
-        String(ref.target.engine_id) !== String(target.engine_id) || ref.target.segments.length <= parent.length ||
+        typeof ref.primary !== 'boolean' || !/^[a-z0-9_]{1,64}$/.test(ref.role) || !modelPath(ref.target) ||
+        ref.target.segments.at(-1).term !== target.segments.at(-1).term || String(ref.target.engine_id) !== String(target.engine_id) || ref.target.segments.length <= parent.length ||
         !parent.every((part, index) => ['term', 'kind', 'name'].every(key => part[key] === ref.target.segments[index]?.[key]))) return boundaryError()
     const key = JSON.stringify(ref.target.segments.map(({ term, kind, name }) => [term, kind, name]))
     if (seen.has(key)) return boundaryError()
@@ -80,8 +84,8 @@ export async function readNativeApprovalFacts(target, readFacts) {
   const id = typeof target?.engine_id === 'number' && Number.isSafeInteger(target.engine_id) ? String(target.engine_id) : target?.engine_id
   target = { ...target, engine_id: id }
   serializeEngineCatalogTarget(target)
-  const file = target.segments.at(-1)?.term === 'file'
-  if (file ? !filePath(target) : (target.segments.length !== 3 || target.segments[0].term !== 'server' || target.segments[0].kind !== 'server' ||
+  const file = ['file', 'object'].includes(target.segments.at(-1)?.term)
+  if (file ? !modelPath(target) : (target.segments.length !== 3 || target.segments[0].term !== 'server' || target.segments[0].kind !== 'server' ||
       target.segments[1].term !== 'schema' || target.segments[1].kind !== 'namespace' ||
       target.segments[2].term !== 'table' || target.segments[2].kind !== 'table')) throw new Error('invalidDataItemBoundary')
   const name = file ? target.segments.slice(1).map(part => part.name).join('/') : `${target.segments[1].name}.${target.segments[2].name}`
@@ -95,7 +99,7 @@ export async function readNativeApprovalFacts(target, readFacts) {
     if (facts.boundary !== null || facts.boundary_hash !== null) throw new Error('invalidDataItemBoundary')
     return Object.freeze({ state: facts.basis_state, binding: null })
   }
-  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== 'file' || facts.boundary?.layout !== 'single' ||
+  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== 'single' ||
       facts.boundary?.native_target !== undefined)) throw new Error('invalidDataItemBoundary')
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash,
     ...(file ? { file_composition: structuredClone(facts.boundary?.file_composition) } : { native_target: structuredClone(facts.boundary?.native_target) }) }

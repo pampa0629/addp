@@ -1345,6 +1345,15 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 			t.Fatalf("FTP consumer received an unrelated or source-issuing qualification: %s", key)
 		}
 	}
+	managerPermissions, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), wantIssuer) {
+		t.Fatal("Manager MinIO model acceptance requires a separate exact-source issuer", err)
+	}
+	for _, key := range wantIssuer {
+		if slices.Contains(managerPermissions, key) {
+			t.Fatalf("Manager browser received issuer permission %s", key)
+		}
+	}
 	issuer[0] = "mutated"
 	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 4 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")

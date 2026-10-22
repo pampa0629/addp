@@ -1785,7 +1785,7 @@ def run_browser(
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
     report_path = artifact_dir / f"manager-internal-artifact-lineage-browser-{phase}.json"
     report_path.unlink(missing_ok=True)
-    browser_environment = dict(environment)
+    browser_environment = {key:value for key,value in environment.items() if key not in {"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"}}
     browser_environment.update(
         {
             "ADDP_ONLINE_MANAGER_LINEAGE_EXECUTION_ID": execution_id,
@@ -2281,12 +2281,39 @@ def run_scenario(
             raise SuiteError(message) from scenario_error
 
 
+
+def prepare_minio_model_grants(client, environment):
+    # Reuse the exact-model owner helper, with this suite's independently checked
+    # consumer Permission set. Only the two migrated formats receive Grants.
+    from importlib import import_module
+    models = import_module('scripts.test.ftp-consumer-flow-online')
+    tenant = positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
+    engine = positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'], 'engine')
+    wait_for_meta_scan(client, engine, time.monotonic()+180)
+    identity = client.request('GET','/api/v1/system/auth/context',(200,)).payload
+    issuer = GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
+    grants = models.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,
+        'principal_id':str(identity['principal']['id'])},source_type='minio',consumer_permissions=REQUIRED_PERMISSIONS)
+    try:
+        for kind in ('ifc','3ds'):
+            name = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/model3d/'+kind+'/model.'+kind
+            item = find_fixture_item(client,engine,name,kind)
+            refs = [{'path':name,'role':'model','required':True,'primary':True}]
+            if kind=='3ds':
+                refs.append({'path':name.rsplit('/',1)[0]+'/texture.png','role':'texture','required':True,'primary':False})
+            grants.grant({'format':kind,'full_name':name,'fingerprint':item['fingerprint'],'composition':refs})
+    except BaseException:
+        grants.cleanup()
+        raise
+    return grants
+
 def required_environment() -> dict[str, str]:
     names = (
         "ADDP_ONLINE_ARTIFACT_DIR",
         "ADDP_ONLINE_TEST_RUN_ID",
         "ADDP_ONLINE_TEST_TENANT_ID",
         "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
+        "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
         "ADDP_ONLINE_TEST_USER_USERNAME",
         "ADDP_ONLINE_TEST_USER_PASSWORD",
         "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID",
@@ -2320,7 +2347,11 @@ def main() -> int:
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
         versions = verify_index_source_versions(client, environment, time.monotonic() + 180)
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
-        report = run_scenario(repository, environment, run_browser)
+        grants = prepare_minio_model_grants(client, environment)
+        try:
+            report = run_scenario(repository, environment, run_browser)
+        finally:
+            grants.cleanup()
         import importlib.util
         img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
         img_scene = importlib.util.module_from_spec(img_spec)

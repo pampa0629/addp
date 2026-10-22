@@ -12,7 +12,7 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   const id = String(safePickerEngineID(engineID)), path = requirement?.catalog_path
   const leaf = path?.segments?.at(-1)
   if (requirement?.mode !== 'independent' || String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
-    !((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'file' && leaf.kind === 'file'))) throw new Error('invalidGrant')
+    !((leaf?.term === 'table' && leaf.kind === 'table') || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term))) throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
   if (!['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||

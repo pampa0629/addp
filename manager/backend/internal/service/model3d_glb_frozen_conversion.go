@@ -27,7 +27,7 @@ type model3DGLBFrozenHeader struct {
 
 func freezeFileModel3DGLBConfig(snapshot *repository.Model3DGLBTaskSnapshot, engine *commonModels.Engine, candidate *model3DGLBSourceCandidate, executionID, bucket string) (commonModels.JSONMap, error) {
 	reject := ErrModel3DGLBSourceAuthorizationRequired
-	if snapshot == nil || snapshot.TaskID == 0 || snapshot.Version == 0 || snapshot.TenantID == 0 || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.Version <= 0 || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || candidate == nil || candidate.composition == nil || candidate.composition.Validate(engine.ID) != nil {
+	if snapshot == nil || snapshot.TaskID == 0 || snapshot.Version == 0 || snapshot.TenantID == 0 || engine == nil || !commonExecution.ManagerModel3DSourceEngineType(engine.EngineType) || engine.Version <= 0 || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || candidate == nil || candidate.composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, candidate.composition) {
 		return nil, reject
 	}
 	conversion, err := decodeFileModel3DGLBConversion(snapshot.Config)

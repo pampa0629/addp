@@ -141,3 +141,28 @@ func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 		t.Fatal("legacy frozen configuration accepted")
 	}
 }
+
+func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
+	for _, format := range []string{"ifc", "3ds", "dae"} {
+		for _, kind := range []string{"ftp", "nfs", "minio", "s3"} {
+			for _, term := range []string{"file", "object"} {
+				target := plugin.FileItemPath(33, "models/model."+format)
+				if term == "object" {
+					target = plugin.ObjectItemPath(33, "models", "model."+format)
+				}
+				composition, err := authorizationfacts.NewFileCompositionBoundary(format, []authorizationfacts.FileCompositionRef{{Target: target, Role: "model", Required: true, Primary: true}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := ((kind == "ftp" || kind == "nfs") && term == "file") || (kind == "minio" && term == "object" && format != "dae")
+				if ManagerModel3DSourceComposition(kind, composition) != want {
+					t.Fatalf("wrong admission %s/%s/%s", kind, term, format)
+				}
+				scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+				if (scope.Validate() == nil) != (term == "file" || format != "dae") {
+					t.Fatalf("wrong scope shape %s/%s", term, format)
+				}
+			}
+		}
+	}
+}

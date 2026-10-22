@@ -24,6 +24,17 @@ describe('System live-catalog protocol adapter', () => {
     expect(() => approvalTargetFromSelection({ raw: { node: nfs } }, '33')).toThrow()
     expect((await adapter.search('33', 'model.3ds')).map(node => node.label)).toEqual(['Model.3DS'])
   })
+  it('selects MinIO IFC/3DS objects only, never a bucket, prefix or DAE', () => {
+    const segments = [{ term: 'service', kind: 'service', name: '' }, { term: 'bucket', kind: 'bucket', name: 'models' }]
+    const node = (term, name, role = 'leaf') => ({ metadata: { approval_engine_type: 'minio', catalog_entry: {
+      role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
+    } } })
+    for (const name of ['part.ifc', 'model.3DS']) expect(isApprovalSelection(node('object', name))).toBe(true)
+    for (const name of ['scene.dae', 'TEST.PNG', 'other.obj']) expect(isApprovalSelection(node('object', name))).toBe(false)
+    expect(isApprovalSelection(node('prefix', 'prefix', 'branch'))).toBe(false)
+    expect(isApprovalSelection(node('bucket', 'bucket', 'branch'))).toBe(false)
+    expect(isApprovalSelection(node('file', 'model.3ds'))).toBe(false)
+  })
   it('searches current native paths with the same adapter and preserves exact resource identity', async () => {
     const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [root] : path.segments.length === 1 ? [namespace] : [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] }))
     const adapter = createApprovalCatalogAdapter(engine, api)

@@ -74,7 +74,7 @@ func (s *Service) resolveApprovedBoundary(ctx context.Context, tenantID int64, p
 // Validate only the submitted identity/hash shape before owner facts are read.
 // A file hash cannot prove a composition until resolveApprovedBoundary succeeds.
 func validateExpectedPrimary(path plugin.EngineCatalogPath, fingerprint, hash string) error {
-	if len(path.Segments) > 0 && path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile {
+	if len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermObject) {
 		candidate, err := authorizationfacts.PrimaryCandidateFingerprint(path)
 		if err != nil || candidate != fingerprint || !authorizationfacts.ValidItemFingerprint(hash) {
 			return commonapi.ErrBadRequest

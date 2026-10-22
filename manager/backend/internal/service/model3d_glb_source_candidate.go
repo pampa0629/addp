@@ -23,15 +23,25 @@ type model3DGLBSourceCandidate struct {
 func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, item *commonModels.MetaItem) (*model3DGLBSourceCandidate, error) {
 	reject := ErrModel3DGLBSourceAuthorizationRequired
 	if tenantID == 0 || source.ItemID == 0 || item == nil || item.ID != source.ItemID || item.TenantID != tenantID ||
-		item.EngineID != source.SourceEngineID || item.ItemType != "file" || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||
+		item.EngineID != source.SourceEngineID || (item.ItemType != "file" && item.ItemType != "object") || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||
 		(source.Format != "ifc" && source.Format != "3ds" && source.Format != "dae") {
 		return nil, reject
 	}
 	locator, err := resourcetree.ParseURI(source.ItemLocator)
-	if err != nil || locator.EngineID != item.EngineID || locator.FullName() != item.FullName {
+	if err != nil || locator.EngineID != item.EngineID || string(locator.Type) != item.ItemType || locator.FullName() != item.FullName {
 		return nil, reject
 	}
-	primary := plugin.FileItemPath(item.EngineID, item.FullName)
+	targetFor := func(name string) plugin.EngineCatalogPath {
+		if item.ItemType == "object" {
+			target, _ := plugin.ObjectItemPathFromRefPath(item.EngineID, name)
+			return target
+		}
+		return plugin.FileItemPath(item.EngineID, name)
+	}
+	if item.ItemType == "object" && source.Format == "dae" {
+		return nil, reject
+	}
+	primary := targetFor(item.FullName)
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
 		commonJSON.String(item.Attributes, "item", "layout") != "single" ||
 		commonJSON.String(item.Attributes, "item", "data_type") != "model_3d" ||
@@ -69,7 +79,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	compositionRefs := make([]authorizationfacts.FileCompositionRef, 0, len(refs))
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
-		target := plugin.FileItemPath(item.EngineID, ref.Path)
+		target := targetFor(ref.Path)
 		if target.StringPath() != ref.Path || seen[ref.Path] || ref.Required == nil || !*ref.Required {
 			return nil, reject
 		}

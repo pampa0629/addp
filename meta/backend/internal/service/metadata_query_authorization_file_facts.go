@@ -41,7 +41,17 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae") {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	primary := plugin.FileItemPath(item.EngineID, item.FullName)
+	if item.ItemType == plugin.EngineCatalogTermObject && format == "dae" {
+		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
+	targetFor := func(name string) plugin.EngineCatalogPath {
+		if item.ItemType == plugin.EngineCatalogTermObject {
+			target, _ := plugin.ObjectItemPathFromRefPath(item.EngineID, name)
+			return target
+		}
+		return plugin.FileItemPath(item.EngineID, name)
+	}
+	primary := targetFor(item.FullName)
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
 		strings.ToLower(path.Ext(item.FullName)) != "."+format || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
@@ -81,7 +91,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	compositionRefs := make([]authorizationfacts.FileCompositionRef, 0, len(refs))
 	primaryCount := 0
 	for _, ref := range refs {
-		target := plugin.FileItemPath(item.EngineID, ref.Path)
+		target := targetFor(ref.Path)
 		if ref.Path == "" || target.StringPath() != ref.Path || ref.Required == nil || !*ref.Required {
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
@@ -166,6 +176,10 @@ func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (author
 		return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
 	}
 	id := item.NodeID
+	rootTerm := plugin.EngineCatalogTermRoot
+	if item.ItemType == plugin.EngineCatalogTermObject {
+		rootTerm = plugin.EngineCatalogTermService
+	}
 	for i := len(parts) - 2; i >= -1; i-- {
 		var node models.MetaNode
 		err := tx.Where("tenant_id = ? AND engine_id = ? AND id = ? AND deleted_at IS NULL", item.TenantID, item.EngineID, id).First(&node).Error
@@ -176,12 +190,19 @@ func validateFileAuthorizationParents(tx *gorm.DB, item models.MetaItem) (author
 			return "", err
 		}
 		if i == -1 {
-			if node.NodeType != plugin.EngineCatalogTermRoot || node.ParentNodeID != nil || node.FullName != "" {
+			if node.NodeType != rootTerm || node.ParentNodeID != nil || node.FullName != "" {
 				return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
 			}
 			return authorizationfacts.AuthorizationBasisComplete, nil
 		}
-		if node.NodeType != "dir" || node.Name != parts[i] || node.FullName != strings.Join(parts[:i+1], "/") || node.ParentNodeID == nil {
+		expectedType := "dir"
+		if item.ItemType == plugin.EngineCatalogTermObject {
+			expectedType = "prefix"
+			if i == 0 {
+				expectedType = "bucket"
+			}
+		}
+		if node.NodeType != expectedType || node.Name != parts[i] || node.FullName != strings.Join(parts[:i+1], "/") || node.ParentNodeID == nil {
 			return authorizationfacts.AuthorizationBasisNeedsRefresh, nil
 		}
 		id = *node.ParentNodeID

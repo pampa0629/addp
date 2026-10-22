@@ -413,8 +413,17 @@ def validate_preview(payload):
     require(actual == SEED.ROWS, 'FTP preview changed native IDs, Chinese text or amounts')
 
 
+def model_source_type():
+    return os.environ.get('ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE', 'ftp')
+
+def model_item_type():
+    return 'object' if model_source_type() == 'minio' else 'file'
+
+def model_scope(path):
+    return 'model-source/' + path if model_source_type() == 'minio' else path
+
 def validate_item(item, sample):
-    require(item.get('item_type') == 'file' and item.get('full_name') == sample['full_name'] and item.get('fingerprint'),
+    require(item.get('item_type') == model_item_type() and item.get('full_name') == sample['full_name'] and item.get('fingerprint'),
             'FTP Meta item must preserve its exact account-relative file identity')
     attributes = item.get('attributes', {})
     require(attributes.get('schema_version') == 1 and attributes.get('item', {}).get('data_type') == 'table',
@@ -426,14 +435,20 @@ def validate_item(item, sample):
 
 def file_locator(engine_id, item):
     path = '/'.join(quote(part, safe='') for part in item['full_name'].split('/'))
-    return f'addp://engine/{engine_id}/path/{path}?' + urlencode({'type': 'file', 'item_id': item['id']})
+    return f'addp://engine/{engine_id}/path/{path}?' + urlencode({'type': model_item_type(), 'item_id': item['id']})
 
 
-def file_target(engine_id, path):
+def file_target(engine_id, path, source_type=None):
     parts = path.split('/')
     require(type(engine_id) is int and engine_id > 0 and parts and
             all(part and part not in {'.', '..'} and not any(char in part for char in '\\:') for part in parts),
             'FTP approval requires an exact account-relative leaf')
+    if (source_type or model_source_type()) == 'minio':
+        require(len(parts) >= 2, 'object target requires bucket and key')
+        segments = [{'term':'service','kind':'service','name':''}, {'term':'bucket','kind':'bucket','name':parts[0]}]
+        segments.extend({'term':'prefix','kind':'prefix','name':part} for part in parts[1:-1])
+        segments.append({'term':'object','kind':'object','name':parts[-1]})
+        return {'version':'catalog.path/v1','engine_id':engine_id,'segments':segments}
     segments = [{'term': 'root', 'kind': 'root', 'name': ''}]
     segments.extend({'term': 'directory', 'kind': 'directory', 'name': part} for part in parts[:-1])
     segments.append({'term': 'file', 'kind': 'file', 'name': parts[-1]})
@@ -459,11 +474,13 @@ def exact_user_principal(client, tenant, permissions):
 class ModelSourceAuthorization:
     """Use the formal User APIs; receipts are history, never a cached Allow."""
 
-    def __init__(self, issuer, consumer, report):
+    def __init__(self, issuer, consumer, report, *, source_type=None, consumer_permissions=None):
+        self.source_type = source_type or report.get("source_engine_type", model_source_type())
+        self.target = lambda name: file_target(self.engine_id, name, self.source_type)
         tenant = report['tenant_id']
         require(type(tenant) is int and tenant > 1, 'FTP grants require the disposable nondefault Tenant')
         self.operator = exact_user_principal(issuer, tenant, ISSUER_PERMISSIONS)
-        self.recipient = exact_user_principal(consumer, tenant, PERMISSIONS)
+        self.recipient = exact_user_principal(consumer, tenant, consumer_permissions or PERMISSIONS)
         require(self.recipient == report['principal_id'] and self.operator != self.recipient,
                 'FTP source issuer must be distinct from the actual browser consumer')
         self.issuer = issuer
@@ -476,7 +493,7 @@ class ModelSourceAuthorization:
 
     def facts(self, model):
         facts = self.issuer.request('GET', self.base + f"/data-items/{model['fingerprint']}/authorization-facts", (200,)).payload
-        expected_refs = [{'target': file_target(self.engine_id, ref['path']), 'role': ref['role'],
+        expected_refs = [{'target': self.target(ref['path']), 'role': ref['role'],
                           'required': ref['required'], 'primary': ref['primary']} for ref in model['composition']]
         # The fixed fixture's typed targets use the shared boundary's canonical
         # JSON byte order. Primary is a semantic flag, never an ordering rule.
@@ -485,7 +502,7 @@ class ModelSourceAuthorization:
         require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
             'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'],
-            'item_type': 'file', 'basis_state': 'complete', 'boundary': boundary}.items()) and
+            'item_type': 'object' if self.source_type == 'minio' else 'file', 'basis_state': 'complete', 'boundary': boundary}.items()) and
             isinstance(facts.get('boundary_hash'), str) and re.fullmatch('[0-9a-f]{64}', facts['boundary_hash']) and
             bool(facts.get('observed_at')),
             'FTP approval requires matching complete System facts, never a directory or caller-supplied composition')
@@ -494,7 +511,7 @@ class ModelSourceAuthorization:
     def grant(self, model, *, initialize=True):
         facts = self.facts(model)
         command = str(uuid.uuid4())
-        body = {'request_id': command, 'catalog_path': file_target(self.engine_id, model['full_name']),
+        body = {'request_id': command, 'catalog_path': self.target(model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
                 'requirement_version': '1', 'initialize_approval': initialize, 'recipient_type': 'user',
                 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
@@ -536,7 +553,7 @@ class ModelSourceAuthorization:
 
     def deny(self, model):
         command = str(uuid.uuid4())
-        body = {'deny_id': command, 'catalog_path': file_target(self.engine_id, model['full_name']),
+        body = {'deny_id': command, 'catalog_path': self.target(model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'recipient_type': 'user', 'recipient_id': self.recipient,
                 'action': 'read', 'expiry_mode': 'until_revoked', 'reason': 'Disposable FTP stable DataItem Deny'}
         self.denies.append(command)
@@ -675,6 +692,10 @@ def owned_ftp_fixture():
 @contextmanager
 def changed_texture_fixture(model):
     """Change only the fixed model in this Hosted run owned read-only mount."""
+    if model_source_type() == 'minio':
+        with import_module('scripts.test.online-file-model-minio-fixture').changed_texture(model) as changed:
+            yield changed
+        return
     root = owned_ftp_fixture()
     kind = model['format']
     require(kind in {'3ds', 'dae'}, 'composition fixture requires a declared texture model')
@@ -743,6 +764,10 @@ def replace_fixture_file(path, content):
 
 @contextmanager
 def invalid_ifc_fixture(model):
+    if model_source_type() == 'minio':
+        with import_module('scripts.test.online-file-model-minio-fixture').invalid_ifc(model):
+            yield
+        return
     root = owned_ftp_fixture()
     require(model['format'] == 'ifc' and model['full_name'] == 'models/ifc/model.ifc',
             'FTP failure input must be the exact fixed IFC source')
@@ -839,7 +864,7 @@ def verify_old_grant_composition(client, authorization, report, source, timeout)
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
+            scan = scan_scope(client, report['engine_id'], [model_scope('models/' + source['format'])], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash, 'FTP composition boundary did not change')
             denied = source_read_control(client, report['engine_id'], changed, 403)
@@ -849,7 +874,7 @@ def verify_old_grant_composition(client, authorization, report, source, timeout)
                     'changed_boundary_hash': facts['boundary_hash'],
                     'old_grant_without_deny': denied, 'old_cached_content': stale, 'denied_generation': generation}
     finally:
-        scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
+        scan_scope(client, report['engine_id'], [model_scope('models/' + source['format'])], 'basic', timeout)
 
 
 def verify_composition_rules(client, authorization, report, source, deny, timeout):
@@ -857,7 +882,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
+            scan = scan_scope(client, report['engine_id'], [model_scope('models/' + source['format'])], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash,
                     'FTP changed texture reference must change the complete approval boundary')
@@ -873,7 +898,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
                       'old_deny_after_new_grant': denied, 'new_grant_after_release': allowed,
                       'old_cached_content': stale}
     finally:
-        scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
+        scan_scope(client, report['engine_id'], [model_scope('models/' + source['format'])], 'basic', timeout)
     authorization.revoke(new_grant['request_id'])
     result['restored_grant'] = authorization.grant(source, initialize=False)
     return result
@@ -885,7 +910,9 @@ def prepare_models(items, engine_id, samples):
                 'dae': ('models/dae/model.dae', 'addp_online_model_fixture.dae'),
                 'dae_png': ('models/dae/texture.png', 'addp_online_exchange_texture.png'),
                 'png': ('models/3ds/texture.png', 'addp_online_exchange_texture.png')}
-    require(isinstance(samples, list) and len(samples) == 5 and
+    if model_source_type() == 'minio':
+        expected = {key:(model_scope(value[0]), value[1]) for key,value in expected.items() if key in {'ifc','3ds','png'}}
+    require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
             'FTP model manifest requires exactly IFC, 3DS, DAE and their two PNG files')
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
@@ -898,7 +925,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in ('ifc', '3ds', 'dae'):
+    for kind in (('ifc', '3ds') if model_source_type() == 'minio' else ('ifc', '3ds', 'dae')):
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')
@@ -909,7 +936,7 @@ def prepare_models(items, engine_id, samples):
         require(type(item.get('id')) is int and item['id'] > 0 and
                 type(item.get('engine_id')) is int and item['engine_id'] == engine_id and
                 item.get('fingerprint') == hashlib.sha256(f"{engine_id}:{sample['full_name']}".encode()).hexdigest() and
-                item.get('item_type') == 'file' and attributes.get('schema_version') == 1 and
+                item.get('item_type') == model_item_type() and attributes.get('schema_version') == 1 and
                 all(facts.get(key) == value for key, value in
                     {'data_type': 'model_3d', 'layout': 'single', 'format': kind}.items()) and
                 attributes.get('storage', {}).get('physical_path') == sample['full_name'],
@@ -939,7 +966,7 @@ def prepare_models(items, engine_id, samples):
 
 
 def run(client, tenant_id, engine_id, samples, model_samples, timeout, source_type="ftp"):
-    require(source_type in {"ftp", "nfs"}, "unadmitted file model source")
+    require(source_type in {"ftp", "nfs", "minio"}, "unadmitted file model source")
     require(tenant_id > 1, 'FTP Online requires a nondefault disposable Tenant')
     API.validate_user_identity(client, tenant_id, PERMISSIONS)
     API.wait_manager_read_boundary(client, engine_id, time.monotonic() + min(timeout, 120))
@@ -950,25 +977,28 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout, source_ty
             'FTP must be in the ordinary User catalog without credentials')
     capabilities = selected[0].get('capabilities', {})
     store = capabilities.get('storage', {}).get('store', {})
-    require(capabilities.get('engine_family') == 'file' and store.get('stream_read') is True and
-            store.get('range_read') is True and (source_type == 'nfs' or (not store.get('stream_write') and not store.get('delete'))),
+    require(capabilities.get('engine_family') == ('object' if source_type == 'minio' else 'file') and store.get('stream_read') is True and
+            store.get('range_read') is True and (source_type in {'nfs','minio'} or (not store.get('stream_write') and not store.get('delete'))),
             'FTP must declare only the admitted read capabilities')
     endpoint = f'/api/v1/system/engines/{engine_id}/catalog/children'
     roots = client.request('POST', endpoint, (200,), {'path': {'version': 'catalog.path/v1', 'segments': []}}).payload['nodes']
-    require(len(roots) == 1 and roots[0]['kind'] == 'root', 'FTP must expose one explicit account root')
+    require(len(roots) == 1 and roots[0]['kind'] == ('service' if source_type == 'minio' else 'root'), 'FTP must expose one explicit account root')
     directories = client.request('POST', endpoint, (200,), {'path': roots[0]['path']}).payload['nodes']
+    if source_type == 'minio':
+        bucket, = [entry for entry in directories if entry['name'] == 'model-source' and entry['kind'] == 'bucket']
+        directories = client.request('POST', endpoint, (200,), {'path':bucket['path']}).payload['nodes']
     branches = [entry for entry in directories if entry['name'] == 'examples']
-    require(len(branches) == 1 and branches[0]['kind'] == 'directory', 'FTP account root lost the examples directory')
+    require(len(branches) == 1 and branches[0]['kind'] == ('prefix' if source_type == 'minio' else 'directory'), 'FTP account root lost the examples directory')
     files = client.request('POST', endpoint, (200,), {'path': branches[0]['path']}).payload['nodes']
     for sample in samples:
         matches = [entry for entry in files if entry['name'] == sample['full_name'].split('/')[-1]]
-        require(len(matches) == 1 and matches[0]['kind'] == 'file', 'FTP live catalog normalized or omitted a sample name')
+        require(len(matches) == 1 and matches[0]['kind'] == model_item_type(), 'FTP live catalog normalized or omitted a sample name')
         facts = client.request('POST', f'/api/v1/system/engines/{engine_id}/catalog/facts', (200,), {'path': matches[0]['path']}).payload
         storage = facts.get('storage', {})
-        require(storage.get('path') == sample['full_name'] and storage.get('size_bytes') == sample['size'] and not storage.get('etag'),
+        require(storage.get('path') == sample['full_name'] and storage.get('size_bytes') == sample['size'] and (bool(storage.get('etag')) if source_type == 'minio' else not storage.get('etag')),
                 'FTP facts must preserve native path/size without inventing an ETag')
-    model_scan = scan_scope(client, engine_id, ['models'], 'basic', timeout)
-    execution_id = scan_scope(client, engine_id, ['examples'], 'deep', timeout)
+    model_scan = scan_scope(client, engine_id, [model_scope('models')], 'basic', timeout)
+    execution_id = scan_scope(client, engine_id, [model_scope('examples')], 'deep', timeout)
     items = client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,)).payload
     result = []
     for sample in samples:
@@ -1013,6 +1043,7 @@ def validate_source_download(observed, source, artifact_dir):
               'models/dae/model.dae': 'addp_online_model_fixture.dae',
               'models/dae/texture.png': 'addp_online_exchange_texture.png',
               'models/3ds/texture.png': 'addp_online_exchange_texture.png'}
+    pinned = {model_scope(key):value for key,value in pinned.items()}
     require(all(ref['path'] in pinned for ref in source['composition']),
             'FTP source download requires the exact confirmed fixed-fixture composition')
     expected = {Path(ref['path']).name: (fixture / pinned[ref['path']]).read_bytes()
@@ -1049,7 +1080,7 @@ def validate_browser_report(actual, expected, artifact_dir):
     require({key: value for key, value in actual.items() if key != 'models'} == proof,
             'FTP browser identity, scan, preview or physical download proof differs')
     models = actual.get('models')
-    require(isinstance(models, list) and len(models) == 3,
+    require(isinstance(models, list) and len(models) == len(expected['models']),
             'FTP browser must generate and reopen all three model formats')
     for observed, source in zip(models, expected['models']):
         require(set(observed) == {'format', 'item_id', 'task_id', 'execution_id', 'result_id',
@@ -1171,6 +1202,20 @@ def main():
         os.environ['ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE'] = 'nfs'
         os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(nfs_artifacts)
         report['nfs_profile'] = run_profile(client, tenant, nfs_engine, samples, nfs_models, timeout, 'nfs')
+    finally:
+        os.environ.pop('ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE', None)
+        os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(root_artifacts)
+    minio_engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_MINIO_ENGINE_ID'), 'MinIO engine')
+    require(len({engine,nfs_engine,minio_engine}) == 3, 'model profiles require distinct Engines')
+    private = Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR'))
+    minio_artifacts = root_artifacts / 'minio'
+    minio_artifacts.mkdir()
+    try:
+        os.environ['ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE'] = 'minio'
+        os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(minio_artifacts)
+        report['minio_profile'] = run_profile(client, tenant, minio_engine,
+            json.loads((private/'minio-samples.json').read_text()),
+            json.loads((private/'minio-model-samples.json').read_text()),timeout,'minio')
     finally:
         os.environ.pop('ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE', None)
         os.environ['ADDP_ONLINE_ARTIFACT_DIR'] = str(root_artifacts)
