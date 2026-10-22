@@ -20,6 +20,7 @@ const MaxObjectBytes = 16 << 20
 const MaxQueryRows = 1000
 const MaxQueryBytes = 16 << 20
 const minRetentionDays = 365
+const minControlYears = 20
 const format = "addp.audit-archive/v2"
 const maxParts = 256
 const partTarget = 4 << 20
@@ -62,7 +63,7 @@ func (r Ref) valid() bool {
 
 // There is deliberately no deletion or release-hold operation in this interface.
 type Store interface {
-	Create(context.Context, string, []byte, time.Time, bool) (string, error)
+	Create(context.Context, string, []byte, time.Time) (string, error)
 	Read(context.Context, Version) ([]byte, Protection, error)
 	Extend(context.Context, Version, time.Time) error
 	Walk(context.Context, string, func(Version) error) error
@@ -227,7 +228,7 @@ func exact(ctx context.Context, s Store, key string) (Version, error) {
 	}
 	return got, nil
 }
-func readRef(ctx context.Context, s Store, r Ref, hold bool) ([]byte, Protection, error) {
+func readRef(ctx context.Context, s Store, r Ref, control bool) ([]byte, Protection, error) {
 	if !r.valid() {
 		return nil, Protection{}, ErrUnknown
 	}
@@ -236,7 +237,7 @@ func readRef(ctx context.Context, s Store, r Ref, hold bool) ([]byte, Protection
 		return nil, Protection{}, ErrConflict
 	}
 	b, p, e := s.Read(ctx, v)
-	if e != nil || digest(b) != r.SHA || (hold && !p.Hold) {
+	if e != nil || digest(b) != r.SHA || (control && !validControl(v, p, time.Now().UTC())) {
 		return nil, p, ErrUnknown
 	}
 	return b, p, nil
@@ -252,13 +253,25 @@ func retentionUntil(t time.Time) time.Time {
 	return u
 }
 
-func put(ctx context.Context, s Store, key string, value any, until time.Time, hold bool) (Ref, error) {
+// Control deadlines use UTC calendar years, not a 365-day approximation.
+func controlUntil(at time.Time) time.Time {
+	return retentionUntil(at.UTC().AddDate(minControlYears, 0, 0).Add(retentionMargin))
+}
+func validControl(v Version, p Protection, now time.Time) bool {
+	return !v.CreatedAt.IsZero() && !p.Until.Before(v.CreatedAt.UTC().AddDate(minControlYears, 0, 0)) && p.Until.After(now)
+}
+func put(ctx context.Context, s Store, key string, value any, until time.Time, control bool) (Ref, error) {
+	if control {
+		if minimum := controlUntil(time.Now().UTC()); minimum.After(until) {
+			until = minimum
+		}
+	}
 	until = retentionUntil(until)
 	b, e := encode(value)
 	if e != nil {
 		return Ref{}, e
 	}
-	id, writeErr := s.Create(ctx, key, b, until, hold)
+	id, writeErr := s.Create(ctx, key, b, until)
 	v, e := exact(ctx, s, key)
 	if e != nil {
 		return Ref{}, e
@@ -267,7 +280,7 @@ func put(ctx context.Context, s Store, key string, value any, until time.Time, h
 		return Ref{}, ErrConflict
 	}
 	r := Ref{key, v.ID, digest(b)}
-	got, p, e := readRef(ctx, s, r, hold)
+	got, p, e := readRef(ctx, s, r, control)
 	if e != nil || string(got) != string(b) || p.Until.Before(until) {
 		return Ref{}, ErrUnknown
 	}
@@ -276,10 +289,11 @@ func put(ctx context.Context, s Store, key string, value any, until time.Time, h
 	}
 	return r, nil
 }
-func readRoot(ctx context.Context, s Store, r Ref) (Root, error) {
+func readRoot(ctx context.Context, s Store, r Ref, now time.Time) (Root, error) {
 	var root Root
-	b, _, e := readRef(ctx, s, r, true)
-	if e != nil {
+	b, pr, e := readRef(ctx, s, r, true)
+	if e != nil || !pr.Until.After(now) {
+		e = ErrUnknown
 		return root, e
 	}
 	if e = decode(b, &root); e != nil {
@@ -336,7 +350,7 @@ func Load(ctx context.Context, s Store, rootRef Ref, verify bool, visit func(Row
 	return loadAt(ctx, s, rootRef, verify, visit, time.Now().UTC())
 }
 func loadAt(ctx context.Context, s Store, rootRef Ref, verify bool, visit func(Row, bool) error, now time.Time) (*Chain, error) {
-	root, e := readRoot(ctx, s, rootRef)
+	root, e := readRoot(ctx, s, rootRef, now)
 	if e != nil {
 		return nil, e
 	}
@@ -351,7 +365,7 @@ func loadAt(ctx context.Context, s Store, rootRef Ref, verify bool, visit func(R
 			return ErrConflict
 		}
 		b, pr, e := s.Read(ctx, v)
-		if e != nil || !pr.Hold {
+		if e != nil || !validControl(v, pr, now) {
 			return ErrUnknown
 		}
 		var cp Checkpoint
@@ -592,7 +606,7 @@ func planAt(ctx context.Context, s Store, root Ref, now time.Time) (*Plan, error
 			return nil
 		}
 		b, pr, e := s.Read(ctx, v)
-		if e != nil || !pr.Hold {
+		if e != nil || !validControl(v, pr, now) {
 			return ErrUnknown
 		}
 		var cp Checkpoint

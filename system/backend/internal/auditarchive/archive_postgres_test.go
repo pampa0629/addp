@@ -3,7 +3,13 @@ package auditarchive
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/xml"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -19,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/signer"
 )
 
 func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
@@ -368,10 +375,10 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal("reader impersonated another query-log identity")
 	}
 	key := partKey(testSourceID, 0, 0)
-	if _, e = reader.Create(ctx, key, []byte(`{}`), time.Now().Add(366*24*time.Hour), false); e == nil {
+	if _, e = reader.Create(ctx, key, []byte(`{}`), time.Now().Add(366*24*time.Hour)); e == nil {
 		t.Fatal("audit reader wrote original facts")
 	}
-	if _, e = writer.Create(ctx, "queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour), false); e == nil {
+	if _, e = writer.Create(ctx, "queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour)); e == nil {
 		t.Fatal("collector wrote query history")
 	}
 	v, e := exact(ctx, root, key)
@@ -398,11 +405,105 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if e != nil || len(plan.Objects) != 0 || plan.Authorization {
 		t.Fatal("read-only plan accepted current protected data", e)
 	}
-	off := minio.LegalHoldDisabled
-	if e = writer.Client.PutObjectLegalHold(ctx, writer.Bucket, rootRef.Key, minio.PutObjectLegalHoldOptions{VersionID: rootRef.Version, Status: &off}); e == nil {
-		t.Fatal("collector released the root hold")
+	// Real storage metadata, not a synthetic clock or a successful PUT alone.
+	controls := 0
+	for _, prefix := range []string{rootRef.Key, "sources/" + testSourceID + "/checkpoints/"} {
+		if e = writer.Walk(ctx, prefix, func(cv Version) error {
+			_, pr, err := writer.Read(ctx, cv)
+			if err != nil || !validControl(cv, pr, time.Now().UTC()) || pr.Hold {
+				return ErrUnknown
+			}
+			controls++
+			if err = root.Client.RemoveObject(ctx, root.Bucket, cv.Key, minio.RemoveObjectOptions{VersionID: cv.ID}); err == nil {
+				t.Fatal("root deleted a protected control version")
+			}
+			shorter := pr.Until.Add(-24 * time.Hour)
+			if err = root.Extend(ctx, cv, shorter); err == nil {
+				t.Fatal("root shortened control protection")
+			}
+			longer := retentionUntil(pr.Until.Add(24 * time.Hour))
+			if err = writer.Extend(ctx, cv, longer); err != nil {
+				return err
+			}
+			_, after, err := writer.Read(ctx, cv)
+			if err != nil || after.Until.Before(longer) {
+				return ErrUnknown
+			}
+			return nil
+		}); e != nil {
+			t.Fatal("control protection readback/extension", e)
+		}
 	}
-	t.Log("segmented baseline exceeded 8 MiB in one exported snapshot; pinned root and sealed checkpoints retained legal holds; read-only expiry plan selected no protected objects and collector could not release the root hold")
+	if controls < 2 {
+		t.Fatal("missing root or sealed checkpoints")
+	}
+	_, bodyProtection, e := writer.Read(ctx, v)
+	if e != nil || bodyProtection.Until.Before(v.CreatedAt.Add(365*24*time.Hour)) || bodyProtection.Until.After(v.CreatedAt.AddDate(2, 0, 0)) {
+		t.Fatal("control retention leaked into body retention", e)
+	}
+	for _, bad := range []struct {
+		key   string
+		until time.Time
+	}{
+		{"sources/" + testSourceID + "/checkpoints/too-short.json", time.Now().Add(366 * 24 * time.Hour)},
+		{"sources/" + testSourceID + "/data/too-short.json", time.Now().Add(time.Hour)},
+	} {
+		if _, err := writer.Create(ctx, bad.key, []byte(`{}`), bad.until); minio.ToErrorResponse(err).Code != "AccessDenied" {
+			t.Fatal("policy did not deny short retention", err)
+		}
+	}
+	queryKey := "queries/" + testActor + "/hold-denial-fixture.json"
+	queryVersion, e := reader.Create(ctx, queryKey, []byte(`{}`), time.Now().Add(366*24*time.Hour))
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, identity := range []struct {
+		store                      *S3Store
+		user, secret, key, version string
+	}{
+		{writer, "audit-writer", "owned-writer-test", rootRef.Key, rootRef.Version},
+		{reader, "audit-reader", "owned-reader-test", queryKey, queryVersion},
+	} {
+		for _, status := range []minio.LegalHoldStatus{minio.LegalHoldEnabled, minio.LegalHoldDisabled} {
+			err := identity.store.Client.PutObjectLegalHold(ctx, identity.store.Bucket, identity.key, minio.PutObjectLegalHoldOptions{VersionID: identity.version, Status: &status})
+			if minio.ToErrorResponse(err).Code != "AccessDenied" {
+				t.Fatal("runtime modified Legal Hold", err)
+			}
+		}
+		// Sign a real contradictory request: header ON, XML body OFF. Denial
+		// must be authorization, never just a broken signature or malformed XML.
+		body := `<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>OFF</Status></LegalHold>`
+		u := *backendURL
+		u.Path = "/" + identity.store.Bucket + "/" + identity.key
+		q := url.Values{"legal-hold": {""}, "versionId": {identity.version}}
+		u.RawQuery = q.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		md := md5.Sum([]byte(body))
+		sh := sha256.Sum256([]byte(body))
+		req.Header.Set("Content-Md5", base64.StdEncoding.EncodeToString(md[:]))
+		req.Header.Set("X-Amz-Content-Sha256", hex.EncodeToString(sh[:]))
+		req.Header.Set("X-Amz-Object-Lock-Legal-Hold", "ON")
+		req = signer.SignV4(*req, identity.user, identity.secret, "", "us-east-1")
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rejected struct{ Code string }
+		err = xml.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&rejected)
+		response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusForbidden || rejected.Code != "AccessDenied" {
+			t.Fatal("contradictory Legal Hold request did not receive an authorization denial")
+		}
+	}
+	if _, err := Load(ctx, reader, rootRef, true, nil); err != nil {
+		t.Fatal("extension changed evidence identity", err)
+	}
+	t.Log("root and all sealed checkpoints have at least 20 calendar years COMPLIANCE protection without Legal Hold; extensions succeeded and root deletion/shortening were denied; body protection remains at least 365 days")
+	t.Log("collector and auditor were denied Legal Hold ON, OFF and signed header-ON/body-OFF requests; short control/body retention was denied; read-only expiry plan selected no protected objects")
+	t.Log("segmented baseline exceeded 8 MiB in one exported snapshot with a pinned root and immutable sealed checkpoints")
 	// A privileged storage administrator can create a new version; verification
 	// must detect the shadow rather than trusting an unversioned latest object.
 	data, until, e := root.Read(ctx, v)

@@ -159,7 +159,11 @@ func (w *writer) seal(ctx context.Context) (Ref, error) {
 		return Ref{}, ErrUnknown
 	}
 	cp := Checkpoint{format, w.source, g.Sequence, g.Previous, g.Baseline, g.BeforeLSN, g.EndLSN, closed, until, g.Parts}
-	r, e := put(ctx, w.store, checkpointKey(w.source.ID, g.Sequence), cp, until, true)
+	controlDeadline := controlUntil(closed)
+	if until.After(controlDeadline) {
+		controlDeadline = until
+	}
+	r, e := put(ctx, w.store, checkpointKey(w.source.ID, g.Sequence), cp, controlDeadline, true)
 	if e != nil {
 		return Ref{}, e
 	}

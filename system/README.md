@@ -159,7 +159,7 @@ Copyright © 2025 ADDP Team
 
 正式构建：`make build-audit-archive`。独立审计域运行 `addp-audit-archive init --config /受控私有路径/collector.json` 显式建立唯一快照基线，随后以前台进程 `collect --config ...` 消费同一复制槽；不注册到 ADDP 开发启动或设置定时任务。持有独立审计身份的操作者使用 `verify --config /受控私有路径/auditor.json`，或 `query --config ... --event-name iam.example --tenant-id 123` 做有界核验；筛选不授予权限，首期不向 Tenant 角色发放原始归档凭据。stdout 为机器可读结果，失败只返回安全本地化提示。
 
-配置文件必须是非符号链接的私有普通文件（权限 0600 或更严），启动时不读取根 `.env`。两类配置分别部署，不混放原始数据库凭据与人类查询凭据。正文最低保护期已确认为365天；根记录/封段检查点长期保全，不与正文一同到期。以下不含真实密钥；init配置不带root，成功后将输出的完整根对象引用绑定到collect及auditor配置，不能仅按来源编号自动信任新根：
+配置文件必须是非符号链接的私有普通文件（权限 0600 或更严），启动时不读取根 `.env`。两类配置分别部署，不混放原始数据库凭据与人类查询凭据。正文最低保护期已确认为365天；根记录/封段检查点从存储创建时间起至少20个UTC日历年COMPLIANCE保护、只允许延长，不与正文一同到期，首期不清理。以下不含真实密钥；init配置不带root，成功后将输出的完整根对象引用绑定到collect及auditor配置，不能仅按来源编号自动信任新根：
 
 ```json
 {"mode":"collector","source_id":"由部署生成并固定的 UUID","endpoint":"https://独立归档端点","region":"目标区域","bucket":"独立归档桶","access_key":"独立注入","secret_key":"独立注入","retention_days":365,"postgres_dsn":"仅独立采集身份，postgres://独立用户:独立密码@权威主库/数据库?sslmode=verify-full&sslrootcert=/受控证书路径/ca.pem","slot":"addp_audit_archive","publication":"addp_audit_archive"}
@@ -171,6 +171,6 @@ Copyright © 2025 ADDP Team
 
 标准验证：`make test-module MODULE=system GO_ONLY=1`；`make test-system-audit-archive` 为已登记的 Hosted-only T2，使用本次独占 PostgreSQL 15 logical 与从既有固定源码构建的 MinIO，测试和退出清理不接触共享 Infra。其结果只证明真实 PG／S3 保留协议，不证明生产提供方根权限、独立运维域或全部访问日志。其临时 MinIO 使用 tmpfs、随 Job 销毁，因此不得当作生产 WORM 保留部署。
 
-当前唯一协议为v2。基线在同一快照流式分片，数据分片软目标4MiB/5秒，段按日界/128MiB/256分片封存；单对象16MiB与事务8MiB预算保持，取消全链64MiB/10000批限制。控制对象必须Legal Hold=ON，身份策略拒绝解除保全，存储端期限读回须满足至少365天。完整结果明确区分仍保护与已过期正文，不能把过期核验当受保护证明。
+当前唯一协议为v2。基线在同一快照流式分片，数据分片软目标4MiB/5秒，段按日界/128MiB/256分片封存；单对象16MiB与事务8MiB预算保持，取消全链64MiB/10000批限制。控制对象实际期限读回须覆盖存储创建时间起20年且当前未过期，运行账号不得修改Legal Hold；正文实际期限至少365天，外部保全状态只读。控制证据延期须受控核验，未提供自动续期或删除入口。完整结果明确区分仍保护与已过期正文，不能把过期核验当受保护证明。
 
 `addp-audit-archive plan --config /受控私有路径/auditor.json`只读核验并输出最旧连续到期段的具体对象版本/摘要和24小时宽限情况；不输出正文、不写计划/批准/访问回执、不执行删除。它不是清理授权，无删除/解除保全命令；实际清理、双人批准及回执尚未实现，计划不能作为已删除的证据。v1对象不自动迁移、不兼容读取；既有存证的协议交接需另行核清，不能重新建来源掩盖缺口。

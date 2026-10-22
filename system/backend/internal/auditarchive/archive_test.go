@@ -30,7 +30,7 @@ func (s *memoryStore) clock() time.Time {
 	}
 	return time.Now().UTC()
 }
-func (s *memoryStore) Create(_ context.Context, key string, b []byte, until time.Time, hold bool) (string, error) {
+func (s *memoryStore) Create(_ context.Context, key string, b []byte, until time.Time) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.creates++
@@ -45,7 +45,7 @@ func (s *memoryStore) Create(_ context.Context, key string, b []byte, until time
 	}
 	s.next++
 	id := fmt.Sprint(s.next)
-	s.objects[key] = []memoryObject{{Version{key, id, false, s.clock()}, append([]byte(nil), b...), Protection{until, hold}}}
+	s.objects[key] = []memoryObject{{Version{key, id, false, s.clock()}, append([]byte(nil), b...), Protection{until, false}}}
 	if s.loseResponse {
 		return "", ErrUnknown
 	}
@@ -147,7 +147,7 @@ func memoryArchive(t *testing.T, s *memoryStore) (*writer, Ref) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	root, e := put(ctx, s, rootKey(testSourceID), Root{format, testSource(), base, 256}, s.clock().Add(365*24*time.Hour+retentionMargin), true)
+	root, e := put(ctx, s, rootKey(testSourceID), Root{format, testSource(), base, 256}, controlUntil(s.clock()), true)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -175,7 +175,7 @@ func TestArchiveConfirmationLossAndTamperDetection(t *testing.T) {
 			t.Fatal(e)
 		}
 	})
-	for _, scenario := range []string{"body", "hold", "shadow", "marker", "gap", "root", "v1", "expired_missing"} {
+	for _, scenario := range []string{"body", "control_short", "shadow", "marker", "gap", "root", "v1", "expired_missing"} {
 		t.Run(scenario, func(t *testing.T) {
 			s := &memoryStore{}
 			w, root := memoryArchive(t, s)
@@ -187,8 +187,8 @@ func TestArchiveConfirmationLossAndTamperDetection(t *testing.T) {
 			switch scenario {
 			case "body":
 				s.objects[partKey(testSourceID, 0, 0)][0].data[0] = '!'
-			case "hold":
-				s.objects[checkpointKey(testSourceID, 0)][0].protection.Hold = false
+			case "control_short":
+				s.objects[checkpointKey(testSourceID, 0)][0].protection.Until = time.Now().Add(366 * 24 * time.Hour)
 			case "shadow":
 				o := s.objects[checkpointKey(testSourceID, 1)][0]
 				o.version.ID = "shadow"
@@ -484,5 +484,43 @@ func TestArchiveRetentionSurvivesSDKWholeSecondHeaders(t *testing.T) {
 	}
 	if _, e = Load(context.Background(), s, root, true, nil); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestArchiveControlProtectionUsesCalendarYearsAndCannotBeReplacedByHold(t *testing.T) {
+	created := time.Date(2080, 2, 29, 23, 59, 59, 123, time.UTC)
+	deadline := controlUntil(created)
+	minimum := time.Date(2100, 3, 1, 23, 59, 59, 123, time.UTC)
+	if deadline.Before(minimum.Add(retentionMargin)) || deadline.Nanosecond() != 0 {
+		t.Fatal("twenty calendar years lost leap-day or fractional protection")
+	}
+	v := Version{Key: "control", ID: "1", CreatedAt: created}
+	p := Protection{Until: deadline}
+	if !validControl(v, p, created.AddDate(19, 0, 0)) {
+		t.Fatal("valid original twenty-year protection required rolling twenty years")
+	}
+	if validControl(v, p, deadline) || validControl(Version{}, p, created) {
+		t.Fatal("expired or unverifiable control protection accepted")
+	}
+	p = Protection{Until: created.Add(366 * 24 * time.Hour), Hold: true}
+	if validControl(v, p, created) {
+		t.Fatal("Legal Hold replaced required twenty-year COMPLIANCE retention")
+	}
+	p.Until = deadline.AddDate(1, 0, 0)
+	if !validControl(v, p, created) {
+		t.Fatal("extension invalidated control protection")
+	}
+	for _, key := range []string{rootKey(testSourceID), checkpointKey(testSourceID, 0)} {
+		s := &memoryStore{}
+		_, root := memoryArchive(t, s)
+		obj := &s.objects[key][0]
+		if obj.protection.Hold || obj.protection.Until.Before(obj.version.CreatedAt.AddDate(20, 0, 0)) {
+			t.Fatal("control creation still depends on Legal Hold")
+		}
+		obj.protection.Until = time.Now().Add(366 * 24 * time.Hour)
+		obj.protection.Hold = true
+		if chain, e := Load(context.Background(), s, root, true, nil); e == nil || chain != nil {
+			t.Fatal("accepted short-retention control object")
+		}
 	}
 }

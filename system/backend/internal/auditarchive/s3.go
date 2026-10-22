@@ -15,14 +15,11 @@ type S3Store struct {
 	Bucket string
 }
 
-func (s *S3Store) Create(ctx context.Context, key string, data []byte, until time.Time, hold bool) (string, error) {
+func (s *S3Store) Create(ctx context.Context, key string, data []byte, until time.Time) (string, error) {
 	if len(data) > MaxObjectBytes {
 		return "", ErrBudget
 	}
 	opts := minio.PutObjectOptions{ContentType: "application/json", Mode: minio.Compliance, RetainUntilDate: until, DisableMultipart: true}
-	if hold {
-		opts.LegalHold = minio.LegalHoldEnabled
-	}
 	opts.SetMatchETagExcept("*")
 	v, e := s.Client.PutObject(ctx, s.Bucket, key, bytes.NewReader(data), int64(len(data)), opts)
 	return v.VersionID, e
@@ -36,8 +33,19 @@ func (s *S3Store) Read(ctx context.Context, v Version) ([]byte, Protection, erro
 		return nil, Protection{}, ErrUnknown
 	}
 	hold, e := s.Client.GetObjectLegalHold(ctx, s.Bucket, v.Key, minio.GetObjectLegalHoldOptions{VersionID: v.ID})
-	if e != nil || hold == nil {
-		return nil, Protection{}, ErrUnknown
+	// A successfully read COMPLIANCE version can have no legal-hold
+	// configuration. That explicit absence is distinct from denied/failed reads.
+	// Legal Hold is only observed; this runtime cannot set or release it.
+	held := false
+	if e != nil {
+		if minio.ToErrorResponse(e).Code != "NoSuchObjectLockConfiguration" {
+			return nil, Protection{}, ErrUnknown
+		}
+	} else {
+		if hold == nil || !hold.IsValid() {
+			return nil, Protection{}, ErrUnknown
+		}
+		held = *hold == minio.LegalHoldEnabled
 	}
 	o, e := s.Client.GetObject(ctx, s.Bucket, v.Key, minio.GetObjectOptions{VersionID: v.ID})
 	if e != nil {
@@ -48,7 +56,7 @@ func (s *S3Store) Read(ctx context.Context, v Version) ([]byte, Protection, erro
 	if e != nil || len(b) > MaxObjectBytes {
 		return nil, Protection{}, ErrUnknown
 	}
-	return b, Protection{*until, *hold == minio.LegalHoldEnabled}, nil
+	return b, Protection{*until, held}, nil
 }
 func (s *S3Store) Extend(ctx context.Context, v Version, until time.Time) error {
 	mode := minio.Compliance

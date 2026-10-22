@@ -59,6 +59,7 @@ docker exec "$S3_ID" mc admin user add owned audit-writer owned-writer-test >/de
 docker exec "$S3_ID" mc admin user add owned audit-reader owned-reader-test >/dev/null
 python3 - "$WORK_DIR" <<'PY'
 import json,sys
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 root=Path(sys.argv[1]); base='arn:aws:s3:::audit-disposable'
 source='sources/a21db94b-6dd5-446a-b66a-df379ea51dc8/'
@@ -71,8 +72,24 @@ def policy(name,statements):
     (root/(name+'.json')).write_text(json.dumps({'Version':'2012-10-17','Statement':statements}))
 listing=statement(['s3:ListBucketVersions'],[base],{'StringLike':{'s3:prefix':[source+'*']}})
 read=statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+source+'*'])
-policy('writer',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention','s3:PutObjectLegalHold'],[base+'/'+source+'*'],{'StringEqualsIfExists':{'s3:object-lock-legal-hold':'ON'}})])
-policy('reader',[listing,read,statement(['s3:PutObject','s3:PutObjectRetention','s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+queries+'*'])])
+now=datetime.now(timezone.utc)
+try: control=now.replace(year=now.year+20)
+except ValueError: control=now.replace(year=now.year+20,month=3,day=1)
+def retained(paths,deadline):
+    return statement(['s3:PutObject','s3:PutObjectRetention'],[base+'/'+p for p in paths],{
+        'StringEquals':{'s3:object-lock-mode':'COMPLIANCE'},
+        'DateGreaterThanEquals':{'s3:object-lock-retain-until-date':deadline.strftime('%Y-%m-%dT%H:%M:%SZ')}})
+def no_hold(paths):
+    return {'Effect':'Deny','Action':['s3:PutObjectLegalHold'],'Resource':[base+'/'+p for p in paths]}
+# These dated lower bounds belong only to this short-lived job. Production
+# deployment must establish and verify its own current retention policy.
+policy('writer',[listing,read,
+    retained([source+'data/*'],now+timedelta(days=365)),
+    retained([source+'root.json',source+'checkpoints/*'],control),
+    no_hold([source+'*'])])
+policy('reader',[listing,read,
+    statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+queries+'*']),
+    retained([queries+'*'],now+timedelta(days=365)),no_hold([source+'*',queries+'*'])])
 PY
 for identity in writer reader; do
     docker exec -i "$S3_ID" mc admin policy create owned "audit-$identity-policy" /dev/stdin < "$WORK_DIR/$identity.json" >/dev/null
