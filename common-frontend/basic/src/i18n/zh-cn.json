@@ -867,5 +867,211 @@
   },
   "resourcePicker": {
     "removeSelection": "移除 {name}"
+  },
+  "roles": {
+    "platform": {
+      "asset_runtime": {
+        "name": "资产服务平台运行时",
+        "description": "供 Asset 服务注册模块和发送运行时心跳，不授予用户或租户业务权限。"
+      },
+      "catalog_runtime": {
+        "name": "企业目录平台运行时",
+        "description": "供 Catalog 注册模块并发现已初始化租户，不授予用户业务权限。"
+      },
+      "develop_runtime": {
+        "name": "开发服务平台运行时",
+        "description": "供 Develop 服务注册模块和任务提供者，不授予数据访问权限。"
+      },
+      "meta_runtime": {
+        "name": "元数据服务平台运行时",
+        "description": "供 Meta 服务注册模块和任务提供者，不授予用户业务权限。"
+      },
+      "orchestrator_runtime": {
+        "name": "编排服务平台运行时",
+        "description": "供 Orchestrator 发现任务提供者并注册自身运行时能力。"
+      },
+      "portal_runtime": {
+        "name": "资产门户平台运行时",
+        "description": "供 Portal 注册模块并发送运行时心跳，不授予用户或租户业务权限。"
+      },
+      "prometheus_runtime": {
+        "name": "指标采集服务",
+        "description": "只读取受认证指标发现，不授予节点管理或业务读取。"
+      }
+    },
+    "tenant": {
+      "administrator": {
+        "name": "租户组织与权限管理员",
+        "description": "管理租户成员、邀请、角色与角色分配；不包含基础设施和业务权限。"
+      },
+      "agent_runtime": {
+        "name": "Agent 执行运行时",
+        "description": "供 Agent 在租户范围内调用推理能力并读取引擎描述。"
+      },
+      "copilot_runtime": {
+        "name": "Copilot 执行运行时",
+        "description": "供 Copilot 读取开发任务、调用推理能力并读取引擎描述。"
+      },
+      "document_runtime": {
+        "name": "文档派生运行时",
+        "description": "供 Document 工作负载在租户范围内创建文档派生产物。"
+      },
+      "duckdb_runtime": {
+        "name": "DuckDB 联邦查询运行时",
+        "description": "供 DuckDB 在租户范围内消费单次执行授权并获取精确的引擎访问。"
+      },
+      "geopython_runtime": {
+        "name": "GeoPython 派生运行时",
+        "description": "供 GeoPython 工作负载在租户范围内创建空间数据派生产物。"
+      },
+      "graph_runtime": {
+        "name": "知识图谱执行运行时",
+        "description": "供 Graph 调用图谱抽取能力，并读取业务实体、实体关系和引擎信息。"
+      },
+      "manager_runtime": {
+        "name": "数据管理执行运行时",
+        "description": "供 Manager 在租户范围内检索元数据、使用引擎、发起传输任务并消费执行授权。"
+      },
+      "model3d_runtime": {
+        "name": "三维模型派生运行时",
+        "description": "供 Model3D 工作负载在租户范围内创建三维模型派生产物。"
+      },
+      "model_runtime": {
+        "name": "数据建模执行运行时",
+        "description": "供 Model 读取数据标准和引擎描述，并消费建模执行授权。"
+      },
+      "monitor_runtime": {
+        "name": "运行监控运行时",
+        "description": "供 Monitor 读取元数据扫描任务并写入租户审计事件。"
+      },
+      "ontology_runtime": {
+        "name": "本体投影运行时",
+        "description": "供 Ontology 消费精确的内部任务执行授权，不授予业务引擎访问权限。"
+      },
+      "pointcloud_runtime": {
+        "name": "点云派生运行时",
+        "description": "供 PointCloud 工作负载在租户范围内创建点云派生产物。"
+      },
+      "quality_runtime": {
+        "name": "数据质量执行运行时",
+        "description": "供 Quality 读取元数据、数据标准和物化信息，并消费质量执行授权。"
+      },
+      "security_runtime": {
+        "name": "数据保护运行时",
+        "description": "供 Security 读取租户成员和元数据安全事实，维护数据保护投影。"
+      },
+      "service_runtime": {
+        "name": "数据服务执行运行时",
+        "description": "供 Service 使用引擎和元数据、执行数据服务、维护血缘并写入租户审计事件。"
+      },
+      "spark_runtime": {
+        "name": "Spark 执行运行时",
+        "description": "供 Spark 工作负载读取当前租户可用的引擎信息。"
+      },
+      "standard_runtime": {
+        "name": "数据标准执行运行时",
+        "description": "供 Standard 读取租户成员、执行标准文档解析并更新模型标准引用。"
+      },
+      "transfer_runtime": {
+        "name": "数据传输执行运行时",
+        "description": "供 Transfer 使用引擎和元数据，并消费用户派生的数据传输授权。"
+      },
+      "ai_user": {
+        "name": "AI 用户",
+        "description": "使用 Agent 会话、运行任务以及 Copilot 执行能力。"
+      },
+      "asset_consumer": {
+        "name": "资产使用者",
+        "description": "查看已上架资产、申请授权、在授权有效时查看服务端点并参与评价。"
+      },
+      "asset_manager": {
+        "name": "资产管理员",
+        "description": "管理资产目录、条目、授权申请和评价。"
+      },
+      "asset_runtime": {
+        "name": "资产发现运行时",
+        "description": "供 Asset 服务按租户读取 Meta、Service、Standard 和 Develop 的可发现资产。"
+      },
+      "catalog_runtime": {
+        "name": "企业目录同步运行时",
+        "description": "供 Catalog 按租户读取 Meta 变化和 Standard 语义摘要。"
+      },
+      "system_runtime": {
+        "name": "System 可信办理反查",
+        "description": "仅反查当前租户中精确持久办理请求的 Catalog 依据，不授予数据访问。"
+      },
+      "auditor": {
+        "name": "租户审计员",
+        "description": "查看和导出租户审计事件，并只读查看执行与统计信息。"
+      },
+      "data_architect": {
+        "name": "数据架构师",
+        "description": "管理租户级业务实体、实体关系、逻辑模型、数仓分层、命名规范和质量 SLA。"
+      },
+      "data_engineer": {
+        "name": "数据工程师",
+        "description": "管理传输任务、开发任务、Notebook 和工作流。"
+      },
+      "data_steward": {
+        "name": "数据管理员",
+        "description": "管理数据条目和衍生物，并执行 Meta 检查与扫描任务。"
+      },
+      "data_viewer": {
+        "name": "数据查看者",
+        "description": "只读查看数据内容、数据条目、搜索结果和 Meta Catalog。"
+      },
+      "develop_runtime": {
+        "name": "开发执行运行时",
+        "description": "供 Develop 消费用户派生的执行授权并读取脱敏运行时描述，不独立授予数据权限。"
+      },
+      "governance_manager": {
+        "name": "数据治理管理员",
+        "description": "管理数据标准、质量规则、检查任务和质量问题。"
+      },
+      "protected_data_requester": {
+        "name": "受保护数据申请人",
+        "description": "在租户范围内查看可申请的受保护字段，并为本人发起限时原值访问申请。"
+      },
+      "security_manager": {
+        "name": "数据安全管理员",
+        "description": "在租户范围内管理敏感数据定义、受保护资源、保护规则和原值访问审批。"
+      },
+      "graph_engineer": {
+        "name": "图谱工程师",
+        "description": "管理本体、图谱、构建任务、分析和审核。"
+      },
+      "source_data_authorizer": {
+        "name": "数据授权办理员",
+        "description": "在有效引擎管理范围内配置数据项的初始批准方式，办理直接批准或已获业务确认的只读授权，查看历史及撤销授权；不授予业务确认、批准方式切换、委托管理或数据读取权限。"
+      },
+      "engine_access_delegation_administrator": {
+        "name": "引擎授权管理员",
+        "description": "在租户范围内直接办理数据读取授权，或委托其他账号办理；不需要委托自己，不自动取得数据读取权，也不代替业务批准。"
+      },
+      "infrastructure_administrator": {
+        "name": "租户基础设施管理员",
+        "description": "管理引擎、应用、API Key 和资源回收，并查看健康状态。"
+      },
+      "monitoring_operator": {
+        "name": "监控运维员",
+        "description": "管理告警规则、事件和通知目标，并查看执行与健康状态。"
+      },
+      "meta_runtime": {
+        "name": "元数据扫描运行时",
+        "description": "供 Meta 在租户范围内读取引擎连接并写入审计事件。"
+      },
+      "orchestrator_runtime": {
+        "name": "任务编排运行时",
+        "description": "供 Orchestrator 调用任务提供者和解析执行授权主体，不独立授予数据权限。"
+      },
+      "portal_runtime": {
+        "name": "资产门户聚合运行时",
+        "description": "仅在用户资产授权有效后读取租户服务端点投影，不独立授予资产访问权限。"
+      },
+      "service_publisher": {
+        "name": "数据服务发布者",
+        "description": "查看数据与 Meta Catalog，并管理服务定义和外部服务注册。"
+      }
+    }
   }
 }

@@ -97,7 +97,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	}
 	for _, state := range []string{"not-synchronized", "managed"} {
 		if state == "managed" {
-			projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "protected", Revision: "00000000000000000001", ConsumerOwner: "graph", State: dataprotection.ProjectionStateEnrolling, Target: target, TargetEngineID: 13, Rules: []dataprotection.Rule{}, ValidFrom: time.Now().UTC().Add(-time.Minute)}
+			projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "protected", Revision: "00000000000000000001", ConsumerOwner: "graph", State: dataprotection.ProjectionStateEnrolling, Target: target, TargetEngineID: 13, Rules: []dataprotection.Rule{}, ValidFrom: time.Now().UTC().Add(-time.Minute)}
 			if err = projection.Seal(); err != nil {
 				t.Fatal(err)
 			}

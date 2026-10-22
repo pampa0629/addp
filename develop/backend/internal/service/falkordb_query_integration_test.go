@@ -81,7 +81,7 @@ func TestIntegrationFalkorDBDevelopQueryExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "different-engine", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateEnrolling, Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "other"}, TargetEngineID: 11, Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute)}
+	projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "different-engine", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateEnrolling, Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "other"}, TargetEngineID: 11, Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute)}
 	if err = projection.Seal(); err != nil {
 		t.Fatal(err)
 	}

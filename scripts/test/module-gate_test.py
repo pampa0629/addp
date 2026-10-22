@@ -184,7 +184,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -245,6 +245,18 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)|TestIntegrationPostgresQueryReadSession)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_projection_store_group_and_skip_rejection(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "projection-store"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["test ./dataprotection/projectionstore -run ^TestProjectionStore.*AgainstPostgres$ -count=1 -v"], calls)
+        self.assertIn("not the full PostgreSQL gate", result.stdout)
+        result, _ = self._run_common_postgres_group(["--test", "projection-store"], "--- SKIP: fixture")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("refuses skipped tests", result.stderr)
+        result, _ = self._run_common_postgres_group(["--test", "projection-store"], "PASS [no tests to run]")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("requires the real schema and migration contract test", result.stderr)
 
     def test_common_postgres_requires_output_rewrite_equivalence_in_full_and_read_groups(self) -> None:
         for arguments in ([], ["--test", "query-read-set"]):

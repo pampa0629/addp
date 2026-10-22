@@ -103,6 +103,58 @@ test('combines resource name, engine and state with scope and resets all filter 
   expect(backend.unhandledRequests).toEqual([])
 })
 
+test('configures a multi-role option without replacing the default mask', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true, roleCatalogue: true })
+  backend.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1')
+  backend.conflictNextPolicyUpdate = false
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+  await drawer.getByRole('button', { name: '收紧保护' }).click()
+  const dialog = page.getByRole('dialog', { name: '资源级保护策略' })
+  await dialog.getByText('脱敏', { exact: true }).click()
+  await dialog.getByRole('button', { name: '添加可选方式' }).click()
+  const option = dialog.locator('.role-option')
+  await formTextbox(option, '方式名称').fill('关联统计')
+  await option.locator('.el-form-item').filter({ hasText: '可使用的角色' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '统计分析员', exact: true }).click()
+  await page.getByRole('option', { name: '数据查看者', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await option.locator('.el-form-item').filter({ hasText: '脱敏算法' }).locator('.el-select').click()
+  await page.getByRole('option', { name: 'SM3 哈希', exact: true }).click()
+  await formTextbox(dialog, '调整依据').fill('保留默认方式，新增统计选择')
+  await dialog.getByRole('button', { name: '保存策略' }).click()
+  await expect.poll(() => backend.policyCreateRequests.length).toBe(1)
+  expect(backend.policyCreateRequests[0]).toMatchObject({ algorithm: 'addp.mask.keep_prefix_suffix/v2', role_options: [{ name: '关联统计', role_keys: ['custom.analyst', 'tenant.data_viewer'], decision: { effect: 'mask', algorithm: 'addp.mask.sm3/v1' } }] })
+  await expect(dialog).toHaveCount(0)
+  await drawer.getByRole('button', { name: '调整收紧策略' }).click()
+  await expect(formTextbox(dialog.locator('.role-option'), '方式名称')).toHaveValue('关联统计')
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+for (const roleCatalogue of [false, true]) {
+  test(`preserves existing role options when the role catalogue is unavailable (${roleCatalogue ? 'failed' : 'forbidden'})`, async ({ page }) => {
+    const backend = await installMockBackend(page, { governanceValidation: true, roleCatalogue })
+    backend.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1')
+    backend.conflictNextPolicyUpdate = false
+    const option = { id: '11111111-1111-4111-8111-111111111111', name: '关联统计', role_keys: ['custom.analyst'], decision: { effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'suppress' } }
+    backend.policies.push({ id: policyID, assessment_id: assessmentID, consumer_owner: 'manager', action: 'preview', state: 'active', version: 1, current_revision: 1, current: { revision: 1, state: 'active', effect: 'mask', algorithm: backend.baselines[0].algorithm, parameters: backend.baselines[0].parameters, invalid_value_effect: 'suppress', rationale: '已有配置', role_options: [option] } })
+    if (roleCatalogue) await page.route('**/api/v1/system/tenant/roles', route => fulfillJSON(route, { error: 'fixture unavailable' }, 503))
+    await page.goto('/protection-enrollments')
+    await page.getByRole('button', { name: '查看详情' }).click()
+    await page.locator('.el-drawer').filter({ hasText: '资源保护详情' }).getByRole('button', { name: '调整收紧策略' }).click()
+    const dialog = page.getByRole('dialog', { name: '资源级保护策略' })
+    await expect(dialog.getByRole('button', { name: '添加可选方式' })).toBeDisabled()
+    await expect(dialog.getByText(/当前方式：SM3 哈希/)).toBeVisible()
+    await expect(formTextbox(dialog.locator('.role-option'), '方式名称')).toBeDisabled()
+    await formTextbox(dialog, '调整依据').fill('只维护默认配置，保留角色方式')
+    await dialog.getByRole('button', { name: '保存策略' }).click()
+    await expect.poll(() => backend.policyUpdateRequests.length).toBe(1)
+    expect(backend.policyUpdateRequests[0].role_options).toEqual([option])
+    expect(backend.unhandledRequests).toEqual([])
+  })
+}
+
 test('saves permitted SM3 and constant field algorithms independently from the default mask', async ({ page }) => {
   const backend = await installMockBackend(page, { governanceValidation: true })
   backend.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1', 'addp.mask.constant/v1')
@@ -987,7 +1039,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     assessment_id: assessmentID,
     consumer_owner: 'manager',
     action: 'preview',
-    effect: 'suppress', algorithm: '', parameters: {}, invalid_value_effect: 'suppress',
+    effect: 'suppress', algorithm: '', parameters: {}, invalid_value_effect: 'suppress', role_options: [],
     rationale: '该客户表仅允许展示非联系方式字段'
   })
   await expect(detailDrawer.getByText('数据预览：默认 脱敏，字段规则配置为 移除；执行时遵守当前基线约束', { exact: true })).toBeVisible()
@@ -1000,7 +1052,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect.poll(() => backend.policyUpdateRequests.length).toBe(1)
   expect(backend.policyUpdateRequests[0]).toEqual({
     version: 1,
-    effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny',
+    effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
     rationale: '复核后将当前资源收紧为拒绝访问'
   })
   await expect(policyDialog.getByText('该资源级保护策略已被其他操作更新；当前选择和依据已保留，不会覆盖最新修订。', { exact: true })).toBeVisible()
@@ -1021,7 +1073,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect.poll(() => backend.policyUpdateRequests.length).toBe(2)
   expect(backend.policyUpdateRequests[1]).toEqual({
     version: 2,
-    effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny',
+    effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
     rationale: '重新加载后确认收紧为拒绝访问'
   })
   await expect(detailDrawer.getByText('数据预览：默认 脱敏，字段规则配置为 拒绝；执行时遵守当前基线约束', { exact: true })).toBeVisible()
@@ -1342,6 +1394,7 @@ async function installMockBackend(page, options = {}) {
     'security.protection_exemption.delete',
     'security.protection_access_request.update'
   ]
+  if (options.roleCatalogue) permissions.push('iam.tenant_role.read')
   if (options.governanceValidation) {
     permissions.push(
       'security.finding.read',
@@ -2009,6 +2062,9 @@ async function installMockBackend(page, options = {}) {
       })
       return fulfillJSON(route, { ...state.assessment, history: state.assessmentHistory })
     }
+    if (method === 'GET' && path === '/api/v1/system/tenant/roles' && options.roleCatalogue) {
+      return fulfillJSON(route, [{ role_key: 'tenant.data_viewer', name_i18n_key: 'roles.tenant.data_viewer.name', allowed_principal_types: ['user'], allowed_scope_types: ['tenant'] }, { role_key: 'custom.analyst', name: '统计分析员', allowed_principal_types: ['user'], allowed_scope_types: ['tenant'] }])
+    }
     if (method === 'GET' && path === '/api/v1/security/protection-policies') {
       return fulfillJSON(route, { supported_scopes: [{ consumer_owner: 'manager', action: 'preview' }, { consumer_owner: 'develop', action: 'query' }, { consumer_owner: 'service', action: 'service_execute' }, { consumer_owner: 'transfer', action: 'export' }], data: state.policies, total: state.policies.length, page: 1, page_size: 100, total_pages: state.policies.length ? 1 : 0 })
     }
@@ -2023,7 +2079,7 @@ async function installMockBackend(page, options = {}) {
         state: 'active',
         version: '1',
         current_revision: '1',
-        current: { revision: '1', state: 'active', effect: body.effect, algorithm:body.algorithm, parameters:body.parameters, invalid_value_effect:body.invalid_value_effect, rationale: body.rationale }
+        current: { revision: '1', state: 'active', effect: body.effect, algorithm:body.algorithm, parameters:body.parameters, invalid_value_effect:body.invalid_value_effect, role_options:body.role_options, rationale: body.rationale }
       }
       state.policies.push(created)
       return fulfillJSON(route, created, 201)
@@ -2057,7 +2113,7 @@ async function installMockBackend(page, options = {}) {
         revision: policy.current_revision,
         state: 'active',
         effect: body.effect,
-        algorithm:body.algorithm, parameters:body.parameters, invalid_value_effect:body.invalid_value_effect,
+        algorithm:body.algorithm, parameters:body.parameters, invalid_value_effect:body.invalid_value_effect, role_options:body.role_options,
         rationale: body.rationale
       }
       return fulfillJSON(route, policy)

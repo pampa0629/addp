@@ -26,6 +26,7 @@
         </el-radio-group>
         <div class="field-help">{{ selectedEffectImpact }}</div>
       </el-form-item>
+      <el-alert v-if="form.effect !== 'mask' && form.role_options?.length" :title="t('security.roleOptions.removeOnStrict')" type="warning" :closable="false" />
       <template v-if="form.effect === 'mask'">
         <ProtectionAlgorithmEditor ref="algorithmEditor" :configuration="form" :baseline="presentation.baseline" :field-type="presentation.fieldType" />
         <el-form-item :label="t('security.fields.invalid_value_effect')" required>
@@ -34,6 +35,7 @@
             <el-option value="deny" :label="t('security.options.effects.deny')" />
           </el-select>
         </el-form-item>
+        <ProtectionRoleOptionsEditor ref="roleOptionsEditor" :options="form.role_options" :baseline="presentation.baseline" :field-type="presentation.fieldType" />
       </template>
       <el-form-item :label="t('security.policy.rationale')" prop="rationale" required>
         <el-input v-model="form.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
@@ -53,6 +55,7 @@
 </template>
 
 <script setup>
+import ProtectionRoleOptionsEditor from './ProtectionRoleOptionsEditor.vue'
 import ProtectionAlgorithmEditor from '../ProtectionAlgorithmEditor.vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -71,6 +74,7 @@ const emit = defineEmits(['reload', 'scopeChange'])
 const { t } = useI18n()
 const formRef = ref(null)
 const algorithmEditor = ref(null)
+const roleOptionsEditor = ref(null)
 const hintKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreHint' : 'security.policy.hint')
 const conflictKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreVersionConflict' : 'security.policy.versionConflict')
 const reloadKey = computed(() => props.mode === 'restore' ? 'security.policy.reloadLatestForRestore' : 'security.policy.reloadLatest')
@@ -78,7 +82,7 @@ const selectedEffectImpact = computed(() => props.presentation.effectOptions
   .find(option => option.value === props.form.effect)?.impact || '')
 
 function validate() {
-  if (props.mode === 'tighten' && props.form.effect === 'mask' && !algorithmEditor.value?.validate()) return Promise.resolve(false)
+  if (props.mode === 'tighten' && props.form.effect === 'mask' && (!algorithmEditor.value?.validate() || !roleOptionsEditor.value?.validate())) return Promise.resolve(false)
   return formRef.value?.validate() ?? Promise.resolve(false)
 }
 

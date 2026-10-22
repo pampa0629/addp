@@ -23,7 +23,7 @@ func TestDocumentTextSampleAndProjectionUseSameSnapshot(t *testing.T) {
 	}}
 	projection := Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  ProjectionSchemaV4, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion:  ProjectionSchemaV5, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "document-1"},
 		SourceSnapshotHash: hash, Rules: []Rule{{Action: "search_index", Component: DocumentTextComponent(), Decision: decision}},
@@ -62,7 +62,7 @@ func TestDocumentTextProjectionRejectsMismatchedTargetComponent(t *testing.T) {
 	}}
 	projection := Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  ProjectionSchemaV4, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion:  ProjectionSchemaV5, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "document-1", ComponentKey: "wrong.component"},
 		SourceSnapshotHash: hash, Rules: []Rule{{Action: "search_index", Component: DocumentTextComponent(), Decision: decision}},

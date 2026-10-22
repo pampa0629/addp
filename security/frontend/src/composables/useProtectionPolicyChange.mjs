@@ -40,7 +40,7 @@ export function useProtectionPolicyChange({
   const editAssessment = ref(null)
   const editPolicy = ref(null)
   const editScope = ref(null)
-  const editForm = reactive({ ...initialProtectionConfiguration(), effect: '', rationale: '', invalid_value_effect: 'suppress' })
+  const editForm = reactive({ ...initialProtectionConfiguration(), effect: '', role_options: [], rationale: '', invalid_value_effect: 'suppress' })
 
   const restoreDialog = ref(false)
   const restoreDialogRef = ref(null)
@@ -93,6 +93,7 @@ export function useProtectionPolicyChange({
       : effects[0]
     const baseline = baselineForAssessment(assessment)
     const source = policy?.state === 'active' && policy.current?.effect === 'mask' ? policy.current : baseline
+    editForm.role_options = JSON.parse(JSON.stringify(policy?.state === 'active' ? policy.current?.role_options || [] : []))
     Object.assign(editForm, initialProtectionConfiguration(), source ? { algorithm: source.algorithm, parameters: JSON.parse(JSON.stringify(source.parameters || {})), invalid_value_effect: source.invalid_value_effect || 'suppress' } : {})
     editForm.rationale = policy?.state === 'active' ? String(policy.current?.rationale || '') : ''
     return true
@@ -104,6 +105,7 @@ export function useProtectionPolicyChange({
     editPolicy.value = null
     editScope.value = null
     editForm.effect = ''
+    editForm.role_options = []
     editForm.rationale = ''
     editSaving.value = false
     editReloading.value = false
@@ -190,6 +192,7 @@ export function useProtectionPolicyChange({
           effect: editForm.effect,
           algorithm: editForm.effect === 'mask' ? editForm.algorithm : '',
           parameters: editForm.effect === 'mask' ? editForm.parameters : {},
+          role_options: editForm.effect === 'mask' ? editForm.role_options : [],
           invalid_value_effect: editForm.effect === 'mask' ? editForm.invalid_value_effect : editForm.effect,
           rationale: editForm.rationale.trim()
         })
@@ -201,6 +204,7 @@ export function useProtectionPolicyChange({
           effect: editForm.effect,
           algorithm: editForm.effect === 'mask' ? editForm.algorithm : '',
           parameters: editForm.effect === 'mask' ? editForm.parameters : {},
+          role_options: editForm.effect === 'mask' ? editForm.role_options : [],
           invalid_value_effect: editForm.effect === 'mask' ? editForm.invalid_value_effect : editForm.effect,
           rationale: editForm.rationale.trim()
         })

@@ -118,6 +118,7 @@ export function createProtectionAssessmentPresentation({
           conclusion: { type: revision.state === 'active' ? 'success' : 'info', label: t(`security.policy.historyStates.${revision.state}`) },
           sourceLabel: t('security.policy.historySource', { owner: ownerLabel(policy.consumer_owner), action: actionLabel(policy.action) }),
           summary: policyRevisionSummary(revision),
+          roleOptions: (revision.role_options || []).map(option => ({ id: option.id, text: t('security.roleOptions.history', { name: option.name, roles: option.role_keys.join(', '), method: policyRevisionSummary(option.decision) }) })),
           rationale: revision.rationale || '',
           metadata: t('security.assessment.historyMeta', { actor: assessmentActorLabel(revision.created_by), time: timestamp })
         })

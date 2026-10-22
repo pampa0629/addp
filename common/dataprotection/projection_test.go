@@ -166,7 +166,7 @@ func TestProjectionRejectsAllowDefaultAndInvalidAuthorization(t *testing.T) {
 func testProjection(now time.Time) Projection {
 	return Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  ProjectionSchemaV4,
+		SchemaVersion:  ProjectionSchemaV5,
 		ProjectionID:   "projection-1",
 		Revision:       "00000000000000000001",
 		ConsumerOwner:  "manager",
@@ -239,7 +239,7 @@ func TestPermanentProjectionRequiresExplicitNullAndKeepsTemporaryAuthorizationBo
 	if projection.Validate(now) == nil {
 		t.Fatal("runtime accepted the old protocol")
 	}
-	projection.SchemaVersion = ProjectionSchemaV4
+	projection.SchemaVersion = ProjectionSchemaV5
 	projection.ExpiresAt = ProjectionDeadline(time.Time{})
 	_ = projection.Seal()
 	if projection.Validate(now) == nil {
@@ -256,7 +256,7 @@ func TestMigrateV2ProjectionPreservesDeadlineAndRejectsCorruptPayload(t *testing
 	if err != nil || !changed || migrated.ExpiresAt == nil || !migrated.ExpiresAt.Equal(*projection.ExpiresAt) || migrated.Revision != projection.Revision {
 		t.Fatalf("migration changed validity: %#v %v", migrated, err)
 	}
-	migrated.SchemaVersion = ProjectionSchemaV4
+	migrated.SchemaVersion = ProjectionSchemaV5
 	_ = migrated.Seal()
 	if err := migrated.Validate(time.Now()); err != nil {
 		t.Fatal(err)

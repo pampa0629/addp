@@ -44,7 +44,7 @@ type legacyProjectionV1 struct {
 	ExpiresAt          time.Time                        `json:"expires_at"`
 }
 
-func TestProjectionSchemaV4MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
+func TestProjectionSchemaV5MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestProjectionSchemaV4MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 		t.Fatal(err)
 	}
 
-	if err := migrateProtectionProjectionSchemaV4(db); err != nil {
+	if err := migrateProtectionProjectionSchemaV5(db); err != nil {
 		t.Fatal(err)
 	}
 	var migratedRecord models.ProtectionProjectionRecord
@@ -120,7 +120,7 @@ func TestProjectionSchemaV4MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 	if err := projection.Validate(time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	if projection.SchemaVersion != dataprotection.ProjectionSchemaV4 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
+	if projection.SchemaVersion != dataprotection.ProjectionSchemaV5 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
 		t.Fatalf("unexpected migrated projection: %#v", projection)
 	}
 	if projection.Rules[0].Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || projection.Rules[0].Decision.Parameters["mask_rune"] != "*" || len(projection.Rules[0].Decision.Parameters) != 3 {
@@ -144,7 +144,7 @@ func TestProjectionSchemaV4MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 
 func timePointer(value time.Time) *time.Time { return &value }
 
-func TestProjectionSchemaV4MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
+func TestProjectionSchemaV5MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		payload  string
 		expected string
@@ -172,9 +172,9 @@ func TestProjectionSchemaV4MigrationFailsClosedForNonCurrentPayloads(t *testing.
 			if err := db.Create(&record).Error; err != nil {
 				t.Fatal(err)
 			}
-			err = migrateProtectionProjectionSchemaV4(db)
+			err = migrateProtectionProjectionSchemaV5(db)
 			if err == nil || !strings.Contains(err.Error(), testCase.expected) {
-				t.Fatalf("migrateProtectionProjectionSchemaV4() error=%v, want %q", err, testCase.expected)
+				t.Fatalf("migrateProtectionProjectionSchemaV5() error=%v, want %q", err, testCase.expected)
 			}
 		})
 	}
@@ -202,7 +202,7 @@ func TestKeepPrefixSuffixV2MigrationRewritesBaselineAndCurrentFeed(t *testing.T)
 	}
 	projection := dataprotection.Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
+		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item"},
 		SourceSnapshotHash: "sha256:snapshot",
@@ -346,7 +346,7 @@ func assertExistingEnrollmentValidityMigration(t *testing.T, db *gorm.DB) {
 			if err := projection.Validate(time.Time{}); err != nil {
 				t.Fatal(err)
 			}
-			if projection.SchemaVersion != dataprotection.ProjectionSchemaV4 || projection.ExpiresAt == nil || !projection.ExpiresAt.Equal(ownerDeadlines[record.ConsumerOwner]) || projection.Revision != "00000000000000000003" || record.PublishedSequence != 1 {
+			if projection.SchemaVersion != dataprotection.ProjectionSchemaV5 || projection.ExpiresAt == nil || !projection.ExpiresAt.Equal(ownerDeadlines[record.ConsumerOwner]) || projection.Revision != "00000000000000000003" || record.PublishedSequence != 1 {
 				t.Fatal("migration changed an Owner deadline, revision or feed position")
 			}
 		}
@@ -396,7 +396,7 @@ func TestProjectionV4MigrationRejectsMissingOrInconsistentEnginePreimage(t *test
 			if err := db.Create(&record).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := migrateProtectionProjectionSchemaV4(db); err == nil {
+			if err := migrateProtectionProjectionSchemaV5(db); err == nil {
 				t.Fatal("untrusted engine preimage was migrated")
 			}
 			var persisted models.ProtectionProjectionRecord

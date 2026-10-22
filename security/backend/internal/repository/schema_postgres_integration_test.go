@@ -89,7 +89,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(legacyRecord.ProjectionPayload), &migratedProjection); err != nil {
 		t.Fatal(err)
 	}
-	if migratedProjection.SchemaVersion != dataprotection.ProjectionSchemaV4 {
+	if migratedProjection.SchemaVersion != dataprotection.ProjectionSchemaV5 {
 		t.Fatalf("migrated projection schema = %s", migratedProjection.SchemaVersion)
 	}
 	decision := migratedProjection.Rules[0].Decision

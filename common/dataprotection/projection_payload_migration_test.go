@@ -60,7 +60,7 @@ func TestDecodePersistedProjectionForMigrationConvertsLegacyAllowToProtectiveFal
 	if err != nil || !algorithmChanged {
 		t.Fatalf("MigrateKeepPrefixSuffixAlgorithmV2() changed=%v error=%v", algorithmChanged, err)
 	}
-	projection.SchemaVersion = ProjectionSchemaV4
+	projection.SchemaVersion = ProjectionSchemaV5
 	projection.TargetEngineID = 1
 	_ = projection.Seal()
 	if err := projection.Validate(time.Time{}); err != nil {

@@ -833,7 +833,7 @@ func installEnrollmentOwnerProjection(tx *gorm.DB, enrollment models.ProtectionE
 		validFrom = enrollment.CreatedAt
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV4,
+		SchemaVersion: dataprotection.ProjectionSchemaV5,
 		ProjectionID:  uuid.NewString(), Revision: revisionString(1),
 		ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
 		Target: enrollment.Target(), TargetEngineID: enrollment.TargetEngineID, Rules: []dataprotection.Rule{},

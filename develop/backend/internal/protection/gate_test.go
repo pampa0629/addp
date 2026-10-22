@@ -204,7 +204,7 @@ func installDevelopProjection(t *testing.T, store *projectionstore.Store, identi
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
 		TargetEngineID: 11,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		SchemaVersion:  dataprotection.ProjectionSchemaV5,
 		ProjectionID:   "projection-develop-persons",
 		Revision:       "00000000000000000001",
 		ConsumerOwner:  "develop",
@@ -250,7 +250,7 @@ func installActiveDevelopProjectionAt(t *testing.T, store *projectionstore.Store
 	}
 	projection := dataprotection.Projection{
 		TargetEngineID: 11,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
+		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
 		ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,
@@ -381,7 +381,7 @@ func TestGateBindsExecutionActorAndPersistsOnlyDefaultPreview(t *testing.T) {
 			if mode == "expired" {
 				deadline = now.Add(-time.Minute)
 			}
-			projection := dataprotection.Projection{TargetEngineID: 11, SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "actor-bound-query", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: schemaHash, ValidFrom: now.Add(-time.Hour), Rules: []dataprotection.Rule{{Action: "query", Component: component, Decision: decision, Authorizations: []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-30 * time.Minute), ValidUntil: deadline}}}}}
+			projection := dataprotection.Projection{TargetEngineID: 11, SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "actor-bound-query", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: schemaHash, ValidFrom: now.Add(-time.Hour), Rules: []dataprotection.Rule{{Action: "query", Component: component, Decision: decision, Authorizations: []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-30 * time.Minute), ValidUntil: deadline}}}}}
 			if err := projection.Seal(); err != nil {
 				t.Fatal(err)
 			}

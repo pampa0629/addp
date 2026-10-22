@@ -76,7 +76,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 				if granted {
 					actor = dataprotection.SubjectReference{Type: "user", ID: "41"}
 				}
-				projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "hybrid-output", Revision: "00000000000000000001", ConsumerOwner: owner, Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute)}
+				projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "hybrid-output", Revision: "00000000000000000001", ConsumerOwner: owner, Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute)}
 				for _, definition := range []struct {
 					name, typ string
 					decision  dataprotection.Decision
@@ -336,7 +336,7 @@ func QueryOutputExpressionProtection(t *testing.T, model plugin.EngineCatalogMod
 					actor = dataprotection.SubjectReference{Type: "user", ID: "41"}
 					rule.Authorizations = []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}}
 				}
-				projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "expression-output", Revision: "00000000000000000001", ConsumerOwner: owner, Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute), Rules: []dataprotection.Rule{rule}}
+				projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "expression-output", Revision: "00000000000000000001", ConsumerOwner: owner, Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute), Rules: []dataprotection.Rule{rule}}
 				if err = projection.Seal(); err != nil {
 					t.Fatal(err)
 				}

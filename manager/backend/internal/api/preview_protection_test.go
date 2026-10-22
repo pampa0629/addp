@@ -461,7 +461,7 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 	}
 	projection := dataprotection.Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		SchemaVersion:  dataprotection.ProjectionSchemaV5,
 		ProjectionID:   "outdoor-phone-manager",
 		Revision:       "00000000000000000001",
 		ConsumerOwner:  "manager",

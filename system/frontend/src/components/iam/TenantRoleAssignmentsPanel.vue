@@ -144,6 +144,7 @@
 </template>
 
 <script setup>
+import { resolveRoleName } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, CircleClose, Connection, DataAnalysis, Plus, Refresh, User, View } from '@element-plus/icons-vue'
@@ -159,7 +160,6 @@ import {
   buildTenantRoleOptions,
   hasTenantRole,
   partitionTenantRoleOptions,
-  resolveRoleName,
   tenantRoleKeys
 } from '../../utils/iamRoles'
 

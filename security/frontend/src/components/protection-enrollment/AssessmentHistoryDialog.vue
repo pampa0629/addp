@@ -36,6 +36,7 @@
                 </el-tag>
               </div>
               <p class="assessment-history__summary">{{ row.summary }}</p>
+              <p v-for="option in row.roleOptions || []" :key="option.id">{{ option.text }}</p>
               <p>{{ row.rationale }}</p>
               <small>{{ row.metadata }}</small>
             </article>

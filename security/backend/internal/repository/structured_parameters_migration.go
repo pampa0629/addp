@@ -13,6 +13,7 @@ import (
 func migrateStructuredProtectionParameters(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, statement := range []struct{ table, column, definition string }{
+			{"protection_policy_revisions", "role_options", "TEXT"},
 			{"protection_baselines", "parameters", "TEXT"}, {"protection_baselines", "allowed_algorithms", "TEXT"},
 			{"protection_policy_revisions", "algorithm", "VARCHAR(80)"}, {"protection_policy_revisions", "parameters", "TEXT"}, {"protection_policy_revisions", "invalid_value_effect", "VARCHAR(20)"},
 		} {

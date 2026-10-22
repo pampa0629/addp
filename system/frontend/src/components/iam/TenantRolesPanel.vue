@@ -228,13 +228,14 @@
 </template>
 
 <script setup>
+import { resolveRoleName, resolveRoleDescription } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
-import { isValidTenantRoleKey, resolveRoleDescription, resolveRoleName } from '../../utils/iamRoles'
+import { isValidTenantRoleKey } from '../../utils/iamRoles'
 import {
   buildPermissionGroups,
   groupPermissionsByNamespace,

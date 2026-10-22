@@ -52,7 +52,7 @@ func TestPreviewRejectsLiveSchemaDriftBeforeReadingAndRecovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV4, TargetEngineID: 9,
+		SchemaVersion: dataprotection.ProjectionSchemaV5, TargetEngineID: 9,
 		ProjectionID: "preview-live-schema", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonModels.GenerateItemFingerprint(9, "business.cards"), ComponentKey: "phone"},
 		SourceSnapshotHash: snapshot, ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),

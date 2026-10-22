@@ -156,7 +156,7 @@ func TestManagerAcknowledgementKeepsInstalledCursorWhileOldReadFinishes(t *testi
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}
 	projection := dataprotection.Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection",
+		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "projection",
 		Revision: "00000000000000000001", ConsumerOwner: "manager",
 		State: dataprotection.ProjectionStateEnrolling, Target: target, Rules: []dataprotection.Rule{},
 		ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),

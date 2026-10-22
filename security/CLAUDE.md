@@ -2,7 +2,7 @@ Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` �
 
 # Security 模块说明
 
-Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档、邮箱、身份证件号码和银行卡号元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译、显式重新发现和资源级有效期设置。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。当前用户从 Manager 或 Develop 复用共享交互发起 ProtectionAccessRequest，显式选择 Manager 预览、Develop 查询或两者；另一名有审批权限的用户一次审批，原子形成各精确出口的 ProtectionExemption。授权仍按用户、按字段、最长 30 天，已有 Manager 授权不扩大。Projection v4 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
+Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档、邮箱、身份证件号码和银行卡号元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译、显式重新发现和资源级有效期设置。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。当前用户从 Manager 或 Develop 复用共享交互发起 ProtectionAccessRequest，显式选择 Manager 预览、Develop 查询或两者；另一名有审批权限的用户一次审批，原子形成各精确出口的 ProtectionExemption。授权仍按用户、按字段、最长 30 天，已有 Manager 授权不扩大。Projection v5 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
 
 ## 边界
 
@@ -419,3 +419,18 @@ Develop六计算substring/coalesce/case/cast/subquery_alias/union均准备阶段
 规范见 `docs/spec/addp授权上下文规范.md`“执行发起人的当前角色核验”和数据安全实现规范 7.1.1。实现为 System `execution_subject_roles.go`、API adapter 与 Common `system_execution_subject_roles.go`；沿用现有执行授权权限，无新增迁移、角色权限分配或通用角色枚举 API。角色选项控制面、投影编译、保存查询/服务/传输的选择引用与四出口执行/界面尚未接入；本项不能记为角色脱敏功能完成。
 
 验证：`make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=common GO_ONLY=1` 通过（仅 Go T1）；`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test execution-subject-roles"` 在已核实的 25432/addp_iam_test 通过真实 PostgreSQL T2，无跳过，复用完整 ExecutionAuthorizationService 用例，新增当前角色、无权限角色、自然到期、Owner/租户/身份/租约/父执行边界。前两轮测试夹具分别因变更角色后沿用旧授权、非法成员期限，以及修改不可变角色分配期限而失败；已改为正式新会话/新授权与创建时确定期限后的自然到期，不关闭数据库约束或放宽断言。`make test-system-iam-runner` 27项通过；System Swagger 生成与覆盖检查通过（241个公开路由方法）。标准 IAM T2 默认发现仍覆盖本用例，新增 filter 只用于最小充分本地回归，未新增 CI 路线。日志 `/tmp/p145-role-{system-t1,common-t1,system-t2,runner,swagger}.log`。尚未进行本接口的本地 HTTP/浏览器或 Hosted T4，未重启用户服务、不定时、不跟进 CI；四出口原有逐原因 T4 不作为本接口证据。
+
+
+## 2026-10-22 角色可选方式控制面与 Projection v5
+
+按已确认的“默认自动保护、角色只增加选择资格、多角色取并集”原则，在原 ProtectionPolicy 不可变修订增加 `role_options`，不新增角色策略聚合或优先级。Security 为新选项生成 UUID，更新只接受当前修订已有身份；完整集合随默认效果同事务校验、保存、编译，撤销保留审计配置但不发布。每项仅可采用当前基线许可且类型匹配的内置 mask 决策，不能穿透字段默认 suppress/deny；基线撤回算法后移除不再许可的选项，普通默认保护继续有效。投影选项绑定 policy_id、policy_revision、assessment_revision；Common 显式解析器区分不可用/已变更与当前角色不具资格，角色取并集，不自动切换默认算法，也不把显式选择替换为原值豁免。调用者仍须先核验主体、Tenant、来源字段和当前角色事实；传入字符串集合本身不是认证证明。
+
+唯一运行协议为 `addp.protection_projection/v5`，旧版本只用于一次性启动迁移，不保留运行兼容分支。Security 从可信 Enrollment 前像原位迁移中央记录和历史变化，保持序号；共享投影存储新增 `005_projection_role_options_v5`，清除旧缓存与所有 checkpoint 后完整重放。新增回归实际发现“只清 cursor 而保留 initialized=true”会提前认为就绪，已改为一并清除 checkpoint 并通过 SQLite/真实 PG 验证。Security 与 Transfer 外层启动 schema 均递增至 6，避免 Transfer 已应用旧 schema 时跳过共享迁移。其他 Owner/Provider 夹具只切换当前协议常量；运行时默认保护、原值授权、SQL 语义和源数据均未新增宽松路径。
+
+既有字段策略表单复用 ProtectionAlgorithmEditor 配置角色选项；角色候选只读取现有 System 租户角色目录，沿用 `iam.tenant_role.read`，只选择可分配给 User 的 Tenant 角色，不增加权限或自由输入角色键。目录无权读取或失败时已有选项保持只读、可保留或显式移除，不能因加载失败清空。修订历史显示选项身份对应的名称、角色键、算法参数；版本冲突仍由原显式重新加载流程处理。内置角色译名及名称/说明解析迁入 common-frontend 唯一维护，System 三个 IAM 组件直接复用，原重复函数和转发入口已删除；自定义名称保持原输入。Security 创建/更新/详情 Swagger 同步，上一轮执行主体角色接口的已生成 System Swagger 同次补入提交。
+
+验证：Common Go T1 最终标准入口 `make test-module MODULE=common GO_ONLY=1` 通过；Security Go T1 标准入口已通过，新增 HTTP 及字段策略用例继续由共享 Go/既有 PG 入口发现。`make test-security-postgres` 在已核实 25432/addp_test 完整通过 8 个顶层用例，无失败或跳过，含四出口选项编译、默认不变、修订身份、基线收紧、撤销审计与 HTTP 未知选项身份拒绝、显式移除和跨租户隔离。`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test projection-store"` 真实通过 7 个顶层用例，无失败或跳过，覆盖多 Owner 同构、v4 缓存重放、初始化、并发版本以及既有 28 格逐原因协议；这是投影存储组，不计完整 Common PostgreSQL 门禁。该标准脚本只抽取原完整门禁中的同一函数，默认全门禁保持原组序；新过滤及拒绝跳过/零测试由 `scripts/test/module-gate_test.py` 34 项验证。最初全仓 Go 在新增初始化断言处红，修后 `GOMAXPROCS=2 GOFLAGS=-p=1 make test-go` 完整退出 0（依赖 tidy、全部已跟踪 Go 模块及 Common 无 CGO 过程指标）；补充的 Common 最终入口覆盖其后的评估修订断言。全仓日志 `/tmp/p145-options-go-final.log`；两次完整 Common PG 尝试因临时 guard 发现并发而终止，不计通过；后来精确投影组经过同一 guard 完成，不宣称共享主机独占。
+
+Security 237 个单元、原 33 个完整浏览器回归及构建通过；随后新增角色目录无权读取/失败保留场景，与多角色配置合计 3 个最终专项再次通过并构建（现有 35 个不同浏览器场景未合并伪称一次全跑）。System 155 单元、203 完整浏览器及构建通过；删除旧转发入口后，155 单元、8 个角色管理/角色分配/账号专项与构建再次通过。Common Frontend 257 项通过；投影存储所有权 9 项/4577 Go-SQL 文件、T2 登记检查以及 Security/System Swagger 63/241 路由覆盖通过。日志 `/tmp/p145-options-{common-t1-final,security-t1,security-postgres-final,projection-postgres-final,module-runner-final,store-ownership,t2-registration,security-frontend-final,security-role-browser-final,security-build-final,system-frontend-final,system-role-browser-final,system-build-direct,common-frontend-final,swagger-coverage-final}.log`。
+
+边界：本轮完成控制面、v5 发布/重放和共享显式选项解析，不将 Develop/Service/Transfer 的业务保存选择、运行时选择与同次默认历史预览计为完成；Manager 普通预览继续默认方式。尚无本轮本地实际产品或 Hosted T4，不复用旧四出口 T4 为角色能力背书。后续保存及同步消费还需完整的当前登录用户角色事实：现有 AuthContext 是带 Permission 的角色投影，会漏掉零功能权限业务角色；不能据此暗中缩小已确认的角色并集。该窄接口的调用边界已向用户提出，未擅自扩大角色枚举或改变认证协议。未启停用户服务、不设置定时、不跟进其他 CI、不改变源授权、原值授权或栅格。清单大项仍部分实现，由 p0 维护表格。

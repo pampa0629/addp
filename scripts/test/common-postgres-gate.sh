@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write|graph) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph|projection-store) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -82,6 +82,33 @@ source "$ROOT_DIR/scripts/infra/ports.sh"
 addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "$database"
 if [ -n "${ADDP_TEST_EXECUTION_POSTGRES_DSN:-}" ]; then
     addp_infra_verify_test_postgres_dsn "$ADDP_TEST_EXECUTION_POSTGRES_DSN"
+fi
+
+postgres_host=${ADDP_TEST_POSTGRES_HOST:-localhost}
+postgres_port=$ADDP_TEST_POSTGRES_PORT
+postgres_user=${ADDP_TEST_POSTGRES_USER:-addp}
+postgres_password=$ADDP_TEST_POSTGRES_PASSWORD
+postgres_sslmode=${ADDP_TEST_POSTGRES_SSLMODE:-disable}
+execution_dsn=${ADDP_TEST_EXECUTION_POSTGRES_DSN:-postgres://${postgres_user}:${postgres_password}@${postgres_host}:${postgres_port}/${database}?sslmode=${postgres_sslmode}}
+
+run_projection_store_postgres() {
+    (cd "$SOURCE_ROOT/common" && ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN="$execution_dsn" \
+        go test ./dataprotection/projectionstore \
+        -run '^TestProjectionStore.*AgainstPostgres$' \
+        -count=1 -v) 2>&1 | tee "$WORK_DIR/common-projectionstore-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/common-projectionstore-postgres.log"; then
+        echo "Common protection projection store PostgreSQL gate refuses skipped tests" >&2
+        exit 1
+    fi
+    grep -q -- '--- PASS: TestProjectionStoreSchemaContractAgainstPostgres ' "$WORK_DIR/common-projectionstore-postgres.log" || {
+        echo 'Common protection projection store gate requires the real schema and migration contract test' >&2
+        exit 1
+    }
+}
+if [ "$test_group" = projection-store ]; then
+    run_projection_store_postgres
+    echo 'Common protection projection store group passed (not the full PostgreSQL gate)'
+    exit 0
 fi
 
 run_graph_postgres() {
@@ -145,12 +172,6 @@ if [ "$test_group" != all ]; then
     exit 0
 fi
 
-postgres_host=${ADDP_TEST_POSTGRES_HOST:-localhost}
-postgres_port=$ADDP_TEST_POSTGRES_PORT
-postgres_user=${ADDP_TEST_POSTGRES_USER:-addp}
-postgres_password=$ADDP_TEST_POSTGRES_PASSWORD
-postgres_sslmode=${ADDP_TEST_POSTGRES_SSLMODE:-disable}
-execution_dsn=${ADDP_TEST_EXECUTION_POSTGRES_DSN:-postgres://${postgres_user}:${postgres_password}@${postgres_host}:${postgres_port}/${database}?sslmode=${postgres_sslmode}}
 
 ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
     go test ./execution \
@@ -170,15 +191,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-export-source-postgres.log"; then
     exit 1
 fi
 
-ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN="$execution_dsn" \
-    go test ./dataprotection/projectionstore \
-    -run '^TestProjectionStore.*AgainstPostgres$' \
-    -count=1 -v 2>&1 | tee "$WORK_DIR/common-projectionstore-postgres.log"
-
-if grep -q -- '--- SKIP:' "$WORK_DIR/common-projectionstore-postgres.log"; then
-    echo "Common protection projection store PostgreSQL gate refuses skipped tests" >&2
-    exit 1
-fi
+run_projection_store_postgres
 
 ADDP_TEST_TABLE_RESULT_POSTGRES_DSN="$execution_dsn" \
     go test ./dbbridge -run '^TestTableResult.*AgainstPostgres$' \

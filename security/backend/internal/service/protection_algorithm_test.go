@@ -42,6 +42,15 @@ func TestFieldAlgorithmsAgainstPostgres(t *testing.T) {
 	}
 	// Discovery execution ownership uses the existing common startup schema.
 	verifyFieldAlgorithmPermissions(t, tx)
+	t.Run("role_options", func(t *testing.T) {
+		if err := tx.Exec("DROP SCHEMA security CASCADE").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.Migrate(tx); err != nil {
+			t.Fatal(err)
+		}
+		verifyRolePolicyOptions(t, tx)
+	})
 }
 func verifyFieldAlgorithmPermissions(t *testing.T, db *gorm.DB) {
 	t.Helper()

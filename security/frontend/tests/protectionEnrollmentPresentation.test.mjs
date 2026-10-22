@@ -725,7 +725,7 @@ describe('protected-resource presentation model', () => {
       id: `policy-${index}`, consumer_owner, action, current_revision: 2,
       history: [
         { id: `p${index}-r1`, revision: 1, state: 'active', effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2', parameters: { prefix_runes: 1, suffix_runes: 2, mask_rune: '#' }, invalid_value_effect: 'suppress', rationale: 'tightened', created_by: '8', created_at: '2026-01-03T03:04:05Z' },
-        { id: `p${index}-r2`, revision: 2, state: 'revoked', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'deny', rationale: 'restore baseline', created_by: '9', created_at: '2026-01-04T03:04:05Z' }
+        { id: `p${index}-r2`, revision: 2, state: 'revoked', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'deny', role_options: [{ id: 'choice-1', name: '关联分析', role_keys: ['tenant.reader'], decision: { effect: 'mask', algorithm: 'addp.mask.sm3/v1', invalid_value_effect: 'deny' } }], rationale: 'restore baseline', created_by: '9', created_at: '2026-01-04T03:04:05Z' }
       ]
     }))
     const view = presentation.assessmentHistoryView({ component_key: 'phone', history: [] }, policies)
@@ -740,6 +740,8 @@ describe('protected-resource presentation model', () => {
       expect(active.summary).toContain('security.algorithms.prefix.name')
       expect(active.current).toBe(false)
       expect(revoked.current).toBe(true)
+      expect(revoked.roleOptions[0].text).toContain('关联分析')
+      expect(revoked.roleOptions[0].text).toContain('tenant.reader')
       expect(revoked.conclusion).toEqual({ type: 'info', label: 'security.policy.historyStates.revoked' })
       expect(revoked.summary).toContain('security.algorithms.sm3.name')
       expect(revoked.rationale).toBe('restore baseline')

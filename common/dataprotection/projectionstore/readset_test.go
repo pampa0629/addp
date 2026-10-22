@@ -564,7 +564,7 @@ func activeTableProjection(t *testing.T, owner, action string, model plugin.Engi
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
 		TargetEngineID: path.EngineID,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-table", Revision: "00000000000000000001",
+		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "projection-table", Revision: "00000000000000000001",
 		ConsumerOwner: owner, State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: action, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,

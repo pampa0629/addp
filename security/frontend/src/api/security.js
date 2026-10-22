@@ -81,3 +81,5 @@ export const protectionAccessRequestAPI = {
 export const metaAPI = {
   getItem: itemId => client.get(`/meta/items/${itemId}`)
 }
+
+export const policyRoleAPI = { list: () => client.get('/system/tenant/roles') }

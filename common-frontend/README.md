@@ -48,6 +48,8 @@ Vite 配置直接导入 `basic/src/utils/viteTestIsolation.mjs`，以 `defineCon
 
 先按[工程约束](docs/frontend-style/工程约束.md#组件开发规范)检索已有实现，再在所属子目录的现有组织中维护组件。基础 UI 放 `basic/src/components/`，地图组件放 `map/src/components/`；公共导出维护在对应 `src/index.js`，文件预览使用 `basic/src/previews.js` 独立入口。组件职责与使用说明同步到对应文档。
 
+System 与各业务模块显示 IAM 角色时，统一从 `@common-ui` 导入 `resolveRoleName`、`resolveRoleDescription`。内置 `roles.*` 译名唯一维护在 `basic/src/i18n/`，自定义角色名称保持原输入；业务模块不得复制角色译名或保留转发实现。
+
 ### 添加新工具函数
 
 工具函数放在所属子目录的既有工具位置，补充 JSDoc 与最小充分测试，再从对应入口导出；不在已经不存在的根 `src/utils/` 下新建一套路径。

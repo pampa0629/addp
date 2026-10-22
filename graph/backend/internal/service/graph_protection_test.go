@@ -43,7 +43,7 @@ func graphProtectionProjection(t *testing.T, provider plugin.PropertyGraphProvid
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: id, Revision: "00000000000000000001", ConsumerOwner: "graph", State: dataprotection.ProjectionStateEnrolling, Target: target, TargetEngineID: path.EngineID, Rules: []dataprotection.Rule{}, ValidFrom: time.Now().UTC().Add(-time.Minute)}
+	p := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: id, Revision: "00000000000000000001", ConsumerOwner: "graph", State: dataprotection.ProjectionStateEnrolling, Target: target, TargetEngineID: path.EngineID, Rules: []dataprotection.Rule{}, ValidFrom: time.Now().UTC().Add(-time.Minute)}
 	if err = p.Seal(); err != nil {
 		t.Fatal(err)
 	}

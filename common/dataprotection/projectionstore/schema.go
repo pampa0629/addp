@@ -25,6 +25,7 @@ var storeMigrations = []storeMigration{
 	{version: keepPrefixSuffixV2StoreMigration, apply: retiredProjectionMigration},
 	{version: "003_projection_validity_v3", apply: retiredProjectionMigration},
 	{version: "004_projection_engine_scope_v4", apply: migrateProjectionEngineScopeV4},
+	{version: "005_projection_role_options_v5", apply: resetProjectionReplay},
 }
 
 type postgresColumnDefinition struct {
@@ -217,7 +218,7 @@ func resetProjectionReplay(tx *gorm.DB, store *Store) error {
 	if err := tx.Exec("DELETE FROM " + store.entriesTable).Error; err != nil {
 		return err
 	}
-	return tx.Exec("UPDATE " + store.checkpointTable + " SET cursor = ''").Error
+	return tx.Exec("DELETE FROM " + store.checkpointTable).Error
 }
 
 func migrateProjectionEngineScopeV4(tx *gorm.DB, store *Store) error {

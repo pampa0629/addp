@@ -12,10 +12,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
-	ProjectionSchemaV4 = "addp.protection_projection/v4"
+	ProjectionSchemaV5 = "addp.protection_projection/v5"
 
 	ProjectionStateEnrolling = "enrolling"
 	ProjectionStateActive    = "active"
@@ -72,6 +74,7 @@ type TemporaryAuthorization struct {
 }
 
 type Rule struct {
+	RoleOptions    *RoleMaskingOptions      `json:"role_options,omitempty"`
 	Action         string                   `json:"action"`
 	Component      Component                `json:"component"`
 	Decision       Decision                 `json:"decision"`
@@ -94,7 +97,7 @@ type Projection struct {
 }
 
 func (p Projection) Validate(now time.Time) error {
-	if p.SchemaVersion != ProjectionSchemaV4 {
+	if p.SchemaVersion != ProjectionSchemaV5 {
 		return errors.New("unsupported protection projection schema")
 	}
 	if strings.TrimSpace(p.ProjectionID) == "" || !revisionPattern.MatchString(p.Revision) {
@@ -192,6 +195,14 @@ func (r Rule) Validate() error {
 	}
 	if r.Component.Key != DocumentTextComponentKey {
 		if err := ValidateStructuredDecision(r.Decision, r.Component.ValueType); err != nil {
+			return err
+		}
+	}
+	if r.RoleOptions != nil {
+		if r.Component.Key == DocumentTextComponentKey || (r.Action != "preview" && r.Action != "query" && r.Action != "service_execute" && r.Action != "export") || uuid.Validate(r.RoleOptions.PolicyID) != nil || r.RoleOptions.PolicyRevision <= 0 || r.RoleOptions.AssessmentRevision <= 0 || len(r.RoleOptions.Options) == 0 {
+			return errors.New("invalid role option policy binding")
+		}
+		if err := ValidateRoleMaskingOptions(r.RoleOptions.Options, r.Decision, r.Component.ValueType); err != nil {
 			return err
 		}
 	}

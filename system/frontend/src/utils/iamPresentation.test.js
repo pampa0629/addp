@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import en from '../i18n/en.json'
 import zhCN from '../i18n/zh-cn.json'
+import commonEn from '../../../../common-frontend/basic/src/i18n/en.json'
+import commonZhCN from '../../../../common-frontend/basic/src/i18n/zh-cn.json'
 import {
   accountSessionIsLoading,
   assuranceLevelKey,
@@ -30,7 +32,7 @@ describe('IAM presentation helpers', () => {
     const hasMessage = (messages, key) => key.split('.').reduce((value, segment) => value?.[segment], messages) != null
 
     expect(roleMessageKeys.length).toBeGreaterThan(0)
-    for (const [locale, messages] of [['zh-CN', zhCN], ['en', en]]) {
+    for (const [locale, messages] of [['zh-CN', commonZhCN], ['en', commonEn]]) {
       expect(roleMessageKeys.filter((key) => !hasMessage(messages, key)), `${locale} built-in tenant role translations`).toEqual([])
     }
   })

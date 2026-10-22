@@ -10,18 +10,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// migrateProtectionProjectionSchemaV4 is a one-way data migration. It rewrites
-// every persisted non-v4 payload in place so existing feed cursors and sequence
+// migrateProtectionProjectionSchemaV5 is a one-way data migration. It rewrites
+// every persisted non-v5 payload in place so existing feed cursors and sequence
 // ordering remain valid. Ownership is verified against Enrollment before the
 // new protocol is sealed; missing or inconsistent preimages abort migration.
-func migrateProtectionProjectionSchemaV4(db *gorm.DB) error {
+func migrateProtectionProjectionSchemaV5(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		payloadVersionPredicate := "COALESCE(json_extract(projection_payload, '$.schema_version'), '') <> ?"
 		if tx.Dialector.Name() == "postgres" {
 			payloadVersionPredicate = "COALESCE(projection_payload ->> 'schema_version', '') <> ?"
 		}
 		var records []models.ProtectionProjectionRecord
-		if err := tx.Where(payloadVersionPredicate, dataprotection.ProjectionSchemaV4).Find(&records).Error; err != nil {
+		if err := tx.Where(payloadVersionPredicate, dataprotection.ProjectionSchemaV5).Find(&records).Error; err != nil {
 			return fmt.Errorf("find non-current protection projection records: %w", err)
 		}
 		for _, record := range records {
@@ -35,7 +35,7 @@ func migrateProtectionProjectionSchemaV4(db *gorm.DB) error {
 		}
 
 		var changes []models.ProtectionProjectionChange
-		if err := tx.Where("projection_payload IS NOT NULL AND "+payloadVersionPredicate, dataprotection.ProjectionSchemaV4).Find(&changes).Error; err != nil {
+		if err := tx.Where("projection_payload IS NOT NULL AND "+payloadVersionPredicate, dataprotection.ProjectionSchemaV5).Find(&changes).Error; err != nil {
 			return fmt.Errorf("find non-current protection projection changes: %w", err)
 		}
 		for _, change := range changes {
@@ -66,7 +66,7 @@ func migrateEnrollmentProjectionPayload(tx *gorm.DB, tenantID int64, enrollmentI
 	if err := dataprotection.VerifyTargetEngine(projection.Target, enrollment.TargetEngineID, enrollment.TargetFullName); err != nil {
 		return "", false, err
 	}
-	projection.SchemaVersion = dataprotection.ProjectionSchemaV4
+	projection.SchemaVersion = dataprotection.ProjectionSchemaV5
 	projection.TargetEngineID = enrollment.TargetEngineID
 	if _, err := dataprotection.MigrateKeepPrefixSuffixAlgorithmV2(&projection); err != nil {
 		return "", false, err

@@ -73,6 +73,7 @@
 </template>
 
 <script setup>
+import { resolveRoleName } from '@common-ui'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleClose, Edit, MoreFilled, Plus, Refresh, RefreshLeft, Search, UserFilled, VideoPause } from '@element-plus/icons-vue'
@@ -81,7 +82,7 @@ import { useRouter } from 'vue-router'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { resolveMembershipSourceLabel } from '../../utils/iamPresentation'
-import { resolveRoleName, summarizeEffectiveTenantRoles } from '../../utils/iamRoles'
+import { summarizeEffectiveTenantRoles } from '../../utils/iamRoles'
 import { navigateSystemRoute } from '../../utils/moduleNavigation'
 import TenantRoleAssignmentsPanel from './TenantRoleAssignmentsPanel.vue'
 

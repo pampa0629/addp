@@ -3706,6 +3706,42 @@ definitions:
       engine_id:
         type: string
     type: object
+  internal_api.IAMExecutionSubjectRolesRequest:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      lease_token:
+        type: string
+    type: object
+  internal_api.IAMExecutionSubjectRolesResponse:
+    properties:
+      actor_principal_id:
+        type: string
+      attempt:
+        type: integer
+      authorization_id:
+        type: string
+      authorization_version:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      observed_at:
+        type: string
+      owner:
+        type: string
+      role_keys:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
   internal_api.IAMInitializeTenantRequest:
     properties:
       initial_administrator_principal_id:
@@ -8553,6 +8589,52 @@ paths:
         for Manager profiling
       tags:
       - 执行授权 | Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /execution-authorizations/{id}/subject-roles:
+    post:
+      consumes:
+      - application/json
+      description: 仅所属 Develop 或 Transfer Tenant Service 可按真实运行租约核验，不授予数据读取或原值权限 |
+        Only the owning Develop or Transfer Tenant Service may observe roles using
+        the current running lease; grants no data or plaintext access
+      parameters:
+      - description: 执行授权 ID | Execution authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 当前执行租约 | Current execution lease
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMExecutionSubjectRolesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMExecutionSubjectRolesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核验执行发起人的当前角色 | Observe current execution subject roles
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute

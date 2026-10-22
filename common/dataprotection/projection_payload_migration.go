@@ -48,12 +48,17 @@ func DecodePersistedProjectionForMigration(payload []byte) (Projection, bool, er
 		return Projection{}, false, fmt.Errorf("decode protection projection schema: %w", err)
 	}
 	switch envelope.SchemaVersion {
-	case ProjectionSchemaV4, "addp.protection_projection/v3":
+	case ProjectionSchemaV5, "addp.protection_projection/v4", "addp.protection_projection/v3":
 		var projection Projection
 		if err := json.Unmarshal(payload, &projection); err != nil {
 			return Projection{}, false, fmt.Errorf("decode v3 protection projection: %w", err)
 		}
-		if envelope.SchemaVersion == "addp.protection_projection/v3" {
+		if envelope.SchemaVersion != ProjectionSchemaV5 {
+			for _, rule := range projection.Rules {
+				if rule.RoleOptions != nil {
+					return Projection{}, false, errors.New("legacy projection cannot carry role options")
+				}
+			}
 			expected, err := projection.CalculateChecksum()
 			if err != nil || projection.Checksum != expected {
 				return Projection{}, false, errors.New("legacy protection projection checksum mismatch")

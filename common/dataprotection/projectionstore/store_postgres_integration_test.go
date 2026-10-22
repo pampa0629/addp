@@ -466,7 +466,7 @@ func assertCurrentMigrations(t *testing.T, db *gorm.DB, store *Store) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatalf("read projection store migration versions: %v", err)
 	}
-	if len(versions) != 4 || versions[3] != "004_projection_engine_scope_v4" || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
+	if len(versions) != 5 || versions[4] != "005_projection_role_options_v5" || versions[3] != "004_projection_engine_scope_v4" || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("projection store migration versions = %#v", versions)
 	}
 }

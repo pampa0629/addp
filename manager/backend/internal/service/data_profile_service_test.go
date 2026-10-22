@@ -168,7 +168,7 @@ func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *t
 	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{ReadSet: profileReadSetForTest(t)}, onSample: func() {
 		projection := dataprotection.Projection{
 			TargetEngineID: 1,
-			SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
+			SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
 			Target:    dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"},
 			ValidFrom: time.Now().Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(time.Now().Add(time.Hour)),
 		}
@@ -1153,7 +1153,7 @@ func managedDataProfileServiceTestGate(t *testing.T, itemFingerprint string, fie
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
+		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: itemFingerprint},
 		SourceSnapshotHash: snapshotHash,

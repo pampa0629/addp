@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createAuthStore } from '@common-ui'
+import { createAuthStore, resolveRoleName, resolveRoleDescription } from '@common-ui'
 import {
   buildTenantRoleOptions,
   hasTenantRole,
   isValidTenantRoleKey,
   needsTenantRoleSetup,
   partitionTenantRoleOptions,
-  resolveRoleDescription,
-  resolveRoleName,
   summarizeEffectiveTenantRoles,
   tenantRoleKeys
 } from './iamRoles'

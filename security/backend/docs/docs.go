@@ -4465,7 +4465,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为正式字段评估的指定结构化出口创建收紧策略，仅重编译对应 Owner 投影；支持 manager/preview、develop/query、service/service_execute、transfer/export | Create a tightening policy for one formal field assessment outlet and recompile only its Owner projection; supports manager/preview, develop/query, service/service_execute and transfer/export",
+                "description": "为正式字段评估的指定结构化出口创建默认收紧决策及完整 role_options，仅重编译对应 Owner 投影；角色只增加显式选择资格，空集合移除选项 | Create the default tightening decision and complete role_options for one formal field assessment outlet, recompiling only its Owner projection; roles grant explicit-choice eligibility and an empty set removes options",
                 "consumes": [
                     "application/json"
                 ],
@@ -5643,6 +5643,46 @@ const docTemplate = `{
                 }
             }
         },
+        "dataprotection.RoleMaskingOption": {
+            "type": "object",
+            "properties": {
+                "decision": {
+                    "$ref": "#/definitions/dataprotection.Decision"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dataprotection.RoleMaskingOptions": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleMaskingOption"
+                    }
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                }
+            }
+        },
         "dataprotection.Rule": {
             "type": "object",
             "properties": {
@@ -5660,6 +5700,9 @@ const docTemplate = `{
                 },
                 "decision": {
                     "$ref": "#/definitions/dataprotection.Decision"
+                },
+                "role_options": {
+                    "$ref": "#/definitions/dataprotection.RoleMaskingOptions"
                 }
             }
         },
@@ -6747,6 +6790,12 @@ const docTemplate = `{
                 "revision": {
                     "type": "integer"
                 },
+                "role_options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleMaskingOption"
+                    }
+                },
                 "state": {
                     "type": "string"
                 }
@@ -7399,6 +7448,12 @@ const docTemplate = `{
                 },
                 "rationale": {
                     "type": "string"
+                },
+                "role_options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleMaskingOption"
+                    }
                 }
             }
         },
@@ -7966,6 +8021,12 @@ const docTemplate = `{
                 },
                 "rationale": {
                     "type": "string"
+                },
+                "role_options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleMaskingOption"
+                    }
                 },
                 "version": {
                     "type": "integer"

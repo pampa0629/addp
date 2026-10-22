@@ -53,11 +53,19 @@ func verifyPolicyHTTPVersions(t *testing.T, db *gorm.DB, kind models.SensitiveDa
 		}
 		return recorder.Body.Bytes()
 	}
-	create, err := json.Marshal(models.CreateProtectionPolicyRequest{AssessmentID: assessment.ID, ConsumerOwner: "manager", Action: "preview", Effect: "mask", Algorithm: baseline.Algorithm, Parameters: baseline.Parameters, Rationale: "initial mask"})
+	create, err := json.Marshal(models.CreateProtectionPolicyRequest{AssessmentID: assessment.ID, ConsumerOwner: "manager", Action: "preview", Effect: "mask", Algorithm: baseline.Algorithm, Parameters: baseline.Parameters, Rationale: "initial mask", RoleOptions: []dataprotection.RoleMaskingOption{{Name: "汇总用途", RoleKeys: []string{"tenant.data_viewer"}, Decision: dataprotection.Decision{Effect: "mask", Algorithm: dataprotection.AlgorithmConstantV1, Parameters: map[string]any{"value": "hidden"}, InvalidValueEffect: "suppress"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	created := decodeDefinitionResponse[models.ProtectionPolicyResponse](t, call(http.MethodPost, "", create, "7", handler.Create, http.StatusCreated))
+	if len(created.Current.RoleOptions) != 1 || uuid.Validate(created.Current.RoleOptions[0].ID) != nil {
+		t.Fatal("HTTP role options were not assigned and persisted")
+	}
+	fetched := decodeDefinitionResponse[models.ProtectionPolicyResponse](t, call(http.MethodGet, created.ID, nil, "7", handler.Get, http.StatusOK))
+	if len(fetched.Current.RoleOptions) != 1 || fetched.Current.RoleOptions[0].ID != created.Current.RoleOptions[0].ID {
+		t.Fatal("GET lost immutable role option identity")
+	}
+	call(http.MethodPut, created.ID, []byte(`{"version":1,"effect":"mask","algorithm":"addp.mask.constant/v1","parameters":{"value":"hidden"},"invalid_value_effect":"suppress","rationale":"unknown option identity","role_options":[{"id":"11111111-1111-4111-8111-111111111111","name":"unknown","role_keys":["tenant.data_viewer"],"decision":{"effect":"mask","algorithm":"addp.mask.constant/v1","parameters":{"value":"hidden"},"invalid_value_effect":"suppress"}}]}`), "7", handler.Update, http.StatusBadRequest)
 	// Reproduce the frontend's literal numeric version and change its algorithm.
 	update := []byte(`{"version":1,"effect":"mask","algorithm":"addp.mask.constant/v1","parameters":{"value":"validation"},"invalid_value_effect":"suppress","rationale":"constant replacement"}`)
 	response := call(http.MethodPut, created.ID, update, "7", handler.Update, http.StatusOK)
@@ -66,7 +74,7 @@ func verifyPolicyHTTPVersions(t *testing.T, db *gorm.DB, kind models.SensitiveDa
 		t.Fatal(err)
 	}
 	updated := decodeDefinitionResponse[models.ProtectionPolicyResponse](t, response)
-	if string(wire["version"]) != "2" || updated.Current.Algorithm != dataprotection.AlgorithmConstantV1 || updated.Current.Parameters["value"] != "validation" || len(updated.History) != 2 {
+	if string(wire["version"]) != "2" || updated.Current.Algorithm != dataprotection.AlgorithmConstantV1 || updated.Current.Parameters["value"] != "validation" || len(updated.History) != 2 || len(updated.Current.RoleOptions) != 0 || len(updated.History[1].RoleOptions) != 1 {
 		t.Fatalf("update must persist replacement and return numeric new version: %s", response)
 	}
 	call(http.MethodPut, created.ID, []byte(`{"version":"2","effect":"deny","rationale":"string version"}`), "7", handler.Update, http.StatusBadRequest)

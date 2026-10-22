@@ -67,6 +67,19 @@ function allowRestoreValidation(policyChange) {
 }
 
 describe('protection policy change sessions', () => {
+  it('keeps option identities across edit/reload and saves the entire chosen set', async () => {
+    const option = { id: 'option-1', name: '分析', role_keys: ['tenant.reader'], decision: { effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'suppress' } }
+    const current = { ...activePolicy, current: { effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, role_options: [option] } }
+    const { dependencies, policyChange } = createPolicyChange({ currentPolicy: current, stricterEffects: () => ['mask', 'suppress', 'deny'] })
+    policyChange.openEdit(assessment)
+    allowEditValidation(policyChange)
+    policyChange.editForm.role_options[0].name = '关联分析'
+    expect(option.name).toBe('分析')
+    policyChange.editForm.rationale = '配置角色方式'
+    await policyChange.submitEdit()
+    expect(dependencies.updatePolicy).toHaveBeenCalledWith('policy-1', expect.objectContaining({ role_options: [{ ...option, name: '关联分析' }] }))
+  })
+
   it('opens tightening from the current policy baseline and rejects an already-strictest assessment', () => {
     const { policyChange } = createPolicyChange()
 
@@ -106,7 +119,7 @@ describe('protection policy change sessions', () => {
       consumer_owner: 'manager',
       action: 'preview',
       effect: 'deny',
-      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
       rationale: 'required by owner'
     })
     expect(dependencies.updatePolicy).not.toHaveBeenCalled()
@@ -129,7 +142,7 @@ describe('protection policy change sessions', () => {
     expect(dependencies.updatePolicy).toHaveBeenCalledWith('policy-1', {
       version: 2,
       effect: 'deny',
-      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
       rationale: 'confirmed against opened baseline'
     })
   })
@@ -175,7 +188,7 @@ describe('protection policy change sessions', () => {
     expect(dependencies.updatePolicy).toHaveBeenLastCalledWith('policy-1', {
       version: 3,
       effect: 'deny',
-      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
       rationale: 'retry with latest'
     })
   })

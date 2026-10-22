@@ -48,7 +48,7 @@ func (h *PolicyHandler) List(c *gin.Context) {
 }
 
 // @Summary 创建保护策略 | Create protection policy
-// @Description 为正式字段评估的指定结构化出口创建收紧策略，仅重编译对应 Owner 投影；支持 manager/preview、develop/query、service/service_execute、transfer/export | Create a tightening policy for one formal field assessment outlet and recompile only its Owner projection; supports manager/preview, develop/query, service/service_execute and transfer/export
+// @Description 为正式字段评估的指定结构化出口创建默认收紧决策及完整 role_options，仅重编译对应 Owner 投影；角色只增加显式选择资格，空集合移除选项 | Create the default tightening decision and complete role_options for one formal field assessment outlet, recompiling only its Owner projection; roles grant explicit-choice eligibility and an empty set removes options
 // @Tags Protection Policy
 // @Accept json
 // @Produce json

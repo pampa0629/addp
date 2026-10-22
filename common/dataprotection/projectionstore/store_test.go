@@ -224,7 +224,7 @@ func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 4 || versions[3] != "004_projection_engine_scope_v4" || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
+	if len(versions) != 5 || versions[4] != "005_projection_role_options_v5" || versions[3] != "004_projection_engine_scope_v4" || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("migration versions = %#v", versions)
 	}
 	if err := db.Exec("INSERT INTO "+store.migrationsTable+" (version) VALUES (?)", "999_unknown").Error; err != nil {
@@ -268,7 +268,7 @@ func enrollingProjection(t *testing.T, owner string, target dataprotection.Resou
 	now := time.Now().UTC().Add(-time.Minute)
 	projection := dataprotection.Projection{
 		TargetEngineID: 1,
-		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		SchemaVersion:  dataprotection.ProjectionSchemaV5,
 		ProjectionID:   "projection-1",
 		Revision:       "00000000000000000001",
 		ConsumerOwner:  owner,
@@ -320,6 +320,7 @@ func TestProjectionEngineScopeMigrationRequiresTrustedReplay(t *testing.T) {
 
 func assertBoundedProjectionMigration(t *testing.T, store *Store) {
 	t.Helper()
+	assertRoleOptionsProjectionReplay(t, store)
 	now := time.Now().UTC()
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "validity-migration"}
 	projection := enrollingProjection(t, store.consumerOwner, target)
@@ -354,7 +355,7 @@ func assertBoundedProjectionMigration(t *testing.T, store *Store) {
 		t.Fatalf("replay cursor=%q err=%v", cursor, err)
 	}
 	// Security's upgraded feed restores the exact original validity and revision.
-	projection.SchemaVersion = dataprotection.ProjectionSchemaV4
+	projection.SchemaVersion = dataprotection.ProjectionSchemaV5
 	projection.TargetEngineID = 1
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -372,5 +373,39 @@ func initializeTenant(t *testing.T, store *Store, tenantID int64) {
 	t.Helper()
 	if err := store.ApplyBatch(t.Context(), tenantID, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertRoleOptionsProjectionReplay(t *testing.T, store *Store) {
+	t.Helper()
+	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "role-options-migration"}
+	p := enrollingProjection(t, store.consumerOwner, target)
+	now := time.Now().UTC()
+	if err := store.ApplyBatch(t.Context(), 9, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "v4-source", Operation: dataprotection.ChangeOperationUpsert, Projection: &p}}, NextCursor: "old-v4"}, now); err != nil {
+		t.Fatal(err)
+	}
+	p.SchemaVersion = "addp.protection_projection/v4"
+	if err := p.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(p)
+	if err := store.db.Table(store.entriesTable).Where("tenant_id = ?", 9).Update("projection_payload", string(payload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Exec("DELETE FROM "+store.migrationsTable+" WHERE version = ?", "005_projection_role_options_v5").Error; err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := Migrate(store.db, store.schema, store.consumerOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrated.EnsureCurrent(t.Context(), 9); !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("v4 replay readiness: %v", err)
+	}
+	if cursor, err := migrated.CurrentCursor(t.Context(), 9); err != nil || cursor != "" {
+		t.Fatalf("v4 cursor retained: %q %v", cursor, err)
+	}
+	if migrated.Gate(9, target, now).Managed {
+		t.Fatal("v4 payload retained")
 	}
 }
