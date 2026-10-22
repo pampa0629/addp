@@ -191,7 +191,17 @@ func (s *Store) PrepareTableProtection(
 	}
 	derived := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
 
-	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, ValidateSourceSchema: func(current []datatype.FieldInfo) error {
+		if _, err := dataprotection.TableSchemaSnapshotHash(current); err != nil {
+			return fmt.Errorf("%w: live source structure unavailable", dataprotection.ErrSchemaMismatch)
+		}
+		for _, projection := range gate.Projections {
+			if _, err := dataprotection.ValidateTableProjection(projection, action, current, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, Apply: func(result *plugin.QueryResult) error {
 		if err := validateOutputProjections(gate.Projections); err != nil {
 			return err
 		}

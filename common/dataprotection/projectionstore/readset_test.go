@@ -489,6 +489,16 @@ func TestPrepareTableProtectionMasksManagedNativeRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if protect.ValidateSourceSchema == nil || protect.ValidateSourceSchema(fields) != nil {
+		t.Fatal("managed native protection must bind its current-schema validator")
+	}
+	drifted := append(append([]datatype.FieldInfo(nil), fields...), datatype.FieldInfo{Name: "extra", Type: datatype.FieldTypeInt})
+	if !errors.Is(protect.ValidateSourceSchema(drifted), dataprotection.ErrSchemaMismatch) {
+		t.Fatal("native schema validator accepted an added unrelated field")
+	}
+	if !errors.Is(protect.ValidateSourceSchema(nil), dataprotection.ErrSchemaMismatch) {
+		t.Fatal("missing live structure must retain the schema-mismatch reason")
+	}
 	result := &plugin.QueryResult{Rows: []map[string]interface{}{{"userInfo": map[string]interface{}{"phone": "13661384499"}}}}
 	if err := protect.Apply(result); err != nil {
 		t.Fatal(err)
@@ -518,6 +528,9 @@ func TestPrepareTableProtectionDoesNotValidateUnmanagedPathFields(t *testing.T) 
 	protect, err := store.PrepareTableProtection(t.Context(), 7, model, unmanagedPath, nil, "export", time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if protect.ValidateSourceSchema != nil {
+		t.Fatal("unmanaged source must not require a live schema read")
 	}
 	if err := protect.Apply(&plugin.QueryResult{}); err != nil {
 		t.Fatal(err)

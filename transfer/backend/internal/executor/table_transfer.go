@@ -258,6 +258,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			return nil, fmt.Errorf("native table source requires batch reader or table read session")
 		}
 		return &nativeTableBatchSource{
+			catalogFacts:         e.SourceCatalogFacts,
 			reader:               e.SourceNativeReader,
 			tableSessionProvider: e.SourceTableSessionProvider,
 			protector:            e.SourceProtector,

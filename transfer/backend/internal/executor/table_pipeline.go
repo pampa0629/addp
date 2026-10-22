@@ -274,6 +274,7 @@ func tableInfoEmpty(tableInfo *datatype.TableInfo) bool {
 }
 
 type nativeTableBatchSource struct {
+	catalogFacts         engineplugin.EngineCatalogFactsProvider
 	reader               engineplugin.BatchReadableProvider
 	tableSessionProvider engineplugin.TableReadSessionProvider
 	protector            TableSourceProtector
@@ -469,6 +470,24 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: native table: %w", ErrProtectionPreparation, err)
+		}
+		// The managed-source validator captures the same projections as Apply.
+		// Unmanaged sources retain their existing native read path.
+		if prepared != nil && prepared.ValidateSourceSchema != nil {
+			if s.catalogFacts == nil {
+				return nil, fmt.Errorf("%w: native source catalog facts required", ErrProtectionPreparation)
+			}
+			facts, err := s.catalogFacts.DescribeEngineCatalogFacts(ctx, s.connInfo, s.path, engineplugin.EngineCatalogFactsOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("%w: describe native source table: %w", ErrProtectionPreparation, err)
+			}
+			var liveFields []datatype.FieldInfo
+			if table := engineplugin.EngineCatalogFactsTableInfo(facts); table != nil {
+				liveFields = table.Fields
+			}
+			if err := prepared.ValidateSourceSchema(liveFields); err != nil {
+				return nil, fmt.Errorf("%w: native table: %w", ErrProtectionPreparation, err)
+			}
 		}
 	}
 	if s.tableSessionProvider != nil {

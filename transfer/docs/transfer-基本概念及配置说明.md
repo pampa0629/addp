@@ -145,6 +145,8 @@ MongoDB 控制台提供一个通用结构整形构建器，当前覆盖两类基
 
 查询执行前，Transfer 必须从将要打开读会话的同一 `PreparedQuery` 无条件取得 Provider `ReadSet`。上游声明 `source.query.inputs[]` 时，其 Locator 集合必须与 ReadSet 精确相等；Console 单源构建器不声明 `inputs` 时，ReadSet 必须精确只包含所选 source leaf。输入缺失、多出或错配都必须在打开游标前失败，不得仅在数据保护命中时才解析；执行血缘只能使用已通过该校验的输入。
 
+原生表的 bounded 保护准备必须在打开读会话和任何目标变更前，同时核验计划携带的 Meta 字段快照与同一源 Provider 实时返回的完整 `FieldInfo`。先按精确 Locator 用本地投影校验计划字段，再由 Common 编译结果绑定的结构校验闭包核验实时字段；该闭包与输出保护使用同一份投影，只准备一次保护视图。未纳管源不绑定该闭包、不增加 Catalog 读取要求；不能把旧 Meta 字段或选中的输出字段当作受保护源的实时全表结构。受保护源的实时结构缺失或无法获取时拒绝执行，结构与投影不符时使用既有 `protection_schema_mismatch` 准备阶段原因；既有字段映射、空间事实和查询 PreparedQuery 路线保持各自契约。本检查不承诺结构描述与读取之间的并发 DDL 原子性。
+
 结构整形与 PostgreSQL 字段映射的职责必须分离：结构整形只决定“一行代表什么”和“哪些 MongoDB 源字段进入查询结果”；编译器为查询结果自动生成确定性、无点号的内部字段名。下一步 `field_mapping` 只展示实际查询输出，不展示其余 MongoDB 原始字段，并负责 PostgreSQL 目标字段名、类型、可空性等目标定义。数组展开的父文档标识属于关系行必需来源，基础模式自动携带且不得从映射中删除；`activity_id` 等业务目标名只在 `field_mapping` 中声明。
 
 关系型 native table 的 Console 基础 SQL 构造器只扩展 Transfer 的轻量 ETL 能力，不是第二个 SQL IDE：

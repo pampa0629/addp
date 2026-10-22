@@ -103,6 +103,48 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 		t.Fatalf("exported phone = %q, want masked value", phone)
 	}
 
+	t.Run("native_live_schema_drift_before_target_mutation", func(t *testing.T) {
+		var originalOID uint32
+		if err := db.QueryRowContext(ctx, `SELECT $1::regclass::oid`, schema+"."+targetTable).Scan(&originalOID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN unrelated_probe integer`, schema, sourceTable)); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE "%s"."%s" DROP COLUMN unrelated_probe`, schema, sourceTable)); err != nil {
+				t.Error(err)
+			}
+		})
+		// The source plan still contains the original Meta snapshot. The live
+		// field is deliberately unrelated to the protected phone component.
+		metrics, err := tableExecutor.Execute(ctx, executor.TableTransferPlan{
+			Source: executor.TableSourcePlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: sourcePath, TableInfo: &datatype.TableInfo{Name: sourceTable, Fields: fields}},
+			Target: executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: targetPath, DeleteBeforeWrite: true}, BatchSize: 10,
+		})
+		if !errors.Is(err, executor.ErrProtectionPreparation) || !errors.Is(err, dataprotection.ErrSchemaMismatch) {
+			t.Errorf("live native schema mismatch must fail during protection preparation: %v", err)
+		}
+		if errors.Is(err, executor.ErrTargetMayHaveChanged) || metrics != nil && (metrics.RecordsRead != 0 || metrics.RecordsWritten != 0) {
+			t.Error("schema mismatch crossed the read/write or target mutation boundary")
+		}
+		var actualOID uint32
+		if err := db.QueryRowContext(ctx, `SELECT $1::regclass::oid`, schema+"."+targetTable).Scan(&actualOID); err != nil {
+			t.Fatal(err)
+		}
+		if actualOID != originalOID {
+			t.Error("schema mismatch replaced the existing target table")
+		}
+		var count int
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM "%s"."%s"`, schema, targetTable)).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("schema mismatch changed target row count: count=%d error=%v", count, err)
+		}
+		var actual string
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT phone FROM "%s"."%s" WHERE id=1`, schema, targetTable)).Scan(&actual); err != nil || actual != "136****4499" {
+			t.Fatalf("schema mismatch changed the existing protected value: error=%v", err)
+		}
+	})
+
 	queryExecutor, err := executor.NewTableTransferExecutor("postgresql", "postgresql", "", "")
 	if err != nil {
 		t.Fatal(err)

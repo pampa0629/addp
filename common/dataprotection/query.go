@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -12,6 +13,10 @@ import (
 // DerivedFields contains top-level value components and no policy or protected values.
 type PreparedTableProtection struct {
 	Apply func(*plugin.QueryResult) error
+	// ValidateSourceSchema is bound only for managed native-table sources.
+	// It checks live fields against the same projections already used by Apply.
+	// Unmanaged sources require no additional catalog read.
+	ValidateSourceSchema func([]datatype.FieldInfo) error
 	// ApplyDefault produces the persisted preview with no plaintext grants.
 	ApplyDefault  func(*plugin.QueryResult) error
 	DerivedFields []string
