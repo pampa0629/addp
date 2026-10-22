@@ -112,8 +112,12 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 		t.Fatal(err)
 	}
 	spy := &ftpModelReadSpy{FTPPlugin: &ftpPlugin.FTPPlugin{}, engineType: engineType, t: t, files: map[string][]byte{item.FullName: []byte("ifc input")}}
-	if format == "3ds" {
-		spy.files[item.FullName] = threeDSStagingInput("TEST.PNG")
+	if format == "3ds" || format == "dae" {
+		if format == "dae" {
+			spy.files[item.FullName] = []byte(daeStagingInput("TEST.PNG"))
+		} else {
+			spy.files[item.FullName] = threeDSStagingInput("TEST.PNG")
+		}
 		spy.files["models/TEST.PNG"] = []byte("actual texture")
 	}
 	original, err := plugin.Get(engineType)
@@ -183,12 +187,16 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 }
 
 func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds"} {
+	for _, format := range []string{"ifc", "3ds", "dae"} {
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, "nfs", format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
-				if fault == "changed-declaration" && format == "3ds" {
-					spy.files["models/model.3ds"] = threeDSStagingInput("OTHER.PNG")
+				if fault == "changed-declaration" && format != "ifc" {
+					if format == "dae" {
+						spy.files["models/model.dae"] = []byte(daeStagingInput("OTHER.PNG"))
+					} else {
+						spy.files["models/model.3ds"] = threeDSStagingInput("OTHER.PNG")
+					}
 				}
 				store := &stagingModelStore{}
 				called := false
@@ -199,7 +207,7 @@ func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
 					}
 					return nil
 				})
-				rejected := fault == "revoked" || fault == "changed-declaration" && format == "3ds"
+				rejected := fault == "revoked" || fault == "changed-declaration" && format != "ifc"
 				if (err != nil) != rejected || called == rejected || len(store.objects) != 0 {
 					t.Fatalf("err=%v called=%v residual=%d", err, called, len(store.objects))
 				}
@@ -209,7 +217,7 @@ func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T) {
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds"} {
+	for _, format := range []string{"ifc", "3ds", "dae"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
@@ -240,7 +248,7 @@ func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T
 				t.Fatalf("err=%v consumed=%v residual=%d checks=%d closes=%d", err, consumed, len(store.objects), calls.Load(), spy.closes)
 			}
 			expected := []string{"models/model." + format}
-			if format == "3ds" {
+			if format == "3ds" || format == "dae" {
 				expected = append(expected, "models/TEST.PNG")
 			}
 			if !reflect.DeepEqual(spy.opens, expected) || !reflect.DeepEqual(spy.facts, expected) {
@@ -407,4 +415,8 @@ func TestFTPModelBuildUsesFrozenNumbersCreateTargetAndCurrentPublicationAuthoriz
 			}
 		})
 	}
+}
+
+func daeStagingInput(ref string) string {
+	return `<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><library_images><image><init_from>` + ref + `</init_from></image></library_images></COLLADA>`
 }

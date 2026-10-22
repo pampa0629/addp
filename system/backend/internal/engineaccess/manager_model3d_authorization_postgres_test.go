@@ -22,7 +22,7 @@ import (
 
 // Reuses the formal file Grant fixture and current User session. Meta and the
 // connection decoder are controlled projections, not physical FTP content I/O.
-func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Service, tenantID int64, user userProvenance, credential string, operator Actor, engineID uint, facts authorizationfacts.AuthorizationFacts) {
+func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Service, tenantID int64, user userProvenance, credential string, operator Actor, engineID uint, expectedHost string, facts authorizationfacts.AuthorizationFacts) {
 	t.Run("Manager file model source execution authorization", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 		defer cancel()
@@ -149,7 +149,7 @@ func exerciseManagerModel3DAuthorization(t *testing.T, db *gorm.DB, source *Serv
 		allow := func() {
 			t.Helper()
 			got, err := service.Authorize(ctx, claim)
-			if err != nil || got == nil || got.Engine == nil || got.Engine.ID != engineID || got.Engine.Version != 1 || got.Engine.ConnectionInfo["host"] != "file-composition.invalid" {
+			if err != nil || got == nil || got.Engine == nil || got.Engine.ID != engineID || got.Engine.Version != 1 || got.Engine.ConnectionInfo["host"] != expectedHost {
 				t.Fatalf("current source snapshot rejected: %v", err)
 			}
 		}

@@ -105,7 +105,7 @@ System 核对已封存且未撤销、未过期的 user 来源授权，排除 Not
 
 ### 5.2.3 FTP／NFS 单体模型快显执行授权
 
-正式接入范围为真实 FTP、NFS 引擎的 IFC／3DS 单体 GLB 生成，二者共用精确组成、执行授权与受控暂存链。NFS 仅通过 Provider 读取已核验的普通文件，删除这两个格式的宿主挂载路径直传入口；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。其他 NFS 格式、MinIO 尚未迁移，不据此宣称已受本链控制。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
+已验收接入范围为真实 FTP、NFS 引擎的 IFC／3DS 单体 GLB 生成，二者共用精确组成、执行授权与受控暂存链。NFS 仅通过 Provider 读取已核验的普通文件，删除这两个格式的宿主挂载路径直传入口；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 已于 2026-10-22 确认沿同一路线扩展（基础扫描完整 XML 上限 64 MiB，仅认领明确 PNG/JPEG，组成变化重新批准），实现及真实运行结果须独立登记；其余 NFS 格式、MinIO 尚未迁移，不据此宣称已受本链控制。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
 
 Manager 在真实 pending 行可领取之前，冻结 `model3d-glb-file-config/v1` 配置：保留完整原始 `source`／`result`／`options` 与转换字段，增加 `config_version`、`owner_task={id,version}`、`source_engine_version` 与 `source_composition`。ID／版本采用规范十进制字符串，任务配置取同一 SQL 快照；结果是当前 execution 的独占对象，不提前覆盖旧快显。`common/execution.ManagerModel3DReadScope` 保存完整原始 JSON 的 `config_digest`、`owner_task_id`、`owner_task_version`、`engine_version` 与 `file_composition`。摘要输入不超过 512 KiB，只规范 JSON 键序／空白，保留精确数值并拒绝重复键；不能经过 `JSONMap` 浮点往返或把摘要自身嵌入配置。逐文件大小在消费后作为本 attempt 的 I/O 完整性事实取得，不回写已冻结配置，也不进入授权边界摘要。
 
@@ -226,7 +226,7 @@ Meta 向 System 精确投影当前数据项身份、可执行组成边界与基�
 
 **文件批准快照与同次读取。** 文件组成沿现有不可变 Grant 记录保存 `file_composition` 最小批准快照，不另建文件 ACL 或纹理 Grant。请求仍绑定主文件对应 DataItem、预期边界摘要和原批准要求版本；完整快照只从 System 独立读取的 Meta 完整事实冻结，不接受浏览器提交替代事实。历史记录及撤销不要求 Meta 保留旧组成。当前读取按主文件定位候选，但必须证明其是同一完整数据项的主入口，再以完整组成计算边界并消费同一 Grant／Deny 规则；不能用某条纹理 ref 反推主项许可，也不能把单文件旧 Grant 升格成组合许可。受管模型内容请求的 `expected_source` 在同一次 System 裁决中比较当前完整组成及 Engine 版本；即使变化后的新边界另有 Grant，旧生成边界也不得获准。跨 Meta 读取在 IAM 事务外，随后重新核验原凭据、当前 Engine 及源规则，不跨 owner 持锁。此文件分支接入 FTP／NFS IFC／3DS 的直接批准与内容读取；Catalog 文件办理和文件任务产出初始授权分别后续接入，不因共享目标已能表达便默认为已支持。原生表／集合的已验证边界摘要保持不变。
 
-System 正式授权页面复用现有共享资源选择器、事实观察与 Grant 命令。FTP／NFS 目录仅用于浏览，不批量展开为读取许可；只可选择 IFC／3DS 主文件候选，仍须由正式事实接口证明其为完整 single DataItem 的唯一主入口。确认框展示 Meta 返回的整个组成清单及接收方、期限；不允许选中独立纹理后借用模型许可，不向浏览器开放自报组成。文件分支仅办理直接批准，不能在页面选择尚未接入的 Catalog 文件办理；PG 普通表及 schema 展开语义不变。前端接线、本地确定性门禁和真实运行验收分别记录，不能以页面可选代替实际授权生效。
+System 正式授权页面复用现有共享资源选择器、事实观察与 Grant 命令。FTP／NFS 目录仅用于浏览，不批量展开为读取许可；只可选择 IFC／3DS 以及本轮已确认追加的 DAE 主文件候选，仍须由正式事实接口证明其为完整 single DataItem 的唯一主入口。确认框展示 Meta 返回的整个组成清单及接收方、期限；不允许选中独立纹理后借用模型许可，不向浏览器开放自报组成。文件分支仅办理直接批准，不能在页面选择尚未接入的 Catalog 文件办理；PG 普通表及 schema 展开语义不变。前端接线、本地确定性门禁和真实运行验收分别记录，不能以页面可选代替实际授权生效。
 
 组成的规范 JSON 本身至多 64 KiB，完整授权事实／批准 Binding 信封至多 128 KiB，后者给主项身份与摘要字段留出空间。工厂、严格 wire 和统一 Meta Client 使用同一预算，不出现“工厂接受、加信封后读不回”的合法边界；超预算拒绝，不截断 refs 或静默减少授权组成。
 

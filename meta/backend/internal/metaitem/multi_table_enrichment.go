@@ -838,8 +838,8 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 		if formatType != format.FormatDAE && formatType != format.Format3DS {
 			continue
 		}
-		if formatType == format.Format3DS && input.StructureReader != nil {
-			items = append(items, resolveStructured3DSItem(ctx, input, file, byPath))
+		if input.StructureReader != nil {
+			items = append(items, resolveStructuredExchangeModelItem(ctx, input, file, byPath, formatType))
 			continue
 		}
 		if input.ContentReader == nil {

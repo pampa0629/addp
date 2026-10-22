@@ -20,7 +20,7 @@ func (s *ManagerModel3DExpectedSource) Validate() error {
 		return ErrManagerPreviewReadDenied
 	}
 	version, err := strconv.ParseInt(s.EngineVersion, 10, 64)
-	if err != nil || version <= 0 || strconv.FormatInt(version, 10) != s.EngineVersion || (s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds") {
+	if err != nil || version <= 0 || strconv.FormatInt(version, 10) != s.EngineVersion || (s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae") {
 		return ErrManagerPreviewReadDenied
 	}
 	primary, err := s.FileComposition.PrimaryTarget()

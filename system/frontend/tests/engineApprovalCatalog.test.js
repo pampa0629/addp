@@ -11,13 +11,13 @@ describe('System live-catalog protocol adapter', () => {
     const path = { engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
     const directory = { name: 'Models', role: 'branch', term: 'directory', kind: 'directory', path: { ...path, segments: [...path.segments, { term: 'directory', kind: 'directory', name: 'Models' }] } }
     const model = name => ({ name, role: 'leaf', term: 'file', kind: 'file', path: { ...path, segments: [...directory.path.segments, { term: 'file', kind: 'file', name }] } })
-    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj')] }))
+    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj'), model('scene.DAE')] }))
     const adapter = createApprovalCatalogAdapter({ id: '33', name: engineType, engine_type: engineType }, api)
     const root = await adapter.getTreeRoot(), dir = root.children[0]
     expect(isApprovalSelection(dir)).toBe(false)
     await expect(collectApprovalTargets({ raw: { node: dir } }, '33', adapter)).rejects.toThrow()
     const children = await adapter.getNodeChildren(dir)
-    expect(children.map(isApprovalSelection)).toEqual([true, false, true, false])
+    expect(children.map(isApprovalSelection)).toEqual([true, false, true, false, true])
     expect(await collectApprovalTargets({ raw: { node: children[0] } }, '33', adapter)).toEqual([{ ...model('Model.3DS').path, engine_id: '33' }])
     const nfs = { ...children[0], metadata: { ...children[0].metadata, approval_engine_type: 'minio' } }
     expect(isApprovalSelection(nfs)).toBe(false)

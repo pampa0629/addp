@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	commonformat "github.com/addp/common/format"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -37,7 +38,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout == "" || dataType == "" || format == "" {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
-	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds") {
+	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae") {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	primary := plugin.FileItemPath(item.EngineID, item.FullName)
@@ -108,8 +109,8 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if format == "ifc" && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	if format == "3ds" {
-		native := commonjson.Section(item.Attributes, "format_info.3ds")
+	if format == "3ds" || format == "dae" {
+		native := commonjson.Section(item.Attributes, "format_info."+format)
 		if complete, ok := native["scan_complete"].(bool); !ok || !complete {
 			return finish(authorizationfacts.AuthorizationBasisIncomplete)
 		}
@@ -123,6 +124,13 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 		}
 		expected := map[string]bool{item.FullName: true}
 		for _, ref := range declarations {
+			if format == "dae" {
+				decoded, err := commonformat.DecodeDAETextureRef(ref)
+				if err != nil {
+					return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+				}
+				ref = decoded
+			}
 			resolved, ok := metaitem.ResolveExchangeModelTexturePath(item.FullName, ref)
 			if !ok {
 				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)

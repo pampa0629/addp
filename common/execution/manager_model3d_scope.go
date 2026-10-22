@@ -66,7 +66,7 @@ func NewManagerModel3DReadScope(raw json.RawMessage, taskID, taskVersion, engine
 func (s *ManagerModel3DReadScope) Validate() error {
 	if s == nil || !authorizationfacts.ValidItemFingerprint(s.ConfigDigest) || !positiveModel3DVersion(s.OwnerTaskID) ||
 		!positiveModel3DVersion(s.OwnerTaskVersion) || !positiveModel3DVersion(s.EngineVersion) ||
-		(s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds") {
+		(s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae") {
 		return errManagerModel3DScope
 	}
 	primary, err := s.FileComposition.PrimaryTarget()

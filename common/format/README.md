@@ -573,3 +573,5 @@ go test ./manager/backend/internal/preview ./manager/backend/internal/objectcont
 DAE / 3DS 的 `Model3DInfoProvider` 解析预算为 64 MiB；模型字段写入 `type_info.model_3d`，源版本、单位、上轴与声明贴图引用写入 `format_info.dae` / `format_info.3ds`。Meta 消费 `texture_refs` 精确认领资源，格式插件不访问存储目录。二者保持 `layout=single`，GLB 转换边界见内置格式规范。
 
 3DS 另实现 `Model3DCompositionProvider`，只消费调用方绑定到一个主文件的 `io.ReaderAt` 与已观察大小，返回完整原生贴图声明，不返回网格统计或授权结果。基础识别只读取必要 chunk 头和材质声明，跳过几何 payload；逻辑长度 64 MiB、实际读取 256 KiB／4096 次、嵌套 64 层、声明 200 条／每条 4096 字节是硬预算，任何错误均不返回部分声明。Meta 独占目录／refs 匹配、claims 和持久化，不将此接口当作读取许可；无 range 能力不转为全文件读取。现有 deep 模型统计仍由 `Model3DInfoProvider` 独占。
+
+DAE 同样实现 `Model3DCompositionProvider`，通过调用方绑定的 range reader 完整解析不超过 64 MiB 的 XML（XML 无 3DS chunk 的可跳跃结构）。只返回原始 `texture_refs`，至多 200 条、单条 4096 字节，禁止 DTD/实体和不完整 XML；不输出深度网格摘要或访问依赖。Meta 负责依赖匹配及失败快照替换；FTP/NFS 执行校验同一主文件并暂存批准清单，不重读后发现更多文件。

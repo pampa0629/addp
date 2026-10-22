@@ -86,5 +86,5 @@ func validateModel3DGLBClaim(ctx context.Context, item *commonExecution.TaskExec
 }
 
 func managedModel3DFileSource(engineType, format string) bool {
-	return engineType == "ftp" || engineType == "nfs" && (format == "ifc" || format == "3ds")
+	return engineType == "ftp" || engineType == "nfs" && (format == "ifc" || format == "3ds" || format == "dae")
 }

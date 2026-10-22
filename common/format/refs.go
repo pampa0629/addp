@@ -2,8 +2,12 @@ package format
 
 import (
 	"fmt"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/addp/common/contentio"
 )
@@ -122,4 +126,30 @@ func normalizedRefRole(role, ext string, primary bool) string {
 		return contentio.RoleMain
 	}
 	return strings.TrimPrefix(NormalizeExtension(ext), ".")
+}
+
+// DecodeDAETextureRef decodes a Collada URI exactly once, without I/O.
+// Only local PNG/JPEG references beneath the model parent are admitted.
+func DecodeDAETextureRef(raw string) (string, error) {
+	if raw == "" || len(raw) > 4096 || !utf8.ValidString(raw) {
+		return "", fmt.Errorf("invalid DAE texture URI")
+	}
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid DAE texture URI escape")
+	}
+	decoded = strings.ReplaceAll(decoded, "\\", "/")
+	if decoded == "" || strings.HasPrefix(decoded, "/") || strings.ContainsAny(decoded, ":?#") || strings.ContainsFunc(decoded, unicode.IsControl) {
+		return "", fmt.Errorf("DAE texture URI is not a local path")
+	}
+	for _, segment := range strings.Split(decoded, "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("DAE texture URI escapes model parent")
+		}
+	}
+	switch strings.ToLower(path.Ext(decoded)) {
+	case ".png", ".jpg", ".jpeg":
+		return decoded, nil
+	}
+	return "", fmt.Errorf("unsupported DAE texture encoding")
 }

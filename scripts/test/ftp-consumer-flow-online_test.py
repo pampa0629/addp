@@ -23,7 +23,7 @@ GLB = import_module('scripts.test.manager-internal-artifact-lineage-online_test'
 
 def source_download_proof(source, artifacts, entries=None):
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    files = {'model.ifc': 'addp_online_model_fixture.ifc', 'model.3ds': 'addp_online_model_fixture.3ds',
+    files = {'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
              'texture.png': 'addp_online_exchange_texture.png'}
     bundled = len(source['composition']) > 1
     if bundled:
@@ -63,16 +63,16 @@ class FakeClient:
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(self.model_samples[:2]):
+        for i, sample in enumerate(self.model_samples[:3]):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
                           'item': {'data_type': 'model_3d', 'layout': 'single', 'format': kind},
                           'storage': {'physical_path': path}}
-            if kind == '3ds':
-                refs.append({'path': 'models/3ds/texture.png', 'role': 'texture', 'required': True})
+            if kind in {'3ds', 'dae'}:
+                refs.append({'path': f'models/{kind}/texture.png', 'role': 'texture', 'required': True})
                 attributes['item']['refs'] = refs
-                attributes['format_info'] = {'3ds': {'scan_complete': True, 'texture_refs': ['texture.png']}}
+                attributes['format_info'] = {kind: {'scan_complete': True, 'texture_refs': ['texture.png']}}
             self.items.append({'id': 4 + i, 'engine_id': 17, 'item_type': 'file', 'full_name': path,
                                'fingerprint': hashlib.sha256(f'17:{path}'.encode()).hexdigest(),
                                'attributes': attributes})
@@ -221,7 +221,7 @@ class FTPConsumerTest(unittest.TestCase):
         return SimpleNamespace(request=request), report, published, identifier, calls
 
     def test_denied_generation_records_unclaimed_failure_and_preserves_physical_output(self):
-        for kind in ('ifc', '3ds'):
+        for kind in ('ifc', '3ds', 'dae'):
             client, report, published, identifier, calls = self.denied_generation_fixture(kind)
             with self.subTest(kind=kind), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows):
                 observed = M.verify_denied_generation(client, report, kind, 'source_withdrawn')
@@ -557,7 +557,7 @@ class FTPConsumerTest(unittest.TestCase):
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
-        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds'])
+        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
         self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
@@ -700,43 +700,45 @@ class FTPConsumerTest(unittest.TestCase):
                 M.prepare_models(client.items, 17, client.model_samples)
 
     def test_3ds_requires_complete_native_structure_and_exact_texture_declarations(self):
-        mutations = [lambda item: item['attributes'].pop('format_info'),
-                     lambda item: item['attributes']['format_info'].pop('3ds'),
-                     lambda item: item['attributes']['format_info']['3ds'].pop('scan_complete'),
-                     lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=False),
-                     lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=1),
-                     lambda item: item['attributes']['format_info']['3ds'].pop('texture_refs'),
-                     lambda item: item['attributes']['format_info']['3ds'].update(texture_refs=[])]
-        for index, mutate in enumerate(mutations):
-            client = FakeClient()
-            mutate(client.items[-1])
-            with self.subTest(mutation=index), self.assertRaises(M.SuiteError):
-                M.prepare_models(client.items, 17, client.model_samples)
+        for kind in ('3ds', 'dae'):
+            mutations = [lambda item: item['attributes'].pop('format_info'),
+                         lambda item: item['attributes']['format_info'].pop(kind),
+                         lambda item: item['attributes']['format_info'][kind].pop('scan_complete'),
+                         lambda item: item['attributes']['format_info'][kind].update(scan_complete=False),
+                         lambda item: item['attributes']['format_info'][kind].update(scan_complete=1),
+                         lambda item: item['attributes']['format_info'][kind].pop('texture_refs'),
+                         lambda item: item['attributes']['format_info'][kind].update(texture_refs=[])]
+            for index, mutate in enumerate(mutations):
+                client = FakeClient()
+                mutate(next(row for row in client.items if row['full_name'] == f'models/{kind}/model.{kind}'))
+                with self.subTest(mutation=index), self.assertRaises(M.SuiteError):
+                    M.prepare_models(client.items, 17, client.model_samples)
 
     def test_model_metadata_rejects_incomplete_expanded_or_changed_composition(self):
-        mutations = [lambda item: item['attributes']['format_info']['3ds'].update(scan_complete=False),
-                     lambda item: item['attributes']['format_info']['3ds'].update(texture_refs=['TEXTURE.PNG']),
-                     lambda item: item['attributes']['item']['refs'].pop(),
-                     lambda item: item['attributes']['item']['refs'].append({'path': 'models/3ds/other.png', 'role': 'texture_2', 'required': True}),
-                     lambda item: item['attributes']['item']['refs'][1].update(path='models/other/texture.png'),
-                     lambda item: item['attributes']['item'].update(layout='multi'),
-                     lambda item: item['attributes']['storage'].update(physical_path='models/wrong.3ds'),
-                     lambda item: item.update(engine_id=18),
-                     lambda item: item.update(fingerprint='a' * 64),
-                     lambda item: item['attributes']['item']['refs'][1].update(required=1)]
-        for mutate in mutations:
+        for kind in ('3ds', 'dae'):
+            mutations = [lambda item: item['attributes']['format_info'][kind].update(scan_complete=False),
+                         lambda item: item['attributes']['format_info'][kind].update(texture_refs=['TEXTURE.PNG']),
+                         lambda item: item['attributes']['item']['refs'].pop(),
+                         lambda item: item['attributes']['item']['refs'].append({'path': 'models/3ds/other.png', 'role': 'texture_2', 'required': True}),
+                         lambda item: item['attributes']['item']['refs'][1].update(path='models/other/texture.png'),
+                         lambda item: item['attributes']['item'].update(layout='multi'),
+                         lambda item: item['attributes']['storage'].update(physical_path='models/wrong.3ds'),
+                         lambda item: item.update(engine_id=18),
+                         lambda item: item.update(fingerprint='a' * 64),
+                         lambda item: item['attributes']['item']['refs'][1].update(required=1)]
+            for mutate in mutations:
+                client = FakeClient()
+                mutate(next(row for row in client.items if row['full_name'] == f'models/{kind}/model.{kind}'))
+                with self.assertRaises(M.SuiteError):
+                    M.prepare_models(client.items, 17, client.model_samples)
             client = FakeClient()
-            mutate(client.items[-1])
+            for samples in (client.model_samples[:2], client.model_samples + client.model_samples[:1]):
+                with self.assertRaises(M.SuiteError):
+                    M.prepare_models(client.items, 17, samples)
+            changed = copy.deepcopy(client.model_samples)
+            changed[0]['sha256'] = 'a' * 64
             with self.assertRaises(M.SuiteError):
-                M.prepare_models(client.items, 17, client.model_samples)
-        client = FakeClient()
-        for samples in (client.model_samples[:2], client.model_samples + client.model_samples[:1]):
-            with self.assertRaises(M.SuiteError):
-                M.prepare_models(client.items, 17, samples)
-        changed = copy.deepcopy(client.model_samples)
-        changed[0]['sha256'] = 'a' * 64
-        with self.assertRaises(M.SuiteError):
-            M.prepare_models(client.items, 17, changed)
+                M.prepare_models(client.items, 17, changed)
 
     def test_browser_process_does_not_inherit_preparer_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -768,9 +770,9 @@ class FTPConsumerTest(unittest.TestCase):
         issuer = FakeSourceIssuer(report)
         authorization = M.ModelSourceAuthorization(issuer, consumer, report)
         receipts = [authorization.grant(model) for model in report['models']]
-        self.assertEqual(len(receipts), 2)
+        self.assertEqual(len(receipts), 3)
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
-        self.assertEqual([body['recipient_id'] for body in commands], ['8', '8'])
+        self.assertEqual([body['recipient_id'] for body in commands], ['8', '8', '8'])
         for body in commands:
             self.assertIs(body['initialize_approval'], True)
             self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
@@ -1103,10 +1105,10 @@ class FTPConsumerTest(unittest.TestCase):
         with patch.object(M, 'changed_texture_fixture', fixture), patch.object(M, 'scan_scope', side_effect=scan), \
                 patch.object(M, 'source_read_control', side_effect=check), \
                 patch.object(M, 'verify_cached_results', return_value=[{'status': 403}]) as cache:
-            result = M.verify_composition_rules(client, Authorization(), report, 'deny-A', 30)
+            result = M.verify_composition_rules(client, Authorization(), report, source, 'deny-A', 30)
         self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
                                   'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
-        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403})
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):

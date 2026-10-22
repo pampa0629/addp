@@ -74,6 +74,8 @@ def write_model_samples(directory):
     samples = (
         ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
         ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
+        ('dae', 'models/dae/model.dae', 'addp_online_model_fixture.dae'),
+        ('dae_png', 'models/dae/texture.png', 'addp_online_exchange_texture.png'),
         ('png', 'models/3ds/texture.png', 'addp_online_exchange_texture.png'),
     )
     report = []

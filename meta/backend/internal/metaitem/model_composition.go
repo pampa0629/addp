@@ -3,7 +3,6 @@ package metaitem
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"path"
 	"reflect"
 	"sort"
@@ -17,9 +16,9 @@ import (
 	"github.com/addp/common/format"
 )
 
-func resolveStructured3DSItem(ctx context.Context, input DirectoryResolveInput, file StorageFileRef, files map[string]StorageFileRef) *DetectedItem {
-	declarations, err := read3DSDeclarations(ctx, input, file)
-	return exchangeModelResourceItem(file, format.Format3DS, declarations, files, err == nil)
+func resolveStructuredExchangeModelItem(ctx context.Context, input DirectoryResolveInput, file StorageFileRef, files map[string]StorageFileRef, formatType format.FormatType) *DetectedItem {
+	declarations, err := readExchangeModelDeclarations(ctx, input, file, formatType)
+	return exchangeModelResourceItem(file, formatType, declarations, files, err == nil)
 }
 
 // Both structural identification and deep summaries use the same resource
@@ -37,7 +36,7 @@ func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType
 		counts := map[string]int{}
 		for _, declaration := range ordered {
 			if formatType == format.FormatDAE {
-				decoded, err := url.PathUnescape(declaration)
+				decoded, err := format.DecodeDAETextureRef(declaration)
 				if err != nil {
 					continue
 				}
@@ -63,7 +62,7 @@ func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType
 	return item
 }
 
-func read3DSDeclarations(ctx context.Context, input DirectoryResolveInput, file StorageFileRef) ([]string, error) {
+func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveInput, file StorageFileRef, formatType format.FormatType) ([]string, error) {
 	if _, ok := input.StructureReader.(plugin.RangeReadableProvider); !ok {
 		return nil, fmt.Errorf("model structure requires native range access")
 	}
@@ -71,7 +70,7 @@ func read3DSDeclarations(ctx context.Context, input DirectoryResolveInput, file 
 	if !reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path)) {
 		return nil, fmt.Errorf("model structure requires the exact typed primary file")
 	}
-	provider, err := format.GetModel3DCompositionProvider(format.Format3DS)
+	provider, err := format.GetModel3DCompositionProvider(formatType)
 	if err != nil {
 		return nil, err
 	}

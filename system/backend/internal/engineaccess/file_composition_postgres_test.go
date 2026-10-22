@@ -25,19 +25,20 @@ import (
 func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
-		for _, kind := range []string{"ftp", "nfs"} {
-			t.Run(kind, func(t *testing.T) {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}} {
+			kind, format := fixture.kind, fixture.format
+			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 				defer cancel()
 				tenant := uint(tenantID)
-				engine := models.Engine{Name: "File composition fixture", EngineType: kind, TenantID: &tenant, Version: 1,
-					LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"host": "file-composition.invalid"}, IdentityKey: models.JSONString(`{"host":"file-composition.invalid"}`)}
+				engine := models.Engine{Name: "File composition fixture " + format, EngineType: kind, TenantID: &tenant, Version: 1,
+					LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"host": format + ".file-composition.invalid"}, IdentityKey: models.JSONString(`{"host":"` + format + `.file-composition.invalid"}`)}
 				if err := db.Table("system.engines").Create(&engine).Error; err != nil {
 					t.Fatal(err)
 				}
-				primary := plugin.FileItemPath(engine.ID, "models/scene.3ds")
+				primary := plugin.FileItemPath(engine.ID, "models/scene."+format)
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
-					composition, err := authorizationfacts.NewFileCompositionBoundary("3ds", []authorizationfacts.FileCompositionRef{
+					composition, err := authorizationfacts.NewFileCompositionBoundary(format, []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
 						{Target: plugin.FileItemPath(engine.ID, "models/"+texture), Role: "texture", Required: true},
 					})
@@ -77,7 +78,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					}
 					return actual.Version, nil
 				}))
-				role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_issuer_" + kind, Name: "File grant issuer",
+				role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_issuer_" + kind + "_" + format, Name: "File grant issuer",
 					PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
@@ -92,7 +93,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				actor := Actor{TenantID: tenantID, PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
 				reader, _ := newUser(t, time.Hour)
-				readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader_" + kind, Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission, "manager.derived_artifact.create"}, ActorPrincipalID: adminID})
+				readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader_" + kind + "_" + format, Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission, "manager.derived_artifact.create"}, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -148,7 +149,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
-				exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, current)
+				exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
 				// A primary-only row cannot become a full composition Grant.
 				bare, err := prepareIndependentGrant(input)
 				if err != nil {

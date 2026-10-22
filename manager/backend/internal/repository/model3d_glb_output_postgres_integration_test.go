@@ -19,6 +19,12 @@ import (
 )
 
 func TestIntegrationPostgresManagerGLBIsolatedOutputPublication(t *testing.T) {
+	for _, sourceFormat := range []string{"ifc", "dae"} {
+		t.Run(sourceFormat, func(t *testing.T) { exerciseManagerGLBIsolatedOutputPublication(t, sourceFormat) })
+	}
+}
+
+func exerciseManagerGLBIsolatedOutputPublication(t *testing.T, sourceFormat string) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("run through make test-manager-postgres")
 	}
@@ -58,7 +64,7 @@ func TestIntegrationPostgresManagerGLBIsolatedOutputPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldID := uuid.NewString()
-	old := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "glb-fp", TaskID: &task.ID, LastExecutionID: &oldID, SourceEngineID: 33, SourceFormat: "ifc", StorageRef: "published.glb", Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{}}
+	old := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "glb-fp", TaskID: &task.ID, LastExecutionID: &oldID, SourceEngineID: 33, SourceFormat: sourceFormat, StorageRef: "published.glb", Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{}}
 	if err := db.Create(old).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -13,13 +13,13 @@ import (
 func model3DGLBCandidateFixture(format string) (Model3DGLBSourceConfig, *commonModels.MetaItem) {
 	item := &commonModels.MetaItem{ID: 41, TenantID: 7, EngineID: 33, ItemType: "file", Name: "model." + format, FullName: "models/model." + format, Fingerprint: "scanned-model"}
 	refs := []map[string]any{{"path": item.FullName, "role": "model", "required": true, "primary": true}}
-	if format == "3ds" {
+	if format == "3ds" || format == "dae" {
 		refs = append(refs, map[string]any{"path": "models/TEST.PNG", "role": "texture", "required": true})
 	}
 	item.Attributes = map[string]any{
 		"item":        map[string]any{"layout": "single", "data_type": "model_3d", "format": format, "refs": refs},
 		"storage":     map[string]any{"physical_path": item.FullName, "total_size": 999999},
-		"format_info": map[string]any{"3ds": map[string]any{"scan_complete": true, "texture_refs": []string{"TEST.PNG"}}},
+		"format_info": map[string]any{format: map[string]any{"scan_complete": true, "texture_refs": []string{"TEST.PNG"}}},
 	}
 	locator := resourcetree.LocatorFromFullName(item.EngineID, "ftp", item.ItemType, item.FullName, &item.ID)
 	return Model3DGLBSourceConfig{ItemLocator: locator.ToURI(), ItemID: item.ID, SourceEngineID: item.EngineID, ItemFingerprint: item.Fingerprint, Format: format}, item

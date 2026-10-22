@@ -594,7 +594,7 @@ def latest_owner_execution(report, kind):
 
 
 def verify_denied_generation(client, report, kind, reason):
-    require(kind in {'ifc', '3ds'} and reason in {'composition_changed', 'source_withdrawn'},
+    require(kind in {'ifc', '3ds', 'dae'} and reason in {'composition_changed', 'source_withdrawn'},
             'FTP denied generation requires its explicit observed source rule phase')
     model, = [row for row in report['models'] if row['format'] == kind]
     published, = [row for row in report['browser']['models'] if row['format'] == kind]
@@ -676,19 +676,22 @@ def owned_ftp_fixture():
 def changed_texture_fixture(model):
     """Change only the fixed model in this Hosted run owned read-only mount."""
     root = owned_ftp_fixture()
-    paths = [root / relative for relative in ('data', 'data/models', 'data/models/3ds',
-             'data/models/3ds/model.3ds', 'data/models/3ds/texture.png')]
+    kind = model['format']
+    require(kind in {'3ds', 'dae'}, 'composition fixture requires a declared texture model')
+    paths = [root / relative for relative in ('data', 'data/models', f'data/models/{kind}',
+             f'data/models/{kind}/model.{kind}', f'data/models/{kind}/texture.png')]
     require(all(not path.is_symlink() for path in paths), 'FTP composition fixture must not traverse a link')
     main, texture = paths[-2:]
     original, png = main.read_bytes(), texture.read_bytes()
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    require(model['full_name'] == 'models/3ds/model.3ds' and model['format'] == '3ds' and
-            original == (fixture / 'addp_online_model_fixture.3ds').read_bytes() and
+    require(model['full_name'] == f'models/{kind}/model.{kind}' and
+            original == (fixture / f'addp_online_model_fixture.{kind}').read_bytes() and
             png == (fixture / 'addp_online_exchange_texture.png').read_bytes() and
             hashlib.sha256(original).hexdigest() == model['sha256'] and original.count(b'texture.png') == 1,
             'FTP composition mutation only accepts the fixed physical model and texture')
-    changed = original.replace(b'texture.png', b' tex.png   ')
-    replacement = texture.with_name(' tex.png   ')
+    replacement_name = 'changed.png' if kind == 'dae' else ' tex.png   '
+    changed = original.replace(b'texture.png', replacement_name.encode())
+    replacement = texture.with_name(replacement_name)
     created = None
     published = False
     try:
@@ -704,7 +707,7 @@ def changed_texture_fixture(model):
         projected.update(sha256=hashlib.sha256(changed).hexdigest(), size=len(changed))
         for ref in projected['composition']:
             if ref['role'] == 'texture':
-                ref['path'] = 'models/3ds/ tex.png   '
+                ref['path'] = f'models/{kind}/{replacement_name}'
         yield projected
     finally:
         try:
@@ -794,7 +797,7 @@ def verify_failed_generation(client, report, timeout):
     objects = verify_physical_objects([
         {**object_ref(after['storage_ref']), 'exists': True, 'size': published['size'], 'sha256': published['sha256']},
         *inputs, {**failed_output, 'exists': False}])
-    readable = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
+    readable = verify_cached_results(client, report, {model['format']: 200 for model in report['models']})
     return {'format': 'ifc', 'task_id': published['task_id'], 'execution_id': identifier, 'status': 'failed',
             'preserved_result_id': published['result_id'], 'preserved_execution_id': published['execution_id'],
             'preserved_storage_ref': after['storage_ref'], 'objects': objects, 'cached_content': readable,
@@ -832,31 +835,29 @@ def scan_scope(client, engine_id, directories, depth, timeout):
     raise SuiteError('FTP scoped scan did not complete within its existing budget')
 
 
-def verify_old_grant_composition(client, authorization, report, timeout):
-    source = next(model for model in report['models'] if model['format'] == '3ds')
+def verify_old_grant_composition(client, authorization, report, source, timeout):
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
+            scan = scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash, 'FTP composition boundary did not change')
             denied = source_read_control(client, report['engine_id'], changed, 403)
-            stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
-            generation = verify_denied_generation(client, report, '3ds', 'composition_changed')
+            stale = verify_cached_results(client, report, {model['format']: 403 if model['format'] == source['format'] else 200 for model in report['models']})
+            generation = verify_denied_generation(client, report, source['format'], 'composition_changed')
             return {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
                     'changed_boundary_hash': facts['boundary_hash'],
                     'old_grant_without_deny': denied, 'old_cached_content': stale, 'denied_generation': generation}
     finally:
-        scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
+        scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
 
 
-def verify_composition_rules(client, authorization, report, deny, timeout):
-    source = next(model for model in report['models'] if model['format'] == '3ds')
+def verify_composition_rules(client, authorization, report, source, deny, timeout):
     prior, = [grant for grant in report['source_authorizations'] if grant['item_fingerprint'] == source['fingerprint']]
     original_hash = authorization.facts(source)['boundary_hash']
     try:
         with changed_texture_fixture(source) as changed:
-            scan = scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
+            scan = scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
             facts = authorization.facts(changed)
             require(facts['boundary_hash'] != original_hash,
                     'FTP changed texture reference must change the complete approval boundary')
@@ -866,13 +867,13 @@ def verify_composition_rules(client, authorization, report, deny, timeout):
             denied = source_read_control(client, report['engine_id'], changed, 403)
             authorization.release(deny)
             allowed = source_read_control(client, report['engine_id'], changed, 200)
-            stale = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
+            stale = verify_cached_results(client, report, {model['format']: 403 if model['format'] == source['format'] else 200 for model in report['models']})
             result = {'scan_execution_id': scan, 'original_boundary_hash': original_hash,
                       'changed_boundary_hash': facts['boundary_hash'], 'changed_grant': new_grant,
                       'old_deny_after_new_grant': denied, 'new_grant_after_release': allowed,
                       'old_cached_content': stale}
     finally:
-        scan_scope(client, report['engine_id'], ['models/3ds'], 'basic', timeout)
+        scan_scope(client, report['engine_id'], ['models/' + source['format']], 'basic', timeout)
     authorization.revoke(new_grant['request_id'])
     result['restored_grant'] = authorization.grant(source, initialize=False)
     return result
@@ -881,10 +882,12 @@ def verify_composition_rules(client, authorization, report, deny, timeout):
 def prepare_models(items, engine_id, samples):
     expected = {'ifc': ('models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
                 '3ds': ('models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
+                'dae': ('models/dae/model.dae', 'addp_online_model_fixture.dae'),
+                'dae_png': ('models/dae/texture.png', 'addp_online_exchange_texture.png'),
                 'png': ('models/3ds/texture.png', 'addp_online_exchange_texture.png')}
-    require(isinstance(samples, list) and len(samples) == 3 and
+    require(isinstance(samples, list) and len(samples) == 5 and
             {sample.get('format') for sample in samples} == set(expected),
-            'FTP model manifest requires exactly IFC, 3DS and its PNG')
+            'FTP model manifest requires exactly IFC, 3DS, DAE and their two PNG files')
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     by_format = {}
     for sample in samples:
@@ -895,7 +898,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in ('ifc', '3ds'):
+    for kind in ('ifc', '3ds', 'dae'):
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')
@@ -917,12 +920,12 @@ def prepare_models(items, engine_id, samples):
         if kind == 'ifc' and refs is None:
             refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
         expected_refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
-        if kind == '3ds':
+        if kind in {'3ds', 'dae'}:
             require(native.get('scan_complete') is True,
-                    'FTP 3DS requires complete structural native facts')
+                    'FTP texture model requires complete structural native facts')
             require(native.get('texture_refs') == ['texture.png'],
-                    'FTP 3DS must retain its exact texture declaration')
-            expected_refs.append({'path': by_format['png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
+                    'FTP texture model must retain its exact texture declaration')
+            expected_refs.append({'path': by_format['dae_png' if kind == 'dae' else 'png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
         require(isinstance(refs, list) and len(refs) == len(expected_refs) and
                 all(isinstance(ref, dict) and type(ref.get('required')) is bool and
                     type(ref.get('primary', False)) is bool for ref in refs) and
@@ -1007,6 +1010,8 @@ def validate_source_download(observed, source, artifact_dir):
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     pinned = {'models/ifc/model.ifc': 'addp_online_model_fixture.ifc',
               'models/3ds/model.3ds': 'addp_online_model_fixture.3ds',
+              'models/dae/model.dae': 'addp_online_model_fixture.dae',
+              'models/dae/texture.png': 'addp_online_exchange_texture.png',
               'models/3ds/texture.png': 'addp_online_exchange_texture.png'}
     require(all(ref['path'] in pinned for ref in source['composition']),
             'FTP source download requires the exact confirmed fixed-fixture composition')
@@ -1044,8 +1049,8 @@ def validate_browser_report(actual, expected, artifact_dir):
     require({key: value for key, value in actual.items() if key != 'models'} == proof,
             'FTP browser identity, scan, preview or physical download proof differs')
     models = actual.get('models')
-    require(isinstance(models, list) and len(models) == 2,
-            'FTP browser must generate and reopen both model formats')
+    require(isinstance(models, list) and len(models) == 3,
+            'FTP browser must generate and reopen all three model formats')
     for observed, source in zip(models, expected['models']):
         require(set(observed) == {'format', 'item_id', 'task_id', 'execution_id', 'result_id',
                                  'size', 'sha256', 'source_download', 'rendered', 'reopened',
@@ -1074,7 +1079,7 @@ def validate_withdrawal_browser_report(actual, expected):
                        'unchanged_execution_id': latest['execution_id'], 'unchanged_execution_status': latest['status']})
     require(actual == {**{key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')},
                        'browser_phase': 'withdrawn', 'models': models},
-            'FTP withdrawal browser must reject both original models without content or new execution')
+            'FTP withdrawal browser must reject all original models without content or new execution')
 
 
 def run_browser(report, *, withdrawn=False):
@@ -1119,20 +1124,24 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
         report['failed_generation'] = verify_failed_generation(client, report, timeout)
         save_completed_phase(report, 'failed_generation_preserves_output')
         report['denied_generations'] = []
-        source = next(model for model in report['models'] if model['format'] == '3ds')
-        report['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, timeout)
-        report['denied_generations'].append(report['old_grant_composition']['denied_generation'])
-        save_completed_phase(report, 'old_grant_composition_denial')
-        report['restored_before_deny'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
-        deny = authorization.deny(source)
-        report['source_deny_id'] = deny
-        report['deny_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 403})
-        report['composition_rules'] = verify_composition_rules(client, authorization, report, deny, timeout)
-        report['released_cached_content'] = verify_cached_results(client, report, {'ifc': 200, '3ds': 200})
-        save_completed_phase(report, 'composition_deny_release_and_restoration')
+        report['composition_checks'] = {}
+        for source in report['models']:
+            if source['format'] == 'ifc':
+                continue
+            checks = {}
+            report['composition_checks'][source['format']] = checks
+            checks['old_grant_composition'] = verify_old_grant_composition(client, authorization, report, source, timeout)
+            report['denied_generations'].append(checks['old_grant_composition']['denied_generation'])
+            checks['restored_before_deny'] = verify_cached_results(client, report, {model['format']: 200 for model in report['models']})
+            deny = authorization.deny(source)
+            checks['source_deny_id'] = deny
+            checks['deny_cached_content'] = verify_cached_results(client, report, {model['format']: 403 if model['format'] == source['format'] else 200 for model in report['models']})
+            checks['composition_rules'] = verify_composition_rules(client, authorization, report, source, deny, timeout)
+            checks['released_cached_content'] = verify_cached_results(client, report, {model['format']: 200 for model in report['models']})
+            save_completed_phase(report, source['format'] + '_composition_rules_and_restoration')
     finally:
         authorization.cleanup()
-    report['revoked_cached_content'] = verify_cached_results(client, report, {'ifc': 403, '3ds': 403})
+    report['revoked_cached_content'] = verify_cached_results(client, report, {model['format']: 403 for model in report['models']})
     report['denied_generations'].extend(verify_denied_generation(client, report, model['format'], 'source_withdrawn')
                                         for model in report['models'])
     save_completed_phase(report, 'source_withdrawal_denials')

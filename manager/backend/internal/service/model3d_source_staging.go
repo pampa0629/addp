@@ -201,13 +201,13 @@ func (r *model3DStagingContextReader) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
-// buffer3DSStagingEntrypoint accepts the caller's already-authorized main-file
+// bufferExchangeModelStagingEntrypoint accepts the caller's already-authorized main-file
 // stream, not a locator or authorization proof. The shared parser bounds input.
 // Only these parsed bytes may subsequently be staged; reopening the source would
 // invalidate the reference check. No dependency is opened by this primitive.
-func buffer3DSStagingEntrypoint(ctx context.Context, main io.Reader, declaredRefs []string) ([]byte, error) {
-	if main == nil || declaredRefs == nil {
-		return nil, errors.New("3DS input requires complete frozen reference declarations")
+func bufferExchangeModelStagingEntrypoint(ctx context.Context, main io.Reader, formatName string, declaredRefs []string) ([]byte, error) {
+	if main == nil || declaredRefs == nil || (formatName != "3ds" && formatName != "dae") {
+		return nil, errors.New("model input requires complete frozen reference declarations")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -216,32 +216,32 @@ func buffer3DSStagingEntrypoint(ctx context.Context, main io.Reader, declaredRef
 	slices.Sort(expected)
 	for i, ref := range expected {
 		if ref == "" || (i > 0 && ref == expected[i-1]) {
-			return nil, errors.New("3DS input reference declarations are invalid")
+			return nil, errors.New("model input reference declarations are invalid")
 		}
 	}
-	provider, err := format.GetModel3DInfoProvider(format.Format3DS)
+	provider, err := format.GetModel3DInfoProvider(format.FormatType(formatName))
 	if err != nil {
-		return nil, fmt.Errorf("resolve 3DS input parser: %w", err)
+		return nil, fmt.Errorf("resolve model input parser: %w", err)
 	}
 	var buffered bytes.Buffer
 	facts, err := provider.DescribeModel3D(ctx, io.TeeReader(&model3DStagingContextReader{ctx: ctx, reader: main}, &buffered), nil)
 	if err != nil {
-		return nil, fmt.Errorf("inspect 3DS input references: %w", err)
+		return nil, fmt.Errorf("inspect model input references: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if facts == nil || facts.FormatInfo["scan_complete"] != true {
-		return nil, errors.New("3DS input reference scan is incomplete")
+		return nil, errors.New("model input reference scan is incomplete")
 	}
 	actual, ok := facts.FormatInfo["texture_refs"].([]string)
 	if !ok || actual == nil {
-		return nil, errors.New("3DS input reference declarations are missing")
+		return nil, errors.New("model input reference declarations are missing")
 	}
 	actual = slices.Clone(actual)
 	slices.Sort(actual)
 	if !slices.Equal(actual, expected) {
-		return nil, errors.New("3DS input references changed from the frozen composition")
+		return nil, errors.New("model input references changed from the frozen composition")
 	}
 	return buffered.Bytes(), nil
 }

@@ -74,10 +74,10 @@ func TestScannedFileAuthorizationFacts(t *testing.T) {
 
 func exerciseScannedFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for fi, format := range []string{"ifc", "3ds"} {
+	for fi, format := range []string{"ifc", "3ds", "dae"} {
 		for mi, mode := range []string{"directory", "refs"} {
 			t.Run("scanned/"+format+"/"+mode, func(t *testing.T) {
-				engineID := uint(770 + fi*2 + mi)
+				engineID := uint(1770 + fi*2 + mi)
 				primary := "nfs-copy/3d/models/panel." + format
 				p := &fileFactsScanProvider{engineID: engineID, primary: primary, content: []byte("synthetic IFC source; basic scan does not parse it")}
 				if format == "3ds" {
@@ -89,6 +89,9 @@ func exerciseScannedFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 					}
 					p.content = chunk(0x4d4d, chunk(0x3d3d, chunk(0xafff, chunk(0xa200, chunk(0xa300, []byte("TEST.PNG\x00"))))))
 				}
+				if format == "dae" {
+					p.content = []byte(`<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><library_images><image><init_from>TEST.PNG</init_from></image></library_images></COLLADA>`)
+				}
 				entry := func(name string, size int64) plugin.EngineCatalogEntry {
 					return plugin.EngineCatalogEntry{Name: path.Base(name), Path: plugin.FileItemPath(engineID, name), Term: plugin.EngineCatalogTermFile,
 						Kind: plugin.EngineCatalogKindFile, Role: plugin.EngineCatalogRoleLeaf,
@@ -96,7 +99,7 @@ func exerciseScannedFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				}
 				p.entries = []plugin.EngineCatalogEntry{entry(primary, int64(len(p.content)))}
 				refs := []models.ScanRef{{Path: primary, Role: "model", Required: true}}
-				if format == "3ds" {
+				if format == "3ds" || format == "dae" {
 					texture := path.Dir(primary) + "/TEST.PNG"
 					p.entries = append(p.entries, entry(texture, 20))
 					refs = append(refs, models.ScanRef{Path: texture, Role: "texture", Required: true})
@@ -120,7 +123,7 @@ func exerciseScannedFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if p.streams != 0 || (format == "3ds" && p.ranges == 0) || (mode == "refs" && p.lists != 0) {
+				if p.streams != 0 || (format != "ifc" && p.ranges == 0) || (mode == "refs" && p.lists != 0) {
 					t.Fatal("scan bypassed its basic structural read boundary")
 				}
 				var item models.MetaItem

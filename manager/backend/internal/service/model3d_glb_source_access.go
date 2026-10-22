@@ -51,7 +51,7 @@ func newModel3DGLBSourceAuthorization(ctx context.Context, client *commonClient.
 		return nil, err
 	}
 	result := &Model3DGLBSourceAuthorization{client: client, scope: *scope.Clone(), lease: lease, authorizationID: strconv.FormatInt(*item.ExecutionAuthorizationID, 10), expiresAt: *item.AuthorizationExpiresAt, expectedConversion: conversion}
-	if scope.FileComposition.Format == "3ds" {
+	if scope.FileComposition.Format == "3ds" || scope.FileComposition.Format == "dae" {
 		if candidate.declarations == nil {
 			return nil, ErrModel3DGLBSourceAuthorizationRequired
 		}
@@ -77,7 +77,7 @@ func (a *Model3DGLBSourceAuthorization) Composition() *authorizationfacts.FileCo
 }
 
 func (a *Model3DGLBSourceAuthorization) DeclaredTextureRefs() ([]string, error) {
-	if a == nil || a.scope.Validate() != nil || (a.scope.FileComposition.Format == "3ds" && a.declarations == nil) {
+	if a == nil || a.scope.Validate() != nil || ((a.scope.FileComposition.Format == "3ds" || a.scope.FileComposition.Format == "dae") && a.declarations == nil) {
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	return append([]string{}, a.declarations...), nil

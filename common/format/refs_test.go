@@ -97,3 +97,17 @@ func TestValidateRelatedRefsRejectsMultiplePrimary(t *testing.T) {
 		t.Fatal("ValidateRelatedRefs() succeeded with multiple primary refs")
 	}
 }
+
+func TestDAETextureURIIsDecodedOnceAndRemainsLocal(t *testing.T) {
+	for raw, want := range map[string]string{"textures/a%20b.PNG": "textures/a b.PNG", "a%2520b.jpg": "a%20b.jpg", "a+b.jpeg": "a+b.jpeg", "a.PNG": "a.PNG"} {
+		actual, err := DecodeDAETextureRef(raw)
+		if err != nil || actual != want {
+			t.Fatal(raw, actual, err)
+		}
+	}
+	for _, raw := range []string{"", "%", "a%2.png", "https://host/a.png", "//host/a.png", "/a.png", "../a.png", "%2e%2e/a.png", "a.png?x=1", "a.png#id", "a%3F.png", "a%00.png", "a.bmp"} {
+		if actual, err := DecodeDAETextureRef(raw); err == nil {
+			t.Fatal("unsafe DAE reference accepted", raw, actual)
+		}
+	}
+}

@@ -28,7 +28,7 @@ export const isApprovalTarget = node => isApprovalTable(node) || isApprovalModel
 export function isApprovalModel(node) {
   const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
   return isFileModelEngine(node?.metadata?.approval_engine_type) && entry?.role === 'leaf' && entry.term === 'file' && entry.kind === 'file' &&
-    entry.path?.version === 'catalog.path/v1' && leaf?.term === 'file' && leaf.kind === 'file' && /\.(ifc|3ds)$/i.test(leaf.name)
+    entry.path?.version === 'catalog.path/v1' && leaf?.term === 'file' && leaf.kind === 'file' && /\.(ifc|3ds|dae)$/i.test(leaf.name)
 }
 
 // A namespace is a discovery shortcut, never an authorization target.

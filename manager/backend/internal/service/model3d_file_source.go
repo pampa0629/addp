@@ -34,7 +34,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	composition := auth.Composition()
-	if composition == nil || composition.Validate(engine.ID) != nil || (composition.Format != "ifc" && composition.Format != "3ds") || composition.Format != req.Config.Source.Format {
+	if composition == nil || composition.Validate(engine.ID) != nil || (composition.Format != "ifc" && composition.Format != "3ds" && composition.Format != "dae") || composition.Format != req.Config.Source.Format {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	primary, err := composition.PrimaryTarget()
@@ -114,7 +114,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		return err
 	}
 	var primaryBytes []byte
-	if composition.Format == "3ds" {
+	if composition.Format == "3ds" || composition.Format == "dae" {
 		refs, err := auth.DeclaredTextureRefs()
 		if err != nil {
 			return err
@@ -123,13 +123,13 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return err
 		}
-		primaryBytes, err = buffer3DSStagingEntrypoint(ctx, stream, refs)
+		primaryBytes, err = bufferExchangeModelStagingEntrypoint(ctx, stream, composition.Format, refs)
 		closeErr := stream.Close()
 		if err != nil || closeErr != nil {
 			return errors.Join(err, closeErr)
 		}
 		if int64(len(primaryBytes)) != primarySize {
-			return errors.New("3DS main file size changed during preparation")
+			return errors.New("model main file size changed during preparation")
 		}
 	}
 	parentDepth := len(primary.Segments) - 1
@@ -177,7 +177,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: size, Open: func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, target) }})
 	}
 	kind := workflowaccess.KindFile
-	if composition.Format == "3ds" {
+	if composition.Format == "3ds" || composition.Format == "dae" {
 		kind = workflowaccess.KindDirectory
 	}
 	if err := auth.Checkpoint(ctx); err != nil {

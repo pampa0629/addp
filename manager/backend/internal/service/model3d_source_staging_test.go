@@ -303,7 +303,7 @@ func Test3DSStagingFreezesParsedBytesAndExactDeclarations(t *testing.T) {
 		if len(expected) > 1 {
 			expected[0], expected[1] = expected[1], expected[0]
 		}
-		buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(input), expected)
+		buffered, err := bufferExchangeModelStagingEntrypoint(context.Background(), bytes.NewReader(input), "3ds", expected)
 		if err != nil || !bytes.Equal(input, buffered) {
 			t.Fatalf("parsed main-file bytes changed: %v", err)
 		}
@@ -316,7 +316,7 @@ func Test3DSStagingFreezesParsedBytesAndExactDeclarations(t *testing.T) {
 
 func Test3DSStagingRejectsChangedReferencesBeforeAnyStaging(t *testing.T) {
 	for _, changed := range [][]string{{"EVIL.PNG"}, {"test.png"}, {"TEST.PNG", "extra.png"}, {}} {
-		buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput(changed...)), []string{"TEST.PNG"})
+		buffered, err := bufferExchangeModelStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput(changed...)), "3ds", []string{"TEST.PNG"})
 		if err == nil || buffered != nil {
 			t.Fatalf("changed references accepted: %v", changed)
 		}
@@ -326,7 +326,7 @@ func Test3DSStagingRejectsChangedReferencesBeforeAnyStaging(t *testing.T) {
 	if len(threeDSStagingInput("TEST.PNG")) != len(threeDSStagingInput("EVIL.PNG")) {
 		t.Fatal("reference mutation fixture changed byte length")
 	}
-	buffered, err := buffer3DSStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput("图%20.PNG")), []string{"图 .PNG"})
+	buffered, err := bufferExchangeModelStagingEntrypoint(context.Background(), bytes.NewReader(threeDSStagingInput("图%20.PNG")), "3ds", []string{"图 .PNG"})
 	if err == nil || buffered != nil {
 		t.Fatal("URI-decoded texture reference was accepted")
 	}
@@ -348,7 +348,7 @@ func Test3DSStagingRejectsIncompleteOrFailedMainRead(t *testing.T) {
 		{ctx, bytes.NewReader(threeDSStagingInput()), []string{}},
 		{context.Background(), failed3DSStagingReader{}, []string{}},
 	} {
-		buffered, err := buffer3DSStagingEntrypoint(tc.ctx, tc.reader, tc.refs)
+		buffered, err := bufferExchangeModelStagingEntrypoint(tc.ctx, tc.reader, "3ds", tc.refs)
 		if err == nil || buffered != nil {
 			t.Fatal("incomplete main input accepted")
 		}
@@ -426,5 +426,18 @@ func TestModel3DStagingPersistsAllObjectsBeforeAnyUpload(t *testing.T) {
 				t.Fatal("successful cleanup not acknowledged")
 			}
 		})
+	}
+}
+
+func TestDAEStagingChecksFrozenRawURISetBeforeAnyDependency(t *testing.T) {
+	raw := []byte(daeStagingInput("textures/A%20B.PNG"))
+	buffered, err := bufferExchangeModelStagingEntrypoint(t.Context(), bytes.NewReader(raw), "dae", []string{"textures/A%20B.PNG"})
+	if err != nil || !bytes.Equal(raw, buffered) {
+		t.Fatal("DAE staged bytes differ", err)
+	}
+	for _, declared := range [][]string{nil, {}, {"textures/A B.PNG"}, {"different.PNG"}} {
+		if buffered, err := bufferExchangeModelStagingEntrypoint(t.Context(), bytes.NewReader(raw), "dae", declared); err == nil || buffered != nil {
+			t.Fatal("changed URI set accepted", declared)
+		}
 	}
 }

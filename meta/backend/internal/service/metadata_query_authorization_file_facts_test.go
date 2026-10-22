@@ -26,13 +26,13 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	}
 	name := "panel." + format
 	refs := []map[string]any{{"path": "models/" + name, "role": "model", "required": true, "primary": true}}
-	if format == "3ds" {
+	if format == "3ds" || format == "dae" {
 		refs = append(refs, map[string]any{"path": "models/TEST.PNG", "role": "texture", "required": true})
 	}
 	item := models.MetaItem{TenantID: 7, EngineID: engineID, NodeID: dir.ID, ItemType: "file", Name: name, FullName: "models/" + name, ScannedDepth: "basic",
 		Attributes: models.JSONMap{"item": map[string]any{"layout": "single", "data_type": "model_3d", "format": format, "refs": refs},
 			"storage":     map[string]any{"physical_path": "models/" + name},
-			"format_info": map[string]any{"3ds": map[string]any{"texture_refs": []string{"TEST.PNG"}, "scan_complete": true}}}}
+			"format_info": map[string]any{format: map[string]any{"texture_refs": []string{"TEST.PNG"}, "scan_complete": true}}}}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, item.FullName)
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, format := range []string{"ifc", "3ds"} {
+	for i, format := range []string{"ifc", "3ds", "dae"} {
 		t.Run(format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
 			s := NewMetadataQueryService(db)
@@ -90,10 +90,10 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			if err != nil || current.BoundaryHash == nil || *current.BoundaryHash != hash {
 				t.Fatal("equivalent single composition changed boundary", err)
 			}
-			if format == "3ds" {
+			if format == "3ds" || format == "dae" {
 				refs := item.Attributes["item"].(map[string]any)["refs"].([]any)
 				refs[0].(map[string]any)["path"] = "models/OTHER.PNG"
-				item.Attributes["format_info"].(map[string]any)["3ds"].(map[string]any)["texture_refs"] = []string{"OTHER.PNG"}
+				item.Attributes["format_info"].(map[string]any)[format].(map[string]any)["texture_refs"] = []string{"OTHER.PNG"}
 				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
 					t.Fatal(err)
 				}
@@ -197,4 +197,32 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 
 func TestFileDataItemAuthorizationFacts(t *testing.T) {
 	exerciseFileAuthorizationFacts(t, metatest.OpenMetadataDB(t))
+}
+
+func TestDAEFileAuthorizationFactsDecodeURIsExactlyOnce(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	for i, tc := range []struct {
+		raw, path string
+		state     authorizationfacts.AuthorizationBasisState
+	}{
+		{"texture%20A.PNG", "models/texture A.PNG", authorizationfacts.AuthorizationBasisComplete},
+		{"texture%2520A.PNG", "models/texture%20A.PNG", authorizationfacts.AuthorizationBasisComplete},
+		{"texture%2520A.PNG", "models/texture A.PNG", authorizationfacts.AuthorizationBasisIncomplete},
+		{"texture%2.PNG", "models/texture.PNG", authorizationfacts.AuthorizationBasisNeedsRefresh},
+		{"%2e%2e/outside.PNG", "models/outside.PNG", authorizationfacts.AuthorizationBasisNeedsRefresh},
+		{"https://host/texture.PNG", "models/texture.PNG", authorizationfacts.AuthorizationBasisNeedsRefresh},
+		{"texture.BMP", "models/texture.BMP", authorizationfacts.AuthorizationBasisNeedsRefresh},
+	} {
+		item := seedFileAuthorizationFacts(t, db, uint(2900+i), "dae")
+		refs := item.Attributes["item"].(map[string]any)["refs"].([]any)
+		refs[1].(map[string]any)["path"] = tc.path
+		item.Attributes["format_info"].(map[string]any)["dae"].(map[string]any)["texture_refs"] = []string{tc.raw}
+		if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+			t.Fatal(err)
+		}
+		facts, err := NewMetadataQueryService(db).GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+		if err != nil || facts.BasisState != tc.state {
+			t.Fatalf("%s: %+v %v", tc.raw, facts, err)
+		}
+	}
 }

@@ -95,7 +95,7 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
-        for format_name in ("ifc", "osgb", "skp", "max", "3ds"):
+        for format_name in ("ifc", "osgb", "skp", "max", "3ds", "dae"):
             source = SCRIPT.parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{format_name}"
             shutil.copy2(source, self.business / "fixtures/manager" / source.name)
         shutil.copy2(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png", self.business / "fixtures/manager/addp_online_max_texture.png")

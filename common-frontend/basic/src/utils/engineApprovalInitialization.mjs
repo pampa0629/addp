@@ -51,7 +51,7 @@ function filePath(path) {
 // independently rereads Meta and computes the approved boundary on submission.
 function fileCompositionPrimary(composition) {
   if (!composition || Object.keys(composition).sort().join(',') !== 'format,refs' ||
-      !['ifc', '3ds'].includes(composition.format) || !Array.isArray(composition.refs) ||
+      !['ifc', '3ds', 'dae'].includes(composition.format) || !Array.isArray(composition.refs) ||
       !composition.refs.length || composition.refs.length > 200 || new TextEncoder().encode(JSON.stringify(composition)).length > 65536) return boundaryError()
   const seen = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
   if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== 'model') return boundaryError()

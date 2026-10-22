@@ -24,7 +24,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	reject := ErrModel3DGLBSourceAuthorizationRequired
 	if tenantID == 0 || source.ItemID == 0 || item == nil || item.ID != source.ItemID || item.TenantID != tenantID ||
 		item.EngineID != source.SourceEngineID || item.ItemType != "file" || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||
-		(source.Format != "ifc" && source.Format != "3ds") {
+		(source.Format != "ifc" && source.Format != "3ds" && source.Format != "dae") {
 		return nil, reject
 	}
 	locator, err := resourcetree.ParseURI(source.ItemLocator)
@@ -87,8 +87,8 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 		return nil, reject
 	}
 	candidate := &model3DGLBSourceCandidate{composition: composition}
-	if source.Format == "3ds" {
-		native := commonJSON.Section(item.Attributes, "format_info.3ds")
+	if source.Format == "3ds" || source.Format == "dae" {
+		native := commonJSON.Section(item.Attributes, "format_info."+source.Format)
 		if native["scan_complete"] != true {
 			return nil, reject
 		}

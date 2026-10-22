@@ -111,3 +111,14 @@ test('file candidates reject unrelated refs, ambiguous or incomplete composition
   assert.throws(() => approvedBoundaryFields(filePath(), { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: filePath() }))
   for (const state of ['incomplete', 'needs_refresh', 'unsupported']) assert.deepEqual(await readNativeApprovalFacts(filePath(), async (_, fp) => ({ ...fileFacts(fp), basis_state: state, boundary: null, boundary_hash: null })), { state, binding: null })
 })
+
+test('DAE approval binds the full model and texture set and rejects an incomplete boundary', async () => {
+  const target = filePath('scene.dae')
+  const makeFacts = fp => { const facts = fileFacts(fp); facts.boundary.file_composition.format = 'dae'; facts.boundary.file_composition.refs[0].target = target; return facts }
+  const binding = await observeNativeApprovalBinding(target, async (_, fp) => makeFacts(fp))
+  assert.equal(binding.file_composition.format, 'dae')
+  assert.equal(binding.file_composition.refs.length, 2)
+  assert.equal(JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'independent', 'DAE exact composition', binding)).expected_boundary_hash, 'c'.repeat(64))
+  await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.refs[1].target = filePath('../outside.PNG'); return facts }))
+  await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.format = 'obj'; return facts }))
+})

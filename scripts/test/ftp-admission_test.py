@@ -113,9 +113,9 @@ class FTPAdmissionTests(unittest.TestCase):
             finally:
                 os.umask(previous)
             self.assertEqual({x['full_name'] for x in report}, {
-                'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png'})
+                'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png'})
             source_by_kind = {'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
-                              'png': 'addp_online_exchange_texture.png'}
+                              'png': 'addp_online_exchange_texture.png', 'dae': 'addp_online_model_fixture.dae', 'dae_png': 'addp_online_exchange_texture.png'}
             for item in report:
                 raw = (root / item['full_name']).read_bytes()
                 source = ROOT / 'business/fixtures/manager' / source_by_kind[item['format']]
