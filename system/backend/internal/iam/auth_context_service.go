@@ -238,13 +238,9 @@ func (s *AuthContextService) resolveSessionCredential(
 ) (*commonauth.AuthContext, error) {
 	var authContext *commonauth.AuthContext
 	startedAt := time.Now()
-	poolBefore, poolAvailable := s.authContextPoolStats()
-	stageDurations := make(map[string]time.Duration, 7)
 	stage, stageStartedAt := "transaction_begin", startedAt
 	enterStage := func(next string) {
-		now := time.Now()
-		stageDurations[stage] += now.Sub(stageStartedAt)
-		stage, stageStartedAt = next, now
+		stage, stageStartedAt = next, time.Now()
 	}
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
 		enterStage("credential_snapshot")
@@ -382,9 +378,6 @@ func (s *AuthContextService) resolveSessionCredential(
 		s.logAuthContextResolutionFailure(ctx, err, startedAt, stage, stageStartedAt)
 		return nil, err
 	}
-	finished := time.Now()
-	stageDurations[stage] += finished.Sub(stageStartedAt)
-	s.logSlowAuthContextResolution(ctx, startedAt, finished, stageDurations, poolBefore, poolAvailable)
 	return authContext, nil
 }
 

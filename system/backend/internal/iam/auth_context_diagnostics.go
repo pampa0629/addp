@@ -2,7 +2,6 @@ package iam
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"io"
 	"net"
@@ -14,44 +13,6 @@ import (
 	"github.com/addp/common/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
-
-func (s *AuthContextService) authContextPoolStats() (sql.DBStats, bool) {
-	pool, err := s.repository.db.DB()
-	if err != nil {
-		return sql.DBStats{}, false
-	}
-	return pool.Stats(), true
-}
-
-// This diagnostic never affects a decision. Stage durations include scheduling
-// and database waits; pool deltas include all concurrent users of the same pool.
-func (s *AuthContextService) logSlowAuthContextResolution(ctx context.Context, started, finished time.Time,
-	stages map[string]time.Duration, before sql.DBStats, available bool) {
-	if finished.Sub(started) < 100*time.Millisecond {
-		return
-	}
-	wall := make(map[string]float64, len(stages))
-	for stage, duration := range stages {
-		wall[stage] = float64(duration) / float64(time.Millisecond)
-	}
-	after, afterAvailable := s.authContextPoolStats()
-	available = available && afterAvailable
-	fields := []any{"event", "iam.auth_context.resolve_slow",
-		"elapsed_ms", float64(finished.Sub(started)) / float64(time.Millisecond),
-		"stage_wall_ms", wall, "pool_stats_available", available}
-	if id := requestid.FromContext(ctx); id != "" {
-		fields = append(fields, "request_id", id)
-	}
-	if available {
-		fields = append(fields, "pool_open", after.OpenConnections, "pool_in_use", after.InUse,
-			"pool_idle", after.Idle, "pool_max_open", after.MaxOpenConnections,
-			"pool_wait_count_total", after.WaitCount,
-			"pool_wait_duration_total_ms", float64(after.WaitDuration)/float64(time.Millisecond),
-			"pool_wait_count_delta", after.WaitCount-before.WaitCount,
-			"pool_wait_duration_delta_ms", float64(after.WaitDuration-before.WaitDuration)/float64(time.Millisecond))
-	}
-	logger.L().InfoContext(ctx, "AuthContext resolution slow", fields...)
-}
 
 func (s *AuthContextService) logAuthContextResolutionFailure(ctx context.Context, err error, startedAt time.Time, stage string, stageStartedAt time.Time) {
 	// Authentication decisions and dependency failures have separate events.
