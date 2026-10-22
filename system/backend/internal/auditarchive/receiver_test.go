@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
 const receiverTestToken = "owned-fixture-receiver-token-32-characters"
@@ -335,5 +338,27 @@ func TestReceiverLateOrphanRetryProtectsBodyBeyondNewReceipt(t *testing.T) {
 	}
 	if _, e := VerifyReceiver(context.Background(), memory, testSourceID, receiverTestDeployment, root, Ref{}); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestReceiverRetentionOracleRequiresPinnedWORMResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"actual_worm", minio.ErrorResponse{Code: "InvalidRequest", StatusCode: 400, Message: "Object is WORM protected and cannot be overwritten"}, true},
+		{"operation_succeeded", nil, false},
+		{"transport", errors.New("owned transport failure"), false},
+		{"policy_denied", minio.ErrorResponse{Code: "AccessDenied", StatusCode: 403, Message: "Access Denied."}, false},
+		{"bad_date", minio.ErrorResponse{Code: "InvalidRequest", StatusCode: 400, Message: "the retain until date must be in the future"}, false},
+		{"wrong_status", minio.ErrorResponse{Code: "InvalidRequest", StatusCode: 500, Message: "Object is WORM protected and cannot be overwritten"}, false},
+		{"bad_signature", minio.ErrorResponse{Code: "SignatureDoesNotMatch", StatusCode: 403}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := fixedMinioWORMShorteningDenied(tc.err); got != tc.want {
+				t.Fatalf("retention evidence accepted=%t want=%t", got, tc.want)
+			}
+		})
 	}
 }

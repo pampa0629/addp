@@ -107,11 +107,39 @@ func TestIndependentAuditReceiverAgainstPostgres(t *testing.T) {
 		} else if !validControl(v, p, time.Now()) {
 			t.Fatal("control lacks 20-year protection")
 		}
-		if e = writer.Extend(ctx, v, p.Until.AddDate(1, 0, 0)); e != nil {
+		extendedUntil := retentionUntil(p.Until.AddDate(1, 0, 0))
+		if e = writer.Extend(ctx, v, extendedUntil); e != nil {
 			t.Fatal("extension denied", e)
 		}
-		if e = writer.Extend(ctx, v, time.Now().Add(time.Hour)); e == nil || minio.ToErrorResponse(e).Code != "AccessDenied" {
-			t.Fatal("shortening allowed")
+		extendedBody, extendedProtection, readErr := reader.Read(ctx, v)
+		if readErr != nil || !bytes.Equal(extendedBody, b) || extendedProtection.Until.Before(extendedUntil) {
+			t.Fatal("extension was not confirmed on the original exact version", readErr)
+		}
+		// This pinned MinIO release rejects shortening via ObjectLocked before
+		// evaluating the retention policy's date condition. Require its exact
+		// WORM response, not an arbitrary error or only an AccessDenied code.
+		shortenErr := writer.Extend(ctx, v, time.Now().Add(time.Hour))
+		rejection := minio.ToErrorResponse(shortenErr)
+		afterBody, afterProtection, afterReadErr := reader.Read(ctx, v)
+		mode, until, retentionReadErr := reader.Client.GetObjectRetention(ctx, reader.Bucket, v.Key, v.ID)
+		afterVersion, versionErr := exact(ctx, reader, v.Key)
+		afterUntil := "unreadable"
+		if until != nil {
+			afterUntil = until.UTC().Format(time.RFC3339Nano)
+		}
+		t.Logf("COMPLIANCE shortening probe key=%q version=%q error_type=%T error_code=%q http_status=%d error_message=%q before=%s after=%s",
+			v.Key, v.ID, shortenErr, rejection.Code, rejection.StatusCode, rejection.Message,
+			extendedProtection.Until.UTC().Format(time.RFC3339Nano), afterUntil)
+		if afterReadErr != nil || retentionReadErr != nil || versionErr != nil || afterVersion.ID != v.ID ||
+			mode == nil || *mode != minio.Compliance || until == nil || !until.Equal(extendedProtection.Until) ||
+			afterProtection != extendedProtection || !bytes.Equal(afterBody, b) {
+			t.Fatal("COMPLIANCE evidence changed or could not be read after the shortening attempt")
+		}
+		if !fixedMinioWORMShorteningDenied(shortenErr) {
+			if shortenErr == nil {
+				t.Fatal("retention shortening operation unexpectedly succeeded")
+			}
+			t.Fatal("retention shortening did not return the pinned MinIO WORM rejection; see safe S3 error and version evidence above")
 		}
 		hold := minio.LegalHoldEnabled
 		if e = writer.Client.PutObjectLegalHold(ctx, writer.Bucket, v.Key, minio.PutObjectLegalHoldOptions{VersionID: v.ID, Status: &hold}); e == nil || minio.ToErrorResponse(e).Code != "AccessDenied" {
@@ -130,6 +158,25 @@ func TestIndependentAuditReceiverAgainstPostgres(t *testing.T) {
 	if _, e = writer.Create(ctx, "access/foreign/data/x.json", []byte(`{}`), controlUntil(time.Now())); e == nil || minio.ToErrorResponse(e).Code != "AccessDenied" {
 		t.Fatal("foreign source write allowed")
 	}
+	// A new object has no pre-existing WORM retention. Its too-short deadline
+	// must be refused by IAM, separately from the existing-version WORM check.
+	for _, key := range []string{accessPrefix(testSourceID) + "data/too-short.json", accessPrefix(testSourceID) + "receipts/too-short.json"} {
+		_, denyErr := writer.Create(ctx, key, []byte(`{}`), time.Now().Add(time.Hour))
+		denial := minio.ToErrorResponse(denyErr)
+		if denyErr == nil || denial.Code != "AccessDenied" || denial.StatusCode != http.StatusForbidden {
+			t.Fatalf("new short-retention object was not denied by IAM: code=%q http_status=%d", denial.Code, denial.StatusCode)
+		}
+		found := false
+		if e = reader.Walk(ctx, key, func(v Version) error {
+			if v.Key == key {
+				found = true
+			}
+			return nil
+		}); e != nil || found {
+			t.Fatal("short-retention rejection left an object or its absence could not be confirmed", e)
+		}
+	}
+	t.Log("all B exact versions retained their extended COMPLIANCE deadlines and bytes after the pinned MinIO 400 InvalidRequest WORM rejection; new short-retention body and control objects received IAM 403 AccessDenied and remained absent")
 	// Fail the real S3 transport, then replay against the recovered endpoint.
 	backend, _ := url.Parse("http://" + os.Getenv("ADDP_AUDIT_S3_TEST_ENDPOINT"))
 	reverse := httputil.NewSingleHostReverseProxy(backend)
@@ -270,4 +317,14 @@ func testNativeAuditQueue(t *testing.T, ctx context.Context, writer, reader Stor
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("native audit queue did not reconcile the known source request set")
+}
+
+// This is a version-specific test oracle, not a runtime fallback. Malformed
+// requests, transport failures and other InvalidRequest messages must fail.
+func fixedMinioWORMShorteningDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	response := minio.ToErrorResponse(err)
+	return response.StatusCode == http.StatusBadRequest && response.Code == "InvalidRequest" && response.Message == "Object is WORM protected and cannot be overwritten"
 }
