@@ -266,11 +266,11 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 ### DEM D8 流向持久化
 
-独立手工 `raster-flow-direction-d8-persistence`／`make test-raster-flow-direction-d8-online-runner`，600秒业务预算，沿用既有Hosted生命周期、NFS、产品默认入口Runtime及普通User原12权限。三条COG保存链：直接流向、填洼接流向、全无效；四类错误（封闭洼地、非法波段、旋转网格、单位冲突）各按中英文提交，精确匹配当前执行的direction任务与语言原因，并核反向查询不会改写错误。严格核完整像元／mask、方向码、闭式最短平坦路径、无环与最终开放出口、源网格／CRS、COG、artifact／物理／Meta相等正整数大小、精确扫描身份、当前执行实际输入血缘及Monitor；失败无发布／新增扫描血缘，源及先前成果不变，Runtime工作区／NFS／部署／Infra全部清理。本地夹具专项33项、脚本门禁62项及Online登记通过，独立Hosted待运行及归档审计。仅API持久化，不计UI、容量或Linux全量；原套件及预算不变。
+独立手工 `raster-flow-direction-d8-persistence`／`make test-raster-flow-direction-d8-online-runner`，600秒业务预算，沿用既有Hosted生命周期、NFS、产品默认入口Runtime及普通User原12权限。三条COG保存链：直接流向、填洼接流向、全无效；四类错误（封闭洼地、非法波段、旋转网格、单位冲突）各按中英文提交，精确匹配当前执行的direction任务与语言原因，并核反向查询不会改写错误。严格核完整像元／mask、方向码、闭式最短平坦路径、无环与最终开放出口、源网格／CRS、COG、artifact／物理／Meta相等正整数大小、精确扫描身份、当前执行实际输入血缘及Monitor；失败无发布／新增扫描血缘，源及先前成果不变，Runtime工作区／NFS／部署／Infra全部清理。本地夹具专项33项、脚本门禁62项及Online登记通过。固定3944846c9的Hosted 39750207818／119728593684已通过且完成原始归档领域终审：225115毫秒，三保存链及八准确双语失败、三方大小、精确扫描／血缘／Monitor和全部清理通过。归档12414557855无TIFF，复核现场全像元worker及原始回执，未离线重算。仅API持久化，不计UI、容量或该394源码Linux全量；4fba的Linux另按精确版本记录，原套件及预算不变。
 
 ### D8 汇流累积持久化
 
-独立手工 `raster-flow-accumulation-d8-persistence`／`make test-raster-flow-accumulation-d8-online-runner`，600秒预算，沿用Hosted、NFS、同源默认入口Runtime和原普通User十二权限。四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒，严格核网格／CRS、COG及三方大小、精确自动扫描身份、当前执行实际输入血缘与Monitor、源和先前成果不变、失败零发布／零新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项40项、脚本门禁62项及完整Online登记通过，原栅格脚本总门禁退出0；共享重复测试不累加，Go隔离身份T1不计全量IAM。独立Hosted运行及归档审计待验，Linux全量等CI会话回传，不计UI、容量或完整水文体系。
+独立手工 `raster-flow-accumulation-d8-persistence`／`make test-raster-flow-accumulation-d8-online-runner`，600秒预算，沿用Hosted、NFS、同源默认入口Runtime和原普通User十二权限。四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒，严格核网格／CRS、COG及三方大小、精确自动扫描身份、当前执行实际输入血缘与Monitor、源和先前成果不变、失败零发布／零新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项40项、脚本门禁62项及完整Online登记通过，原栅格脚本总门禁退出0；共享重复测试不累加，Go隔离身份T1不计全量IAM。固定4fba03313的Hosted 39761858875／119767722319已通过并完成领域终审：273053毫秒，四保存链／十四准确双语失败和全部严格断言及清理通过。前三成果各35819字节／264714有效像元／2终点，终点含自身总量264714；全无效成果10741字节／0有效。归档12420909006无TIFF，复核现场独立逐源路径全像元worker及原始回执，未离线重算。同精确源码Linux GeoPython 39761773681／119767424921全量2360 passed／21 warnings／1541.12秒，0失败／跳过／筛除；不覆盖后续流长／汇水分区，后续Linux仍等CI会话回传，不计UI、容量、整体Platform或完整水文体系。
 
 ### D8 下游流长持久化
 
