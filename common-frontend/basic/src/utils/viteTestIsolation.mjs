@@ -35,7 +35,8 @@ export function withFrontendTestIsolation(moduleName, config) {
         { find: '@addp/common-frontend', replacement: sharedRoot }
       ]
     },
-    server: { ...config.server, hmr: false, strictPort: true },
+    // Real HMR probes still own an isolated cache and lifecycle.
+    server: { ...config.server, hmr: run?.hmr === true ? config.server?.hmr : false, strictPort: true },
     plugins: [...(config.plugins || []), {
       name: 'addp-frontend-test-isolation',
       configureServer(server) {

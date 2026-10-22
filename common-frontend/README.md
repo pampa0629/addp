@@ -40,6 +40,8 @@ npm --prefix common-frontend test
 
 Vite 配置直接导入 `basic/src/utils/viteTestIsolation.mjs`，以 `defineConfig(withFrontendTestIsolation(模块名, 配置对象))` 包装。`ADDP_E2E=1` 时统一关闭 HMR，使用模块和进程独立的临时依赖缓存，并在 Vite 关闭、进程正常退出及收到 `SIGTERM` / `SIGINT` 时清理；普通开发返回原配置。Playwright 每个 `webServer` 显式传入该标记、回环地址、独立端口与 `--strictPort`，且不得复用现有服务；配置带正数超时的 `gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }`，避免 Playwright 默认强制结束进程而留下缓存。隔离逻辑及清理测试归共享库，配置接入检查归平台 T0。
 
+真实 HMR 集成探针保持 `ADDP_E2E=1`，在 `ADDP_BROWSER_RUN` 中提供当轮临时 `runtimeDir` 和 `hmr: true`；共享 helper 保留原 HMR 配置，继续隔离缓存、源码和清理生命周期。不能为测试 HMR 而关闭整个测试隔离，否则链接复用的 `node_modules/.vite` 会被测试进程改写。
+
 ## 开发
 
 ### 添加新组件

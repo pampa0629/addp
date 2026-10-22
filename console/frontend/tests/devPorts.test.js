@@ -5,6 +5,9 @@ import { createServer as createHttpServer } from 'node:http'
 import { createServer as createTcpServer } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { mkdtemp, readdir, access, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { parseDevPorts } from '../../../common-frontend/basic/src/utils/devPorts'
 
 async function availablePort() {
@@ -90,6 +93,13 @@ describe('开发端口传递', () => {
   })
 
   it('真实 Vite 在解析后的端口提供页面、HMR 和 Gateway 代理', async () => {
+    const runtimeDir = await mkdtemp(join(tmpdir(), 'addp-console-hmr-'))
+    const testEnvironment = {
+      ...process.env,
+      NODE_ENV: 'development',
+      ADDP_E2E: '1',
+      ADDP_BROWSER_RUN: JSON.stringify({ runtimeDir, hmr: true }),
+    }
     const vitePort = await availablePort()
     const modulePort = await availablePort()
     const gateway = createHttpServer((request, response) => {
@@ -109,8 +119,7 @@ describe('开发端口传递', () => {
       cwd: fileURLToPath(new URL('..', import.meta.url)),
       detached: true,
       env: {
-        ...process.env,
-        NODE_ENV: 'development',
+        ...testEnvironment,
         CONSOLE_FE_PORT: String(vitePort),
         GATEWAY_PORT: String(gatewayPort),
         SYSTEM_BACKEND_PORT: String(gatewayPort),
@@ -124,7 +133,7 @@ describe('开发端口传递', () => {
     const moduleServer = spawn('npm', ['--prefix', '../../system/frontend', 'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(modulePort), '--strictPort'], {
       cwd: fileURLToPath(new URL('..', import.meta.url)),
       detached: true,
-      env: { ...process.env, NODE_ENV: 'development', ADDP_E2E: '0', VITE_ADDP_CONSOLE_PORT: String(vitePort) },
+      env: { ...testEnvironment, VITE_ADDP_CONSOLE_PORT: String(vitePort) },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     for (const stream of [moduleServer.stdout, moduleServer.stderr]) {
@@ -159,11 +168,22 @@ describe('开发端口传递', () => {
       const health = await fetch(`${origin}/module-health/system`)
       expect(health.status).toBe(200)
       expect(await health.text()).toBe('system-ok')
+      const caches = (await readdir(runtimeDir)).filter(name => name.includes('-vite-test-'))
+      expect(caches.map(name => name.replace(/-\d+$/, '')).sort()).toEqual([
+        'addp-console-vite-test', 'addp-system-vite-test',
+      ])
+      // Both real optimizers must have written only into this test's runtime.
+      await Promise.all(caches.map(name => access(join(runtimeDir, name, 'deps/_metadata.json'))))
     } finally {
       socket?.close()
       await stopProcessGroup(moduleServer)
       await stopProcessGroup(vite)
       await new Promise((resolve) => gateway.close(resolve))
+      try {
+        expect(await readdir(runtimeDir)).toEqual([])
+      } finally {
+        await rm(runtimeDir, { recursive: true, force: true })
+      }
     }
   }, 45000)
 })

@@ -52,6 +52,33 @@ test('normal process exit removes a fixture cache before a server is opened', ()
   assert.equal(existsSync(result.stdout), false)
 })
 
+test('real HMR probes keep shared cache isolation and the original HMR configuration', () => {
+  const previous = { ADDP_E2E: process.env.ADDP_E2E, ADDP_BROWSER_RUN: process.env.ADDP_BROWSER_RUN }
+  const runtimeDir = resolve(tmpdir(), `addp-hmr-isolation-${process.pid}`)
+  const hmr = { clientPort: 15170, path: '__hmr' }
+  let testing
+  try {
+    process.env.ADDP_E2E = '1'
+    process.env.ADDP_BROWSER_RUN = JSON.stringify({ runtimeDir, hmr: true })
+    testing = withFrontendTestIsolation('hmr-fixture', { server: { hmr } })
+    assert.equal(testing.server.hmr, hmr)
+    assert.equal(testing.server.strictPort, true)
+    assert.equal(testing.cacheDir, resolve(runtimeDir, `addp-hmr-fixture-vite-test-${process.pid}`))
+    assert.ok(testing.resolve.alias.some(entry => entry.find === '@addp/common-frontend'))
+    mkdirSync(testing.cacheDir, { recursive: true })
+    writeFileSync(resolve(testing.cacheDir, 'fixture'), 'test')
+    testing.plugins.at(-1).closeBundle()
+    assert.equal(existsSync(testing.cacheDir), false)
+  } finally {
+    testing?.plugins.at(-1).closeBundle()
+    rmSync(runtimeDir, { recursive: true, force: true })
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 for (const signal of ['SIGTERM', 'SIGINT']) {
   test(`${signal} closes the fixture server and removes its cache`, () => {
     const helper = new URL('../src/utils/viteTestIsolation.mjs', import.meta.url).href
