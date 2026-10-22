@@ -121,3 +121,29 @@ test('stop reason reuses System current offline scope without changing status, t
   }
   assert.equal(resolveProcessRoute({ stop_reason: ' graceful ' }).query.stop_reason, 'graceful')
 })
+
+
+test('host IP is a System-owned exact query, independent of endpoint and trend filters', () => {
+  for (const node_ip of ['192.0.2.7', '2001:0DB8:0:0:0:0:0:7', '::ffff:192.0.2.7']) {
+    const state = resolveProcessRoute({ node_ip: `  ${node_ip}  `, registered_host: 'db.internal', status: 'all', stop_reason: 'graceful', time_basis: 'offline', page: '2', instance_id: '7' })
+    assert.equal(state.nodeIP, node_ip)
+    assert.equal(state.query.node_ip, node_ip)
+    assert.equal(state.params.node_ip, node_ip)
+    assert.equal(state.params.registered_host, 'db.internal')
+    assert.equal(state.params.stop_reason, 'graceful')
+    assert.equal(state.params.status, undefined)
+    assert.equal(state.changed, true)
+    assert.equal(resolveProcessRoute(state.query).changed, false)
+    assert.equal(processInstanceParameters(state, Date.parse(stamp)).node_ip, node_ip)
+    assert.equal(processTrendParameters(7, '5m', stamp).node_ip, undefined)
+  }
+  for (const node_ip of [null, undefined, '', '   ', ['192.0.2.7'], {}, ['192.0.2.7', '192.0.2.8']]) {
+    assert.equal(resolveProcessRoute({ node_ip }).query.node_ip, undefined)
+    assert.equal(resolveProcessRoute({ node_ip }).params.node_ip, undefined)
+  }
+  // Invalid single values reach System for its authoritative 400 response;
+  // silently dropping them would widen the user's query.
+  for (const node_ip of ['host.internal', '192.0.2.7:9100', '192.0.2.0/24', 'fe80::1%en0', '192.0.2.007']) {
+    assert.equal(resolveProcessRoute({ node_ip }).params.node_ip, node_ip)
+  }
+})

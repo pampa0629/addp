@@ -1,9 +1,10 @@
+import { BlockList, isIP } from 'node:net'
 import { identity } from './monitoring-targets.fixture'
 
 export const permissions = ['platform.module.read', 'monitor.resource_observation.read']
 export async function backend(page, options = {}) {
   let stamp = '2026-10-10T00:00:00Z'
-  const rows = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `native-${id}`, role: 'worker', node_id: '', host_node_name: '', runtime_hostname: `mac-process-${id}`, status: 'up', process_metrics_declared: true, process_started_at: '2026-10-09T23:58:00Z' }))
+  const rows = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `native-${id}`, role: 'worker', node_id: '', host_node_name: '', host_node_ips: [], runtime_hostname: `mac-process-${id}`, status: 'up', process_metrics_declared: true, process_started_at: '2026-10-09T23:58:00Z' }))
   if (options.instances) rows.splice(0, rows.length, ...options.instances.map(row => ({ ...rows[0], instance_id: `native-${row.id}`, runtime_hostname: `mac-process-${row.id}`, ...row })))
   if (options.workerTypes) rows.splice(0, rows.length, ...[
     ['meta', 'worker', 'scan'], ['transfer', 'worker', 'sync'], ['transfer', 'worker', 'continuous_sync'],
@@ -27,10 +28,19 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity(permissions)
     else if (path === '/api/v1/system/platform/module-instances') {
       listCalls.push(Object.fromEntries(url.searchParams))
+      const nodeIP = url.searchParams.get('node_ip')
+      // System owns address validation/canonical matching. Node's IP primitives
+      // emulate that boundary in this HTTP fixture, not in the product frontend.
+      if (nodeIP && (!isIP(nodeIP) || nodeIP.includes('%'))) return route.fulfill({ status: 400, json: { error_code: 'invalid_params' } })
+      const addresses = new BlockList()
+      if (nodeIP) addresses.addAddress(nodeIP, isIP(nodeIP) === 4 ? 'ipv4' : 'ipv6')
       const pageNumber = Number(url.searchParams.get('page'))
       const filtered = rows.filter(row => {
         const time = url.searchParams.get('time_basis') === 'offline' ? row.stopped_at : row.registered_at
-        return (!url.searchParams.has('stop_reason') || (row.status === 'down' && row.stop_reason === url.searchParams.get('stop_reason'))) &&
+        return (!nodeIP || row.host_node_ips?.some(ip => addresses.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'))) &&
+          (!url.searchParams.has('module_name') || row.module_name === url.searchParams.get('module_name')) &&
+          (!url.searchParams.has('role') || row.role === url.searchParams.get('role')) &&
+          (!url.searchParams.has('stop_reason') || (row.status === 'down' && row.stop_reason === url.searchParams.get('stop_reason'))) &&
           (url.searchParams.get('time_basis') !== 'offline' || (row.status === 'down' && time)) &&
           (!url.searchParams.has('time_from') || Date.parse(time) >= Date.parse(url.searchParams.get('time_from'))) &&
           (!url.searchParams.has('time_to') || Date.parse(time) < Date.parse(url.searchParams.get('time_to'))) && (!url.searchParams.has('registered_host') || (row.registered_host || '').toLowerCase() === url.searchParams.get('registered_host')) && (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared'))

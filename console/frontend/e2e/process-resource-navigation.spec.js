@@ -5,7 +5,7 @@ import { observations, serverEnd } from '../../../monitor/frontend/e2e/resource-
 
 test('Console opens the exact managed host without reloading and one Back restores service filters', async ({ page }, testInfo) => {
   const nodeID = '10000000-0000-4000-8000-000000000001'
-  await backend(page, { instances: [{ id: 1, node_id: nodeID, host_node_name: 'old-deployment-alias' }],
+  await backend(page, { instances: [{ id: 1, node_id: nodeID, host_node_name: 'old-deployment-alias', host_node_ips: ['192.0.2.7'] }],
     hosts: [{ node_id: nodeID, display_name: 'Current managed host', node_kind: 'virtual', addresses: [], enabled: true, version: 1 }],
     identity: identity([...permissions, 'platform.host_node.read']) })
   await page.route('**/api/v1/monitor/platform/resource_*', route => {
@@ -14,7 +14,7 @@ test('Console opens the exact managed host without reloading and one Back restor
     if (trend) body.start = url.searchParams.get('start')
     return route.fulfill({ json: body })
   })
-  await page.goto('/monitor/service-resources?module_name=monitor&role=worker&refresh=off')
+  await page.goto('/monitor/service-resources?module_name=monitor&role=worker&node_ip=192.0.2.7&refresh=off')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const host = frame.getByTestId('process-host').getByRole('button', { name: 'Current managed host', exact: true })
   await expect(host).toBeVisible()
@@ -102,7 +102,10 @@ test('Console language switching updates worker purposes in the active service i
 })
 
 test('Console service monitoring uses one iframe and restores System filters after paging and reload', async ({ page }) => {
-  const state = await backend(page)
+  const state = await backend(page, { instances: [
+    ...Array.from({ length: 21 }, (_, index) => ({ id: index + 1, role: 'worker' })),
+    { id: 22, role: 'backend' }
+  ] })
   await page.goto('/monitor/service-resources?module_name=monitor&role=worker')
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
@@ -124,13 +127,14 @@ test('Console service monitoring uses one iframe and restores System filters aft
   await monitor.getByRole('option', { name: '在线', exact: true }).click()
   await monitor.getByRole('button', { name: '搜索', exact: true }).click()
   await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && !url.searchParams.has('status') && !url.searchParams.has('page'))
-  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  await expect(monitor.getByTestId('process-list')).toContainText('0.00 核')
+  await expect.poll(() => state.calls.at(-1)).toBe('22')
   expect(state.listCalls.at(-1)).toMatchObject({ module_name: 'monitor', role: 'backend', status: 'up', page: '1' })
   expect(await documentOrigin()).toBe(restoredDocumentID)
   await page.reload()
   await expect(roleControl).toContainText('后端服务')
   await expect(statusControl).toContainText('在线')
-  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  await expect(monitor.getByTestId('process-list')).toContainText('0.00 核')
 })
 
 test('reloaded Console opens the collapsed monitoring group and service-page refresh preserves its active iframe', async ({ page }) => {
@@ -251,5 +255,39 @@ test('Console preserves service stop reason through search, language, reload and
   await expect(page).toHaveURL(/monitor\/service-resources\?refresh=off$/)
   await expect.poll(() => state.calls.at(-1)).toBe('3')
   expect(state.listCalls.at(-1)).not.toHaveProperty('stop_reason')
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
+
+
+test('Console preserves host IP search, language and URL restoration in one Monitor iframe', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, host_node_ips: ['192.0.2.7'] },
+    { id: 2, host_node_ips: ['2001:db8::7'] },
+    { id: 3, host_node_ips: [], registered_host: '192.0.2.7' }
+  ] })
+  await page.goto('/monitor/service-resources?node_ip=192.0.2.7&refresh=off')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect.poll(() => state.calls.at(-1)).toBe('1')
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  await monitor.getByRole('textbox', { name: '承载主机 IP（精确匹配）', exact: true }).fill(' 2001:0DB8:0:0:0:0:0:7 ')
+  await monitor.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  await expect(page).toHaveURL(url => url.searchParams.get('node_ip') === '2001:0DB8:0:0:0:0:0:7')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  const input = monitor.getByRole('textbox', { name: 'Host IP (exact match)', exact: true })
+  await expect(input).toHaveValue('2001:0DB8:0:0:0:0:0:7')
+  const selected = page.url()
+  await page.reload()
+  await expect(input).toHaveValue('2001:0DB8:0:0:0:0:0:7')
+  await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(1)
+  await expect(page).toHaveURL(selected)
+  expect(state.listCalls.at(-1).node_ip).toBe('2001:0DB8:0:0:0:0:0:7')
+  await monitor.getByRole('button', { name: 'Reset', exact: true }).click()
+  await expect(page).toHaveURL(/monitor\/service-resources\?refresh=off$/)
+  await expect(input).toHaveValue('')
+  await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(3)
+  expect(state.listCalls.at(-1)).not.toHaveProperty('node_ip')
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
 })

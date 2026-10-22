@@ -847,6 +847,9 @@
     "process": {
       "title": "服务监控",
       "moduleFilter": "模块名称（精确匹配）",
+      "hostIPFilter": "承载主机 IP（精确匹配）",
+      "hostIPHint": "填写运行该实例的主机 IPv4 或 IPv6，不含端口、网段；与服务登记地址分开筛选。",
+      "invalidQuery": "查询条件无效，请检查筛选值。",
       "addressFilter": "登记主机名或 IP（精确匹配）",
       "addressHint": "仅填写服务端点中的主机名或 IP，不含协议和端口。",
       "module": "服务模块",

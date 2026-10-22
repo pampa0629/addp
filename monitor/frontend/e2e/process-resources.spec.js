@@ -686,3 +686,98 @@ test('automatic service refresh keeps the applied reason separate from its draft
   await expect.poll(() => state.listCalls.length).toBeGreaterThan(beforeRecovery)
   await expect(page.getByTestId('process-stop-reason')).toHaveCount(0)
 })
+
+
+for (const locale of ['zh-cn', 'en']) test(`host IP matches declared hosts including endpoint-free workers and survives paging, trend and reset (${locale})`, async ({ page }, info) => {
+  const en = locale === 'en', ip = '192.0.2.7'
+  const state = await backend(page, { locale, instances: [
+    ...Array.from({ length: 23 }, (_, i) => ({ id: i + 1, host_node_ips: [ip], registered_host: '', module_url: '' })),
+    { id: 24, host_node_ips: ['192.0.2.70'], registered_host: ip, runtime_hostname: ip },
+    { id: 25, host_node_ips: [ip], status: 'down' },
+    { id: 26, host_node_ips: [ip], process_metrics_declared: false }
+  ] })
+  await page.goto('/service-resources?module_name=monitor&role=worker&refresh=off')
+  const input = page.getByRole('textbox', { name: en ? 'Host IP (exact match)' : '承载主机 IP（精确匹配）', exact: true })
+  const list = page.getByTestId('process-list')
+  await expect(list.locator('.el-table__body tr')).toHaveCount(20)
+  await input.fill(`  ${ip}  `)
+  await page.getByRole('button', { name: en ? 'Search' : '搜索', exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('node_ip') === ip && !url.searchParams.has('page'))
+  await expect(input).toHaveValue(ip)
+  await expect(page.locator('.el-pagination__total')).toContainText('23')
+  await expect.poll(() => state.calls.at(-1)).toBe(Array.from({ length: 20 }, (_, i) => i + 1).join(','))
+  expect(state.hostReads).toEqual([])
+  await page.locator('.el-pagination .btn-next').click()
+  await expect.poll(() => state.calls.at(-1)).toBe('21,22,23')
+  expect(state.listCalls.at(-1)).toMatchObject({ page: '2', node_ip: ip, module_name: 'monitor', role: 'worker' })
+  await page.reload()
+  await expect(list.locator('.el-table__body tr')).toHaveCount(3)
+  await expect(input).toHaveValue(ip)
+  await list.getByRole('button', { name: en ? 'View trend' : '查看趋势', exact: true }).first().click()
+  await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  expect(state.trendCalls.at(-1)).not.toHaveProperty('node_ip')
+  await page.locator('.el-dialog__headerbtn').click()
+  await page.getByRole('button', { name: en ? 'All instances' : '全部实例', exact: true }).click()
+  await expect(page.locator('.el-pagination__total')).toContainText('25')
+  expect(state.listCalls.at(-1).node_ip).toBe(ip)
+  await page.getByRole('button', { name: en ? 'Reset' : '重置', exact: true }).click()
+  await expect(page).toHaveURL(/service-resources\?refresh=off$/)
+  await expect(input).toHaveValue('')
+  await expect(page.locator('.el-pagination__total')).toContainText('24')
+  expect(state.listCalls.at(-1)).not.toHaveProperty('node_ip')
+  await input.fill('not-submitted')
+  await page.getByRole('button', { name: en ? 'Reset' : '重置', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(input).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath(`service-host-ip-${locale}.png`), fullPage: true })
+})
+
+test('System host IP matching accepts IPv6 and mapped IPv4, rejects invalid literals without broadening scope', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, host_node_ips: ['2001:db8::7'] },
+    { id: 2, host_node_ips: ['192.0.2.7'] },
+    { id: 3, host_node_ips: [], registered_host: '192.0.2.7', runtime_hostname: '2001:db8::7' }
+  ] })
+  for (const [node_ip, id] of [['2001:0DB8:0:0:0:0:0:7', '1'], ['::ffff:192.0.2.7', '2']]) {
+    await page.goto('/service-resources?' + new URLSearchParams({ node_ip, refresh: 'off' }))
+    await expect.poll(() => state.calls.at(-1)).toBe(id)
+    await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(1)
+    expect(state.listCalls.at(-1).node_ip).toBe(node_ip)
+  }
+  for (const node_ip of ['host.internal', '192.0.2.7:9100', '192.0.2.0/24', 'fe80::1%en0']) {
+    const count = state.calls.length
+    await page.goto('/service-resources?' + new URLSearchParams({ node_ip, refresh: 'off' }))
+    await expect(page.getByTestId('process-error')).toContainText('查询条件无效')
+    await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(0)
+    expect(state.listCalls.at(-1).node_ip).toBe(node_ip)
+    expect(state.calls).toHaveLength(count)
+  }
+  await page.goto('/service-resources?node_ip=192.0.2.7&node_ip=192.0.2.70&refresh=off')
+  await expect(page).toHaveURL(/service-resources\?refresh=off$/)
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(3)
+  expect(state.listCalls.at(-1)).not.toHaveProperty('node_ip')
+})
+
+test('host IP auto refresh uses only submitted values and combines endpoint, time and reason conditions', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, host_node_ips: ['192.0.2.7'], registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', stopped_at: '2026-10-22T10:30:00Z' },
+    { id: 2, host_node_ips: ['192.0.2.8'], registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', stopped_at: '2026-10-22T10:30:00Z' },
+    { id: 3, host_node_ips: ['192.0.2.7'], registered_host: 'other.internal', status: 'down', stop_reason: 'graceful', stopped_at: '2026-10-22T10:30:00Z' }
+  ] })
+  await page.clock.install()
+  const query = new URLSearchParams({ node_ip: '192.0.2.7', registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', time_basis: 'offline', time_period: 'custom', time_from: '2026-10-22T10:00:00.000Z', time_to: '2026-10-22T11:00:00.000Z', refresh: '10' })
+  await page.goto('/service-resources?' + query)
+  await expect.poll(() => state.calls.at(-1)).toBe('1')
+  const input = page.getByRole('textbox', { name: '承载主机 IP（精确匹配）', exact: true })
+  await input.fill('192.0.2.8')
+  const count = state.calls.length
+  await page.clock.fastForward(10001)
+  await expect.poll(() => state.calls.length).toBe(count + 1)
+  expect(state.listCalls.at(-1).node_ip).toBe('192.0.2.7')
+  await expect(input).toHaveValue('192.0.2.8')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  expect(state.listCalls.at(-1)).toMatchObject({ node_ip: '192.0.2.8', registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', time_basis: 'offline' })
+})
