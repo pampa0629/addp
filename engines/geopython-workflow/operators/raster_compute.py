@@ -2735,6 +2735,45 @@ def raster_flow_length_d8(input_raster, band):
     return _d8_output(source, values, 'metre')
 
 
+_D8_BASIN_MESSAGES = {
+    key: (zh.replace('D8 汇流累积', 'D8 汇水分区'),
+          en.replace('D8 flow accumulation', 'D8 drainage basins'))
+    for key, (zh, en) in _D8_ACC_MESSAGES.items() if key != 'overflow'
+}
+_D8_BASIN_MESSAGES['overflow'] = (
+    'D8 汇水分区的出口数超过Float64精确整数上限2^53−1',
+    'D8 drainage basins outlet count exceeds the Float64 exact integer limit 2^53-1',
+)
+
+
+def _d8_basin_error(code):
+    return ValueError(_D8_BASIN_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_drainage_basins(directions):
+    """Propagate row-major open-outlet IDs on the complete validated D8 graph."""
+    valid, downstream, indegree = _d8_graph(directions, _d8_basin_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_basin_error)
+    outlets = np.flatnonzero(directions.ravel() == 0)
+    if outlets.size > _D8_MAX_EXACT_COUNT:
+        raise _d8_basin_error('overflow')
+    labels = np.zeros(directions.size, dtype=np.int64)
+    labels[outlets] = np.arange(1, outlets.size + 1, dtype=np.int64)
+    for cell in order[::-1]:
+        target = int(downstream[cell])
+        if target >= 0:
+            labels[cell] = labels[target]
+    result = labels.reshape(directions.shape).astype(np.float64)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_drainage_basins_d8(input_raster, band):
+    """Label each effective cell by its final open outlet, without changing flow."""
+    source, directions, _ = _d8_direction_source(input_raster, band, _d8_basin_error)
+    return _d8_output(source, _d8_drainage_basins(directions))
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
     source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3)
     raw = gdal.DEMProcessing(str(_path()), source, processing,
@@ -2873,6 +2912,7 @@ _SPECS = [
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
+    (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2899,7 +2939,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
-    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8'):
+    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})

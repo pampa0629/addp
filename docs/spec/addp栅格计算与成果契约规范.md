@@ -103,6 +103,7 @@
 | DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
 | D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；沿给定方向、不计自身，非法方向／循环失败 |
 | D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
+| D8 汇水分区 | raster_load → 可选显式填洼／D8流向 → raster_drainage_basins_d8 → raster_save；每个开放终点独立分区，按出口行列顺序从1编号，非法方向／循环失败 |
 | DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
 | DEM 等值线 | raster_load → raster_contour → 既有矢量保存节点或 JSON 预览 |
 
@@ -197,7 +198,7 @@
 
 ### 6.2 DEM 验收边界
 
-DEM 填洼首期已实现并经本地 Native 验证，范围和证据见[后续专题](../next/栅格算子体系后续专题.md)。独立 Hosted 已在固定 `8599f94ed` 通过严格归档审计，Linux 全量仍等 CI 会话回传，不沿用下述原 DEM 基础四项的 T4 作为填洼验收。D8流向首期已实现并通过本地标准Native全量，独立Hosted尚未验收；验证状态独立记录于专题，不沿用填洼证据。 D8无权汇流累积首期也已实现并通过本地Native全量，Linux及独立Hosted未验；不沿用流向或填洼验收作为其平台持久化证据。 D8下游流长已实现并通过本地标准Native全量，米制中心间路径及开放终点零规则见算子契约；Linux待CI回传，独立Hosted未验，不沿用其他算子的持久化证据。
+DEM 填洼首期已实现并经本地 Native 验证，范围和证据见[后续专题](../next/栅格算子体系后续专题.md)。独立 Hosted 已在固定 `8599f94ed` 通过严格归档审计，Linux 全量仍等 CI 会话回传，不沿用下述原 DEM 基础四项的 T4 作为填洼验收。D8流向首期已实现并通过本地标准Native全量，独立Hosted尚未验收；验证状态独立记录于专题，不沿用填洼证据。 D8无权汇流累积首期也已实现并通过本地Native全量，Linux及独立Hosted未验；不沿用流向或填洼验收作为其平台持久化证据。 D8下游流长已实现并通过本地标准Native全量，米制中心间路径及开放终点零规则见算子契约；Linux待CI回传，独立Hosted未验，不沿用其他算子的持久化证据。 D8汇水分区首期已实现并通过本地标准Native全量，按开放终点行列顺序从1编号，完整图校验及独立逐源路径归属证据见专题；Linux继续等CI会话回传，独立Hosted未授权／未运行，不沿用其他算子证据。
 
 DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与归档见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。坡度、坡向和晕渲在 Hosted 中覆盖 COG 保存、自动扫描、资源血缘与页面参数；等值线在原 Hosted 中覆盖计算及 JSON 预览，另由独立 `raster-contour-persistence` 在 `54acffb1c` 完成两种高程模式的 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人归属、严格物理／Meta 大小、Monitor、当前执行血缘和零残留清理。Runtime 沿现有挂载路径写入，Meta 经真实 NFS 读取；GeoPackage 内部图层遵守容器边界。该 API 闭环不替代 Manager 绘制、HTTP Range、业务删除、覆盖冲突或容量验收；原 Raster T4 保留原版本和 1740 秒预算。
 
