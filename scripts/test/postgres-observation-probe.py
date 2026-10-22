@@ -44,6 +44,25 @@ def quoted(value):
     return "'" + value.replace('\\', '\\\\').replace("'", "\\'") + "'"
 
 
+def check_source_admission(work, port):
+    web = work / 'postgres-web'
+    binary = work / 'postgres-admission.test'
+    environment = dict(os.environ, GOWORK='off', GOMAXPROCS='2')
+    print('PostgreSQL admission T2: build test binary (preparation limit 180s)', flush=True)
+    subprocess.run(['go', 'test', '-c', './internal/metricsdiscovery', '-o', str(binary)],
+                   cwd=ROOT / 'monitor/backend', env=environment, check=True, timeout=180)
+    print('PostgreSQL admission T2: execute prepared test (Go limit 30s, process limit 45s)', flush=True)
+    subprocess.run([str(binary), '-test.run=^TestIntegrationMetricsPostgreSQLAdmission$',
+                    '-test.count=1', '-test.timeout=30s', '-test.v'],
+                   cwd=ROOT / 'monitor/backend/internal/metricsdiscovery',
+                   env=dict(environment, ADDP_POSTGRES_ADMISSION_INTEGRATION='1',
+                            ADDP_POSTGRES_ADMISSION_ENDPOINT='https://127.0.0.1:' + port + '/metrics',
+                            ADDP_POSTGRES_ADMISSION_CA=str(web / 'ca.crt'),
+                            ADDP_POSTGRES_ADMISSION_CERT=str(work / 'admission.crt'),
+                            ADDP_POSTGRES_ADMISSION_KEY=str(work / 'admission.key')),
+                   check=True, timeout=45)
+
+
 class Probe:
     def __init__(self):
         project = os.environ['METRICS_T2_PROJECT']
@@ -442,14 +461,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         get('/reload', method='POST', expected=404)
         get('/metrics?target=forbidden', expected=400)
         get(method='POST', expected=405)
-        subprocess.run(['go', 'test', './internal/metricsdiscovery', '-run', '^TestIntegrationMetricsPostgreSQLAdmission$',
-                        '-count=1', '-timeout=30s', '-v'], cwd=ROOT / 'monitor/backend',
-                       env=dict(os.environ, GOWORK='off', GOMAXPROCS='2', ADDP_POSTGRES_ADMISSION_INTEGRATION='1',
-                                ADDP_POSTGRES_ADMISSION_ENDPOINT='https://127.0.0.1:' + port + '/metrics',
-                                ADDP_POSTGRES_ADMISSION_CA=str(web / 'ca.crt'),
-                                ADDP_POSTGRES_ADMISSION_CERT=str(work / 'admission.crt'),
-                                ADDP_POSTGRES_ADMISSION_KEY=str(work / 'admission.key')),
-                       check=True, timeout=45)
+        check_source_admission(work, port)
         get(tls=ssl.create_default_context(cafile=str(web / 'ca.crt')), expected=403)
         untrusted = ssl.create_default_context(cafile=str(web / 'ca.crt'))
         untrusted.load_cert_chain(str(work / 'untrusted.crt'), str(work / 'untrusted.key'))

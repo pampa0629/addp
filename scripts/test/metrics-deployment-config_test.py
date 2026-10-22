@@ -24,8 +24,62 @@ auth_spec = importlib.util.spec_from_file_location('addp_postgres_auth_directory
 postgres_auth = importlib.util.module_from_spec(auth_spec)
 auth_spec.loader.exec_module(postgres_auth)
 
+probe_spec = importlib.util.spec_from_file_location('postgres_observation_probe', ROOT / 'scripts/test/postgres-observation-probe.py')
+postgres_probe = importlib.util.module_from_spec(probe_spec)
+probe_spec.loader.exec_module(postgres_probe)
+
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_cold_admission_build_does_not_consume_the_test_execution_deadline(self):
+        calls = []
+
+        def run(command, **options):
+            calls.append((command, options))
+            # A 70-second cold preparation is valid; the actual admission is 1s.
+            elapsed = 70 if command[0] == 'go' else 1
+            if elapsed > options['timeout']:
+                raise subprocess.TimeoutExpired(command, options['timeout'])
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(postgres_probe.subprocess, 'run', side_effect=run):
+            work = Path(directory)
+            postgres_probe.check_source_admission(work, '19401')
+        self.assertEqual(len(calls), 2)
+        self.assertIn('-c', calls[0][0])
+        self.assertEqual(calls[0][1]['timeout'], 180)
+        self.assertEqual(calls[1][1]['timeout'], 45)
+        self.assertIn('-test.timeout=30s', calls[1][0])
+        self.assertIn('-test.run=^TestIntegrationMetricsPostgreSQLAdmission$', calls[1][0])
+        self.assertIn('-test.count=1', calls[1][0])
+        self.assertTrue(all(options['check'] for _, options in calls))
+        self.assertEqual(calls[1][1]['env']['ADDP_POSTGRES_ADMISSION_ENDPOINT'], 'https://127.0.0.1:19401/metrics')
+
+    def test_failed_admission_build_never_runs_a_stale_test_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            (work / 'postgres-admission.test').write_text('stale test executable')
+            failure = subprocess.CalledProcessError(1, ['go', 'test', '-c'])
+            with mock.patch.object(postgres_probe.subprocess, 'run', side_effect=failure) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    postgres_probe.check_source_admission(work, '19401')
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('-c', run.call_args.args[0])
+
+    def test_admission_execution_timeout_is_not_retried_or_promoted_to_success(self):
+        calls = []
+
+        def run(command, **options):
+            calls.append(command)
+            if len(calls) == 1:
+                return subprocess.CompletedProcess(command, 0)
+            raise subprocess.TimeoutExpired(command, options['timeout'])
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(postgres_probe.subprocess, 'run', side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired) as error:
+                postgres_probe.check_source_admission(Path(directory), '19402')
+        self.assertEqual(error.exception.timeout, 45)
+        self.assertEqual(len(calls), 2)
+
     def test_stopped_process_waits_for_failure_at_the_consumers_whole_second(self):
         tree = ast.parse((ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'query')

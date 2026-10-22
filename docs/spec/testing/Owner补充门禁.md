@@ -72,6 +72,8 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的三个互补分组：`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警。各分组独占随机 Compose 项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
 
+PostgreSQL 来源的正式准入探针将 Go 准备与执行分开计时：在本轮私有目录以 `go test -c` 构建测试文件，每次构建准备最多 180 秒；构建失败立即退出，不执行已有文件。随后直接运行该文件，保留 `-test.timeout=30s` 与外层 45 秒进程期限，不将下载和编译占用实际准入测试期限。构建、执行分别记录安全阶段，私有目录仍由原退出路径清除；不修改 mTLS、完整窗口、采样新鲜度或原 20 分钟 Job 上限。
+
 `make test-monitor-metrics` 由 Monitor owner 自建 Prometheus、受控指标源与实际私有 TLS 转发入口，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。原生 OAuth/HTTP SD 经正式转发模板运行，验证固定路径/方法/查询参数和匿名请求拒绝，全部 owned 服务均纳入退出清理。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；同一来源还重新部署为 Docker Desktop 受限层，验证七采集器、Engine CPU/内存/内核对照、不同 PID/挂载/网络命名空间的磁盘原始计数前后快照对照、禁用文件系统/网络族、五项磁盘即时值及精确设备趋势、mTLS 与唯一 HTTP SD 查询和恢复后新磁盘样本。本地 macOS 执行证明 Desktop VM 采集，Linux CI 证明受限层语义，不冒充 Desktop 环境或完整 Linux 节点验收；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。
 
 ## Manager Raster Mosaic 原生 Runtime 门禁
