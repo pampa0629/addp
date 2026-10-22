@@ -44,11 +44,20 @@ WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_withou
 PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
                      'output_withdrawal_denies_read']
+READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 
 
 def require(condition, message):
     if not condition:
         raise SuiteError(message)
+
+
+def latency_statistics(samples):
+    require(bool(samples) and all(type(value) in (int, float) and math.isfinite(value) and value >= 0
+                                  for value in samples), 'latency samples must be finite nonnegative milliseconds')
+    ordered = sorted(samples)
+    return {'sample_count': len(samples), 'p50_ms': ordered[math.ceil(len(samples) * .50) - 1],
+            'p95_ms': ordered[math.ceil(len(samples) * .95) - 1], 'min_ms': ordered[0], 'max_ms': ordered[-1]}
 
 
 def tenant_functional_assignments(current, tenant):
@@ -533,6 +542,105 @@ class Lifecycle:
     def revoke(self, command):
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
+
+    def measure_read_latency(self, report, facts, command):
+        """Observe one existing Grant; never prepare or repair authorization here."""
+        result = {'schema_version': 'addp.authorization-latency/v1', 'result': 'failed',
+                  'measurement': 'gateway_client_http_and_json_roundtrip', 'unit': 'ms',
+                  'endpoint': READ_CHECK, 'catalog_path': self.path, 'principal_id': self.recipient,
+                  'grant_id': command, 'item_fingerprint': facts['item_fingerprint'],
+                  'boundary_hash': facts['boundary_hash'], 'concurrency': 1,
+                  'round_count': 3, 'samples_per_round': 100, 'warmups_per_round': 10,
+                  'request_interval_ms': 10, 'round_interval_ms': 1000, 'budget_seconds': 90,
+                  'quantile_method': 'nearest_rank', 'request_timeout_seconds': self.reader.timeout,
+                  'started_at': datetime.now(timezone.utc).isoformat(),
+                  'phase': 'controls_before', 'attempted_count': 0,
+                  'sample_count': 0, 'warmup_count': 0, 'failed_count': 0, 'rounds': []}
+        report['authorization_latency'] = result
+        deadline = time.monotonic() + 90
+        credentials = (self.reader.token, self.operator.token)
+        body = {'targets': [json.loads(json.dumps(self.path))]}
+
+        def within_budget():
+            require(time.monotonic() < deadline, 'fixed-target latency sampling exceeded its budget')
+
+        def snapshot():
+            within_budget()
+            require((self.reader.token, self.operator.token) == credentials,
+                    'latency sampling credential changed')
+            context = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
+            require(context.get('principal') == {'type': 'user', 'id': self.recipient}
+                    and context.get('context', {}).get('tenant_id') == str(self.tenant)
+                    and context.get('context', {}).get('type') == 'tenant',
+                    'latency sampling identity changed')
+            roles = tenant_functional_assignments(context, self.tenant)
+            require({key for role in roles for key in role['permissions']} == READER_PERMISSIONS,
+                    'latency sampling functional permissions changed')
+            current = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+            require(all(current.get(key) == facts.get(key) for key in ('item_fingerprint', 'boundary_hash')),
+                    'latency sampling DataItem boundary changed')
+            history = self.listing(history=True, state='active')
+            require(history.get('total') == 1 and len(history.get('data', [])) == 1,
+                    'latency sampling requires exactly its original active Grant')
+            grant = history['data'][0]
+            require(all(grant.get(key) == value for key, value in {
+                'request_id': command, 'catalog_path': self.path, 'recipient_type': 'user',
+                'recipient_id': self.recipient, 'action': 'read', 'revocation': None,
+                'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash']}.items()),
+                'latency sampling Grant binding changed')
+            within_budget()
+            # Stable immutable snapshots, excluding only the Meta observation clock.
+            return json.dumps([context, history, {key: value for key, value in current.items()
+                                                 if key != 'observed_at'}], sort_keys=True)
+
+        baseline = snapshot()
+        try:
+            for round_number in range(1, 4):
+                row = {'round': round_number, 'warmup_count': 0, 'samples_ms': []}
+                result['rounds'].append(row)
+                for number in range(110):
+                    within_budget()
+                    require((self.reader.token, self.operator.token) == credentials,
+                            'latency sampling credential changed')
+                    result['phase'] = f'round_{round_number}_' + ('warmup' if number < 10 else 'sample')
+                    result['attempted_count'] += 1
+                    started = time.perf_counter_ns()
+                    try:
+                        response = self.reader.request('POST', READ_CHECK, (200,), body)
+                        elapsed = (time.perf_counter_ns() - started) / 1000000
+                        payload = response.payload
+                        require(response.status == 200 and isinstance(payload, dict) and set(payload) == {'observed_at'}
+                                and isinstance(payload['observed_at'], str), 'invalid read-check observation')
+                        observed = datetime.fromisoformat(payload['observed_at'].replace('Z', '+00:00'))
+                        require(observed.tzinfo is not None and observed.year > 1970, 'invalid read-check timestamp')
+                        require(math.isfinite(elapsed) and elapsed >= 0, 'invalid latency clock')
+                    except (SuiteError, ValueError, TypeError):
+                        result['failed_count'] += 1
+                        # Do not copy remote diagnostics or credentials into public evidence.
+                        raise SuiteError('fixed-target latency request failed; no retry performed') from None
+                    if number < 10:
+                        row['warmup_count'] += 1
+                        result['warmup_count'] += 1
+                    else:
+                        row['samples_ms'].append(elapsed)
+                        result['sample_count'] += 1
+                    within_budget()
+                    time.sleep(.01)
+                row.update(latency_statistics(row['samples_ms']))
+                result['phase'] = f'round_{round_number}_controls_after'
+                require(snapshot() == baseline, 'latency sampling identity, rules or facts drifted')
+                if round_number < 3:
+                    time.sleep(1)
+            samples = [sample for row in result['rounds'] for sample in row['samples_ms']]
+            result.update(latency_statistics(samples))
+            for quantile in ('p50_ms', 'p95_ms'):
+                values = [row[quantile] for row in result['rounds']]
+                result['round_' + quantile.removesuffix('_ms') + '_range_ms'] = [min(values), max(values)]
+            result.update(result='passed', unchanged_identity_rules_boundary=True, phase='completed',
+                          finished_at=datetime.now(timezone.utc).isoformat())
+        except SuiteError:
+            result['result'] = 'failed'
+            raise
 
     def function_permission_flow(self, report, business, confirmer):
         report['phase'] = 'data_grant_without_read_function'
@@ -1249,6 +1357,8 @@ class Lifecycle:
         self.grants.append(duplicate['request_id'])
         rejected = self.operator.request('POST', self.base + '/access_grants', (409,), duplicate).payload
         require(rejected.get('error_code') == 'engine_access_grant_relation_exists', 'duplicate rejected for the wrong reason')
+        report['phase'] = 'fixed_target_read_latency'
+        self.measure_read_latency(report, facts, first)
         report['phase'] = 'basic_rescan'
         report['basic_rescan'] = basic_scan(self.reader, self.engine, ['metric_people'])
         refreshed = item(self.reader, self.engine, 'metric_people')

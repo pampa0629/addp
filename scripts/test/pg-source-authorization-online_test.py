@@ -14,6 +14,7 @@ REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
 REAL_WORKSPACE_OBSERVATION = ONLINE.WorkspaceObservation
 REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
 REAL_MUTATE_SOURCE_CONTENT = ONLINE.mutate_source_content
+READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 
 
 class Server:
@@ -72,6 +73,9 @@ class Server:
                     result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
                 elif path.endswith('/authorization-facts'):
                     status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_facts_unavailable'}
+                elif path == READ_CHECK:
+                    assert method == 'POST' and kind == 'reader' and body == {'targets': [ONLINE.table_path(2, 'metric_people')]}
+                    result = {'observed_at': '2026-10-22T00:00:00Z'}
                 elif '/memberships' in path:
                     membership_kind = 'department' if '/departments/' in path else 'project_group'
                     row = {'id': '81' if membership_kind == 'department' else '91', 'version': 1,
@@ -279,7 +283,10 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertFalse(any(server.denies.values()))
         self.assertEqual(self.scans.call_args_list[0].args[2], ['metric_people', 'metric_events'])
         self.assertEqual(self.scans.call_args_list[1].args[2], ['metric_people'])
-        writes = [call for call in server.calls if call[1] == 'POST']
+        decisions = [call for call in server.calls if call[2] == READ_CHECK]
+        self.assertEqual(len(decisions), 330)
+        self.assertEqual(report['authorization_latency']['sample_count'], 300)
+        writes = [call for call in server.calls if call[1] == 'POST' and call[2] != READ_CHECK]
         self.assertTrue(all(call[0] == ('login' if call[2].endswith('/login') else
                                       'coordinator' if '/memberships/' in call[2] else 'operator') for call in writes))
         self.assertTrue(all(call[3]['catalog_path']['segments'][-1]['name'] == 'metric_people'
@@ -297,6 +304,78 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(self.scans.call_count, 6)
         self.assertEqual(server.people, ('A', 'B'))
         self.assertTrue(report['content_changes']['source_baseline_restored'])
+
+    def test_latency_statistics_use_nearest_rank_without_discarding_tail(self):
+        self.assertEqual(ONLINE.latency_statistics(list(range(1, 101))),
+                         {'sample_count': 100, 'p50_ms': 50, 'p95_ms': 95, 'min_ms': 1, 'max_ms': 100})
+        for invalid in ([], [float('nan')], [float('inf')], [-1], [True]):
+            with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.latency_statistics(invalid)
+
+    def test_latency_sampling_is_read_only_and_excludes_warmups(self):
+        server, lifecycle = self.lifecycle()
+        command, _ = lifecycle.grant(self.facts, initialize=True)
+        before_calls = len(server.calls)
+        # Each warmup costs 1s; each measured request costs 1..100ms per round.
+        durations = ([1000] * 10 + list(range(1, 101))) * 3
+        clock = iter(value for duration in durations for value in (0, duration * 1000000))
+        report = {}
+        with patch.object(ONLINE.time, 'perf_counter_ns', side_effect=lambda: next(clock)):
+            lifecycle.measure_read_latency(report, self.facts, command)
+        result = report['authorization_latency']
+        self.assertEqual((result['sample_count'], result['warmup_count'], result['failed_count']), (300, 30, 0))
+        self.assertEqual((result['p50_ms'], result['p95_ms']), (50, 95))
+        self.assertEqual(result['round_p95_range_ms'], [95, 95])
+        self.assertTrue(result['unchanged_identity_rules_boundary'])
+        self.assertEqual(len(result['rounds']), 3)
+        self.assertTrue(all(row['samples_ms'] == list(range(1, 101)) for row in result['rounds']))
+        self.assertEqual(len(server.grants), 1)
+        self.assertTrue(all(call[1] == 'GET' or call[1:3] == ('POST', READ_CHECK)
+                            for call in server.calls[before_calls:]))
+        self.assertNotIn('private-token', json.dumps(result))
+
+    def test_latency_failure_stops_without_retry_and_preserves_partial_evidence(self):
+        for fault in ('denied', 'transport', 'invalid_time', 'extra_data', 'credential', 'context', 'grant', 'boundary', 'budget'):
+            with self.subTest(fault=fault):
+                server, lifecycle = self.lifecycle()
+                command, _ = lifecycle.grant(self.facts, initialize=True)
+                request = lifecycle.reader.request
+                count = 0
+                def intercept(method, path, expected, body=None):
+                    nonlocal count
+                    if path == READ_CHECK:
+                        count += 1
+                        if count == 12:
+                            if fault in ('denied', 'transport'):
+                                raise ONLINE.SuiteError('private diagnostic must not enter public evidence')
+                            if fault == 'credential':
+                                lifecycle.reader.token = 'changed-private-token'
+                            if fault == 'context':
+                                server.version += 1
+                            if fault == 'grant':
+                                server.grants[command]['expires_at'] = '2099-01-01T00:00:00Z'
+                            if fault in ('invalid_time', 'extra_data'):
+                                return SimpleNamespace(status=200, payload={'observed_at': 'invalid'} if fault == 'invalid_time'
+                                                       else {'observed_at': '2026-10-22T00:00:00Z', 'data': []})
+                    return request(method, path, expected, body)
+                lifecycle.reader.request = intercept
+                reads = 0
+                def facts(*_):
+                    nonlocal reads
+                    reads += 1
+                    return dict(self.facts, boundary_hash='c' * 64) if fault == 'boundary' and reads > 1 else self.facts
+                report = {}
+                with patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', side_effect=facts), \
+                     patch.object(ONLINE.time, 'monotonic', side_effect=(lambda: 0 if count < 12 else 100) if fault == 'budget'
+                                  else ONLINE.time.monotonic):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        lifecycle.measure_read_latency(report, self.facts, command)
+                result = report['authorization_latency']
+                self.assertEqual(result['result'], 'failed')
+                self.assertLessEqual(count, 110)
+                self.assertNotIn('private', json.dumps(result))
+                if fault in ('denied', 'transport', 'invalid_time', 'extra_data'):
+                    self.assertEqual((count, result['sample_count'], result['failed_count']), (12, 1, 1))
 
     def test_initial_security_boundary_must_be_ready_before_scan_or_grant(self):
         server, lifecycle = self.lifecycle()
@@ -682,7 +761,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_natural_expiry_deadline_is_bounded_and_failure_still_withdraws(self):
         server, lifecycle = self.lifecycle('never_expire')
-        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 1, 0, 1, 100]):
+        with patch.object(lifecycle, 'measure_read_latency'), \
+             patch.object(ONLINE.time, 'monotonic', side_effect=[0, 1, 0, 1, 100]):
             with self.assertRaisesRegex(ONLINE.SuiteError, 'naturally expire'):
                 lifecycle.run({})
         lifecycle.cleanup()
