@@ -76,10 +76,14 @@ type Processor struct {
 	log                *slog.Logger
 	formatDetector     metaenrich.RuntimeFormatDetector
 	containerInspector metaenrich.ContainerInspector
+	mediaInspector     metaenrich.RuntimeMediaInspector
 }
 
 func (p Processor) WithContainerInspector(inspector metaenrich.ContainerInspector) Processor {
 	p.containerInspector = inspector
+	if media, ok := inspector.(metaenrich.RuntimeMediaInspector); ok {
+		p.mediaInspector = media
+	}
 	if detector, ok := inspector.(metaenrich.RuntimeFormatDetector); ok {
 		p.formatDetector = detector
 	}

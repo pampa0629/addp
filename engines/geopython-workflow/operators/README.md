@@ -21,7 +21,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 - `raster_mosaic`：显式源 mask 在分块有效性计算后转为各波段 NoData，避免 GDAL 同时遇到 mask 和 NoData 时忽略 mask；原始源保持不变。
 - `raster_save_tiles`：每次只物化与编码一片，随后清除该片中间文件；源快照和逐片摘要保留至执行结束，摘要内存随片数增长。
 
-`raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。
+`raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；`raster_inspect` 是只读媒体元数据 direct 入口，不进入工作流面板；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。
 
 ## 目录结构
 
@@ -64,7 +64,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
-`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义。
+`raster_inspect`、`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义。
 
 ## 拓扑构面
 

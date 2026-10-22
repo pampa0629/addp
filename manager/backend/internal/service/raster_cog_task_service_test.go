@@ -64,6 +64,7 @@ func newRasterCOGTaskDefinition() *models.RasterCOGTask {
 				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
+				"source_format":     "tiff",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(900 * 1024 * 1024),
 				"width":             int64(120000),
@@ -73,6 +74,21 @@ func newRasterCOGTaskDefinition() *models.RasterCOGTask {
 				"extent_srid":       4326,
 			},
 		},
+	}
+}
+
+func TestRasterCOGTaskRequiresActualSourceFormat(t *testing.T) {
+	for _, sourceFormat := range []string{"", "other", "img", "tiff"} {
+		task := newRasterCOGTaskDefinition()
+		task.Config["raster"].(commonModels.JSONMap)["source_format"] = sourceFormat
+		config, err := normalizeRasterCOGTaskConfig(task.Config, "manager", task.TenantID)
+		if sourceFormat == "img" || sourceFormat == "tiff" {
+			if err != nil || config.Raster.SourceFormat != sourceFormat {
+				t.Fatalf("%s: %+v %v", sourceFormat, config, err)
+			}
+		} else if err == nil {
+			t.Fatalf("accepted %q source format", sourceFormat)
+		}
 	}
 }
 
@@ -92,6 +108,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
+				"source_format":     "tiff",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(900 * 1024 * 1024),
 				"width":             int64(120000),
@@ -187,6 +204,7 @@ func TestRasterCOGPrepareResultReturnsUpdatedExistingResult(t *testing.T) {
 				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
+				"source_format":     "tiff",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(900 * 1024 * 1024),
 				"width":             int64(120000),
@@ -333,7 +351,7 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 				Locator:         "addp://engine/26/path/rasters/large.tif?type=file",
 				FullName:        "rasters/large.tif",
 			},
-			Raster: RasterCOGRasterConfig{
+			Raster: RasterCOGRasterConfig{SourceFormat: "tiff",
 				SourceSizeBytes: 7,
 				SourceSRID:      4326,
 				SourceCRS:       "EPSG:4326",
@@ -467,6 +485,7 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 	_, err = executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: &models.RasterCOGTask{TenantID: 7, Name: "生成 COG"},
 		Config: RasterCOGExecutionConfig{
+			Raster: RasterCOGRasterConfig{SourceFormat: "tiff"},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",
@@ -554,6 +573,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 	_, err = executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: &models.RasterCOGTask{TenantID: 7, Name: "生成 COG"},
 		Config: RasterCOGExecutionConfig{
+			Raster: RasterCOGRasterConfig{SourceFormat: "tiff"},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",
@@ -607,6 +627,7 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
+				"source_format":     "tiff",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(1024),
 				"width":             int64(256),

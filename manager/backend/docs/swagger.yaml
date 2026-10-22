@@ -2583,6 +2583,8 @@ definitions:
         type: integer
       height:
         type: integer
+      source_format:
+        type: string
       source_profile:
         type: string
       source_size_bytes:

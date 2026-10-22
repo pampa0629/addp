@@ -654,7 +654,7 @@ func TestQuickViewGeneratedConfigsAreAcceptedByOwningTaskServices(t *testing.T) 
 				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindRaster,
 				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/dem.tif"),
 			},
-			service.QuickViewSource{EngineID: 26, Raster: &service.RasterQuickViewSource{Profile: "geotiff", SizeBytes: 8192}},
+			service.QuickViewSource{EngineID: 26, Raster: &service.RasterQuickViewSource{Format: "tiff", Profile: "geotiff", SizeBytes: 8192}},
 		)
 		if err != nil {
 			t.Fatalf("build config: %v", err)

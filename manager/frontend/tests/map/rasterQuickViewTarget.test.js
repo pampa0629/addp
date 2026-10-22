@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isRasterMosaicMeta,
-  isTIFFRasterMeta,
+  isRasterCOGSourceMeta,
   rasterExtentLooksGeographic,
   rasterExtentSRIDFromMetadata,
   rasterMetaAttributes,
@@ -37,7 +37,7 @@ describe('rasterQuickViewTarget', () => {
       path: 'addp/image/srtm_40_01'
     }
 
-    expect(isTIFFRasterMeta(previewData, selectedNode)).toBe(true)
+    expect(isRasterCOGSourceMeta(previewData, selectedNode)).toBe(true)
     expect(rasterSpatialFacts(previewData, selectedNode)).toEqual({
       srid: 4326,
       extent: [100, 20, 101, 21]
@@ -54,7 +54,7 @@ describe('rasterQuickViewTarget', () => {
       }
     }
 
-    expect(isTIFFRasterMeta({}, selectedNode)).toBe(true)
+    expect(isRasterCOGSourceMeta({}, selectedNode)).toBe(true)
     expect(rasterMetaAttributes({}, selectedNode)).toBe(selectedNode.attributes)
   })
 
@@ -70,7 +70,14 @@ describe('rasterQuickViewTarget', () => {
       }
     }
 
-    expect(isTIFFRasterMeta(previewData, {})).toBe(false)
+    expect(isRasterCOGSourceMeta(previewData, {})).toBe(false)
+  })
+
+  it('uses canonical IMG metadata for COG capability without treating a raw suffix as evidence', () => {
+    const node = { attributes: { item: { data_type: 'media', format: 'img' } } }
+    expect(isRasterCOGSourceMeta({}, node)).toBe(true)
+    expect(isRasterCOGSourceMeta({}, { name: 'fake.img', format: 'img' })).toBe(false)
+    expect(isRasterCOGSourceMeta({}, { attributes: { item: { data_type: 'unknown', format: 'img' } } })).toBe(false)
   })
 
   it('identifies whole raster mosaic item from meta attributes', () => {

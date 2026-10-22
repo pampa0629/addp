@@ -1391,6 +1391,26 @@ func TestRasterConversionRejectsRuntimePlanAndUnsupportedFormat(t *testing.T) {
 	}
 }
 
+func TestRasterAdapterPreservesIMGIdentityInSourceOnlyPlan(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{
+		map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/image.img?type=file&item_id=8"}},
+	}}
+	result, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := workflowTasksFromInterface(result["tasks"])
+	params := tasks[0]["params"].(map[string]interface{})
+	plan := params["access_plan"].(commonModels.JSONMap)
+	source := plan["source"].(commonModels.JSONMap)
+	if source["format"] != "img" || source["kind"] != "file" || plan["target"] != nil || len(targets) != 0 {
+		t.Fatalf("invalid IMG source plan: %+v", plan)
+	}
+}
+
 func TestPreprocessWorkflowHDFSReadOnly(t *testing.T) {
 	info := commonModels.ConnectionInfo{"webhdfs_endpoint": "http://namenode:9870", "rpc_uri": "hdfs://namenode:8020", "root_path": "/addp", "authentication": "simple", "user": "reader"}
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{3: {ID: 3, Name: "test-hdfs", EngineType: "hdfs", LifecycleState: "active", ConnectionInfo: info}})

@@ -921,7 +921,7 @@
       "rasterInvert": "Invert",
       "loadingRasterQuickView": "Loading raster image...",
       "loadRasterQuickViewFailed": "Failed to load raster image",
-      "requiresCOGGeneration": "This TIFF exceeds the browser render budget. Generate a managed raster COG first.",
+      "requiresCOGGeneration": "This raster cannot be displayed directly in the browser. Generate a managed COG first.",
       "requiresManagedCOG": "The source is already COG, but a managed raster COG must still be generated first.",
       "generateRasterCOG": "Generate COG",
       "generateRasterCOGSubmitted": "Raster COG generation task submitted",

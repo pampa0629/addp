@@ -164,6 +164,14 @@ func (r *ProviderRegistry) GetScopeTableWriterProvider(formatType FormatType) (S
 	return pluginCapability[ScopeTableWriterProvider](r, formatType, "scope table writer provider")
 }
 
+func GetRuntimeMediaInfoProviderFactory(formatType FormatType) (RuntimeMediaInfoProviderFactory, error) {
+	return globalProviderRegistry.GetRuntimeMediaInfoProviderFactory(formatType)
+}
+
+func (r *ProviderRegistry) GetRuntimeMediaInfoProviderFactory(formatType FormatType) (RuntimeMediaInfoProviderFactory, error) {
+	return pluginCapability[RuntimeMediaInfoProviderFactory](r, formatType, "runtime media info provider factory")
+}
+
 func GetRuntimeFormatDetectorFactory(formatType FormatType) (RuntimeFormatDetectorFactory, error) {
 	return globalProviderRegistry.GetRuntimeFormatDetectorFactory(formatType)
 }

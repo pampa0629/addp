@@ -217,7 +217,10 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlan(ctx context.Context, req Ra
 	if locator.EngineID != engine.ID || locator.FullName() != req.Config.Target.FullName {
 		return workflowaccess.Plan{}, nil, errors.New("source locator does not match COG source")
 	}
-	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: "tiff"})
+	if req.Config.Raster.SourceFormat != "tiff" && req.Config.Raster.SourceFormat != "img" {
+		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff or img")
+	}
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: req.Config.Raster.SourceFormat})
 	if err != nil {
 		return workflowaccess.Plan{}, nil, err
 	}

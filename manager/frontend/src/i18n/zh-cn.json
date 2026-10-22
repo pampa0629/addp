@@ -921,7 +921,7 @@
       "rasterInvert": "反色",
       "loadingRasterQuickView": "正在加载栅格影像...",
       "loadRasterQuickViewFailed": "栅格影像加载失败",
-      "requiresCOGGeneration": "当前 TIFF 超出浏览器直接渲染预算，需要先生成 COG 快显优化。",
+      "requiresCOGGeneration": "当前栅格无法直接在浏览器显示，请先生成 COG 快显。",
       "requiresManagedCOG": "源文件已经是 COG，但仍需要先生成平台受管的栅格快显 COG。",
       "generateRasterCOG": "生成 COG",
       "generateRasterCOGSubmitted": "栅格快显 COG 生成任务已提交",

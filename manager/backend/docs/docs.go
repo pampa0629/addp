@@ -9816,6 +9816,9 @@ const docTemplate = `{
                 "height": {
                     "type": "integer"
                 },
+                "source_format": {
+                    "type": "string"
+                },
                 "source_profile": {
                     "type": "string"
                 },

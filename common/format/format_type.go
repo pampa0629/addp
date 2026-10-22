@@ -29,6 +29,7 @@ const (
 	FormatPNG   FormatType = "png"
 	FormatGIF   FormatType = "gif"
 	FormatTIFF  FormatType = "tiff"
+	FormatIMG   FormatType = "img"
 	FormatWebP  FormatType = "webp"
 	FormatBMP   FormatType = "bmp"
 	FormatSVG   FormatType = "svg"

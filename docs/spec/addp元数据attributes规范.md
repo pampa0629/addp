@@ -344,6 +344,10 @@ JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时�
 
 TIFF / GeoTIFF 的 CRS、extent、transform 等跨格式空间事实写入 `capabilities.spatial`，不写入 `format_info.tiff` 作为唯一消费来源。`format_info.tiff` 可保留原始 tag 摘要，但平台地图定位必须消费 `capabilities.spatial`。
 
+### format_info.img
+
+`format=img` 首期只接受自包含 ERDAS Imagine HFA。Runtime 检查返回 `driver=HFA`、`profile=hfa`、`scan_complete=true`、`band_count` 及每个波段的 `dtype`、`color_interpretation`、`nodata`、`nodata_is_nan`、`block_size` 和 `overviews`。这些为源格式事实，不存像元或转换结果。宽高、编码及大小属于 `type_info.media`；源 CRS、完整自定义 WKT 定义及覆盖范围仍属于 `capabilities.spatial`，不猜测缺失定位。失败的本次摘要必须清除旧媒体、空间与 IMG 完整标记，错误按 Meta 原有扫描/刷新事务语义处理，不把失败检查登记为成功。
+
 ### format_info.raster_mosaic
 
 `format_info.raster_mosaic` 表达栅格镶嵌数据集的格式层事实。Raster mosaic 是 `data_type=media`、`layout=whole`、`format=raster_mosaic` 的 whole-scope 数据集，不是单个 TIFF / COG。

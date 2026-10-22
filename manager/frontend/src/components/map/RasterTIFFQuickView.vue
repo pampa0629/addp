@@ -93,7 +93,8 @@ import { unByKey } from 'ol/Observable.js'
 import { fromLonLat, createGaodeBaseLayer, createTiandituBaseLayers, useMapConfig } from '@common-ui-map'
 import {
   rasterGeoTIFFProjectionFromQuickView,
-  rasterGeoTIFFSourceOptions
+  rasterGeoTIFFSourceOptions,
+  rasterWebMercatorExtent
 } from '@/utils/rasterGeoTIFFSourceOptions'
 import {
   RASTER_QUICK_VIEW_GAODE_BASE_MAP,
@@ -212,14 +213,7 @@ function formatBytes(bytes) {
 }
 
 function renderExtentInWebMercator() {
-  const extent = quickViewInfo.value.extent
-  const srid = Number(quickViewInfo.value.extent_srid || 0)
-  if (!Array.isArray(extent) || extent.length !== 4 || srid !== 4326) return null
-  const [minX, minY, maxX, maxY] = extent.map(Number)
-  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null
-  const minCorner = fromLonLat([minX, minY])
-  const maxCorner = fromLonLat([maxX, maxY])
-  return [...minCorner, ...maxCorner]
+  return rasterWebMercatorExtent(quickViewInfo.value)
 }
 
 function fitToExtent({ duration = 0 } = {}) {

@@ -134,6 +134,45 @@ func (i *WorkflowContainerInspector) InspectContainer(
 	return result, nil
 }
 
+// InspectMedia shares runtime discovery with native format/container inspection;
+// metadata and conversion use the same source-only access-plan protocol.
+func (i *WorkflowContainerInspector) InspectMedia(ctx context.Context, source *commonModels.Engine, tenantID uint, physicalPath, sourceFormat string) (*format.MediaDescribeResult, error) {
+	if i == nil || i.engineService == nil || source == nil {
+		return nil, fmt.Errorf("workflow media inspector is not configured")
+	}
+	factory, err := format.GetRuntimeMediaInfoProviderFactory(format.NormalizeFormat(sourceFormat))
+	if err != nil {
+		return nil, err
+	}
+	_, runtime, conn, err := i.resolveRuntime(ctx, tenantID, factory.RequiredMediaInfoOperators())
+	if err != nil {
+		return nil, err
+	}
+	resourceType := resourcetree.TypeFile
+	if strings.EqualFold(source.EngineType, "minio") || strings.EqualFold(source.EngineType, "s3") {
+		resourceType = resourcetree.TypeObject
+	}
+	locator := resourcetree.LocatorFromFullName(source.ID, source.EngineType, string(resourceType), physicalPath, nil)
+	if locator == nil {
+		return nil, fmt.Errorf("cannot build media source locator")
+	}
+	workflowSource, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: source, Locator: locator, Kind: workflowaccess.KindFile, Format: sourceFormat})
+	if err != nil {
+		return nil, err
+	}
+	plan, err := workflowaccess.NewSourcePlan(workflowSource)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := factory.BindMediaInfoProvider(runtime, conn, tenantID, plan)
+	if err != nil {
+		return nil, err
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return provider.DescribeMedia(inspectCtx)
+}
+
 func (i *WorkflowContainerInspector) resolveRuntime(
 	ctx context.Context,
 	tenantID uint,

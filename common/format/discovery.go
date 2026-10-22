@@ -22,6 +22,7 @@ type FormatImplementationSnapshot struct {
 	ScopeTableWriter            bool `json:"scope_table_writer_provider,omitempty"`
 	RuntimeFormatDetector       bool `json:"runtime_format_detector_factory,omitempty"`
 	RuntimeContainerInfo        bool `json:"runtime_container_info_provider_factory,omitempty"`
+	RuntimeMediaInfo            bool `json:"runtime_media_info_provider_factory,omitempty"`
 	RuntimeScopeTableReader     bool `json:"runtime_scope_table_reader_factory,omitempty"`
 	RuntimeScopeTableWriter     bool `json:"runtime_scope_table_writer_factory,omitempty"`
 	TableReaderProvider         bool `json:"table_reader_provider,omitempty"`
@@ -89,6 +90,7 @@ func implementationSnapshotForFormat(formatType FormatType) FormatImplementation
 	_, status.ScopeTableWriter = plugin.(ScopeTableWriterProvider)
 	_, status.RuntimeFormatDetector = plugin.(RuntimeFormatDetectorFactory)
 	_, status.RuntimeContainerInfo = plugin.(RuntimeContainerInfoProviderFactory)
+	_, status.RuntimeMediaInfo = plugin.(RuntimeMediaInfoProviderFactory)
 	_, status.RuntimeScopeTableReader = plugin.(RuntimeScopeTableReaderFactory)
 	_, status.RuntimeScopeTableWriter = plugin.(RuntimeScopeTableWriterFactory)
 	_, status.TableReaderProvider = plugin.(TableReaderProvider)

@@ -2320,7 +2320,7 @@ func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 }
 
 func applyRasterCRSInference(raster *RasterQuickViewSource) {
-	if raster == nil {
+	if raster == nil || raster.Format == "img" {
 		return
 	}
 	if raster.SourceSRID > 0 || strings.TrimSpace(raster.SourceCRS) != "" {
@@ -2645,6 +2645,9 @@ func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels 
 	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
 		return RasterUnavailableReasonMissingCRS
 	}
+	if raster.Format == "img" {
+		return RasterUnavailableReasonRequiresCOGGeneration
+	}
 	if strings.TrimSpace(raster.PreviewURL) == "" {
 		return "raster preview URL is unavailable"
 	}
@@ -2675,6 +2678,9 @@ func rasterDirectTIFFOptionalAction(raster *RasterQuickViewSource) string {
 }
 
 func rasterUnavailableOptionalAction(reason string, raster *RasterQuickViewSource) string {
+	if raster != nil && raster.Format == "img" {
+		return ""
+	}
 	switch strings.TrimSpace(reason) {
 	case RasterUnavailableReasonMissingSpatialExtent, RasterUnavailableReasonMissingCRS:
 		return rasterDirectTIFFOptionalAction(raster)
@@ -3020,18 +3026,21 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	if len(attrs) == 0 {
 		return nil
 	}
-	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") ||
-		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), "tiff") {
+	sourceFormat := commonJSON.String(attrs, "item", "format")
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") || (sourceFormat != "tiff" && sourceFormat != "img") {
 		return nil
 	}
-	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	if sourceFormat == "img" && commonJSON.Section(attrs, "format_info.img")["scan_complete"] != true {
+		return nil
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info."+sourceFormat)
 	mediaInfo := commonJSON.Section(attrs, "type_info.media")
 	spatialInfo := commonJSON.Section(attrs, "capabilities.spatial")
 	if tiffInfo == nil && mediaInfo == nil && spatialInfo == nil {
 		return nil
 	}
 	raster := &RasterQuickViewSource{
-		Format:              "tiff",
+		Format:              sourceFormat,
 		Profile:             strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["profile"])),
 		SizeBytes:           rasterSizeBytesFromAttributes(attrs, mediaInfo),
 		Width:               commonJSON.InterfaceInt64(mediaInfo["width"]),
@@ -3057,8 +3066,18 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	if raster.ExtentSRID == 0 {
 		raster.ExtentSRID = raster.SourceSRID
 	}
+	if facts := datatype.SpatialInfoFromPayload(spatialInfo); facts != nil && raster.SourceSRID == 0 {
+		if definition := facts.CRSDefinitionByID(raster.SourceCRS); definition != nil {
+			raster.SourceCRS = definition.Definition
+		}
+	}
 	if raster.PreviewURL == "" && strings.TrimSpace(locator) != "" {
 		raster.PreviewURL = SourceStorageStreamURLFromLocator(locator, engineID)
+	}
+	if sourceFormat == "img" {
+		raster.BandCount = commonJSON.InterfaceInt64(tiffInfo["band_count"])
+		raster.ClientReadMode = ""
+		raster.ClientRenderLibrary = ""
 	}
 	return raster
 }

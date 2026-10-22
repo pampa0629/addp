@@ -1273,6 +1273,7 @@ func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, s
 	}
 	raster := source.Raster
 	rasterMap := commonModels.JSONMap{
+		"source_format":     raster.Format,
 		"source_profile":    firstNonEmptyString(raster.Profile, "unknown"),
 		"source_size_bytes": raster.SizeBytes,
 		"width":             raster.Width,

@@ -227,6 +227,19 @@ type BoundFormatDetector interface {
 	DetectFormat(ctx context.Context) (FormatType, error)
 }
 
+// RuntimeMediaInfoProviderFactory binds native media inspection to an explicit
+// runtime and authorized source plan. It is not a stream-based media provider.
+type RuntimeMediaInfoProviderFactory interface {
+	FormatPlugin
+	RequiredMediaInfoOperators() []string
+	BindMediaInfoProvider(runtime engineplugin.WorkflowRuntimeProvider, runtimeConn engineplugin.ConnectionInfo, tenantID uint, plan workflowaccess.SourcePlan) (BoundMediaInfoProvider, error)
+}
+
+type BoundMediaInfoProvider interface {
+	FormatPlugin
+	DescribeMedia(ctx context.Context) (*MediaDescribeResult, error)
+}
+
 // RuntimeContainerInfoProviderFactory binds a source-only access plan to a
 // container info provider whose native dependencies live in a workflow runtime.
 // The factory does not inspect resources itself.

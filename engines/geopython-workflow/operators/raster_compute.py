@@ -12,6 +12,7 @@ from numbers import Integral, Real
 import shutil
 from pathlib import Path
 import tempfile
+import struct
 import threading
 import uuid
 import xml.etree.ElementTree as ET
@@ -158,6 +159,7 @@ def _raster_disk_bytes(dataset, *, profile='geotiff', blocksize=256, numeric=Fal
 class RasterDataset:
     path: Path
     workspace: Path
+    native_driver: str = ''
 
 
 @dataclass(frozen=True)
@@ -184,14 +186,15 @@ def raster_tiles_info(input_tiles):
             'columns': columns, 'rows': rows, 'total_tiles': columns * rows}
 
 
-def _raster(path):
-    return RasterDataset(Path(path), _WORKSPACE.get())
+def _raster(path, native_driver=''):
+    return RasterDataset(Path(path), _WORKSPACE.get(), native_driver)
 
 
 def _open(raster):
     if not isinstance(raster, RasterDataset) or raster.workspace != _WORKSPACE.get() or raster.workspace is None:
         raise ValueError('input_raster must come from a raster port in this execution')
-    dataset = gdal.OpenEx(str(raster.path), gdal.OF_RASTER, allowed_drivers=['GTiff', 'PNG', 'JPEG'])
+    drivers = [raster.native_driver] if raster.native_driver else ['GTiff', 'PNG', 'JPEG']
+    dataset = gdal.OpenEx(str(raster.path), gdal.OF_RASTER, allowed_drivers=drivers)
     if dataset is None or dataset.RasterCount < 1:
         raise ValueError('Raster dataset has no bands')
     return dataset
@@ -357,21 +360,87 @@ def _resized(dataset, width, height, resampling):
     return _translated(gdal.Open(str(view_path)), format='GTiff')
 
 
+def _require_self_contained_hfa(path):
+    """Bounded reference preflight, before native GDAL can follow dependencies.
+
+    Only entry headers are inspected, not raster metadata or pixel encoding.
+    Layout follows GDAL frmts/hfa/hfaopen.cpp and hfaentry.cpp. Native HFA
+    remains the sole metadata/pixel decoder. RRD reference lists (including
+    internal ones) are outside this initial self-contained profile.
+    """
+    with path.open('rb') as stream:
+        size = path.stat().st_size
+
+        def read_at(offset, count):
+            if offset < 0 or offset > size - count:
+                raise ValueError('Invalid HFA entry bounds')
+            stream.seek(offset)
+            data = stream.read(count)
+            if len(data) != count:
+                raise ValueError('Truncated HFA entry')
+            return data
+
+        header = read_at(0, 20)
+        if header[:16] != b'EHFA_HEADER_TAG\x00':
+            raise ValueError('IMG input must be ERDAS Imagine HFA')
+        file_header = read_at(struct.unpack_from('<I', header, 16)[0], 18)
+        version, _, root, header_size, _ = struct.unpack('<IIIHI', file_header)
+        if version != 1 or header_size < 120 or not root:
+            raise ValueError('Unsupported HFA entry header')
+        pending, visited = [root], set()
+        while pending:
+            offset = pending.pop()
+            if offset in visited or len(visited) >= 8192:
+                raise ValueError('Invalid or over-budget HFA entry tree')
+            visited.add(offset)
+            entry = read_at(offset, 120)
+            next_entry, _, _, child, data_offset, data_size = struct.unpack_from('<IIIIII', entry)
+            if data_size and (not data_offset or data_offset > size - data_size):
+                raise ValueError('Invalid HFA entry data bounds')
+            name = entry[24:88].split(b'\x00', 1)[0].lower()
+            kind = entry[88:120].split(b'\x00', 1)[0].lower()
+            if name in (b'externalrasterdms', b'dependentfile', b'rrdnameslist') or kind in (
+                    b'imgexternalraster', b'eimg_dependentfile', b'eimg_rrdnameslist'):
+                raise ValueError('HFA external/dependent files and RRD reference lists are not supported')
+            pending.extend(pointer for pointer in (next_entry, child) if pointer)
+
+
 def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
     path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
-    raster = _raster(path)
-    dataset = _open(raster)
-    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG'}
-    if drivers.get(plan['source']['format']) != dataset.GetDriver().ShortName:
+    source_format = plan['source']['format']
+    if source_format == 'img':
+        # Do not expose sibling .aux.xml, .rrd or .ige resources to native HFA.
+        isolated = _path().parent / uuid.uuid4().hex / path.name
+        isolated.parent.mkdir()
+        shutil.copyfile(path, isolated)
+        path = isolated
+        _require_self_contained_hfa(path)
+    native_driver = 'HFA' if source_format == 'img' else ''
+    raster = _raster(path, native_driver)
+    try:
+        dataset = _open(raster)
+    except RuntimeError as exc:
+        raise ValueError('Source format must match a supported raster driver') from exc
+    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA'}
+    if drivers.get(source_format) != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
+    if source_format == 'img':
+        bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
+        if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):
+            raise ValueError('Complex HFA bands require an explicit real-valued conversion before loading')
+        nodata = [band.GetNoDataValue() for band in bands]
+        nodata = ['nan' if value is not None and math.isnan(value) else value for value in nodata]
+        if len({band.DataType for band in bands}) != 1 or any(value != nodata[0] for value in nodata):
+            raise ValueError('HFA bands must share one data type and NoData value for lossless TIFF conversion')
     if any(Path(file).resolve() != path.resolve() for file in dataset.GetFileList() or []):
         raise ValueError('Raster input must be self-contained; external sidecars are not supported')
     # Snapshot the selected resource so later writes cannot change an upstream input.
-    snapshot = _path(path.suffix)
-    shutil.copyfile(path, snapshot)
+    snapshot = path if source_format == 'img' else _path(path.suffix)
+    if snapshot != path:
+        shutil.copyfile(path, snapshot)
     dataset = None
-    raster = _raster(snapshot)
+    raster = _raster(snapshot, native_driver)
     dataset = _open(raster)
     if source_crs:
         supplied = _crs(source_crs)
@@ -386,6 +455,34 @@ def raster_load(access_plan, source_crs=''):
         else:
             raster = _translated(dataset, format='GTiff', outputSRS=supplied.ExportToWkt())
     return raster
+
+
+def raster_inspect(access_plan):
+    """Read-only native media facts; no publication and no pixel statistics."""
+    plan = require_source_plan({'access_plan': access_plan})
+    if plan['source']['format'] != 'img':
+        raise ValueError('raster_inspect requires IMG format')
+    with raster_workspace():
+        raster = raster_load(plan)
+        facts = raster_info(raster)
+        spatial = {}
+        if facts['extent']:
+            spatial['extent'] = facts['extent']
+        if facts['extent_srid']:
+            spatial['srid'] = facts['extent_srid']
+        elif facts['crs']:
+            import hashlib
+            definition = facts['crs'].strip()
+            reference = 'ADDP:CRS:' + hashlib.sha256(definition.encode()).hexdigest()
+            spatial.update({'crs_ref': reference, 'crs_definitions': [{
+                'id': reference, 'definition_encoding': 'wkt', 'definition': definition,
+                'source': 'gdal_hfa'}]})
+        return {'schema_version': 'gdal.raster.inspect/v1', 'format': 'img', 'description': {
+            'media': {'kind': 'image', 'encoding': 'HFA', 'width': facts['width'],
+                      'height': facts['height'], 'size_bytes': raster.path.stat().st_size},
+            'spatial': spatial or None,
+            'format_info': {'profile': 'hfa', 'driver': 'HFA', 'scan_complete': True,
+                            'band_count': facts['band_count'], 'bands': facts['bands']}}}
 
 
 def _corners(dataset):
@@ -2441,6 +2538,7 @@ _SPECS = [
     (raster_tile, OperatorCategory.RASTER_EXTENT, '栅格切片', [_INPUT(), _param('tile_size', 'list[int]', '每片像素宽高；边缘保留实际尺寸')], 'raster_tiles', ['read']),
     (raster_save_tiles, OperatorCategory.RASTER_IO, '栅格切片批量保存', [_param('input_tiles', 'raster_tiles', '当前执行内的栅格切片集合', role='input'), _param('access_plan', 'object', '目标子目录访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog']), *_COG_OPTIONS], 'object', ['read', 'write']),
     (raster_info, OperatorCategory.RASTER_INSPECTION, '栅格信息', [_INPUT()], 'object', ['read']),
+    (raster_inspect, OperatorCategory.RASTER_INSPECTION, '原生栅格媒体检查', [_param('access_plan', 'object', '源访问计划')], 'object', ['read']),
     (validate_cog, OperatorCategory.RASTER_INSPECTION, 'COG 合规校验', [_INPUT()], 'object', ['read']),
     (raster_to_cog, OperatorCategory.RASTER_OUTPUT, '栅格转 COG', [_param('access_plan', 'object', '源和目标访问计划'), _param('options', 'object', 'COG 转换选项', {}, False)], 'object', ['read', 'write']),
     (raster_build_overviews, OperatorCategory.RASTER_OUTPUT, '栅格金字塔', [_INPUT(), _param('levels', 'list[int]', '递增金字塔倍率', [2, 4, 8, 16], False), _ALGORITHM()], 'raster', ['read']),
@@ -2477,8 +2575,10 @@ OPERATORS = {}
 for function, category, label, params, output, effects in _SPECS:
     name = function.__name__
     examples = {'input_raster': {'$ref': 'source'}}
-    if name in ('raster_load', 'raster_to_cog'):
+    if name in ('raster_load', 'raster_to_cog', 'raster_inspect'):
         examples = {'access_plan': {'schema_version': 'addp.workflow.access-plan/v1', 'source': {'kind':'file','format':'tiff','access':{'method':'mounted_path','path':'/mnt/input.tif'}}}}
+    if name == 'raster_inspect':
+        examples['access_plan']['source'].update({'format': 'img', 'access': {'method': 'mounted_path', 'path': '/mnt/input.img'}})
     if name in ('raster_save', 'raster_to_cog'):
         examples['access_plan'] = {**examples.get('access_plan', {}), 'schema_version':'addp.workflow.access-plan/v1', 'target':{'kind':'file','format':'tiff','name':'output.tif','write_mode':'create','access':{'method':'mounted_path','path':'/mnt/output.tif'}}}
     examples.update({'raster_reproject':{'target_crs':'EPSG:3857'}, 'raster_resample':{'size':[512,512]}, 'raster_clip':{'boundary_crs':'EPSG:4326','bbox':[110,20,111,21]}, 'raster_band_math':{'expression':'(b2-b1)/(b2+b1)'}}.get(name, {}))
@@ -2529,7 +2629,7 @@ for function, category, label, params, output, effects in _SPECS:
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=category,
         description=label, brief_description=label, overview=label + '，复用受控访问计划与当前执行内栅格对象。',
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],
-        execution_modes=['workflow', 'direct'] if name == 'raster_to_cog' else ['workflow'], effects=effects,
+        execution_modes=['direct'] if name == 'raster_inspect' else (['workflow', 'direct'] if name == 'raster_to_cog' else ['workflow']), effects=effects,
         use_cases=['遥感影像处理', '业务栅格成果生成'], notes=['CRS 不隐式推断', '栅格对象仅在当前工作流内流转'],
         workflow_example={'operator': name, 'params': examples}, attributes={'resource_groups': ['raster']})
     key, descriptor = register_operator(metadata, function)

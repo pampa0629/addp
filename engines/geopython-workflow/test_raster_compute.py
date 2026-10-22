@@ -26,6 +26,130 @@ from operators.raster_compute import (
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
+from operators.raster_compute import raster_inspect, _require_self_contained_hfa
+
+
+@pytest.mark.parametrize('compressed', [False, True])
+@pytest.mark.parametrize('epsg', [4326, 32650, None])
+def test_img_real_hfa_inspect_and_cog_pixels(tmp_path, compressed, epsg):
+    path = tmp_path / 'scene.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(path), 32, 16, 3, gdal.GDT_UInt16,
+                                               options=['COMPRESSED=YES' if compressed else 'COMPRESSED=NO'])
+    transform = (110, .01, 0, 30, 0, -.01) if epsg == 4326 else (500000, 10, 0, 3000000, 0, -10)
+    if epsg:
+        crs = osr.SpatialReference()
+        crs.ImportFromEPSG(epsg)
+        dataset.SetProjection(crs.ExportToWkt())
+        dataset.SetGeoTransform(transform)
+    expected = np.arange(32*16, dtype=np.uint16).reshape(16, 32)
+    for band in range(1, 4):
+        dataset.GetRasterBand(band).WriteArray(expected + band)
+        dataset.GetRasterBand(band).SetNoDataValue(65535)
+    dataset = None
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    result = raster_inspect(source_plan(path, 'img'))
+    description = result['description']
+    assert result['format'] == 'img'
+    assert description['media']['width'] == 32
+    assert description['media']['height'] == 16
+    assert description['media']['encoding'] == 'HFA'
+    assert description['format_info']['band_count'] == 3
+    assert description['format_info']['scan_complete'] is True
+    assert description['format_info']['bands'][0]['nodata'] == 65535
+    if epsg:
+        assert description['spatial']['srid'] == epsg
+        assert description['spatial']['extent'] == pytest.approx([
+            transform[0], transform[3] + 16*transform[5], transform[0] + 32*transform[1], transform[3]])
+    else:
+        assert not description['spatial'] or not description['spatial'].get('srid')
+    target = tmp_path / 'scene.cog.tif'
+    plan = {**source_plan(path, 'img'), 'target': target_plan(target)['target']}
+    if not epsg:
+        raster_to_cog(plan)
+        output = gdal.Open(str(target))
+        assert not output.GetProjection()
+        output = None
+    else:
+        artifact = raster_to_cog(plan)
+        assert artifact['size_bytes'] == target.stat().st_size
+        output = gdal.Open(str(target))
+        assert output.GetGeoTransform() == pytest.approx(transform)
+        assert output.GetSpatialRef().GetAuthorityCode(None) == str(epsg)
+        for band in range(1, 4):
+            np.testing.assert_array_equal(output.GetRasterBand(band).ReadAsArray(), expected + band)
+            assert output.GetRasterBand(band).GetNoDataValue() == 65535
+        output = None
+        with raster_workspace():
+            assert validate_cog(raster_load(source_plan(target)))['valid']
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('option', ['USE_SPILL=YES', 'DEPENDENT_FILE=outside.img'])
+def test_img_dependency_rejected_before_native_open(tmp_path, monkeypatch, option):
+    path = tmp_path / 'dependent.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(path), 8, 8, 1, gdal.GDT_Byte, options=[option])
+    dataset.GetRasterBand(1).Fill(42)
+    dataset = None
+    monkeypatch.setattr(gdal, 'OpenEx', lambda *a, **kw: pytest.fail('native decoder reached before dependency rejection'))
+    with pytest.raises(ValueError, match='external/dependent'):
+        raster_inspect(source_plan(path, 'img'))
+
+
+@pytest.mark.parametrize('payload', [b'not HFA at all but long enough', b'EHFA_HEADER_TAG\0' + bytes(32)])
+def test_img_invalid_header_is_rejected(tmp_path, payload):
+    path = tmp_path / 'fake.img'
+    path.write_bytes(payload)
+    with pytest.raises(ValueError):
+        raster_inspect(source_plan(path, 'img'))
+
+
+def test_img_tiff_renamed_and_wrong_declared_format_are_rejected(tmp_path):
+    tiff = create_raster(tmp_path / 'fake.img', np.ones((2, 2)))
+    with pytest.raises(ValueError, match='HFA'):
+        raster_inspect(source_plan(tiff, 'img'))
+    real = tmp_path / 'real.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(real), 8, 8, 1, gdal.GDT_Byte)
+    dataset = None
+    with raster_workspace(), pytest.raises(ValueError, match='format must match'):
+        raster_load(source_plan(real, 'tiff'))
+
+
+def test_img_entry_cycle_rejected_with_bounded_preflight(tmp_path):
+    import struct
+    path = tmp_path / 'cycle.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(path), 8, 8, 1, gdal.GDT_Byte)
+    dataset = None
+    data = bytearray(path.read_bytes())
+    header = struct.unpack_from('<I', data, 16)[0]
+    root = struct.unpack_from('<I', data, header + 8)[0]
+    struct.pack_into('<I', data, root, root)
+    path.write_bytes(data)
+    with pytest.raises(ValueError, match='entry tree'):
+        _require_self_contained_hfa(path)
+
+
+def test_img_complex_pixels_do_not_silently_discard_imaginary_component(tmp_path):
+    path = tmp_path / 'complex.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(path), 8, 8, 1, gdal.GDT_CFloat32)
+    dataset.GetRasterBand(1).Fill(3, 4)
+    dataset = None
+    with pytest.raises(ValueError, match='Complex HFA'):
+        raster_inspect(source_plan(path, 'img'))
+
+
+def test_img_mixed_nodata_is_not_silently_replaced_by_one_tiff_tag(tmp_path):
+    path = tmp_path / 'mixed-nodata.img'
+    dataset = gdal.GetDriverByName('HFA').Create(str(path), 8, 8, 2, gdal.GDT_UInt16)
+    dataset.GetRasterBand(1).Fill(7)
+    dataset.GetRasterBand(1).SetNoDataValue(0)
+    dataset.GetRasterBand(2).Fill(9)
+    dataset.GetRasterBand(2).SetNoDataValue(1)
+    dataset = None
+    target = tmp_path / 'must-not-publish.tif'
+    plan = {**source_plan(path, 'img'), 'target': target_plan(target)['target']}
+    with pytest.raises(ValueError, match='share one data type and NoData'):
+        raster_to_cog(plan)
+    assert not target.exists()
 
 
 

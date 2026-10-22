@@ -102,7 +102,7 @@ func workflowRasterAdapterSpec(id string) workflowOperatorAdapterSpec {
 		}
 	}
 	spec := conversionAdapterSpec(id, "栅格", "", "file", "file", nil, "tiff", "file", "", "image/tiff", options)
-	spec.AccessPlan.SourceFormats = []string{"tiff", "png", "jpeg"}
+	spec.AccessPlan.SourceFormats = []string{"tiff", "png", "jpeg", "img"}
 	for i := range spec.PublicParameters {
 		parameter := &spec.PublicParameters[i]
 		if parameter.Name == "source_resource" {

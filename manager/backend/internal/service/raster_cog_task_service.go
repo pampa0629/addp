@@ -63,6 +63,7 @@ type RasterCOGTargetConfig struct {
 }
 
 type RasterCOGRasterConfig struct {
+	SourceFormat    string
 	SourceProfile   string
 	SourceSizeBytes int64
 	Width           int64
@@ -456,6 +457,9 @@ func normalizeRasterCOGTaskConfig(config commonModels.JSONMap, bucket string, te
 		return RasterCOGExecutionConfig{}, err
 	}
 	raster := normalizeRasterCOGRaster(config)
+	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" {
+		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff or img")
+	}
 	cog := normalizeRasterCOGOptions(config)
 	result := normalizeRasterCOGTargetResult(config, target, bucket, tenantID)
 	return RasterCOGExecutionConfig{Target: target, Raster: raster, COG: cog, Result: result}, nil
@@ -509,6 +513,7 @@ func normalizeRasterCOGTarget(config commonModels.JSONMap) (RasterCOGTargetConfi
 func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig {
 	rasterMap, _ := asJSONMap(config["raster"])
 	raster := RasterCOGRasterConfig{
+		SourceFormat:    stringFromConfig(rasterMap["source_format"]),
 		SourceProfile:   firstNonEmptyConfig(stringFromConfig(rasterMap["source_profile"]), "unknown"),
 		SourceSizeBytes: int64FromConfig(rasterMap["source_size_bytes"], 0),
 		Width:           int64FromConfig(rasterMap["width"], 0),
@@ -523,6 +528,7 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 	}
 	normalized := commonModels.JSONMap{
 		"source_profile":    raster.SourceProfile,
+		"source_format":     raster.SourceFormat,
 		"source_size_bytes": raster.SourceSizeBytes,
 		"width":             raster.Width,
 		"height":            raster.Height,

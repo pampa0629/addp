@@ -27,11 +27,11 @@ export function rasterMetaAttributes(previewData, selectedNode) {
   return asPlainObject(preview.attributes)
 }
 
-export function isTIFFRasterMeta(previewData, selectedNode) {
+export function isRasterCOGSourceMeta(previewData, selectedNode) {
   const attrs = rasterMetaAttributes(previewData, selectedNode)
   const item = nestedObject(attrs, 'item')
   return normalizedFormat(item.data_type) === 'media' &&
-    normalizedFormat(item.format) === 'tiff'
+    ['tiff', 'img'].includes(normalizedFormat(item.format))
 }
 
 export function isRasterMosaicMeta(previewData, selectedNode) {

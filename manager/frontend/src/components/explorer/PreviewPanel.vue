@@ -564,7 +564,7 @@ import {
 import {
   rasterExtentSRIDFromMetadata,
   isRasterMosaicMeta,
-  isTIFFRasterMeta,
+  isRasterCOGSourceMeta,
   rasterSpatialFacts
 } from '@/utils/rasterQuickViewTarget'
 import { isVectorTilePreviewTarget } from '@/utils/vectorTileSetResource'
@@ -717,7 +717,7 @@ const previewComponentData = computed(() => {
   if (isXMLContent.value) {
     return withFormattedXMLPreview(props.previewData, xmlRawMode.value)
   }
-  if (previewPluginName.value !== 'image' || !isTIFFNode.value || !quickViewStatus.value) {
+  if (previewPluginName.value !== 'image' || !isRasterCOGSourceNode.value || !quickViewStatus.value) {
     return props.previewData
   }
   if (quickViewStatus.value?.can_use_quick_view) {
@@ -1434,10 +1434,10 @@ const selectedNodePath = computed(() => {
   return String(node.path || node.full_name || node.table || node.name || node.label || node.id || '').trim()
 })
 
-const isTIFFNode = computed(() => {
+const isRasterCOGSourceNode = computed(() => {
   const node = props.selectedNode || {}
   const metadata = props.previewData?.metadata || {}
-  if (isTIFFRasterMeta(props.previewData, node)) return true
+  if (isRasterCOGSourceMeta(props.previewData, node)) return true
   const format = String(
     props.previewData?.format ||
     metadata.format ||
@@ -1530,7 +1530,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isRasterCOGSourceNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null

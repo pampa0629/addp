@@ -362,6 +362,7 @@ type RasterCOGTaskTargetResponse struct {
 }
 
 type RasterCOGTaskRasterResponse struct {
+	SourceFormat    string    `json:"source_format"`
 	SourceProfile   string    `json:"source_profile,omitempty"`
 	SourceSizeBytes int64     `json:"source_size_bytes,omitempty"`
 	Width           int64     `json:"width,omitempty"`
@@ -4091,6 +4092,7 @@ func rasterCOGTaskResponse(task *models.RasterCOGTask) RasterCOGTaskResponse {
 	if raster, ok := asJSONMap(task.Config["raster"]); ok {
 		extent, _ := floatSliceFromAPIConfig(raster["extent"])
 		resp.Raster = &RasterCOGTaskRasterResponse{
+			SourceFormat:    stringFromConfig(raster["source_format"]),
 			SourceProfile:   stringFromConfig(raster["source_profile"]),
 			SourceSizeBytes: int64FromAPIConfig(raster["source_size_bytes"], 0),
 			Width:           int64FromAPIConfig(raster["width"], 0),

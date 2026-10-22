@@ -27,6 +27,7 @@ type ResourceAttributesInput struct {
 	EngineCatalogPathFor func(string) plugin.EngineCatalogPath
 	FormatDetector       RuntimeFormatDetector
 	ContainerInspector   ContainerInspector
+	MediaInspector       RuntimeMediaInspector
 	SourceEngine         *commonModels.Engine
 	TenantID             uint
 }
@@ -102,8 +103,14 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
-		if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
+		handled, err := EnrichRuntimeMediaItem(ctx, attrs, input.MediaInspector, input.SourceEngine, input.TenantID, item, input.PhysicalPath)
+		if err != nil {
 			return item, item.Fields, err
+		}
+		if !handled {
+			if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.EngineCatalogPathFor); err != nil {
+				return item, item.Fields, err
+			}
 		}
 		if err := EnrichSingleGaussianSplatItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.SizeBytes, input.EngineCatalogPathFor); err != nil {
 			return item, item.Fields, err

@@ -136,7 +136,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 文档元信息 | `DocumentInfoProvider` | Meta、Manager、Search |
 | 文档文本片段 | `DocumentTextReader` | Manager、Search |
 | 文档仅前端解析 | descriptor 保留 document 静态身份，后端不实现 `DocumentTextReader`；Manager 基于 engine/contentio 或自身 fetcher 提供 raw/range 内容 | Manager |
-| 媒体元信息 | `MediaInfoProvider` | Meta、Manager |
+| 媒体元信息 | `MediaInfoProvider`；原生解析使用执行期 `RuntimeMediaInfoProviderFactory` | Meta、Manager |
 | 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 三维模型元信息 | `Model3DInfoProvider` | Meta、Manager |
