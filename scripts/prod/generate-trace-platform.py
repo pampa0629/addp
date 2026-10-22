@@ -1,4 +1,4 @@
-"""Project the sole explicit Go trace deployment into container-local mounts."""
+"""Project explicit platform HTTP trace deployments into container-local mounts."""
 from pathlib import Path
 import json
 import os
@@ -38,7 +38,7 @@ def render():
         if not isinstance(value,dict) or set(value)!={'module_name','role','endpoint','tls_dir'}: raise ValueError('invalid deployment')
         module,role = value['module_name'],value['role']
         service = 'gateway' if module=='gateway' and role=='ingress' else module+'-backend' if role=='backend' else ''
-        if service not in known or service in services or (service != 'gateway' and not (ROOT/module/'backend/go.mod').is_file()): raise ValueError('unknown or duplicate container deployment')
+        if service not in known or service in services or (service != 'gateway' and module not in {'agent', 'copilot'} and not (ROOT/module/'backend/go.mod').is_file()): raise ValueError('unknown or duplicate container deployment')
         from urllib.parse import urlsplit
         endpoint=urlsplit(value['endpoint'])
         if endpoint.scheme!='https' or not endpoint.hostname or endpoint.username or endpoint.path!='/v1/traces' or endpoint.query or endpoint.fragment: raise ValueError('invalid OTLP endpoint')

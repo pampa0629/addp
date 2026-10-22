@@ -138,3 +138,30 @@ class RoutineHTTPRequestTests(unittest.IsolatedAsyncioTestCase):
             requests = [json.loads(line) for line in output.getvalue().splitlines()
                         if json.loads(line)["logger"] == "httpx"]
             self.assertEqual([event["level"] for event in requests], ["debug", "info"])
+
+
+class TraceCorrelationLoggingTests(unittest.TestCase):
+    def test_formatter_only_uses_current_valid_context_and_does_not_retain_it(self):
+        from addp_common.httptrace import runtime
+        from opentelemetry.sdk.trace import TracerProvider
+
+        record = logging.LogRecord("test", logging.INFO, __file__, 1, "ordinary event", (), None)
+        record.trace_id = "forged-record-trace"
+        record.request_id = "forged-record-request"
+        self.assertNotIn("trace_id", json.loads(RuntimeFormatter().format(record)))
+        self.assertNotIn("request_id", json.loads(RuntimeFormatter().format(record)))
+        request_token = runtime.request_id_var.set("6f4ff34d-583f-42c8-b193-6502161b1534")
+        provider = TracerProvider()
+        try:
+            with provider.get_tracer("logging-test").start_as_current_span("request") as span:
+                event = json.loads(RuntimeFormatter().format(record))
+                self.assertEqual(event["trace_id"], f"{span.get_span_context().trace_id:032x}")
+                self.assertEqual(event["span_id"], f"{span.get_span_context().span_id:016x}")
+                self.assertEqual(event["request_id"], "6f4ff34d-583f-42c8-b193-6502161b1534")
+            runtime.request_id_var.set("invalid\nrequest-id")
+            self.assertNotIn("request_id", json.loads(RuntimeFormatter().format(record)))
+        finally:
+            runtime.request_id_var.reset(request_token)
+            provider.shutdown()
+        self.assertNotIn("trace_id", json.loads(RuntimeFormatter().format(record)))
+        self.assertNotIn("request_id", json.loads(RuntimeFormatter().format(record)))

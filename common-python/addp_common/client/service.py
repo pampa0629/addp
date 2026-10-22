@@ -9,6 +9,8 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
+
+from ..httptrace.client import trace_transport
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CONSUMER_DESCRIPTOR_SCHEMA_VERSION = "addp.service_consumer/v1"
@@ -297,7 +299,7 @@ class ServiceConsumerClient:
             base_url=normalized_url,
             headers={"Content-Type": "application/json"},
             timeout=timeout,
-            transport=transport,
+            transport=trace_transport(normalized_url, transport),
             trust_env=False,
         )
 

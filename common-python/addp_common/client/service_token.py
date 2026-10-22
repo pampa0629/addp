@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..httptrace.client import trace_transport, trace_sync_transport
+
 
 class ServiceTokenError(RuntimeError):
     """Raised when a service access token cannot be obtained."""
@@ -125,7 +127,7 @@ class OAuthServiceTokenSource:
         self._token_url = system_url + "/api/v1/system/oauth/token"
         self._client_id = client_id
         self._client_secret = client_secret
-        self._client = httpx.AsyncClient(timeout=timeout, transport=transport, trust_env=False)
+        self._client = httpx.AsyncClient(timeout=timeout, transport=trace_transport(system_url, transport), trust_env=False)
         self._cache: dict[str, _CachedToken] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
@@ -212,7 +214,7 @@ class SyncOAuthServiceTokenSource:
         self._token_url = system_url + "/api/v1/system/oauth/token"
         self._client_id = client_id
         self._client_secret = client_secret
-        self._client = httpx.Client(timeout=timeout, transport=transport, trust_env=False)
+        self._client = httpx.Client(timeout=timeout, transport=trace_sync_transport(system_url, transport), trust_env=False)
         self._cache: dict[str, _CachedToken] = {}
         self._lock = threading.Lock()
 

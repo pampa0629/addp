@@ -83,8 +83,9 @@ def test_register_runtime_engine_uses_platform_bearer(monkeypatch):
         text = "accepted"
 
     class FakeClient:
-        def __init__(self, *, timeout, trust_env):
+        def __init__(self, *, timeout, transport, trust_env):
             captured["client"] = (timeout, trust_env)
+            captured["transport"] = transport
 
         def __enter__(self):
             return self
@@ -107,6 +108,7 @@ def test_register_runtime_engine_uses_platform_bearer(monkeypatch):
     )
 
     assert (status, body) == (202, "accepted")
+    assert isinstance(captured["transport"], httpx.BaseTransport)
     assert captured["request"] == (
         "http://system/api/v1/system/runtime/engines",
         {"engine_type": "geopython_workflow"},

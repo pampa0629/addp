@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from ..httptrace.client import trace_sync_transport
+
 from .service_token import SyncOAuthServiceTokenSource
 
 
@@ -57,7 +59,7 @@ def register_runtime_engine(
     source = SyncOAuthServiceTokenSource(system_url, client_id, client_secret, timeout=timeout)
     try:
         token = source.platform_token()
-        with httpx.Client(timeout=timeout, trust_env=False) as client:
+        with httpx.Client(timeout=timeout, transport=trace_sync_transport(system_url), trust_env=False) as client:
             response = client.post(
                 system_url.rstrip("/") + "/api/v1/system/runtime/engines",
                 json=payload,

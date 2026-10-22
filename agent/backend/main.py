@@ -23,6 +23,8 @@ from addp_common.client import (
     ModuleRegistration,
     ModuleRegistryClient,
 )
+from addp_common.httptrace import runtime as trace_runtime
+from addp_common.httptrace.server import TraceMiddleware
 from addp_common import (
     ModuleReadyMiddleware,
     live_response,
@@ -114,6 +116,7 @@ async def health_live():
 _registry_client: ModuleRegistryClient | None = None
 _registry_task: asyncio.Task | None = None
 _registry_monitor_task: asyncio.Task | None = None
+_trace_close = None
 
 
 def _module_registration() -> ModuleRegistration:
@@ -145,6 +148,8 @@ def _readiness():
 
 
 app.add_middleware(ModuleReadyMiddleware, readiness=_readiness)
+# Last installed user middleware runs outside readiness and authentication.
+app.add_middleware(TraceMiddleware, module="agent")
 
 
 @app.get(
@@ -160,37 +165,48 @@ async def health_ready():
 
 @app.on_event("startup")
 async def startup():
-    global _registry_client, _registry_task, _registry_monitor_task
-    await init_db()
-    AgentInferenceService.initialize()
-    _registry_client = ModuleRegistryClient(settings.get_system_url(), AgentInferenceService.token_source())
-    _registry_task = asyncio.create_task(
-        register_after_listener(_registry_client, _registration, settings.AGENT_BACKEND_PORT)
-    )
-    _registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(_registry_task))
+    global _registry_client, _registry_task, _registry_monitor_task, _trace_close
+    _trace_close = trace_runtime.start_optional(_registration)
+    try:
+        await init_db()
+        AgentInferenceService.initialize()
+        _registry_client = ModuleRegistryClient(settings.get_system_url(), AgentInferenceService.token_source())
+        _registry_task = asyncio.create_task(
+            register_after_listener(_registry_client, _registration, settings.AGENT_BACKEND_PORT)
+        )
+        _registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(_registry_task))
+    except BaseException:
+        await asyncio.to_thread(_trace_close)
+        _trace_close = None
+        raise
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _registry_client, _registry_task, _registry_monitor_task
-    if _registry_monitor_task is not None:
-        _registry_monitor_task.cancel()
-        try:
-            await _registry_monitor_task
-        except asyncio.CancelledError:
-            pass
-    if _registry_task is not None:
-        _registry_task.cancel()
-        try:
-            await _registry_task
-        except asyncio.CancelledError:
-            pass
-    if _registry_client is not None:
-        await _registry_client.close()
-    _registry_task = None
-    _registry_monitor_task = None
-    _registry_client = None
-    await AgentInferenceService.close()
+    global _registry_client, _registry_task, _registry_monitor_task, _trace_close
+    try:
+        if _registry_monitor_task is not None:
+            _registry_monitor_task.cancel()
+            try:
+                await _registry_monitor_task
+            except asyncio.CancelledError:
+                pass
+        if _registry_task is not None:
+            _registry_task.cancel()
+            try:
+                await _registry_task
+            except asyncio.CancelledError:
+                pass
+        if _registry_client is not None:
+            await _registry_client.close()
+        _registry_task = None
+        _registry_monitor_task = None
+        _registry_client = None
+        await AgentInferenceService.close()
+    finally:
+        if _trace_close is not None:
+            await asyncio.to_thread(_trace_close)
+            _trace_close = None
 
 
 if __name__ == "__main__":

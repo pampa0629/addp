@@ -2106,5 +2106,12 @@ jobs:
         with:
           go-version-file: common/go.mod
           cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Prepare shared Python trace source
+        run: python -m pip install -e ./common-python fastapi==0.142.2 uvicorn==0.32.0
       - name: Verify isolated trace lifecycle
+        env:
+          MONITOR_TRACES_PYTHON: python
         run: make test-monitor-traces

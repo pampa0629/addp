@@ -118,7 +118,7 @@ func TestOwnedTracePipeline(t *testing.T) {
 		return startOwnedTrace(t, w, users, &captures, module, role, next, id)
 	}
 	leaf := start("system", "backend", "", 3)
-	middle := start("monitor", "backend", leaf, 2)
+	middle := startOwnedPythonTrace(t, w, users, &captures, leaf, 2)
 	gateway := start("gateway", "ingress", middle, 1)
 	request := func(path string) string {
 		req, _ := http.NewRequest("GET", gateway+path+"?payload=never-observe-this", nil)
@@ -266,18 +266,20 @@ func TestOwnedTracePipeline(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	q := url.Values{"query": {`{module_name="system"} | trace_id="` + failure + `"`}, "start": {fmt.Sprint(from.UnixNano())}, "end": {fmt.Sprint(time.Now().UnixNano())}, "limit": {"10"}}
-	logURL.RawQuery = q.Encode()
-	req, _ := http.NewRequest("GET", logURL.String(), nil)
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("LOKI_READ_TOKEN"))
-	response, e = (&http.Client{Timeout: 5 * time.Second}).Do(req)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if response.StatusCode != 200 || !strings.Contains(string(body), failure) || !strings.Contains(string(body), "span_id") {
-		t.Fatalf("real Loki Trace metadata missing: %d %s", response.StatusCode, body)
+	for _, module := range []string{"system", "copilot"} {
+		q := url.Values{"query": {`{module_name="` + module + `"} | trace_id="` + failure + `"`}, "start": {fmt.Sprint(from.UnixNano())}, "end": {fmt.Sprint(time.Now().UnixNano())}, "limit": {"10"}}
+		logURL.RawQuery = q.Encode()
+		req, _ := http.NewRequest("GET", logURL.String(), nil)
+		req.Header.Set("Authorization", "Bearer "+os.Getenv("LOKI_READ_TOKEN"))
+		response, e = (&http.Client{Timeout: 5 * time.Second}).Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		response.Body.Close()
+		if response.StatusCode != 200 || !strings.Contains(string(body), failure) || !strings.Contains(string(body), "span_id") {
+			t.Fatalf("real Loki Trace metadata missing for %s: %d %s", module, response.StatusCode, body)
+		}
 	}
 	compose := func(args ...string) {
 		command := append([]string{"compose", "--env-file", "/dev/null", "-p", os.Getenv("TRACE_T2_PROJECT"), "-f", os.Getenv("TRACE_T2_COMPOSE")}, args...)
@@ -348,7 +350,7 @@ func TestOwnedTracePipeline(t *testing.T) {
 	if !recovered {
 		t.Fatal("new trace did not recover after collector restart and real 120s tail wait")
 	}
-	t.Log("real receiver → shared Alloy → Loki Trace metadata, safe Tempo projection, historical participants, current User revocation and collector outage/recovery passed")
+	t.Log("real Go → Python → Go and receiver → shared Alloy → Loki Trace metadata, safe Tempo projection, historical participants, current User revocation and collector outage/recovery passed")
 }
 
 func startOwnedTrace(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, module, role, next string, id uint) string {
@@ -361,6 +363,23 @@ func startOwnedTrace(t *testing.T, w string, users *ownedTraceUsers, captures *s
 	}
 	cmd := exec.Command(exe, "-test.run=^TestOwnedTraceProcess$", "-test.timeout=38m")
 	cmd.Env = append(os.Environ(), "TRACE_T2_CHILD=true", "ADDP_OBSERVABILITY_TRACES_ENABLED=true", "TRACE_T2_MODULE="+module, "TRACE_T2_ROLE="+role, "TRACE_T2_ADDRESS="+address, "TRACE_T2_NEXT="+next, "ADDP_TRACE_DEPLOYMENTS="+string(deployment), "ADDP_PROCESS_INSTANCE_ID="+instance)
+	return launchOwnedTrace(t, w, users, captures, cmd, module, role, instance, address, id)
+}
+
+func startOwnedPythonTrace(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, next string, id uint) string {
+	python := os.Getenv("TRACE_T2_PYTHON")
+	fixture := os.Getenv("TRACE_T2_PYTHON_FIXTURE")
+	if python == "" || fixture == "" {
+		t.Fatal("Python Trace source requires the standard gate dependency preparation")
+	}
+	address := filepath.Join(w, "copilot.address")
+	deployment, _ := json.Marshal([]httptrace.Deployment{{Module: "copilot", Role: "backend", Endpoint: os.Getenv("TRACE_T2_OTLP"), TLSDir: filepath.Join(w, "source-tls")}})
+	cmd := exec.Command(python, fixture)
+	cmd.Env = append(os.Environ(), "ADDP_OBSERVABILITY_TRACES_ENABLED=true", "ADDP_TRACE_DEPLOYMENTS="+string(deployment), "TRACE_T2_ADDRESS="+address, "TRACE_T2_NEXT="+next, "ADDP_PROCESS_INSTANCE_ID=t2-copilot")
+	return launchOwnedTrace(t, w, users, captures, cmd, "copilot", "backend", "t2-copilot", address, id)
+}
+
+func launchOwnedTrace(t *testing.T, w string, users *ownedTraceUsers, captures *sync.WaitGroup, cmd *exec.Cmd, module, role, instance, address string, id uint) string {
 	out, e := cmd.StdoutPipe()
 	if e != nil {
 		t.Fatal(e)

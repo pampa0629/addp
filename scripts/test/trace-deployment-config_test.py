@@ -42,6 +42,47 @@ class TraceConfigTests(unittest.TestCase):
    self.assertEqual(json.loads(projected['services']['gateway']['environment']['ADDP_TRACE_DEPLOYMENTS'])[0]['tls_dir'],'/etc/addp/traces/source')
    p.chmod(0o755)
    with self.assertRaises(ValueError):renderer.render(p,True)
+ def test_platform_projection_includes_only_explicit_agent_and_copilot_backends(self):
+  platform=module('scripts/prod/generate-trace-platform.py')
+  with tempfile.TemporaryDirectory(prefix='addp-trace-python-config-') as directory:
+   p=Path(directory);p.chmod(0o700)
+   tls=p/'source';tls.mkdir(mode=0o700)
+   for name in ['ca.crt','client.crt','client.key']:(tls/name).write_text(name)
+   (tls/'client.key').chmod(0o600)
+   def declaration(name,role='backend'):
+    return {'module_name':name,'role':role,'endpoint':'https://alloy:4318/v1/traces','tls_dir':str(tls)}
+   deployment=[declaration('agent'),declaration('copilot'),declaration('monitor')]
+   def render(values):
+    with patch.dict(os.environ,{'ADDP_TRACE_DEPLOYMENT_DIR':str(p),'ADDP_TRACE_DEPLOYMENTS':json.dumps(values),'MONITOR_TEMPO_URL':''}):platform.render()
+   render(deployment)
+   output=p/'platform-traces.json'
+   projected=json.loads(output.read_text())
+   self.assertEqual(set(projected['services']),{'agent-backend','copilot-backend','monitor-backend'})
+   self.assertEqual(output.stat().st_mode&0o777,0o600)
+   for original in deployment:
+    row=projected['services'][original['module_name']+'-backend']
+    self.assertEqual(row['environment']['ADDP_OBSERVABILITY_TRACES_ENABLED'],'true')
+    self.assertEqual(json.loads(row['environment']['ADDP_TRACE_DEPLOYMENTS']),[original|{'tls_dir':'/etc/addp/traces/source'}])
+    self.assertEqual(row['volumes'],[{'type':'bind','source':str(tls),'target':'/etc/addp/traces/source','read_only':True,'bind':{'create_host_path':False}}])
+   unchanged=output.read_bytes()
+   rejected=[
+    [declaration('agent','worker')],
+    [declaration('copilot','ingress')],
+    [declaration('geopython-workflow')],
+    [declaration('not-a-platform-module')],
+    [declaration('agent'),declaration('agent')],
+    [declaration('agent')|{'extra':'not-a-four-field-declaration'}],
+    [declaration('copilot')|{'endpoint':'http://alloy:4318/v1/traces'}],
+    [declaration('copilot')|{'endpoint':'https://alloy:4318/v1/traces?private=1'}],
+    [declaration('agent')|{'endpoint':'https://user:password@alloy:4318/v1/traces'}],
+   ]
+   for invalid in rejected:
+    with self.subTest(deployment=invalid):
+     with self.assertRaises(ValueError):render(invalid)
+     self.assertEqual(output.read_bytes(),unchanged)
+   (tls/'client.key').chmod(0o644)
+   with self.assertRaises(ValueError):render([declaration('agent')])
+   self.assertEqual(output.read_bytes(),unchanged)
  def test_unselected_preflight_ignores_stale_private_inputs(self):
   env=os.environ|{'ADDP_OBSERVABILITY_TRACES_ENABLED':'false','ADDP_TRACE_DEPLOYMENT_DIR':'/nonexistent','TEMPO_S3_SECRET_KEY':'invalid'}
   subprocess.run(['bash','-eu','-c','PROJECT_ROOT="$PWD"; source scripts/utils/observability-env.sh; addp_traces_preflight'],cwd=ROOT,env=env,check=True)

@@ -238,3 +238,8 @@ CLI 门禁验证已安装客户端，不替代 System Fosite 和 PostgreSQL 事�
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
   make test-system-iam-postgres
 ```
+
+
+### 可选同步 HTTP 追踪
+
+`addp_common.httptrace` 是 Agent/Copilot 同步 HTTP 的唯一 ASGI、HTTPX 和有界 OTLP 导出内核；由同一 ModuleRegistration 身份启动，复用显式 ADDP Trace 部署、mTLS 和既有尾采样。应用日志仍由 `runtime_logging` 唯一 JSON 出口附当前关联 ID。默认关闭，不自动采集第三方模型、异步 execution、SQL 或全量 HTTP 指标。边界、预算及验收见[平台运行观测规范 6.5](../docs/spec/addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)。验证沿 `make test-common-python`，Agent/Copilot 的直接消费者沿 `make test-agent-eval`、`make test-copilot`；真实 Go → Python → Go 与日志关联沿原 `make test-monitor-traces`，容量专项仍保留原三 Go 进程模型，不在本批执行。

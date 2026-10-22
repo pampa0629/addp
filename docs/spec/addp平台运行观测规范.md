@@ -370,6 +370,20 @@ OTLP 使用独立 TLS/认证和部署来源约束，不公开任意写入。查�
 
 调用关系沿同一有界查询从实际匹配跨度派生，不另存第二份调用事实，显示窗口、采样局限和不完整性；不推导根因、血缘或部署关系。查无 Trace 不能单独判定未采样、过期或丢弃；能力故障与未找到分开。异步任务后续另建 Trace 并通过 Link 关联，不延长创建请求跨度。
 
+#### Python 同步 HTTP 追踪接入（第二批）
+
+2026-10-22 用户确认本批并行实现 `common-python` 共享内核、Agent/Copilot 接入及结构化日志关联，仅本地验证；异步 execution、SQL、其他 Python Runtime、真实 72 小时长测和 Hosted 不在本批。Python 接入只补同步 HTTP Trace，不表示已有全量 HTTP 指标、进程指标或 QPS 告警来源；不得从采样 Trace 推导这些能力。
+
+`common-python/addp_common/httptrace` 唯一维护显式 OpenTelemetry Python SDK、ASGI Server 与 HTTPX Client 传输；Agent/Copilot 只负责把同一实际 ModuleRegistration 的模块、backend 角色及进程实例身份接入生命周期。复用 `ADDP_OBSERVABILITY_TRACES_ENABLED` 与严格 `ADDP_TRACE_DEPLOYMENTS` 四字段部署声明、仓库外私有 mTLS 目录和同一 Alloy `/v1/traces`，不引入新的 OTEL 环境变量配置路线、自动全局 instrument 或采样策略。关闭、缺少声明或配置失败不影响业务 Ready；生产端仍为已结束 Span 的 2048 非阻塞队列、失败/丢弃计数、两秒内判定导出失败与三秒有界退出。HTTPX 不提供活动 socket 取消接口；极端持续滴流最多保留一个网络守护线程，结束前不得重复出站或重建 Runtime 累积线程，迟到结果不计成功。普通成功、失败与慢请求均交现有唯一尾采样，SDK 不按远端 sampled 标志丢弃本地跨度。第三方 SDK 初始化异常也仅禁用追踪，不影响客户端导入与业务启动；不修改进程全局环境。
+
+纯 ASGI 中间件位于用户中间件最外层，作为统一 HTTP 观测入口，覆盖 Ready/认证拒绝；生命周期延续至最后响应 body、发送错误、未完成取消或异常，不缓存请求/响应正文、不改变流式协议。只从正式 route 模板取路由，方法归一为现有有限集合，5xx 与未完成请求失败分类沿 6.4，4xx 单列语义不变。内部保留合法 W3C traceparent 和既有 request_id 格式，拒绝传播 baggage/tracestate；不将后台任务自动变成异步 execution 关联。
+
+所有本批共享 Owner Client（含真实推理、服务消费、认证及登记所用 HTTPX 路径）复用唯一传输包装。每次请求/重定向先剥关联头，仅与该 Client 原配置的完整 origin 相同时注入当前上下文，不由用户输入或重定向目标扩展信任；第三方 LLM 及外部目标不携带平台关联。保持原 TLS、认证及精确 401 刷新、超时、取消和流式响应语义，流式 Client Span 在 EOF/关闭/错误时结束。遥测导出使用独立非追踪传输，不递归采集。
+
+安全属性、资源和状态沿 Go 白名单，不采集 URL/query、正文、Token、用户/租户、SQL 或原始异常文本。共享 `runtime_logging` 唯一 JSON Formatter 只附当前合法非零 request_id/trace_id/span_id，作为现有日志接收和 Loki 结构化元数据；不新增日志出口、索引标签或查询权限。Trace 查询继续由 System 当前 User 核验全部参与实例，关联日志仍需 System 正文权限。
+
+本批在既有 Common Python、Agent/Copilot 标准门禁验证：跨并发上下文、Server/Client 父子、流式取消/写失败、外域重定向剥离、4xx/5xx分类、无敏感数据、关闭与配置失败的Ready隔离、队列/导出/退出边界及实际mTLS/OTLP protobuf接收。新增依赖固定版本并同步锁与消费者准备；Python CI owner/输入登记须同批覆盖。与真实 Alloy/Tempo 的混合语言 T2 证据、正式身份及长时容量分别记录，不以测试替身或短测宣称已通过未执行的验收。
+
 ## 七、平台告警与通知
 
 ### 7.1 领域、入口与权限

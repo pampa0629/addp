@@ -5,6 +5,8 @@ import sys
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+from .httptrace.runtime import correlation
+
 
 class RoutineHTTPFilter(logging.Filter):
     """Keep successful routine HTTP exchanges at DEBUG without hiding failures."""
@@ -35,6 +37,7 @@ class RuntimeFormatter(logging.Formatter):
         value = {"time": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
                  "level": record.levelname.lower(), "logger": record.name,
                  "message": record.getMessage()}
+        value.update(correlation())
         if record.exc_info:
             value["stack"] = self.formatException(record.exc_info)
         return json.dumps(value, ensure_ascii=False)

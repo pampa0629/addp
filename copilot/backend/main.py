@@ -12,6 +12,8 @@ from addp_common.client import (
     ModuleRegistration,
     ModuleRegistryClient,
 )
+from addp_common.httptrace import runtime as trace_runtime
+from addp_common.httptrace.server import TraceMiddleware
 from addp_common import (
     ModuleReadyMiddleware,
     live_response,
@@ -61,38 +63,43 @@ async def lifespan(app: FastAPI):
     from database import init_db
     from services.inference_service import CopilotInferenceService
 
-    logger.info("Copilot Backend 启动中")
-    await init_db()
-    CopilotInferenceService.initialize()
-
-    global _registry_client
-    registry_client = ModuleRegistryClient(settings.get_system_url(), CopilotInferenceService.token_source())
-    _registry_client = registry_client
-    registry_task = asyncio.create_task(
-        register_after_listener(registry_client, _registration, settings.port)
-    )
-    registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(registry_task))
-
-    logger.info("Copilot Backend 启动完成")
-
-    yield  # 应用运行中
-
-    # 关闭时：停止心跳
-    logger.info("Copilot Backend 关闭中")
-    registry_task.cancel()
-    registry_monitor_task.cancel()
+    trace_close = trace_runtime.start_optional(_registration)
     try:
-        await registry_monitor_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await registry_task
-    except asyncio.CancelledError:
-        pass
-    await registry_client.close()
-    _registry_client = None
-    await CopilotInferenceService.close()
-    logger.info("Copilot Backend 已关闭")
+        logger.info("Copilot Backend 启动中")
+        await init_db()
+        CopilotInferenceService.initialize()
+
+        global _registry_client
+        registry_client = ModuleRegistryClient(settings.get_system_url(), CopilotInferenceService.token_source())
+        _registry_client = registry_client
+        registry_task = asyncio.create_task(
+            register_after_listener(registry_client, _registration, settings.port)
+        )
+        registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(registry_task))
+
+        logger.info("Copilot Backend 启动完成")
+
+        try:
+            yield  # 应用运行中
+        finally:
+            # 关闭时：停止心跳
+            logger.info("Copilot Backend 关闭中")
+            registry_task.cancel()
+            registry_monitor_task.cancel()
+            try:
+                await registry_monitor_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await registry_task
+            except asyncio.CancelledError:
+                pass
+            await registry_client.close()
+            _registry_client = None
+            await CopilotInferenceService.close()
+            logger.info("Copilot Backend 已关闭")
+    finally:
+        await asyncio.to_thread(trace_close)
 
 
 # 创建 FastAPI 应用
@@ -134,6 +141,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Last installed user middleware covers readiness, auth and streaming.
+app.add_middleware(TraceMiddleware, module="copilot")
 
 # 注册路由
 from api import inference_scenario_binding_router, navigate_router, notebook_router, query_router, transfer_router, workflow_router  # noqa: E402

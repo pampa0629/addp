@@ -7,6 +7,8 @@ from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+
+from ..httptrace.client import trace_transport
 from pydantic import BaseModel, ConfigDict, Field
 
 from .service_token import OAuthServiceTokenSource
@@ -127,7 +129,7 @@ class InferenceClient:
         self._token_source = token_source
         self._client = httpx.AsyncClient(
             timeout=timeout,
-            transport=transport,
+            transport=trace_transport(system_url, transport),
             trust_env=False,
             headers={"Content-Type": "application/json"},
         )

@@ -14,6 +14,8 @@ from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
+
+from ..httptrace.client import trace_transport
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .service_token import OAuthServiceTokenSource, ServiceTokenError
@@ -170,7 +172,7 @@ class ModuleRegistryClient:
         self._client = httpx.AsyncClient(
             base_url=system_url.strip().rstrip("/"),
             timeout=timeout,
-            transport=transport,
+            transport=trace_transport(system_url, transport),
             trust_env=False,
             headers={"Content-Type": "application/json"},
         )

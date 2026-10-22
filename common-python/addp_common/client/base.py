@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import httpx
+
+from ..httptrace.client import trace_transport
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -46,6 +48,7 @@ class BaseClient:
             base_url=self.base_url,
             headers=headers,
             timeout=timeout,
+            transport=trace_transport(self.base_url),
             trust_env=False,
         )
 
