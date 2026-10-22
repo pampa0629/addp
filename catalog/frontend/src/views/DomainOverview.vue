@@ -23,7 +23,7 @@
      <div class="resource-types"><el-button v-for="item in overview.entry_types" :key="item.entry_type" @click="browse({ entry_type: item.entry_type })">{{ catalogEntryTypeLabel(item.entry_type, t) }} · {{ item.count }}</el-button></div>
      <el-empty v-if="overview.total_entries === 0" :description="t('catalog.entries.domainContext.empty')" />
      <div class="statuses"><el-button v-for="item in overview.governance_statuses" :key="item.status" link @click="browse({ governance_status: item.status })">{{ t(`catalog.status.governance.${item.status}`) }} · {{ item.count }}</el-button></div>
-     <section v-if="overview.coverage"><h3>{{ t('catalog.domainOverview.governance') }}</h3><div class="coverage-grid"><el-button v-for="dimension in overview.coverage.dimensions" :key="dimension.key" :disabled="!dimension.not_covered" @click="browse({ coverage_dimension: dimension.key, coverage_state: 'missing' })">{{ coverageDimensionLabel(dimension.key, t) }} · {{ dimension.covered }}/{{ dimension.applicable }}</el-button></div></section>
+     <section v-if="overview.coverage"><h3>{{ t('catalog.domainOverview.governance') }}</h3><div class="coverage-grid"><el-button v-for="dimension in overview.coverage.dimensions" :key="dimension.key" :disabled="!dimension.not_covered" @click="browse({ coverage_dimension: dimension.key, coverage_state: 'missing' })">{{ coverageDimensionLabel(t, dimension.key, 'name') }} · {{ dimension.covered }}/{{ dimension.applicable }}</el-button></div></section>
     </template>
    </el-card>
    <el-card shadow="never" data-testid="catalog-domain-reference-summary">

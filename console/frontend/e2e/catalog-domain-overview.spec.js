@@ -38,6 +38,7 @@ test('Catalog domain overview shares inventory counts, resource drill-down and a
  await expect(overview).toBeVisible()
  await expect(overview).toContainText('户外业务语义和责任边界')
  await expect(overview.getByTestId('catalog-domain-resource-summary')).toContainText('标准文档 · 1')
+ await expect(overview.getByRole('button', { name: '业务定义 · 5/5', exact: true })).toBeDisabled()
  await expect(overview.getByTestId('catalog-domain-reference-summary')).toContainText('公共活动标识')
  await expect(overview).toContainText('无权查看此类引用')
  expect(reads.some(path => path.includes('/api/v1/model/') || path.includes('/api/v1/standard/'))).toBe(false)
