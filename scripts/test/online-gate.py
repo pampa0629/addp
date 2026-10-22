@@ -337,7 +337,7 @@ SUITES: Mapping[str, Suite] = {
         ),
     ),
     "manager-internal-artifact-lineage": Suite(
-        command=(sys.executable, "scripts/test/manager-internal-artifact-lineage-online.py"),
+        command=(sys.executable, "-m", "scripts.test.manager-internal-artifact-lineage-online"),
         services=(
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),
