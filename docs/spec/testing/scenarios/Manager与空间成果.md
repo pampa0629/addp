@@ -280,3 +280,7 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 ### D8 汇水分区持久化
 
 独立手工 `raster-drainage-basins-d8-persistence`／`make test-raster-drainage-basins-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。四条已登记多出口方向／DEM接流向／填洼接流向／全无效COG链，七类非法方向（含64位NoData相邻值）／内部伪终点／越界或无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确失败链。独立逐源路径核全像元／mask、出口行列编号、相邻出口不合并、唯一归属与总数守恒；严格三方大小、COG／网格／CRS、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与全部清理。入口、夹具及登记已实现；本地Native新增夹具专项42项（2676筛除，不是新全量）、脚本门禁62项及完整Online登记、Python CI标准登记通过，记录输入无漂移。独立Hosted待实际运行及完整归档审计，不计UI或容量；Linux全量等CI会话回传，原套件／权限／跨模块产品逻辑不变。
+
+### D8 上游最长流长持久化
+
+独立手工 `raster-flow-length-upstream-d8-persistence`／`make test-raster-flow-length-upstream-d8-online-runner`，600秒预算；复用Hosted、NFS、同源默认入口Runtime、普通User原12权限。米制／国际英尺／美制测量英尺已登记方向、DEM接流向、填洼接流向及全无效六条COG链，七类非法方向码／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交共14条准确length任务失败。独立逐源路径全像元oracle核横纵对角米制中心距离、无入流零、汇合取最长以及开放终点保留上游长度；完整mask／原网格／CRS／Float64／NaN／COG及金字塔、严格artifact／物理／Meta相等正整数大小、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与Runtime／NFS／部署／Infra清理均须满足。查询语言不改写旧失败；不修改产品算法、原套件、权限或跨模块产品逻辑。入口、夹具、Native recipe与手工Hosted登记已实现。本地标准Native新增夹具专项48项通过（2844项筛除不计通过），标准脚本门禁62项与完整Online登记通过，Python CI登记10项通过；记录输入无漂移。实际Hosted及完整归档终审待验，Linux全量仍等专门CI会话回传，不计UI或容量。
