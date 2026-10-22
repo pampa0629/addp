@@ -248,3 +248,12 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 四条成功链严格核完整像元／mask、Float64 NaN、单位、原 CRS／网格、COG、artifact／物理／Meta 相等正整数大小、精确父执行／普通用户／租户／引擎自动扫描、当前执行血缘和 Monitor。四条拒绝后均核无新增成果、扫描和派生血缘；独立 oracle、源物理／Meta 与先前成果不变贯穿全部执行。退出路径先停止本轮 Runtime，再核精确挂载源与 loop backing file，卸载、分离设备、删除镜像／占位文件和本轮归属目录，随后核 NFS、产品部署及 Infra 零残留；部分启动失败也必须清理，不允许以跳过或错误阶段充数。
 
 标准确定性入口为 `make test-raster-disk-pressure-online-runner`，由原 `make test-raster-online-runner` 聚合，覆盖隔离挂载归属、失败清理、8 条业务链和 CI 登记；GDAL 物理 oracle 与拒绝／恢复回归走 `make test-geopython-workflow`。本场景不新增并发抢盘或容量不可读取的 Hosted 故障注入，相关 Native 证据独立保留。独立入口与夹具已实现，本地 Native 全量、受影响场景复验及标准脚本聚合门禁通过；目前尚未执行真实 Hosted，仍需先补齐提交语言传递，不计 T4 通过。
+
+
+## raster-fill-depressions-persistence
+
+独立手工 Hosted Linux x86_64，标准业务入口 `make test-online ONLINE_SUITE=raster-fill-depressions-persistence`。复用现有 Hosted 生命周期、NFS、同源产品默认入口 Runtime 与普通 User 原十二权限，独立600秒业务预算，不改变原 Raster／分类整理套件、权限或跨模块产品逻辑。
+
+北向非方形网格的519×515多波段 DEM，显式选择第二波段；覆盖嵌套洼地、多／对角出口、图像与内部无效边界、合法零和负高程、跨512块、NoData／mask／alpha／非有限。三条保存链为米制填洼、英尺换算米制后填洼、全无效第三波段，独立逐水位连通oracle核全像元／mask；输出Float64米制NaN、原网格／CRS、COG／overview、无scale/offset泄漏。非法波段、旋转网格、单位冲突及未应用scale四类必须精确匹配当前父执行和fill任务的参数失败，不能用权限／保护投影／加载失败充数。每条只承认实际输入的当前执行血缘；核artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎与Monitor，失败无发布、无新增扫描或派生血缘，源及先前成果不变。
+
+成功与失败均沿现有隔离生命周期核工作目录、NFS、部署和Infra零残留。Native物理夹具与脚本门禁走标准入口，新增文件同次登记Native、Online、影响路由及CI一致性检查；入口、夹具及 CI 登记已实现并通过本地 Native 专项94项、脚本57项与完整登记检查；详细边界与日志指纹见[栅格专题](../../../next/栅格算子体系后续专题.md#dem-填洼独立持久化验收)。真实Hosted尚待运行，不计T4通过。不认证UI、容量、平台中英文矩阵或完整水文分析，Linux全量继续等CI会话回传。

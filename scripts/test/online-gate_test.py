@@ -106,7 +106,7 @@ class OnlineGateTest(unittest.TestCase):
                 "vector-rasterize-persistence",
                 "vector-zonal-statistics-persistence",
                 "raster-proximity-persistence",
-                "raster-focal-mode-persistence", "raster-boundary-clean-persistence", "raster-thin-persistence", "raster-band-recommendation-workflow", "raster-nibble-persistence", "raster-nibble-capacity", "raster-disk-pressure",
+                "raster-focal-mode-persistence", "raster-boundary-clean-persistence", "raster-thin-persistence", "raster-fill-depressions-persistence", "raster-band-recommendation-workflow", "raster-nibble-persistence", "raster-nibble-capacity", "raster-disk-pressure",
                 "raster-focal-statistics-persistence",
                 "raster-zonal-statistics-persistence",
                 "vector-pmtiles-workflow",

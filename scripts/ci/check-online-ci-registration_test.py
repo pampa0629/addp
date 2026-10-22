@@ -209,6 +209,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_thin_profile(self.repository,registered)
             target.write_text(original)
 
+    def test_fill_depressions_requires_manual_nfs_full_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-fill-depressions-gate.sh','scripts/test/raster-fill-depressions-persistence-online.py',
+            'business/scripts/online-raster-fill-depressions-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_fill_depressions_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-fill-depressions-persistence'}
+        CHECK.validate_raster_fill_depressions_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-fill-depressions-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-fill-depressions-online-runner'),(paths[2],'test_online_fill_depressions_fixture.py'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[5],'raw_filled_pixels'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'unit_metres_verified'),(paths[4],'source_edges(client'),(paths[4],'depression_fill_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[5],'empty-filled.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_fill_depressions_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_fill_depressions_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'scripts/test/raster-band-recommendation-workflow-online.py', 'business/scripts/online-raster-band-recommendation-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'Makefile')
