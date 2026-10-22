@@ -96,6 +96,7 @@ describe('BrowserAuthSession', () => {
         queueMicrotask(() => this.listener({
           data: {
             type: 'token',
+            requestId: message.requestId,
             sender: 'another-tab',
             token: 'revoked-peer-token',
             expiresAt: Date.now() + 900_000
