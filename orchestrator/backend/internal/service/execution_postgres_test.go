@@ -238,6 +238,9 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 		frozen := legacyPending
 		frozen.ExecutionID = uuid.NewString()
 		frozen.ExecutionConfig, _ = freezeExecutionPlan(testSteps())
+		if err := execution.FreezeDisplayLanguage(&frozen, "zh-cn"); err != nil {
+			t.Fatal(err)
+		}
 		for _, item := range []*execution.TaskExecution{&legacyPending, &legacyRunning, &complete, &frozen} {
 			if err := tx.Create(item).Error; err != nil {
 				t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"gorm.io/gorm/clause"
 
 	commonModels "github.com/addp/common/models"
@@ -87,6 +88,15 @@ func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models
 		if err := commonExecution.InheritOrchestratorActor(tx, item); err != nil {
 			return nil, err
 		}
+		var parentExecution commonExecution.TaskExecution
+		if err := tx.WithContext(ctx).Where("tenant_id = ? AND execution_id = ?", item.TenantID, *item.ParentExecutionID).First(&parentExecution).Error; err != nil {
+			return nil, err
+		}
+		if err := commonExecution.InheritDisplayLanguage(item, &parentExecution); err != nil {
+			return nil, err
+		}
+	} else if err := commonExecution.FreezeDisplayLanguage(item, commoni18n.Language(ctx)); err != nil {
+		return nil, err
 	}
 	if err := tx.WithContext(ctx).Create(item).Error; err != nil {
 		return nil, err

@@ -48,6 +48,9 @@ func TestQualityPlanReceivesResolvedUpstreamTargets(t *testing.T) {
 	db := newOrchestratorExecutionServiceTestDB(t)
 	config, _ := freezeExecutionPlan(models.Steps{{ID: "s1", Name: "Step", Provider: "quality", TaskType: "quality_plan", TaskID: 42}})
 	item := execution.TaskExecution{TenantID: 7, ExecutionID: "parent", Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Source: execution.ModuleOrchestrator, Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: config}
+	if err := execution.FreezeDisplayLanguage(&item, "zh-cn"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/models"
 	orchmodels "github.com/addp/orchestrator/internal/models"
 )
@@ -46,7 +47,17 @@ func freezeExecutionPlan(steps orchmodels.Steps) (models.JSONMap, error) {
 }
 
 func readExecutionPlan(value models.JSONMap) (*executionPlan, error) {
-	data, err := json.Marshal(value)
+	if _, err := commonExecution.DisplayLanguage(&commonExecution.TaskExecution{ExecutionConfig: value}); err != nil {
+		return nil, err
+	}
+	// The execution language is a common snapshot fact, outside the private plan.
+	planConfig := make(models.JSONMap, len(value))
+	for key, item := range value {
+		if key != commonExecution.DisplayLanguageKey {
+			planConfig[key] = item
+		}
+	}
+	data, err := json.Marshal(planConfig)
 	if err != nil {
 		return nil, err
 	}

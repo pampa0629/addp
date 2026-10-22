@@ -102,6 +102,9 @@ func TestCreateExecutionWithContextInheritsActorFromRunningOrchestratorParent(t 
 		TriggeredBy: func() *int { v := int(principalID); return &v }(), ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}
+	if err := commonExecution.FreezeDisplayLanguage(parent, "en"); err != nil {
+		t.Fatal(err)
+	}
 	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
 		t.Fatalf("create parent execution: %v", err)
 	}

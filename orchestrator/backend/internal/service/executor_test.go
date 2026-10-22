@@ -686,6 +686,9 @@ func submissionLeaseForTest(t *testing.T, executor *Executor) context.Context {
 		t.Fatal(err)
 	}
 	item := execution.TaskExecution{TenantID: 7, ExecutionID: "parent-exec", Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Source: execution.ModuleOrchestrator, Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: config}
+	if err := execution.FreezeDisplayLanguage(&item, "zh-cn"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
