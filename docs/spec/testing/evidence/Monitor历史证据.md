@@ -327,3 +327,16 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 最终 `make test-monitor-frontend` 退出 0：89 项单元、272 项浏览器及生产构建均通过，日志 `/tmp/addp-service-time-monitor-complete.log`；覆盖相对窗口随每次请求前移、未提交草稿隔离、自定义真实日期录入与 UTC 转换、半开边界、离线后恢复退出结果、中英文窄屏、分页／刷新／重载及趋势隔离。22 项最终实现／测试／规范输入与成功冻结副本逐字节一致。`make test-frontend-ci-registration` 通过 20 项回归和 21 个受控前端登记检查，日志 `/tmp/addp-service-time-registration.log`；现有 Common／System／Monitor／Console 路径已覆盖，无需新增 Make 或 workflow。
 
 上述四组成功浏览器运行的输出目录与精确端口租约均已由标准入口清理，另行核对不存在。已人工检查此前同一共享控件的中英文窄屏截图 `/tmp/addp-service-time-visuals/service-time-{zh-cn,en}.png`；最终全量同场景及真实日期录入均通过。最终运行的补充截图捕获未取得新文件，仅为临时产物收集，不计新的截图证据，也未据此重复执行测试。本批为本地 T0／T1／T3 与构建验证，不代表正式身份 Hosted T4；CI 与 Hosted 等专门会话回传，没有查询、调度、设置定时或重启个人服务。
+
+
+### 服务实例离线原因筛选共享入口
+
+2026-10-22，服务监控复用 System 当前离线观测的 `stop_reason=graceful|lease_expired`，支持全部原因、正常退出及租约超时筛选，并在列表对应原因旁说明租约超时只表示失联。原因与状态、采集声明和时间取交集，不自动切换到 DOWN，不按浏览器时钟或采集失败推断退出；实例恢复后退出原因结果。沿原表单搜索提交、回到第一页并关闭旧趋势，分页／刷新／重载／Console iframe 保留已提交原因，自动刷新不应用原因草稿，重置清除原因；原因参数不进入进程趋势，离线实例仍不能打开历史趋势。
+
+原因控件、枚举规范化和中英文译名统一到 Common Frontend 的 `RuntimeInstanceStopReasonSelect`／`runtimeInstanceStopReason.mjs`；System 原内联选择器和枚举删除，模块概览、实例列表与日志诊断同步消费共享译名。System 仍选择立即查询，Monitor 仍搜索提交；没有 API/Swagger、权限、后端状态裁决或部署变化。现有 Common／System／Monitor／Console 前端门禁及自动路径登记覆盖，不新增 Make、workflow 或测试路线。
+
+冻结基线 `66b1f8ab8725bd3c32c9b8a0150694561c894a62`，仅叠加本批输入，实际 Node `v24.19.0`。最终 `make test-common-frontend` 退出 0，251 项通过，日志 `/tmp/addp-service-reason-common-final.log`；`make test-system-frontend` 退出 0，152 项单元、194 项浏览器及构建通过，日志 `/tmp/addp-service-reason-system-final.log`；`make test-monitor-frontend` 退出 0，90 项单元、275 项浏览器及构建通过，日志 `/tmp/addp-service-reason-monitor-final.log`；`make test-console-frontend` 退出 0，188 项单元、208 项浏览器及构建通过，日志 `/tmp/addp-service-reason-console.log`。新增中英 T3 覆盖原因／状态／时间交集、计数分页、范围切换、恢复移除、草稿隔离、重置、未知原因不分类，以及真实 Console 语言切换／重载保持一个 iframe。`make test-frontend-ci-registration` 通过 20 项回归与 21 个受控前端登记检查，日志 `/tmp/addp-service-reason-registration.log`。
+
+首轮 Monitor 为 273 项浏览器通过、两项新用例失败：测试错误要求手动刷新保留未提交草稿，既有行为是手动刷新恢复已提交条件；改为断言选择不提交，并由独立自动刷新用例验证草稿隔离，未改产品交互。标准入口定向两项通过后，完整 Monitor 门禁通过，首轮与定向日志为 `/tmp/addp-service-reason-monitor.log`、`/tmp/addp-service-reason-targeted.log`。首轮 System 在发现运行日志仍引用移走的译名后精确中断当次独立门禁，不计通过；补齐消费者与唯一所有权回归后沿相同入口完整重跑通过，未停止个人服务。初轮日志 `/tmp/addp-service-reason-system.log`，保留中断状态与当时已通过项，不扩大为完整验收。
+
+最终仅为新窄屏截图增加“下拉弹层已关闭”的断言，再沿 `npm run test:e2e -- e2e/process-resources.spec.js --grep 'service stop reasons'` 重跑中英两项退出 0，日志 `/tmp/addp-service-reason-visual-final.log`。已检查稳定截图 `/tmp/addp-service-reason-visuals/service-stop-reason-{zh-cn,en}.png`；18 项最终代码／测试输入与成功验证副本逐字节一致，三项规范及能力摘要同步更新。四组成功浏览器门禁和最终截图专项的输出目录、精确端口租约均独立核对已清理；失败／中断证据按标准保留在临时目录。本批为本地 T0／T1／T3 与构建，不计正式身份 Hosted T4；CI 和 Hosted 等专门会话回传，未查询、调度、设置定时或重启个人服务。

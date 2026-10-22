@@ -116,7 +116,7 @@
                         <el-tag size="small" :type="instanceStatusTagType(instance)">{{ instanceStatusLabel(instance) }}</el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column :label="t('system.module.instances.stopReason')" width="145">
+                    <el-table-column :label="t('common.runtimeInstanceStopReason.label')" width="145">
                       <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
                     </el-table-column>
                     <el-table-column :label="t('system.module.instances.node')" min-width="220">
@@ -229,6 +229,7 @@ import ModuleLogPipeline from '../components/ModuleLogPipeline.vue'
 import { modulesAPI } from '../api/modules'
 import { useAuthStore } from '../store/auth'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
+import { runtimeInstanceStopReasonLabelKey } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from '../utils/moduleRegistry'
 import { formatRuntimeUptime } from '../utils/moduleRuntimePresentation'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
@@ -279,8 +280,8 @@ const visibleModules = computed(() => modules.value
 
 function stopReasonLabel(instance) {
   if (isInstanceOnline(instance)) return '—'
-  const key = `system.module.stopReasons.${instance.stop_reason}`
-  return instance.stop_reason && te(key) ? t(key) : '—'
+  const key = runtimeInstanceStopReasonLabelKey(instance.stop_reason)
+  return key ? t(key) : '—'
 }
 
 function formatUptime(instance) {

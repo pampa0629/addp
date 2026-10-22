@@ -602,3 +602,87 @@ for (const locale of ['zh-cn', 'en']) test(`custom offline time is fixed, half-o
   await expect.poll(() => state.listCalls.at(-1)).toMatchObject(expected)
   await expect(page).toHaveURL(url => url.searchParams.get('time_period') === 'custom' && url.searchParams.get('time_from') === expected.time_from)
 })
+
+for (const locale of ['zh-cn', 'en']) test(`service stop reasons preserve System intersections, paging and recovery (${locale})`, async ({ page }, testInfo) => {
+  const en = locale === 'en'
+  const graceful = en ? 'Graceful Exit' : '正常退出', expired = en ? 'Lease expired; possible unexpected exit' : '租约超时，疑似异常退出'
+  const all = en ? 'All instances' : '全部实例', search = en ? 'Search' : '搜索'
+  const state = await backend(page, { locale, instances: [
+    { id: 1, stop_reason: 'lease_expired', registered_at: '2026-10-22T10:00:00Z' },
+    { id: 2, status: 'down', stop_reason: 'graceful', stopped_at: '2026-10-22T10:30:00Z' },
+    ...Array.from({ length: 23 }, (_, index) => ({ id: index + 3, status: 'down', stop_reason: 'lease_expired', stopped_at: '2026-10-22T10:30:00Z', process_metrics_declared: index !== 22 })),
+    { id: 26, status: 'down', stop_reason: 'future_reason', stopped_at: '2026-10-22T10:30:00Z' }
+  ] })
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.goto('/service-resources?status=all&time_basis=offline&refresh=off&page=2')
+  const reason = page.locator('.process-filters .el-select').filter({ has: page.locator(`input[aria-label="${en ? 'Stop Reason' : '下线原因'}"]`) })
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(4)
+  const previous = state.listCalls.length
+  await reason.click()
+  await page.getByRole('option', { name: graceful, exact: true }).click()
+  await expect(reason).toContainText(graceful)
+  expect(state.listCalls.at(-1)).not.toHaveProperty('stop_reason')
+  expect(state.listCalls).toHaveLength(previous)
+  await page.getByRole('button', { name: search, exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('stop_reason') === 'graceful' && url.searchParams.get('status') === 'all' && url.searchParams.get('time_basis') === 'offline' && !url.searchParams.has('page'))
+  await expect(page.getByTestId('process-stop-reason')).toHaveText([graceful])
+  expect(state.calls.at(-1)).toBe('2')
+  expect(state.trendCalls).toHaveLength(0)
+  await expect(page.getByRole('button', { name: en ? 'View trend' : '查看趋势', exact: true })).toBeDisabled()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await expect(page.locator('.el-select__popper:visible')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`service-stop-reason-${locale}.png`), fullPage: true })
+  await reason.click()
+  await page.getByRole('option', { name: expired, exact: true }).click()
+  await page.getByRole('button', { name: all, exact: true }).click()
+  await expect(page.getByTestId('process-stop-reason')).toHaveText(Array(20).fill(expired))
+  expect(state.listCalls.at(-1)).toMatchObject({ stop_reason: 'lease_expired', time_basis: 'offline', page: '1' })
+  expect(state.listCalls.at(-1)).not.toHaveProperty('status')
+  expect(state.listCalls.at(-1)).not.toHaveProperty('process_metrics_declared')
+  await expect(page.getByTestId('process-list')).toContainText(en ? 'does not prove that the process exited' : '不能据此断定进程已经退出')
+  await page.locator('.el-pagination button.btn-next').click()
+  await expect.poll(() => state.calls.at(-1)).toBe('23,24,25')
+  await page.reload()
+  await expect(page.getByTestId('process-stop-reason')).toHaveText(Array(3).fill(expired))
+  await expect(reason).toContainText(expired)
+  expect(state.listCalls.at(-1)).toMatchObject({ stop_reason: 'lease_expired', page: '2', time_basis: 'offline' })
+  state.setStatus(23, 'up')
+  await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('24,25')
+  const summaries = state.calls.length
+  await page.getByRole('button', { name: en ? 'Online with collection enabled' : '在线且已启用采集', exact: true }).click()
+  await expect(page.getByTestId('process-stop-reason')).toHaveCount(0)
+  expect(state.calls).toHaveLength(summaries)
+  expect(state.listCalls.at(-1)).toMatchObject({ status: 'up', stop_reason: 'lease_expired', time_basis: 'offline', process_metrics_declared: 'true', page: '1' })
+  await page.getByRole('button', { name: en ? 'Reset' : '重置', exact: true }).click()
+  await expect(page).toHaveURL(/service-resources\?refresh=off$/)
+  await expect(page.getByTestId('process-stop-reason')).toHaveText(['—', '—'])
+  await expect(reason).toContainText(en ? 'All stop reasons' : '全部下线原因')
+  expect(state.listCalls.at(-1)).not.toHaveProperty('stop_reason')
+})
+
+test('automatic service refresh keeps the applied reason separate from its draft', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, status: 'down', stop_reason: 'lease_expired' },
+    { id: 2, status: 'down', stop_reason: 'graceful' }
+  ] })
+  await page.clock.install()
+  await page.goto('/service-resources?status=all&stop_reason=lease_expired&refresh=10')
+  await expect(page.getByTestId('process-stop-reason')).toHaveText(['租约超时，疑似异常退出'])
+  const reason = page.locator('.process-filters .el-select:has(input[aria-label="下线原因"])')
+  await reason.click()
+  await page.getByRole('option', { name: '正常退出', exact: true }).click()
+  const before = state.listCalls.length
+  await page.clock.fastForward(10001)
+  await expect.poll(() => state.listCalls.length).toBeGreaterThan(before)
+  expect(state.listCalls.at(-1).stop_reason).toBe('lease_expired')
+  await expect(reason).toContainText('正常退出')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  await expect(page.getByTestId('process-stop-reason')).toHaveText(['正常退出'])
+  state.setStatus(2, 'up')
+  const beforeRecovery = state.listCalls.length
+  await page.clock.fastForward(10001)
+  await expect.poll(() => state.listCalls.length).toBeGreaterThan(beforeRecovery)
+  await expect(page.getByTestId('process-stop-reason')).toHaveCount(0)
+})

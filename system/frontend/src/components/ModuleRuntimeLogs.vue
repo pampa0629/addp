@@ -11,7 +11,7 @@
       </el-descriptions>
       <el-alert v-if="isSource" :title="t('system.module.sources.hint')" type="info" :closable="false" />
       <ModuleLogPipeline v-if="!isSource && modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
-      <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('system.module.instances.leaseExpiredHint') }}</p>
+      <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
       <div class="log-controls">
         <el-input v-model="traceFilter" :placeholder="t('system.module.logs.traceID')" :aria-label="t('system.module.logs.traceID')" clearable @change="changed" />
         <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" @change="changed">

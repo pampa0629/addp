@@ -62,10 +62,6 @@
         "ingress_online": "入口在线",
         "ingress_offline": "入口离线"
       },
-      "stopReasons": {
-        "graceful": "正常退出",
-        "lease_expired": "租约超时，疑似异常退出"
-      },
       "status": {
         "up": "UP · 在线",
         "down": "DOWN · 离线"
@@ -104,10 +100,8 @@
         "leaseExpiresAt": "租约到期",
         "offlineDeterminedAt": "离线判定时间",
         "diagnostics": "诊断",
-        "leaseExpiredHint": "租约超时仅表示实例失联，不能据此断定进程已经退出。",
         "registeredAt": "注册时间",
         "processStartedAt": "进程启动时间",
-        "stopReason": "下线原因",
         "uptime": "持续运行时长",
         "uptimeDays": "{days} 天 {hours} 小时 {minutes} 分钟",
         "uptimeHours": "{hours} 小时 {minutes} 分钟",
@@ -122,7 +116,6 @@
         "role": "实例角色",
         "status": "运行状态",
         "allStatuses": "全部状态",
-        "allStopReasons": "全部下线原因",
         "timeRange": "时间范围",
         "custom": "自定义时间",
         "from": "起始时间",

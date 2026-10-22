@@ -19,10 +19,7 @@
         <el-option :label="t('system.module.status.up')" value="up" />
         <el-option :label="t('system.module.status.down')" value="down" />
       </el-select>
-      <el-select v-model="stopReason" :empty-values="[null, undefined]" :aria-label="t('system.module.instances.stopReason')" class="query-control" @change="search">
-        <el-option :label="t('system.module.query.allStopReasons')" value="" />
-        <el-option v-for="reason in stopReasons" :key="reason" :label="t(`system.module.stopReasons.${reason}`)" :value="reason" />
-      </el-select>
+      <RuntimeInstanceStopReasonSelect v-model="stopReason" class="query-control" @change="search" />
       <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" @change="search" />
       <el-button @click="reset">{{ t('system.module.query.reset') }}</el-button>
       <el-button :icon="Refresh" :loading="loading" :disabled="period === 'custom' && !validCustomRange" @click="refresh">{{ t('system.module.refresh') }}</el-button>
@@ -43,7 +40,7 @@
               <el-descriptions-item :label="t('system.module.instances.lastHeartbeat')">{{ formatDate(row.last_heartbeat) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.leaseExpiresAt')">{{ formatDate(row.lease_expires_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.offlineDeterminedAt')">{{ formatDate(row.stopped_at) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('system.module.instances.stopReason')">{{ stopReasonLabel(row) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('common.runtimeInstanceStopReason.label')">{{ stopReasonLabel(row) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.hostNodeName')">{{ row.host_node_name || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.hostNodeIPs')">{{ row.host_node_ips?.join(', ') || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.runtimeHostname')">{{ row.runtime_hostname || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
@@ -51,7 +48,7 @@
               <el-descriptions-item :label="t('system.module.instances.healthCheckUrl')">{{ row.health_check_url || '—' }}</el-descriptions-item>
             </el-descriptions>
             <p v-if="!isRuntimeInstanceOnline(row) && row.stop_reason === 'lease_expired'" class="diagnostic-hint">
-              {{ t('system.module.instances.leaseExpiredHint') }}
+              {{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}
             </p>
           </div>
         </template>
@@ -91,7 +88,7 @@
       <el-table-column :label="t('system.module.instances.registeredAt')" width="175">
         <template #default="{ row }">{{ formatDate(row.registered_at) }}</template>
       </el-table-column>
-      <el-table-column :label="t('system.module.instances.stopReason')" width="170">
+      <el-table-column :label="t('common.runtimeInstanceStopReason.label')" width="170">
         <template #default="{ row }">{{ stopReasonLabel(row) }}</template>
       </el-table-column>
       <el-table-column v-if="canReadLogs" :label="t('system.module.logs.title')" width="120" fixed="right">
@@ -119,9 +116,11 @@ import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
 import { formatRuntimeUptime } from '../utils/moduleRuntimePresentation'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
+import RuntimeInstanceStopReasonSelect from '../../../../common-frontend/basic/src/components/RuntimeInstanceStopReasonSelect.vue'
+import { runtimeInstanceStopReasonLabelKey } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
 import { validRuntimeInstanceRange, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
-import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_STOP_REASONS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
+import { MODULE_INSTANCE_ROLES, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 defineProps({ modules: { type: Array, required: true } })
@@ -134,7 +133,6 @@ const logRange = computed(() => { const q = resolveModulesRouteState(route.query
 const route = useRoute()
 const router = useRouter()
 const roles = MODULE_INSTANCE_ROLES
-const stopReasons = MODULE_INSTANCE_STOP_REASONS
 const moduleName = ref('')
 const registeredHost = ref('')
 const nodeName = ref('')
@@ -170,8 +168,8 @@ function roleLabel(value) {
 
 function stopReasonLabel(instance) {
   if (isRuntimeInstanceOnline(instance)) return '—'
-  const key = `system.module.stopReasons.${instance.stop_reason}`
-  return instance.stop_reason && te(key) ? t(key) : '—'
+  const key = runtimeInstanceStopReasonLabelKey(instance.stop_reason)
+  return key ? t(key) : '—'
 }
 
 function formatDate(value) {

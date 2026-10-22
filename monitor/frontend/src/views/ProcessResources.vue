@@ -20,6 +20,7 @@
           <el-option value="all" :label="t('monitor.process.allStatuses')" />
           <el-option v-for="item in ['up', 'down']" :key="item" :value="item" :label="t(`monitor.process.status.${item}`)" />
         </el-select>
+        <RuntimeInstanceStopReasonSelect v-model="stopReason" />
         <div class="collection-filter">
           <el-select v-model="declared" :aria-label="t('monitor.process.collectionConfig')" aria-describedby="collection-config-hint">
             <el-option v-for="item in ['true', 'false', 'all']" :key="item" :value="item" :label="t(`monitor.process.declarations.${item}`)" />
@@ -41,6 +42,9 @@
         <el-table-column :label="t('monitor.process.endpoint')" min-width="210" show-overflow-tooltip><template #default="{ row }"><span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="140"><template #default="{ row }"><el-tag data-testid="process-online" size="small" :type="row.status === 'up' ? 'success' : 'danger'">{{ row.status.toUpperCase() }} · {{ t(`monitor.process.status.${row.status}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
+        <el-table-column :label="t('common.runtimeInstanceStopReason.label')" min-width="200">
+          <template #default="{ row }"><span data-testid="process-stop-reason">{{ stopReasonLabel(row) }}</span><p v-if="row.status === 'down' && row.stop_reason === 'lease_expired'" class="process-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p></template>
+        </el-table-column>
         <el-table-column :label="t(`common.runtimeInstanceTime.${state.timeBasis}Time`)" min-width="180"><template #default="{ row }">{{ row[state.timeBasis === 'offline' ? 'stopped_at' : 'registered_at'] ? date(row[state.timeBasis === 'offline' ? 'stopped_at' : 'registered_at']) : '—' }}</template></el-table-column>
         <el-table-column :label="t('monitor.resources.associatedHost')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
@@ -83,6 +87,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import RuntimeInstanceStopReasonSelect from '../../../../common-frontend/basic/src/components/RuntimeInstanceStopReasonSelect.vue'
+import { runtimeInstanceStopReasonLabelKey } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
 import { validRuntimeInstanceRange } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
@@ -108,6 +114,7 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
 const hostReferences = ref({})
+const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
 const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
 const trend = ref(null), trendErrorKey = ref('')
@@ -153,12 +160,17 @@ async function loadHosts(rows, ticket) {
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
-function filter() { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
-function setScope(scope) { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function filter() { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query) }
+function setScope(scope) { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, stop_reason: stopReason.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function stopReasonLabel(row) {
+  const key = row.status === 'down' ? runtimeInstanceStopReasonLabelKey(row.stop_reason) : ''
+  return key ? t(key) : '—'
+}
 function timeDraft() {
   return { time_basis: timeBasis.value, time_period: period.value, ...(period.value === 'custom' && validTimeDraft.value ? { time_from: new Date(customRange.value[0]).toISOString(), time_to: new Date(customRange.value[1]).toISOString() } : {}) }
 }
 function resetFilters() {
+  stopReason.value = ''
   timeBasis.value = 'registered'; period.value = 'all'; customRange.value = null
   moduleName.value = ''; registeredHost.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
   return navigate(resolveProcessRoute({ refresh: state.value.refresh }).query)
@@ -184,7 +196,7 @@ async function reload({ automatic = false } = {}) {
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
-  if (!automatic) { timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
+  if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
   try {
     const listParams = processInstanceParameters(state.value)

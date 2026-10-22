@@ -1,8 +1,8 @@
+import { normalizeRuntimeInstanceStopReason } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { resolveRuntimeInstanceTime, normalizeQueryTimestamp } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 
 export const MODULE_INSTANCE_ROLES = ['backend', 'worker', 'scheduler', 'ingress']
-export const MODULE_INSTANCE_STOP_REASONS = ['graceful', 'lease_expired']
 function singleQueryValue(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -30,8 +30,8 @@ export function resolveModulesRouteState(routeQuery = {}) {
       filters.status = status === 'all' ? '' : status
       preservedQuery.status = status
     }
-    const stopReason = singleQueryValue(routeQuery.stop_reason)
-    if (MODULE_INSTANCE_STOP_REASONS.includes(stopReason)) {
+    const stopReason = normalizeRuntimeInstanceStopReason(routeQuery.stop_reason)
+    if (stopReason) {
       filters.stopReason = stopReason
       preservedQuery.stop_reason = stopReason
     }

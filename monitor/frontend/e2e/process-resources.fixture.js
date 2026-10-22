@@ -30,7 +30,8 @@ export async function backend(page, options = {}) {
       const pageNumber = Number(url.searchParams.get('page'))
       const filtered = rows.filter(row => {
         const time = url.searchParams.get('time_basis') === 'offline' ? row.stopped_at : row.registered_at
-        return (url.searchParams.get('time_basis') !== 'offline' || (row.status === 'down' && time)) &&
+        return (!url.searchParams.has('stop_reason') || (row.status === 'down' && row.stop_reason === url.searchParams.get('stop_reason'))) &&
+          (url.searchParams.get('time_basis') !== 'offline' || (row.status === 'down' && time)) &&
           (!url.searchParams.has('time_from') || Date.parse(time) >= Date.parse(url.searchParams.get('time_from'))) &&
           (!url.searchParams.has('time_to') || Date.parse(time) < Date.parse(url.searchParams.get('time_to'))) && (!url.searchParams.has('registered_host') || (row.registered_host || '').toLowerCase() === url.searchParams.get('registered_host')) && (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared'))
       })
@@ -70,5 +71,5 @@ export async function backend(page, options = {}) {
     } else throw new Error(`unexpected process fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return { setStatus: (id, status) => { const row = rows.find(row => row.id === id); row.status = status; if (status === 'up') row.stopped_at = null }, calls, listCalls, trendCalls, hostReads, releaseHosts: () => releaseHosts?.(), setEnd: value => { stamp = value }, hold: () => { held = new Promise(yes => { resolve = yes }) }, replaceInstance: (id, next) => { const row = rows.find(row => row.id === id); row.id = next; row.instance_id = `native-${next}` }, setMode: value => { mode = value }, setTrendMode: value => { trendMode = value }, setRuntimeName: (id, value) => { rows.find(row => row.id === id).metadata = { runtime_name: value } }, release: () => { resolve?.(); held = null; trendResolve?.() } }
+  return { setStatus: (id, status) => { const row = rows.find(row => row.id === id); row.status = status; if (status === 'up') { row.stopped_at = null; row.stop_reason = '' } }, calls, listCalls, trendCalls, hostReads, releaseHosts: () => releaseHosts?.(), setEnd: value => { stamp = value }, hold: () => { held = new Promise(yes => { resolve = yes }) }, replaceInstance: (id, next) => { const row = rows.find(row => row.id === id); row.id = next; row.instance_id = `native-${next}` }, setMode: value => { mode = value }, setTrendMode: value => { trendMode = value }, setRuntimeName: (id, value) => { rows.find(row => row.id === id).metadata = { runtime_name: value } }, release: () => { resolve?.(); held = null; trendResolve?.() } }
 }

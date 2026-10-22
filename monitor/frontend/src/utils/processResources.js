@@ -1,3 +1,4 @@
+import { normalizeRuntimeInstanceStopReason } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { resolveRuntimeInstanceTime, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resourceRanges } from './nodeResources.js'
@@ -20,14 +21,15 @@ export function resolveProcessRoute(input = {}) {
   const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''
   const registeredHost = typeof input.registered_host === 'string' && input.registered_host.length <= 255 && !/[\x00-\x1f\x7f]/.test(input.registered_host) ? input.registered_host.trim().toLowerCase() : ''
   const role = processRoles.includes(input.role) ? input.role : ''
+  const stopReason = normalizeRuntimeInstanceStopReason(input.stop_reason)
   const status = ['up', 'down', 'all'].includes(input.status) ? input.status : 'up'
   const declared = ['true', 'false', 'all'].includes(input.process_metrics_declared) ? input.process_metrics_declared : 'true'
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
-  const query = { ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
-  const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
-  return { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, role, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  const query = { ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
+  const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
+  return { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, role, stopReason, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 export function processInstanceParameters(state, now = Date.now()) {
   return { ...state.params, ...runtimeInstanceTimeParams(state, now) }
@@ -67,6 +69,7 @@ export function validateProcessInstances(value, page, filters = {}, pageSize = 2
     const identity = JSON.stringify([row.module_name, row.instance_id])
     if (!Number.isSafeInteger(row.id) || row.id < 1 || ids.has(row.id) || names.has(identity) || typeof row.module_name !== 'string' || !row.module_name || typeof row.instance_id !== 'string' || !row.instance_id || !processRoles.includes(row.role) || !['up', 'down'].includes(row.status) || typeof row.node_id !== 'string' || typeof row.process_metrics_declared !== 'boolean') invalid()
     if ((filters.status && row.status !== filters.status) || (filters.process_metrics_declared !== undefined && String(row.process_metrics_declared) !== filters.process_metrics_declared)) invalid()
+    if (filters.stop_reason && (row.status !== 'down' || row.stop_reason !== filters.stop_reason)) invalid()
     ids.add(row.id); names.add(identity)
   }
   return value

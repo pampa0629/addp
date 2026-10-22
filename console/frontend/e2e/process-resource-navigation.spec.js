@@ -221,3 +221,35 @@ test('Console preserves the shared custom instance time filter, language and one
   expect(state.listCalls.at(-1)).not.toHaveProperty('time_from')
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
 })
+
+test('Console preserves service stop reason through search, language, reload and reset in one iframe', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, status: 'down', stop_reason: 'lease_expired' },
+    { id: 2, status: 'down', stop_reason: 'graceful' },
+    { id: 3 }
+  ] })
+  await page.goto('/monitor/service-resources?module_name=monitor&role=worker&status=all&stop_reason=lease_expired&refresh=off')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-stop-reason')).toHaveText(['租约超时，疑似异常退出'])
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  const reason = monitor.locator('.process-filters .el-select:has(input[aria-label="下线原因"])')
+  await reason.click()
+  await monitor.getByRole('option', { name: '正常退出', exact: true }).click()
+  await monitor.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  await expect(page).toHaveURL(url => url.searchParams.get('stop_reason') === 'graceful' && url.searchParams.get('module_name') === 'monitor' && url.searchParams.get('role') === 'worker')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(monitor.getByTestId('process-stop-reason')).toHaveText(['Graceful Exit'])
+  const selected = page.url()
+  await page.reload()
+  await expect(monitor.getByTestId('process-stop-reason')).toHaveText(['Graceful Exit'])
+  await expect(page).toHaveURL(selected)
+  expect(state.listCalls.at(-1)).toMatchObject({ stop_reason: 'graceful', module_name: 'monitor', role: 'worker' })
+  await monitor.getByRole('button', { name: 'Reset', exact: true }).click()
+  await expect(page).toHaveURL(/monitor\/service-resources\?refresh=off$/)
+  await expect.poll(() => state.calls.at(-1)).toBe('3')
+  expect(state.listCalls.at(-1)).not.toHaveProperty('stop_reason')
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})

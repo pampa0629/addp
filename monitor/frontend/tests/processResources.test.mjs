@@ -94,3 +94,30 @@ test('instance list time uses the shared System contract and never rewrites stat
   assert.equal(processTrendParameters(7, state.range, stamp).time_basis, undefined)
   assert.deepEqual(resolveProcessRoute({ time_period: 'custom', time_from: 'invalid', time_to: stamp }).query, {})
 })
+
+
+test('stop reason reuses System current offline scope without changing status, time or trend', () => {
+  for (const reason of ['graceful', 'lease_expired']) {
+    const state = resolveProcessRoute({ stop_reason: reason, status: 'all', time_basis: 'offline', time_period: '1h', page: '2', instance_id: '7', range: '1h', refresh: 'off' })
+    assert.equal(state.stopReason, reason)
+    assert.equal(state.params.stop_reason, reason)
+    assert.equal(state.query.stop_reason, reason)
+    assert.equal(state.changed, false)
+    assert.equal(processInstanceParameters(state, Date.parse(stamp)).stop_reason, reason)
+    assert.equal(processTrendParameters(7, state.range, stamp).stop_reason, undefined)
+    assert.equal(resolveProcessRoute({ stop_reason: reason }).params.status, 'up')
+    assert.equal(resolveProcessRoute({ stop_reason: reason }).timeBasis, 'registered')
+    const offline = { ...owner, status: 'down', stop_reason: reason }
+    assert.equal(validateProcessInstances({ data: [offline], total: 1, page: 2, page_size: 20 }, 2, state.params).data[0], offline)
+    for (const row of [owner, { ...offline, stop_reason: 'foreign' }, { ...offline, status: 'up' }, { ...offline, stop_reason: undefined }]) {
+      assert.throws(() => validateProcessInstances({ data: [row], total: 1, page: 2, page_size: 20 }, 2, state.params), /invalid_resource_response/)
+    }
+  }
+  for (const stop_reason of [undefined, null, '', [], ['graceful'], {}, 'unknown', 'GRACEFUL']) {
+    const state = resolveProcessRoute({ stop_reason })
+    assert.equal(state.stopReason, '')
+    assert.equal(state.params.stop_reason, undefined)
+    assert.equal(state.query.stop_reason, undefined)
+  }
+  assert.equal(resolveProcessRoute({ stop_reason: ' graceful ' }).query.stop_reason, 'graceful')
+})

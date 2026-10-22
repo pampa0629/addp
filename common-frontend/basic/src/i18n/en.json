@@ -479,6 +479,15 @@
       },
       "registeredHint": "Filter by registration time; online status remains current UP/DOWN.",
       "offlineHint": "Only currently offline instances are returned; recovered instances leave the results. Lease expiry does not prove process exit."
+    },
+    "runtimeInstanceStopReason": {
+      "label": "Stop Reason",
+      "all": "All stop reasons",
+      "reasons": {
+        "graceful": "Graceful Exit",
+        "lease_expired": "Lease expired; possible unexpected exit"
+      },
+      "leaseExpiredHint": "Lease expiration only indicates lost contact; it does not prove that the process exited."
     }
   },
   "auth": {

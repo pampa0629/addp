@@ -479,6 +479,15 @@
       },
       "registeredHint": "按登记时间筛选；在线状态仍表示当前 UP/DOWN。",
       "offlineHint": "仅查询当前仍离线的实例，恢复后退出结果；租约超时不代表进程已退出。"
+    },
+    "runtimeInstanceStopReason": {
+      "label": "下线原因",
+      "all": "全部下线原因",
+      "reasons": {
+        "graceful": "正常退出",
+        "lease_expired": "租约超时，疑似异常退出"
+      },
+      "leaseExpiredHint": "租约超时仅表示实例失联，不能据此断定进程已经退出。"
     }
   },
   "auth": {
