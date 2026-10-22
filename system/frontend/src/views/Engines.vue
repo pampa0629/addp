@@ -113,7 +113,7 @@
             <el-button
               v-if="availableAuthorizationTabs.length"
               size="small"
-              :disabled="!hasDeclaredStorageCapability(row) || ['deleting', 'deleted'].includes(row.lifecycle_state)"
+              :disabled="!hasDeclaredStorageCapability(row) || !applicableAuthorizationTabs(row).length || ['deleting', 'deleted'].includes(row.lifecycle_state)"
               data-testid="engine-authorization-open"
               @click="viewEngineAuthorization(row)"
             >{{ t('system.engine.actions.authorization') }}</el-button>
@@ -633,6 +633,9 @@
           <el-tab-pane v-if="renderedAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
+          <el-tab-pane v-if="renderedAuthorizationTabs.includes('collection-qualifications')" :label="t('system.engine.collection.title')" name="collection-qualifications">
+            <EngineMetaCollectionQualifications v-if="detailTab === 'collection-qualifications'" :key="authorizationKey" :engine="selectedEngine" :authorization-ready="authorizationReady" />
+          </el-tab-pane>
         </el-tabs>
       </div>
       <template #footer>
@@ -776,6 +779,7 @@ import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
+import EngineMetaCollectionQualifications from '../components/engines/EngineMetaCollectionQualifications.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
@@ -878,7 +882,7 @@ const detailsVisible = ref(false)
 const selectedEngine = ref(null)
 const { authorizationPending, authorizationReady, authorizationKey } = useEngineAuthorizationSession(authStore, selectedEngine)
 const detailTab = ref('basic')
-const isAuthorizationView = computed(() => ['data-authorization', 'delegations'].includes(detailTab.value))
+const isAuthorizationView = computed(() => ['data-authorization', 'delegations', 'collection-qualifications'].includes(detailTab.value))
 useConsolePageDescriptor(router, 'system', {
   title: computed(() => t(isAuthorizationView.value ? 'system.engine.recentAuthorizationTitle' : 'system.engine.recentDetailTitle')),
   subject: computed(() => selectedEngine.value?.name || ''),
@@ -1993,8 +1997,11 @@ const availableAuthorizationTabs = computed(() => {
   if (['read', 'initialize', 'update'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
     ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
+  if (['read', 'approve', 'revoke'].some(action => authStore.hasPermission(`system.meta_collection_qualification.${action}`))) tabs.push('collection-qualifications')
   return tabs
 })
+
+const applicableAuthorizationTabs = (engine, tabs = availableAuthorizationTabs.value) => tabs.filter(tab => tab !== 'collection-qualifications' || engine?.engine_type === 'postgresql')
 
 const settledAuthorizationTabs = ref([])
 watch([authorizationReady, availableAuthorizationTabs], ([ready, tabs]) => {
@@ -2002,7 +2009,7 @@ watch([authorizationReady, availableAuthorizationTabs], ([ready, tabs]) => {
 }, { immediate: true })
 const renderedAuthorizationTabs = computed(() => {
   if (!hasDeclaredStorageCapability(selectedEngine.value)) return []
-  return authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value
+  return applicableAuthorizationTabs(selectedEngine.value, authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value)
 })
 
 const availableDetailTabs = computed(() => {
@@ -2011,7 +2018,7 @@ const availableDetailTabs = computed(() => {
     tabs.push('connection')
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
-  if (hasDeclaredStorageCapability(selectedEngine.value)) tabs.push(...availableAuthorizationTabs.value)
+  if (hasDeclaredStorageCapability(selectedEngine.value)) tabs.push(...applicableAuthorizationTabs(selectedEngine.value))
   return tabs
 })
 
@@ -2074,7 +2081,7 @@ const viewEngineDetails = async (row) => {
 
 const viewEngineAuthorization = async (row) => {
   if (!hasDeclaredStorageCapability(row) || ['deleting', 'deleted'].includes(row.lifecycle_state)) return
-  const tab = availableAuthorizationTabs.value[0]
+  const tab = applicableAuthorizationTabs(row)[0]
   if (!tab) return
   await navigateSystemRoute(router, {
     name: 'EngineDetail',

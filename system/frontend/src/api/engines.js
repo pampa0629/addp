@@ -2,6 +2,10 @@ import client from './client'
 import { ENGINE_LIFECYCLE_STATES } from '../utils/engineList'
 
 export const enginesAPI = {
+  getMetaCollectionTaskFacts: (id, taskID) => client.get(`/system/engines/${encodeURIComponent(id)}/meta_collection_task_facts/${encodeURIComponent(taskID)}`),
+  listMetaCollectionQualifications: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/meta_collection_qualifications`, { params }),
+  approveMetaCollection: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/meta_collection_qualifications`, payload),
+  revokeMetaCollection: (id, qualificationID, payload) => client.delete(`/system/engines/${encodeURIComponent(id)}/meta_collection_qualifications/${encodeURIComponent(qualificationID)}`, { data: payload }),
 	getAuthorizationFacts: (id, fingerprint) => client.get(`/system/engines/${encodeURIComponent(id)}/data-items/${encodeURIComponent(fingerprint)}/authorization-facts`),
   createSourceGrant: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants`, payload, { headers: { 'Content-Type': 'application/json' } }),
   listSourceGrants: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants`, { params }),
