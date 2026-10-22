@@ -457,6 +457,28 @@
       "pixelLimit": "This page exceeds 16 million pixels. Download the original file",
       "unsupportedSamples": "This page uses unsupported color or sample settings. Download the original file",
       "decodeFailed": "Failed to read or decode this TIFF page. Check the file and Range service, or download the original file"
+    },
+    "runtimeInstanceTime": {
+      "timeBasis": "Time basis",
+      "registeredTime": "Registration time",
+      "offlineTime": "Offline determination time",
+      "timeRange": "Time range",
+      "allTime": "All time",
+      "custom": "Custom range",
+      "from": "Start time",
+      "to": "End time",
+      "completeRange": "Select both the start and end time",
+      "periods": {
+        "m15": "Last 15 minutes",
+        "m30": "Last 30 minutes",
+        "h1": "Last hour",
+        "h6": "Last 6 hours",
+        "h12": "Last 12 hours",
+        "h24": "Last 24 hours",
+        "d7": "Last 7 days"
+      },
+      "registeredHint": "Filter by registration time; online status remains current UP/DOWN.",
+      "offlineHint": "Only currently offline instances are returned; recovered instances leave the results. Lease expiry does not prove process exit."
     }
   },
   "auth": {

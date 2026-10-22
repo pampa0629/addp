@@ -140,7 +140,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await expect(page.getByText('请选择完整的起止时间', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeDisabled()
   expect(instanceQueries).toHaveLength(queriesBeforeCustomRange)
-  const customRange = page.locator('.module-instances .query-range')
+  const customRange = page.locator('.module-instances .runtime-instance-time-filter .el-date-editor')
   await customRange.getByPlaceholder('起始时间').fill('2020-01-01 00:00:00')
   await customRange.getByPlaceholder('结束时间').fill('2030-01-01 00:00:00')
   await customRange.getByPlaceholder('结束时间').press('Enter')

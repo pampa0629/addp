@@ -11,7 +11,7 @@
       </el-select>
       <el-select v-model="period" :aria-label="t('system.module.sources.timeRange')" @change="search">
         <el-option value="all" :label="t('system.module.sources.allTimes')" />
-        <el-option v-for="item in MODULE_INSTANCE_PERIODS" :key="item.value" :value="item.value" :label="t(item.label)" />
+        <el-option v-for="item in runtimeInstancePeriods" :key="item.value" :value="item.value" :label="t(item.label)" />
         <el-option value="custom" :label="t('system.module.query.custom')" />
       </el-select>
       <el-button @click="reset">{{ t('system.module.query.reset') }}</el-button>
@@ -51,7 +51,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
-import { MODULE_INSTANCE_PERIODS } from '../utils/routeState'
+import { runtimeInstancePeriods } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import ModuleRuntimeLogs from './ModuleRuntimeLogs.vue'
 defineProps({ modules: { type: Array, default: () => [] } })
 const { t, te } = useI18n()

@@ -4,6 +4,8 @@
 
 export { default as AutoRefreshControl } from './components/AutoRefreshControl.vue'
 export { createAutoRefresh, autoRefreshOptions } from './utils/autoRefresh.mjs'
+export { default as RuntimeInstanceTimeFilter } from './components/RuntimeInstanceTimeFilter.vue'
+export * from './utils/runtimeInstanceTime.mjs'
 export { getRegisteredEndpoint } from './utils/moduleRuntimeEndpoint.mjs'
 
 // Basic UI Components (no map dependencies)

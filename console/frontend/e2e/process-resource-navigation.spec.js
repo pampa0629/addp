@@ -187,3 +187,37 @@ test('Console switches service scope, preserves module and role, and restores al
   await expect(page).toHaveURL(url => url.searchParams.get('module_name') === 'monitor' && !url.searchParams.has('status') && !url.searchParams.has('process_metrics_declared'))
   await expect(monitor.getByTestId('process-list')).toContainText('mac-process-1')
 })
+
+
+test('Console preserves the shared custom instance time filter, language and one iframe through submission and reload', async ({ page }) => {
+  const state = await backend(page, { instances: [
+    { id: 1, registered_at: '2026-10-22T10:00:00Z', stopped_at: null },
+    { id: 2, status: 'down', registered_at: '2026-10-22T10:00:00Z', stopped_at: '2026-10-22T10:30:00Z' }
+  ] })
+  const query = new URLSearchParams({ refresh: 'off', time_period: 'custom', time_from: '2026-10-22T00:00:00.000Z', time_to: '2026-10-23T00:00:00.000Z' })
+  await page.goto('/monitor/service-resources?' + query)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  const basis = monitor.locator('.runtime-instance-time-filter .el-select').first()
+  await basis.click()
+  await monitor.getByRole('option', { name: '离线判定时间', exact: true }).click()
+  await monitor.getByRole('button', { name: '全部实例', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  expect(state.listCalls.at(-1)).toMatchObject({ time_basis: 'offline', time_from: '2026-10-22T00:00:00.000Z', time_to: '2026-10-23T00:00:00.000Z' })
+  await expect(page).toHaveURL(url => url.searchParams.get('time_basis') === 'offline' && url.searchParams.get('time_period') === 'custom' && url.searchParams.get('status') === 'all')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(basis).toContainText('Offline determination time')
+  const selectedURL = page.url()
+  await page.reload()
+  await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(1)
+  await expect(basis).toContainText('Offline determination time')
+  await expect(page).toHaveURL(selectedURL)
+  await monitor.getByRole('button', { name: 'Reset', exact: true }).click()
+  await expect(page).toHaveURL(/monitor\/service-resources\?refresh=off$/)
+  await expect.poll(() => state.calls.at(-1)).toBe('1')
+  expect(state.listCalls.at(-1)).not.toHaveProperty('time_from')
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})

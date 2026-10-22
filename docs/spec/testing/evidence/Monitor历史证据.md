@@ -312,3 +312,18 @@ T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）�
 GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 checkout 均为上述 SHA，三个分组末尾均明确 `zero owned containers/networks/volumes and temporary files`。原始日志、Job 元数据及独立哈希审计保存在 `/tmp/addp-p19-metrics-manual-20261022/`，审计为 `audit.json`。这是复核既有 Linux T2 的结果，没有重新执行测试；文档增量通过 `git diff --check`。在仓库外冻结 HEAD `48515ba5ecfb1064630530490c05f9c766e2c35b`、仅叠加本段证据的标准 `GOMAXPROCS=2 GOFLAGS=-p=2 make test-changed` 实际选择平台 T0，但在 `TestTransferReviewSourceDrift/config` 因既有 `transfer/docs/transfer-基本概念及配置说明.md` 语义/溯源漂移而失败，未执行完后续门禁；该文档与冻结 HEAD 逐字节一致，本次未修改，不计 T0 通过，也不扩修无关内容。日志为审计目录的 `evidence-test-changed.log`；此结果与上表既有 Linux Metrics T2 成功分别记录。
 
 此前 ParseAddr、停源竞态、20 分钟取消和准入外层 45 秒失败仍按其原输入保留，不追溯改成通过。本次关闭上述 `c7ef8ea0e` 输入的完整 Linux Metrics T2 缺口；核对时更晚 main 的运行仍有排队或 Metrics 未选中，不能扩大为最新共享工作区、后续前端改动、额外 Hosted T4、72 小时留存/容量、生产 T5 或其它 Owner CI 全部通过。
+
+
+### 服务实例时间查询共享入口
+
+2026-10-22，服务监控接入 System 已有实例时间契约：登记／离线判定时间、全部时间、15 分钟至 7 天预设及自定义范围；相对时段每请求从同一当前锚点重算，自定义范围固定为 URL 中的 UTC 起止，边界含起点、不含终点。当前状态、采集声明与时间取交集，不自动切换状态；恢复在线的实例退出离线时间结果。时间筛选不进入进程趋势请求，退出实例仍不开放历史趋势。查询、分页、重载、草稿隔离与重置沿原页面生命周期；新增相应时间列并保留在线状态与采集状态相邻。
+
+时间控件、预设目录、RFC3339 规范化和 API 边界换算已统一到 Common Frontend 的 `RuntimeInstanceTimeFilter`／`runtimeInstanceTime.mjs`；System 原内联控件、日期校验与换算删除，日志页面改用同一预设目录，不保留旧导出别名。自定义范围未完整时的提示由共享控件就地呈现，删除 System 表格空态的重复提示。模块只组合自身列表和草稿提交；不改变 System 时间裁决、API/Swagger、权限或生产身份。
+
+验证采用冻结基线 `a7353b132e7e8832549f247410671cec4e03fd1e`，叠加本批 22 项实现／测试／规范输入，Node 实际为 `v24.19.0`，不带共享工作区其他会话改动。`make test-common-frontend` 最终通过 249 项契约／工具／唯一所有权测试，日志 `/tmp/addp-service-time-common-verified.log`；`make test-system-frontend` 最终退出 0，152 项单元、194 项浏览器及构建通过，日志 `/tmp/addp-service-time-system-verified.log`。Console 的 `make test-console-frontend` 通过 188 项单元、206 项浏览器及构建，日志 `/tmp/addp-service-time-console-final.log`；随后对最终输入沿原标准浏览器入口补跑 `npm run test:e2e -- e2e/process-resource-navigation.spec.js`，九项服务导航全部通过，包括新增自定义时间提交、语言切换、重载及重置仍保持一个 iframe，日志 `/tmp/addp-service-time-console-scope.log`。
+
+首轮失败均未计通过：新单元测试误保留默认趋势范围、System 两个日志消费者仍引用被删除导出、隔离 Console 副本缺少夹具模块依赖链接；另修正新增时间列插入位置与重复验证提示。相对时段新浏览器用例曾错误要求自然启动没有毫秒耗时，并在初始化或交互期间暂停时钟，分别造成空白页或加载遮罩退场停滞；改为页面就绪后仅暂停时钟验证窗口、交互前恢复。产品时钟、查询窗口、超时及业务断言未放宽，定向用例沿标准入口通过；相关失败和定向日志为 `/tmp/addp-service-time-{monitor,system,console}.log`、`/tmp/addp-service-time-monitor-{final,verified}.log`、`/tmp/addp-service-time-system-final.log` 与 `/tmp/addp-service-time-relative-clock-final.log`。完整最终 Monitor 结果按下段记录，不以定向成功替代。
+
+最终 `make test-monitor-frontend` 退出 0：89 项单元、272 项浏览器及生产构建均通过，日志 `/tmp/addp-service-time-monitor-complete.log`；覆盖相对窗口随每次请求前移、未提交草稿隔离、自定义真实日期录入与 UTC 转换、半开边界、离线后恢复退出结果、中英文窄屏、分页／刷新／重载及趋势隔离。22 项最终实现／测试／规范输入与成功冻结副本逐字节一致。`make test-frontend-ci-registration` 通过 20 项回归和 21 个受控前端登记检查，日志 `/tmp/addp-service-time-registration.log`；现有 Common／System／Monitor／Console 路径已覆盖，无需新增 Make 或 workflow。
+
+上述四组成功浏览器运行的输出目录与精确端口租约均已由标准入口清理，另行核对不存在。已人工检查此前同一共享控件的中英文窄屏截图 `/tmp/addp-service-time-visuals/service-time-{zh-cn,en}.png`；最终全量同场景及真实日期录入均通过。最终运行的补充截图捕获未取得新文件，仅为临时产物收集，不计新的截图证据，也未据此重复执行测试。本批为本地 T0／T1／T3 与构建验证，不代表正式身份 Hosted T4；CI 与 Hosted 等专门会话回传，没有查询、调度、设置定时或重启个人服务。

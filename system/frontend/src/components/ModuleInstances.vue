@@ -23,22 +23,11 @@
         <el-option :label="t('system.module.query.allStopReasons')" value="" />
         <el-option v-for="reason in stopReasons" :key="reason" :label="t(`system.module.stopReasons.${reason}`)" :value="reason" />
       </el-select>
-      <el-select v-model="timeBasis" :aria-label="t('system.module.query.timeBasis')" class="query-control" @change="search">
-        <el-option :label="t('system.module.query.registeredTime')" value="registered" />
-        <el-option :label="t('system.module.query.offlineTime')" value="offline" />
-      </el-select>
-      <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" class="query-control" @change="search">
-        <el-option :label="t('system.module.query.allTime')" value="all" />
-        <el-option v-for="item in periods" :key="item.value" :label="t(item.label)" :value="item.value" />
-        <el-option :label="t('system.module.query.custom')" value="custom" />
-      </el-select>
-      <el-date-picker v-if="period === 'custom'" v-model="customRange" type="datetimerange"
-        :start-placeholder="t('system.module.query.from')" :end-placeholder="t('system.module.query.to')"
-        class="query-range" @change="search" />
+      <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" @change="search" />
       <el-button @click="reset">{{ t('system.module.query.reset') }}</el-button>
       <el-button :icon="Refresh" :loading="loading" :disabled="period === 'custom' && !validCustomRange" @click="refresh">{{ t('system.module.refresh') }}</el-button>
     </div>
-    <p class="query-hint">{{ t('system.module.query.timeHint') }}</p>
+    <p class="query-hint">{{ t('system.module.query.addressHint') }}</p>
     <p class="query-freshness" data-testid="instance-query-freshness">
       {{ lastSuccessAt === null ? t('system.module.query.notLoaded') : t('system.module.query.lastSuccess', { time: formatDate(lastSuccessAt) }) }}
     </p>
@@ -108,7 +97,7 @@
       <el-table-column v-if="canReadLogs" :label="t('system.module.logs.title')" width="120" fixed="right">
         <template #default="{ row }"><el-button text type="primary" @click="logInstance = row; logsOpen = true">{{ t('system.module.logs.view') }}</el-button></template>
       </el-table-column>
-      <template #empty><el-empty :description="t(period === 'custom' && !validCustomRange ? 'system.module.query.completeRange' : lastSuccessAt === null ? 'system.module.query.notLoaded' : 'system.module.query.empty')" :image-size="72" /></template>
+      <template #empty><el-empty :description="t(lastSuccessAt === null ? 'system.module.query.notLoaded' : 'system.module.query.empty')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="lastSuccessAt !== null" v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
@@ -130,7 +119,9 @@ import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
 import { formatRuntimeUptime } from '../utils/moduleRuntimePresentation'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
-import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_STOP_REASONS, MODULE_INSTANCE_PERIODS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
+import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
+import { validRuntimeInstanceRange, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
+import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_STOP_REASONS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 defineProps({ modules: { type: Array, required: true } })
@@ -144,7 +135,6 @@ const route = useRoute()
 const router = useRouter()
 const roles = MODULE_INSTANCE_ROLES
 const stopReasons = MODULE_INSTANCE_STOP_REASONS
-const periods = MODULE_INSTANCE_PERIODS
 const moduleName = ref('')
 const registeredHost = ref('')
 const nodeName = ref('')
@@ -156,8 +146,7 @@ const stopReason = ref('')
 const timeBasis = ref('registered')
 const period = ref('all')
 const customRange = ref(null)
-const validCustomRange = computed(() => Array.isArray(customRange.value) && customRange.value.length === 2 &&
-  new Date(customRange.value[0]).getTime() < new Date(customRange.value[1]).getTime())
+const validCustomRange = computed(() => validRuntimeInstanceRange(customRange.value))
 const applied = ref({})
 const rows = ref([])
 const total = ref(0)
@@ -202,18 +191,7 @@ function currentParams() {
     ...(applied.value.role ? { role: applied.value.role } : {}),
     ...(applied.value.status ? { status: applied.value.status } : {}),
     ...(applied.value.stopReason ? { stop_reason: applied.value.stopReason } : {}),
-    ...(applied.value.timeBasis === 'offline' ? { time_basis: 'offline' } : {})
-  }
-  if (applied.value.period === 'custom') {
-    params.time_from = applied.value.from
-    params.time_to = applied.value.to
-  } else {
-    const preset = periods.find(item => item.value === applied.value.period)
-    if (preset) {
-      const now = Date.now()
-      params.time_from = new Date(now - preset.minutes * 60000).toISOString()
-      params.time_to = new Date(now).toISOString()
-    }
+    ...runtimeInstanceTimeParams(applied.value)
   }
   return params
 }
@@ -358,7 +336,6 @@ onUnmounted(() => {
 <style scoped>
 .query-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
 .query-control { width: 175px; }
-.query-range { max-width: 380px; }
 .query-hint, .query-freshness, .technical-name { color: var(--addp-text-secondary); font-size: 12px; }
 .query-hint { margin: 0 0 12px; }
 .query-freshness { margin: 0 0 12px; }
@@ -368,5 +345,5 @@ onUnmounted(() => {
 .instance-diagnostics :deep(.el-descriptions__content) { overflow-wrap: anywhere; }
 .diagnostic-hint { color: var(--addp-text-secondary); font-size: 12px; margin: 10px 0 0; }
 @media (max-width: 900px) { .instance-diagnostics :deep(.el-descriptions__body) { overflow-x: auto; } }
-@media (max-width: 600px) { .query-control, .query-range { width: 100%; max-width: none; } }
+@media (max-width: 600px) { .query-control { width: 100%; max-width: none; } }
 </style>

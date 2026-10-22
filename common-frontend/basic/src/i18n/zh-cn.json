@@ -457,6 +457,28 @@
       "pixelLimit": "当前页超过 1600 万像素，暂不支持基础预览，请下载原始文件查看",
       "unsupportedSamples": "当前页的颜色或采样方式暂不支持基础预览，请下载原始文件查看",
       "decodeFailed": "TIFF 当前页读取或解码失败，请检查文件与 Range 服务，或下载原始文件查看"
+    },
+    "runtimeInstanceTime": {
+      "timeBasis": "时间依据",
+      "registeredTime": "登记时间",
+      "offlineTime": "离线判定时间",
+      "timeRange": "时间范围",
+      "allTime": "全部时间",
+      "custom": "自定义时间",
+      "from": "起始时间",
+      "to": "结束时间",
+      "completeRange": "请选择完整的起止时间",
+      "periods": {
+        "m15": "近 15 分钟",
+        "m30": "近 30 分钟",
+        "h1": "近 1 小时",
+        "h6": "近 6 小时",
+        "h12": "近 12 小时",
+        "h24": "近 24 小时",
+        "d7": "近 7 天"
+      },
+      "registeredHint": "按登记时间筛选；在线状态仍表示当前 UP/DOWN。",
+      "offlineHint": "仅查询当前仍离线的实例，恢复后退出结果；租约超时不代表进程已退出。"
     }
   },
   "auth": {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processMetrics, processRoleLabelKey, processTrendParameters, validateProcessTrend } from '../src/utils/processResources.js'
+import { resolveProcessRoute, processInstanceParameters, validateProcessInstances, validateProcessSummaries, processMetrics, processRoleLabelKey, processTrendParameters, validateProcessTrend } from '../src/utils/processResources.js'
 
 const owner = { id: 7, module_name: 'monitor', instance_id: 'native-a', role: 'worker', status: 'up', node_id: '', process_metrics_declared: true }
 const stamp = '2026-10-10T00:00:00Z'
@@ -81,4 +81,16 @@ test('registered endpoint host stays in canonical list scope without leaking int
   for (const registered_host of [null, ['private.example'], {}, 'a'.repeat(256), 'host\nforeign', 'host\u0000', '']) {
     assert.equal(resolveProcessRoute({ registered_host }).params.registered_host, undefined)
   }
+})
+
+
+test('instance list time uses the shared System contract and never rewrites status or trend bounds', () => {
+  const state = resolveProcessRoute({ status: 'all', time_basis: 'offline', time_period: '1h', registered_host: 'db.internal', page: '2', instance_id: '7', range: '1h' })
+  assert.equal(state.changed, false)
+  const params = processInstanceParameters(state, Date.parse('2026-10-22T10:00:00Z'))
+  assert.deepEqual(params, { page: 2, page_size: 20, registered_host: 'db.internal', process_metrics_declared: 'true', time_basis: 'offline', time_from: '2026-10-22T09:00:00.000Z', time_to: '2026-10-22T10:00:00.000Z' })
+  assert.equal(params.instance_id, undefined); assert.equal(params.time_period, undefined)
+  assert.equal(processInstanceParameters(resolveProcessRoute({ time_basis: 'offline' })).status, 'up')
+  assert.equal(processTrendParameters(7, state.range, stamp).time_basis, undefined)
+  assert.deepEqual(resolveProcessRoute({ time_period: 'custom', time_from: 'invalid', time_to: stamp }).query, {})
 })

@@ -1,3 +1,4 @@
+import { resolveRuntimeInstanceTime, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resourceRanges } from './nodeResources.js'
 
@@ -14,6 +15,7 @@ export function processRoleLabelKey(instance) {
     : `monitor.process.roles.${instance.role}`
 }
 export function resolveProcessRoute(input = {}) {
+  const time = resolveRuntimeInstanceTime(input)
   const page = typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
   const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''
   const registeredHost = typeof input.registered_host === 'string' && input.registered_host.length <= 255 && !/[\x00-\x1f\x7f]/.test(input.registered_host) ? input.registered_host.trim().toLowerCase() : ''
@@ -23,9 +25,12 @@ export function resolveProcessRoute(input = {}) {
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
-  const query = { ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
+  const query = { ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
   const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(role ? { role } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
-  return { page, module, registeredHost, role, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  return { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, role, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+}
+export function processInstanceParameters(state, now = Date.now()) {
+  return { ...state.params, ...runtimeInstanceTimeParams(state, now) }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function processTrendParameters(instanceID, range, queriedAt) {

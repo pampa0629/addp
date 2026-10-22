@@ -17,7 +17,7 @@
         <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" @change="changed">
           <el-option v-if="isSource" value="source" :label="t('system.module.sources.sourceWindow')" />
           <el-option v-if="instance.stopped_at" value="offline" :label="t('system.module.logs.offlineWindow')" />
-          <el-option v-for="item in MODULE_INSTANCE_PERIODS" :key="item.value" :value="item.value" :label="t(item.label)" />
+          <el-option v-for="item in runtimeInstancePeriods" :key="item.value" :value="item.value" :label="t(item.label)" />
           <el-option value="custom" :label="t('system.module.query.custom')" />
         </el-select>
         <el-select v-model="level" :empty-values="[null, undefined]" :aria-label="t('system.module.logs.level')" @change="changed">
@@ -75,7 +75,7 @@ import { ElMessage } from 'element-plus'
 import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
-import { MODULE_INSTANCE_PERIODS } from '../utils/routeState'
+import { runtimeInstancePeriods } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import ModuleLogPipeline from './ModuleLogPipeline.vue'
 import { useAuthStore } from '../store/auth'
 import ModuleInstanceNode from './ModuleInstanceNode.vue'

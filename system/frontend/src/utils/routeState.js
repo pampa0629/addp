@@ -1,29 +1,10 @@
+import { resolveRuntimeInstanceTime, normalizeQueryTimestamp } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 
 export const MODULE_INSTANCE_ROLES = ['backend', 'worker', 'scheduler', 'ingress']
 export const MODULE_INSTANCE_STOP_REASONS = ['graceful', 'lease_expired']
-export const MODULE_INSTANCE_PERIODS = [
-  { value: '15m', minutes: 15, label: 'system.module.query.periods.m15' },
-  { value: '30m', minutes: 30, label: 'system.module.query.periods.m30' },
-  { value: '1h', minutes: 60, label: 'system.module.query.periods.h1' },
-  { value: '6h', minutes: 360, label: 'system.module.query.periods.h6' },
-  { value: '12h', minutes: 720, label: 'system.module.query.periods.h12' },
-  { value: '24h', minutes: 1440, label: 'system.module.query.periods.h24' },
-  { value: '7d', minutes: 10080, label: 'system.module.query.periods.d7' }
-]
-
 function singleQueryValue(value) {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function queryTime(value) {
-  const text = singleQueryValue(value)
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) return ''
-  const time = new Date(text)
-  const calendar = new Date(`${text.slice(0, 10)}T00:00:00Z`)
-  if (Number.isNaN(time.getTime()) || Number.isNaN(calendar.getTime()) ||
-    calendar.toISOString().slice(0, 10) !== text.slice(0, 10) || Number(text.slice(11, 13)) > 23) return ''
-  return time.toISOString()
 }
 
 export function resolveModulesRouteState(routeQuery = {}) {
@@ -54,25 +35,12 @@ export function resolveModulesRouteState(routeQuery = {}) {
       filters.stopReason = stopReason
       preservedQuery.stop_reason = stopReason
     }
-    if (singleQueryValue(routeQuery.time_basis) === 'offline') {
-      filters.timeBasis = 'offline'
-      preservedQuery.time_basis = 'offline'
-    }
-    const period = singleQueryValue(routeQuery.time_period)
-    if (MODULE_INSTANCE_PERIODS.some(item => item.value === period)) {
-      filters.period = period
-      preservedQuery.time_period = period
-    } else if (period === 'custom') {
-      const from = queryTime(routeQuery.time_from)
-      const to = queryTime(routeQuery.time_to)
-      if (from && to && from < to) {
-        Object.assign(filters, { period, from, to })
-        Object.assign(preservedQuery, { time_period: period, time_from: from, time_to: to })
-      }
-    }
+    const time = resolveRuntimeInstanceTime(routeQuery)
+    Object.assign(filters, { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to })
+    Object.assign(preservedQuery, time.query)
     const logInstance = singleQueryValue(routeQuery.log_instance)
     const traceID = singleQueryValue(routeQuery.trace_id)
-    const logFrom = queryTime(routeQuery.log_from), logTo = queryTime(routeQuery.log_to)
+    const logFrom = normalizeQueryTimestamp(routeQuery.log_from), logTo = normalizeQueryTimestamp(routeQuery.log_to)
     if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(logInstance) && /^[0-9a-f]{32}$/.test(traceID) && !/^0+$/.test(traceID) && logFrom && logTo && logFrom < logTo && Date.parse(logTo) - Date.parse(logFrom) <= 3600000) {
       Object.assign(preservedQuery, { log_instance: logInstance, trace_id: traceID, log_from: logFrom, log_to: logTo })
       filters.logInstance = logInstance

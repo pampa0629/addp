@@ -26,10 +26,11 @@
           </el-select>
           <p id="collection-config-hint" class="process-hint">{{ t('monitor.process.declarationHint') }}</p>
         </div>
-        <el-button native-type="submit">{{ t('common.search') }}</el-button>
+        <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" />
+        <el-button native-type="submit" :disabled="!validTimeDraft">{{ t('common.search') }}</el-button>
         <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
-        <el-button @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
-        <el-button v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
+        <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
+        <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
       <el-table :data="instances" v-loading="loading" :empty-text="t('monitor.process.empty')" data-testid="process-list">
@@ -40,6 +41,7 @@
         <el-table-column :label="t('monitor.process.endpoint')" min-width="210" show-overflow-tooltip><template #default="{ row }"><span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="140"><template #default="{ row }"><el-tag data-testid="process-online" size="small" :type="row.status === 'up' ? 'success' : 'danger'">{{ row.status.toUpperCase() }} · {{ t(`monitor.process.status.${row.status}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
+        <el-table-column :label="t(`common.runtimeInstanceTime.${state.timeBasis}Time`)" min-width="180"><template #default="{ row }">{{ row[state.timeBasis === 'offline' ? 'stopped_at' : 'registered_at'] ? date(row[state.timeBasis === 'offline' ? 'stopped_at' : 'registered_at']) : '—' }}</template></el-table-column>
         <el-table-column :label="t('monitor.resources.associatedHost')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
@@ -81,6 +83,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
+import { validRuntimeInstanceRange } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -93,7 +97,7 @@ import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
-import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
+import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, processInstanceParameters, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
@@ -104,6 +108,8 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
 const hostReferences = ref({})
+const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
+const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
 const trend = ref(null), trendErrorKey = ref('')
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
@@ -147,9 +153,13 @@ async function loadHosts(rows, ticket) {
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
-function filter() { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
-function setScope(scope) { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function filter() { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
+function setScope(scope) { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function timeDraft() {
+  return { time_basis: timeBasis.value, time_period: period.value, ...(period.value === 'custom' && validTimeDraft.value ? { time_from: new Date(customRange.value[0]).toISOString(), time_to: new Date(customRange.value[1]).toISOString() } : {}) }
+}
 function resetFilters() {
+  timeBasis.value = 'registered'; period.value = 'all'; customRange.value = null
   moduleName.value = ''; registeredHost.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
   return navigate(resolveProcessRoute({ refresh: state.value.refresh }).query)
 }
@@ -174,12 +184,13 @@ async function reload({ automatic = false } = {}) {
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
-  if (!automatic) { moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
+  if (!automatic) { timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
   try {
-    const list = await requests.request(config => api.instances(state.value.params, config))
+    const listParams = processInstanceParameters(state.value)
+    const list = await requests.request(config => api.instances(listParams, config))
     if (!requests.current(ticket)) return
-    validateProcessInstances(list, state.value.page, state.value.params)
+    validateProcessInstances(list, state.value.page, listParams)
     if (!automatic) { instances.value = list.data; total.value = list.total }
     let currentSummaries = new Map(), currentTrend = null
     if (list.data.length) {

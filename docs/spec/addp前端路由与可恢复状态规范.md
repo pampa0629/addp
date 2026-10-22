@@ -90,7 +90,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Monitor | 平台节点资源 | 列表 `/monitor/node-resources`、详情 `/monitor/node-resources/:node_id`；query 为 `search/page/page_size` 与详情 `range/metric/refresh`；文件系统趋势使用完整 `device/mountpoint/fstype` 精确挂载维度，只与 `node.filesystem.*` 指标同时出现，不完整或非法挂载参数显示错误，不回落到另一个资源；默认第 1 页、每页 20 条、近 1 小时、内存使用率、15 秒刷新省略；`refresh` 非默认值只允许 `10/30/60/off`，列表不保留；详情返回保留列表上下文，趋势及刷新选择 replace，后台刷新不改变历史，节点切换 push |
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
 | Monitor | 平台告警与通知管理 | `/monitor/platform-alerts`；`category/status/subject_id/page/delivery_page/tab`，默认活动事件、第 1 页与事件页签省略；`status=all` 表示页面不过滤状态，API 请求省略该参数；非默认通知页签为 `tab=notifications`，更新筛选/分页/页签使用 replace；System 仅以日志类别和观察器身份跳转 |
-| Monitor | 服务监控列表 | `/monitor/service-resources`；`module_name/role/status/process_metrics_declared/page`；默认在线 `status=up`、已启用采集 `process_metrics_declared=true`、第 1 页省略；`all` 表示页面不限制对应状态或采集声明，调用 System API 时省略该条件；其他值为 `status=down`、`process_metrics_declared=false`；切换范围重置分页，模块及角色保留 |
+| Monitor | 服务监控列表 | `/monitor/service-resources`；`module_name/registered_host/role/status/process_metrics_declared/time_basis/time_period/time_from/time_to/page`；默认在线 `status=up`、已启用采集 `process_metrics_declared=true`、第 1 页省略；`all` 表示页面不限制对应状态或采集声明，调用 System API 时省略该条件；其他值为 `status=down`、`process_metrics_declared=false`；切换范围重置分页，其他已提交筛选保留；时间依据和范围沿 System 实例查询同一口径，默认登记及全部时间省略，列表时间不传给进程趋势 |
 | Monitor | 引擎监控范围与趋势 | `/monitor/engine-resources`；`search/page/refresh` 恢复列表上下文，`deployment_id` 选择观测的部署，`metric/range` 选择其固定指标与时间窗；默认第 1 页、每秒提交、近 5 分钟、15 秒刷新省略；列表切换观测部署使用 push，筛选、趋势及刷新使用 replace，返回列表保留筛选／分页／刷新；不在 URL 存储采集端点或凭据 |
 | Orchestrator | 编排列表任务引用筛选 | `module`、`task_type`、`task_id` 同时提供，三者精确匹配步骤；编辑与执行历史返回保留筛选 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
@@ -131,6 +131,8 @@ Develop TaskProvider 的 canonical 前端路由为：
 System 模块管理默认进入模块概览；实例筛选参数仅用于 `tab=instances`。实例视图默认 UP、以登记时间为依据、全部时间、第 1 页、每页 10 条，默认值省略；全部状态显式使用 `status=all`，API 请求不传状态筛选。`time_basis` 唯一支持 `registered|offline`，默认 `registered` 省略；`offline` 按当前离线观测的判定时间筛选，没有离线观测的实例不进入结果。状态始终表示当前有效状态，同一实例恢复后退出离线时间查询，不重建历史在线状态或已经恢复的离线事件。租约超时只表示失联，不证明进程已经退出。
 
 `stop_reason` 支持 `graceful|lease_expired`，未筛选原因时省略。它按当前有效离线观测过滤，与其他条件取交集，不自动修改状态或时间依据；UP 与原因组合返回空结果。租约已过期但未被扫描落库的实例按 `lease_expired` 查询，恢复后退出原因筛选结果。选择原因立即查询并回到第 1 页，保留其他条件；重置清除原因。
+
+System 与 Monitor 的实例时间控件、RFC3339 规范化、预设目录和 API 时间边界换算统一由 Common Frontend 的 `RuntimeInstanceTimeFilter`／`runtimeInstanceTime` 拥有，模块只组合自身列表和草稿提交，不保留平行的日期校验或时段换算。
 
 `time_period` 支持 `15m|30m|1h|6h|12h|24h|7d|custom`；相对时段在每次查询时重新计算，分享链接仍表示“最近”时段。自定义范围使用唯一的 `time_from` / `time_to`，必须同时提供有时区的 RFC3339 起止时间且起点早于终点，URL 统一为 UTC ISO 时间。API 使用同一 `time_basis` / `time_from` / `time_to` 契约，范围下界包含、上界不包含，按选定的时间依据倒序稳定分页；不保留旧的登记时间专属 query。未完成的自定义范围和尚未应用的输入不写入 URL；未知参数、重复参数、无效枚举和分页值通过 replace 规范化。页签、筛选、分页和重置统一 replace 当前历史项；刷新和后台轮询不修改 URL。外部历史导航恢复 URL 中的状态，不沿用组件内的旧条件。
 
