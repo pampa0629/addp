@@ -1218,7 +1218,7 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		}
 		return nil
 	}
-	if engineType == "ftp" && model3D.Format != string(format.FormatIFC) && model3D.Format != string(format.Format3DS) {
+	if engineType == "ftp" && !managedModel3DFileSource(engineType, model3D.Format) {
 		capability.CanUseQuickView = false
 		capability.Status = QuickViewStatusUnavailable
 		capability.UnavailableReason = "model_3d_glb_source_not_supported"

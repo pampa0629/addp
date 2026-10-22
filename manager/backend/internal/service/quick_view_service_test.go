@@ -927,7 +927,7 @@ func TestModel3DGLBCapabilityFTPFormatBoundary(t *testing.T) {
 		{"ftp", "ifc", "requires_glb_generation", true},
 		{"ftp", "3ds", "requires_glb_generation", true},
 		{"ftp", "max", "model_3d_glb_source_not_supported", false},
-		{"ftp", "dae", "model_3d_glb_source_not_supported", false},
+		{"ftp", "dae", "requires_glb_generation", true},
 		{"ftp", "skp", "model_3d_glb_source_not_supported", false},
 		{"ftp", "osgb", "model_3d_glb_source_not_supported", false},
 		{"ftp", "sgm", "model_3d_glb_source_not_supported", false},
@@ -936,6 +936,7 @@ func TestModel3DGLBCapabilityFTPFormatBoundary(t *testing.T) {
 		{"ftp", "obj", "model_3d_glb_source_not_supported", false},
 		{"ftp", "fbx", "model_3d_glb_source_not_supported", false},
 		{"nfs", "max", "requires_glb_generation", true},
+		{"nfs", "dae", "requires_glb_generation", true},
 		{"minio", "max", "requires_glb_generation", true},
 	} {
 		t.Run(tc.engine+"/"+tc.format, func(t *testing.T) {
