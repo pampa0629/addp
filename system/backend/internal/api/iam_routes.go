@@ -84,6 +84,7 @@ func RegisterIAMRoutes(
 	auth := api.Group("/auth")
 	auth.Use(runtime.Authentication)
 	{
+		auth.GET("/subject-roles", runtime.FirstPartyCredential, tenantContext, (&IAMCurrentSubjectRolesHandler{service: runtime.AuthContextService}).Get)
 		auth.GET("/context-options", runtime.FirstPartyCredential, runtime.AuthHandler.ContextOptions)
 		auth.POST("/context-switches", runtime.FirstPartyCredential, runtime.AuthHandler.SwitchContext)
 		auth.GET("/mfa", runtime.FirstPartyCredential, runtime.MFASessionHandler.Status)

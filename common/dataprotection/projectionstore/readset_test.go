@@ -20,7 +20,7 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 	}
 	initializeTenant(t, store, 7)
 	prepared, calls := preparedReadSet(t, plugin.DynamicSchemaCatalogModel(), "Outdoor", "Persons")
-	protect, err := store.PrepareQueryProtection(context.Background(), 7, plugin.DynamicSchemaCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC())
+	protect, err := store.PrepareQueryProtection(context.Background(), 7, plugin.DynamicSchemaCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, nil, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	for _, query := range []bool{false, true} {
 		prepare := func(at time.Time) (*dataprotection.PreparedTableProtection, error) {
 			if query {
-				return store.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, at)
+				return store.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, nil, at)
 			}
 			return store.PrepareTableProtection(t.Context(), 7, model, path, fields, action, at)
 		}
@@ -208,7 +208,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	if err != nil {
 		t.Fatal(err)
 	}
-	joinedProtect, err := store.PrepareQueryProtection(t.Context(), 7, model, joined, action, dataprotection.SubjectReference{}, validAt)
+	joinedProtect, err := store.PrepareQueryProtection(t.Context(), 7, model, joined, action, dataprotection.SubjectReference{}, nil, validAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 		for _, query := range []bool{false, true} {
 			var protect *dataprotection.PreparedTableProtection
 			if query {
-				protect, err = reader.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, time.Now().UTC())
+				protect, err = reader.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, nil, time.Now().UTC())
 			} else {
 				protect, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, action, time.Now().UTC())
 			}
@@ -322,7 +322,7 @@ func TestPrepareQueryProtectionDeniesEnrollingManagedReadSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepared, calls := preparedReadSet(t, model, "Outdoor", "Persons")
-	if _, err := store.PrepareQueryProtection(context.Background(), 7, model, prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC()); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, err := store.PrepareQueryProtection(context.Background(), 7, model, prepared, "query", dataprotection.SubjectReference{}, nil, time.Now().UTC()); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("gate error = %v, want ErrDenied", err)
 	}
 	if *calls != 1 {
@@ -389,7 +389,7 @@ func TestPrepareQueryProtectionUsesExactSubjectForMetadataAndOutput(t *testing.T
 				if err != nil {
 					t.Fatal(err)
 				}
-				protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "preview", test.subject, now)
+				protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "preview", test.subject, nil, now)
 				if err != nil {
 					t.Fatal(err)
 				}

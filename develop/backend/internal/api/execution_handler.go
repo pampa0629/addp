@@ -463,6 +463,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTaskSwagger "当次结果 | Current result"
 // @Failure 403 {object} map[string]string
+// @Failure 409 {object} models.ErrorResponse "脱敏方式失效或当次结果过期，请重新查询 | Masking choice unavailable or live result expired; rerun the query"
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
@@ -470,8 +471,12 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Router /executions/{execution_id}/result [get]
 func (h *ExecutionHandler) GetQueryResult(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	execution, err := h.devExecutor.GetQueryResult(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c))
+	bearer, _ := requestUserAccessToken(c)
+	execution, err := h.devExecutor.GetQueryResult(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c), bearer)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		if errors.Is(err, protection.ErrRequired) {
 			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryResultProtectionRequired), "error_code": "data_protection_required"})
 			return

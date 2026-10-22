@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -50,6 +51,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 		}
 		return outputs
 	}
+	t.Run("role_choices_same_execution", func(t *testing.T) { queryRoleChoiceProtection(t, model, prepare, source) })
 	phoneOutputs, emailOutputs, labelOutputs := outputNames("phone"), outputNames("email"), outputNames("label")
 
 	raw, err := original.Execute(ctx)
@@ -119,7 +121,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 				if err != nil {
 					t.Fatal(err)
 				}
-				protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, action, actor, now)
+				protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, action, actor, nil, now)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -208,7 +210,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					}
 				}
 				if granted {
-					read, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, action)
+					read, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, action, nil)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -225,7 +227,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					projection.Revision = "00000000000000000002"
 					projection.Rules[0].Authorizations = nil
 					applyProjection("hybrid-1", "hybrid-2")
-					read, err = store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, action)
+					read, err = store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, action, nil)
 					if err != nil || !sameJSON(read.Rows, expected.Rows) {
 						t.Fatal("revoked original did not return default protection", err)
 					}
@@ -347,7 +349,7 @@ func QueryOutputExpressionProtection(t *testing.T, model plugin.EngineCatalogMod
 				if err != nil {
 					t.Fatal(err)
 				}
-				protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, action, actor, now)
+				protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, action, actor, nil, now)
 				if reject {
 					if !errors.Is(err, dataprotection.ErrDenied) || protect != nil {
 						t.Fatal("protected expression was not rejected at preparation", err)
@@ -372,5 +374,135 @@ func QueryOutputExpressionProtection(t *testing.T, model plugin.EngineCatalogMod
 				}
 			})
 		}
+	}
+}
+
+func queryRoleChoiceProtection(t *testing.T, model plugin.EngineCatalogModelSpec, prepare func(context.Context) (plugin.PreparedQuery, error), source plugin.QueryOutputSource) {
+	ctx := t.Context()
+	now := time.Now().UTC()
+	actor := dataprotection.SubjectReference{Type: "user", ID: "41"}
+	target, err := dataprotection.DataItemTargetFromCatalogPath(model, source.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := dataprotection.TableSchemaSnapshotHash(source.Fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultMask := dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "●"}, InvalidValueEffect: dataprotection.EffectSuppress}
+	sm3 := dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmSM3V1, Parameters: map[string]any{}, InvalidValueEffect: dataprotection.EffectSuppress}
+	projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV5, ProjectionID: "role-choice", Revision: "00000000000000000001", ConsumerOwner: "develop", Target: target, TargetEngineID: source.Path.EngineID, SourceSnapshotHash: hash, State: dataprotection.ProjectionStateActive, ValidFrom: now.Add(-time.Minute)}
+	selection := &dataprotection.QueryRoleSelection{RoleKeys: []string{"custom.analytics", "custom.viewer"}, ExpiresAt: now.Add(time.Minute)}
+	chosenRules := []dataprotection.Rule{}
+	for _, name := range []string{"phone", "email", "label"} {
+		component := dataprotection.Component{Key: name, ValueType: "string", Path: []dataprotection.PathSegment{{Name: name, Container: "scalar"}}}
+		component.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(source.Fields, component)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decision := defaultMask
+		if name == "email" {
+			decision = sm3
+		}
+		rule := dataprotection.Rule{Action: "query", Component: component, Decision: decision}
+		chosen := rule
+		if name != "label" {
+			policy, option := uuid.NewString(), uuid.NewString()
+			alternative := sm3
+			if name == "email" {
+				alternative = defaultMask
+			}
+			rule.RoleOptions = &dataprotection.RoleMaskingOptions{PolicyID: policy, AssessmentRevision: 1, PolicyRevision: 1, Options: []dataprotection.RoleMaskingOption{{ID: option, Name: "analytic mask", RoleKeys: []string{"custom.analytics"}, Decision: alternative}}}
+			rule.Authorizations = []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}}
+			selection.Choices = append(selection.Choices, dataprotection.FieldRoleChoice{Target: target, ComponentKey: name, Selection: dataprotection.RoleOptionSelection{PolicyID: policy, AssessmentRevision: 1, PolicyRevision: 1, OptionID: option}})
+			chosen.Decision = alternative
+		}
+		chosenRules = append(chosenRules, chosen)
+		projection.Rules = append(projection.Rules, rule)
+	}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	store := queryProtectionStore(t, "develop")
+	if err := store.ApplyBatch(ctx, 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "roles1", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "roles1"}, now); err != nil {
+		t.Fatal(err)
+	}
+	original, err := prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := original.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedLive, _ := dataprotection.CloneQueryResult(raw)
+	expectedDefault, _ := dataprotection.CloneQueryResult(raw)
+	if err := dataprotection.ProtectQueryResultSource(expectedLive, source, "query", chosenRules, actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := dataprotection.ProtectQueryResultSource(expectedDefault, source, "query", projection.Rules, dataprotection.SubjectReference{}); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepare(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protect, err := store.PrepareQueryProtection(ctx, 7, model, prepared, "query", actor, selection, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := prepared.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := protect.CaptureAuthorized(result, actor)
+	if err != nil || snapshot == nil {
+		t.Fatal("capture", err)
+	}
+	live, cloneErr := dataprotection.CloneQueryResult(result)
+	if cloneErr != nil {
+		t.Fatal(cloneErr)
+	}
+	if err := protect.Apply(live); err != nil || !sameJSON(live, snapshot.Result) {
+		t.Fatal("direct chosen Apply diverged from the captured live result", err)
+	}
+	// Native rewrites may change native type spelling (MySQL VARCHAR -> LONGTEXT).
+	// Semantic output types and exact Provider metadata must survive capture, not be guessed from source fields.
+	if !sameJSON(snapshot.Result.Rows, expectedLive.Rows) || !sameJSON(snapshot.Result.Columns, expectedLive.Columns) || !sameJSON(snapshot.Result.Fields, result.Fields) {
+		t.Fatal("chosen output or Provider metadata changed during capture")
+	}
+	for i, field := range snapshot.Result.Fields {
+		expected := expectedLive.Fields[i]
+		if field.Name != expected.Name || field.Type != expected.Type || field.Precision != expected.Precision || field.Scale != expected.Scale {
+			t.Fatal("chosen output lost its semantic type or precision")
+		}
+	}
+	if err := protect.ApplyDefault(result); err != nil || (!sameJSON(result.Rows, expectedDefault.Rows) || !sameJSON(result.Columns, expectedDefault.Columns) || !sameJSON(result.Fields, snapshot.Result.Fields)) {
+		t.Fatal("history is not the default protected preview", err)
+	}
+	for range 2 {
+		read, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, "query", selection)
+		if err != nil || !sameJSON(read.QueryResult, snapshot.Result) {
+			t.Fatal("masked snapshot was remasked or requery required unexpectedly", err)
+		}
+	}
+	revoked := *selection
+	revoked.RoleKeys = []string{"custom.viewer"}
+	if _, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, "query", &revoked); err == nil {
+		t.Fatal("revoked role delivered selected result")
+	}
+	if _, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, dataprotection.SubjectReference{Type: "user", ID: "42"}, "query", selection); err == nil {
+		t.Fatal("other actor delivered selected result")
+	}
+	projection.Revision = "00000000000000000002"
+	projection.Rules[0].RoleOptions.PolicyRevision = 2
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(ctx, 7, "roles1", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "roles2", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "roles2"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReadAuthorizedQueryResult(ctx, 7, snapshot, actor, "query", selection); err == nil {
+		t.Fatal("obsolete policy revision delivered selected result")
 	}
 }

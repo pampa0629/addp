@@ -170,3 +170,5 @@ export { createNavigationDraftSlot, takeConsoleNavigationDraft } from './utils/n
 export { default as HostNodeSelect } from './components/HostNodeSelect.vue'
 
 export { resolveRoleName, resolveRoleDescription } from './utils/rolePresentation.mjs'
+
+export { default as FieldMaskingChoices } from './components/FieldMaskingChoices.vue'

@@ -8,7 +8,7 @@ export const failureReasons = Object.freeze([
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required', 'local_read_unsupported',
-  'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_not_ready',
+  'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_role_choice_unavailable', 'protection_not_ready',
   'protection_expired', 'protection_not_yet_valid', 'protection_schema_mismatch', 'protection_operation_unsupported'
 ])
 

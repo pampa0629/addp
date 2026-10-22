@@ -16,6 +16,10 @@ import (
 // executionAuthorizationJSON is the one bounded fixed-purpose EA transport:
 // no redirects, hidden POST retries, legacy parsing or upstream body leakage.
 func (c *SystemServiceClient) executionAuthorizationJSON(ctx context.Context, path, credential string, request, response any, wantStatus int) error {
+	return c.boundedAuthorizationJSON(ctx, http.MethodPost, path, credential, request, response, wantStatus)
+}
+
+func (c *SystemServiceClient) boundedAuthorizationJSON(ctx context.Context, method, path, credential string, request, response any, wantStatus int) error {
 	if c == nil || c.httpClient == nil || c.baseURL == "" {
 		return errors.New("execution authorization System endpoint unavailable")
 	}
@@ -24,7 +28,7 @@ func (c *SystemServiceClient) executionAuthorizationJSON(ctx context.Context, pa
 	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	bound.httpClient = &transport
 	var raw json.RawMessage
-	status, err := bound.doJSON(ctx, http.MethodPost, path, credential, request, &raw, 512<<10)
+	status, err := bound.doJSON(ctx, method, path, credential, request, &raw, 512<<10)
 	if err != nil || status != wantStatus {
 		code := "execution_authorization_internal_error"
 		switch status {
@@ -41,7 +45,7 @@ func (c *SystemServiceClient) executionAuthorizationJSON(ctx context.Context, pa
 		if errors.As(err, &apiError) && apiError.ErrorCode == "execution_authorization_unavailable" {
 			code = apiError.ErrorCode
 		}
-		return &SystemAPIError{Method: http.MethodPost, Path: path, StatusCode: status, ErrorCode: code}
+		return &SystemAPIError{Method: method, Path: path, StatusCode: status, ErrorCode: code}
 	}
 	if _, err := jsonmap.DecodeObjectStrict(raw, 512<<10, 64); err != nil {
 		return errors.New("invalid execution authorization System response")

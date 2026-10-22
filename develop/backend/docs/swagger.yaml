@@ -74,6 +74,61 @@ definitions:
     - execution_id
     - request_digest
     type: object
+  dataprotection.FieldRoleChoice:
+    properties:
+      component_key:
+        type: string
+      selection:
+        $ref: '#/definitions/dataprotection.RoleOptionSelection'
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
+  dataprotection.FieldRoleOptions:
+    properties:
+      assessment_revision:
+        type: integer
+      component_key:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/dataprotection.RoleOptionCandidate'
+        type: array
+      policy_id:
+        type: string
+      policy_revision:
+        type: integer
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
+  dataprotection.ResourceReference:
+    properties:
+      component_key:
+        type: string
+      owner_module:
+        type: string
+      resource_identity:
+        type: string
+      resource_type:
+        type: string
+    type: object
+  dataprotection.RoleOptionCandidate:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  dataprotection.RoleOptionSelection:
+    properties:
+      assessment_revision:
+        type: integer
+      option_id:
+        type: string
+      policy_id:
+        type: string
+      policy_revision:
+        type: integer
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -453,6 +508,10 @@ definitions:
         type: string
       parameters:
         type: object
+      protection_choices:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleChoice'
+        type: array
       query:
         example: SELECT * FROM source
         type: string
@@ -966,6 +1025,13 @@ definitions:
       warnings:
         items:
           type: string
+        type: array
+    type: object
+  github_com_addp_develop_backend_internal_models.QueryProtectionOptionsResponse:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleOptions'
         type: array
     type: object
   github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest:
@@ -2405,6 +2471,11 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "409":
+          description: 脱敏方式失效或当次结果过期，请重新查询 | Masking choice unavailable or live result
+            expired; rerun the query
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 获取当次查询结果 | Get current query result
       tags:
       - Execution
@@ -3540,6 +3611,47 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.execute
+  /query-protection-options:
+    get:
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 精确数据项定位符 | Exact data item locator
+        in: query
+        name: target_locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 字段可选方式 | Selectable field methods
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.QueryProtectionOptionsResponse'
+        "400":
+          description: 无效来源 | Invalid source
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "401":
+          description: 需要本人登录 | Current user login required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "409":
+          description: 角色或保护方式不可用 | Role or masking method unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询本人可选脱敏方式 | List my selectable masking methods
+      tags:
+      - Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.execute
+      - develop.data_read.execute
   /runtime/catalog-references/resolve:
     post:
       consumes:
@@ -3782,6 +3894,11 @@ paths:
           description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "409":
+          description: 脱敏方式或当前角色资格不可用 | Masking method or current role eligibility
+            unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 创建开发任务 | Create development task
       tags:
       - DevTask
@@ -3857,6 +3974,11 @@ paths:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
         "400":
           description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "409":
+          description: 脱敏方式或当前角色资格不可用 | Masking method or current role eligibility
+            unavailable
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 更新开发任务 | Update development task

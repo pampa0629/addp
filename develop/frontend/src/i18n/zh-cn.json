@@ -24,6 +24,7 @@
       "passwordRequired": "请输入密码"
     },
     "query": {
+      "maskingLoadFailed": "无法加载当前可选脱敏方式，请重试。",
       "title": "查询开发",
       "selectDataSource": "选择数据源",
       "testConnection": "测试连接",

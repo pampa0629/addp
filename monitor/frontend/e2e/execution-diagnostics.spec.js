@@ -129,6 +129,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
 })
 
 for (const locale of ['zh-cn', 'en']) for (const [reason, stage, zh, en, zhAction, enAction] of [
+  ['protection_role_choice_unavailable', 'preparation', '所选脱敏方式或当前角色资格已不可用', 'selected masking method or current role eligibility is unavailable', '重新选择并执行查询', 'choose again and rerun'],
   ['data_protection_required', 'preparation', '数据脱敏保护校验未通过', 'data masking protection checks'],
   ['permission_denied', 'execution', '当前执行缺少读取或写入权限', 'lacks read or write permission'],
   ['authorization_invalid', 'authorization', '执行授权缺失、失效或与本次执行不匹配', 'Execution authorization is missing, expired'],

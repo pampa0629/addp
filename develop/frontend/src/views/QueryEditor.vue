@@ -175,6 +175,9 @@
                 <el-icon><List /></el-icon>
                 {{ t('develop.query.showCompletions') }}
               </el-button>
+              <el-button text size="small" :disabled="executing || switchingQueryTarget || savingForEngineSwitch" @click="maskingDrawerVisible = true">
+                {{ t('fieldMaskingChoices.title') }}<span v-if="protectionChoices.length"> ({{ protectionChoices.length }})</span>
+              </el-button>
               <el-button
                 text
                 size="small"
@@ -734,6 +737,9 @@
         </el-button>
       </el-tooltip>
     </div>
+    <el-drawer v-model="maskingDrawerVisible" :title="t('fieldMaskingChoices.title')" size="min(480px, 100vw)" class="addp-drawer">
+      <FieldMaskingChoices v-model="protectionChoices" :fields="maskingFields" :loading="maskingLoading" :error="maskingError" :disabled="executing" @refresh="refreshMaskingOptions" />
+    </el-drawer>
     <StatusAnnouncer :message="announcement" />
     <ProtectionAccessRequestDialog v-model="plaintextRequestVisible" :target-identity="plaintextTargetIdentity" initial-owner="develop" :api="client" />
   </div>
@@ -783,7 +789,7 @@ import { GraphResultView } from '@addp/common-frontend/graph'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { getSampleQuery, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
+import { getSampleQuery, getQueryProtectionOptions, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
 import { createExecution, createQueryExport, getQueryResult, getQueryExport } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
@@ -797,7 +803,7 @@ import { createLatestRequestCoordinator } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import client from '../api/client'
 import { createQueryPlaintextRefresh } from '../utils/queryPlaintextRefresh.mjs'
-import { ProtectionAccessRequestDialog } from '@addp/common-frontend'
+import { ProtectionAccessRequestDialog, FieldMaskingChoices } from '@addp/common-frontend'
 import {
   formatterLanguageForQuery,
   formatGeneratedQueryForEditor,
@@ -868,6 +874,26 @@ const saveForEngineSwitch = ref(false)
 const resultViewMode = ref('table')
 const catalogSelection = ref(null)
 const targetLocator = ref('')
+const protectionChoices = ref([])
+const maskingDrawerVisible = ref(false)
+const maskingFields = ref([])
+const maskingLoading = ref(false)
+const maskingError = ref('')
+let maskingRequestSequence = 0
+const refreshMaskingOptions = async () => {
+  const sequence = ++maskingRequestSequence
+  const locator = catalogSelection.value?.identity?.locator || targetLocator.value
+  maskingFields.value = []
+  maskingError.value = ''
+  if (!locator || !selectedEngineId.value) { maskingError.value = t('fieldMaskingChoices.sourceRequired'); maskingLoading.value = false; return }
+  maskingLoading.value = true
+  try {
+    const response = await getQueryProtectionOptions(selectedEngineId.value, locator)
+    if (sequence === maskingRequestSequence) maskingFields.value = response.fields
+  } catch (error) {
+    if (sequence === maskingRequestSequence) maskingError.value = error.response?.data?.error || t('develop.query.maskingLoadFailed')
+  } finally { if (sequence === maskingRequestSequence) maskingLoading.value = false }
+}
 watch([catalogSelection, targetLocator, canRequestPlaintext],async ([selection, savedLocator, permitted])=>{
   const sequence=++plaintextTargetSequence
   plaintextTargetIdentity.value='';plaintextRequestVisible.value=false
@@ -1145,6 +1171,7 @@ const currentSnapshot = computed(() => JSON.stringify({
   query: queryContent.value,
   target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
   query_parameters: queryParameters.value.map(queryParameterPayload),
+      protection_choices: protectionChoices.value,
 }))
 const isDirty = computed(() => queryTaskRouteReady.value && savedSnapshot.value !== currentSnapshot.value)
 
@@ -1316,6 +1343,7 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   fieldCompletions.value = []
   diagnosticAnalysis.value = null
   targetLocator.value = ''
+  protectionChoices.value = []
   initialCatalogLocator.value = ''
   queryContent.value = ''
   queryParameters.value = []
@@ -1665,7 +1693,8 @@ const submitQuery = async (parameters = {}) => {
         query,
         query_type: currentQueryLanguage.value,
         target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
-        query_parameters: queryParameters.value.map(queryParameterPayload)
+        query_parameters: queryParameters.value.map(queryParameterPayload),
+      protection_choices: protectionChoices.value
       },
       execution_config: { engine_id: selectedEngineId.value },
       parameters,
@@ -2247,7 +2276,8 @@ const handleSaveTask = async (taskData) => {
       ...taskData,
       query_type: currentQueryLanguage.value,
       target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
-      query_parameters: queryParameters.value.map(queryParameterPayload)
+      query_parameters: queryParameters.value.map(queryParameterPayload),
+      protection_choices: protectionChoices.value
     })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
@@ -2314,6 +2344,7 @@ const persistCurrentQueryTask = async () => {
       query_type: currentQueryLanguage.value,
       target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
       query_parameters: queryParameters.value.map(queryParameterPayload),
+      protection_choices: protectionChoices.value,
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -2342,6 +2373,7 @@ const loadTask = async (taskId) => {
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
   selectedQueryTarget.value = engineID ? `engine:${engineID}` : ''
+  protectionChoices.value = structuredClone(task.content?.protection_choices || [])
   targetLocator.value = task.content?.target_locator || ''
   initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
@@ -2360,6 +2392,7 @@ const resetQueryEditorForCreate = async () => {
   queryParameters.value = []
   executionParameterOverrides.value = {}
   targetLocator.value = ''
+  protectionChoices.value = []
   initialCatalogLocator.value = ''
   catalogSelection.value = null
   fieldRequestSequence += 1
@@ -2412,6 +2445,12 @@ onMounted(async () => {
   await applyQueryTaskRoute()
   queryTaskRouteReady.value = true
   markSaved()
+})
+
+watch([maskingDrawerVisible, selectedEngineId, () => catalogSelection.value?.identity?.locator, targetLocator], () => {
+  ++maskingRequestSequence
+  maskingFields.value = []
+  if (maskingDrawerVisible.value) refreshMaskingOptions()
 })
 
 watch(() => route.fullPath, () => {

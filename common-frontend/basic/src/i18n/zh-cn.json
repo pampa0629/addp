@@ -1,4 +1,14 @@
 {
+  "fieldMaskingChoices": {
+  "title": "脱敏方式",
+  "hint": "未选择的字段沿用默认保护；选择将随查询保存，后续执行自动复用。",
+  "default": "默认方式",
+  "refresh": "刷新方式",
+  "empty": "当前来源没有可用的角色专用方式。",
+  "stale": "已保存的选择当前不可用，请移除或重新选择。",
+  "remove": "移除选择",
+  "sourceRequired": "请先在资源树中选择一个数据表或集合。"
+},
   "autoRefresh": {
     "interval": "刷新间隔",
     "off": "关闭自动刷新",
@@ -193,6 +203,7 @@
         "data_protection_required": "本次执行因数据脱敏保护校验未通过而被阻止。",
         "protection_computed_output_unsupported": "当前计算或组合输出涉及受保护字段，暂不支持安全脱敏，执行已被阻止。",
         "protection_lineage_unverified": "无法验证本次操作的完整读取范围或输出字段来源，数据保护已阻止执行。",
+        "protection_role_choice_unavailable": "所选脱敏方式或当前角色资格已不可用，执行已被阻止。",
         "protection_not_ready": "数据保护配置尚未就绪，执行已被阻止。",
         "protection_expired": "此数据资源的保护规则已到期，执行已被阻止。",
         "protection_not_yet_valid": "此数据资源的保护规则尚未生效，执行已被阻止。",
@@ -234,6 +245,7 @@
         "data_protection_required": "请联系安全管理员检查脱敏保护规则、有效期和同步状态，并确认当前操作支持所需的保护处理。",
         "protection_computed_output_unsupported": "请改为直接读取受保护字段，由系统统一脱敏；该限制不能通过申请原值授权解除。",
         "protection_lineage_unverified": "请使用能验证数据来源的受支持操作；查询可先改为单表直接字段读取，仍失败时请联系管理员检查引擎支持。",
+        "protection_role_choice_unavailable": "请刷新可选脱敏方式，重新选择并执行查询；实时结果已过期时也需重新查询。这不表示数据读取权限不足。",
         "protection_not_ready": "请等待数据保护纳管和规则同步完成后重试；持续未就绪时，请联系安全管理员检查同步状态。",
         "protection_expired": "请联系安全管理员为数据保护续期或设置长期有效，待规则同步后重试。",
         "protection_not_yet_valid": "请等待保护规则的生效时间，或联系安全管理员核对时间设置。",

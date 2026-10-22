@@ -114,7 +114,7 @@ func (h *NotebookHandler) CreateNotebook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookStoreFailed, err.Error())})
 		return
 	}
-	devTask, err := h.createNotebookTask(req.Name, req.Description, notebookPath, minioPath, req.Kernel, map[string]interface{}{}, req.EngineID, tenantID, userIDValue(c))
+	devTask, err := h.createNotebookTask(c.Request.Context(), req.Name, req.Description, notebookPath, minioPath, req.Kernel, map[string]interface{}{}, req.EngineID, tenantID, userIDValue(c))
 	if err != nil {
 		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
@@ -123,8 +123,8 @@ func (h *NotebookHandler) CreateNotebook(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Notebook 创建成功", "dev_task": devTask})
 }
 
-func (h *NotebookHandler) createNotebookTask(name, description, notebookPath, minioPath, kernel string, parameters map[string]interface{}, engineID, tenantID, userID uint) (*models.DevTask, error) {
-	return h.devTaskService.CreateDevTask(&models.CreateDevTaskRequest{
+func (h *NotebookHandler) createNotebookTask(ctx context.Context, name, description, notebookPath, minioPath, kernel string, parameters map[string]interface{}, engineID, tenantID, userID uint) (*models.DevTask, error) {
+	return h.devTaskService.CreateDevTask(ctx, "", &models.CreateDevTaskRequest{
 		Name: name, DisplayName: name, DevType: "script", Description: description, Timeout: 600,
 		Content: models.DevTaskContent{
 			"notebook_path": notebookPath, "minio_path": minioPath, "kernel": kernel,
@@ -296,7 +296,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		return
 	}
 
-	devTask, err := h.createNotebookTask(name, description, notebookPath, minioPath, kernel, parameters, engineID, tenantID, userID)
+	devTask, err := h.createNotebookTask(c.Request.Context(), name, description, notebookPath, minioPath, kernel, parameters, engineID, tenantID, userID)
 	if err != nil {
 		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})

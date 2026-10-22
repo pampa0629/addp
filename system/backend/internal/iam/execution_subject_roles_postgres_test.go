@@ -14,6 +14,7 @@ import (
 // Called by the existing real PostgreSQL EA gate, using its isolated schema.
 func testExecutionSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, issued *IssuedExecutionAuthorization, audit AuditMetadata, userToken string) {
 	t.Helper()
+	testCurrentSubjectRoles(t, ctx, db, userToken)
 	t.Run("current_subject_roles", func(t *testing.T) {
 		lease := uuid.New()
 		base := ResolveExecutionSubjectRolesInput{AuthorizationID: issued.ID, ExecutionID: issued.ExecutionID, Attempt: 1, LeaseToken: lease, ServicePrincipalID: *audit.PrincipalID, ServiceClientID: "addp-develop", TenantID: issued.TenantID, Audit: audit}

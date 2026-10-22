@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"gorm.io/gorm"
 )
@@ -34,8 +35,9 @@ var (
 
 // DevTaskService 开发任务业务逻辑层
 type DevTaskService struct {
-	devTaskRepo  *repository.DevTaskRepository
-	systemClient *commonClient.SystemServiceClient
+	devTaskRepo     *repository.DevTaskRepository
+	systemClient    *commonClient.SystemServiceClient
+	queryProtection *SQLEngineService
 }
 
 // NewDevTaskService 创建开发任务服务
@@ -46,8 +48,10 @@ func NewDevTaskService(devTaskRepo *repository.DevTaskRepository, systemClient *
 	}
 }
 
+func (s *DevTaskService) SetQueryProtection(service *SQLEngineService) { s.queryProtection = service }
+
 // CreateDevTask 创建开发任务
-func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
+func (s *DevTaskService) CreateDevTask(ctx context.Context, bearer string, req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
 	// 业务验证：检查名称是否已存在
 	exists, err := s.devTaskRepo.ExistsByName(req.Name, tenantID, nil)
 	if err != nil {
@@ -65,6 +69,10 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 		return nil, err
 	}
 	if err := validateDevTaskExecutionConfig(req.DevType, req.Content, req.ExecutionConfig); err != nil {
+		return nil, err
+	}
+
+	if err := s.validateSavedQueryChoices(ctx, bearer, tenantID, userID, &models.DevTask{DevType: req.DevType, Content: req.Content, ExecutionConfig: req.ExecutionConfig}); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +112,7 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 }
 
 // UpdateDevTask 更新开发任务
-func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
+func (s *DevTaskService) UpdateDevTask(ctx context.Context, bearer string, id uint, req *models.UpdateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
 	// 获取现有开发任务
 	item, err := s.devTaskRepo.FindByID(id, tenantID)
 	if err != nil {
@@ -143,6 +151,9 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 		}
 	}
 	if err := validateDevTaskExecutionConfig(item.DevType, nextContent, nextExecutionConfig); err != nil {
+		return nil, err
+	}
+	if err := s.validateSavedQueryChoices(ctx, bearer, tenantID, userID, &models.DevTask{DevType: item.DevType, Content: nextContent, ExecutionConfig: nextExecutionConfig}); err != nil {
 		return nil, err
 	}
 	if req.Content != nil && len(req.Content) > 0 {
@@ -554,8 +565,11 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 	switch devType {
 	case commonExecution.TaskTypeQuery:
 		if err := validateAllowedFields(content, "content", map[string]struct{}{
-			"query": {}, "query_type": {}, "query_parameters": {}, "target_locator": {},
+			"query": {}, "query_type": {}, "query_parameters": {}, "target_locator": {}, "protection_choices": {},
 		}); err != nil {
+			return err
+		}
+		if _, err := models.QueryProtectionChoices(content); err != nil {
 			return err
 		}
 		query, ok := content["query"].(string)
@@ -973,4 +987,18 @@ func (s *DevTaskService) BatchUpdateStatus(ids []uint, tenantID uint, status str
 
 	log.Printf("✅ [DevTaskService] 批量更新状态成功 count=%d status=%s", len(ids), status)
 	return nil
+}
+
+func (s *DevTaskService) validateSavedQueryChoices(ctx context.Context, bearer string, tenant, user uint, task *models.DevTask) error {
+	choices, err := models.QueryProtectionChoices(task.Content)
+	if err != nil {
+		return err
+	}
+	if len(choices) == 0 {
+		return nil
+	}
+	if s.queryProtection == nil {
+		return protection.ErrRequired
+	}
+	return s.queryProtection.ValidateQueryProtectionChoices(ctx, tenant, user, bearer, task)
 }

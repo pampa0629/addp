@@ -126,6 +126,10 @@ Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthCont
 
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
 
+Develop 查询的角色可选脱敏方式沿用同一普通查询路径。候选 `GET /query-protection-options` 仅观察用户显式选中数据项，使用本人当前角色自查；`content.protection_choices` 只保存精确源字段与方式身份／修订。保存、仅改名称的更新与执行均重新核验，后台执行只能使用绑定当前 Execution Authorization、attempt、lease 的角色事实，不借用任务作者、Worker 或发布人角色。未选择继续默认保护；旧引用、资格失效、未消费来源、派生／opaque 来源或不支持路径明确拒绝，不自动换默认算法。特殊方式首期覆盖 SQL／MQL 的已证明直接字段及别名，联邦、关系结果写入、Notebook 与经 Transfer 执行的全量导出不消费此选择。
+
+实时所选脱敏结果与历史默认预览由同一次 PreparedQuery 分别形成；共享计划仅延后所选字段的原生变换，其余仍走原 SQL／Go 协同保护，不伪造 allow、不重跑查询、不对掩码再次哈希。交付沿现有 5 分钟／大小有界进程内缓存，每次读取核对当前 User 角色及本地投影；失效或淘汰明确要求重新查询。其他字段既有临时原值授权仍独立复核，撤销／到期的原值逐字段从后续快照移除；CAS 与每版独立计时标识防止并发旧读取恢复原值或延长暂存。持久执行历史始终只含默认脱敏预览；详情与 Monitor 共用 `protection_role_choice_unavailable` 中英文说明。
+
 Backend 与查询执行进程共用的数据库连接必须使用 `common/logger.WithoutSQLValues`：ORM 查询日志保留 SQL 结构、级别、耗时和行数，不展开绑定参数；错误只记录固定类别、类型或合法 SQLSTATE，避免驱动回显查询结果参数。过滤不改变绑定值、事务、持久历史和调用方错误链；`Debug/LogMode` 不能移除过滤。执行事务的日志非泄露与数据完整性由 SQLite 和既有 Develop PostgreSQL 门禁共同验证。
 
 数据保护拒绝沿既有 `error_details.diagnostic` 和共享 `ExecutionFailure` 展示：稳定码 `develop.query.protection_required`，通用原因 `data_protection_required`，已证明的具体原因按下文细分。Gate 准备失败标记 `preparation`，已执行结果的保护失败标记 `result`，保留原始错误链用于内部判定；不解析原始错误正文、不混同数据项权限不足，也不放宽保护规则。标准验证为 `make test-module MODULE=develop`、`make test-common-frontend` 和 `make test-go`；共享组件的 Monitor 消费由 `make test-monitor-frontend` 验证。现有单测、浏览器和 Develop PostgreSQL 入口自动覆盖，不增加新门禁。
@@ -506,3 +510,5 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 2026-10-18 新历史规则验收闭环：[Hosted v6 39041158723](https://github.com/pampa0629/addp/actions/runs/39041158723) 通过，Job `117420768709`，运行源码 `293fdafe2290955c15272056b627c8fad721be2a`。领域 `addp.security-plaintext-access-online/v6` 与浏览器 `addp.security-plaintext-access-browser/v2` 归档均经独立校验。两个真实 User 验证获批当次结果接口返回原值，而授权有效时的历史接口已经默认脱敏；同一历史在自然到期、主动撤销后仍脱敏，另一用户不继承授权，Manager 单出口授权不扩大至 Develop，Security 不可达期间本地授权期限继续生效。浏览器 v2 证明 Console 申请／审批及 Manager 保护状态，不扩大为 Develop 当次原值工作台的真实浏览器专项。Hosted 生命周期 `cleanup=passed`、`infra_cleanup=zero_residuals`；新 Develop 日志 9,681 条中测试手机号原值命中为零，旧私有历史键的两处命中均为单向迁移 SQL。
 
 同日用户重启后的本地 Develop／Security ready/registered，运行构建 `53be389c5e434b8e1f045796b7f892dd9aef7b1b` 已包含本次实现。只读数据库核对迁移 `2026101701` 已安装、Develop Query 旧私有历史键剩余零条；旧执行 `a812f451-4f09-4d11-862e-86c351ae6675` 与旧获批执行 `00adf789-ec22-4f01-9875-add997566ebd` 均保留成功状态和十行默认预览，完整手机号行数为零。Chrome 管理员真实打开前一执行的历史详情，十行预览保持掩码／NULL。本地未新增原值授权或重跑源查询；旧获批执行的移除事实来自只读数据库核对。结合已通过的 Common／Develop Go、全仓 Go、真实 PostgreSQL、Develop 前端、授权／Swagger 和 Online 夹具门禁，本切片已验收；不外推为 SQL 自动重写或透明加密已实现。
+
+2026-10-22 角色方式选择阶段验证：本人自查、选择保存／重载、绑定执行角色复核、同次实时／默认历史以及有界交付已落地。Common／Develop／System Go T1、既有 IAM／Common PG query-read-set／Common MySQL／Develop PG T2 及 Develop 92 项浏览器／构建、Monitor 289+2 项浏览器和共享前端 259 项通过；详见 `security/CLAUDE.md` 同日记录。当前特殊选择仅限已证明的 SQL／MQL 普通查询；其他 Owner 业务选择、受选查询全量导出与本地真实账号／Hosted T4 尚未完成，不以此阶段记录宣称整体数据保护清单已完成。

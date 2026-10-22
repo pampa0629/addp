@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -41,7 +42,7 @@ func queryErrorCode(err error) string {
 	if errors.As(err, &network) {
 		return "connection_failed"
 	}
-	if errors.Is(err, protection.ErrRequired) {
+	if errors.Is(err, protection.ErrRequired) || errors.Is(err, dataprotection.ErrRoleOptionUnavailable) || errors.Is(err, dataprotection.ErrRoleOptionIneligible) {
 		return "develop.query.protection_required"
 	}
 	return "develop.query.execution_failed"

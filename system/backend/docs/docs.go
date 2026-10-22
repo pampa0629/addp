@@ -994,6 +994,50 @@ const docTemplate = `{
                 ]
             }
         },
+        "/auth/subject-roles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅第一方登录用户查询本人角色，包含无功能权限的业务角色；不授予权限，不支持指定其他主体或租户 | First-party users may observe only their own tenant roles, including roles without functional permissions; grants no access and accepts no subject or tenant selector",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "查询本人当前租户角色 | Observe own current tenant roles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.CurrentSubjectRoles"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
         "/auth/task-authorization-subjects": {
             "post": {
                 "security": [
@@ -15727,6 +15771,35 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "authorization.CurrentSubjectRoles": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "type": "string"
+                },
+                "authorization_version": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "role_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
                 }
             }
         },

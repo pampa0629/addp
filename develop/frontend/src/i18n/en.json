@@ -24,6 +24,7 @@
       "passwordRequired": "Please enter password"
     },
     "query": {
+      "maskingLoadFailed": "Unable to load current selectable masking methods. Retry.",
       "title": "Query Development",
       "selectDataSource": "Select data source",
       "testConnection": "Test Connection",

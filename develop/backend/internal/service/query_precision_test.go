@@ -12,7 +12,7 @@ import (
 
 type preciseResultReadGate struct{ allowDevelopProtectionGate }
 
-func (*preciseResultReadGate) ReadQueryResult(_ context.Context, _ int64, snapshot *dataprotection.AuthorizedQueryResult, _ dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryReadResult, error) {
+func (*preciseResultReadGate) ReadQueryResult(_ context.Context, _ int64, snapshot *dataprotection.AuthorizedQueryResult, _ dataprotection.SubjectReference, _ *dataprotection.QueryRoleSelection) (*dataprotection.AuthorizedQueryReadResult, error) {
 	until := time.Now().Add(time.Minute)
 	return &dataprotection.AuthorizedQueryReadResult{QueryResult: snapshot.Result, PlaintextExpiresAt: &until}, nil
 }
@@ -29,7 +29,7 @@ func TestCurrentQueryResultRetainsSchemaThroughCacheAndExactWireProjection(t *te
 	}
 	t.Cleanup(func() { cache.remove("current", "generation") })
 	ctx := WithExecutionAuthContext(t.Context(), authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"}))
-	response, err := executor.queryResultResponse(ctx, professionalExecutionResponse(resultFixture()), 7)
+	response, err := executor.queryResultResponse(ctx, professionalExecutionResponse(resultFixture()), 7, "")
 	if err != nil {
 		t.Fatal(err)
 	}

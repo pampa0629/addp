@@ -352,7 +352,7 @@ func TestProjectionStoreReasonMatrixAgainstPostgres(t *testing.T) {
 					if reason == "protection_operation_unsupported" || reason == "protection_computed_output_unsupported" {
 						prepared = reasonMatrixUnsupportedQuery{prepared}
 					}
-					protected, refusal := reader.PrepareQueryProtection(t.Context(), 7, model, prepared, outlet.action, dataprotection.SubjectReference{}, now)
+					protected, refusal := reader.PrepareQueryProtection(t.Context(), 7, model, prepared, outlet.action, dataprotection.SubjectReference{}, nil, now)
 					if protected != nil || refusal == nil || execution.ProtectionFailureReason(refusal) != reason || executed {
 						t.Fatalf("protocol refusal: want=%s got=%s error=%v executed=%t", reason, execution.ProtectionFailureReason(refusal), refusal, executed)
 					}

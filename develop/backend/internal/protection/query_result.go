@@ -19,6 +19,7 @@ func WithInteractiveQuerySubject(ctx context.Context, subject dataprotection.Sub
 // QueryCapture exists only during an execution whose actor was verified by
 // its Execution Authorization. It never accepts an actor from query JSON.
 type QueryCapture struct {
+	Roles   *dataprotection.QueryRoleSelection
 	Subject dataprotection.SubjectReference
 	Result  *dataprotection.AuthorizedQueryResult
 }
@@ -28,7 +29,7 @@ func WithQueryCapture(ctx context.Context, subject dataprotection.SubjectReferen
 	return context.WithValue(ctx, queryCaptureKey{}, capture), capture
 }
 
-func (g *Gate) ReadQueryResult(ctx context.Context, tenantID int64, snapshot *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryReadResult, error) {
+func (g *Gate) ReadQueryResult(ctx context.Context, tenantID int64, snapshot *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference, roles *dataprotection.QueryRoleSelection) (*dataprotection.AuthorizedQueryReadResult, error) {
 	if g == nil || g.store == nil {
 		return nil, ErrRequired
 	}
@@ -37,7 +38,7 @@ func (g *Gate) ReadQueryResult(ctx context.Context, tenantID int64, snapshot *da
 		return nil, err
 	}
 	defer end()
-	result, err := g.store.ReadAuthorizedQueryResult(ctx, tenantID, snapshot, subject, "query")
+	result, err := g.store.ReadAuthorizedQueryResult(ctx, tenantID, snapshot, subject, "query", roles)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrResultRequired, err)
 	}

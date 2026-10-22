@@ -348,3 +348,12 @@ other = "显式字段名 JSON 数组，如 [\"名称\", \"类型\"]；空数组�
 other = "矢量切片参数或源元数据无效；请核对层级、属性字段，并对源数据执行深度扫描。"
 [develop.query.result_protection_required]
 other = "查询结果的保护规则已变化或无法验证，请重新执行查询。"
+
+[develop.query.protection_choice_invalid]
+other = "所选脱敏方式已变更、已失效或实时结果已过期。请刷新脱敏方式并重新执行查询。"
+
+[develop.query.protection_roles_unavailable]
+other = "无法确认当前账号仍具备所选脱敏方式的角色资格。请刷新方式列表，或联系管理员核对角色。"
+
+[develop.query.protection_unavailable]
+other = "数据脱敏保护暂不可用，请稍后重试或联系安全管理员检查规则同步状态。"

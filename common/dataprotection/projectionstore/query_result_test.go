@@ -64,7 +64,7 @@ func assertAuthorizedQueryResultLifecycle(t *testing.T, store *Store, identity b
 	if err != nil {
 		t.Fatal(err)
 	}
-	protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "query", user, now)
+	protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "query", user, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,20 +117,33 @@ func assertAuthorizedQueryResultLifecycle(t *testing.T, store *Store, identity b
 		t.Fatal(err)
 	}
 	apply("history-2", "history-1")
-	result, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query")
+	result, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query", nil)
 	if err != nil || result.Rows[0][output] != masked {
 		t.Fatalf("revocation: %v %v", result, err)
 	}
+	if result.Retained == nil || len(result.Retained.Sources[0].Source.Bindings) != 0 {
+		t.Fatal("revoked raw bindings were retained")
+	}
 	projection.Revision = "00000000000000000003"
-	projection.Rules[0].Decision = dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}
+	projection.Rules[0].Authorizations = []dataprotection.TemporaryAuthorization{{Subject: user, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Second), ValidUntil: deadline}}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
 	}
 	apply("history-3", "history-2")
-	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
+	renewed, err := store.ReadAuthorizedQueryResult(t.Context(), 7, result.Retained, user, "query", nil)
+	if err != nil || renewed.Rows[0][output] != masked || renewed.PlaintextExpiresAt != nil {
+		t.Fatal("renewed grant resurrected a revoked retained original", err)
+	}
+	projection.Revision = "00000000000000000004"
+	projection.Rules[0].Decision = dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	apply("history-4", "history-3")
+	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query", nil); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("changed default: %v", err)
 	}
-	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 8, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 8, history, user, "query", nil); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("other tenant: %v", err)
 	}
 }
@@ -140,7 +153,7 @@ func TestAuthorizedIdentityKeepsTypedArrayTraversal(t *testing.T) {
 	user := dataprotection.SubjectReference{Type: "user", ID: "41"}
 	rule := dataprotection.Rule{Action: "query", Component: dataprotection.Component{Key: "contacts.phone", Path: []dataprotection.PathSegment{{Name: "contacts", Container: "array"}, {Name: "phone", Container: "scalar"}}, ValueType: "string"}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}, Authorizations: []dataprotection.TemporaryAuthorization{{Subject: user, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}}}
 	row := &plugin.QueryResult{Rows: []map[string]interface{}{{"contacts": []interface{}{map[string]interface{}{"phone": "13661384499", "label": "home"}}}}}
-	history, err := captureAuthorizedQuery(row, []querySourceProtection{{source: plugin.QueryOutputSource{IdentityOutput: true}, rules: []dataprotection.Rule{rule}}}, user, 7, "query")
+	history, err := captureAuthorizedQuery(row, []querySourceProtection{{source: plugin.QueryOutputSource{IdentityOutput: true}, rules: []dataprotection.Rule{rule}}}, user, 7, "query", nil)
 	if err != nil || history == nil {
 		t.Fatalf("capture array: %v", err)
 	}
@@ -204,7 +217,7 @@ func assertQueryGrantExecutionBoundary(t *testing.T, store *Store) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			protect, err := store.PrepareQueryProtection(t.Context(), tenant, model, prepared, "query", subject, preparedAt)
+			protect, err := store.PrepareQueryProtection(t.Context(), tenant, model, prepared, "query", subject, nil, preparedAt)
 			if err != nil {
 				t.Fatal(err)
 			}

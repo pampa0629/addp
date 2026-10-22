@@ -83,6 +83,12 @@ Monitor 任务诊断同样由任务 owner 复核当前用户范围；Monitor 功
 
 上述执行结果不等同于写入业务引擎后形成的独立 DataItem；产出数据的初始使用权见 5.5.8。具体执行协议见[登录认证统一要求](addp登录认证的统一要求.md)和[任务体系规范](addp任务体系规范.md)。
 
+#### 本人当前角色自查
+
+`GET /api/v1/system/auth/subject-roles` 仅允许当前第一方登录 User 在当前 Tenant Context 中自查有效 Role Key 集合，包含没有功能 Permission 的业务角色。既有 AuthContext 仍是功能权限投影，不改变 v1 Schema，也不拿它代替完整业务角色事实。该接口不接收主体、Tenant、角色、筛选或请求正文；Platform、Service Principal、委托、资源票据及应用凭据不得使用，不新增查询其他人的能力或数据访问权限。
+
+响应固定为 `{tenant_id, actor_principal_id, tenant_membership_id, authorization_version, role_keys, observed_at, expires_at}`，ID 为十进制字符串，角色键稳定排序去重，可为空数组。System 复用执行发起人角色核验的同一有效 Role Assignment 查询，在身份锁与数据库当前时间下复核当前令牌、Family、Principal、Membership、授权版本及期限；截止时间取当前令牌、Family、Membership 和返回角色期限的最早值。HTTP `Cache-Control: no-store`；Owner 每次保存、列举选项或同步结果交付均使用当前请求 User Bearer 核验并精确绑定已有 AuthContext，不缓存、不持久化角色事实，不回退 Service 凭据。异步执行仍使用下节的 execution/attempt/lease 专属接口，不能用本人接口代替运行资格裁决。
+
 #### 执行发起人的当前角色核验
 
 `POST /api/v1/system/execution-authorizations/{id}/subject-roles` 仅供当前 Tenant 的 `addp-develop`、`addp-transfer` 在本模块真实 running 执行中核验发起人的当前角色；沿用 `system.execution_authorization.execute`，不新增用户角色枚举权限。请求只有 execution UUID、正整数 attempt、lease token，不接收主体、Tenant、角色或算法。Develop 的 DuckDB audience 仍由 Develop Owner 核验，Runtime 不取得角色。
@@ -273,6 +279,8 @@ Meta 是数据授权的事实依赖，不是 System 登录、IAM、引擎登记�
 - 资格保存于 `system.meta_collection_qualifications`；批准命令 UUID 重放只恢复原历史，包括已撤销或已过期记录，不再调用 Meta、不恢复有效性。撤销需匹配当前版本，资格到期后只读；数据库约束保留不可变配置、原期限及撤销历史。批准和撤销与对应审计同事务提交。
 - Worker 对当前租约和冻结计划调用 `SystemServiceClient.CheckMetaCollection`；System 独立核对当前机器身份、Common 原执行配置、running 状态、attempt／lease、Meta 当前任务事实、Engine 版本及资格。此响应仅是不可缓存的当次观察，根目录与每个 schema 枚举前均重新核验，不能凭首次成功持续读取。
 - 未批准、到期、撤销、任务／引擎配置变化或依赖不可用均不能打开下一次源目录读取。首次核验失败须以当前 lease 完成本次失败终态和任务摘要，不留下伪 running 或扫描成功。无定义的一次性交互与可信成果补扫不借此分支获权；它们的独立授权边界不能由本期外推完成。
+
+采集资格审批工作区由 System 引擎授权页唯一提供，与数据授权、委托授权分区；新增批准与资格记录分开。审批人先输入真实 ScanTask 编号，通过上述当前任务事实接口核对整个引擎、basic、force 与读取选项，再明确用途和到期时间。页面只提交已核对的任务摘要，不提交自报范围，不触发扫描。任务编号变化后清除核对结果；配置冲突须显式重新核对，不自动改摘要重试。批准响应未知时只允许显式恢复同一不可变命令，不生成新命令或自动续期；查询、分页和切换页面不写资格。撤销提交观察到的版本与明确原因，冲突保留原因并要求显式刷新后重新确认。记录中的“期限内、未撤销”不表示当前可执行，Worker 仍以当次事实裁决。首期页面仅在 PG 存储引擎及相应独立 Permission 下开放，不复制 Meta 扫描配置编辑或普通数据授权入口。
 
 个人交互采集完整适用当前 User、部门及项目组的源数据 Deny。租户集中治理采集不绑定创建人的个人 Grant 或 Deny，而由独立采集资格的范围、用途、允许深度、期限与撤销状态，以及适用的 Security 约束决定是否继续执行；创建人被拒绝读取或离职不自动撤销该资格。本期不新增针对治理任务或 Meta 服务的专用 Deny，也不把现有人类接收方的 Deny 扩大为后台禁扫。需要停止治理采集时撤销其资格；操作人读取源内容或采集结果仍独立核验本人当前授权。
 

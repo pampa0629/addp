@@ -24,8 +24,12 @@ func (s *Store) PrepareQueryProtection(
 	prepared plugin.PreparedQuery,
 	action string,
 	subject dataprotection.SubjectReference,
+	selection *dataprotection.QueryRoleSelection,
 	now time.Time,
 ) (*dataprotection.PreparedTableProtection, error) {
+	if err := selection.Validate(now); err != nil {
+		return nil, err
+	}
 	if prepared == nil {
 		return nil, errors.New("protection query gate requires a prepared query")
 	}
@@ -36,10 +40,16 @@ func (s *Store) PrepareQueryProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
+		if selection != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	if scope, err := prepared.EngineReadScope(ctx); err == nil {
 		if s.engineScopeDisjoint(tenantID, scope) {
+			if selection != nil {
+				return nil, dataprotection.ErrRoleOptionUnavailable
+			}
 			return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 		}
 	} else if !errors.Is(err, plugin.ErrQueryEngineReadScopeUnresolved) {
@@ -67,6 +77,9 @@ func (s *Store) PrepareQueryProtection(
 		projections = append(projections, gate.Projections...)
 	}
 	if len(managed) == 0 {
+		if selection != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 
@@ -94,7 +107,11 @@ func (s *Store) PrepareQueryProtection(
 			}
 			rules = append(rules, projectionRules...)
 		}
-		fields := dataprotection.QueryOutputDerivedFields(source, action, rules, subject, now)
+		chosen, choiceErr := planRoleRules(querySourceProtection{target: target, source: source, rules: rules}, selection, action)
+		if choiceErr != nil {
+			return nil, choiceErr
+		}
+		fields := dataprotection.QueryOutputDerivedFields(source, action, chosen, subject, now)
 		derived = append(derived, fields...)
 		plans = append(plans, querySourceProtection{target: target, source: source, rules: rules})
 		matched[target.ResourceIdentity] = struct{}{}
@@ -102,13 +119,30 @@ func (s *Store) PrepareQueryProtection(
 	if len(matched) != len(managed) {
 		return nil, dataprotection.ErrLineageUnverified
 	}
+	if err := validateConsumedRoleChoices(plans, selection, action); err != nil {
+		return nil, err
+	}
 	// Freeze the exact actor's preparation-time eligibility. A grant that
 	// starts during execution cannot reclassify an already masked value as raw.
 	plans = queryPlansAt(plans, subject, now)
 	if binder, ok := prepared.(plugin.OutputTransformPreparedQuery); ok {
 		operations := []plugin.QueryOutputTransform{}
 		for _, plan := range plans {
-			compiled, err := dataprotection.QueryOutputTransformsAt(plan.source, action, plan.rules, subject, now)
+			nativeRules := []dataprotection.Rule{}
+			for _, rule := range plan.rules {
+				if !selectedRule(plan, rule, selection) {
+					nativeRules = append(nativeRules, rule)
+				}
+			}
+			// Validate the complete default and selected mappings before deferring only selected transformations.
+			chosen, err := planRoleRules(plan, selection, action)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := dataprotection.QueryOutputTransformsAt(plan.source, action, chosen, subject, now); err != nil {
+				return nil, err
+			}
+			compiled, err := dataprotection.QueryOutputTransformsAt(plan.source, action, nativeRules, subject, now)
 			if err != nil {
 				return nil, err
 			}
@@ -120,27 +154,40 @@ func (s *Store) PrepareQueryProtection(
 			}
 		}
 	}
-	apply := func(actor dataprotection.SubjectReference) func(*plugin.QueryResult) error {
+	apply := func(actor dataprotection.SubjectReference, selected bool) func(*plugin.QueryResult) error {
 		return func(result *plugin.QueryResult) error {
 			if err := validateOutputProjections(projections); err != nil {
 				return err
 			}
+			if selected {
+				if err := selection.Validate(time.Now().UTC()); err != nil {
+					return err
+				}
+			}
 			for _, plan := range plans {
-				if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, actor); err != nil {
+				rules := plan.rules
+				if selected {
+					var err error
+					rules, err = planRoleRules(plan, selection, action)
+					if err != nil {
+						return err
+					}
+				}
+				if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, rules, actor); err != nil {
 					return fmt.Errorf("protect query result: %w", err)
 				}
 			}
 			return nil
 		}
 	}
-	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: apply(subject), ApplyDefault: apply(dataprotection.SubjectReference{}), CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryResult, error) {
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: apply(subject, true), ApplyDefault: apply(dataprotection.SubjectReference{}, false), CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryResult, error) {
 		if actor != subject {
 			return nil, dataprotection.ErrDenied
 		}
 		if err := validateOutputProjections(projections); err != nil {
 			return nil, err
 		}
-		return captureAuthorizedQuery(result, plans, actor, tenantID, action)
+		return captureAuthorizedQuery(result, plans, actor, tenantID, action, selection)
 	}}, nil
 }
 

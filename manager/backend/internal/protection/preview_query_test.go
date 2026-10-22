@@ -46,7 +46,7 @@ type previewTestProtection struct {
 	err           error
 }
 
-func (s *previewTestProtection) PrepareQueryProtection(_ context.Context, tenant int64, model plugin.EngineCatalogModelSpec, plan plugin.PreparedQuery, action string, subject dataprotection.SubjectReference, now time.Time) (*dataprotection.PreparedTableProtection, error) {
+func (s *previewTestProtection) PrepareQueryProtection(_ context.Context, tenant int64, model plugin.EngineCatalogModelSpec, plan plugin.PreparedQuery, action string, subject dataprotection.SubjectReference, _ *dataprotection.QueryRoleSelection, now time.Time) (*dataprotection.PreparedTableProtection, error) {
 	s.calls++
 	if tenant != 7 || plan != s.plan || subject != s.subject || action != ActionPreview || now.IsZero() || !reflect.DeepEqual(model, plugin.TabularCatalogModel("schema")) {
 		s.t.Fatal("protection did not receive current subject and the authorized plan")

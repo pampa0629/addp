@@ -256,6 +256,10 @@ tenant + assessment_id + consumer_owner + action
 
 ProtectionProjection 唯一运行协议升级为 `addp.protection_projection/v5`。规则的可选 `role_options` 对象携带 `policy_id`、`policy_revision`、`assessment_revision` 和 `options`；仅正式结构化字段的四个消费动作可携带，剖析、索引与 Graph 不携带。每个选项均须通过当前基线及类型校验；基线变化导致选项不再合法时编译器移除该项，已保存选择因选项不存在而拒绝，不改变其他默认操作。选项身份引用为 `{policy_id, policy_revision, assessment_revision, option_id}`，Owner 仍需绑定精确源字段、动作、Tenant 和当前有效投影。Common 的显式解析只返回该选项的 mask 决策，不经过原值豁免；无选择继续原默认决策。解析函数不认证调用方，Owner 必须先核验角色事实及其执行租约、主体、Tenant 和有效期，禁止把请求正文角色数组直接送入匹配。
 
+Develop 业务选择首期保存在 Query 的 `content.protection_choices`，每项为精确源 `target`、`component_key` 与既有选项身份/修订。空集合使用默认保护；每个源字段至多一项，不能提交算法、参数、角色或原值效果。保存及更新（包括仅改名称而保留选择）必须按当前登录用户的本人角色事实和当前本地投影核验。候选只针对用户显式选中的确定来源，不枚举租户全部受保护资源；执行仍须由同一 PreparedQuery 的已证明 ReadSet/OutputLineage 命中精确来源，选择未消费、来源不匹配、角色或修订失效均明确拒绝，不忽略旧选择。首期不扩张 Notebook、定时、委托、Service 应用或其他出口的特殊方式；Develop 全量导出由 Transfer 执行，保存了特殊方式的查询暂明确拒绝导出，不丢弃选择改用默认方式。
+
+选择字段的实时结果与默认历史预览必须在同一次查询中分别形成。对于需要两种保护结果的字段，现有 SQL 输出变换绑定由共享计划延后该字段的变换，Owner 只在同一次受控执行内取得中间值，由同一共享算法先形成所选脱敏快照，再形成默认预览；其他字段继续现有 SQL/Go 协同路径。不借用 allow 或伪造原值授权，不重跑查询、不把一种脱敏结果再次脱敏冒充另一种。显式选择字段只在原有有界进程内交付缓存保留已脱敏值和必要的来源/选择引用，不长期保存中间原值；同一查询其他字段的现有短期原值豁免仍单独复核，读取后从后续暂存中逐字段移除已到期／撤销的原值及其捕获标记，重新授权也须重新查询；每次交付按当前用户角色和投影重判，失效或缓存淘汰明确要求重新查询，历史始终显示默认预览。
+
 管理表单从现有 System `GET /tenant/roles` 读取可分配给 User 的当前 Tenant 角色，沿用 `iam.tenant_role.read`，不扩大权限。无该读取权限或目录加载失败时不新增选项，但保留已有配置，且明确显示原因；不允许自由输入角色键充当角色目录。内置角色译名与角色名称解析由 `common-frontend` 唯一拥有，System 与 Security 复用，自定义角色名称按用户原输入展示。
 
 启动迁移将 Security 历史投影及变化流原位升级到 v5，保留发布序号且不制造角色选项；消费端投影存储通过一次性迁移清空旧缓存与游标，重新拉取。运行解码器只接受 v5，旧协议不得并存。既有 Policy 修订新增 JSON 文本选项列，历史空值仅表示无选项。此批标准门禁沿 Common/Security Go、Common/Security PostgreSQL、Security 前端及 Online Runner 现有入口扩散；协议样例、Swagger 与迁移验证同次更新，实际 Owner 业务选择接入和 T4 须单独验收。仅投影存储变更可使用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test projection-store"` 跑完整投影存储组（含同构、迁移、租户边界和拒绝原因），不得记为完整 Common PostgreSQL 门禁；默认全门禁仍执行同一组且拒绝跳过。

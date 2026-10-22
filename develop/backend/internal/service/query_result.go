@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"sync"
 	"time"
 
@@ -23,13 +24,14 @@ const (
 )
 
 type queryResultReader interface {
-	ReadQueryResult(context.Context, int64, *dataprotection.AuthorizedQueryResult, dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryReadResult, error)
+	ReadQueryResult(context.Context, int64, *dataprotection.AuthorizedQueryResult, dataprotection.SubjectReference, *dataprotection.QueryRoleSelection) (*dataprotection.AuthorizedQueryReadResult, error)
 }
 
 type liveQueryResult struct {
 	value      *dataprotection.AuthorizedQueryResult
 	attempt    int
 	generation string
+	revision   string
 	expires    time.Time
 	bytes      int
 	timer      *time.Timer
@@ -63,6 +65,16 @@ func (s *queryResultCache) remove(id, generation string) {
 }
 
 func (s *queryResultCache) put(id string, attempt int, generation string, value *dataprotection.AuthorizedQueryResult, deadline *time.Time) error {
+	return s.store(id, attempt, generation, value, deadline, nil)
+}
+
+// replace fences concurrent reads. An earlier observation cannot restore an original
+// after another read has already removed its authorization binding.
+func (s *queryResultCache) replace(id string, item liveQueryResult, value *dataprotection.AuthorizedQueryResult, deadline *time.Time) error {
+	return s.store(id, item.attempt, item.generation, value, deadline, item.value)
+}
+
+func (s *queryResultCache) store(id string, attempt int, generation string, value *dataprotection.AuthorizedQueryResult, deadline *time.Time, expected *dataprotection.AuthorizedQueryResult) error {
 	encoded, err := json.Marshal(value)
 	if err != nil || len(encoded) > queryResultMaxEntryBytes {
 		return fmt.Errorf("authorized query result exceeds the delivery budget")
@@ -75,6 +87,12 @@ func (s *queryResultCache) put(id string, attempt int, generation string, value 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if expected != nil {
+		old, exists := s.entries[id]
+		if !exists || old.value != expected || old.attempt != attempt || old.generation != generation {
+			return fmt.Errorf("query result delivery observation is stale")
+		}
+	}
 	if old, exists := s.entries[id]; exists && old.attempt > attempt {
 		return fmt.Errorf("query result delivery attempt is stale")
 	}
@@ -96,8 +114,15 @@ func (s *queryResultCache) put(id string, attempt int, generation string, value 
 		return fmt.Errorf("query result authorization expired")
 	}
 	// The timer captures identities only, never a result that could outlive eviction.
-	timer := time.AfterFunc(time.Until(expires), func() { s.remove(id, generation) })
-	s.entries[id] = liveQueryResult{value: &detached, attempt: attempt, generation: generation, expires: expires, bytes: len(encoded), timer: timer}
+	revision := uuid.NewString()
+	timer := time.AfterFunc(time.Until(expires), func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if current, ok := s.entries[id]; ok && current.revision == revision {
+			s.removeLocked(id)
+		}
+	})
+	s.entries[id] = liveQueryResult{revision: revision, value: &detached, attempt: attempt, generation: generation, expires: expires, bytes: len(encoded), timer: timer}
 	s.bytes += len(encoded)
 	return nil
 }
@@ -121,15 +146,15 @@ func (s *queryResultCache) get(id string, attempt int, tenant int64, subject dat
 
 // GetQueryResult is the current workbench delivery path. GetExecution/ListExecutions
 // always return the default protected preview, even while a grant is active.
-func (e *DevExecutor) GetQueryResult(ctx context.Context, executionID string, tenantID uint) (*models.ExecutionWithDevTask, error) {
+func (e *DevExecutor) GetQueryResult(ctx context.Context, executionID string, tenantID uint, bearer string) (*models.ExecutionWithDevTask, error) {
 	response, err := e.GetExecution(ctx, executionID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return e.queryResultResponse(ctx, response, tenantID)
+	return e.queryResultResponse(ctx, response, tenantID, bearer)
 }
 
-func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.ExecutionWithDevTask, tenantID uint) (*models.ExecutionWithDevTask, error) {
+func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.ExecutionWithDevTask, tenantID uint, bearer string) (*models.ExecutionWithDevTask, error) {
 	facts, ok := executionUserFacts(ctx)
 	tenant, _, _, _ := executionActorIDs(facts)
 	if !ok || tenant != int(tenantID) {
@@ -144,6 +169,9 @@ func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.
 	subject := dataprotection.SubjectReference{Type: "user", ID: facts.Principal.ID}
 	item, exists := e.queryResults.get(response.ExecutionID, response.Attempt, int64(tenantID), subject)
 	if !exists {
+		if visible, ok := mapValue(response.Metadata["result"]); ok && visible["role_choice_delivery"] == true {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return response, nil
 	}
 	if e.sqlEngine == nil {
@@ -153,13 +181,33 @@ func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.
 	if !ok {
 		return nil, protection.ErrResultRequired
 	}
-	result, err := reader.ReadQueryResult(ctx, int64(tenantID), item.value, subject)
+	var roles *dataprotection.QueryRoleSelection
+	if len(item.value.RoleChoices) > 0 {
+		current, err := e.sqlEngine.currentQueryRoles(ctx, tenantID, bearer)
+		if err != nil {
+			return nil, err
+		}
+		roles = &dataprotection.QueryRoleSelection{Choices: item.value.RoleChoices, RoleKeys: current.RoleKeys, ExpiresAt: current.ExpiresAt}
+	}
+	result, err := reader.ReadQueryResult(ctx, int64(tenantID), item.value, subject, roles)
 	if err != nil {
 		return nil, err
 	}
 	if !time.Now().Before(item.expires) {
 		e.queryResults.remove(response.ExecutionID, item.generation)
+		if len(item.value.RoleChoices) > 0 {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return response, nil
+	}
+	if len(item.value.RoleChoices) > 0 && result.Retained != nil {
+		deadline := item.expires
+		if result.PlaintextExpiresAt != nil && result.PlaintextExpiresAt.Before(deadline) {
+			deadline = *result.PlaintextExpiresAt
+		}
+		if err := e.queryResults.replace(response.ExecutionID, item, result.Retained, &deadline); err != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 	}
 	encoded, err := json.Marshal(response.Metadata["result"])
 	if err != nil {
@@ -178,7 +226,7 @@ func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.
 	}
 	visible["fields"] = result.Fields
 	visible["summary"] = map[string]interface{}{"column_count": len(result.Columns), "preview_rows": wireRows}
-	if result.PlaintextExpiresAt == nil {
+	if result.PlaintextExpiresAt == nil && len(item.value.RoleChoices) == 0 {
 		e.queryResults.remove(response.ExecutionID, item.generation)
 	}
 	if result.PlaintextExpiresAt != nil {

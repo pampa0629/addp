@@ -827,6 +827,12 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "409": {
+                        "description": "脱敏方式失效或当次结果过期，请重新查询 | Masking choice unavailable or live result expired; rerun the query",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2419,6 +2425,69 @@ const docTemplate = `{
                 ]
             }
         },
+        "/query-protection-options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Query"
+                ],
+                "summary": "查询本人可选脱敏方式 | List my selectable masking methods",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "精确数据项定位符 | Exact data item locator",
+                        "name": "target_locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "字段可选方式 | Selectable field methods",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.QueryProtectionOptionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效来源 | Invalid source",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "需要本人登录 | Current user login required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "角色或保护方式不可用 | Role or masking method unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute",
+                    "develop.data_read.execute"
+                ]
+            }
+        },
         "/runtime/catalog-references/resolve": {
             "post": {
                 "security": [
@@ -2777,6 +2846,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2886,6 +2961,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求或查询参数定义无效 | Invalid request or query parameter definitions",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
@@ -3700,6 +3781,91 @@ const docTemplate = `{
                 }
             }
         },
+        "dataprotection.FieldRoleChoice": {
+            "type": "object",
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "selection": {
+                    "$ref": "#/definitions/dataprotection.RoleOptionSelection"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
+        "dataprotection.FieldRoleOptions": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component_key": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleOptionCandidate"
+                    }
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
+        "dataprotection.ResourceReference": {
+            "type": "object",
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_identity": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.RoleOptionCandidate": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.RoleOptionSelection": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "option_id": {
+                    "type": "string"
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -4243,6 +4409,12 @@ const docTemplate = `{
                 },
                 "parameters": {
                     "type": "object"
+                },
+                "protection_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleChoice"
+                    }
                 },
                 "query": {
                     "type": "string",
@@ -4972,6 +5144,17 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.QueryProtectionOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleOptions"
                     }
                 }
             }

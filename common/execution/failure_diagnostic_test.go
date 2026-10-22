@@ -69,7 +69,7 @@ func TestFailureDiagnosticSurvivesPersistenceWithoutRuntimeText(t *testing.T) {
 
 func TestProtectionFailureReasonsSurviveObservation(t *testing.T) {
 	for _, reason := range []string{
-		"protection_computed_output_unsupported", "protection_lineage_unverified", "protection_not_ready",
+		"protection_role_choice_unavailable", "protection_computed_output_unsupported", "protection_lineage_unverified", "protection_not_ready",
 		"protection_expired", "protection_not_yet_valid", "protection_schema_mismatch", "protection_operation_unsupported",
 	} {
 		for _, stage := range []string{"preparation", "result"} {
@@ -99,6 +99,8 @@ func TestProtectionFailureReasonRequiresTypedEvidence(t *testing.T) {
 		{plugin.ErrQueryOutputLineageUnresolved, "protection_lineage_unverified"},
 		{dataprotection.ErrExpired, "protection_expired"},
 		{dataprotection.ErrNotYetValid, "protection_not_yet_valid"},
+		{dataprotection.ErrRoleOptionIneligible, "protection_role_choice_unavailable"},
+		{dataprotection.ErrRoleOptionUnavailable, "protection_role_choice_unavailable"},
 		{dataprotection.ErrNotReady, "protection_not_ready"},
 		{dataprotection.ErrSchemaMismatch, "protection_schema_mismatch"},
 		{dataprotection.ErrOperationUnsupported, "protection_operation_unsupported"},

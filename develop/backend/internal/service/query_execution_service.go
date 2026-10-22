@@ -65,6 +65,10 @@ func (s *QueryExecutionService) Execute(
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_parameters_invalid")
 	}
+	choices, choiceErr := models.QueryProtectionChoices(devTask.Content)
+	if choiceErr != nil || len(choices) > 0 && (s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) || relationResult && execution.Source == commonExecution.ModuleOrchestrator) {
+		return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, dataprotection.ErrRoleOptionUnavailable))
+	}
 	if relationResult && execution.Source == commonExecution.ModuleOrchestrator {
 		if execution.ParentExecutionID == nil {
 			return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("orchestrator query has no parent execution"), "develop.query.parent_invalid")
@@ -334,17 +338,35 @@ func (s *QueryExecutionService) executeAndComplete(
 	if authorization == nil || execution.ActorPrincipalID == nil || authorization.ActorPrincipalID != *execution.ActorPrincipalID || authorization.ActorPrincipalID <= 0 {
 		return fmt.Errorf("query plaintext actor is unverified")
 	}
+	roles, roleErr := s.executor.sqlEngine.executionQueryRoles(ctx, execution, lease, authorization, devTask)
+	if roleErr != nil {
+		return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, roleErr))
+	}
 	queryCtx, capture := protection.WithQueryCapture(ctx, dataprotection.SubjectReference{Type: "user", ID: strconv.FormatInt(authorization.ActorPrincipalID, 10)})
+	capture.Roles = roles
 	result, rowsAffected, queryErr := s.executor.executeQuery(
 		queryCtx, devTask, execution.ExecutionID, execution.TenantID, authorization,
 	)
 	if queryErr != nil {
 		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, queryErr)
 	}
+	if capture.Roles != nil {
+		current, err := s.executor.sqlEngine.executionQueryRoles(ctx, execution, lease, authorization, devTask)
+		if err != nil {
+			return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, err)
+		}
+		capture.Roles = current
+	}
 	return s.completeQueryResult(ctx, execution, lease, startedAt, result, rowsAffected, capture, devTask.QueryResultLimit)
 }
 
 func (s *QueryExecutionService) completeQueryResult(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, startedAt time.Time, result commonModels.JSONMap, rowsAffected *int64, capture *protection.QueryCapture, limit int) error {
+	if capture.Result != nil && len(capture.Result.RoleChoices) > 0 {
+		if result == nil {
+			return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, protection.ErrResultRequired)
+		}
+		result["role_choice_delivery"] = true
+	}
 	metadata := queryExecutionMetadata(result)
 	if capture.Result != nil {
 		if limit > 0 && len(capture.Result.Result.Rows) > limit {
@@ -355,12 +377,16 @@ func (s *QueryExecutionService) completeQueryResult(ctx context.Context, executi
 		if !ok {
 			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
 		}
-		current, err := reader.ReadQueryResult(ctx, int64(execution.TenantID), capture.Result, capture.Subject)
+		current, err := reader.ReadQueryResult(ctx, int64(execution.TenantID), capture.Result, capture.Subject, capture.Roles)
 		if err != nil {
-			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, fmt.Errorf("%w: %w", protection.ErrResultRequired, err))
 		}
-		if current.PlaintextExpiresAt != nil {
-			if err := s.executor.queryResults.put(execution.ExecutionID, lease.Attempt, lease.Token, capture.Result, current.PlaintextExpiresAt); err != nil {
+		if current.PlaintextExpiresAt != nil || len(capture.Result.RoleChoices) > 0 {
+			retained := capture.Result
+			if current.Retained != nil {
+				retained = current.Retained
+			}
+			if err := s.executor.queryResults.put(execution.ExecutionID, lease.Attempt, lease.Token, retained, current.PlaintextExpiresAt); err != nil {
 				return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
 			}
 		}

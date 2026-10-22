@@ -5,6 +5,7 @@ export function toQueryDevTaskPayload(taskData, includeDevType = true) {
     content: {
       query: taskData.query,
       query_type: taskData.query_type || 'sql',
+      protection_choices: JSON.parse(JSON.stringify(taskData.protection_choices || [])),
       target_locator: taskData.target_locator || undefined,
       query_parameters: Array.isArray(taskData.query_parameters) ? taskData.query_parameters : []
     },

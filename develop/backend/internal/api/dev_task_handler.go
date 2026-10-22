@@ -37,6 +37,7 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService, operatorDiscovery
 // @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
 // @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
 // @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.create"]
 // @Router /task-definitions [post]
@@ -50,8 +51,12 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
 
-	item, err := h.devTaskService.CreateDevTask(&req, tenantID, userID)
+	bearer, _ := requestUserAccessToken(c)
+	item, err := h.devTaskService.CreateDevTask(c.Request.Context(), bearer, &req, tenantID, userID)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		var parameterDefinitionsError *service.QueryParameterDefinitionsError
 		if errors.As(err, &parameterDefinitionsError) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})
@@ -73,6 +78,7 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
 // @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.update"]
 // @Router /task-definitions/{id} [put]
@@ -92,8 +98,12 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
 
-	item, err := h.devTaskService.UpdateDevTask(uint(id), &req, tenantID, userID)
+	bearer, _ := requestUserAccessToken(c)
+	item, err := h.devTaskService.UpdateDevTask(c.Request.Context(), bearer, uint(id), &req, tenantID, userID)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		var parameterDefinitionsError *service.QueryParameterDefinitionsError
 		if errors.As(err, &parameterDefinitionsError) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})

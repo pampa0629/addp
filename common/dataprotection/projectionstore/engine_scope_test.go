@@ -35,7 +35,7 @@ func TestEngineScopeExclusionRequiresCompleteProjectionSnapshot(t *testing.T) {
 	}
 	plan, calls := scopeOnlyPlan(t, 13)
 	prepare := func() error {
-		_, err := store.PrepareQueryProtection(t.Context(), 7, plugin.GraphCatalogModel(), plan, "query", dataprotection.SubjectReference{}, time.Now().UTC())
+		_, err := store.PrepareQueryProtection(t.Context(), 7, plugin.GraphCatalogModel(), plan, "query", dataprotection.SubjectReference{}, nil, time.Now().UTC())
 		return err
 	}
 	if err := prepare(); !errors.Is(err, ErrNotInitialized) {

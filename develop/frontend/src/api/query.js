@@ -45,3 +45,7 @@ export const saveQueryTask = (taskData) => {
 export const updateQueryTask = (id, taskData) => {
   return updateDevTask(id, toQueryDevTaskPayload(taskData, false))
 }
+
+export const getQueryProtectionOptions = (engineId, targetLocator) => client.get('/develop/query-protection-options', {
+  params: { engine_id: engineId, target_locator: targetLocator }
+})

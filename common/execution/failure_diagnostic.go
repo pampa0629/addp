@@ -42,7 +42,7 @@ var failureReasons = map[string]bool{
 	"query_failed": true, "result_invalid": true,
 	"local_read_unsupported": true, "database_required": true, "data_protection_required": true,
 	"protection_computed_output_unsupported": true, "protection_lineage_unverified": true,
-	"protection_not_ready": true, "protection_expired": true, "protection_not_yet_valid": true,
+	"protection_role_choice_unavailable": true, "protection_not_ready": true, "protection_expired": true, "protection_not_yet_valid": true,
 	"protection_schema_mismatch": true, "protection_operation_unsupported": true,
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
@@ -56,6 +56,8 @@ func ProtectionFailureReason(cause error) string {
 		cause  error
 		reason string
 	}{
+		{dataprotection.ErrRoleOptionUnavailable, "protection_role_choice_unavailable"},
+		{dataprotection.ErrRoleOptionIneligible, "protection_role_choice_unavailable"},
 		{dataprotection.ErrComputedOutputUnsupported, "protection_computed_output_unsupported"},
 		{dataprotection.ErrExpired, "protection_expired"},
 		{dataprotection.ErrNotYetValid, "protection_not_yet_valid"},

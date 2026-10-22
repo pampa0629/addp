@@ -126,6 +126,7 @@ func main() {
 
 	// 4. DevTask业务逻辑服务
 	devTaskService := service.NewDevTaskService(devTaskRepo, systemServiceClient)
+	devTaskService.SetQueryProtection(sqlEngine)
 	catalogResourceService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
 	catalogResourceHandler := api.NewCatalogResourceHandler(catalogResourceService)
 	log.Printf("✅ DevTaskService 初始化完成")

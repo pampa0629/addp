@@ -21,7 +21,7 @@ type PreparedTableProtection struct {
 	ApplyDefault  func(*plugin.QueryResult) error
 	DerivedFields []string
 	// CaptureAuthorized retains a bounded, already protected snapshot only when
-	// the trusted user has a plaintext grant. Ordinary executions retain none.
+	// the trusted user has a plaintext grant or selected masking method. Ordinary executions retain none.
 	CaptureAuthorized func(*plugin.QueryResult, SubjectReference) (*AuthorizedQueryResult, error)
 }
 

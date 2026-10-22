@@ -3,6 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/develop/backend/internal/models"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,14 +23,19 @@ import (
 
 type resultReadGate struct {
 	allowDevelopProtectionGate
-	reads   int
-	expired bool
+	reads    int
+	expired  bool
+	retained *dataprotection.AuthorizedQueryResult
 }
 
-func (g *resultReadGate) ReadQueryResult(_ context.Context, tenantID int64, result *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryReadResult, error) {
+func (g *resultReadGate) ReadQueryResult(_ context.Context, tenantID int64, result *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference, _ *dataprotection.QueryRoleSelection) (*dataprotection.AuthorizedQueryReadResult, error) {
 	g.reads++
 	if tenantID != 7 || subject.Type != "user" || subject.ID != "9" {
 		return nil, protection.ErrResultRequired
+	}
+	if g.retained != nil {
+		until := time.Now().Add(time.Hour)
+		return &dataprotection.AuthorizedQueryReadResult{QueryResult: g.retained.Result, PlaintextExpiresAt: &until, Retained: g.retained}, nil
 	}
 	phone := "13812345678"
 	var expires *time.Time
@@ -55,7 +66,7 @@ func TestCurrentQueryResultNeverChangesPersistedOrHistoricalPreview(t *testing.T
 	item := resultFixture()
 	for _, expired := range []bool{false, true} {
 		gate.expired = expired
-		response, err := executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7)
+		response, err := executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,24 +85,24 @@ func TestCurrentQueryResultNeverChangesPersistedOrHistoricalPreview(t *testing.T
 		}
 	}
 	gate.expired = false
-	responseAfterRenewal, err := executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7)
+	responseAfterRenewal, err := executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7, "")
 	if err != nil || strings.Contains(string(mustJSON(t, responseAfterRenewal)), "13812345678") {
 		t.Fatal("a renewed grant restored an expired result without a new query")
 	}
 	if gate.reads != 2 {
 		t.Fatal("current result not rechecked")
 	}
-	if _, err := executor.queryResultResponse(t.Context(), professionalExecutionResponse(item), 7); err == nil {
+	if _, err := executor.queryResultResponse(t.Context(), professionalExecutionResponse(item), 7, ""); err == nil {
 		t.Fatal("unverified caller accepted")
 	}
 	other := WithExecutionAuthContext(t.Context(), authtest.NewTenantUserAuthContext("7", "10", []string{"develop.task.read", "develop.data_read.execute"}))
-	response, err := executor.queryResultResponse(other, professionalExecutionResponse(item), 7)
+	response, err := executor.queryResultResponse(other, professionalExecutionResponse(item), 7, "")
 	if err != nil || strings.Contains(string(mustJSON(t, response)), "13812345678") {
 		t.Fatal("other subject received current plaintext")
 	}
 	// Restart or expiry never reconstructs raw results from the persisted execution.
 	executor.queryResults = newQueryResultCache()
-	response, err = executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7)
+	response, err = executor.queryResultResponse(ctx, professionalExecutionResponse(item), 7, "")
 	if err != nil || strings.Contains(string(mustJSON(t, response)), "13812345678") {
 		t.Fatal("restart restored plaintext")
 	}
@@ -172,4 +183,97 @@ func mustJSON(t *testing.T, value interface{}) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+type choiceResultReadGate struct{ resultReadGate }
+
+func (g *choiceResultReadGate) ReadQueryResult(_ context.Context, _ int64, snapshot *dataprotection.AuthorizedQueryResult, _ dataprotection.SubjectReference, roles *dataprotection.QueryRoleSelection) (*dataprotection.AuthorizedQueryReadResult, error) {
+	if roles == nil || len(roles.RoleKeys) == 0 || roles.RoleKeys[0] != "custom.analytics" {
+		return nil, dataprotection.ErrRoleOptionIneligible
+	}
+	return &dataprotection.AuthorizedQueryReadResult{QueryResult: snapshot.Result, Retained: snapshot}, nil
+}
+func TestSelectedQueryDeliveryRechecksCurrentRolesDoesNotExtendCacheAndRequiresRequeryAfterEviction(t *testing.T) {
+	facts := authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})
+	roles := []string{"custom.analytics"}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/api/v1/system/auth/subject-roles" || r.Header.Get("Authorization") != "Bearer addp_at_current" {
+			t.Error("live result used a different identity")
+		}
+		json.NewEncoder(w).Encode(authorization.CurrentSubjectRoles{TenantID: "7", ActorPrincipalID: "9", TenantMembershipID: *facts.Context.TenantMembershipID, AuthorizationVersion: facts.Authorization.AuthorizationVersion, RoleKeys: roles, ObservedAt: time.Now().UTC(), ExpiresAt: time.Now().Add(time.Minute)})
+	}))
+	defer server.Close()
+	executor := &DevExecutor{queryResults: newQueryResultCache(), sqlEngine: &SQLEngineService{systemService: commonClient.NewSystemServiceClient(server.URL, nil, server.Client()), protectionGate: &choiceResultReadGate{}}}
+	snapshot := authorizedResultFixture()
+	snapshot.Result.Rows[0]["phone"] = "selected-mask"
+	snapshot.RoleChoices = []dataprotection.FieldRoleChoice{{Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}, ComponentKey: "phone", Selection: dataprotection.RoleOptionSelection{PolicyID: "policy", AssessmentRevision: 1, PolicyRevision: 1, OptionID: "hash"}}}
+	if err := executor.queryResults.put("current", 1, "generation", snapshot, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { executor.queryResults.remove("current", "generation") })
+	original, _ := executor.queryResults.get("current", 1, 7, snapshot.Subject)
+	response := func() *models.ExecutionWithDevTask {
+		item := professionalExecutionResponse(resultFixture())
+		result, _ := mapValue(item.Metadata["result"])
+		result["role_choice_delivery"] = true
+		return item
+	}
+	ctx := WithExecutionAuthContext(t.Context(), facts)
+	for range 2 {
+		out, err := executor.queryResultResponse(ctx, response(), 7, "addp_at_current")
+		if err != nil || !strings.Contains(string(mustJSON(t, out)), "selected-mask") {
+			t.Fatal("current selected result missing", err)
+		}
+	}
+	current, _ := executor.queryResults.get("current", 1, 7, snapshot.Subject)
+	if !current.expires.Equal(original.expires) {
+		t.Fatal("reading a choice extended retention")
+	}
+	roles = []string{"custom.reader"}
+	if _, err := executor.queryResultResponse(ctx, response(), 7, "addp_at_current"); !errors.Is(err, dataprotection.ErrRoleOptionIneligible) {
+		t.Fatal("withdrawn role did not reject delivery", err)
+	}
+	executor.queryResults.remove("current", "generation")
+	if _, err := executor.queryResultResponse(ctx, response(), 7, "addp_at_current"); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+		t.Fatal("missing choice cache silently returned a different mask", err)
+	}
+	if calls != 3 {
+		t.Fatal("current roles were cached or a query was rerun")
+	}
+}
+
+func TestQueryCacheReplacementCannotResurrectAnEarlierObservation(t *testing.T) {
+	cache := newQueryResultCache()
+	raw := authorizedResultFixture()
+	if err := cache.put("cas", 1, "lease", raw, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cache.remove("cas", "lease") })
+	original, ok := cache.get("cas", 1, 7, raw.Subject)
+	if !ok {
+		t.Fatal("snapshot missing")
+	}
+	masked := *raw
+	masked.Result = *mustCloneQueryResult(t, &raw.Result)
+	masked.Result.Rows[0]["phone"] = "default-mask"
+	if err := cache.replace("cas", original, &masked, &original.expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.replace("cas", original, raw, &original.expires); err == nil {
+		t.Fatal("an old observation restored a removed original")
+	}
+	current, ok := cache.get("cas", 1, 7, raw.Subject)
+	if !ok || current.value.Result.Rows[0]["phone"] != "default-mask" || current.revision == original.revision || !current.expires.Equal(original.expires) {
+		t.Fatal("replacement lost fencing or retention")
+	}
+}
+func mustCloneQueryResult(t *testing.T, result *plugin.QueryResult) *plugin.QueryResult {
+	t.Helper()
+	copy, err := dataprotection.CloneQueryResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return copy
 }

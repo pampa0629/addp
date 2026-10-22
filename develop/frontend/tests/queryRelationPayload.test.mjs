@@ -22,3 +22,12 @@ test('saved relation query keeps an optional default table in the unified query 
   assert.equal(payload.content.target_locator, undefined)
   assert.deepEqual(payload.execution_config, { engine_id: 2 })
 })
+
+ test('query task saves only explicit masking references and detaches the draft', () => {
+ const choices=[{target:{owner_module:'meta',resource_type:'data_item',resource_identity:'one'},component_key:'phone',selection:{policy_id:'policy',assessment_revision:1,policy_revision:2,option_id:'hash'}}]
+ const payload=toQueryDevTaskPayload({name:'mask choice',engine_id:2,query:'SELECT phone FROM person',protection_choices:choices})
+ assert.deepEqual(payload.content.protection_choices,choices)
+ payload.content.protection_choices[0].selection.option_id='other'
+ assert.equal(choices[0].selection.option_id,'hash')
+ assert.deepEqual(toQueryDevTaskPayload({}).content.protection_choices,[])
+ })

@@ -100,7 +100,7 @@ func TestIntegrationNeo4jPreparedReadScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protector, err := store.PrepareQueryProtection(ctx, 7, provider.EngineCatalogModel(), table, "query", dataprotection.SubjectReference{}, now)
+	protector, err := store.PrepareQueryProtection(ctx, 7, provider.EngineCatalogModel(), table, "query", dataprotection.SubjectReference{}, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestIntegrationNeo4jPreparedReadScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generated sample preparation: %v", err)
 	}
-	templateProtection, err := store.PrepareQueryProtection(ctx, 7, provider.EngineCatalogModel(), template, "query", dataprotection.SubjectReference{}, now)
+	templateProtection, err := store.PrepareQueryProtection(ctx, 7, provider.EngineCatalogModel(), template, "query", dataprotection.SubjectReference{}, nil, now)
 	if err != nil {
 		t.Fatalf("generated sample protection: %v", err)
 	}

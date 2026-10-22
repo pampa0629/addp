@@ -41,6 +41,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodDelete + " /api/v1/system/oauth/authorization_requests/:request_id",
 		http.MethodGet + " /api/v1/system/auth/context",
 		http.MethodGet + " /api/v1/system/auth/context-options",
+		http.MethodGet + " /api/v1/system/auth/subject-roles",
 		http.MethodGet + " /api/v1/system/auth/mfa",
 		http.MethodGet + " /api/v1/system/oauth/authorization_requests/:request_id",
 		http.MethodGet + " /api/v1/system/users/me",

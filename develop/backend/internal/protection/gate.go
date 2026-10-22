@@ -44,7 +44,11 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		}
 		subject = capture.Subject
 	}
-	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", subject, time.Now().UTC())
+	var roles *dataprotection.QueryRoleSelection
+	if capture != nil {
+		roles = capture.Roles
+	}
+	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", subject, roles, time.Now().UTC())
 	if err != nil {
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)

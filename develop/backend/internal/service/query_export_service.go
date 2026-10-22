@@ -59,6 +59,10 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	if !ok {
 		return nil, fmt.Errorf("%w: query execution content is unavailable", ErrQueryExportInvalid)
 	}
+	choices, choiceErr := models.QueryProtectionChoices(content)
+	if choiceErr != nil || len(choices) > 0 {
+		return nil, fmt.Errorf("%w: role-selected masking is not supported by the Transfer export path", ErrQueryExportInvalid)
+	}
 	query := strings.TrimSpace(interfaceString(content["query"]))
 	language := strings.ToLower(strings.TrimSpace(interfaceString(content["query_type"])))
 	if query == "" || language == "" {

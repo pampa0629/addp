@@ -454,7 +454,7 @@ func TestGateBindsExecutionActorAndPersistsOnlyDefaultPreview(t *testing.T) {
 				if capture.Result == nil || capture.Result.Result.Rows[0]["contact"] != "13661384499" {
 					t.Fatal("verified live actor lost its ephemeral result")
 				}
-				live, err := gate.ReadQueryResult(ctx, 7, capture.Result, actor)
+				live, err := gate.ReadQueryResult(ctx, 7, capture.Result, actor, nil)
 				if err != nil || live.Rows[0]["contact"] != "13661384499" {
 					t.Fatalf("current authorized read failed: %v", err)
 				}

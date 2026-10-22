@@ -34,7 +34,7 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: query provider has no catalog model", ErrRequired)
 	}
-	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "service_execute", dataprotection.SubjectReference{}, time.Now().UTC())
+	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "service_execute", dataprotection.SubjectReference{}, nil, time.Now().UTC())
 	if err != nil {
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
