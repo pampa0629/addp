@@ -3295,8 +3295,16 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
 def validate_catalog_domain_overview_profile(repository: Path, registered: set[str]) -> None:
     if "catalog-domain-overview" not in registered:
         return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  catalog-domain-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'catalog-domain-overview'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
+        raise RegistrationError("Catalog domain overview requires manual Hosted Linux")
+    if "inputs.suite != 'catalog-domain-overview'" not in workflow or "catalog-domain-overview)" in (repository / "scripts/test/online-host-gate.sh").read_text():
+        raise RegistrationError("Catalog domain overview must not use self-hosted")
+    if "online-hosted-catalog-domain-gate_test.py" not in make_target_commands((repository / "Makefile").read_text(), "test-catalog-domain-online-runner"):
+        raise RegistrationError("Catalog Hosted cleanup regression is missing")
     required = {
-        "scripts/test/online-host-gate.sh": ("catalog-domain-overview)", "ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN", "ADDP_ONLINE_CATALOG_REFERENCE_ELEMENT_ID"),
+        "scripts/test/online-hosted-catalog-domain-gate.sh": ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "--suite catalog-domain-overview", "-model -catalog -quality"),
         "scripts/test/catalog-domain-overview-online.py": ("reader_inventory_denied", "stable_source_identities", "reference_element_unchanged", "catalog_history", "finally:"),
         "scripts/test/catalog-domain-overview-online_test.py": ("test_partial_fixture_failure_cleans_created_domain_and_leaves_reference_read_only", "test_cleanup_attempts_all_exact_resources_and_reports_failure"),
         "console/frontend/e2e/catalog-domain-overview.spec.js": ("catalog-domain-overview", "inventory", "governance"),

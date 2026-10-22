@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Five Standard identities and domain overview through real owner APIs.
 
-Only run-scoped drafts and a Model entity are created. The configured published
-reference Element is read-only and is checked again after cleanup.
+An isolated preparation User publishes an external-domain fixture. The consumer
+only reads that standard; its complete response is checked again after cleanup.
+Published history is destroyed with the disposable Hosted deployment.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 import os
 import sys
 import time
-from functools import partial
 from importlib import import_module
 from urllib.parse import urlencode
 
@@ -21,7 +23,44 @@ REQUIRED_USER_PERMISSIONS = {'catalog.entry.read', 'catalog.inventory.read', 'mo
  'standard.domain.create', 'standard.domain.read', 'standard.domain.delete'}
 for _kind in ('glossary', 'element', 'code_set', 'document', 'metric'):
     REQUIRED_USER_PERMISSIONS.update(f'standard.{_kind}.{action}' for action in ('create', 'read', 'delete'))
-validate_user_identity = partial(_API.validate_user_identity, required_permissions=REQUIRED_USER_PERMISSIONS)
+PREPARER_PERMISSIONS = {'standard.domain.create', 'standard.domain.read', 'standard.element.create', 'standard.element.read', 'standard.element.update', 'standard.element.publish'}
+
+
+def fixture_prefix(run_id):
+    # Domain codes are bounded to 50 characters; preserve a collision-resistant Run ID link.
+    return 'cat_' + hashlib.sha256(run_id.encode()).hexdigest()[:24]
+
+
+def validate_identity(client, tenant, permissions):
+    facts = _API.validate_user_identity(client, tenant, required_permissions=permissions)
+    context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    actual = {permission for assignment in context['authorization']['role_assignments'] for permission in assignment['permissions']}
+    if actual != permissions:
+        raise SuiteError('Catalog acceptance User must have exactly its declared permissions')
+    principal_id = str(context['principal'].get('id', ''))
+    if not principal_id.isdecimal() or int(principal_id) <= 0:
+        raise SuiteError('Catalog acceptance User must have a stable Principal ID')
+    return facts, principal_id
+
+
+def prepare_reference(client, run_id):
+    prefix = fixture_prefix(run_id) + '_source'
+    domain = client.request('POST', '/api/v1/standard/domains', (201,), {'name': prefix, 'code': prefix}).payload
+    domain_id = require_positive_int(domain, 'id')
+    element = client.request('POST', '/api/v1/standard/elements', (201,), {
+        'scope_type': 'domain', 'owner_domain_id': domain_id, 'code': prefix, 'name': prefix,
+        'definition': 'Disposable external standard for Catalog T4', 'tags': [],
+        'data_type': 'string', 'value_domain_kind': 'unrestricted', 'nullable': True,
+        'effective_from': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+    }).payload
+    element_id = require_positive_int(element, 'id')
+    revision_id = require_positive_int(element['latest_revision'], 'id')
+    for action in ('submit', 'publish'):
+        element = client.request('POST', f'/api/v1/standard/elements/{element_id}/revisions/{revision_id}/{action}', (200,), {'version': require_positive_int(element, 'version')}).payload
+    if str(element.get('owner_domain_id')) != str(domain_id) or element.get('current_revision', {}).get('status') != 'published':
+        raise SuiteError('external reference fixture is not an effective domain standard')
+    return element_id
+
 
 
 def check_overview(payload, expected_types):
@@ -49,7 +88,7 @@ def cleanup(client, paths):
 
 
 def run_suite(client, reader, tenant_id, run_id, reference_element_id):
-    prefix = 'domain_overview_' + run_id.replace('-', '_').replace('.', '_')
+    prefix = fixture_prefix(run_id)
     paths = []
     reference_path = f'/api/v1/standard/elements/{reference_element_id}'
     reference = client.request('GET', reference_path, (200,)).payload
@@ -63,6 +102,8 @@ def run_suite(client, reader, tenant_id, run_id, reference_element_id):
         domain = client.request('POST', '/api/v1/standard/domains', (201,), {'name': prefix, 'code': prefix, 'description': 'Run-scoped domain overview acceptance', 'sort_order': 0}).payload
         domain_id = require_positive_int(domain, 'id')
         paths.append(f'/api/v1/standard/domains/{domain_id}')
+        if reference.get('scope_type') != 'domain' or not reference.get('owner_domain_id') or str(reference['owner_domain_id']) == str(domain_id):
+            raise SuiteError('reference Element must belong to a different exact domain')
         for kind, route in [('glossary', 'glossaries'), ('element', 'elements'), ('code_set', 'code-sets'), ('document', 'documents'), ('metric', 'metrics')]:
             body = {'scope_type': 'domain', 'owner_domain_id': domain_id, 'code': prefix + '_' + kind, 'name': prefix + ' ' + kind, 'tags': []}
             if kind in ('glossary', 'element', 'metric'):
@@ -109,18 +150,34 @@ def run_suite(client, reader, tenant_id, run_id, reference_element_id):
         if references.get('total') != 1 or references['data'][0]['source_identity'] != str(reference_element_id):
             raise SuiteError('Model did not expose its explicit standard reference')
         evidence = references['data'][0].get('evidence', [])
-        if not any(row.get('resource_id') == str(entity_id) and row.get('state') == 'draft' and not row.get('revision_id') for row in evidence):
+        if not any(row.get('resource_id') == str(entity_id) and row.get('owner_module') == 'model' and row.get('resource_type') == 'entity' and row.get('position') == 'Reference attribute' and row.get('relation_kind') == 'model.entity.element' and row.get('state') == 'draft' and not row.get('revision_id') for row in evidence):
             raise SuiteError('Model draft reference was presented as a frozen adoption')
+        external_reference = {'source_module': 'standard', 'source_type': 'element', 'source_identity': str(reference_element_id)}
+        resolved = client.request('POST', '/api/v1/catalog/entries/resolve-sources', (200,), {'references': [external_reference]}).payload
+        targets = resolved.get('results', [])
+        if len(targets) != 1 or not targets[0].get('found') or targets[0].get('scope_type') != 'domain' or str(targets[0].get('owner_domain_id')) != str(reference['owner_domain_id']):
+            raise SuiteError('Catalog did not resolve the exact external standard ownership')
+        reader.request('GET', '/api/v1/catalog/entries?' + urlencode({'view': 'inventory', 'primary_domain_id': domain_id}), (403,))
+        invisible = reader.request('POST', '/api/v1/catalog/entries/resolve-sources', (200,), {'references': identity_bindings + [external_reference]}).payload
+        if len(invisible.get('results', [])) != 6 or any(row.get('found') or row.get('entry') for row in invisible['results']):
+            raise SuiteError('directory-only reader discovered inventory source identities')
+        for route in ('model/entities', 'model/logical-tables', 'model/metric-implementations', 'standard/glossaries', 'standard/elements', 'standard/metrics'):
+            reader.request('GET', '/api/v1/' + route + '/standard_references?' + urlencode({'domain_id': domain_id, 'page': 1, 'page_size': 20}), (403,))
+        own_references = reader.request('GET', '/api/v1/catalog/domain_standard_references?' + urlencode({'domain_id': domain_id, 'view': 'governance', 'page': 1, 'page_size': 20}), (200,)).payload
+        if own_references.get('total') != 0 or own_references.get('data'):
+            raise SuiteError('governance references leaked inventory-only facts')
         reader.request('GET', overview_path, (403,))
         governed = reader.request('GET', f'/api/v1/catalog/domains/{domain_id}/overview?view=governance', (200,)).payload
         if governed.get('total_entries') != 0 or governed.get('coverage') is not None:
             raise SuiteError('ordinary directory reader discovered inventory-only drafts')
-        report = {'schema_version': 'addp.online-suite/v1', 'suite': 'catalog-domain-overview', 'run_id': run_id, 'tenant_id': str(tenant_id), 'five_standard_types': True, 'stable_source_identities': True, 'model_reference_evidence': True, 'reader_inventory_denied': True, 'reference_element_unchanged': False, 'cleanup': 'pending'}
+        report = {'schema_version': 'addp.online-suite/v1', 'suite': 'catalog-domain-overview', 'run_id': run_id, 'tenant_id': str(tenant_id), 'five_standard_types': True, 'stable_source_identities': True, 'model_reference_evidence': True, 'reader_inventory_denied': True, 'reader_professional_references_denied': True, 'reader_source_resolution_hidden': True, 'external_domain_ownership': True, 'reference_element_unchanged': False, 'cleanup': 'pending'}
     finally:
-        cleanup(client, paths)
-        current = client.request('GET', reference_path, (200,)).payload
-        if current != reference:
-            raise SuiteError('read-only configured reference Element changed during acceptance')
+        try:
+            cleanup(client, paths)
+        finally:
+            current = client.request('GET', reference_path, (200,)).payload
+            if current != reference:
+                raise SuiteError('read-only configured reference Element changed during acceptance')
     report.update(reference_element_unchanged=True, cleanup='passed', residual_professional_resources=0, catalog_history='retained')
     return report
 
@@ -129,15 +186,25 @@ def main():
     try:
         if os.environ.get('ADDP_ONLINE_TEST') != '1':
             raise SuiteError('ADDP_ONLINE_TEST must be exactly 1')
+        for key, value in {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1', 'POSTGRES_DB': 'addp_online'}.items():
+            if os.environ.get(key) != value:
+                raise SuiteError('Catalog T4 requires the disposable Hosted profile: ' + key)
         tenant = int(os.environ['ADDP_ONLINE_TEST_TENANT_ID'])
         timeout = float(os.environ.get('ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS', '10'))
         if tenant <= 0 or timeout <= 0:
             raise SuiteError('Tenant and HTTP timeout must be positive')
         token = os.environ['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN']
         reader_token = os.environ['ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN']
-        identity = validate_user_identity(GatewayClient(os.environ['SYSTEM_URL'], token, timeout, 'SYSTEM_URL'), tenant)
-        _API.validate_user_identity(GatewayClient(os.environ['SYSTEM_URL'], reader_token, timeout, 'SYSTEM_URL'), tenant, required_permissions={'catalog.entry.read'})
-        report = run_suite(GatewayClient(os.environ['GATEWAY_URL'], token, timeout), GatewayClient(os.environ['GATEWAY_URL'], reader_token, timeout), tenant, os.environ['ADDP_ONLINE_TEST_RUN_ID'], int(os.environ['ADDP_ONLINE_CATALOG_REFERENCE_ELEMENT_ID']))
+        preparer_token = os.environ['ADDP_ONLINE_CATALOG_PREPARER_ACCESS_TOKEN']
+        identities = [validate_identity(GatewayClient(os.environ['SYSTEM_URL'], value, timeout, 'SYSTEM_URL'), tenant, permissions)
+                      for value, permissions in ((token, REQUIRED_USER_PERMISSIONS), (reader_token, {'catalog.entry.read'}), (preparer_token, PREPARER_PERMISSIONS))]
+        if len({principal for _, principal in identities}) != 3:
+            raise SuiteError('consumer, reader and preparer must be three distinct Users')
+        identity = identities[0][0]
+        reference_id = prepare_reference(GatewayClient(os.environ['GATEWAY_URL'], preparer_token, timeout), os.environ['ADDP_ONLINE_TEST_RUN_ID'])
+        report = run_suite(GatewayClient(os.environ['GATEWAY_URL'], token, timeout), GatewayClient(os.environ['GATEWAY_URL'], reader_token, timeout), tenant, os.environ['ADDP_ONLINE_TEST_RUN_ID'], reference_id)
+        report['three_minimal_users_verified'] = True
+        report['retained_source_history'] = 'destroy_with_hosted_deployment'
         report['identity'] = identity
         json.dump(report, sys.stdout, ensure_ascii=False, sort_keys=True); sys.stdout.write('\n')
         return 0

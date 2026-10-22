@@ -264,6 +264,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return metricPermissions, nil
 	case "quality-dynamic-binding":
 		return qualityPermissions, nil
+	case "catalog-domain-overview":
+		return catalogDomainPermissions(), nil
 	case "ontology-revision-lifecycle":
 		return ontologyPermissions, nil
 	case "orchestrator-execution":
@@ -711,6 +713,23 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
+	}
+	if *suite == "catalog-domain-overview" {
+		for _, fixture := range []struct {
+			name        string
+			key         string
+			permissions []string
+		}{
+			{"external-online-catalog-reader", "ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN", []string{"catalog.entry.read"}},
+			{"external-online-catalog-preparer", "ADDP_ONLINE_CATALOG_PREPARER_ACCESS_TOKEN", catalogDomainPreparerPermissions},
+		} {
+			session, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+				tenant.ID, administrator.PrincipalID, fixture.name, fixture.permissions)
+			if fixtureErr != nil {
+				return fixtureErr
+			}
+			values[fixture.key] = session.AccessToken
+		}
 	}
 	if *suite == "quality-dynamic-binding" {
 		preparer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
