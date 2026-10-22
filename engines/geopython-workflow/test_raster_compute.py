@@ -6510,7 +6510,7 @@ def test_d8_accumulation_chain_singleton_and_all_invalid(tmp_path,directions):
 
 @pytest.mark.parametrize('bad',[-1.,3.,255.,1.5,2**53,float(2**64)])
 @pytest.mark.parametrize('language,phrase',[('zh-cn','非法方向码'),('en','invalid direction code')])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_illegal_direction_bilingual_no_private_output(tmp_path,bad,language,phrase, operator_name):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'directions.tif',np.array([[bad,0.]]),(0,1,0,100,0,-1),'EPSG:3857');before=path.read_bytes()
@@ -6527,7 +6527,7 @@ def test_d8_consumers_illegal_direction_bilingual_no_private_output(tmp_path,bad
     ('cycle-with-outlet','方向循环','direction cycle'),
 ])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_invalid_graph_fails_whole_workflow(tmp_path,case,zh,en,language, operator_name):
     import operators.raster_compute as compute
     directions=np.array([[1.,1.,0.]])
@@ -6544,7 +6544,7 @@ def test_d8_consumers_invalid_graph_fails_whole_workflow(tmp_path,case,zh,en,lan
 
 
 @pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_requires_explicit_data_band(tmp_path,band, operator_name):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'directions.tif',np.array([[1.,0.]]),(0,2,0,100,0,-3),'EPSG:3857')
@@ -6553,7 +6553,7 @@ def test_d8_consumers_requires_explicit_data_band(tmp_path,band, operator_name):
 
 
 @pytest.mark.parametrize('case,phrase', [('scale','scale/offset'),('offset','scale/offset'),('alpha','alpha band as direction'),('complex','complex direction'),('complex-alpha','complex direction'),('rotated','projected north-up'),('geographic','projected north-up'),('no-crs','projected north-up'),('south-up','projected north-up')])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_admission_grid_and_band_encoding(tmp_path,case,phrase, operator_name):
     import operators.raster_compute as compute
     path=tmp_path/'directions.tif';complex_type=case in ('complex','complex-alpha')
@@ -6571,7 +6571,7 @@ def test_d8_consumers_admission_grid_and_band_encoding(tmp_path,case,phrase, ope
         getattr(compute,operator_name)(raster_load(source_plan(path)),1)
 
 
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_effective_mask_nodata_alpha_nonfinite_and_valid_zero(tmp_path, operator_name):
     import operators.raster_compute as compute
     path=tmp_path/'bands.tif';values=np.zeros((3,7));values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
@@ -6605,7 +6605,7 @@ def test_d8_accumulation_exact_count_limit_and_overflow_fail_closed(monkeypatch)
 
 
 @pytest.mark.parametrize('stage',['read','graph','write','metadata'])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage, operator_name):
     import operators.raster_compute as compute
     path=create_raster(tmp_path/'directions.tif',np.array([[1.,1.,0.]]),(0,2,0,100,0,-3),'EPSG:3857')
@@ -6614,7 +6614,7 @@ def test_d8_consumers_injected_failure_cleans_private_outputs(tmp_path,monkeypat
         def fail(*args,**kwargs):raise RuntimeError('injected accumulation failure')
         if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
         if stage=='graph':
-            helper={'raster_flow_accumulation_d8':'_d8_accumulation','raster_flow_length_d8':'_d8_flow_length','raster_drainage_basins_d8':'_d8_drainage_basins'}[operator_name]
+            helper={'raster_flow_accumulation_d8':'_d8_accumulation','raster_flow_length_d8':'_d8_flow_length','raster_flow_length_upstream_d8':'_d8_upstream_flow_length','raster_drainage_basins_d8':'_d8_drainage_basins'}[operator_name]
             monkeypatch.setattr(compute,helper,fail)
         if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
         if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
@@ -6649,7 +6649,7 @@ def test_d8_accumulation_long_cross_block_cog_full_counts_and_conservation(tmp_p
 
 @pytest.mark.parametrize('case',['saved-direction','dem-direction','fill-direction','empty','cycle'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_real_async_save_and_failure_cleanup(tmp_path,monkeypatch,case,language, operator_name):
     import api_server,workflow_engine
     values=np.tile(np.arange(11,0,-1,dtype=float),(9,1));directions=np.ones(values.shape);directions[:,-1]=0
@@ -6685,17 +6685,18 @@ def test_d8_consumers_real_async_save_and_failure_cleanup(tmp_path,monkeypatch,c
     else:
         expected={'raster_flow_accumulation_d8':_accumulation_walk_oracle,
                   'raster_flow_length_d8':lambda v:_flow_length_walk_oracle(v,2,3),
+                  'raster_flow_length_upstream_d8':lambda v:_upstream_length_walk_oracle(v,2,3),
                   'raster_drainage_basins_d8':_drainage_basins_walk_oracle}[operator_name](directions)
         ds=gdal.Open(str(target));actual=read_band_values(ds.GetRasterBand(1))
-        if operator_name=='raster_flow_length_d8':np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+        if operator_name in ('raster_flow_length_d8','raster_flow_length_upstream_d8'):np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9,equal_nan=True)
         else:np.testing.assert_array_equal(actual,expected)
-        assert ds.GetRasterBand(1).GetUnitType()==('metre' if operator_name=='raster_flow_length_d8' else '');ds=None
+        assert ds.GetRasterBand(1).GetUnitType()==('metre' if operator_name in ('raster_flow_length_d8','raster_flow_length_upstream_d8') else '');ds=None
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
     assert client.post('/api/operators/'+operator_name+'/invoke',json={'params':{}}).status_code==403
 
 
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_discovery_explicit_direction_band_only(operator_name):
     spec=next(item for item in list_operators() if item['id']==operator_name)
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
@@ -6717,7 +6718,7 @@ def test_d8_accumulation_cross_block_single_long_path_without_recursion():
     assert actual[-1,-1]+1==height*width and np.count_nonzero(actual==0)==1
 
 
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_rejects_mixed_real_data_complex_alpha(monkeypatch, operator_name):
     import operators.raster_compute as compute
     ds=gdal.GetDriverByName('MEM').Create('',3,3,0)
@@ -6730,7 +6731,7 @@ def test_d8_consumers_rejects_mixed_real_data_complex_alpha(monkeypatch, operato
 
 
 @pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
-@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_drainage_basins_d8'])
+@pytest.mark.parametrize('operator_name',['raster_flow_accumulation_d8','raster_flow_length_d8','raster_flow_length_upstream_d8','raster_drainage_basins_d8'])
 def test_d8_consumers_native_nodata_cannot_hide_adjacent_illegal_integer(tmp_path,dtype, operator_name):
     import operators.raster_compute as compute
     path=tmp_path/'integer.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype)
@@ -7002,3 +7003,148 @@ def test_d8_drainage_basins_long_single_path_without_recursion():
     height,width=515,519;directions=np.ones((height,width));directions[1::2,:]=16
     directions[::2,-1]=4;directions[1::2,0]=4;directions[-1,-1]=0
     np.testing.assert_array_equal(compute._d8_drainage_basins(directions),np.ones(directions.shape))
+
+
+def _upstream_length_walk_oracle(directions, width_metres, height_metres):
+    # Independently walk every origin, measuring each visited prefix with fsum.
+    # No production graph, indegrees, queue or topological ordering is used.
+    offsets={1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    valid=np.isfinite(directions);result=np.where(valid,0.,np.nan)
+    for origin in np.argwhere(valid):
+        row,col=map(int,origin);seen={(row,col)};edges=[]
+        while directions[row,col]!=0:
+            dy,dx=offsets[directions[row,col]]
+            edges.append(math.sqrt((dx*width_metres)**2+(dy*height_metres)**2))
+            row,col=row+dy,col+dx
+            assert 0<=row<directions.shape[0] and 0<=col<directions.shape[1] and valid[row,col]
+            assert (row,col) not in seen;seen.add((row,col))
+            result[row,col]=max(result[row,col],math.fsum(edges))
+    return result
+
+
+@pytest.mark.parametrize('seed',range(12))
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('US survey foot',1200/3937)])
+def test_d8_upstream_length_full_paths_units_holes_and_multi_outlets(tmp_path,seed,unit,factor):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);directions=np.zeros((9,11));rows,cols=np.indices(directions.shape)
+    ranks=np.minimum.reduce((rows,cols,8-rows,10-cols))
+    offsets=[(-1,-1,32),(-1,0,64),(-1,1,128),(0,-1,16),(0,1,1),(1,-1,8),(1,0,4),(1,1,2)]
+    for row,col in np.argwhere(ranks>0):
+        directions[row,col]=rng.choice([code for dy,dx,code in offsets if ranks[row+dy,col+dx]<ranks[row,col]])
+    directions[4,5]=np.nan
+    for row,col in np.argwhere(np.isfinite(directions)&(directions!=0)):
+        dy,dx=next((dy,dx) for dy,dx,code in offsets if code==directions[row,col])
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    directions[0,0]=1;directions[0,1]=2;directions[1,2]=64;directions[0,2]=0
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);crs.SetLinearUnitsAndUpdateParameters(unit,factor)
+    transform=(500000,3,0,3000000,0,-4)
+    path=create_raster(tmp_path/'directions.tif',directions,transform,crs.ExportToWkt());before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir());result=compute.raster_flow_length_upstream_d8(source,1)
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=read_band_values(band)
+        np.testing.assert_allclose(actual,_upstream_length_walk_oracle(directions,3*factor,4*factor),rtol=1e-12,atol=1e-9,equal_nan=True)
+        assert actual[0,2]>=12*factor and np.any(actual[directions==0]>0)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+        assert ds.GetGeoTransform()==transform and ds.GetSpatialRef().IsSame(crs)
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetUnitType()=='metre'
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert set(source.workspace.iterdir())==prior|{result.path};band=ds=None
+    assert path.read_bytes()==before and not result.path.exists()
+
+
+def test_d8_upstream_length_confluence_takes_maximum_not_sum_or_shortest():
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,4.,np.nan],[np.nan,np.nan,1.,0.],[np.nan,128.,np.nan,32.]])
+    actual=compute._d8_upstream_flow_length(directions,3.,4.)
+    expected=np.array([[0.,3.,6.,np.nan],[np.nan,np.nan,10.,13.],[np.nan,0.,np.nan,0.]])
+    np.testing.assert_array_equal(actual,expected)
+    np.testing.assert_array_equal(actual,_upstream_length_walk_oracle(directions,3.,4.))
+    assert actual[1,3]>0  # An open zero-direction outlet retains upstream length.
+
+
+@pytest.mark.parametrize('dy,dx,code',[(-1,-1,32),(-1,0,64),(-1,1,128),(0,-1,16),(0,1,1),(1,-1,8),(1,0,4),(1,1,2)])
+def test_d8_upstream_length_all_eight_steps_and_no_inflow_zero(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    actual=compute._d8_upstream_flow_length(directions,3.,4.)
+    assert actual[1,1]==0 and actual[1+dy,1+dx]==math.sqrt((dx*3)**2+(dy*4)**2)
+    np.testing.assert_array_equal(actual,_upstream_length_walk_oracle(directions,3.,4.))
+
+
+@pytest.mark.parametrize('directions',[np.array([[1.,1.,0.]]),np.array([[4.],[4.],[0.]]),np.array([[0.]]),np.full((4,5),np.nan)])
+def test_d8_upstream_length_single_axes_singleton_and_all_invalid(tmp_path,directions):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',directions,(0,3,0,100,0,-4),'EPSG:3857')
+    with raster_workspace():
+        result=compute.raster_flow_length_upstream_d8(raster_load(source_plan(path)),1);ds=gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),_upstream_length_walk_oracle(directions,3.,4.),rtol=1e-12,atol=1e-9,equal_nan=True);ds=None
+
+
+@pytest.mark.parametrize('width,height',[(0.,1.),(-1.,1.),(1.,0.),(float('nan'),1.),(1.,float('inf')),(1.7e308,1.7e308),(1e-200,2e-200)])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_upstream_length_finite_positive_steps_and_tiny_diagonal(width,height,language):
+    import operators.raster_compute as compute
+    with raster_error_language(language):
+        if width==1e-200:
+            actual=compute._d8_upstream_flow_length(np.array([[2.,np.nan],[np.nan,0.]]),width,height)
+            assert actual[0,0]==0 and actual[1,1]==pytest.approx(math.hypot(width,height),rel=1e-15,abs=0)
+        else:
+            with pytest.raises(ValueError,match='步长必须有限' if language=='zh-cn' else 'finite, strictly positive'):
+                compute._d8_upstream_flow_length(np.array([[1.,0.]]),width,height)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_upstream_length_real_overflow_fails_without_private_output(tmp_path,language):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'directions.tif',np.array([[1.,1.,0.]]),(0,1e308,0,100,0,-1),'EPSG:3857')
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='D8 上游最长流长累计距离超过' if language=='zh-cn' else 'D8 longest upstream flow length accumulated distance exceeds'):
+            compute.raster_flow_length_upstream_d8(source,1)
+        assert set(source.workspace.iterdir())==prior
+
+
+def test_d8_upstream_length_cross_block_cog_complete_pixels_mask_grid_and_units(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    height,width=515,519;directions=np.ones((height,width));directions[:,-1]=0
+    directions[257,257]=np.nan;directions[257,256]=0
+    expected=np.broadcast_to(np.arange(width)*3.,directions.shape).copy()
+    expected[257,257]=np.nan;expected[257,258:]=np.arange(width-258)*3.
+    transform=(500000.,3.,0.,3000000.,0.,-4.)
+    path=create_raster(tmp_path/'directions.tif',directions,transform,'EPSG:3857');before=path.read_bytes();target=tmp_path/'upstream.cog.tif'
+    original=compute._blocks;reads=[]
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in original(*args,**kwargs):
+            assert all(max(a.shape)<=512 for a in arrays);reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():
+        result=compute.raster_flow_length_upstream_d8(raster_load(source_plan(path)),1)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    ds=gdal.Open(str(target));band=ds.GetRasterBand(1);actual=read_band_values(band)
+    np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+    np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+    assert actual[257,256]==768 and actual[257,258]==0
+    assert not validate(ds,full_check=True)[1] and band.GetOverviewCount()>0
+    assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetUnitType()=='metre'
+    assert ds.GetGeoTransform()==transform and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+    band=ds=None;assert path.read_bytes()==before and not result.path.exists() and (512,512) in reads
+
+
+def test_d8_upstream_length_long_single_path_without_recursion():
+    import operators.raster_compute as compute
+    height,width=515,519;directions=np.ones((height,width));directions[1::2,:]=16
+    directions[::2,-1]=4;directions[1::2,0]=4;directions[-1,-1]=0
+    rows,cols=np.indices(directions.shape);row_distance=np.where(rows%2==0,cols,width-1-cols)*3.
+    expected=rows*((width-1)*3.+4.)+row_distance
+    np.testing.assert_allclose(compute._d8_upstream_flow_length(directions,3.,4.),expected,rtol=1e-12,atol=1e-9)
+
+
+def test_d8_upstream_length_long_irrational_diagonal_path():
+    import operators.raster_compute as compute
+    width=8193;directions=np.full((2,width),np.nan);cols=np.arange(width);rows=cols%2
+    directions[rows,cols]=np.where(rows==0,2.,128.);directions[rows[-1],-1]=0
+    expected=np.full(directions.shape,np.nan);expected[rows,cols]=cols*math.sqrt(13.)
+    np.testing.assert_allclose(compute._d8_upstream_flow_length(directions,2.,3.),expected,rtol=1e-12,atol=1e-9,equal_nan=True)

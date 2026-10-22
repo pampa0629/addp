@@ -2567,7 +2567,7 @@ def _d8_acc_error(code):
 
 
 def _d8_graph(directions, error):
-    """Validate the supplied D8 graph once for all downstream consumers."""
+    """Validate the supplied D8 graph once for all D8 consumers."""
     height, width = directions.shape
     valid = np.isfinite(directions)
     if np.any(valid & ~np.isin(directions, [0, *[step[2] for step in _D8_NEIGHBOURS]])):
@@ -2704,15 +2704,19 @@ def _d8_length_error(code):
     return ValueError(_D8_LENGTH_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _d8_flow_length(directions, width_metres, height_metres):
-    """Sum centre-to-centre edge lengths backwards on the unmodified D8 graph."""
+def _d8_length_steps(width_metres, height_metres, error):
     diagonal = math.hypot(width_metres, height_metres)
     if any(not math.isfinite(step) or step <= 0 for step in (width_metres, height_metres, diagonal)):
-        raise _d8_length_error('step')
+        raise error('step')
+    return {code: diagonal if dy and dx else height_metres if dy else width_metres
+            for dy, dx, code in _D8_NEIGHBOURS}
+
+
+def _d8_flow_length(directions, width_metres, height_metres):
+    """Sum centre-to-centre edge lengths backwards on the unmodified D8 graph."""
+    steps = _d8_length_steps(width_metres, height_metres, _d8_length_error)
     valid, downstream, indegree = _d8_graph(directions, _d8_length_error)
     order = _d8_topological_order(valid, downstream, indegree, _d8_length_error)
-    steps = {code: diagonal if dy and dx else height_metres if dy else width_metres
-             for dy, dx, code in _D8_NEIGHBOURS}
     values = np.full(directions.size, np.nan)
     codes = directions.ravel()
     for cell in order[::-1]:
@@ -2732,6 +2736,46 @@ def raster_flow_length_d8(input_raster, band):
     source, directions, factor = _d8_direction_source(input_raster, band, _d8_length_error)
     transform = source.GetGeoTransform()
     values = _d8_flow_length(directions, transform[1] * factor, -transform[5] * factor)
+    return _d8_output(source, values, 'metre')
+
+
+_D8_UPSTREAM_LENGTH_MESSAGES = {
+    key: (zh.replace('D8 下游流长', 'D8 上游最长流长'),
+          en.replace('D8 downstream flow length', 'D8 longest upstream flow length'))
+    for key, (zh, en) in _D8_LENGTH_MESSAGES.items()
+}
+
+
+def _d8_upstream_length_error(code):
+    return ValueError(_D8_UPSTREAM_LENGTH_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_upstream_flow_length(directions, width_metres, height_metres):
+    """Propagate the maximum upstream distance forward; never sum tributaries."""
+    steps = _d8_length_steps(width_metres, height_metres, _d8_upstream_length_error)
+    valid, downstream, indegree = _d8_graph(directions, _d8_upstream_length_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_upstream_length_error)
+    values = np.zeros(directions.size, dtype=np.float64)
+    codes = directions.ravel()
+    for cell in order:
+        target = int(downstream[cell])
+        if target < 0:
+            continue
+        length = float(values[cell]) + steps[codes[cell]]
+        if not math.isfinite(length):
+            raise _d8_upstream_length_error('overflow')
+        if length > values[target]:
+            values[target] = length
+    result = values.reshape(directions.shape)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_flow_length_upstream_d8(input_raster, band):
+    """Measure the longest projected upstream route in metres to each cell."""
+    source, directions, factor = _d8_direction_source(input_raster, band, _d8_upstream_length_error)
+    transform = source.GetGeoTransform()
+    values = _d8_upstream_flow_length(directions, transform[1] * factor, -transform[5] * factor)
     return _d8_output(source, values, 'metre')
 
 
@@ -2912,6 +2956,7 @@ _SPECS = [
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
+    (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -2939,7 +2984,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
-    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_drainage_basins_d8'):
+    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})
