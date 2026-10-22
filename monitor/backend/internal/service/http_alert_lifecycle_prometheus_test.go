@@ -50,7 +50,7 @@ func TestIntegrationMetricsHTTPAlertLifecycle(t *testing.T) {
 		Address  string    `json:"instance"`
 	}
 	data, e := os.ReadFile(recordFile)
-	if e != nil || json.Unmarshal(data, &records) != nil || len(records) != 2 || records[0].Role != "backend" {
+	if e != nil || json.Unmarshal(data, &records) != nil || len(records) != 3 || records[0].Role != "backend" || records[1].Role != "worker" || records[2].Role != "worker" {
 		t.Fatal("owned native source records", e)
 	}
 	r := records[0]

@@ -74,6 +74,8 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 PostgreSQL 来源的正式准入探针将 Go 准备与执行分开计时：在本轮私有目录以 `go test -c` 构建测试文件，每次构建准备最多 180 秒；构建失败立即退出，不执行已有文件。随后直接运行该文件，保留 `-test.timeout=30s` 与外层 45 秒进程期限，不将下载和编译占用实际准入测试期限。构建、执行分别记录安全阶段，私有目录仍由原退出路径清除；不修改 mTLS、完整窗口、采样新鲜度或原 20 分钟 Job 上限。
 
+进程实源场景覆盖同一模块的一个 Backend 与两个 Worker：每个进程使用独立实例身份、启动时刻和端点，同角色 Worker 的摘要及趋势不得串用身份或端点；依次停止 Backend 和其中一个 Worker，失败来源即时值清空，仍运行的 Worker 保持自身有效数据。此为真实 SDK／Prometheus／Monitor 查询 T2，不替代 System 正式登记与承载绑定、多 Worker 业务执行或原生 macOS 运行拓扑 T4。
+
 `make test-monitor-metrics` 由 Monitor owner 自建 Prometheus、受控指标源与实际私有 TLS 转发入口，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。原生 OAuth/HTTP SD 经正式转发模板运行，验证固定路径/方法/查询参数和匿名请求拒绝，全部 owned 服务均纳入退出清理。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；同一来源还重新部署为 Docker Desktop 受限层，验证七采集器、Engine CPU/内存/内核对照、不同 PID/挂载/网络命名空间的磁盘原始计数前后快照对照、禁用文件系统/网络族、五项磁盘即时值及精确设备趋势、mTLS 与唯一 HTTP SD 查询和恢复后新磁盘样本。本地 macOS 执行证明 Desktop VM 采集，Linux CI 证明受限层语义，不冒充 Desktop 环境或完整 Linux 节点验收；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。
 
 ## Manager Raster Mosaic 原生 Runtime 门禁
