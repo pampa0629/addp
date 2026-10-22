@@ -289,11 +289,14 @@ class AuditLatencyObservationTest(unittest.TestCase):
     def test_linux_disk_counters_preserve_raw_units_and_skip_loop_devices(self):
         documents = {'/proc/diskstats': '7 0 loop0 ' + ' '.join(['0'] * 17) + '\n'
                      + '259 1 nvme0n1p1 ' + ' '.join(map(str, range(17))),
-                     '/proc/pressure/io': 'some avg10=0.00 total=3', '/proc/stat': 'cpu 1 2 3 4 5 6 7 8\ncpu0 1'}
+                     '/proc/pressure/io': 'some avg10=0.00 total=3', '/proc/stat': 'cpu 1 2 3 4 5 6 7 8\ncpu0 1',
+                     '/proc/pressure/cpu': 'some avg10=1.00 total=7', '/proc/loadavg': '1.00 1.20 0.30 4/50 100'}
         with patch.object(Path, 'read_text', autospec=True, side_effect=lambda path: documents[str(path)]):
             sample = ONLINE.disk_observation()
         self.assertEqual(list(sample['disks']), ['259:1'])
         self.assertEqual(sample['disks']['259:1']['counters'], list(range(17)))
+        self.assertEqual(sample['cpu_pressure'], documents['/proc/pressure/cpu'])
+        self.assertEqual(sample['load_average'], documents['/proc/loadavg'])
 
     def test_read_only_session_ownership_settings_and_cleanup(self):
         class Process:
@@ -1573,6 +1576,13 @@ class PGBrowserObservationTest(unittest.TestCase):
 
 class PGReadLoadTest(unittest.TestCase):
     def setUp(self):
+        observation = patch.object(ONLINE, 'AuditLatencyObservation').start()
+        def observe(evidence, principal, *, phase):
+            self.assertEqual(phase, 'load')
+            evidence.update(result='passed', connection_closed=True, audit_rows=[])
+            return observation.return_value
+        observation.side_effect = observe
+        self.audit_windows = patch.object(ONLINE, 'verify_load_audit_windows').start()
         self.server = Server()
         self.reader = self.server.client('reader')
         self.lifecycle = ONLINE.Lifecycle(self.server.client('operator'), self.reader, 3, 2, '33', {},
@@ -1639,7 +1649,8 @@ class PGReadLoadTest(unittest.TestCase):
         self.lifecycle.measure_read_load(report, self.bindings)
         evidence = report['authorization_load']
         self.assertEqual(evidence['result'], 'passed')
-        self.assertFalse(evidence['audit_observer_enabled'])
+        self.assertTrue(evidence['audit_observer_enabled'])
+        self.assertTrue(evidence['audit_observation']['connection_closed'])
         self.assertEqual([(cell['mode'], cell['concurrency_limit']) for cell in evidence['cells']],
             [('single_target', 1), ('single_target', 5), ('single_target', 10),
              ('two_target_batch', 1), ('two_target_batch', 5), ('two_target_batch', 10), ('two_target_separate', 1)])
@@ -1685,6 +1696,26 @@ class PGReadLoadTest(unittest.TestCase):
                 self.lifecycle.measure_read_load({}, bindings)
         self.assertEqual(self.reads, [])
 
+    def test_observer_failure_never_counts_as_a_valid_load_sample(self):
+        with patch.object(ONLINE, 'AuditLatencyObservation') as context:
+            context.return_value.__enter__.return_value.healthy.side_effect = ONLINE.SuiteError('observer failed')
+            report = {}
+            with self.assertRaises(ONLINE.SuiteError):
+                self.lifecycle.measure_read_load(report, self.bindings)
+            context.return_value.__exit__.assert_called_once()
+        self.assertEqual(report['authorization_load']['result'], 'failed')
+        self.assertEqual(self.reads, [])
+
+    def test_observer_initialization_failure_retains_failure_evidence(self):
+        report = {}
+        with patch.object(ONLINE, 'AuditLatencyObservation') as context:
+            context.return_value.__enter__.side_effect = ONLINE.SuiteError('initialization failed')
+            with self.assertRaises(ONLINE.SuiteError):
+                self.lifecycle.measure_read_load(report, self.bindings)
+        self.assertEqual(report['authorization_load']['result'], 'failed')
+        self.assertIn('audit_observation', report['authorization_load'])
+        self.assertEqual(self.reads, [])
+
     def test_concurrent_failure_drains_all_requests_without_later_cells(self):
         original = self.reader.request
         def fail_in_second_cell(method, path, expected, body=None):
@@ -1721,6 +1752,49 @@ class PGReadLoadTest(unittest.TestCase):
             with self.subTest(payload=payload, status=status), patch.object(self.lifecycle.outsider, 'request',
                 return_value=SimpleNamespace(status=status, payload=payload)), self.assertRaises(ONLINE.SuiteError):
                 self.lifecycle.require_batch_denied(self.lifecycle.outsider, self.paths)
+
+
+class PGLoadAuditWindowTest(unittest.TestCase):
+    def fixture(self):
+        start = datetime(2026, 10, 22, tzinfo=timezone.utc).timestamp() * 1000000000
+        result = {'cells': [{'rounds': [{'http_attempted_count': count,
+            'requests': [{'started_unix_ns': start + offset, 'finished_unix_ns': start + offset + 10000000}]}]}
+            for count, offset in ((2, 0), (1, 20000000))]}
+        audits = [{'id': index, 'request_id': str(ONLINE.uuid.uuid4()), 'created_at':
+            datetime.fromtimestamp((start + offset) / 1000000000, timezone.utc).isoformat()}
+            for index, offset in enumerate((1000000, 2000000, 21000000))]
+        return result, audits
+
+    def test_commit_order_is_not_individual_request_order(self):
+        result, audits = self.fixture()
+        ONLINE.verify_load_audit_windows(result, list(reversed(audits)))
+        self.assertEqual(result['audit_correlation'], 'cell_time_windows_only_not_individual_requests')
+        self.assertNotIn('request_id', result['cells'][0]['rounds'][0]['requests'][0])
+
+    def test_missing_duplicate_or_outside_audits_fail_closed(self):
+        for fault in ('missing', 'duplicate_request', 'duplicate_id', 'outside', 'timezone'):
+            with self.subTest(fault=fault):
+                result, audits = self.fixture()
+                if fault == 'missing':
+                    audits.pop()
+                elif fault == 'duplicate_request':
+                    audits[1]['request_id'] = audits[0]['request_id']
+                elif fault == 'duplicate_id':
+                    audits[1]['id'] = audits[0]['id']
+                elif fault == 'outside':
+                    audits[0]['created_at'] = '2026-10-22T00:01:00+00:00'
+                else:
+                    audits[0]['created_at'] = '2026-10-22T00:00:00'
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.verify_load_audit_windows(result, audits)
+
+    def test_observation_phase_keeps_separate_file_and_bounded_query(self):
+        load = ONLINE.AuditLatencyObservation({}, '33', phase='load')
+        serial = ONLINE.AuditLatencyObservation({}, '33')
+        self.assertEqual((load.file, load.audit_limit), ('pg-load-waits.jsonl', 2641))
+        self.assertEqual((serial.file, serial.audit_limit), ('pg-audit-waits.jsonl', 1531))
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.AuditLatencyObservation({}, '33', phase='arbitrary')
 
 
 class InitialProductionOnlineTest(unittest.TestCase):

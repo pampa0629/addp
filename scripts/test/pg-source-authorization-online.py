@@ -79,14 +79,19 @@ def disk_observation():
     require(bool(disks) and len(disks) <= 128, 'disk observation missing or exceeds budget')
     return {'at': datetime.now(timezone.utc).isoformat(), 'disks': disks,
             'io_pressure': Path('/proc/pressure/io').read_text().strip(),
+            'cpu_pressure': Path('/proc/pressure/cpu').read_text().strip(),
+            'load_average': Path('/proc/loadavg').read_text().strip(),
             'cpu': Path('/proc/stat').read_text().splitlines()[0]}
 
 
 class AuditLatencyObservation:
     """One bounded, read-only psql session; never touches a personal deployment."""
-    def __init__(self, evidence, principal):
+    def __init__(self, evidence, principal, *, phase='serial'):
         self.evidence = evidence
         require(re.fullmatch(r'[1-9][0-9]*', principal) is not None, 'invalid audit observation principal')
+        require(phase in {'serial', 'load'}, 'invalid audit observation phase')
+        self.file = 'pg-audit-waits.jsonl' if phase == 'serial' else 'pg-load-waits.jsonl'
+        self.audit_limit = 1531 if phase == 'serial' else LOAD_ROUNDS * (LOAD_SAMPLES + LOAD_WARMUPS) * 8 + 1
         self.principal = principal
         self.process = self.thread = self.stream = None
         self.stop = threading.Event()
@@ -172,7 +177,7 @@ class AuditLatencyObservation:
             directory = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']).resolve()
             require(directory.is_absolute() and not directory.is_relative_to(Path(__file__).resolve().parents[2]),
                     'audit observation evidence must be outside checkout')
-            self.stream = (directory / 'pg-audit-waits.jsonl').open('x')
+            self.stream = (directory / self.file).open('x')
             environment = dict(os.environ, PGPASSWORD=os.environ['POSTGRES_PASSWORD'], PGCONNECT_TIMEOUT='3',
                 PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=2000 -c lock_timeout=100 -c application_name=addp_pg_latency_observer')
             self.process = subprocess.Popen(['docker', 'exec', '-i', '-e', 'PGPASSWORD', '-e', 'PGOPTIONS',
@@ -187,7 +192,7 @@ class AuditLatencyObservation:
             require(settings['database'] == 'addp_online' and settings['read_only'] == 'on'
                     and settings['track_io_timing'] == settings['track_wal_io_timing'] == 'on',
                     'audit observation settings were not effective')
-            self.evidence.update(settings=settings, container_id=identifier, file='pg-audit-waits.jsonl')
+            self.evidence.update(settings=settings, container_id=identifier, file=self.file)
             mounts = [mount for mount in container['Mounts'] if mount['Destination'] == '/var/lib/postgresql/data']
             require(len(mounts) == 1 and mounts[0]['Type'] == 'volume'
                     and mounts[0]['Name'] == 'addp-infra_postgres_data', 'audit observation volume ownership differs')
@@ -242,7 +247,7 @@ class AuditLatencyObservation:
                 SELECT id,request_id,created_at,(details->>'duration_ms')::bigint AS pre_audit_ms FROM system.audit_logs
                 WHERE principal_id={self.principal} AND event_name='http.request.completed'
                 AND http_method='POST' AND resource_path='{READ_CHECK}' AND created_at>='{self.started}'::timestamptz
-                ORDER BY id LIMIT 1531) s;""")
+                ORDER BY id LIMIT {self.audit_limit}) s;""")
             self.evidence['result'] = 'passed' if kind is None else 'failed'
         finally:
             self.evidence.update(samples=self.samples, bytes=self.bytes, max_observer_query_ms=self.query_max_ms,
@@ -265,6 +270,30 @@ def bind_audit_requests(requests, audits):
                     <= request['finished_unix_ns'] + 1000000,
                 'audit observation request time window differs')
         request.update(request_id=audit['request_id'], audit_id=audit['id'], pre_audit_ms=audit['pre_audit_ms'])
+
+
+def verify_load_audit_windows(result, audits):
+    expected = sum(row['http_attempted_count'] for cell in result['cells'] for row in cell['rounds'])
+    require(len(audits) == expected and len({row['request_id'] for row in audits}) == expected
+            and len({row['id'] for row in audits}) == expected,
+            'read load audit count or identity differs')
+    matched = set()
+    for cell in result['cells']:
+        requests = [row for round_ in cell['rounds'] for row in round_['requests']]
+        start = min(row['started_unix_ns'] for row in requests) - 1000000
+        end = max(row['finished_unix_ns'] for row in requests) + 1000000
+        selected = []
+        for audit in audits:
+            stamp = datetime.fromisoformat(audit['created_at'].replace('Z', '+00:00'))
+            require(stamp.tzinfo is not None and re.fullmatch('[a-f0-9-]{36}', audit['request_id']) is not None,
+                    'invalid read load audit metadata')
+            if start <= stamp.timestamp() * 1000000000 <= end:
+                selected.append(audit['id'])
+        require(len(selected) == sum(row['http_attempted_count'] for row in cell['rounds'])
+                and not matched.intersection(selected), 'read load audit cell window differs')
+        matched.update(selected)
+    require(len(matched) == expected, 'read load audit outside measurement windows')
+    result['audit_correlation'] = 'cell_time_windows_only_not_individual_requests'
 
 
 def require(condition, message):
@@ -776,13 +805,25 @@ class Lifecycle:
                 'batch denial must not expose partial data or substitute another boundary')
 
     def measure_read_load(self, report, bindings):
+        observation = {}
+        report['authorization_load'] = {'result': 'failed', 'audit_observer_enabled': True,
+                                        'audit_observation': observation}
+        with AuditLatencyObservation(observation, self.recipient, phase='load') as observer:
+            self.sample_read_load(report, bindings, observer, observation)
+        require(observation.get('result') == 'passed' and observation.get('connection_closed') is True,
+                'read load observation did not finish cleanly')
+        result = report['authorization_load']
+        verify_load_audit_windows(result, observation['audit_rows'])
+        result['result'] = 'passed'
+
+    def sample_read_load(self, report, bindings, observer, observation):
         """Bounded closed-loop HTTP samples, using only already-issued fixture Grants."""
         result = {'schema_version': 'addp.authorization-load/v1', 'result': 'failed',
                   'measurement': 'gateway_client_http_and_json_roundtrip', 'unit': 'ms',
                   'principal_id': self.recipient, 'same_principal': True,
                   'endpoint': READ_CHECK, 'quantile_method': 'nearest_rank',
                   'budget_seconds': 90, 'request_timeout_seconds': self.reader.timeout,
-                  'audit_observer_enabled': False, 'round_count': LOAD_ROUNDS,
+                  'audit_observer_enabled': True, 'audit_observation': observation, 'round_count': LOAD_ROUNDS,
                   'samples_per_round': LOAD_SAMPLES, 'warmups_per_round': LOAD_WARMUPS,
                   'targets': [{'catalog_path': path, 'item_fingerprint': facts['item_fingerprint'],
                                'boundary_hash': facts['boundary_hash'], 'grant_id': command}
@@ -795,6 +836,7 @@ class Lifecycle:
         tokens = (self.reader.token, self.operator.token, self.outsider.token)
 
         def guard():
+            observer.healthy()
             require(time.monotonic() < deadline, 'read load exceeded its budget')
             require((self.reader.token, self.operator.token, self.outsider.token) == tokens,
                     'read load credentials changed')
@@ -908,7 +950,7 @@ class Lifecycle:
                     values = [row[quantile] for row in cell['rounds']]
                     cell['round_' + quantile.removesuffix('_ms') + '_range_ms'] = [min(values), max(values)]
                 cell['result'] = 'passed'
-        result.update(result='passed', unchanged_identity_rules_boundary=True)
+        result.update(unchanged_identity_rules_boundary=True)
 
     def measure_read_latency(self, report, facts, command):
         """Observe one existing Grant; never prepare or repair authorization here."""
