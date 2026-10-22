@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import heapq
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -2202,37 +2203,135 @@ def raster_nibble(input_raster, band, target_values):
             destination = output = None
 
 
-def _dem_source(input_raster, elevation_unit, band, minimum_size):
+_FILL_MESSAGES = {
+    'grid': ('DEM 填洼需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'DEM depression filling requires a projected north-up grid with known linear units; reproject explicitly'),
+    'band': ('DEM 填洼必须显式选择有效的一基高程数据波段', 'DEM depression filling requires an explicit valid one-based elevation band'),
+    'complex': ('DEM 填洼不支持复数高程或复数 alpha 波段', 'DEM depression filling does not support complex elevation or alpha bands'),
+    'alpha': ('DEM 填洼不能选择 alpha 波段作为高程', 'DEM depression filling cannot use an alpha band as elevation'),
+    'unit': ('DEM 填洼必须明确声明 metre、foot 或 us_survey_foot 高程单位', 'DEM depression filling requires elevation_unit metre, foot or us_survey_foot'),
+    'unit-conflict': ('DEM 填洼高程波段单位未知或与声明单位冲突', 'DEM depression filling band unit is unknown or conflicts with elevation_unit'),
+    'scale': ('DEM 填洼前必须显式应用高程 scale/offset', 'DEM depression filling requires elevation scale/offset to be applied first'),
+    'overflow': ('DEM 填洼高程转换为米时溢出', 'DEM depression filling elevation conversion to metres overflowed'),
+}
+
+
+def _fill_error(code):
+    return ValueError(_FILL_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
+    # Share DEM admission and normalization; callers can supply localized diagnostics.
+    def invalid(code, message):
+        return diagnostic(code) if diagnostic is not None else ValueError(message)
     dataset = _open(input_raster)
-    horizontal_metres = _projected_north_up_grid(dataset)
+    try:
+        horizontal_metres = _projected_north_up_grid(dataset)
+    except ValueError as error:
+        if diagnostic is None:
+            raise
+        raise diagnostic('grid') from error
     if min(dataset.RasterXSize, dataset.RasterYSize) < minimum_size:
         raise ValueError(f'DEM must be at least {minimum_size} by {minimum_size} pixels')
     if not isinstance(elevation_unit, str) or elevation_unit not in _ELEVATION_METRES:
-        raise ValueError('elevation_unit must explicitly be metre, foot or us_survey_foot')
-    source_band = _band(dataset, band)
+        raise invalid('unit', 'elevation_unit must explicitly be metre, foot or us_survey_foot')
+    try:
+        source_band = _band(dataset, band)
+    except ValueError as error:
+        if diagnostic is None:
+            raise
+        code = 'complex' if type(band) is int and 1 <= band <= dataset.RasterCount else 'band'
+        raise diagnostic(code) from error
     if source_band.GetColorInterpretation() == gdal.GCI_AlphaBand:
-        raise ValueError('DEM elevation band cannot be alpha')
+        raise invalid('alpha', 'DEM elevation band cannot be alpha')
     unit = source_band.GetUnitType().strip().lower()
     if unit and _ELEVATION_UNIT_NAMES.get(unit) != elevation_unit:
-        raise ValueError('DEM band elevation unit is unknown or conflicts with elevation_unit')
+        raise invalid('unit-conflict', 'DEM band elevation unit is unknown or conflicts with elevation_unit')
     if source_band.GetScale() not in (None, 1) or source_band.GetOffset() not in (None, 0):
-        raise ValueError('DEM encoded scale/offset must be applied before terrain analysis')
+        raise invalid('scale', 'DEM encoded scale/offset must be applied before terrain analysis')
+    # _blocks excludes alpha coverage; reject complex alpha before numeric decoding.
+    for index in range(1, dataset.RasterCount + 1):
+        candidate = dataset.GetRasterBand(index)
+        if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
+            raise invalid('complex', 'DEM complex alpha bands are not supported')
+    candidate = None
     normalized = _numeric_output(dataset, 1)
-    destination = normalized.GetRasterBand(1)
-    destination.SetUnitType('metre')
-    valid_count = 0
-    for x, y, arrays, masks in _blocks(dataset, [band]):
-        with np.errstate(over='ignore', invalid='ignore'):
-            values = arrays[0] * _ELEVATION_METRES[elevation_unit]
-        if np.any(masks[0] & ~np.isfinite(values)):
-            raise ValueError('DEM elevation unit conversion overflow')
-        values[~masks[0]] = np.nan
-        valid_count += int(np.count_nonzero(masks[0]))
-        height, width = values.shape
-        destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
-    destination = source_band = None
-    normalized.FlushCache()
-    return normalized, horizontal_metres, valid_count
+    path = Path(normalized.GetDescription())
+    destination = None
+    completed = False
+    try:
+        destination = normalized.GetRasterBand(1)
+        destination.SetUnitType('metre')
+        valid_count = 0
+        for x, y, arrays, masks in _blocks(dataset, [band]):
+            with np.errstate(over='ignore', invalid='ignore'):
+                values = arrays[0] * _ELEVATION_METRES[elevation_unit]
+            if np.any(masks[0] & ~np.isfinite(values)):
+                raise invalid('overflow', 'DEM elevation unit conversion overflow')
+            values[~masks[0]] = np.nan
+            valid_count += int(np.count_nonzero(masks[0]))
+            height, width = values.shape
+            destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
+        destination = None
+        normalized.FlushCache()
+        completed = True
+        return normalized, horizontal_metres, valid_count
+    finally:
+        destination = source_band = dataset = None
+        if not completed:
+            normalized = None
+            path.unlink(missing_ok=True)
+
+
+def _priority_flood(values):
+    """Eight-connected minimax flood, with every invalid boundary open (epsilon=0)."""
+    height, width = values.shape
+    valid = np.isfinite(values)
+    padded = np.pad(valid, 1, constant_values=False)
+    surrounded = np.ones(valid.shape, dtype=bool)
+    for dy in range(3):
+        for dx in range(3):
+            surrounded &= padded[dy:dy+height, dx:dx+width]
+    visited = valid & ~surrounded
+    queue = [(float(values[row, col]), int(row), int(col)) for row, col in np.argwhere(visited)]
+    heapq.heapify(queue)
+    while queue:
+        level, row, col = heapq.heappop(queue)
+        for y in range(max(0, row-1), min(height, row+2)):
+            for x in range(max(0, col-1), min(width, col+2)):
+                if valid[y, x] and not visited[y, x]:
+                    visited[y, x] = True
+                    elevation = max(level, float(values[y, x]))
+                    values[y, x] = elevation
+                    heapq.heappush(queue, (elevation, y, x))
+
+
+def raster_fill_depressions(input_raster, band, elevation_unit):
+    """Raise DEM depressions to spill elevation, preserving open and invalid boundaries."""
+    normalized = destination = None
+    path = None
+    completed = False
+    try:
+        normalized, _, _ = _dem_source(input_raster, elevation_unit, band, 1, diagnostic=_fill_error)
+        path = Path(normalized.GetDescription())
+        values = np.empty((normalized.RasterYSize, normalized.RasterXSize), dtype=np.float64)
+        for x, y, arrays, _ in _blocks(normalized, [1]):
+            height, width = arrays[0].shape
+            values[y:y+height, x:x+width] = arrays[0]
+        _priority_flood(values)
+        destination = normalized.GetRasterBand(1)
+        for y in range(0, normalized.RasterYSize, 512):
+            for x in range(0, normalized.RasterXSize, 512):
+                destination.WriteArray(values[y:y+512, x:x+512], x, y)
+        destination = None
+        normalized.FlushCache()
+        normalized = None
+        result = _raster(path)
+        completed = True
+        return result
+    finally:
+        destination = normalized = None
+        if path is not None and not completed:
+            path.unlink(missing_ok=True)
 
 
 def _terrain(input_raster, elevation_unit, band, processing, **options):
@@ -2368,6 +2467,7 @@ _SPECS = [
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）')], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
+    (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2417,7 +2517,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
-    if name in ('raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
+    if name in ('raster_fill_depressions', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
         examples.update({'elevation_unit': 'metre', 'band': 1})
         if name == 'raster_contour':
             examples.update({'interval': 10.})

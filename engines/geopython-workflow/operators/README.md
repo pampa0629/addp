@@ -38,7 +38,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 86 个算子：通用处理 18 个、矢量处理 33 个、栅格处理 35 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 87 个算子：通用处理 18 个、矢量处理 33 个、栅格处理 36 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -59,7 +59,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
 | 栅格处理 | 范围处理 | 8 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 像元计算 | 10 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_nibble`、`raster_boundary_clean`、`raster_thin`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
+| 栅格处理 | 像元计算 | 11 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_nibble`、`raster_boundary_clean`、`raster_thin`、`raster_aggregate`、`raster_fill_depressions`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
 | 栅格处理 | 栅格统计 | 6 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_recommend_band_combination`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |

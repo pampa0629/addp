@@ -5808,3 +5808,229 @@ def test_raster_thin_native_nodata_and_mask_excluded_before_safe_validation(tmp_
     with raster_workspace():
         result=compute.raster_thin(raster_load(source_plan(path)),1,2**53-1)
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_thin_oracle(values,valid,2**53-1));ds=None
+
+
+def _fill_level_reachability_oracle(values):
+    """Independent level-set reachability: no production heap, stencil or flood helper."""
+    from collections import deque
+    values = np.asarray(values, dtype=np.float64)
+    height, width = values.shape
+    valid = np.isfinite(values)
+    result = np.full(values.shape, np.nan)
+    exits = set()
+    for row, col in zip(*np.where(valid)):
+        if row in (0, height-1) or col in (0, width-1):
+            exits.add((row, col))
+        elif any(not valid[y, x] for y in range(row-1, row+2) for x in range(col-1, col+2)):
+            exits.add((row, col))
+    for level in sorted(set(values[valid])):
+        allowed = valid & (values <= level)
+        reached = {point for point in exits if allowed[point]}
+        queue = deque(reached)
+        while queue:
+            row, col = queue.popleft()
+            for y in range(max(0, row-1), min(height, row+2)):
+                for x in range(max(0, col-1), min(width, col+2)):
+                    if allowed[y, x] and (y, x) not in reached:
+                        reached.add((y, x)); queue.append((y, x))
+        for point in reached:
+            if np.isnan(result[point]):
+                result[point] = level
+    return result
+
+
+@pytest.mark.parametrize('seed', range(15))
+def test_dem_fill_depressions_independent_minimax_oracle(tmp_path, seed):
+    import operators.raster_compute as compute
+    rng = np.random.default_rng(seed)
+    values = rng.integers(-5, 16, size=(9, 11)).astype(float)
+    values[rng.random(values.shape) < .09] = np.nan
+    path = create_raster(tmp_path/'dem.tif', values, (0, 2, 0, 100, 0, -3), 'EPSG:3857')
+    before = path.read_bytes()
+    expected = _fill_level_reachability_oracle(values)
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        result = compute.raster_fill_depressions(source, 1, 'metre')
+        assert set(source.workspace.iterdir()) == prior | {result.path}
+        ds = gdal.Open(str(result.path)); band = ds.GetRasterBand(1)
+        actual = read_band_values(band)
+        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, np.isfinite(values))
+        assert np.all(actual[np.isfinite(values)] >= values[np.isfinite(values)])
+        assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetUnitType() == 'metre'
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert ds.RasterCount == 1 and ds.GetGeoTransform() == (0, 2, 0, 100, 0, -3)
+        assert ds.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        band = ds = None
+        second = compute.raster_fill_depressions(result, 1, 'metre')
+        ds = gdal.Open(str(second.path)); np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)), expected); ds = None
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('case', ['bowl', 'diagonal', 'hole', 'nested', 'multiple-exits', 'flat', 'all-invalid', 'row', 'column', 'single'])
+def test_dem_fill_depressions_outlets_and_degenerate_grids(tmp_path, case):
+    import operators.raster_compute as compute
+    values = np.full((7, 7), 10.); values[1:-1, 1:-1] = 1.
+    expected = np.full(values.shape, 10.)
+    if case == 'diagonal':
+        values[0, 0] = 4.; expected[1:-1, 1:-1] = 4.; expected[0, 0] = 4.
+    if case == 'hole':
+        values[3, 3] = np.nan; expected = values.copy()
+    if case == 'nested':
+        values[2:5, 2:5] = 15.; values[3, 3] = -2.; expected[2:5, 2:5] = 15.
+    if case == 'multiple-exits':
+        values[0, 2] = 8.; values[-1, 2] = 3.; expected[1:-1, 1:-1] = 3.; expected[0, 2] = 8.; expected[-1, 2] = 3.
+    if case == 'flat': values[:] = 0.; expected[:] = 0.
+    if case == 'all-invalid': values[:] = np.nan; expected[:] = np.nan
+    if case in ('row', 'column', 'single'):
+        shape = {'row': (1, 7), 'column': (7, 1), 'single': (1, 1)}[case]
+        values = np.arange(np.prod(shape), dtype=float).reshape(shape)-2; expected = values.copy()
+    path = create_raster(tmp_path/'dem.tif', values, (0, 1, 0, 10, 0, -1), 'EPSG:3857')
+    with raster_workspace():
+        result = compute.raster_fill_depressions(raster_load(source_plan(path)), 1, 'metre')
+        ds = gdal.Open(str(result.path)); np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)), expected); ds = None
+
+
+@pytest.mark.parametrize('unit,factor,crs', [('metre', 1., 'EPSG:3857'), ('foot', .3048, 'EPSG:2277'), ('us_survey_foot', 1200/3937, 'EPSG:3857')])
+def test_dem_fill_depressions_units_selected_band_alpha_mask_and_cog(tmp_path, unit, factor, crs):
+    import operators.raster_compute as compute
+    values = np.full((17, 19), 10.); values[1:-1, 1:-1] = -2.; values[0, 0] = 0.
+    values[8, 9] = -9999.; values[4, 5] = np.inf; values[6, 7] = np.nan
+    alpha = np.full(values.shape, 255.); alpha[5, 6] = 0; alpha[2, 3] = 128; alpha[7, 2] = np.nan
+    mask = np.full(values.shape, 255, np.uint8); mask[2, 9] = 0
+    path = create_raster(tmp_path/'dem.tif', np.stack([np.full(values.shape, 123.), values, alpha]), (100, 2, 0, 200, 0, -3), crs)
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetUnitType(unit); ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask); ds = None
+    valid = np.isfinite(values) & (values != -9999) & np.isfinite(alpha) & (alpha > 0) & (mask > 0)
+    expected = _fill_level_reachability_oracle(np.where(valid, values*factor, np.nan))
+    before = path.read_bytes(); target = tmp_path/'filled.cog.tif'
+    with raster_workspace():
+        result = compute.raster_fill_depressions(raster_load(source_plan(path)), 2, unit)
+        artifact = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band), expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, valid)
+        assert ds.GetGeoTransform() == (100, 2, 0, 200, 0, -3) and ds.GetSpatialRef().IsSame(osr.SpatialReference(wkt=gdal.Open(str(path)).GetProjection()))
+        assert band.GetUnitType() == 'metre' and ds.RasterCount == 1
+        band = ds = None
+    assert path.read_bytes() == before
+
+
+def test_dem_fill_depressions_cross_block_and_bounded_io(tmp_path, monkeypatch):
+    import operators.raster_compute as compute
+    values = np.full((515, 519), -2.); values[[0, -1], :] = 100.; values[:, [0, -1]] = 100.; values[0, 1] = 50.
+    expected = np.maximum(values, 50.)
+    path = create_raster(tmp_path/'large.tif', values, (0, 2, 0, 2000, 0, -3), 'EPSG:3857')
+    blocks = compute._blocks; reads = []
+    def bounded(*args, **kwargs):
+        for x, y, arrays, masks in blocks(*args, **kwargs):
+            assert all(max(array.shape) <= 512 for array in arrays)
+            reads.append((x, y)); yield x, y, arrays, masks
+    monkeypatch.setattr(compute, '_blocks', bounded)
+    with raster_workspace():
+        result = compute.raster_fill_depressions(raster_load(source_plan(path)), 1, 'metre')
+        ds = gdal.Open(str(result.path)); np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)), expected); ds = None
+    assert any(x >= 512 and y >= 512 for x, y in reads)
+
+
+@pytest.mark.parametrize('language,prefix', [('zh-cn', 'DEM 填洼'), ('en', 'DEM depression filling')])
+@pytest.mark.parametrize('fault', ['geographic', 'rotated', 'south-up', 'missing-crs', 'missing-grid', 'unit', 'unit-conflict', 'unit-unknown', 'scale', 'offset', 'alpha', 'band', 'complex', 'complex-alpha'])
+def test_dem_fill_depressions_bilingual_invalid_input_without_private_output(tmp_path, language, prefix, fault):
+    import operators.raster_compute as compute
+    path = tmp_path/'bad.tif'; dtype = gdal.GDT_CFloat64 if fault in ('complex', 'complex-alpha') else gdal.GDT_Float64
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), 5, 5, 2 if fault == 'complex-alpha' else 1, dtype)
+    if fault != 'missing-grid': ds.SetGeoTransform((0, 1, .2 if fault == 'rotated' else 0, 5, 0, 1 if fault == 'south-up' else -1))
+    if fault != 'missing-crs':
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(4326 if fault == 'geographic' else 3857); ds.SetProjection(crs.ExportToWkt())
+    band = ds.GetRasterBand(1); band.Fill(1)
+    if fault in ('unit-conflict', 'unit-unknown'): band.SetUnitType('foot' if fault == 'unit-conflict' else 'fathom')
+    if fault == 'scale': band.SetScale(2)
+    if fault == 'offset': band.SetOffset(10)
+    if fault == 'alpha': band.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault == 'complex-alpha': ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    band = ds = None
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        with pytest.raises(ValueError, match='^'+prefix):
+            compute.raster_fill_depressions(source, True if fault == 'band' else 1, 'bad' if fault == 'unit' else 'metre')
+        assert set(source.workspace.iterdir()) == prior
+
+
+@pytest.mark.parametrize('band', [True, False, 0, -1, 2, 1.5, '1', None])
+def test_dem_fill_depressions_requires_explicit_valid_band(tmp_path, band):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'dem.tif', np.ones((3, 3)), (0, 1, 0, 5, 0, -1), 'EPSG:3857')
+    with raster_workspace(), pytest.raises(ValueError): compute.raster_fill_depressions(raster_load(source_plan(path)), band, 'metre')
+
+
+@pytest.mark.parametrize('stage', ['normalize', 'flood', 'write'])
+def test_dem_fill_depressions_failure_cleans_normalized_and_output(tmp_path, monkeypatch, stage):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'dem.tif', np.ones((5, 5)), (0, 1, 0, 5, 0, -1), 'EPSG:3857')
+    blocks = compute._blocks; flood = compute._priority_flood; calls = 0
+    def failing_blocks(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        for item in blocks(*args, **kwargs):
+            if stage == 'normalize' and calls == 1: raise RuntimeError('injected fill failure')
+            yield item
+    def failing_flood(values):
+        if stage == 'flood': raise RuntimeError('injected fill failure')
+        flood(values)
+        if stage == 'write':
+            # At this point normalization has completed; fail the output writer.
+            monkeypatch.setattr(gdal.Band, 'WriteArray', lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('injected fill failure')))
+    monkeypatch.setattr(compute, '_blocks', failing_blocks); monkeypatch.setattr(compute, '_priority_flood', failing_flood)
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        with pytest.raises(RuntimeError, match='injected fill failure'): compute.raster_fill_depressions(source, 1, 'metre')
+        assert set(source.workspace.iterdir()) == prior
+
+
+@pytest.mark.parametrize('invalid', [False, True])
+def test_dem_fill_depressions_async_cog_existing_ports_and_cleanup(tmp_path, monkeypatch, invalid):
+    import api_server, workflow_engine
+    values = np.full((9, 11), 10.); values[1:-1, 1:-1] = 0.; values[0, 0] = np.nan
+    path = create_raster(tmp_path/'dem.tif', values, (0, 2, 0, 100, 0, -3), 'EPSG:3857'); before = path.read_bytes(); target = tmp_path/'filled.cog.tif'
+    tasks = [
+        {'id': 'source', 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': source_plan(path)}},
+        {'id': 'fill', 'operator': 'raster_fill_depressions', 'depends_on': ['source'], 'params': {'input_raster': {'$ref': 'source'}, 'band': 99 if invalid else 1, 'elevation_unit': 'metre'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['fill'], 'params': {'input_raster': {'$ref': 'fill'}, 'access_plan': target_plan(target), 'profile': 'cog', 'blocksize': 128}},
+    ]
+    paths = []; execute = workflow_engine._execute_operator
+    def capture(name, params):
+        if name == 'raster_fill_depressions': paths.append(params['input_raster'].workspace)
+        return execute(name, params)
+    monkeypatch.setattr(workflow_engine, '_execute_operator', capture)
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': {'tasks': tasks}, 'input_data': {}, 'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202, response.json
+    deadline = time.monotonic()+10
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == ('failed' if invalid else 'success'), status
+    assert paths and all(not p.exists() for p in paths) and path.read_bytes() == before
+    if invalid: assert not target.exists()
+    else:
+        with raster_workspace(): assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds = gdal.Open(str(target)); np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)), _fill_level_reachability_oracle(values)); ds = None
+        assert json.loads(status['result'])['size_bytes'] == target.stat().st_size > 0
+    assert client.post('/api/operators/raster_fill_depressions/invoke', json={'params': {}}).status_code == 403
+
+
+def test_dem_fill_depressions_discovery_and_required_parameters():
+    spec = next(item for item in list_operators() if item['id'] == 'raster_fill_depressions')
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['attributes']['resource_groups'] == ['raster']
+    assert spec['category_path'] == ['栅格处理', '像元计算']
+    params = {param['name']: param for param in spec['parameters']}
+    assert set(params) == {'input_raster', 'band', 'elevation_unit'}
+    assert params['band']['required'] and params['elevation_unit']['required']
+    assert params['elevation_unit']['enum'] == ['metre', 'foot', 'us_survey_foot']
+    assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'band': 1, 'elevation_unit': 'metre'}
