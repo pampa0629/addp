@@ -360,3 +360,86 @@ class TopologyOnlineTest(unittest.TestCase):
         with patch.object(m.raster,'wait_lineage',side_effect=lineage),self.assertRaisesRegex(m.SuiteError,'dangling lineage missing'):
             m.run_scenario(Path('.'),self.env,Client(),physical,
                 lambda *args:self.fail('missing source lineage must stop before browser'))
+
+    def test_point_map_identity_comparison_is_locale_independent_and_keeps_multiplicity(self):
+        # Execute the actual Online Point assertion in separate Node/browser
+        # realms. Their default collations differ on the original Chinese IDs.
+        script = r'''
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import vm from 'node:vm'
+import { webMercatorPreviewCoordinate } from './manager/frontend/e2e/geometry-preview-support.js'
+const source = fs.readFileSync('console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
+const start = source.indexOf("    if (output.port === 'dangling') {", source.indexOf('const table = frame.locator'))
+const end = source.indexOf("    if (output.port === 'gaps') {",start)
+assert(start > 0 && end > start)
+const check = new (Object.getPrototypeOf(async function(){}).constructor)('evidence','renderer','expect','table','webMercatorPreviewCoordinate','output',source.slice(start,end))
+const expected = JSON.parse(fs.readFileSync(0,'utf8'))
+assert.equal(expected.length,17)
+const originalCompare = String.prototype.localeCompare
+String.prototype.localeCompare = function(other){ return originalCompare.call(this,other,'en-US') }
+const nodeOrder = ['孤线','干线'].sort((a,b) => a.localeCompare(b))
+const browserOrder = ['孤线','干线'].sort(new Intl.Collator('zh-CN').compare)
+assert.notDeepEqual(nodeOrder,browserOrder,'the regression must exercise different collations')
+const expectedPoints = expected.map(row => ({source_id:row.properties.source_id,coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)}))
+async function run(points) {
+  const features = points.map(point => ({get:name => point[name],getGeometry:() => ({getCoordinates:() => point.coordinates})}))
+  const layer = { getSource: () => ({ getFeatures: () => features }) }
+  const map = {
+    getView: () => ({ getAnimating: () => false, getProjection: () => ({ getCode: () => 'EPSG:3857' }) }),
+    getLayers: () => ({ getArray: () => [layer] })
+  }
+  const element = {__vueParentComponent:{setupState:{mapInstance:map}}}
+  const context = vm.createContext({element})
+  vm.runInContext("const compare=String.prototype.localeCompare;String.prototype.localeCompare=function(other){return compare.call(this,other,'zh-CN')}",context)
+  const renderer = {evaluate:async fn => JSON.parse(JSON.stringify(vm.runInContext('('+fn.toString()+')(element)',context)))}
+  const expect = {poll:fn => ({toEqual:async value => assert.deepEqual(await fn(),value)})}
+  const table = {locator:() => ({})}; const assertion = expect
+  const callable = Object.assign(() => ({toContainText:async() => {}}),assertion)
+  await check({dangling_expected:expected},renderer,callable,table,webMercatorPreviewCoordinate,{port:'dangling'})
+}
+await run([...expectedPoints].reverse())
+for (const kind of ['missing','duplicate','wrong-source','wrong-coordinate','micro-gap-rounded','source-coordinate-mismatch']) {
+  const points = structuredClone(expectedPoints)
+  if(kind==='missing') points.pop()
+  if(kind==='duplicate') points.push(structuredClone(points[0]))
+  if(kind==='wrong-source') points[0].source_id='闭环'
+  if(kind==='wrong-coordinate') points[0].coordinates[0]+=1
+  if(kind==='micro-gap-rounded') points.find(p => p.source_id==='微乙').coordinates=webMercatorPreviewCoordinate([251,0])
+  if(kind==='source-coordinate-mismatch') [points[0].source_id,points[2].source_id]=[points[2].source_id,points[0].source_id]
+  await assert.rejects(run(points),{code:'ERR_ASSERTION'},kind)
+}
+console.log('cross-realm Chinese/English Point identity and six corruptions verified')
+'''
+        result = m.subprocess.run(['node','--input-type=module','-e',script],
+            input=json.dumps(m.fixture.dangling_expected_features(),ensure_ascii=False),
+            text=True,capture_output=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_point_map_pixels_reject_empty_water_and_keep_line_polygon_checks(self):
+        script = r'''
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+const source = fs.readFileSync('console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
+const start = source.indexOf('    let ',source.indexOf("    if (output.port === 'dangling') {",source.indexOf('const table = frame.locator')))
+const end = source.indexOf('    const rendered =',start)
+assert(start > 0 && end > start)
+const check = new (Object.getPrototypeOf(async function(){}).constructor)('renderer','expect','output',source.slice(start,end))
+async function run(port,rgba) {
+  const data=Uint8ClampedArray.from(Array.from({length:40},() => rgba).flat())
+  const canvases=[{getContext:() => ({getImageData:() => ({data})}),width:40,height:1}]
+  const renderer={locator:() => ({evaluateAll:async(fn,arg) => fn(canvases,arg)})}
+  const expect={poll:fn => ({toBeGreaterThan:async minimum => assert((await fn())>minimum)})}
+  await check(renderer,expect,{port})
+}
+await run('dangling',[64,158,255,255])
+await assert.rejects(run('dangling',[173,216,230,255]),{code:'ERR_ASSERTION'},'basemap water cannot count as Points')
+await assert.rejects(run('dangling',[103,194,58,255]),{code:'ERR_ASSERTION'},'green line/polygon pixels cannot substitute Points')
+await assert.rejects(run('dangling',[64,158,255,0]),{code:'ERR_ASSERTION'},'transparent Points are not visible')
+await run('gaps',[103,194,58,255])
+await assert.rejects(run('gaps',[64,158,255,255]),{code:'ERR_ASSERTION'},'old green geometry assertion remains strict')
+console.log('Point foreground pixels and preserved polygon assertions verified')
+'''
+        result=m.subprocess.run(['node','--input-type=module','-e',script],
+            text=True,capture_output=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

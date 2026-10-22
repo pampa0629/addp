@@ -163,16 +163,24 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
     })).toEqual(Array(output.port === 'dangling' ? 17 : output.port === 'gaps' ? 8 : output.port === 'overlaps' ? 7 : output.port === 'snapped' ? 5 : output.port === 'repaired' ? 2 : 4).fill(output.port === 'dangling' ? 'Point' : ['faces','gaps'].includes(output.port) ? 'Polygon' : ['repaired','overlaps'].includes(output.port) ? 'MultiPolygon' : 'LineString'))
     if (output.port === 'dangling') {
       await expect(table.locator('thead')).toContainText('source_id')
+      // Sort both complete identity records in Node; browser locale must not
+      // determine matching order or erase duplicate coordinates from two sources.
+      const byIdentity = (a,b) => {
+        const left = JSON.stringify(a), right = JSON.stringify(b)
+        return left < right ? -1 : left > right ? 1 : 0
+      }
       const expected = evidence.dangling_expected.map(row => ({source_id:row.properties.source_id, coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)}))
-        .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      await expect.poll(async () => renderer.evaluate(element => {
-        const value = element.__vueParentComponent?.setupState?.mapInstance
-        const map = value?.value || value
-        if (!map || map.getView().getAnimating() || map.getView().getProjection().getCode() !== 'EPSG:3857') return []
-        return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
-          .map(feature => ({source_id:feature.get('source_id'), coordinates:feature.getGeometry().getCoordinates()}))
-          .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      })).toEqual(expected)
+        .sort(byIdentity)
+      await expect.poll(async () => {
+        const actual = await renderer.evaluate(element => {
+          const value = element.__vueParentComponent?.setupState?.mapInstance
+          const map = value?.value || value
+          if (!map || map.getView().getAnimating() || map.getView().getProjection().getCode() !== 'EPSG:3857') return []
+          return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+            .map(feature => ({source_id:feature.get('source_id'), coordinates:feature.getGeometry().getCoordinates()}))
+        })
+        return actual.sort(byIdentity)
+      }).toEqual(expected)
     }
     if (output.port === 'gaps') {
       await expect(table.locator('thead')).toContainText('gap_area')
@@ -212,12 +220,18 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       })).toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))
         .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
     }
-    let greenPixels = 0
-    await expect.poll(async () => greenPixels = await renderer.locator('canvas').evaluateAll(canvases => canvases.reduce((count, canvas) => {
+    let featurePixels = 0
+    const pointMap = output.port === 'dangling'
+    await expect.poll(async () => featurePixels = await renderer.locator('canvas').evaluateAll((canvases, pointMap) => canvases.reduce((count, canvas) => {
       const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
-      for (let i = 0; i < pixels.length; i += 4) if (pixels[i+3] > 0 && pixels[i+1] > pixels[i] * 1.1 && pixels[i+1] > pixels[i+2] * 1.1) count++
+      for (let i = 0; i < pixels.length; i += 4) {
+        const foreground = pointMap
+          ? pixels[i+2] > pixels[i+1] * 1.1 && pixels[i+1] > pixels[i] * 1.1
+          : pixels[i+1] > pixels[i] * 1.1 && pixels[i+1] > pixels[i+2] * 1.1
+        if (pixels[i+3] > 0 && foreground) count++
+      }
       return count
-    }, 0))).toBeGreaterThan(30)
+    }, 0), pointMap)).toBeGreaterThan(30)
     const rendered = await renderer.evaluate(element => {
       const value = element.__vueParentComponent.setupState.mapInstance
       const map = value?.value || value
@@ -226,7 +240,7 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
         .map(feature => ({ type: feature.getGeometry().getType(), coordinates: feature.getGeometry().getCoordinates(),
           ...(feature.getGeometry().getType() === 'Point' ? { source_id:feature.get('source_id') } : {}) })) }
     })
-    sourceLineage.observations.at(-1).rendered = { ...rendered, green_pixels: greenPixels }
+    sourceLineage.observations.at(-1).rendered = { ...rendered, ...(pointMap ? { point_pixels: featurePixels } : { green_pixels: featurePixels }) }
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-source-lineage-raw.json'), JSON.stringify(sourceLineage, null, 2))
     if (output.port === 'diagnostics') expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(Array(4).fill('dangle'))
     await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `topology-${output.port}-map.png`) })
