@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts } from './graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from './graph-visual.fixture.js'
 
 for (const replace of [false, true]) {
   test(`Graph search settles to visible clickable nodes (${replace ? 'new' : 'retained'} identities)`, async ({ page }, testInfo) => {
@@ -40,15 +40,15 @@ for (const replace of [false, true]) {
     await frame.locator('.search-input input').fill('初始合成节点')
     await frame.locator('.search-input input').press('Enter')
     await first
-    await canvas.evaluate(stableGraphPixels, { count: initial.length, fillColor, color: await graphObservationColor(frame, canvas) })
+    await canvas.evaluate(stableGraphPixels, { groups: [{ count: initial.length, fillColor, color: await graphObservationColor(frame, canvas) }] })
     const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/graph/graphs/7/search')
     await frame.locator('.search-input input').fill('合成节点')
     await frame.locator('.search-input input').press('Enter')
     await response
     const color = await graphObservationColor(frame, canvas)
-    const stable = await canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor })
+    const [stable] = await canvas.evaluate(stableGraphPixels, { groups: [{ count: found.length, color, fillColor }] })
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = 'hidden' })
-    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor, timeout: 200 })).rejects.toThrow('visible stable frame')
+    await expect(canvas.evaluate(stableGraphPixels, { groups: [{ count: found.length, color, fillColor }], timeout: 200 })).rejects.toThrow('visible stable frame')
     await canvas.locator('canvas').evaluate(element => { element.style.visibility = '' })
     const hits = await graphNodeHits(frame, canvas, stable, found)
     await testInfo.attach('stable-search-frame.json', { body: JSON.stringify({ ...stable, hits }, null, 2), contentType: 'application/json' })
@@ -58,7 +58,41 @@ for (const replace of [false, true]) {
     })
     await testInfo.attach('graph-exploration-stable-frame.json', { body: JSON.stringify(exploration, null, 2), contentType: 'application/json' })
     // Clearing the query removes highlights; fill pixels alone must never satisfy search evidence.
-    await expect(canvas.evaluate(stableGraphPixels, { count: found.length, color, fillColor, timeout: 1000 })).rejects.toThrow('visible stable frame')
+    await expect(canvas.evaluate(stableGraphPixels, { groups: [{ count: found.length, color, fillColor }], timeout: 1000 })).rejects.toThrow('visible stable frame')
     expect(unexpected).toEqual([])
   })
 }
+
+
+test('Graph multi-label dense search, filter and four layouts preserve every native identity', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  const diagnostics = []
+  page.on('pageerror', error => diagnostics.push(error.message))
+  page.on('console', message => { if (['warning', 'error'].includes(message.type())) diagnostics.push(message.text()) })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const labelSets = [['Person'], ['Employee', 'Person'], ['Organization'], ['Organization', 'Partner']]
+  const nodes = Array.from({ length: 12 }, (_, index) => {
+    const key = 'n' + String(index + 1).padStart(2, '0')
+    return { id: 'native-' + key, labels: labelSets[Math.floor(index / 3)], display_name: 'Dense ' + key.slice(1), properties: { id: key, name: 'Dense ' + key.slice(1) } }
+  })
+  const edges = nodes.flatMap((source, index) => nodes.slice(index + 1).map(target => ({ source: source.id, target: target.id, type: 'Link' })))
+  edges.push({ source: nodes[1].id, target: nodes[0].id, type: 'Link' }, { source: nodes[0].id, target: nodes[1].id, type: 'Parallel' }, { source: nodes[11].id, target: nodes[11].id, type: 'Link' })
+  edges.push({ source: nodes[0].id, target: nodes[11].id, type: 'Parallel' }, { source: nodes[3].id, target: nodes[8].id, type: 'Parallel' }, { source: nodes[4].id, target: nodes[7].id, type: 'Parallel' })
+  edges.forEach((edge, index) => Object.assign(edge, { id: 'relationship-' + index, directed: true }))
+  const shapes = labelSets.map(labels => ({ name: [...labels].sort().join('+'), labels })).sort((a, b) => a.name.localeCompare(b.name))
+  const unexpected = await mockGraph(page, { permissions: ['graph.graph.read'], responses: {
+    '/api/v1/graph/graphs/7': { id: 7, name: '多标签密集关系隔离图' },
+    '/api/v1/graph/graphs/7/browse-snapshot': { schema: { node_shapes: shapes, relationship_shapes: [{ type: 'Link', directed: true }, { type: 'Parallel', directed: true }] },
+      stats: { node_count: 12, relationship_count: 72 }, overview: { nodes: labelSets.map((labels, index) => ({ id: 'aggregate-' + index, labels, kind: 'aggregate', display_name: labels.join('+'), member_count: 3 })), edges: [] } }
+  } })
+  await page.route('**/api/v1/graph/graphs/7/search', route => route.fulfill({ json: { nodes, edges: [] } }))
+  await page.route('**/api/v1/graph/graphs/7/expand', route => route.fulfill({ json: { nodes, edges } }))
+  await page.goto('/graph/graphs/7/browse')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const result = await denseGraphStages(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes, edges, shapes }, async phase => {
+    await testInfo.attach(phase + '.png', { body: await page.screenshot(), contentType: 'image/png' })
+  })
+  await testInfo.attach('graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  expect(unexpected).toEqual([])
+  expect(diagnostics).toEqual([])
+})

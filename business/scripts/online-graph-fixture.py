@@ -13,6 +13,37 @@ PROJECT = "addp-graph-online"
 CONTAINER = "addp-graph-online-falkordb"
 GRAPHS = ("graph_protection_fixture", "graph_protection_control", "graph_review_fixture")
 
+# Complete directed-by-order graph, plus reverse, parallel and self relations.
+DENSE_NODES = {f"n{i+1:02}": labels for i, labels in enumerate(
+    [["Person"]] * 3 + [["Employee", "Person"]] * 3 + [["Organization"]] * 3 + [["Organization", "Partner"]] * 3)}
+DENSE_EDGES = [(source, target, "Link") for i, source in enumerate(DENSE_NODES)
+               for target in list(DENSE_NODES)[i+1:]] + [("n02", "n01", "Link"), ("n01", "n02", "Parallel"), ("n12", "n12", "Link"), ("n01", "n12", "Parallel"), ("n04", "n09", "Parallel"), ("n05", "n08", "Parallel")]
+
+
+def exploration(secret_dir):
+    # This phase runs only after the old control and review acceptance has finished.
+    # A foreign, changed or missing control fixture must never be overwritten.
+    descriptor = secret_dir / ("graph-control.json" if engine_type() == "neo4j" else "graph-target.json")
+    data = json.loads(descriptor.read_text())
+    container = containers()[1 if engine_type() == "neo4j" else 0]
+    if data.get("engine_type") != engine_type() or data.get("connection_info", {}).get("host") != container:
+        raise RuntimeError("Dense fixture descriptor ownership mismatch")
+    owner = command(["docker", "inspect", "--format", '{{ index .Config.Labels "com.docker.compose.project" }}', container])
+    if owner != PROJECT:
+        raise RuntimeError("Dense fixture container ownership mismatch")
+    graph = GRAPHS[1]
+    if (native(graph, "MATCH (n) RETURN count(n)") != 3 or
+        native(graph, "MATCH ()-[r]->() RETURN count(r)") != 2 or
+        native(graph, "MATCH (n:Person) WHERE n.id IN ['p1','p2','p3'] RETURN count(n)") != 3):
+        raise RuntimeError("Dense phase refuses changed control fixture")
+    native(graph, "MATCH (n) DETACH DELETE n", False)
+    nodes = [f"({key}:{':'.join(labels)} {{id:'{key}', name:'Dense {key[1:]}'}})" for key, labels in DENSE_NODES.items()]
+    edges = [f"({source})-[:{kind}]->({target})" for source, target, kind in DENSE_EDGES]
+    native(graph, "CREATE " + ", ".join(nodes + edges), False)
+    if native(graph, "MATCH (n) RETURN count(n)") != len(DENSE_NODES) or native(graph, "MATCH ()-[r]->() RETURN count(r)") != len(DENSE_EDGES):
+        raise RuntimeError("Dense fixture native counts differ")
+    print("Synthetic Graph dense fixture ready: 12 nodes, 4 label sets, 72 relationships")
+
 
 def command(arguments, environment=None, stdin=None):
     result = subprocess.run(arguments, env=environment, input=stdin, capture_output=True, text=True, timeout=300)
@@ -117,11 +148,11 @@ def stop(secret_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=["start", "stop"])
+    parser.add_argument("operation", choices=["start", "stop", "exploration"])
     args = parser.parse_args()
     engine_type()
     secret_dir = admission()
-    (start if args.operation == "start" else stop)(secret_dir)
+    {"start": start, "stop": stop, "exploration": exploration}[args.operation](secret_dir)
 
 
 if __name__ == "__main__":

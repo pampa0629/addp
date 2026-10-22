@@ -2,12 +2,16 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
+import G6 from '@antv/g6'
 import GraphCanvas from '../src/components/GraphCanvas.vue'
 import GraphResultView from '../../../common-frontend/graph/src/GraphResultView.vue'
 
-const { instances } = vi.hoisted(() => ({ instances: [] }))
-vi.mock('@antv/g6', () => ({ default: {
-  registerEdge: vi.fn(),
+const { instances, edgeTypes } = vi.hoisted(() => ({ instances: [], edgeTypes: new Map() }))
+vi.mock('@antv/g6', async () => ({ default: {
+  Shape: (await import('@antv/g6-core/lib/element/shape.js')).default,
+  _nativeEdges: await import('@antv/g6-core/lib/element/edge.js'),
+  Util: { processParallelEdges: (await import('@antv/g6-core/lib/util/base.js')).processParallelEdges },
+  registerEdge: vi.fn((name, definition, parent) => edgeTypes.set(name, { definition, parent })),
   Arrow: { triangle: vi.fn() },
   Graph: class {
     constructor() { this.handlers = {}; this.states = []; instances.push(this) }
@@ -114,4 +118,56 @@ it('applies the same native ID isolation to shared query graph results', async (
   expect(wrapper.text()).toContain('entry')
   expect(graph.items.get(node.id).getModel()._meta).toEqual(nativeNode)
   wrapper.unmount()
+})
+
+
+it('keeps reverse and parallel relationships distinct and selects native loop geometry', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const nodes = [{ id: 'a' }, { id: 'b' }]
+  const edges = [{ id: 'ab', source: 'a', target: 'b' }, { id: 'ba', source: 'b', target: 'a' },
+    { id: 'parallel', source: 'a', target: 'b' }, { id: 'self', source: 'a', target: 'a' }]
+  const wrapper = mount(GraphCanvas, { props: { nodes, edges }, global: { directives: { loading: {} } } })
+  await nextTick()
+  const graph = instances[0]
+  const [first, second, third, loop] = graph.model.edges
+  {
+    const offsets = [first, second, third].map(edge => edge.source === first.source ? edge.curveOffset : -edge.curveOffset)
+    expect(new Set(offsets).size).toBe(3)
+  }
+  expect(edgeTypes.get(loop.type)?.parent).toBe('loop')
+  expect(loop.loopCfg.dist).toBeGreaterThan(0)
+  wrapper.unmount()
+})
+
+it('preserves inherited quadratic and cubic paths and uses their final tangent for direction', () => {
+  for (const [type, path] of [['quadratic', [['M', 0, 0], ['Q', 20, -30, 100, 0]]],
+    ['loop', [['M', -10, -20], ['C', -80, -80, 80, -80, 10, -20]]]]) {
+    const registered = [...edgeTypes.values()].find(entry => entry.parent === type)
+    expect(registered).toBeDefined()
+    const created = new Map()
+    const group = { find: predicate => [...created.values()].find(predicate), addShape: (shape, config) => {
+      const element = { get: key => key === 'name' ? config.name : undefined, attrs: config.attrs }
+      created.set(config.name, element); return element
+    } }
+    const points = path[0].slice(1)
+    const cfg = { startPoint: { x: points[0], y: points[1] }, endPoint: { x: points[0], y: points[1] }, style: {}, _meta: { directed: true } }
+    registered.definition.afterDraw.call({ getPathPoints: value => value, getControlPoints: () => [], getPath: () => path }, cfg, group)
+    expect(created.get('semantic-edge-line')?.attrs.path).toEqual(path)
+    expect(created.get('direction-marker')?.attrs.path[0]).toEqual(['M', ...path.at(-1).slice(-2)])
+  }
+})
+
+
+it('recomputes loop anchors from the current node instead of retaining invalid layout anchors', () => {
+  const registered = [...edgeTypes.values()].find(entry => entry.parent === 'loop')
+  const sourceNode = {
+    getModel: () => ({ x: 100, y: 200 }),
+    get: () => ({ getMatrix: () => [1, 0, 0, 0, 1, 0, 100, 200, 1] }),
+    getKeyShape: () => ({ getBBox: () => ({ minX: -22, minY: -22, maxX: 22, maxY: 22, width: 44, height: 44 }), get: () => 'circle' })
+  }
+  const inherited = { ...G6.Shape.getFactory('edge').getShape(registered.parent), ...registered.definition }
+  const points = inherited.getPathPoints({ sourceNode, source: 'a', target: 'a', startPoint: { x: NaN, y: NaN },
+    endPoint: { x: NaN, y: NaN }, controlPoints: [{ x: NaN, y: NaN }], loopCfg: { position: 'top', dist: 50 } })
+  expect([points.startPoint, ...points.controlPoints, points.endPoint].every(point => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true)
+  expect(points.startPoint).not.toEqual(points.endPoint)
 })

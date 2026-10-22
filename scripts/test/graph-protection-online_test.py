@@ -37,11 +37,116 @@ def exploration_fixture(expected):
         requests=[{'method': 'POST', 'path': '/api/v1/graph/graphs/'+str(expected['graph_id'])+'/expand', 'body': stage['request']} for stage in stages[:2]])
 
 
+def dense_evidence():
+    labels, relations = SUITE.dense_fixture_contract()
+    ids = {key: 'native-'+key for key in labels}
+    nodes = [{'id': ids[key], 'labels': sorted(value), 'properties': {'id': key, 'name': 'Dense '+key[1:]}} for key, value in labels.items()]
+    edges = sorted([dict(id='edge-'+str(index), source=ids[source], target=ids[target], type=kind) for index, (source, target, kind) in enumerate(relations)], key=lambda edge: edge['id'])
+    shapes = [dict(name='+'.join(value), labels=list(value)) for value in sorted({tuple(sorted(value)) for value in labels.values()})]
+    expected = dict(run_id='run', tenant_id='2', principal_id='4', engine_type='falkordb', engine_id=14, graph_id=8, nodes=nodes, edges=edges, shapes=shapes)
+    phases = ['dense-search', 'dense-search-cleared', 'dense-expand', 'dense-filter', 'dense-filter-restored'] + ['dense-layout-'+key for key in ('dagre', 'circular', 'radial', 'force')]
+    stages = []
+    for index, phase in enumerate(phases):
+        members = [node for node in nodes if index != 3 or node['labels'] == ['Employee', 'Person']]
+        wanted = {node['id'] for node in members}
+        stage = dict(phase=phase, nodes=members, edges=[] if index < 2 else [edge for edge in edges if edge['source'] in wanted and edge['target'] in wanted], groups=[])
+        stage['relationship_pixels'] = [dict(type=kind,color=[10+color_index*40,30,80],pixelCount=100,stableFrames=10) for color_index,kind in enumerate(sorted({edge['type'] for edge in stage['edges']}))]
+        for color_index, shape in enumerate(shapes):
+            group_nodes = [node for node in members if node['labels'] == shape['labels']]
+            if not group_nodes: continue
+            rgb = [60+color_index*40, 30, 50]
+            pixels, hits = [], []
+            for position, node in enumerate(group_nodes):
+                x, y = 100+position*100+index, 100+color_index*100
+                pixels.append(dict(x=x, y=y, box=[x-12,y-12,x+12,y+12], fillBox=[x-10,y-10,x+10,y+10], pixelCount=100, fillPixelCount=100))
+                hits.append(dict(source_id=node['properties']['id'], native_id=node['id'], x=x, y=y))
+            stage['groups'].append(dict(name=shape['name'], labels=shape['labels'], frame=dict(width=800, height=600,
+                color=[250,0,250] if index == 0 else rgb, fillColor=rgb, stableFrames=10, nodes=pixels), hits=hits))
+        if index == 0: stage.update(http_status=200, request=dict(query='Dense', limit=30))
+        if index == 2: stage.update(http_status=200, request=dict(target=dict(kind='entity',id=ids['n01']),depth=2,node_limit=200,relationship_limit=400))
+        if index in (3,4): stage['selected_shapes'] = sorted(group['name'] for group in stage['groups'])
+        if index >= 5:
+            stage.update(layout=['dagre','circular','radial','force'][index-5], selected_label=['分层','环形','辐射','力导向'][index-5])
+        stages.append(stage)
+    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v1', stages=stages,
+        requests=[dict(method='POST',path='/api/v1/graph/graphs/8/'+operation,body=stages[index]['request']) for operation,index in [('search',0),('expand',2)]])
+    return expected, visual
+
+
 class GraphProtectionOnlineTest(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
         environment.start()
         self.addCleanup(environment.stop)
+
+    def test_dense_native_contract_rejects_missing_labels_edges_and_direction(self):
+        expected, _ = dense_evidence()
+        self.assertEqual(len(SUITE.verify_dense_reference(expected['nodes'], expected['edges'])), 12)
+        for change in ('label', 'parallel', 'reverse', 'self', 'duplicate'):
+            nodes, edges = copy.deepcopy(expected['nodes']), copy.deepcopy(expected['edges'])
+            if change == 'label': nodes[3]['labels'] = ['Person']
+            elif change == 'parallel': edges = [edge for edge in edges if edge['type'] != 'Parallel']
+            elif change == 'reverse': edges[0]['source'], edges[0]['target'] = edges[0]['target'], edges[0]['source']
+            elif change == 'self': edges = [edge for edge in edges if edge['source'] != edge['target']]
+            else: edges[0]['id'] = edges[1]['id']
+            with self.subTest(change=change), self.assertRaises(SUITE.SuiteError): SUITE.verify_dense_reference(nodes, edges)
+
+    def test_dense_raw_frames_require_all_groups_native_hits_and_exact_requests(self):
+        expected, visual = dense_evidence()
+        SUITE.verify_dense(visual, expected)
+        for change in ('identity', 'group', 'hit', 'frames', 'bounds', 'filter', 'edge', 'request', 'layout', 'color', 'relation-pixels', 'stage'):
+            raw = copy.deepcopy(visual)
+            if change == 'identity': raw['principal_id'] = '99'
+            elif change == 'group': raw['stages'][0]['groups'].pop()
+            elif change == 'hit': raw['stages'][0]['groups'][0]['hits'][0]['native_id'] = 'wrong'
+            elif change == 'frames': raw['stages'][0]['groups'][0]['frame']['stableFrames'] = True
+            elif change == 'bounds': raw['stages'][0]['groups'][0]['frame']['nodes'][0]['box'][0] = -10
+            elif change == 'filter': raw['stages'][3]['selected_shapes'] = []
+            elif change == 'edge': raw['stages'][2]['edges'].pop()
+            elif change == 'request': raw['stages'][2]['request']['depth'] = 1
+            elif change == 'layout': raw['stages'][-1]['selected_label'] = '环形'
+            elif change == 'relation-pixels': raw['stages'][2]['relationship_pixels'][0]['pixelCount'] = True
+            elif change == 'color': raw['stages'][0]['groups'][1]['frame']['fillColor'] = raw['stages'][0]['groups'][0]['frame']['fillColor']
+            else: raw['stages'].pop()
+            with self.subTest(change=change), self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(raw, expected)
+
+    def test_dense_phase_uses_reader_browser_and_cleans_after_success_or_failure(self):
+        expected, visual = dense_evidence()
+        for failure in ("none", "browser", "identity"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                deleted = []
+                class Client:
+                    def request(self, method, path, status, body=None):
+                        if method == 'DELETE': deleted.append(path)
+                        if method == 'POST' and path == '/api/v1/graph/ontologies': value = {'id': 9}
+                        elif method == 'POST' and path == '/api/v1/graph/graphs': value = {'id': 8, 'is_public': False}
+                        elif '/search?' in path: value = dict(total=12, data=expected['nodes'])
+                        elif path.endswith('/subgraph'): value = dict(nodes=expected['nodes'], edges=expected['edges'])
+                        elif path.endswith('/browse-snapshot'): value = dict(stats=dict(node_count=12,relationship_count=72,by_label=dict(Person=6,Employee=3,Organization=6,Partner=3)),schema=dict(node_shapes=[dict(shape,count=3) for shape in expected['shapes']]))
+                        else: value = {}
+                        return SUITE.SUPPORT.Response(status[0], value)
+                def subprocess_run(command, **kwargs):
+                    if command[-1] == 'exploration': return type('Result', (), {'returncode': 0})()
+                    self.assertIn('--config=playwright.online.config.js', command)
+                    self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
+                    actual = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'])
+                    self.assertEqual(actual, expected)
+                    Path(folder, 'graph-dense-stable-frame.json').write_text(json.dumps(visual))
+                    Path(folder, 'graph-dense-browser-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=[])))
+                    for stage in visual['stages']: Path(folder, stage['phase']+'-console.png').write_bytes(b'unit-test')
+                    return type('Result', (), {'returncode': 1 if failure == "browser" else 0})()
+                environment = dict(ADDP_ONLINE_TEST_RUN_ID='run',ADDP_ONLINE_ARTIFACT_DIR=folder,ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='secret',ADDP_ONLINE_TEST_USER_USERNAME='reader',ADDP_ONLINE_TEST_USER_PASSWORD='reader-password')
+                report = {'identities': {'reader': {'principal_id': '4'}}}
+                with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'identity', return_value=dict(principal_id='5' if failure == 'identity' else '4')), patch.object(SUITE.subprocess, 'run', side_effect=subprocess_run):
+                    if failure == "identity":
+                        with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                    elif failure == "browser":
+                        with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                    else:
+                        SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                        self.assertTrue(report['dense']['passed'])
+                self.assertEqual(deleted, ['/api/v1/graph/graphs/8', '/api/v1/graph/ontologies/9'])
+                self.assertEqual(report['dense_cleanup']['domain_resources_remaining'], 0)
 
     def test_native_targets_preserve_catalog_and_reject_shared_neo4j_instance(self):
         for kind, control_id in (("falkordb", 13), ("neo4j", 14)):
@@ -313,7 +418,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
              patch.object(SUITE, 'create_ontology', return_value=9), patch.object(SUITE, 'create_schema'), \
              patch.object(SUITE, 'probe'), patch.object(SUITE.SUPPORT, 'wait_for_scan'), \
              patch.object(SUITE, 'set_public', side_effect=lambda client, gid, public: closed.append((gid, public))), \
-             patch.object(SUITE, 'run_browser', return_value={}), \
+             patch.object(SUITE, 'run_dense', return_value=None), patch.object(SUITE, 'run_browser', return_value={}), \
              patch.object(SUITE, 'run_develop_browser', side_effect=SUITE.SuiteError('Develop browser failed')):
             with self.assertRaisesRegex(SUITE.SuiteError, 'Develop browser failed'):
                 SUITE.run(*([Client()] * 7), 13, 2, 0, report)

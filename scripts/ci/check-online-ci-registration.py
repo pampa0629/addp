@@ -3010,11 +3010,11 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "scripts/test/graph-review-online.py": ("verify_selection", "graph-review-stable-selection.json", "verify_items", "reader_403=True", "cross_graph_404=True", "domain_resources_remaining", "real_model=False"),
         "scripts/test/graph-review-extractor.py": ("ADDP_ONLINE_HOSTED", "MATERIAL", "bad-native"),
         "console/frontend/e2e/online/graph-review.spec.js": ("addp.graph-review-browser/v2", "browserAPIFromResponse", "login(", "batch_status: 500", "selection_cleared: true", "selection_stable_visible: true", "stableEmptyReviewSelection)", "graph-review-stable-selection.json"),
-        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
+        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "denseGraphStages", "stableRelationshipPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v9", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v10", "verify_dense", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -3032,7 +3032,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
             "develop.query.protection_required", "unexpected_writes: 0", "theme_canvas_pixels: true", "graphCanvasHasThemePixels)",
         ),
         "business/scripts/online-graph-fixture.py": (
-            "--volumes", "owned_resources", "must not publish host ports", "0o600", "graph_protection_control",
+            "--volumes", "owned_resources", "must not publish host ports", "0o600", "graph_protection_control", "def exploration(", "DENSE_EDGES",
         ),
         "business/docker-compose.online-graph.yml": (
             "../scripts/infra/falkordb.yml", "../scripts/test/docker-compose.neo4j-t2.yml", "ports: !reset []", "name: addp-network", "tmpfs:",

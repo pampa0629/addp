@@ -12,6 +12,7 @@ export function createGraphLayoutConfig(
   focusNodeId = '',
 ) {
   const large = isLargeGraph(nodeCount, edgeCount)
+  const relationsPerNode = Math.max(1, edgeCount / Math.max(1, nodeCount))
   let config
 
   switch (layoutType) {
@@ -19,8 +20,8 @@ export function createGraphLayoutConfig(
       config = {
         type: 'dagre',
         rankdir: 'LR',
-        nodesep: large ? 18 : 50,
-        ranksep: large ? 50 : 90,
+        nodesep: (large ? 18 : 50) / relationsPerNode,
+        ranksep: (large ? 50 : 90) / relationsPerNode,
         edgeLabelSpace: !large,
       }
       break

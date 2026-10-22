@@ -103,4 +103,27 @@ class GraphFixtureTest(unittest.TestCase):
         self.assertNotIn('image:', content)
 
 
+    def test_dense_phase_reuses_only_owned_original_control_and_checks_counts(self):
+        for engine in ('falkordb', 'neo4j'):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': engine}):
+                folder = Path(directory)
+                host = FIXTURE.containers()[1 if engine == 'neo4j' else 0]
+                (folder / ('graph-control.json' if engine == 'neo4j' else 'graph-target.json')).write_text(json.dumps({'engine_type': engine, 'connection_info': {'host': host}}))
+                with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', side_effect=[3, 2, 3, None, None, 12, 72]) as native:
+                    FIXTURE.exploration(folder)
+                    self.assertTrue(all(call.args[0] == FIXTURE.GRAPHS[1] for call in native.call_args_list))
+                    writes = [call for call in native.call_args_list if len(call.args) > 2 and call.args[2] is False]
+                    self.assertEqual(len(writes), 2)
+                    self.assertEqual(writes[0].args[1], 'MATCH (n) DETACH DELETE n')
+                    self.assertIn(':Employee:Person', writes[1].args[1])
+                    self.assertIn('(n12)-[:Link]->(n12)', writes[1].args[1])
+                    self.assertIn('(n01)-[:Parallel]->(n02)', writes[1].args[1])
+                with patch.object(FIXTURE, 'command', return_value='foreign'), patch.object(FIXTURE, 'native') as native:
+                    with self.assertRaisesRegex(RuntimeError, 'ownership'): FIXTURE.exploration(folder)
+                    native.assert_not_called()
+                with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', return_value=4) as native:
+                    with self.assertRaisesRegex(RuntimeError, 'changed control'): FIXTURE.exploration(folder)
+                    self.assertTrue(all(len(call.args) == 2 for call in native.call_args_list))
+
+
 if __name__ == '__main__': unittest.main()

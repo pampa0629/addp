@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts } from '../graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from '../graph-visual.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -103,7 +103,7 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
   const canvas = frame.locator('.graph-canvas')
   const color = await graphObservationColor(frame, canvas)
   const fillColor = await graphObservationColor(frame, canvas, true)
-  const stableFrame = await canvas.evaluate(stableGraphPixels, { count: found.nodes.length, color, fillColor })
+  const [stableFrame] = await canvas.evaluate(stableGraphPixels, { groups: [{ count: found.nodes.length, color, fillColor }] })
   const hits = await graphNodeHits(frame, canvas, stableFrame, found.nodes)
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-search-stable-frame.json'), JSON.stringify({
     ...expected, schema_version: 'addp.graph-search-stable-frame/v2', frame: stableFrame, hits
@@ -157,4 +157,60 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
     browser_errors: 0, anonymous_refresh_401: anonymousRefresh,
     release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true, theme_typography: true
   }))
+})
+
+
+test('ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
+  const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'))
+  const errors = [], failed = [], writes = [], development = [], releaseScripts = new Set()
+  const credentials = new Set(Object.entries(process.env).filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|USERNAME)$/.test(key) && value).map(([, value]) => value))
+  const diagnostics = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-browser-diagnostics.json')
+  const persist = () => writeFileSync(diagnostics, JSON.stringify({ schema_version: 'addp.graph-browser-diagnostics/v1', entries: errors }, null, 2))
+  const recordDiagnostic = message => { errors.push(graphBrowserDiagnostic(message, 'dense', credentials)); persist() }
+  persist()
+  let businessStarted = false
+  page.on('pageerror', error => recordDiagnostic({ type: () => 'pageerror', text: () => error.message, location: () => ({}) }))
+  page.on('console', message => {
+    if (isAnonymousRefreshConsoleError(message, businessStarted)) return
+    if (['warning', 'error'].includes(message.type())) recordDiagnostic(message)
+  })
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    const authorization = request.headers().authorization
+    if (authorization) credentials.add(authorization.replace(/^Bearer\s+/i, ''))
+    if (path.startsWith('/module-ui/graph/assets/') && path.endsWith('.js')) releaseScripts.add(path)
+    if (path.startsWith('/api/v1/') && request.headers().authorization) businessStarted = true
+    if (/\/@vite\/|\/@id\/|\/src\//.test(path)) development.push(path)
+    if (path.startsWith('/api/v1/graph/') && !['GET', 'HEAD'].includes(request.method()) &&
+        !['search', 'expand'].some(operation => path === `/api/v1/graph/graphs/${expected.graph_id}/${operation}`)) writes.push(path)
+  })
+  page.on('response', response => {
+    if (isAnonymousRefreshResponse(response, businessStarted)) return
+    if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400) failed.push(response.status())
+  })
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  const loaded = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/graph/graphs/${expected.graph_id}/browse-snapshot`)
+  await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'), required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/graph/graphs/${expected.graph_id}/browse`)
+  const response = await loaded
+  const api = await browserAPIFromResponse(response, required('GATEWAY_URL'), { principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: new Set(['graph.graph.read']) })
+  await api.dispose()
+  const snapshot = await json(response, 'Dense native snapshot')
+  expect(snapshot.stats.node_count).toBe(12)
+  expect(snapshot.stats.relationship_count).toBe(72)
+  expect(snapshot.stats.by_label).toEqual({ Person: 6, Employee: 3, Organization: 6, Partner: 3 })
+  expect(snapshot.schema.node_shapes.map(shape => shape.count)).toEqual([3, 3, 3, 3])
+  expect(snapshot.schema.node_shapes.map(({ name, labels }) => ({ name, labels: [...labels].sort() })).sort((a, b) => a.name.localeCompare(b.name))).toEqual(expected.shapes)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const canvas = frame.locator('.graph-canvas')
+  const visual = await denseGraphStages(page, frame, canvas, expected, async phase => {
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), phase + '-console.png') })
+  })
+  expect(errors).toEqual([])
+  expect(failed).toEqual([])
+  expect(writes).toEqual([])
+  expect(development).toEqual([])
+  expect(releaseScripts.size).toBeGreaterThan(0)
+  writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-stable-frame.json'), JSON.stringify({
+    ...expected, schema_version: 'addp.graph-dense-stable-frame/v1', ...visual
+  }, null, 2))
 })

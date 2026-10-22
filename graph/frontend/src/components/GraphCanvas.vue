@@ -15,23 +15,37 @@ import { createGraphLayoutConfig } from '../utils/graphLayoutPolicy'
 
 const SEMANTIC_EDGE_TYPE = 'addp-semantic-quadratic'
 
-G6.registerEdge(SEMANTIC_EDGE_TYPE, {
-  afterDraw(config, group) {
-    updateSemanticEdgeLine(config, group)
-    updateDirectionMarker(config, group)
-  },
-  afterUpdate(config, item) {
-    const group = item.getContainer()
-    updateSemanticEdgeLine(config, group)
-    updateDirectionMarker(config, group)
-    const matrix = group.getTotalMatrix()
-    syncRenderedSize(item, matrix ? Math.hypot(matrix[0], matrix[1]) : 1)
-  }
-}, 'quadratic')
+for (const parent of ['quadratic', 'loop']) {
+  G6.registerEdge(`addp-semantic-${parent}`, {
+    getPathPoints(config) {
+      if (parent !== 'loop') return config
+      const center = config.sourceNode.getModel()
+      return G6.Shape.getFactory('edge').getShape('loop').getPathPoints({
+        ...config, startPoint: { x: center.x, y: center.y }, endPoint: { x: center.x, y: center.y }, controlPoints: undefined
+      })
+    },
+    afterDraw(config, group) {
+      renderSemanticEdge(this, config, group)
+    },
+    afterUpdate(config, item) {
+      const group = item.getContainer()
+      renderSemanticEdge(this, config, group)
+      const matrix = group.getTotalMatrix()
+      syncRenderedSize(item, matrix ? Math.hypot(matrix[0], matrix[1]) : 1)
+    }
+  }, parent)
+}
 
-function updateSemanticEdgeLine(config, group) {
+function renderSemanticEdge(shape, config, group) {
+  const points = shape.getPathPoints({ ...config })
+  const controls = shape.getControlPoints(points) || []
+  const path = shape.getPath([points.startPoint, ...controls, points.endPoint])
+  updateSemanticEdgeLine(config, group, path)
+  updateDirectionMarker(config, group, path)
+}
+
+function updateSemanticEdgeLine(config, group, path) {
   const existing = group.find(element => element.get('name') === 'semantic-edge-line')
-  const path = semanticEdgePath(config)
   if (!path) {
     existing?.hide()
     return
@@ -52,19 +66,9 @@ function updateSemanticEdgeLine(config, group) {
   }
 }
 
-function semanticEdgePath(config) {
-  const start = config.startPoint
-  const end = config.endPoint
-  if (!start || !end) return null
-  const control = config.controlPoints?.[0]
-  if (control) return [['M', start.x, start.y], ['Q', control.x, control.y, end.x, end.y]]
-  if (start.x === end.x && start.y === end.y) return null
-  return [['M', start.x, start.y], ['L', end.x, end.y]]
-}
-
-function updateDirectionMarker(config, group) {
+function updateDirectionMarker(config, group, edgePath) {
   const existing = group.find(element => element.get('name') === 'direction-marker')
-  const path = config._meta?.directed === false ? null : directionMarkerPath(config)
+  const path = config._meta?.directed === false ? null : directionMarkerPath(edgePath)
   if (!path) {
     existing?.hide()
     return
@@ -79,10 +83,12 @@ function updateDirectionMarker(config, group) {
   }
 }
 
-function directionMarkerPath(config) {
-  const end = config.endPoint
-  const previous = config.controlPoints?.[config.controlPoints.length - 1] || config.startPoint
-  if (!end || !previous) return null
+function directionMarkerPath(edgePath) {
+  const segment = edgePath?.at(-1)
+  if (!segment || edgePath.length < 2) return null
+  const [endX, endY] = segment.slice(-2)
+  const [previousX, previousY] = segment[0] === 'L' ? edgePath.at(-2).slice(-2) : segment.slice(-4, -2)
+  const end = { x: endX, y: endY }, previous = { x: previousX, y: previousY }
   const dx = end.x - previous.x
   const dy = end.y - previous.y
   const length = Math.hypot(dx, dy)
@@ -152,7 +158,7 @@ function graphDensity(nodes, edges) {
 function buildG6Data(nodes, edges) {
   const theme = effectiveTheme()
   const density = graphDensity(nodes, edges)
-  return {
+  const data = {
     nodes: nodes.map(node => {
       const isCenter = props.centerNodeId && node.id === props.centerNodeId
       const isAggregate = node.kind === 'aggregate'
@@ -194,6 +200,7 @@ function buildG6Data(nodes, edges) {
         id: edgeItemId(edge.id || `generated-${index}`),
         source: nodeItemId(edge.source),
         target: nodeItemId(edge.target),
+        curveOffset: 0,
         label: displayLabel,
         _meta: edge,
         _displayLabel: displayLabel,
@@ -218,6 +225,8 @@ function buildG6Data(nodes, edges) {
       }
     })
   }
+  G6.Util.processParallelEdges(data.edges, 20, SEMANTIC_EDGE_TYPE, SEMANTIC_EDGE_TYPE, 'addp-semantic-loop')
+  return data
 }
 
 function currentLayoutConfig() {
