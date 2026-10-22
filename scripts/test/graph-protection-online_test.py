@@ -126,7 +126,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         else: value = {}
                         return SUITE.SUPPORT.Response(status[0], value)
                 def subprocess_run(command, **kwargs):
-                    if command[-1] == 'exploration': return type('Result', (), {'returncode': 0})()
+                    if 'exploration' in command:
+                        self.assertEqual(command[-3:], ['exploration', '--previous-control-graph-id', '2'])
+                        return type('Result', (), {'returncode': 0, 'stdout': 'synthetic fixture ready'})()
                     self.assertIn('--config=playwright.online.config.js', command)
                     self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                     actual = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'])
@@ -139,11 +141,11 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 report = {'identities': {'reader': {'principal_id': '4'}}}
                 with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'identity', return_value=dict(principal_id='5' if failure == 'identity' else '4')), patch.object(SUITE.subprocess, 'run', side_effect=subprocess_run):
                     if failure == "identity":
-                        with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                        with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     elif failure == "browser":
-                        with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                        with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     else:
-                        SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report)
+                        SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                         self.assertTrue(report['dense']['passed'])
                 self.assertEqual(deleted, ['/api/v1/graph/graphs/8', '/api/v1/graph/ontologies/9'])
                 self.assertEqual(report['dense_cleanup']['domain_resources_remaining'], 0)

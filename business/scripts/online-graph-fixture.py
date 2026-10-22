@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Own the synthetic graph database for the Hosted Graph protection suite."""
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -20,7 +21,9 @@ DENSE_EDGES = [(source, target, "Link") for i, source in enumerate(DENSE_NODES)
                for target in list(DENSE_NODES)[i+1:]] + [("n02", "n01", "Link"), ("n01", "n02", "Parallel"), ("n12", "n12", "Link"), ("n01", "n12", "Parallel"), ("n04", "n09", "Parallel"), ("n05", "n08", "Parallel")]
 
 
-def exploration(secret_dir):
+def exploration(secret_dir, previous_control_graph_id):
+    if type(previous_control_graph_id) is not int or previous_control_graph_id <= 0:
+        raise RuntimeError("Dense fixture requires a positive previous control Graph ID")
     # This phase runs only after the old control and review acceptance has finished.
     # A foreign, changed or missing control fixture must never be overwritten.
     descriptor = secret_dir / ("graph-control.json" if engine_type() == "neo4j" else "graph-target.json")
@@ -36,6 +39,18 @@ def exploration(secret_dir):
         native(graph, "MATCH ()-[r]->() RETURN count(r)") != 2 or
         native(graph, "MATCH (n:Person) WHERE n.id IN ['p1','p2','p3'] RETURN count(n)") != 3):
         raise RuntimeError("Dense phase refuses changed control fixture")
+    if engine_type() == "neo4j":
+        # The old Graph configuration is deleted, but its native index survives.
+        # This control container is exclusively owned by this disposable fixture.
+        index = f"addp_graph_{previous_control_graph_id}_search_" + hashlib.sha256(b"Person").hexdigest()[:16]
+        total = native(graph, "SHOW FULLTEXT INDEXES YIELD name RETURN count(*)")
+        exact = native(graph, "SHOW FULLTEXT INDEXES YIELD name, labelsOrTypes, properties WHERE name = '" + index + "' AND labelsOrTypes = ['Person'] AND size(properties) = 2 AND all(property IN properties WHERE property IN ['id','name']) RETURN count(*)")
+        if total != 1 or exact != 1:
+            raise RuntimeError("Dense phase refuses unexpected previous control index catalog")
+        native(graph, "DROP INDEX `" + index + "`", False)
+        if native(graph, "SHOW FULLTEXT INDEXES YIELD name RETURN count(*)") != 0:
+            raise RuntimeError("Dense previous control index cleanup left residuals")
+        print("Synthetic Graph dense control index reset: exact previous index removed; zero fulltext indexes")
     native(graph, "MATCH (n) DETACH DELETE n", False)
     nodes = [f"({key}:{':'.join(labels)} {{id:'{key}', name:'Dense {key[1:]}'}})" for key, labels in DENSE_NODES.items()]
     edges = [f"({source})-[:{kind}]->({target})" for source, target, kind in DENSE_EDGES]
@@ -149,10 +164,14 @@ def stop(secret_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("operation", choices=["start", "stop", "exploration"])
+    parser.add_argument("--previous-control-graph-id", type=int)
     args = parser.parse_args()
     engine_type()
     secret_dir = admission()
-    {"start": start, "stop": stop, "exploration": exploration}[args.operation](secret_dir)
+    if args.operation == "exploration":
+        exploration(secret_dir, args.previous_control_graph_id)
+    else:
+        {"start": start, "stop": stop}[args.operation](secret_dir)
 
 
 if __name__ == "__main__":

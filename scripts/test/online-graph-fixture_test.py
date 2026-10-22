@@ -109,21 +109,69 @@ class GraphFixtureTest(unittest.TestCase):
                 folder = Path(directory)
                 host = FIXTURE.containers()[1 if engine == 'neo4j' else 0]
                 (folder / ('graph-control.json' if engine == 'neo4j' else 'graph-target.json')).write_text(json.dumps({'engine_type': engine, 'connection_info': {'host': host}}))
-                with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', side_effect=[3, 2, 3, None, None, 12, 72]) as native:
-                    FIXTURE.exploration(folder)
+                with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', side_effect=[3, 2, 3, *([1, 1, None, 0] if engine == 'neo4j' else []), None, None, 12, 72]) as native:
+                    FIXTURE.exploration(folder, 2)
                     self.assertTrue(all(call.args[0] == FIXTURE.GRAPHS[1] for call in native.call_args_list))
                     writes = [call for call in native.call_args_list if len(call.args) > 2 and call.args[2] is False]
-                    self.assertEqual(len(writes), 2)
+                    self.assertEqual(len(writes), 3 if engine == 'neo4j' else 2)
+                    if engine == 'neo4j':
+                        self.assertTrue(writes.pop(0).args[1].startswith('DROP INDEX `addp_graph_2_search_'))
                     self.assertEqual(writes[0].args[1], 'MATCH (n) DETACH DELETE n')
                     self.assertIn(':Employee:Person', writes[1].args[1])
                     self.assertIn('(n12)-[:Link]->(n12)', writes[1].args[1])
                     self.assertIn('(n01)-[:Parallel]->(n02)', writes[1].args[1])
                 with patch.object(FIXTURE, 'command', return_value='foreign'), patch.object(FIXTURE, 'native') as native:
-                    with self.assertRaisesRegex(RuntimeError, 'ownership'): FIXTURE.exploration(folder)
+                    with self.assertRaisesRegex(RuntimeError, 'ownership'): FIXTURE.exploration(folder, 2)
                     native.assert_not_called()
                 with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', return_value=4) as native:
-                    with self.assertRaisesRegex(RuntimeError, 'changed control'): FIXTURE.exploration(folder)
+                    with self.assertRaisesRegex(RuntimeError, 'changed control'): FIXTURE.exploration(folder, 2)
                     self.assertTrue(all(len(call.args) == 2 for call in native.call_args_list))
+
+
+    def test_dense_neo4j_removes_only_exact_previous_control_index_before_reseeding(self):
+        from hashlib import sha256
+        name = 'addp_graph_2_search_' + sha256(b'Person').hexdigest()[:16]
+        for initial in ('expected', 'missing', 'foreign', 'wrong-schema', 'extra'):
+            with self.subTest(initial=initial), tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j'}):
+                folder = Path(directory)
+                (folder / 'graph-control.json').write_text(json.dumps({'engine_type': 'neo4j', 'connection_info': {'host': FIXTURE.containers()[1]}}))
+                physical = {name: 'expected'} if initial == 'expected' else {} if initial == 'missing' else {'foreign_index': 'expected'} if initial == 'foreign' else {name: 'wrong-schema'} if initial == 'wrong-schema' else {name: 'expected', 'foreign_index': 'expected'}
+                queries = []; seeded = False
+                def native(graph, query, readonly=True):
+                    nonlocal seeded
+                    self.assertEqual(graph, FIXTURE.GRAPHS[1]); queries.append((query, readonly))
+                    if query.startswith('SHOW FULLTEXT INDEXES'):
+                        if 'WHERE' not in query: return len(physical)
+                        self.assertIn("name = '" + name + "'", query)
+                        self.assertIn("labelsOrTypes = ['Person']", query)
+                        self.assertIn("size(properties) = 2", query)
+                        self.assertIn("all(property IN properties WHERE property IN ['id','name'])", query)
+                        return int(physical.get(name) == 'expected')
+                    if query.startswith('DROP INDEX'):
+                        self.assertEqual(query, 'DROP INDEX `' + name + '`')
+                        self.assertFalse(readonly); physical.pop(name); return
+                    if query.startswith('MATCH') and 'RETURN count' in query:
+                        return (12 if seeded else 3) if 'count(n)' in query else (72 if seeded else 2)
+                    if not readonly:
+                        self.assertEqual(physical, {})
+                        if query.startswith('CREATE'): seeded = True
+                        return
+                    self.fail(query)
+                with patch.object(FIXTURE, 'command', return_value=FIXTURE.PROJECT), patch.object(FIXTURE, 'native', side_effect=native):
+                    if initial == 'expected':
+                        FIXTURE.exploration(folder, 2)
+                        self.assertTrue(seeded)
+                        self.assertEqual(physical, {})
+                        self.assertEqual(len([q for q, _ in queries if q.startswith('DROP INDEX')]), 1)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'control index'): FIXTURE.exploration(folder, 2)
+                        self.assertFalse(any(not readonly for _, readonly in queries))
+
+    def test_dense_phase_refuses_invalid_previous_graph_id_before_docker(self):
+        for identifier in (None, True, 0, -1, '2', '2` DROP INDEX other'):
+            with self.subTest(identifier=identifier), patch.object(FIXTURE, 'command') as command, patch.object(FIXTURE, 'native') as native:
+                with self.assertRaisesRegex(RuntimeError, 'control Graph ID'): FIXTURE.exploration(Path('/unused'), identifier)
+                command.assert_not_called(); native.assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()

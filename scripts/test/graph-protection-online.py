@@ -390,12 +390,13 @@ def verify_dense(visual, expected):
         {"method": "POST", "path": root + "/expand", "body": stages[2]["request"]}], "Dense filter/layout made unexpected requests")
 
 
-def run_dense(preparer, reader, tenant_id, target_path, report):
+def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id):
     ontology_id = graph_id = None
     failed = False
     try:
-        seeded = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "business/scripts/online-graph-fixture.py"), "exploration"], capture_output=True, text=True, timeout=300)
+        seeded = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / "business/scripts/online-graph-fixture.py"), "exploration", "--previous-control-graph-id", str(previous_control_graph_id)], capture_output=True, text=True, timeout=300)
         require(seeded.returncode == 0, "Owned native dense fixture preparation failed")
+        print(seeded.stdout.strip())
         ontology_id = SUPPORT.positive_int(preparer.request("POST", "/api/v1/graph/ontologies", (201,), {"name": "Hosted dense Graph exploration"}).payload.get("id"), "dense ontology id")
         for labels in sorted({tuple(labels) for labels in dense_fixture_contract()[0].values()}):
             preparer.request("POST", f"/api/v1/graph/ontologies/{ontology_id}/entity-types", (201,), {
@@ -565,7 +566,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         preparer.request("DELETE", f"/api/v1/graph/graphs/{control}", (200,))
         preparer.request("GET", f"/api/v1/graph/graphs/{control}", (404,))
         graph_ids.remove(control)
-        run_dense(preparer, reader, tenant_id, targets[1], report)
+        run_dense(preparer, reader, tenant_id, targets[1], report, control)
     except Exception as error:
         operation_failed = True
         report["failure"] = {"error_type": type(error).__name__, "message": str(error)}
