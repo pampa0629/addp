@@ -99,7 +99,7 @@ function relationLabel(evidence) {
  return ['model.entity.element', 'model.logical_table.element', 'catalog.component.standard_mapping'].includes(evidence.relation_kind) ? `${label} · ${evidence.position}` : label
 }
 function adoptedPath(item, evidence) {
- return standardResourcePresentation(item.source_type, item.source_identity, evidence.revision_id)?.detailPath || '' 
+ return standardResourcePresentation(item.source_type, item.source_identity, evidence.revision_id)?.detailPath || ''
 }
 function canOpenEvidence(item, evidence) { return allowsConsoleRoute(adoptedPath(item, evidence), auth.contextType, auth.permissions) }
 function openEvidence(item, evidence) { openConsoleRoute(adoptedPath(item, evidence)) }
