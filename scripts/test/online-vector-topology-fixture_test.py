@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'line-overlaps.gpkg':
+        return m.line_overlap_expected_features()
     if name == 'dangling.gpkg':
         return m.dangling_expected_features()
     if name == 'gaps.gpkg':
@@ -51,7 +53,7 @@ class TopologyFixtureTest(unittest.TestCase):
             original = records(name)
             for mutate in (lambda v: v.pop(), lambda v: v.__setitem__(0, copy.deepcopy(v[1])),
                            lambda v: v[0]['properties'].update(source_name='unexpected'),
-                           lambda v: v[0]['geometry'].update(type='MultiLineString')):
+                           lambda v: v[0]['geometry'].update(type='GeometryCollection')):
                 value = copy.deepcopy(original); mutate(value)
                 with self.subTest(name=name), self.assertRaises(m.FixtureError): m.validate_features(name, value)
         value = records('diagnostics.geojson'); value[0]['geometry']['coordinates'][0][0] = 118
@@ -185,3 +187,30 @@ class TopologyFixtureTest(unittest.TestCase):
         ):
             rows=copy.deepcopy(original);mutate(rows)
             with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_dangling_features(rows)
+
+
+    def test_line_overlap_oracle_rejects_pair_source_length_part_and_order_corruption(self):
+        original=m.line_overlap_expected_features()
+        self.assertEqual(len(original),9);self.assertEqual(original[6]['properties']['overlap_length'],2**-40)
+        m.validate_line_overlap_features(original)
+        m.validate_line_overlap_features(m.line_overlap_source_features(),source=True)
+        for mutate in (
+            lambda rows:rows.pop(),lambda rows:rows.reverse(),
+            lambda rows:rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows:rows[0]['properties'].update(source_id_a='接点'),
+            lambda rows:rows[0]['properties'].update(source_id_b='甲'),
+            lambda rows:rows[2]['properties'].update(overlap_length=True),
+            lambda rows:rows[6]['properties'].update(overlap_length=0),
+            lambda rows:rows[6]['properties'].update(overlap_length=1e-12),
+            lambda rows:rows[5]['geometry']['coordinates'].pop(),
+            lambda rows:rows[0]['geometry']['coordinates'][0][0].__setitem__(0,303),
+            lambda rows:rows[7]['properties'].update(overlap_length=2),
+            lambda rows:rows[0]['geometry'].update(type='LineString'),
+        ):
+            rows=copy.deepcopy(original);mutate(rows)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_line_overlap_features(rows)
+        rows=copy.deepcopy(original)
+        for row in rows:
+            row['geometry']['coordinates'].reverse()
+            for part in row['geometry']['coordinates']:part.reverse()
+        m.validate_line_overlap_features(rows)

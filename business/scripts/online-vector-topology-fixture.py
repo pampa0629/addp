@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,98 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def line_overlap_source_features():
+    rows = [('甲',[[300,60],[304,60]]), ('乙',[[302,60],[306,60]]),
+            ('反甲',[[304,60],[300,60]]), ('内线',[[301,60],[302,60]]),
+            ('接点',[[306,60],[307,60]]), ('交叉',[[305,59],[305,61]]),
+            ('邻线',[[300,60+2**-40],[304,60+2**-40]]),
+            ('多甲',[[[320,60],[324,60]],[[330,60],[334,60]],[[340,60],[341,60]]]),
+            ('多乙',[[[322,60],[326,60]],[[332,60],[336,60]],[[341,60],[342,60]]]),
+            ('微甲',[[350,0],[350,2**-40]]), ('微乙',[[350,2**-40],[350,0]]),
+            ('自叠',[[360,60],[362,60],[360,60]]),
+            ('折返',[[370,60],[372,60],[370,60]]), ('对照',[[371,60],[373,60]]),
+            ('采样',[[380,60],[381,60],[382,60]]), ('反采',[[382,60],[380,60]])]
+    return [{'properties':{'route_key':identifier,'note':f'line-original-{index}'},
+             'geometry':{'type':'MultiLineString' if identifier in ('多甲','多乙') else 'LineString',
+                         'coordinates':coordinates}} for index,(identifier,coordinates) in enumerate(rows)]
+
+
+def line_overlap_expected_features():
+    # Hand-specified pair intersections; never call the production algorithm.
+    rows = [('甲','乙',2,[[[302,60],[304,60]]]), ('甲','反甲',4,[[[300,60],[304,60]]]),
+            ('甲','内线',1,[[[301,60],[302,60]]]), ('乙','反甲',2,[[[302,60],[304,60]]]),
+            ('反甲','内线',1,[[[301,60],[302,60]]]),
+            ('多甲','多乙',4,[[[322,60],[324,60]],[[332,60],[334,60]]]),
+            ('微甲','微乙',2**-40,[[[350,0],[350,2**-40]]]),
+            ('折返','对照',1,[[[371,60],[372,60]]]),
+            ('采样','反采',2,[[[380,60],[381,60]],[[381,60],[382,60]]])]
+    return [{'properties':{'source_id_a':a,'source_id_b':b,'overlap_length':length},
+             'geometry':{'type':'MultiLineString','coordinates':parts}} for a,b,length,parts in rows]
+
+
+def validate_line_overlap_features(features, source=False):
+    expected=line_overlap_source_features() if source else line_overlap_expected_features()
+    if len(features)!=len(expected):raise FixtureError('line overlap source/pair count differs')
+    for actual,wanted in zip(features,expected):
+        if actual['properties']!=wanted['properties'] or actual['geometry']['type']!=wanted['geometry']['type']:
+            raise FixtureError('line overlap source IDs, order, attributes, length or type differ')
+        if source:
+            if actual['geometry']!=wanted['geometry']:raise FixtureError('line overlap source coordinates changed')
+        else:
+            length=actual['properties']['overlap_length']
+            if type(length) not in (int,float) or not math.isfinite(length) or length<=0:
+                raise FixtureError('line overlap length must be finite positive')
+        def parts(shape):
+            return shape['coordinates'] if shape['type']=='MultiLineString' else [shape['coordinates']]
+        actual_parts,wanted_parts=parts(actual['geometry']),parts(wanted['geometry'])
+        if sorted(canonical(part) for part in actual_parts)!=sorted(canonical(part) for part in wanted_parts):
+            raise FixtureError('line overlap exact components or coordinates differ')
+
+
+def seed_line_overlap(path):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    dataset=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=dataset.CreateLayer(path.stem,crs,ogr.wkbUnknown)
+    for name in ('route_key','note'):layer.CreateField(ogr.FieldDefn(name,ogr.OFTString))
+    for row in line_overlap_source_features():
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed line overlap source')
+    dataset=None
+
+
+def verify_line_overlap(path, source=False):
+    from osgeo import ogr,osr
+    dataset=ogr.Open(str(path),0)
+    if dataset is None or dataset.GetLayerCount()!=1:raise FixtureError('expected one line overlap GeoPackage layer')
+    layer=dataset.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('line overlap CRS differs')
+    fields=['route_key','note'] if source else ['source_id_a','source_id_b','overlap_length']
+    schema=layer.GetLayerDefn()
+    if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields
+        or any(schema.GetFieldDefn(i).GetType()!=ogr.OFTString for i in (0,1))
+        or (not source and schema.GetFieldDefn(2).GetType()!=ogr.OFTReal)):
+        raise FixtureError('line overlap field schema differs')
+    features=[]
+    for feature in layer:
+        geometry=feature.GetGeometryRef()
+        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():raise FixtureError('line overlap geometry invalid or non-XY')
+        kind=geometry.GetGeometryName()
+        if kind=='LINESTRING' and source:shape={'type':'LineString','coordinates':[list(point[:2]) for point in geometry.GetPoints()]}
+        elif kind=='MULTILINESTRING':shape={'type':'MultiLineString','coordinates':[
+            [list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
+        else:raise FixtureError('line overlap geometry type differs')
+        properties={name:feature.GetField(name) for name in fields}
+        if not source and geometry.Length()!=properties['overlap_length']:raise FixtureError('line overlap physical length differs')
+        features.append({'properties':properties,'geometry':shape})
+    validate_line_overlap_features(features,source)
+    result={**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
+            'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
+    dataset=None
+    return result
 
 
 def dangling_source_features():
@@ -407,6 +499,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'line-overlaps.gpkg':
+        return validate_line_overlap_features(features)
     if name == 'dangling.gpkg':
         return validate_dangling_features(features)
     if name == 'gaps.gpkg':
@@ -444,6 +538,7 @@ def worker(action, root):
         seed_gap(root / 'gap-input.gpkg')
         seed_gap(root / 'gap-coverage.gpkg', coverage=True)
         seed_dangling(root / 'dangling-input.gpkg')
+        seed_line_overlap(root / 'line-overlap-input.gpkg')
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -461,8 +556,12 @@ def worker(action, root):
     verify_gap(root / 'gap-input.gpkg', source=False)
     verify_gap(root / 'gap-coverage.gpkg', source=True)
     verify_dangling(root / 'dangling-input.gpkg', source=True)
+    verify_line_overlap(root / 'line-overlap-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'line-overlaps.gpkg':
+            results[name] = verify_line_overlap(path)
+            continue
         if name == 'dangling.gpkg':
             results[name] = verify_dangling(path)
             continue
