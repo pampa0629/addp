@@ -1,8 +1,10 @@
 import importlib
+import io
 import itertools
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -14,6 +16,7 @@ REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
 REAL_WORKSPACE_OBSERVATION = ONLINE.WorkspaceObservation
 REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
 REAL_MUTATE_SOURCE_CONTENT = ONLINE.mutate_source_content
+REAL_BIND_AUDITS = ONLINE.bind_audit_requests
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 
 
@@ -227,6 +230,181 @@ class Server:
         return Client()
 
 
+class AuditLatencyObservationTest(unittest.TestCase):
+    def test_audit_binding_requires_exact_unique_request_windows(self):
+        stamp = '2026-10-22T01:19:16.956+00:00'
+        nanos = int(datetime.fromisoformat(stamp).timestamp() * 1000000000)
+        request = {'started_unix_ns': nanos - 1000000, 'finished_unix_ns': nanos + 2000000}
+        audit = {'id': 41, 'request_id': '0730c2c4-e230-42df-a63c-a88673af29f0',
+                 'created_at': stamp, 'pre_audit_ms': 11}
+        rows = [dict(request)]
+        REAL_BIND_AUDITS(rows, [audit])
+        self.assertEqual((rows[0]['audit_id'], rows[0]['pre_audit_ms']), (41, 11))
+        for requests, audits in [([request], []), ([request, request], [audit, audit]),
+                                  ([dict(request, started_unix_ns=nanos + 1000000000)], [audit]),
+                                  ([request], [dict(audit, request_id='private diagnostic')])]:
+            with self.subTest(audits=audits), self.assertRaises(ONLINE.SuiteError):
+                REAL_BIND_AUDITS(requests, audits)
+
+    def test_query_is_bounded_and_accepts_split_json_without_stderr(self):
+        observer = ONLINE.AuditLatencyObservation({}, '33')
+        observer.process = SimpleNamespace(stdin=io.BytesIO(), stdout=Mock())
+        observer.process.stdout.fileno.return_value = 19
+        with patch.object(ONLINE.select, 'select', return_value=([19], [], [])), \
+             patch.object(ONLINE.os, 'read', side_effect=[b'{"safe":', b'true}\n']):
+            self.assertEqual(observer.query('SELECT 1;'), {'safe': True})
+        self.assertEqual(observer.process.stdin.getvalue(), b'SELECT 1;\n')
+        for chunks, ready in [([b''], [19]), ([b'x' * (512 * 1024 + 1)], [19]), ([], [])]:
+            observer.buffer = b''
+            with self.subTest(ready=ready), patch.object(ONLINE.select, 'select', return_value=(ready, [], [])), \
+                 patch.object(ONLINE.os, 'read', side_effect=chunks), self.assertRaises(ONLINE.SuiteError):
+                observer.query('SELECT 1;')
+
+    def test_personal_deployment_is_rejected_before_any_docker_call(self):
+        with patch.dict(ONLINE.os.environ, {'GITHUB_ACTIONS': 'false'}), \
+             patch.object(ONLINE.subprocess, 'run') as run, patch.object(ONLINE.subprocess, 'Popen') as popen:
+            with self.assertRaises(ONLINE.SuiteError):
+                with ONLINE.AuditLatencyObservation({}, '33'):
+                    self.fail('personal deployment was admitted')
+            run.assert_not_called()
+            popen.assert_not_called()
+        for principal in ('0', '33; SELECT 1', '-1'):
+            with self.subTest(principal=principal), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.AuditLatencyObservation({}, principal)
+
+    def test_sampler_failure_is_not_zero_wait_success(self):
+        evidence = {}
+        observer = ONLINE.AuditLatencyObservation(evidence, '33')
+        observer.process = Mock()
+        observer.stop = Mock()
+        observer.stop.wait.return_value = False
+        with patch.object(observer, 'sample', side_effect=ONLINE.SuiteError('private diagnostic')):
+            observer.collect()
+        self.assertEqual(observer.failure, 'audit_observation_failed')
+        with self.assertRaises(ONLINE.SuiteError):
+            observer.healthy()
+        self.assertEqual(evidence['result'], 'failed')
+        self.assertNotIn('private', json.dumps(evidence))
+
+    def test_linux_disk_counters_preserve_raw_units_and_skip_loop_devices(self):
+        documents = {'/proc/diskstats': '7 0 loop0 ' + ' '.join(['0'] * 17) + '\n'
+                     + '259 1 nvme0n1p1 ' + ' '.join(map(str, range(17))),
+                     '/proc/pressure/io': 'some avg10=0.00 total=3', '/proc/stat': 'cpu 1 2 3 4 5 6 7 8\ncpu0 1'}
+        with patch.object(Path, 'read_text', autospec=True, side_effect=lambda path: documents[str(path)]):
+            sample = ONLINE.disk_observation()
+        self.assertEqual(list(sample['disks']), ['259:1'])
+        self.assertEqual(sample['disks']['259:1']['counters'], list(range(17)))
+
+    def test_read_only_session_ownership_settings_and_cleanup(self):
+        class Process:
+            def __init__(self):
+                self.stdin, self.stdout = io.BytesIO(), io.BytesIO()
+                self.returncode = None
+            def poll(self):
+                return self.returncode
+            def wait(self, timeout):
+                self.input = self.stdin.getvalue()
+                self.returncode = 0
+                return 0
+            def kill(self):
+                raise AssertionError('clean observer must not require kill')
+        container = {'Id': 'a' * 64, 'Config': {'Labels': {
+            'com.docker.compose.project': 'addp-infra', 'com.docker.compose.service': 'postgres',
+            'com.docker.compose.project.working_dir': str(Path(ONLINE.__file__).resolve().parents[2])},
+            'Env': ['POSTGRES_DB=addp_online', 'POSTGRES_USER=addp', 'POSTGRES_PASSWORD=private-password']},
+            'State': {'Running': True}, 'Mounts': [{'Destination': '/var/lib/postgresql/data',
+                'Type': 'volume', 'Name': 'addp-infra_postgres_data', 'Source': '/var/lib/docker/volumes/addp-infra_postgres_data/_data'}]}
+        settings = {'database': 'addp_online', 'pid': 44, 'read_only': 'on', 'track_io_timing': 'on', 'track_wal_io_timing': 'on'}
+        with tempfile.TemporaryDirectory() as directory:
+            env = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_TEST': '1',
+                'ADDP_ONLINE_HOSTED': '1', 'ADDP_ONLINE_HOST': '1', 'POSTGRES_DB': 'addp_online',
+                'ADDP_ONLINE_ARTIFACT_DIR': directory, 'POSTGRES_USER': 'addp', 'POSTGRES_PASSWORD': 'private-password'}
+            for fault in ('none', 'owner', 'working_directory', 'database', 'read_only', 'timing', 'init_query', 'final_query'):
+                with self.subTest(fault=fault):
+                    evidence, process = {}, Process()
+                    current = json.loads(json.dumps(container))
+                    if fault == 'owner':
+                        current['Config']['Labels']['com.docker.compose.project'] = 'personal'
+                    if fault == 'working_directory':
+                        current['Config']['Labels']['com.docker.compose.project.working_dir'] = '/personal'
+                    if fault == 'database':
+                        current['Config']['Env'][0] = 'POSTGRES_DB=personal'
+                    current_settings = dict(settings)
+                    if fault == 'read_only':
+                        current_settings['read_only'] = 'off'
+                    if fault == 'timing':
+                        current_settings['track_wal_io_timing'] = 'off'
+                    replies = [current_settings, {'connections': 1, 'activity': []}, {'connections': 1, 'activity': []}, []]
+                    if fault == 'init_query':
+                        replies[0] = ONLINE.SuiteError('private-password')
+                    if fault == 'final_query':
+                        replies[-1] = ONLINE.SuiteError('private-password')
+                    thread = Mock()
+                    thread.is_alive.return_value = False
+                    with patch.dict(ONLINE.os.environ, env), patch.object(ONLINE.sys, 'platform', 'linux'), \
+                         patch.object(Path, 'exists', return_value=False), \
+                         patch.object(Path, 'read_text', return_value='1 0 259:1 / / rw - ext4 /dev/nvme0n1p1 rw'), \
+                         patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(current))), \
+                         patch.object(ONLINE.subprocess, 'Popen', return_value=process) as popen, \
+                         patch.object(ONLINE.AuditLatencyObservation, 'query', side_effect=replies) as query, \
+                         patch.object(ONLINE, 'disk_observation', return_value={'disks': {}}), \
+                         patch.object(ONLINE.threading, 'Thread', return_value=thread):
+                        def run():
+                            with ONLINE.AuditLatencyObservation(evidence, '33') as observer:
+                                observer.healthy()
+                        if fault == 'none':
+                            run()
+                            self.assertEqual(evidence['result'], 'passed')
+                            self.assertEqual(evidence['samples'], 2)
+                            self.assertTrue(evidence['connection_closed'])
+                            self.assertEqual(evidence['volume_host_device'], '259:1')
+                            self.assertEqual(process.input, b'\\q\n')
+                            command = popen.call_args.args[0]
+                            self.assertIn('a' * 64, command)
+                            self.assertNotIn('private-password', ' '.join(command))
+                            self.assertIn('default_transaction_read_only=on', popen.call_args.kwargs['env']['PGOPTIONS'])
+                            self.assertIn('statement_timeout=2000', popen.call_args.kwargs['env']['PGOPTIONS'])
+                            self.assertTrue(all(call.args[0].startswith('SELECT') for call in query.call_args_list))
+                        else:
+                            with self.assertRaises(ONLINE.SuiteError):
+                                run()
+                            self.assertEqual(evidence['result'], 'failed')
+                        if fault not in ('owner', 'working_directory', 'database'):
+                            self.assertEqual(process.returncode, 0)
+                        else:
+                            popen.assert_not_called()
+                    Path(directory, 'pg-audit-waits.jsonl').unlink(missing_ok=True)
+                    self.assertNotIn('private', json.dumps(evidence))
+
+    def test_sample_count_byte_and_activity_caps_fail_closed(self):
+        for fault in ('samples', 'bytes', 'connections', 'missing_activity'):
+            with self.subTest(fault=fault):
+                observer = ONLINE.AuditLatencyObservation({}, '33')
+                observer.stream = io.StringIO()
+                if fault == 'samples':
+                    observer.samples = 2000
+                if fault == 'bytes':
+                    observer.bytes = 32 * 1024 * 1024
+                result = {'connections': 258 if fault == 'connections' else 1,
+                          'activity': None if fault == 'missing_activity' else []}
+                with patch.object(observer, 'query', return_value=result), \
+                     patch.object(ONLINE, 'disk_observation', return_value={}), self.assertRaises(ONLINE.SuiteError):
+                    observer.sample()
+                self.assertEqual(observer.stream.getvalue(), '')
+
+    def test_close_failure_cannot_publish_a_pass(self):
+        evidence = {}
+        observer = ONLINE.AuditLatencyObservation(evidence, '33')
+        observer.thread = Mock()
+        observer.thread.is_alive.return_value = False
+        with patch.object(observer, 'sample'), patch.object(observer, 'query', return_value=[]), \
+             patch.object(observer, 'close', side_effect=ONLINE.SuiteError('cleanup failed')):
+            with self.assertRaises(ONLINE.SuiteError):
+                observer.__exit__(None, None, None)
+        self.assertEqual(evidence['result'], 'failed')
+        self.assertFalse(evidence['connection_closed'])
+
+
 class PGAuthorizationOnlineTest(unittest.TestCase):
     def setUp(self):
         self.facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64}
@@ -234,6 +412,12 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             'initial-basic', 'exact-basic', 'content-grant-basic', 'content-deny-basic',
             'content-revoked-basic', 'content-restored-basic']).start()
         self.addCleanup(patch.stopall)
+        observation = patch.object(ONLINE, 'AuditLatencyObservation').start()
+        def open_observation(evidence, principal):
+            evidence.update(result='passed', connection_closed=True, audit_rows=[])
+            return observation.return_value
+        observation.side_effect = open_observation
+        patch.object(ONLINE, 'bind_audit_requests').start()
         patch.object(ONLINE, 'item', side_effect=lambda reader, engine, name: {
             'id': 10 if name == 'metric_people' else 11, 'fingerprint': 'a' * 64}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
@@ -334,6 +518,22 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertTrue(all(call[1] == 'GET' or call[1:3] == ('POST', READ_CHECK)
                             for call in server.calls[before_calls:]))
         self.assertNotIn('private-token', json.dumps(result))
+        self.assertEqual(len(result['requests']), 1530)
+        self.assertEqual(sum(row['warmup'] for row in result['requests']), 30)
+        self.assertTrue(result['audit_observation']['connection_closed'])
+
+    def test_observer_failure_stops_sampling_without_retry_or_rule_writes(self):
+        server, lifecycle = self.lifecycle()
+        command, _ = lifecycle.grant(self.facts, initialize=True)
+        start = len(server.calls)
+        with patch.object(ONLINE, 'AuditLatencyObservation') as context:
+            context.return_value.__enter__.return_value.healthy.side_effect = ONLINE.SuiteError('observer failed')
+            report = {}
+            with self.assertRaises(ONLINE.SuiteError):
+                lifecycle.measure_read_latency(report, self.facts, command)
+            context.return_value.__exit__.assert_called_once()
+        self.assertEqual(report['authorization_latency']['result'], 'failed')
+        self.assertFalse(any(call[1] == 'POST' for call in server.calls[start:]))
 
     def test_latency_failure_stops_without_retry_and_preserves_partial_evidence(self):
         for fault in ('denied', 'transport', 'invalid_time', 'extra_data', 'credential', 'context', 'grant', 'boundary', 'budget'):

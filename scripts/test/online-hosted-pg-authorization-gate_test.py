@@ -15,6 +15,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        (self.host.repository / '.env.example').write_text('POSTGRES_USER=addp\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test' / SCRIPT.name)
         self.host._write_repository_script('business/scripts/online-metric-postgres-fixture.sh', '''
             #!/usr/bin/env bash
@@ -74,6 +75,29 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertLess(trace.index('start:-security'), trace.index('start:-manager'))
         self.assertLess(trace.index('start:-security'), trace.index('make:test-online'))
+
+    def test_observation_only_changes_timing_before_application_start(self):
+        source = SCRIPT.read_text()
+        self.assertLess(source.index('ALTER SYSTEM SET track_io_timing'), source.index('for start_target'))
+        self.assertIn("ALTER SYSTEM SET track_wal_io_timing = 'on'", source)
+        self.assertNotIn('ALTER SYSTEM SET fsync', source)
+        self.assertNotIn('ALTER SYSTEM SET synchronous_commit', source)
+        self.host._executable('docker', '''
+            #!/usr/bin/env bash
+            [ "$1 $2" != 'container inspect' ] || exit 1
+            if [ "$1" = exec ]; then
+              echo 'timing-enabled' >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_OBSERVATION_FAIL:-0}" != 1 ] || exit 1
+            fi
+            exit 0
+        ''')
+        result = self.run_gate(ADDP_TEST_OBSERVATION_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('timing-enabled', trace)
+        self.assertNotIn('start:-system', trace)
+        self.assertIn('infra-down', trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_source_waits_for_final_tcp_database_not_temporary_socket_readiness(self):
         source = SCRIPT.parents[2] / 'business/scripts/online-metric-postgres-fixture.sh'

@@ -21,6 +21,12 @@ export CATALOG_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secret
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/pg-authorization-engine.json"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+# Observation only, on the fresh disposable Infra admitted by hosted-online.sh.
+# Do not alter durability, audit persistence, permissions or application code.
+run_logged docker exec addp-postgres psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d addp_online \
+  -c "ALTER SYSTEM SET track_io_timing = 'on'" \
+  -c "ALTER SYSTEM SET track_wal_io_timing = 'on'" \
+  -c 'SELECT pg_reload_conf()'
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1

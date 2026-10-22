@@ -6,11 +6,13 @@ import json
 import math
 import os
 import re
+import select
 import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -46,6 +48,221 @@ PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_
                      'output_withdrawal_denies_read']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
+
+# Deliberately no query text/parameters, credentials, relation data or query plans
+# in the published evidence. Counters belong to the whole disposable instance.
+AUDIT_ACTIVITY_SQL = '''SELECT json_build_object(
+ 'at', clock_timestamp(), 'connections', (SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()),
+ 'activity', COALESCE((SELECT json_agg(row_to_json(s)) FROM (
+ SELECT pid, backend_start, xact_start, query_start, state_change, state, wait_event_type, wait_event,
+ pg_blocking_pids(pid) AS blocking_pids,
+ CASE WHEN ltrim(query) ILIKE 'INSERT INTO "system"."audit_logs"%' THEN 'audit_insert'
+      WHEN lower(btrim(query)) IN ('commit', 'commit;', 'rollback', 'rollback;') THEN 'transaction_end'
+      ELSE 'other' END AS query_class
+ FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()
+ AND backend_type='client backend' AND state<>'idle' ORDER BY pid LIMIT 256) s), '[]'::json),
+ 'wal', (SELECT row_to_json(w) FROM pg_stat_wal w),
+ 'bgwriter', (SELECT row_to_json(b) FROM pg_stat_bgwriter b),
+ 'database', (SELECT json_build_object('commits',xact_commit,'rollbacks',xact_rollback,
+ 'blocks_read',blks_read,'blocks_hit',blks_hit,'read_ms',blk_read_time,'write_ms',blk_write_time,
+ 'deadlocks',deadlocks,'stats_reset',stats_reset) FROM pg_stat_database WHERE datname=current_database()));'''
+
+
+def disk_observation():
+    disks = {}
+    for line in Path('/proc/diskstats').read_text().splitlines():
+        fields = line.split()
+        if len(fields) >= 14 and not fields[2].startswith(('loop', 'ram', 'fd', 'sr')):
+            disks[fields[0] + ':' + fields[1]] = {'device': fields[2], 'counters': list(map(int, fields[3:]))}
+    require(bool(disks) and len(disks) <= 128, 'disk observation missing or exceeds budget')
+    return {'at': datetime.now(timezone.utc).isoformat(), 'disks': disks,
+            'io_pressure': Path('/proc/pressure/io').read_text().strip(),
+            'cpu': Path('/proc/stat').read_text().splitlines()[0]}
+
+
+class AuditLatencyObservation:
+    """One bounded, read-only psql session; never touches a personal deployment."""
+    def __init__(self, evidence, principal):
+        self.evidence = evidence
+        require(re.fullmatch(r'[1-9][0-9]*', principal) is not None, 'invalid audit observation principal')
+        self.principal = principal
+        self.process = self.thread = self.stream = None
+        self.stop = threading.Event()
+        self.failure = None
+        self.buffer = b''
+        self.samples, self.bytes, self.query_max_ms, self.max_gap_ms = 0, 0, 0, 0
+        self.last_sample_ns = None
+        self.started = datetime.now(timezone.utc).isoformat()
+        evidence.update(result='failed', target_interval_ms=50, samples=0, connection_closed=False,
+                        scope='disposable_infra_instance_and_host_disks', audit_rows=[],
+                        note='sampled waits are not exhaustive; cumulative counters include other sessions')
+
+    def query(self, sql):
+        started = time.monotonic()
+        self.process.stdin.write((sql + '\n').encode())
+        self.process.stdin.flush()
+        while b'\n' not in self.buffer:
+            remaining = 3 - (time.monotonic() - started)
+            require(remaining > 0, 'audit observation query timed out')
+            ready, _, _ = select.select([self.process.stdout], [], [], remaining)
+            require(bool(ready), 'audit observation query timed out')
+            chunk = os.read(self.process.stdout.fileno(), 65536)
+            require(bool(chunk), 'audit observation connection closed')
+            self.buffer += chunk
+            require(len(self.buffer) <= 512 * 1024, 'audit observation response exceeds budget')
+        line, self.buffer = self.buffer.split(b'\n', 1)
+        self.query_max_ms = max(self.query_max_ms, (time.monotonic() - started) * 1000)
+        return json.loads(line)
+
+    def sample(self):
+        require(self.samples < 2000, 'audit observation sample budget exceeded')
+        started = time.monotonic_ns()
+        snapshot = {'started_unix_ns': time.time_ns(), 'db': self.query(AUDIT_ACTIVITY_SQL), 'host': disk_observation()}
+        snapshot['finished_unix_ns'] = time.time_ns()
+        snapshot['observer_ms'] = (time.monotonic_ns() - started) / 1000000
+        require(type(snapshot['db'].get('connections')) is int and 0 < snapshot['db']['connections'] <= 257
+                and isinstance(snapshot['db'].get('activity'), list), 'audit activity response missing or truncated')
+        if self.last_sample_ns is not None:
+            self.max_gap_ms = max(self.max_gap_ms, (started - self.last_sample_ns) / 1000000)
+        self.last_sample_ns = started
+        encoded = json.dumps(snapshot, separators=(',', ':')) + '\n'
+        self.bytes += len(encoded.encode())
+        require(self.bytes <= 32 * 1024 * 1024, 'audit observation byte budget exceeded')
+        self.stream.write(encoded)
+        self.stream.flush()
+        self.samples += 1
+
+    def healthy(self):
+        require(self.failure is None and self.process.poll() is None, 'audit observation failed')
+
+    def collect(self):
+        started = time.monotonic()
+        try:
+            while not self.stop.wait(.05):
+                require(time.monotonic() - started < 95, 'audit observation time budget exceeded')
+                self.sample()
+        except Exception:
+            # psql stderr or exception text can include connection credentials.
+            self.failure = 'audit_observation_failed'
+            self.stop.set()
+
+    def __enter__(self):
+        try:
+            require(all(os.environ.get(key) == value for key, value in {
+                'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_TEST': '1',
+                'ADDP_ONLINE_HOSTED': '1', 'ADDP_ONLINE_HOST': '1', 'POSTGRES_DB': 'addp_online'}.items())
+                and sys.platform == 'linux' and not (Path(__file__).resolve().parents[2] / '.env').exists(),
+                'audit observation requires a fresh Hosted deployment')
+            inspected = subprocess.run(['docker', 'inspect', '--format', '{{json .}}', 'addp-postgres'],
+                                       capture_output=True, text=True, timeout=5, check=True)
+            container = json.loads(inspected.stdout)
+            labels = container['Config']['Labels']
+            configured = dict(entry.split('=', 1) for entry in container['Config']['Env'] if '=' in entry)
+            require(labels.get('com.docker.compose.project') == 'addp-infra'
+                    and labels.get('com.docker.compose.service') == 'postgres' and container['State']['Running']
+                    and labels.get('com.docker.compose.project.working_dir') == str(Path(__file__).resolve().parents[2])
+                    and configured.get('POSTGRES_DB') == 'addp_online'
+                    and bool(configured.get('POSTGRES_PASSWORD'))
+                    and all(configured.get(key) == os.environ.get(key) for key in ('POSTGRES_USER', 'POSTGRES_PASSWORD')),
+                    'audit observation container ownership differs')
+            identifier = container['Id']
+            require(re.fullmatch('[a-f0-9]{64}', identifier) is not None, 'invalid observation container identity')
+            directory = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']).resolve()
+            require(directory.is_absolute() and not directory.is_relative_to(Path(__file__).resolve().parents[2]),
+                    'audit observation evidence must be outside checkout')
+            self.stream = (directory / 'pg-audit-waits.jsonl').open('x')
+            environment = dict(os.environ, PGPASSWORD=os.environ['POSTGRES_PASSWORD'], PGCONNECT_TIMEOUT='3',
+                PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=2000 -c lock_timeout=100 -c application_name=addp_pg_latency_observer')
+            self.process = subprocess.Popen(['docker', 'exec', '-i', '-e', 'PGPASSWORD', '-e', 'PGOPTIONS',
+                '-e', 'PGCONNECT_TIMEOUT', identifier, 'psql', '-XqAt', '-P', 'pager=off', '-v', 'ON_ERROR_STOP=1',
+                '-h', '127.0.0.1', '-U', os.environ['POSTGRES_USER'], '-d', 'addp_online'],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment)
+            settings = self.query("""SELECT json_build_object('database',current_database(), 'pid',pg_backend_pid(),
+                'server_started_at',pg_postmaster_start_time(), 'server_version',current_setting('server_version'),
+                'read_only',current_setting('default_transaction_read_only'), 'fsync',current_setting('fsync'),
+                'synchronous_commit',current_setting('synchronous_commit'),'wal_sync_method',current_setting('wal_sync_method'),
+                'track_io_timing',current_setting('track_io_timing'),'track_wal_io_timing',current_setting('track_wal_io_timing'));""")
+            require(settings['database'] == 'addp_online' and settings['read_only'] == 'on'
+                    and settings['track_io_timing'] == settings['track_wal_io_timing'] == 'on',
+                    'audit observation settings were not effective')
+            self.evidence.update(settings=settings, container_id=identifier, file='pg-audit-waits.jsonl')
+            mounts = [mount for mount in container['Mounts'] if mount['Destination'] == '/var/lib/postgresql/data']
+            require(len(mounts) == 1 and mounts[0]['Type'] == 'volume'
+                    and mounts[0]['Name'] == 'addp-infra_postgres_data', 'audit observation volume ownership differs')
+            candidates = []
+            for line in Path('/proc/self/mountinfo').read_text().splitlines():
+                left, right = line.split(' - ', 1)
+                fields = left.split()
+                if Path(mounts[0]['Source']).is_relative_to(fields[4]):
+                    candidates.append((len(fields[4]), fields[2], right.split()[0]))
+            require(bool(candidates), 'PostgreSQL volume filesystem could not be mapped')
+            _, device, filesystem = max(candidates)
+            self.evidence.update(volume=mounts[0]['Name'], volume_host_device=device, volume_host_filesystem=filesystem)
+            self.sample()
+            self.thread = threading.Thread(target=self.collect, name='pg-audit-observation', daemon=True)
+            self.thread.start()
+            return self
+        except Exception:
+            self.close()
+            raise SuiteError('audit observation initialization failed') from None
+
+    def close(self):
+        self.stop.set()
+        try:
+            if self.thread is not None:
+                self.thread.join(4)
+                require(not self.thread.is_alive(), 'audit observation thread did not stop')
+            if self.process is not None:
+                if self.process.poll() is None:
+                    self.process.stdin.write(b'\\q\n')
+                    self.process.stdin.flush()
+                self.process.wait(timeout=4)
+                require(self.process.returncode == 0, 'audit observation process failed')
+            self.evidence['connection_closed'] = True
+        finally:
+            if self.process is not None:
+                if self.process.poll() is None:
+                    self.process.kill()
+                    self.process.wait(timeout=4)
+                self.process.stdin.close()
+                self.process.stdout.close()
+            if self.stream is not None:
+                self.stream.close()
+
+    def __exit__(self, kind, value, traceback):
+        try:
+            self.stop.set()
+            self.thread.join(4)
+            require(not self.thread.is_alive() and self.failure is None, 'audit observation failed')
+            self.sample()
+            # Only metadata for this fixture principal, exact route and window.
+            self.evidence['audit_rows'] = self.query(f"""SELECT COALESCE(json_agg(row_to_json(s)), '[]'::json) FROM (
+                SELECT id,request_id,created_at,(details->>'duration_ms')::bigint AS pre_audit_ms FROM system.audit_logs
+                WHERE principal_id={self.principal} AND event_name='http.request.completed'
+                AND http_method='POST' AND resource_path='{READ_CHECK}' AND created_at>='{self.started}'::timestamptz
+                ORDER BY id LIMIT 1531) s;""")
+            self.evidence['result'] = 'passed' if kind is None else 'failed'
+        finally:
+            self.evidence.update(samples=self.samples, bytes=self.bytes, max_observer_query_ms=self.query_max_ms,
+                                 max_sample_gap_ms=self.max_gap_ms)
+            try:
+                self.close()
+            except Exception:
+                self.evidence['result'] = 'failed'
+                raise
+        return False
+
+
+def bind_audit_requests(requests, audits):
+    require(len(requests) == len(audits) and len({row['request_id'] for row in audits}) == len(audits),
+            'audit observation request count or identity differs')
+    for request, audit in zip(requests, audits):
+        stamp = datetime.fromisoformat(audit['created_at'].replace('Z', '+00:00'))
+        require(stamp.tzinfo is not None and re.fullmatch('[a-f0-9-]{36}', audit['request_id']) is not None
+                and request['started_unix_ns'] - 1000000 <= stamp.timestamp() * 1000000000
+                    <= request['finished_unix_ns'] + 1000000,
+                'audit observation request time window differs')
+        request.update(request_id=audit['request_id'], audit_id=audit['id'], pre_audit_ms=audit['pre_audit_ms'])
 
 
 def require(condition, message):
@@ -557,7 +774,7 @@ class Lifecycle:
                   'quantile_method': 'nearest_rank', 'request_timeout_seconds': self.reader.timeout,
                   'started_at': datetime.now(timezone.utc).isoformat(),
                   'phase': 'controls_before', 'attempted_count': 0,
-                  'sample_count': 0, 'warmup_count': 0, 'failed_count': 0, 'rounds': []}
+                  'sample_count': 0, 'warmup_count': 0, 'failed_count': 0, 'rounds': [], 'requests': []}
         report['authorization_latency'] = result
         deadline = time.monotonic() + 90
         credentials = (self.reader.token, self.operator.token)
@@ -597,42 +814,53 @@ class Lifecycle:
 
         baseline = snapshot()
         try:
-            for round_number in range(1, LATENCY_ROUNDS + 1):
-                row = {'round': round_number, 'warmup_count': 0, 'samples_ms': []}
-                result['rounds'].append(row)
-                for number in range(LATENCY_SAMPLES + LATENCY_WARMUPS):
-                    within_budget()
-                    require((self.reader.token, self.operator.token) == credentials,
-                            'latency sampling credential changed')
-                    result['phase'] = f'round_{round_number}_' + ('warmup' if number < LATENCY_WARMUPS else 'sample')
-                    result['attempted_count'] += 1
-                    started = time.perf_counter_ns()
-                    try:
-                        response = self.reader.request('POST', READ_CHECK, (200,), body)
-                        elapsed = (time.perf_counter_ns() - started) / 1000000
-                        payload = response.payload
-                        require(response.status == 200 and isinstance(payload, dict) and set(payload) == {'observed_at'}
-                                and isinstance(payload['observed_at'], str), 'invalid read-check observation')
-                        observed = datetime.fromisoformat(payload['observed_at'].replace('Z', '+00:00'))
-                        require(observed.tzinfo is not None and observed.year > 1970, 'invalid read-check timestamp')
-                        require(math.isfinite(elapsed) and elapsed >= 0, 'invalid latency clock')
-                    except (SuiteError, ValueError, TypeError):
-                        result['failed_count'] += 1
-                        # Do not copy remote diagnostics or credentials into public evidence.
-                        raise SuiteError('fixed-target latency request failed; no retry performed') from None
-                    if number < LATENCY_WARMUPS:
-                        row['warmup_count'] += 1
-                        result['warmup_count'] += 1
-                    else:
-                        row['samples_ms'].append(elapsed)
-                        result['sample_count'] += 1
-                    within_budget()
-                    time.sleep(.01)
-                row.update(latency_statistics(row['samples_ms']))
-                result['phase'] = f'round_{round_number}_controls_after'
-                require(snapshot() == baseline, 'latency sampling identity, rules or facts drifted')
-                if round_number < LATENCY_ROUNDS:
-                    time.sleep(1)
+            observation = result['audit_observation'] = {}
+            with AuditLatencyObservation(observation, self.recipient) as observer:
+                for round_number in range(1, LATENCY_ROUNDS + 1):
+                    row = {'round': round_number, 'warmup_count': 0, 'samples_ms': []}
+                    result['rounds'].append(row)
+                    for number in range(LATENCY_SAMPLES + LATENCY_WARMUPS):
+                        within_budget()
+                        observer.healthy()
+                        require((self.reader.token, self.operator.token) == credentials,
+                                'latency sampling credential changed')
+                        result['phase'] = f'round_{round_number}_' + ('warmup' if number < LATENCY_WARMUPS else 'sample')
+                        result['attempted_count'] += 1
+                        wall_start = time.time_ns()
+                        started = time.perf_counter_ns()
+                        try:
+                            response = self.reader.request('POST', READ_CHECK, (200,), body)
+                            elapsed = (time.perf_counter_ns() - started) / 1000000
+                            wall_end = time.time_ns()
+                            payload = response.payload
+                            require(response.status == 200 and isinstance(payload, dict) and set(payload) == {'observed_at'}
+                                    and isinstance(payload['observed_at'], str), 'invalid read-check observation')
+                            observed = datetime.fromisoformat(payload['observed_at'].replace('Z', '+00:00'))
+                            require(observed.tzinfo is not None and observed.year > 1970, 'invalid read-check timestamp')
+                            require(math.isfinite(elapsed) and elapsed >= 0, 'invalid latency clock')
+                        except (SuiteError, ValueError, TypeError):
+                            result['failed_count'] += 1
+                            # Do not copy remote diagnostics or credentials into public evidence.
+                            raise SuiteError('fixed-target latency request failed; no retry performed') from None
+                        result['requests'].append({'round': round_number, 'index': number,
+                            'warmup': number < LATENCY_WARMUPS, 'started_unix_ns': wall_start,
+                            'finished_unix_ns': wall_end, 'duration_ms': elapsed})
+                        if number < LATENCY_WARMUPS:
+                            row['warmup_count'] += 1
+                            result['warmup_count'] += 1
+                        else:
+                            row['samples_ms'].append(elapsed)
+                            result['sample_count'] += 1
+                        within_budget()
+                        time.sleep(.01)
+                    row.update(latency_statistics(row['samples_ms']))
+                    result['phase'] = f'round_{round_number}_controls_after'
+                    require(snapshot() == baseline, 'latency sampling identity, rules or facts drifted')
+                    if round_number < LATENCY_ROUNDS:
+                        time.sleep(1)
+            require(observation.get('result') == 'passed' and observation.get('connection_closed') is True,
+                    'audit observation did not finish cleanly')
+            bind_audit_requests(result['requests'], observation['audit_rows'])
             samples = [sample for row in result['rounds'] for sample in row['samples_ms']]
             result.update(latency_statistics(samples))
             for quantile in ('p50_ms', 'p95_ms'):
