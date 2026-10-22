@@ -40,11 +40,6 @@ function environment() {
 }
 
 async function verifyOriginalDownload(page, frame, source) {
-  const bundleResponse = source.download_members ? page.waitForResponse(response => {
-    const url = new URL(response.url())
-    return url.pathname === '/api/v1/manager/downloads/file' && url.searchParams.get('locator') === source.locator
-  }) : null
-  bundleResponse?.catch(() => {})
   const downloaded = page.waitForEvent('download')
   await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
   const download = await downloaded
@@ -52,9 +47,10 @@ async function verifyOriginalDownload(page, frame, source) {
   expect(path).not.toBeNull()
   const bytes = readFileSync(path)
   if (source.download_members) {
-    const response = await bundleResponse
-    expect(response.status()).toBe(200)
-    expect(response.headers()['content-type']).toBe('application/zip')
+    expect(await download.failure()).toBe(null)
+    const url = new URL(download.url())
+    expect(url.pathname).toBe('/api/v1/manager/downloads/file')
+    expect(url.searchParams.get('locator')).toBe(source.locator)
     expect(download.suggestedFilename()).toBe(`model.${source.format}.zip`)
     const code = `import sys,json,importlib
 sys.path.insert(0,sys.argv[1])

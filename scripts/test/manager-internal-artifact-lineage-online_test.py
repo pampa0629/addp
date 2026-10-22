@@ -663,6 +663,45 @@ class ManagedArtifactPhysicalEvidenceTest(unittest.TestCase):
 
 
 class ModelBundleDownloadTest(unittest.TestCase):
+    def test_browser_bundle_uses_completed_download_without_page_response_event(self):
+        import re, subprocess
+        script = (SCRIPT.parents[2] / 'console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js').read_text()
+        helper = re.search(r"async function verifyOriginalDownload\(.*?\n}\n", script, re.S).group(0)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'download.zip'
+            path.write_bytes(obj_bundle_bytes())
+            source = {'format':'obj', 'download_members':SUITE.MESH_SOURCE_FACTS['obj']['download_members'],
+                      'locator':'addp://engine/5/path/addp-online/model3d/obj/model.obj?type=object&item_id=59'}
+            probe = """
+const assert=require('node:assert/strict');
+const {readFileSync,writeFileSync}=require('node:fs');const {resolve}=require('node:path');
+const {execFileSync}=require('node:child_process');
+const source=JSON.parse(process.argv[1]),path=process.argv[2];
+const expect=value=>({toBe:expected=>assert.equal(value,expected),not:{toBeNull:()=>assert.notEqual(value,null)}});
+let waiting=false,clicked=false;
+const download={path:async()=>path,failure:async()=>null,suggestedFilename:()=> 'model.obj.zip',
+  url:()=> 'http://127.0.0.1/api/v1/manager/downloads/file?locator='+encodeURIComponent(source.locator)};
+const page={waitForResponse:()=>{throw Error('attachment downloads have no page response event')},
+  waitForEvent:event=>{assert.equal(event,'download');waiting=true;return Promise.resolve(download)}};
+const frame={getByRole:()=>({click:async()=>{assert.equal(waiting,true);clicked=true}})};
+""" + helper + """
+verifyOriginalDownload(page,frame,source).then(result=>{
+  assert.equal(clicked,true);assert.deepEqual(result.bundle.members,source.download_members);
+  assert.equal(result.bytes.length,readFileSync(path).length);
+}).catch(error=>{console.error(error);process.exitCode=1});
+"""
+            import os
+            environment={**os.environ,'ADDP_ONLINE_ARTIFACT_DIR':directory,'ADDP_ONLINE_MANAGER_BROWSER_PHASE':'regression'}
+            result=subprocess.run(['node','--input-type=commonjs','-e',probe,json.dumps(source),str(path)],
+                cwd=SCRIPT.parents[2] / 'console/frontend',env=environment,capture_output=True,text=True,timeout=20)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual((Path(directory)/'model-obj-source-regression.zip').read_bytes(),path.read_bytes())
+            for old,new in (("failure:async()=>null","failure:async()=> 'canceled'"),
+                            ("encodeURIComponent(source.locator)","encodeURIComponent('another-source')")):
+                rejected=subprocess.run(['node','--input-type=commonjs','-e',probe.replace(old,new),json.dumps(source),str(path)],
+                    cwd=SCRIPT.parents[2] / 'console/frontend',env=environment,capture_output=True,text=True,timeout=20)
+                self.assertNotEqual(rejected.returncode,0,rejected.stdout)
+
     def test_browser_python_binding_checks_the_actual_downloaded_zip(self):
         import re, subprocess
         script = (SCRIPT.parents[2] / 'console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js').read_text()
