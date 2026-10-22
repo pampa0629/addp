@@ -100,6 +100,7 @@
 | 自动批量切片 | raster_load → raster_tile → raster_save_tiles |
 | 有效轮廓 | raster_load → raster_footprint → 既有矢量计算／保存节点或 JSON 预览 |
 | DEM 填洼 | raster_load → raster_fill_depressions → raster_save；八邻接、图边／无效区边界开放，输出米制 |
+| DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
 | DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
 | DEM 等值线 | raster_load → raster_contour → 既有矢量保存节点或 JSON 预览 |
 
@@ -194,7 +195,7 @@
 
 ### 6.2 DEM 验收边界
 
-DEM 填洼首期已实现并经本地 Native 验证，范围和证据见[后续专题](../next/栅格算子体系后续专题.md)。该算子没有独立 Hosted 证据，Linux 全量仍等 CI 会话回传，不沿用下述原 DEM 基础四项的 T4 作为填洼验收。
+DEM 填洼首期已实现并经本地 Native 验证，范围和证据见[后续专题](../next/栅格算子体系后续专题.md)。独立 Hosted 已在固定 `8599f94ed` 通过严格归档审计，Linux 全量仍等 CI 会话回传，不沿用下述原 DEM 基础四项的 T4 作为填洼验收。D8流向首期已实现并通过本地标准Native全量，独立Hosted尚未验收；验证状态独立记录于专题，不沿用填洼证据。
 
 DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与归档见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。坡度、坡向和晕渲在 Hosted 中覆盖 COG 保存、自动扫描、资源血缘与页面参数；等值线在原 Hosted 中覆盖计算及 JSON 预览，另由独立 `raster-contour-persistence` 在 `54acffb1c` 完成两种高程模式的 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人归属、严格物理／Meta 大小、Monitor、当前执行血缘和零残留清理。Runtime 沿现有挂载路径写入，Meta 经真实 NFS 读取；GeoPackage 内部图层遵守容器边界。该 API 闭环不替代 Manager 绘制、HTTP Range、业务删除、覆盖冲突或容量验收；原 Raster T4 保留原版本和 1740 秒预算。
 

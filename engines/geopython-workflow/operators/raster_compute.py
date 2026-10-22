@@ -6,6 +6,7 @@ import heapq
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
+from fractions import Fraction
 import json
 import math
 from numbers import Integral, Real
@@ -2379,16 +2380,22 @@ def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=
             path.unlink(missing_ok=True)
 
 
-def _priority_flood(values):
-    """Eight-connected minimax flood, with every invalid boundary open (epsilon=0)."""
-    height, width = values.shape
-    valid = np.isfinite(values)
+def _dem_open_outlets(valid):
+    """Valid cells on the image edge or next to original invalid coverage."""
+    height, width = valid.shape
     padded = np.pad(valid, 1, constant_values=False)
     surrounded = np.ones(valid.shape, dtype=bool)
     for dy in range(3):
         for dx in range(3):
             surrounded &= padded[dy:dy+height, dx:dx+width]
-    visited = valid & ~surrounded
+    return valid & ~surrounded
+
+
+def _priority_flood(values):
+    """Eight-connected minimax flood, with every invalid boundary open (epsilon=0)."""
+    height, width = values.shape
+    valid = np.isfinite(values)
+    visited = _dem_open_outlets(valid)
     queue = [(float(values[row, col]), int(row), int(col)) for row, col in np.argwhere(visited)]
     heapq.heapify(queue)
     while queue:
@@ -2419,6 +2426,114 @@ def raster_fill_depressions(input_raster, band, elevation_unit):
         for y in range(0, normalized.RasterYSize, 512):
             for x in range(0, normalized.RasterXSize, 512):
                 destination.WriteArray(values[y:y+512, x:x+512], x, y)
+        destination = None
+        normalized.FlushCache()
+        normalized = None
+        result = _raster(path)
+        completed = True
+        return result
+    finally:
+        destination = normalized = None
+        if path is not None and not completed:
+            path.unlink(missing_ok=True)
+
+
+_D8_MESSAGES = {
+    'grid': ('DEM D8 流向需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'DEM D8 flow direction requires a projected north-up grid with known linear units; reproject explicitly'),
+    'band': ('DEM D8 流向必须显式选择有效的一基高程数据波段', 'DEM D8 flow direction requires an explicit valid one-based elevation band'),
+    'complex': ('DEM D8 流向不支持复数高程或复数 alpha 波段', 'DEM D8 flow direction does not support complex elevation or alpha bands'),
+    'alpha': ('DEM D8 流向不能选择 alpha 波段作为高程', 'DEM D8 flow direction cannot use an alpha band as elevation'),
+    'unit': ('DEM D8 流向必须明确声明 metre、foot 或 us_survey_foot 高程单位', 'DEM D8 flow direction requires elevation_unit metre, foot or us_survey_foot'),
+    'unit-conflict': ('DEM D8 流向高程波段单位未知或与声明单位冲突', 'DEM D8 flow direction band unit is unknown or conflicts with elevation_unit'),
+    'scale': ('DEM D8 流向前必须显式应用高程 scale/offset', 'DEM D8 flow direction requires elevation scale/offset to be applied first'),
+    'overflow': ('DEM D8 流向高程转换为米时溢出', 'DEM D8 flow direction elevation conversion to metres overflowed'),
+    'distance': ('DEM D8 流向的像元中心距离必须为有限正数', 'DEM D8 flow direction requires finite positive pixel centre distances'),
+    'closed': ('DEM D8 流向存在无法排出的封闭洼地，请先显式执行 DEM 填洼', 'DEM D8 flow direction has a closed depression without an outlet; explicitly fill DEM depressions first'),
+}
+# Row-major neighbours make all equal-gradient and equal-path choices explicit.
+_D8_NEIGHBOURS = ((-1, -1, 32), (-1, 0, 64), (-1, 1, 128), (0, -1, 16),
+                  (0, 1, 1), (1, -1, 8), (1, 0, 4), (1, 1, 2))
+
+
+def _d8_error(code):
+    return ValueError(_D8_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_directions(values, xsize, ysize):
+    """Strict descent followed by exact weighted shortest paths over equal DEM levels."""
+    height, width = values.shape
+    directions = np.full(values.shape, np.nan)
+    valid = np.isfinite(values)
+    outlets = _dem_open_outlets(valid)
+    distances = [None] * values.size
+    offsets = {code: (dy, dx) for dy, dx, code in _D8_NEIGHBOURS}
+    codes = {(dy, dx): code for dy, dx, code in _D8_NEIGHBOURS}
+    steps = []
+    for dy, dx, code in _D8_NEIGHBOURS:
+        distance = math.hypot(dx * xsize, dy * ysize)
+        if not math.isfinite(distance) or distance <= 0:
+            raise _d8_error('distance')
+        steps.append((dy, dx, code, codes[-dy, -dx], Fraction(distance)))
+    queue = []
+    for row, col in np.argwhere(valid):
+        row, col = int(row), int(col)
+        elevation = Fraction(float(values[row, col]))
+        best = 0
+        for dy, dx, code, _, distance in steps:
+            y, x = row + dy, col + dx
+            if 0 <= y < height and 0 <= x < width and valid[y, x] and values[y, x] < values[row, col]:
+                slope = (elevation - Fraction(float(values[y, x]))) / distance
+                if slope > best:
+                    best = slope
+                    directions[row, col] = code
+        if best == 0 and outlets[row, col]:
+            directions[row, col] = 0
+        if np.isfinite(directions[row, col]):
+            distances[row * width + col] = 0
+            queue.append((0, row, col))
+    heapq.heapify(queue)
+    while queue:
+        cost, row, col = heapq.heappop(queue)
+        if cost != distances[row * width + col]:
+            continue
+        for dy, dx, _, reverse, step in steps:
+            y, x = row + dy, col + dx
+            if not (0 <= y < height and 0 <= x < width and valid[y, x] and values[y, x] == values[row, col]):
+                continue
+            candidate = cost + step
+            prior = distances[y * width + x]
+            if prior is None or candidate < prior:
+                distances[y * width + x] = candidate
+                directions[y, x] = reverse
+                heapq.heappush(queue, (candidate, y, x))
+            elif candidate == prior:
+                py, px = offsets[int(directions[y, x])]
+                if (row, col) < (y + py, x + px):
+                    directions[y, x] = reverse
+    if np.any(valid & ~np.isfinite(directions)):
+        raise _d8_error('closed')
+    return directions
+
+
+def raster_flow_direction_d8(input_raster, band, elevation_unit):
+    """One downstream per DEM cell, with immutable elevations and acyclic flat routing."""
+    normalized = destination = None
+    path = None
+    completed = False
+    try:
+        normalized, _, _ = _dem_source(input_raster, elevation_unit, band, 1, diagnostic=_d8_error)
+        path = Path(normalized.GetDescription())
+        values = np.empty((normalized.RasterYSize, normalized.RasterXSize), dtype=np.float64)
+        for x, y, arrays, _ in _blocks(normalized, [1]):
+            height, width = arrays[0].shape
+            values[y:y+height, x:x+width] = arrays[0]
+        transform = normalized.GetGeoTransform()
+        directions = _d8_directions(values, transform[1], -transform[5])
+        destination = normalized.GetRasterBand(1)
+        destination.SetUnitType('')
+        for y in range(0, normalized.RasterYSize, 512):
+            for x in range(0, normalized.RasterXSize, 512):
+                destination.WriteArray(directions[y:y+512, x:x+512], x, y)
         destination = None
         normalized.FlushCache()
         normalized = None
@@ -2566,6 +2681,7 @@ _SPECS = [
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
+    (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2617,7 +2733,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
-    if name in ('raster_fill_depressions', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
+    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
         examples.update({'elevation_unit': 'metre', 'band': 1})
         if name == 'raster_contour':
             examples.update({'interval': 10.})

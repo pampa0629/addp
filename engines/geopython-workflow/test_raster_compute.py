@@ -6062,9 +6062,12 @@ def test_dem_fill_depressions_cross_block_and_bounded_io(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('language,prefix', [('zh-cn', 'DEM 填洼'), ('en', 'DEM depression filling')])
+@pytest.mark.parametrize('operation', ['raster_fill_depressions', 'raster_flow_direction_d8'])
 @pytest.mark.parametrize('fault', ['geographic', 'rotated', 'south-up', 'missing-crs', 'missing-grid', 'unit', 'unit-conflict', 'unit-unknown', 'scale', 'offset', 'alpha', 'band', 'complex', 'complex-alpha'])
-def test_dem_fill_depressions_bilingual_invalid_input_without_private_output(tmp_path, language, prefix, fault):
+def test_dem_fill_depressions_bilingual_invalid_input_without_private_output(tmp_path, language, prefix, fault, operation):
     import operators.raster_compute as compute
+    if operation == 'raster_flow_direction_d8':
+        prefix = 'DEM D8 流向' if language == 'zh-cn' else 'DEM D8 flow direction'
     path = tmp_path/'bad.tif'; dtype = gdal.GDT_CFloat64 if fault in ('complex', 'complex-alpha') else gdal.GDT_Float64
     ds = gdal.GetDriverByName('GTiff').Create(str(path), 5, 5, 2 if fault == 'complex-alpha' else 1, dtype)
     if fault != 'missing-grid': ds.SetGeoTransform((0, 1, .2 if fault == 'rotated' else 0, 5, 0, 1 if fault == 'south-up' else -1))
@@ -6080,7 +6083,7 @@ def test_dem_fill_depressions_bilingual_invalid_input_without_private_output(tmp
     with raster_workspace(), raster_error_language(language):
         source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
         with pytest.raises(ValueError, match='^'+prefix):
-            compute.raster_fill_depressions(source, True if fault == 'band' else 1, 'bad' if fault == 'unit' else 'metre')
+            getattr(compute, operation)(source, True if fault == 'band' else 1, 'bad' if fault == 'unit' else 'metre')
         assert set(source.workspace.iterdir()) == prior
 
 
@@ -6158,3 +6161,281 @@ def test_dem_fill_depressions_discovery_and_required_parameters():
     assert params['band']['required'] and params['elevation_unit']['required']
     assert params['elevation_unit']['enum'] == ['metre', 'foot', 'us_survey_foot']
     assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'band': 1, 'elevation_unit': 'metre'}
+
+
+def _d8_bellman_ford_oracle(values, xsize=2., ysize=3.):
+    """Independent synchronous relaxation, without production heap or neighbours."""
+    from fractions import Fraction
+    height, width = values.shape
+    cells = [tuple(map(int, point)) for point in np.argwhere(np.isfinite(values))]
+    codes = [[32, 64, 128], [16, 0, 1], [8, 4, 2]]
+    def neighbours(row, col):
+        for y in range(max(0, row-1), min(height, row+2)):
+            for x in range(max(0, col-1), min(width, col+2)):
+                if (y, x) != (row, col) and np.isfinite(values[y, x]):
+                    yield (y, x), Fraction(math.hypot((x-col)*xsize, (y-row)*ysize)), codes[y-row+1][x-col+1]
+    result = np.full(values.shape, np.nan)
+    costs = {}
+    for point in cells:
+        row, col = point
+        lower = [(Fraction(float(values[point]))-Fraction(float(values[p])))/distance for p,distance,_ in neighbours(*point) if values[p]<values[point]]
+        if lower:
+            best = max(lower)
+            result[point] = next(code for p,distance,code in neighbours(*point) if values[p]<values[point] and (Fraction(float(values[point]))-Fraction(float(values[p])))/distance==best)
+            costs[point] = 0
+        elif row in (0,height-1) or col in (0,width-1) or any(not np.isfinite(values[y,x]) for y in range(row-1,row+2) for x in range(col-1,col+2)):
+            costs[point] = 0; result[point] = 0
+    seeds = set(costs)
+    for _ in cells:
+        before = costs.copy()
+        for point in cells:
+            if point in seeds:continue
+            candidates = [(before[p]+distance,p,code) for p,distance,code in neighbours(*point) if values[p]==values[point] and p in before]
+            if candidates:
+                cost,_,code = min(candidates)
+                costs[point] = cost; result[point] = code
+        if costs == before:break
+    if len(costs)!=len(cells):raise ValueError('closed depression')
+    return result
+
+
+def _assert_d8_paths(values, directions):
+    codes = {1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    height,width=values.shape
+    np.testing.assert_array_equal(np.isfinite(values), np.isfinite(directions))
+    for point in map(tuple,np.argwhere(np.isfinite(values))):
+        seen=set()
+        while True:
+            assert point not in seen, 'D8 flow cycle'
+            seen.add(point);row,col=point;code=directions[point]
+            if code==0:
+                assert row in (0,height-1) or col in (0,width-1) or any(not np.isfinite(values[y,x]) for y in range(row-1,row+2) for x in range(col-1,col+2))
+                break
+            assert code in codes
+            dy,dx=codes[code];next_point=(row+dy,col+dx)
+            assert 0<=next_point[0]<height and 0<=next_point[1]<width
+            assert np.isfinite(values[next_point]) and values[next_point]<=values[point]
+            point=next_point
+
+
+@pytest.mark.parametrize('seed',range(12))
+def test_dem_d8_independent_flat_shortest_path_and_global_acyclic_oracle(tmp_path,seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);raw=rng.integers(-4,12,size=(7,9)).astype(float)
+    raw[rng.random(raw.shape)<.07]=np.nan
+    values=_fill_level_reachability_oracle(raw)
+    expected=_d8_bellman_ford_oracle(values)
+    path=create_raster(tmp_path/'dem.tif',values,(500000,2,0,3000000,0,-3),'EPSG:3857');before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        result=compute.raster_flow_direction_d8(source,1,'metre');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        actual=read_band_values(band);np.testing.assert_array_equal(actual,expected);_assert_d8_paths(values,actual)
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetUnitType()==''
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(values))
+        assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.) and osr.SpatialReference(wkt=ds.GetProjection()).IsProjected()
+        assert set(source.workspace.iterdir())==prior|{result.path};band=ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('dy,dx,code',[(-1,-1,32),(-1,0,64),(-1,1,128),(0,-1,16),(0,1,1),(1,-1,8),(1,0,4),(1,1,2)])
+def test_dem_d8_eight_direction_codes_and_edge_downhill_precedence(tmp_path,dy,dx,code):
+    import operators.raster_compute as compute
+    values=np.full((3,3),20.);values[1,1]=10;values[1+dy,1+dx]=9
+    path=create_raster(tmp_path/'dem.tif',values,(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace():
+        result=compute.raster_flow_direction_d8(raster_load(source_plan(path)),1,'metre');ds=gdal.Open(str(result.path));directions=read_band_values(ds.GetRasterBand(1));ds=None
+        assert directions[1,1]==code
+        np.testing.assert_array_equal(directions,_d8_bellman_ford_oracle(values));_assert_d8_paths(values,directions)
+        assert np.any(directions[0,:]>0)  # Higher edge cells drain toward lower valid cells.
+
+
+@pytest.mark.parametrize('ysize,expected',[(1.,64),(10.,1)])
+def test_dem_d8_flat_routes_use_physical_distance_not_step_count(ysize,expected):
+    import operators.raster_compute as compute
+    values=np.full((9,13),100.);values[1:8,1:12]=10.;values[0,6]=10.;values[3,-1]=10.
+    frozen=values.copy();values.flags.writeable=False
+    actual=compute._d8_directions(values,1.,ysize)
+    assert actual[3,6]==expected
+    np.testing.assert_array_equal(actual,_d8_bellman_ford_oracle(values,1.,ysize));_assert_d8_paths(values,actual)
+    np.testing.assert_array_equal(values,frozen)
+
+
+@pytest.mark.parametrize('values,xsize,ysize,code',[
+    (np.array([[4.,4.,4.],[4.,5.,4.],[4.,4.,4.]]),1.,1.,64),
+    (np.array([[4.,4.,4.],[4.,5.,4.],[4.,4.,4.]]),2.,3.,16),
+    (np.array([[0.,0.,0.],[-1e308,1e308,0.],[0.,0.,0.]]),1.,1.,16),
+    (np.array([[1e-300,1e-300,1e-300],[0.,1e-300,1e-300],[1e-300,1e-300,1e-300]]),1e200,1e200,16),
+    (np.array([[2.,2.,2.],[1.,np.nextafter(1.,2.),2.],[2.,2.,2.]]),1.,1.,16),
+])
+def test_dem_d8_exact_slope_ties_extremes_and_no_flat_tolerance(values,xsize,ysize,code):
+    import operators.raster_compute as compute
+    actual=compute._d8_directions(values,xsize,ysize)
+    assert actual[1,1]==code
+    np.testing.assert_array_equal(actual,_d8_bellman_ford_oracle(values,xsize,ysize));_assert_d8_paths(values,actual)
+
+
+@pytest.mark.parametrize('shape,empty', [((1,1),False),((1,7),False),((7,1),False),((6,8),False),((6,8),True)])
+def test_dem_d8_all_flat_single_row_column_and_all_invalid(tmp_path,shape,empty):
+    import operators.raster_compute as compute
+    values=np.full(shape,np.nan if empty else 0.)
+    path=create_raster(tmp_path/'dem.tif',values,(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace():
+        result=compute.raster_flow_direction_d8(raster_load(source_plan(path)),1,'metre');ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1))
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(values));ds=None
+        np.testing.assert_array_equal(actual,_d8_bellman_ford_oracle(values));_assert_d8_paths(values,actual)
+        if not empty:assert np.count_nonzero(actual==0)>0
+
+
+@pytest.mark.parametrize('language,diagnostic',[('zh-cn','封闭洼地'),('en','closed depression')])
+def test_dem_d8_closed_depression_fails_without_changing_dem_or_leaking_workspace(tmp_path,language,diagnostic):
+    import operators.raster_compute as compute
+    values=np.full((7,9),10.);values[1:-1,1:-1]=-2.
+    path=create_raster(tmp_path/'dem.tif',values,(0,2,0,100,0,-3),'EPSG:3857');before=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match=diagnostic):compute.raster_flow_direction_d8(source,1,'metre')
+        assert set(source.workspace.iterdir())==prior
+        filled=compute.raster_fill_depressions(source,1,'metre');result=compute.raster_flow_direction_d8(filled,1,'metre')
+        ds=gdal.Open(str(result.path));directions=read_band_values(ds.GetRasterBand(1));ds=None
+        np.testing.assert_array_equal(directions,_d8_bellman_ford_oracle(np.full(values.shape,10.)))
+        _assert_d8_paths(np.full(values.shape,10.),directions)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_dem_d8_selected_band_units_alpha_mask_nodata_and_zero(tmp_path,unit,factor):
+    import operators.raster_compute as compute
+    path=tmp_path/'bands.tif';values=np.tile(np.arange(9,dtype=float),(7,1))-3;values[1,1]=-9999;values[2,2]=np.inf;values[3,3]=np.nan
+    alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,3]=128
+    mask=np.full(values.shape,255,np.uint8);mask[4,4]=0
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),9,7,3,gdal.GDT_Float64);ds.SetGeoTransform((0,2,0,100,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+    for index,array in enumerate((np.full(values.shape,np.nan),values,alpha),1):ds.GetRasterBand(index).WriteArray(array);ds.GetRasterBand(index).SetNoDataValue(-9999)
+    ds.GetRasterBand(2).SetUnitType(unit);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=path.read_bytes()
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0);normalized=np.where(valid,values*factor,np.nan)
+    with raster_workspace():
+        result=compute.raster_flow_direction_d8(raster_load(source_plan(path)),2,unit);ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1))
+        np.testing.assert_array_equal(actual,_d8_bellman_ford_oracle(normalized));_assert_d8_paths(normalized,actual)
+        assert np.isfinite(actual[0,3])  # Valid zero elevation with partial alpha survives.
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,valid);ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
+def test_dem_d8_explicit_band_types_and_range(tmp_path,band):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'dem.tif',np.ones((3,3)),(0,1,0,100,0,-1),'EPSG:3857')
+    with raster_workspace(),raster_error_language('en'),pytest.raises(ValueError,match='one-based elevation band'):
+        compute.raster_flow_direction_d8(raster_load(source_plan(path)),band,'metre')
+
+
+@pytest.mark.parametrize('stage',['normalized-read','routing','write','metadata'])
+def test_dem_d8_injected_failure_removes_all_private_outputs(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'dem.tif',np.zeros((4,5)),(0,2,0,100,0,-3),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir());blocks=compute._blocks;route=compute._d8_directions
+        def fail_blocks(dataset,indices,**kwargs):
+            if stage=='normalized-read' and dataset.GetDescription()!=str(source.path):raise RuntimeError('injected D8 failure')
+            yield from blocks(dataset,indices,**kwargs)
+        def fail_route(*args):
+            if stage=='routing':raise RuntimeError('injected D8 failure')
+            result=route(*args)
+            def fail(*a,**kw):raise RuntimeError('injected D8 failure')
+            if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
+            if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
+            return result
+        monkeypatch.setattr(compute,'_blocks',fail_blocks);monkeypatch.setattr(compute,'_d8_directions',fail_route)
+        with pytest.raises(RuntimeError,match='injected D8 failure'):compute.raster_flow_direction_d8(source,1,'metre')
+        assert set(source.workspace.iterdir())==prior
+
+
+def test_dem_d8_cross_block_complete_cog_directions_masks_and_bounded_reads(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    values=np.full((515,519),10.);values[[0,-1],:]=50.;values[:,[0,-1]]=50.;values[0,1]=10.
+    # Closed-form routing to the sole low boundary outlet. Equal-level paths
+    # prefer NW while both coordinates can decrease; row 1 then follows W.
+    expected=np.full(values.shape,32.);expected[1:-1,1]=64.;expected[1,3:-1]=16.
+    codes=[[32,64,128],[16,0,1],[8,4,2]]
+    rows,cols=np.indices(values.shape)
+    for row,col in np.argwhere((rows==0)|(rows==514)|(cols==0)|(cols==518)):
+        choices=[]
+        for y in range(max(0,row-1),min(515,row+2)):
+            for x in range(max(0,col-1),min(519,col+2)):
+                if values[y,x]<values[row,col]:choices.append(((values[row,col]-values[y,x])/math.hypot((x-col)*2,(y-row)*3),-int(y),-int(x),codes[y-row+1][x-col+1]))
+        expected[row,col]=max(choices)[3] if choices else 0
+    assert expected[512,512]==32 and expected[1,512]==16 and expected[0,1]==0
+    path=create_raster(tmp_path/'large.tif',values,(500000,2,0,3000000,0,-3),'EPSG:3857');before=path.read_bytes()
+    reads=[];blocks=compute._blocks
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert all(max(array.shape)<=512 for array in arrays)
+            reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded);target=tmp_path/'direction.cog.tif'
+    with raster_workspace():
+        direction=compute.raster_flow_direction_d8(raster_load(source_plan(path)),1,'metre')
+        artifact=raster_save(direction,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(read_band_values(band),expected)
+    np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.full(values.shape,255,dtype=np.uint8))
+    assert not validate(ds,full_check=True)[1] and band.GetOverviewCount()>0 and band.GetUnitType()==''
+    for index in range(band.GetOverviewCount()):assert set(np.unique(band.GetOverview(index).ReadAsArray()))<={0.,1.,2.,4.,8.,16.,32.,64.,128.}
+    assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.)
+    band=ds=None;assert path.read_bytes()==before and any(x>=512 and y>=512 for x,y in reads)
+
+
+@pytest.mark.parametrize('case',['direct','filled','empty','closed'])
+def test_dem_d8_real_async_workflow_cog_save_exact_pixels_and_cleanup(tmp_path,monkeypatch,case):
+    import api_server,workflow_engine
+    values=np.tile(np.arange(11,0,-1,dtype=float),(9,1))
+    if case in ('filled','closed'):values[:]=10;values[1:-1,1:-1]=-2
+    if case=='empty':values[:]=np.nan
+    path=create_raster(tmp_path/'dem.tif',values,(500000,2,0,3000000,0,-3),'EPSG:3857');before=path.read_bytes();target=tmp_path/'d8.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];parent='source'
+    if case=='filled':
+        tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'elevation_unit':'metre'}});parent='fill'
+    tasks += [{'id':'direction','operator':'raster_flow_direction_d8','depends_on':[parent],'params':{'input_raster':{'$ref':parent},'band':1,'elevation_unit':'metre'}},
+              {'id':'save','operator':'raster_save','depends_on':['direction'],'params':{'input_raster':{'$ref':'direction'},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}}]
+    paths=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_flow_direction_d8':paths.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='closed' else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and path.read_bytes()==before
+    if case=='closed':
+        assert not target.exists() and '任务 direction 执行失败' in status['error'] and '封闭洼地' in status['error']
+    else:
+        normalized=_fill_level_reachability_oracle(values) if case=='filled' else values
+        ds=gdal.Open(str(target));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        np.testing.assert_array_equal(actual,_d8_bellman_ford_oracle(normalized));_assert_d8_paths(normalized,actual)
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_flow_direction_d8/invoke',json={'params':{}}).status_code==403
+
+
+def test_dem_d8_discovery_single_workflow_and_explicit_parameters():
+    spec=next(item for item in list_operators() if item['id']=='raster_flow_direction_d8')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    params={param['name']:param for param in spec['parameters']}
+    assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
+    assert params['elevation_unit']['enum']==['metre','foot','us_survey_foot']
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'elevation_unit':'metre'}
+
+
+@pytest.mark.parametrize('language,phrase',[('zh-cn','有限正数'),('en','finite positive')])
+def test_dem_d8_unrepresentable_centre_distance_fails_explicitly(language,phrase):
+    import operators.raster_compute as compute
+    with raster_error_language(language),pytest.raises(ValueError,match=phrase):
+        compute._d8_directions(np.zeros((2,2)),1.7e308,1.7e308)
