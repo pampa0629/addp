@@ -230,6 +230,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_fill_depressions_profile(self.repository,registered)
             target.write_text(original)
 
+    def test_flow_direction_d8_requires_manual_nfs_full_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-flow-direction-d8-gate.sh','scripts/test/raster-flow-direction-d8-persistence-online.py',
+            'business/scripts/online-raster-flow-direction-d8-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_flow_direction_d8_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-flow-direction-d8-persistence'}
+        CHECK.validate_raster_flow_direction_d8_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-flow-direction-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-flow-direction-d8-online-runner'),(paths[2],'test_online_flow_direction_d8_fixture.py'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[5],'routing_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'direction_unit_cleared'),(paths[4],'source_edges(client'),(paths[4],'shortest_flat_paths_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'acyclic_verified'),(paths[4],'final_open_outlets_verified'),(paths[5],'empty-direction.cog.tif'),(paths[6],'root_squash'),(paths[7],'test_flow_direction_d8_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_flow_direction_d8_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'scripts/test/raster-band-recommendation-workflow-online.py', 'business/scripts/online-raster-band-recommendation-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'Makefile')

@@ -2349,6 +2349,48 @@ def validate_raster_fill_depressions_profile(repository: Path, registered: set[s
             raise RegistrationError(f'DEM filling persistence contract is incomplete: {relative}')
 
 
+def validate_raster_flow_direction_d8_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-flow-direction-d8-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-flow-direction-d8-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-flow-direction-d8-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-flow-direction-d8-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('DEM D8 flow direction requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-raster-flow-direction-d8-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'online-raster-flow-direction-d8-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/raster-flow-direction-d8-persistence-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'scan_identity',
+            'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
+            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'direction_unit_cleared', 'direction_codes_verified', 'shortest_flat_paths_verified', 'acyclic_verified', 'final_open_outlets_verified', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit'),
+        'business/scripts/online-raster-flow-direction-d8-fixture.py': (
+            'NFSExport', 'owned_root', 'expected_pixels', 'routing_evidence', 'empty-direction.cog.tif', 'np.array_equal(actual,expected,equal_nan=True)', 'GDAL_TIFF_INTERNAL_MASK',
+            'runtime_workspaces_removed', 'source file changed', 'full_check=True'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_flow_direction_d8_fixture.py': (
+            'test_flow_direction_d8_persistence_real_gdal_three_cog_chains_and_complete_pixels',
+            'test_flow_direction_d8_persistence_oracle_rejects_corruption'),
+        'Makefile': ('@$(MAKE) test-raster-flow-direction-d8-online-runner',
+            'test_online_flow_direction_d8_fixture.py',
+            'scripts/test/raster-flow-direction-d8-persistence-online_test.py',
+            'scripts/test/online-raster-flow-direction-d8-fixture_test.py',
+            'scripts/test/online-hosted-raster-flow-direction-d8-gate_test.py',
+            'test_flow_direction_d8_requires_manual_nfs_full_pixels_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'DEM D8 flow direction persistence contract is incomplete: {relative}')
+
+
 def validate_raster_band_recommendation_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-band-recommendation-workflow'
     if suite not in registered:
@@ -3107,6 +3149,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_boundary_clean_profile(repository, registered)
     validate_raster_thin_profile(repository, registered)
     validate_raster_fill_depressions_profile(repository, registered)
+    validate_raster_flow_direction_d8_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
