@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'line-self-overlaps.gpkg':
+        return m.line_self_overlap_expected_features()
     if name == 'line-overlaps.gpkg':
         return m.line_overlap_expected_features()
     if name == 'dangling.gpkg':
@@ -214,3 +216,27 @@ class TopologyFixtureTest(unittest.TestCase):
             row['geometry']['coordinates'].reverse()
             for part in row['geometry']['coordinates']:part.reverse()
         m.validate_line_overlap_features(rows)
+
+    def test_line_self_overlap_oracle_rejects_source_counting_components_and_order_corruption(self):
+        original=m.line_self_overlap_expected_features()
+        self.assertEqual(len(m.line_self_overlap_source_features()),15)
+        self.assertEqual(len(original),8)
+        self.assertEqual(original[4]['properties']['overlap_length'],2**-40)
+        m.validate_line_self_overlap_features(original)
+        m.validate_line_self_overlap_features(m.line_self_overlap_source_features(),source=True)
+        for kind in ('missing','extra','source','fid','length','tiny','component','coordinate','order','duplicate'):
+            rows=copy.deepcopy(original)
+            if kind=='missing':rows.pop()
+            elif kind=='extra':rows.append(copy.deepcopy(rows[0]))
+            elif kind=='source':rows[0]['properties']['source_id']='闭环'
+            elif kind=='fid':rows[0]['properties']['source_id']='1'
+            elif kind=='length':rows[1]['properties']['overlap_length']*=3
+            elif kind=='tiny':rows[4]['properties']['overlap_length']=0
+            elif kind=='component':rows[3]['geometry']['coordinates'].pop()
+            elif kind=='coordinate':rows[0]['geometry']['coordinates'][0][0][0]+=.25
+            elif kind=='order':rows.reverse()
+            elif kind=='duplicate':rows[1]=copy.deepcopy(rows[0])
+            with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_line_self_overlap_features(rows)
+        rows=copy.deepcopy(m.line_self_overlap_source_features())
+        rows[0]['geometry']['coordinates'].pop()
+        with self.assertRaises(m.FixtureError):m.validate_line_self_overlap_features(rows,source=True)
