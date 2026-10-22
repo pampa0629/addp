@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 
 const permissions = ['system.engine.read', 'system.engine_access_delegation.read', 'system.engine_access_delegation.create',
   'system.engine_access_delegation.revoke', 'iam.tenant_membership.read']
-async function fixture(page, { allowed = permissions, conflict = false, language = 'zh-cn' } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, language = 'zh-cn',
+  capabilities = { schema_version: 'engine.capabilities/v1', storage: {} } } = {}) {
   const writes = [], reads = []
   let row = { id: '3', display_name: '办理账号 B', status: 'active', effective_state: 'effective', version: 7,
     expires_at: '2099-01-01T00:00:00Z', grant_reason: 'Manage table authorization' }
@@ -33,13 +34,51 @@ async function fixture(page, { allowed = permissions, conflict = false, language
       reads.push(path)
       return reply({ data: [row], total: 1, page: 1, page_size: 10, total_pages: 1 })
     }
-    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active', is_builtin: false, capabilities }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
     throw new Error(`Unexpected delegation fixture request: ${request.method()} ${path}`)
   })
   return { writes, reads }
+}
+
+for (const storage of [undefined, null]) {
+  test(`authorization stays disabled without declared storage (${String(storage)}), independent of the engine type`, async ({ page }) => {
+    const { reads, writes } = await fixture(page, { capabilities: { schema_version: 'engine.capabilities/v1', compute: {}, storage } })
+    await page.goto('/engines')
+    await expect(page.getByTestId('engine-authorization-open')).toBeVisible()
+    await expect(page.getByTestId('engine-authorization-open')).toBeDisabled()
+    expect(reads).toEqual([])
+    expect(writes).toEqual([])
+  })
+}
+
+for (const compute of [undefined, {}]) {
+  test(`authorization remains enabled for declared storage with compute ${compute ? 'present' : 'absent'}`, async ({ page }) => {
+    const { reads, writes } = await fixture(page, { capabilities: { schema_version: 'engine.capabilities/v1', storage: {}, compute } })
+    await page.goto('/engines')
+    await expect(page.getByTestId('engine-authorization-open')).toBeEnabled()
+    expect(reads).toEqual([])
+    expect(writes).toEqual([])
+  })
+}
+
+for (const tab of ['data-authorization', 'delegations']) {
+  test(`a compute-only engine cannot open ${tab} through a direct URL`, async ({ page }) => {
+    const { reads, writes } = await fixture(page, {
+      allowed: [...permissions, 'system.engine_access_grant.read'],
+      capabilities: { schema_version: 'engine.capabilities/v1', compute: {} }
+    })
+    await page.goto(`/engines/2?tab=${tab}`)
+    await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2`)
+    await expect(page.getByRole('tab', { name: '基本信息', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '数据授权', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: '委托授权', exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('engine-access-delegations')).toHaveCount(0)
+    expect(reads).toEqual([])
+    expect(writes).toEqual([])
+  })
 }
 
 test('delegation-only permission enters handlers from the list without exposing data authorization', async ({ page }) => {

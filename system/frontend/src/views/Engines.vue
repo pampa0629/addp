@@ -113,7 +113,7 @@
             <el-button
               v-if="availableAuthorizationTabs.length"
               size="small"
-              :disabled="['deleting', 'deleted'].includes(row.lifecycle_state)"
+              :disabled="!hasDeclaredStorageCapability(row) || ['deleting', 'deleted'].includes(row.lifecycle_state)"
               data-testid="engine-authorization-open"
               @click="viewEngineAuthorization(row)"
             >{{ t('system.engine.actions.authorization') }}</el-button>
@@ -764,7 +764,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge } from '@common-ui'
+import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
@@ -2000,7 +2000,10 @@ const settledAuthorizationTabs = ref([])
 watch([authorizationReady, availableAuthorizationTabs], ([ready, tabs]) => {
   if (ready) settledAuthorizationTabs.value = [...tabs]
 }, { immediate: true })
-const renderedAuthorizationTabs = computed(() => authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value)
+const renderedAuthorizationTabs = computed(() => {
+  if (!hasDeclaredStorageCapability(selectedEngine.value)) return []
+  return authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value
+})
 
 const availableDetailTabs = computed(() => {
   const tabs = ['basic']
@@ -2008,7 +2011,7 @@ const availableDetailTabs = computed(() => {
     tabs.push('connection')
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
-  tabs.push(...availableAuthorizationTabs.value)
+  if (hasDeclaredStorageCapability(selectedEngine.value)) tabs.push(...availableAuthorizationTabs.value)
   return tabs
 })
 
@@ -2070,6 +2073,7 @@ const viewEngineDetails = async (row) => {
 }
 
 const viewEngineAuthorization = async (row) => {
+  if (!hasDeclaredStorageCapability(row) || ['deleting', 'deleted'].includes(row.lifecycle_state)) return
   const tab = availableAuthorizationTabs.value[0]
   if (!tab) return
   await navigateSystemRoute(router, {
