@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,6 @@ import (
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/addp/system/internal/testsupport"
-	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -68,7 +68,8 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err := db.Raw(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE p.permission_key='system.observability_identity.read' AND (r.role_key<>'platform.monitor_runtime' OR r.tenant_id IS NOT NULL)`).Scan(&count).Error; err != nil || count != 0 {
 		t.Fatalf("excess grant=%d %v", count, err)
 	}
-	node := models.HostNode{NodeID: uuid.NewString(), DisplayName: "node", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{{ClientID: "addp-manager", ModuleName: "manager"}}}
+	// A valid identity can contain the private port digits without exposing a port.
+	node := models.HostNode{NodeID: "54330000-0000-4000-8000-000000000001", DisplayName: "node", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{{ClientID: "addp-manager", ModuleName: "manager"}}}
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -143,10 +144,42 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, private := range []string{"private-engine-name", "127.0.0.1", "5433", "container_id", "inventory", "published_ports", "declared_node_id", "tenant_id"} {
-		if strings.Contains(string(encoded), private) {
-			t.Fatalf("private field leaked: %s", private)
+	// Compare the complete wire projection, including every nested field. Searching
+	// the whole JSON for port digits confuses legitimate UUIDs with SQL endpoints.
+	engineProjection := make([]map[string]any, 0, len(snapshot.EngineDeployments))
+	for _, engine := range snapshot.EngineDeployments {
+		project := "addp-infra"
+		if engine.Scope == "business" {
+			project = "business"
 		}
+		engineProjection = append(engineProjection, map[string]any{
+			"deployment_id": engine.DeploymentID, "version": 1, "scope": engine.Scope,
+			"engine_type": "postgresql", "node_id": node.NodeID,
+			"metrics":    map[string]any{"state": "unavailable"},
+			"source_key": map[string]any{"docker_engine_id": "projection-daemon", "project": project, "service": "postgres"},
+		})
+	}
+	wantJSON, err := json.Marshal(map[string]any{
+		"observed_at": snapshot.ObservedAt,
+		"nodes":       []map[string]any{{"node_id": node.NodeID, "version": 1}},
+		"module_instances": []map[string]any{{
+			"module_name": "manager", "instance_id": "worker-one", "role": "worker", "node_id": node.NodeID,
+			"process_started_at": before.ProcessStartedAt, "lease_expires_at": before.LeaseExpiresAt.UTC(),
+		}},
+		"engine_deployments": engineProjection,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotWire, wantWire any
+	if err := json.Unmarshal(encoded, &gotWire); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(wantJSON, &wantWire); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotWire, wantWire) {
+		t.Fatalf("unexpected observability projection fields or values: got=%s want=%s", encoded, wantJSON)
 	}
 	current, err := registry.ObservabilityIdentities(ctx)
 	if err != nil || len(current.Nodes) != 0 || len(current.ModuleInstances) != 0 || len(current.EngineDeployments) != 0 {
