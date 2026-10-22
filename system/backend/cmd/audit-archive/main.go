@@ -40,7 +40,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return auditarchive.ErrUnknown
 	}
 	action := args[0]
-	if action != "init" && action != "collect" && action != "verify" && action != "query" && action != "plan" {
+	if action != "init" && action != "collect" && action != "verify" && action != "query" && action != "plan" && action != "receiver-init" && action != "receive" && action != "receiver-verify" {
 		return auditarchive.ErrUnknown
 	}
 	flags := flag.NewFlagSet("audit-archive", flag.ContinueOnError)
@@ -58,7 +58,16 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if e != nil {
 		return e
 	}
-	if (action == "init" || action == "collect") != (c.Mode == "collector") {
+	expectedMode := "auditor"
+	switch action {
+	case "init", "collect":
+		expectedMode = "collector"
+	case "receiver-init", "receive":
+		expectedMode = "receiver"
+	case "receiver-verify":
+		expectedMode = "receiver-auditor"
+	}
+	if c.Mode != expectedMode {
 		return auditarchive.ErrUnknown
 	}
 	store, e := c.Store()
@@ -66,6 +75,24 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return e
 	}
 	switch action {
+	case "receiver-init":
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		root, e := auditarchive.InitReceiver(ctx, store, c.SourceID, c.DeploymentID)
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(out).Encode(root)
+	case "receiver-verify":
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		result, e := auditarchive.VerifyReceiver(ctx, store, c.SourceID, c.DeploymentID, c.Root, c.Checkpoint)
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(out).Encode(result)
+	case "receive":
+		return auditarchive.ServeReceiver(ctx, c, store)
 	case "init":
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()

@@ -55,3 +55,32 @@ func TestDecoderRefusesMutationAndUncommittedPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiverConfigBindsSourcePrivateTLSAndReadOnlyIdentity(t *testing.T) {
+	c := Config{Mode: "receiver", SourceID: testSourceID, DeploymentID: receiverTestDeployment, Endpoint: "https://audit.example", Region: "us-east-1", Bucket: "audit", AccessKey: "fixture", SecretKey: "fixture-secret", RetentionDays: 365, ReceiverToken: receiverTestToken, Listen: "127.0.0.1:9443", TLSCert: "/private/server.pem", TLSKey: "/private/server-key.pem"}
+	if e := c.Validate(); e != nil {
+		t.Fatal(e)
+	}
+	for _, change := range []func(*Config){
+		func(c *Config) { c.Listen = ":9443" }, func(c *Config) { c.Listen = "127.0.0.1:0" }, func(c *Config) { c.ReceiverToken = "short" }, func(c *Config) { c.TLSKey = "relative.pem" }, func(c *Config) { c.PostgresDSN = "postgres://other" }, func(c *Config) { c.Root = Ref{rootKey(testSourceID), "v", digest([]byte("x"))} }, func(c *Config) { c.Mode = "auditor" }, func(c *Config) { c.Checkpoint = Ref{"access/foreign/root.json", "v", digest([]byte("x"))} },
+	} {
+		bad := c
+		change(&bad)
+		if bad.Validate() == nil {
+			t.Fatal("unsafe receiver configuration accepted")
+		}
+	}
+	c.Mode = "receiver-auditor"
+	c.ReceiverToken = ""
+	c.Listen = ""
+	c.TLSCert = ""
+	c.TLSKey = ""
+	c.Root = Ref{accessPrefix(testSourceID) + "root.json", "v", digest([]byte("x"))}
+	if e := c.Validate(); e != nil {
+		t.Fatal(e)
+	}
+	c.ReceiverToken = receiverTestToken
+	if c.Validate() == nil {
+		t.Fatal("read-only configuration has incoming credential")
+	}
+}

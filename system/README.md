@@ -174,3 +174,6 @@ Copyright © 2025 ADDP Team
 当前唯一协议为v2。基线在同一快照流式分片，数据分片软目标4MiB/5秒，段按日界/128MiB/256分片封存；单对象16MiB与事务8MiB预算保持，取消全链64MiB/10000批限制。控制对象实际期限读回须覆盖存储创建时间起20年且当前未过期，运行账号不得修改Legal Hold；正文实际期限至少365天，外部保全状态只读。控制证据延期须受控核验，未提供自动续期或删除入口。完整结果明确区分仍保护与已过期正文，不能把过期核验当受保护证明。
 
 `addp-audit-archive plan --config /受控私有路径/auditor.json`只读核验并输出最旧连续到期段的具体对象版本/摘要和24小时宽限情况；不输出正文、不写计划/批准/访问回执、不执行删除。它不是清理授权，无删除/解除保全命令；实际清理、双人批准及回执尚未实现，计划不能作为已删除的证据。v1对象不自动迁移、不兼容读取；既有存证的协议交接需另行核清，不能重新建来源掩盖缺口。
+
+
+日志接收端 B 使用同一构建产物的 `receiver-init`、`receive`、`receiver-verify`，契约见 [8.5](docs/tables/audit_logs表.md#85-内网独立日志接收端-b已确认)。它不随开发环境启动。私有配置 `mode=receiver`、`source_id`、`deployment_id`、独立 S3 `endpoint/region/bucket/access_key/secret_key`、`retention_days=365`、`listen`（显式IP:端口）、`tls_cert/tls_key`（绝对路径）及 `receiver_token`（独立至少32字符随机值）；初始化输出的 `root` 必须固定后才可 receive。`checkpoint` 可固定外部保管的较新末回执。只读核验配置使用 `mode=receiver-auditor`，去掉监听、TLS和token，使用独立只读存储凭据并固定root/checkpoint。A 配置 Authorization 为 `Bearer <receiver_token>`，原生队列投递至 HTTPS `/api/v1/internal/audit-receipts`，不得把密钥放命令参数或根 .env。204仅表示完整投递已受保护落存并读回，错误无正文、不回显凭据；详细部署权限及证据边界见8.5。

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,6 +33,12 @@ type Config struct {
 	Publication   string `json:"publication"`
 	Actor         string `json:"actor"`
 	Root          Ref    `json:"root"`
+	DeploymentID  string `json:"deployment_id,omitempty"`
+	ReceiverToken string `json:"receiver_token,omitempty"`
+	Listen        string `json:"listen,omitempty"`
+	TLSCert       string `json:"tls_cert,omitempty"`
+	TLSKey        string `json:"tls_key,omitempty"`
+	Checkpoint    Ref    `json:"checkpoint,omitempty"`
 }
 
 func ReadConfig(path string) (Config, error) {
@@ -73,7 +82,25 @@ func (c Config) Validate() error {
 	if c.Root != (Ref{}) && !c.RootValid() {
 		return ErrUnknown
 	}
+	if c.Mode != "receiver" && c.Mode != "receiver-auditor" && (c.DeploymentID != "" || c.ReceiverToken != "" || c.Listen != "" || c.TLSCert != "" || c.TLSKey != "" || c.Checkpoint != (Ref{})) {
+		return ErrUnknown
+	}
 	switch c.Mode {
+	case "receiver", "receiver-auditor":
+		if c.PostgresDSN != "" || c.Slot != "" || c.Publication != "" || c.Actor != "" || c.DeploymentID == "" || len(c.DeploymentID) > 128 {
+			return ErrUnknown
+		}
+		if c.Checkpoint != (Ref{}) && (!c.Checkpoint.valid() || !strings.HasPrefix(c.Checkpoint.Key, accessPrefix(c.SourceID))) {
+			return ErrUnknown
+		}
+		if c.Mode == "receiver" {
+			addr, e := netip.ParseAddrPort(c.Listen)
+			if e != nil || addr.Port() == 0 || len(c.ReceiverToken) < 32 || strings.ContainsAny(c.ReceiverToken, "\r\n \t") || !filepath.IsAbs(c.TLSCert) || !filepath.IsAbs(c.TLSKey) {
+				return ErrUnknown
+			}
+		} else if !c.Root.valid() || c.ReceiverToken != "" || c.Listen != "" || c.TLSCert != "" || c.TLSKey != "" {
+			return ErrUnknown
+		}
 	case "collector":
 		urlConfig, urlErr := url.Parse(c.PostgresDSN)
 		if urlErr != nil || (urlConfig.Scheme != "postgres" && urlConfig.Scheme != "postgresql") || urlConfig.Host == "" || urlConfig.User == nil || urlConfig.User.Username() == "" || urlConfig.Path == "" || urlConfig.Path == "/" || urlConfig.Query().Get("sslmode") != "verify-full" || urlConfig.Query().Get("sslrootcert") == "" {
@@ -117,4 +144,10 @@ func (c Config) PostgreSQL() PostgreSQL {
 	return PostgreSQL{DSN: c.PostgresDSN, SourceID: c.SourceID, Slot: c.Slot, Publication: c.Publication, RetentionDays: c.RetentionDays, Root: c.Root}
 }
 
-func (c Config) RootValid() bool { return c.Root.valid() && c.Root.Key == rootKey(c.SourceID) }
+func (c Config) RootValid() bool {
+	key := rootKey(c.SourceID)
+	if c.Mode == "receiver" || c.Mode == "receiver-auditor" {
+		key = accessPrefix(c.SourceID) + "root.json"
+	}
+	return c.Root.valid() && c.Root.Key == key
+}

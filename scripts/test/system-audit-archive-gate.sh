@@ -13,10 +13,11 @@ OWNER=$(python3 -c 'import uuid; print(uuid.uuid4())')
 IMAGE="addp-audit-archive-minio:$OWNER"
 PG_ID=""
 S3_ID=""
+A_ID=""
 cleanup() {
     local status=$? identity
     trap - EXIT INT TERM
-    for identity in "$PG_ID" "$S3_ID"; do
+    for identity in "$PG_ID" "$S3_ID" "$A_ID"; do
         [ -n "$identity" ] || continue
         if [ "$(docker inspect -f '{{index .Config.Labels "addp.test.audit-archive"}}' "$identity")" != "$OWNER" ]; then
             echo "Refusing a foreign audit fixture cleanup target" >&2
@@ -57,6 +58,8 @@ done
 docker exec "$S3_ID" mc alias set owned http://127.0.0.1:9000 owned-audit-root owned-root-test-secret >/dev/null
 docker exec "$S3_ID" mc admin user add owned audit-writer owned-writer-test >/dev/null
 docker exec "$S3_ID" mc admin user add owned audit-reader owned-reader-test >/dev/null
+docker exec "$S3_ID" mc admin user add owned access-writer owned-access-writer-test >/dev/null
+docker exec "$S3_ID" mc admin user add owned access-reader owned-access-reader-test >/dev/null
 python3 - "$WORK_DIR" <<'PY'
 import json,sys
 from datetime import datetime, timezone, timedelta
@@ -91,18 +94,70 @@ policy('reader',[listing,read,
     statement(['s3:ListBucketVersions'],[base],{'StringLike':{'s3:prefix':[queries+'*']}}),
     statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[base+'/'+queries+'*']),
     retained([queries+'*'],now+timedelta(days=365)),no_hold([source+'*',queries+'*'])])
+access='arn:aws:s3:::audit-access-disposable'
+prefixes=['access/a21db94b-6dd5-446a-b66a-df379ea51dc8/','access/aa1744e2-4fbe-45fb-aa91-2a65e26195a1/']
+access_list=statement(['s3:ListBucketVersions'],[access],{'StringLike':{'s3:prefix':[p+'*' for p in prefixes]}})
+access_read=statement(['s3:GetObjectVersion','s3:GetObjectRetention','s3:GetObjectLegalHold'],[access+'/'+p+'*' for p in prefixes])
+def access_put(suffix,deadline):
+    return statement(['s3:PutObject','s3:PutObjectRetention'],[access+'/'+p+suffix for p in prefixes],{
+        'StringEquals':{'s3:object-lock-mode':'COMPLIANCE'},
+        'DateGreaterThanEquals':{'s3:object-lock-retain-until-date':deadline.strftime('%Y-%m-%dT%H:%M:%SZ')}})
+access_hold={'Effect':'Deny','Action':['s3:PutObjectLegalHold'],'Resource':[access+'/*']}
+policy('access-writer',[access_list,access_read,access_put('data/*',now+timedelta(days=365)),access_put('root.json',control),access_put('receipts/*',control),access_hold])
+policy('access-reader',[access_list,access_read,access_hold])
+
 PY
 for identity in writer reader; do
     docker exec -i "$S3_ID" mc admin policy create owned "audit-$identity-policy" /dev/stdin < "$WORK_DIR/$identity.json" >/dev/null
     docker exec "$S3_ID" mc admin policy attach owned "audit-$identity-policy" --user "audit-$identity" >/dev/null
 done
+for identity in access-writer access-reader; do
+    docker exec -i "$S3_ID" mc admin policy create owned "$identity-policy" /dev/stdin < "$WORK_DIR/$identity.json" >/dev/null
+    docker exec "$S3_ID" mc admin policy attach owned "$identity-policy" --user "$identity" >/dev/null
+done
+# A is a separate, owned source. It uses its unmodified native disk webhook
+# queue; B cannot generate recursive audit events back into this queue.
+read -r A_PORT RECEIVER_PORT < <(python3 - <<'PYPORT'
+import socket
+sockets=[socket.socket(),socket.socket()]
+for s in sockets:s.bind(('127.0.0.1',0))
+print(*(s.getsockname()[1] for s in sockets))
+for s in sockets:s.close()
+PYPORT
+)
+mkdir "$WORK_DIR/certs"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=owned-receiver \
+    -addext 'subjectAltName=IP:127.0.0.1' -keyout "$WORK_DIR/receiver-key.pem" -out "$WORK_DIR/certs/receiver.crt" >/dev/null 2>&1
+chmod 600 "$WORK_DIR/receiver-key.pem"
+A_ID=$(docker run -d --label "addp.test.audit-archive=$OWNER" --network host --tmpfs /data:rw --tmpfs /queue:rw --memory 512m \
+    -v "$WORK_DIR/certs:/root/.minio/certs/CAs:ro" \
+    -e MINIO_ROOT_USER=owned-source-root -e MINIO_ROOT_PASSWORD=owned-source-test-secret \
+    -e MINIO_AUDIT_WEBHOOK_ENABLE=on -e "MINIO_AUDIT_WEBHOOK_ENDPOINT=https://127.0.0.1:$RECEIVER_PORT/api/v1/internal/audit-receipts" \
+    -e 'MINIO_AUDIT_WEBHOOK_AUTH_TOKEN=Bearer owned-fixture-receiver-token-32-characters' \
+    -e MINIO_AUDIT_WEBHOOK_QUEUE_DIR=/queue -e MINIO_AUDIT_WEBHOOK_QUEUE_SIZE=10000 \
+    -e MINIO_AUDIT_WEBHOOK_MAX_RETRY=0 -e MINIO_AUDIT_WEBHOOK_RETRY_INTERVAL=100ms \
+    -e MINIO_AUDIT_WEBHOOK_HTTP_TIMEOUT=2s -e MINIO_AUDIT_WEBHOOK_BATCH_SIZE=1 \
+    "$IMAGE" server --address "127.0.0.1:$A_PORT" --console-address 127.0.0.1:0 /data)
+for iteration in $(seq 1 60); do
+    if docker exec "$A_ID" curl -fsS "http://127.0.0.1:$A_PORT/minio/health/ready" >/dev/null 2>&1; then break; fi
+    [ "$iteration" -lt 60 ] || { echo "Owned audit source not ready" >&2; exit 1; }
+    sleep 1
+done
+docker exec "$A_ID" mc alias set owned-source "http://127.0.0.1:$A_PORT" owned-source-root owned-source-test-secret >/dev/null
+A_DEPLOYMENT=$(docker exec "$A_ID" mc admin info --json owned-source | python3 -c 'import json,sys; p=json.load(sys.stdin); d=p["info"]["deploymentID"]; assert d; print(d)')
+export ADDP_AUDIT_A_TEST_ENDPOINT="127.0.0.1:$A_PORT"
+export ADDP_AUDIT_A_TEST_DEPLOYMENT="$A_DEPLOYMENT"
+export ADDP_AUDIT_RECEIVER_TEST_ADDRESS="127.0.0.1:$RECEIVER_PORT"
+export ADDP_AUDIT_RECEIVER_TEST_CERT="$WORK_DIR/certs/receiver.crt"
+export ADDP_AUDIT_RECEIVER_TEST_KEY="$WORK_DIR/receiver-key.pem"
 PG_PORT=$(docker port "$PG_ID" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')
 S3_PORT=$(docker port "$S3_ID" 9000/tcp | sed -n 's/^127\.0\.0\.1://p')
 [[ "$PG_PORT" =~ ^[0-9]+$ && "$S3_PORT" =~ ^[0-9]+$ ]] || exit 1
 export ADDP_AUDIT_ARCHIVE_INTEGRATION=1
 export ADDP_AUDIT_POSTGRES_TEST_DSN="postgres://owned_audit_admin:owned-pg-test@127.0.0.1:$PG_PORT/addp_audit_disposable?sslmode=disable"
 export ADDP_AUDIT_S3_TEST_ENDPOINT="127.0.0.1:$S3_PORT"
-(cd "$ROOT_DIR/system/backend" && go test ./internal/auditarchive -run '^TestIndependentAuditArchiveAgainstPostgres$' -count=1 -timeout=5m -v) 2>&1 | tee "$WORK_DIR/integration.log"
+(cd "$ROOT_DIR/system/backend" && go test ./internal/auditarchive -run '^TestIndependentAudit(Archive|Receiver)AgainstPostgres$' -count=1 -timeout=7m -v) 2>&1 | tee "$WORK_DIR/integration.log"
 ! grep -q -- '--- SKIP:' "$WORK_DIR/integration.log"
 grep -q -- '--- PASS: TestIndependentAuditArchiveAgainstPostgres ' "$WORK_DIR/integration.log"
+grep -q -- '--- PASS: TestIndependentAuditReceiverAgainstPostgres ' "$WORK_DIR/integration.log"
 echo "AUDIT_ARCHIVE_PROTOCOL_T2_PASS production_independent_management_domain=unverified"
