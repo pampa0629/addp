@@ -54,13 +54,13 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: 'img', layout: 'single' })
       expect(meta.attributes.type_info.media).toMatchObject({ encoding: 'HFA', width: 256, height: 256 })
       expect(meta.attributes.format_info.img).toMatchObject({ scan_complete: true, band_count: 3, driver: 'HFA' })
-      await frame.getByRole('tab', { name: '属性', exact: true }).click()
+      await frame.getByRole('tab', { name: /^(?:属性|Attributes)$/, exact: true }).click()
       await expect(frame.getByText('HFA', { exact: true }).first()).toBeVisible()
       actual.metadata_verified = true
-      await frame.getByRole('tab', { name: '预览', exact: true }).click()
+      await frame.getByRole('tab', { name: /^(?:预览|Preview)$/, exact: true }).click()
       if (source.source_srid === null) {
         expect(meta.attributes.capabilities?.spatial).toBeUndefined()
-        await expect(frame.getByRole('button', { name: '生成 COG', exact: true })).toHaveCount(0)
+        await expect(frame.getByRole('button', { name: /^(?:生成 COG|Generate COG)$/, exact: true })).toHaveCount(0)
         await expect(frame.locator('.raster-tiff-quick-view')).toHaveCount(0)
         actual.generation_unavailable = true
         actual.map_absent = true
@@ -72,7 +72,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         expect(response.headers()['content-range']).toMatch(/^bytes \d+-\d+\/\d+$/)
         const preview = frame.locator('.raster-tiff-quick-view')
         await expect(preview).toBeVisible()
-        await preview.getByRole('button', { name: '全幅显示', exact: true }).click()
+        await preview.getByRole('button', { name: /^(?:全幅显示|Fit to Extent)$/, exact: true }).click()
         await expect(preview.locator('.loading-overlay')).toHaveCount(0)
         await expect(preview.locator('.map-empty')).toHaveCount(0)
         let pixels
@@ -98,13 +98,13 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         const capability = await json(reopenedResponse, 'IMG cached capability')
         expect(capability.quick_view.preview_url).toBe(source.preview_url)
         await expect(preview).toBeVisible()
-        await preview.getByRole('button', { name: '全幅显示', exact: true }).click()
+        await preview.getByRole('button', { name: /^(?:全幅显示|Fit to Extent)$/, exact: true }).click()
         await expect.poll(checkPixels).toBeGreaterThanOrEqual(128)
         actual.reopened = true
         actual.reused_result = true
       }
       const downloadEvent = page.waitForEvent('download')
-      await frame.getByRole('button', { name: '下载', exact: true }).click()
+      await frame.getByRole('button', { name: /^(?:下载|Download)$/, exact: true }).click()
       const download = await downloadEvent
       expect(await download.failure()).toBeNull()
       const raw = readFileSync(await download.path())

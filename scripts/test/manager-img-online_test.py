@@ -39,6 +39,21 @@ def browser_report(evidence):
 
 
 class ManagerIMGTests(unittest.TestCase):
+    def test_browser_locators_match_actual_chinese_and_english_labels(self):
+        import re
+        root=Path(__file__).resolve().parents[2]
+        script=(root/'console/frontend/e2e/online/manager-img.spec.js').read_text()
+        locators=re.findall(r"getByRole\('(tab|button)', \{ name: (.*?), exact: true \}\)",script)
+        for locale in ('zh-cn','en'):
+            labels=json.loads((root/f'manager/frontend/src/i18n/{locale}.json').read_text())['manager']
+            expected={'tab':[labels['explorer']['attributesTab'],labels['explorer']['previewTab']],
+                      'button':[labels['spatialPreview']['generateRasterCOG'],labels['vectorTile']['fitExtent'],labels['explorer']['downloadPage']]}
+            for role,names in expected.items():
+                for name in names:
+                    patterns=[value for kind,value in locators if kind==role]
+                    matches=[re.fullmatch(value[1:-1],name) if value.startswith('/') else value.strip("'\"")==name for value in patterns]
+                    self.assertTrue(any(matches),(locale,role,name,patterns))
+
     def test_meta_accepts_located_and_unknown_facts_but_rejects_false_claims(self):
         for spec in IMG.SOURCES:
             good = detail(spec)
