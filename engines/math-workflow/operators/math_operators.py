@@ -54,6 +54,7 @@ ADD_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="a",
             type="float",
+            param_type="input",
             required=True,
             description="加数1",
             default=0.0
@@ -61,6 +62,7 @@ ADD_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="b",
             type="float",
+            param_type="input",
             required=True,
             description="加数2",
             default=0.0
@@ -98,6 +100,7 @@ SUBTRACT_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="a",
             type="float",
+            param_type="input",
             required=True,
             description="被减数",
             default=0.0
@@ -105,6 +108,7 @@ SUBTRACT_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="b",
             type="float",
+            param_type="input",
             required=True,
             description="减数",
             default=0.0
@@ -133,6 +137,7 @@ MULTIPLY_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="a",
             type="float",
+            param_type="input",
             required=True,
             description="乘数1",
             default=1.0
@@ -140,6 +145,7 @@ MULTIPLY_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="b",
             type="float",
+            param_type="input",
             required=True,
             description="乘数2",
             default=1.0
@@ -168,6 +174,7 @@ DIVIDE_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="a",
             type="float",
+            param_type="input",
             required=True,
             description="被除数",
             default=1.0
@@ -175,6 +182,7 @@ DIVIDE_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="b",
             type="float",
+            param_type="input",
             required=True,
             description="除数",
             default=1.0,
@@ -208,6 +216,7 @@ AVERAGE_METADATA = OperatorMetadata(
         ParameterMetadata(
             name="values",
             type="array",
+            param_type="input",
             item_type="float",
             required=True,
             description="数值数组"

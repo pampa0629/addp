@@ -86,6 +86,20 @@ class TestOperatorsEndpoint:
         assert 'divide' in operator_names
         assert 'average' in operator_names
 
+    @pytest.mark.parametrize('operator_name', ['add', 'subtract', 'multiply', 'divide', 'average'])
+    def test_workflow_parameters_publish_explicit_input_ports(self, client, operator_name):
+        operators = client.get('/api/operators').get_json()['operators']
+        operator = next(op for op in operators if op['name'] == operator_name)
+
+        # Imported $ref bindings retain their target parameter name. Develop
+        # accepts that binding only for an explicitly declared workflow input.
+        assert all(parameter.get('param_type') == 'input' for parameter in operator['parameters'])
+        if operator_name == 'average':
+            assert operator['parameters'][0]['item_type'] == 'float'
+        else:
+            assert {parameter['name'] for parameter in operator['parameters']} == {'a', 'b'}
+            assert all(parameter['type'] == 'float' for parameter in operator['parameters'])
+
     def test_get_operators_by_category(self, client):
         """测试按分类过滤算子"""
         response = client.get('/api/operators?category=数学运算')

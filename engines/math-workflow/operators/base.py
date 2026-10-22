@@ -5,7 +5,7 @@ Math Workflow Engine - 基础模型定义
 """
 
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 
 class OutputPortMetadata(BaseModel):
@@ -20,6 +20,7 @@ class ParameterMetadata(BaseModel):
     """参数元数据"""
     name: str = Field(..., description="参数名")
     type: str = Field(..., description="参数类型：string/integer/float/boolean/array/object")
+    param_type: Literal['input', 'output', 'param', 'ui'] = Field(..., description="参数语义；input 可由工作流连线传入")
     required: bool = Field(..., description="是否必填")
     default: Optional[Any] = Field(None, description="默认值")
     description: str = Field(..., description="参数说明")

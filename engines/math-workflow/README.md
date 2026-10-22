@@ -26,6 +26,8 @@ Math 启动后不自动注册到 System。需要在平台中使用时，在 Syst
 
 内置算子均只声明 `workflow` 模式；通过 `POST /api/operators/{name}/invoke` 调用会返回 HTTP `403` 和 `DIRECT_NOT_SUPPORTED`。实际参数、分类、执行效果和输出端口由 `GET /api/operators` 返回。
 
+数学参数均显式声明 `param_type="input"`，既支持常量，也支持工作流连线引用。`values` 同时声明 `item_type="float"`；Develop 导入、编辑和保存 `$ref` 连线时按这些元数据核对目标参数和端口类型。
+
 ## 工作流与执行
 
 [共享请求示例](../docs/examples/workflow-execute-request.json)计算 `(10 + 20) × 2 = 60`。请求中的 `runtime.tenant_id` 和 `runtime.execution_authorization` 由拥有执行入口的后端从可信上下文注入；字段来源与校验要求见 [HTTP 协议](../../docs/spec/workflow/HTTP协议.md#执行工作流)。
