@@ -64,3 +64,17 @@ func TestObjectItemPathFromBucketRefDoesNotRepeatBucket(t *testing.T) {
 		})
 	}
 }
+
+func TestCatalogContentPathsPreserveWhitespace(t *testing.T) {
+	for _, raw := range []string{" file.txt ", " dir / file.txt ", " ", "\t资料%2F.txt\u3000"} {
+		file := FileItemPath(9, raw)
+		got, err := RequireFileLeafPath(file)
+		if err != nil || got != raw {
+			t.Fatalf("file %q became %q (%v)", raw, got, err)
+		}
+		bucket, object, err := SplitObjectRefPath("bucket/" + raw)
+		if err != nil || bucket != "bucket" || object != raw {
+			t.Fatalf("object ref %q became %q/%q (%v)", raw, bucket, object, err)
+		}
+	}
+}

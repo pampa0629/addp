@@ -9,13 +9,13 @@ import (
 )
 
 func TargetPathsFromNode(node models.MetaNode) []string {
-	if node.ParentNodeID == nil && strings.TrimSpace(node.FullName) == "" {
+	if node.ParentNodeID == nil && node.FullName == "" {
 		return nil
 	}
-	if target := strings.Trim(strings.TrimSpace(node.FullName), "/"); target != "" {
+	if target := strings.Trim(node.FullName, "/"); target != "" {
 		return []string{target}
 	}
-	if target := strings.Trim(strings.TrimSpace(node.Name), "/"); target != "" {
+	if target := strings.Trim(node.Name, "/"); target != "" {
 		return []string{target}
 	}
 	return nil
@@ -25,7 +25,7 @@ func TargetPathsFromItem(item models.MetaItem) []string {
 	if targets := TargetPathsFromAttributes(item.Attributes); len(targets) > 0 {
 		return targets
 	}
-	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
+	fullName := strings.Trim(item.FullName, "/")
 	if fullName != "" {
 		return []string{fullName}
 	}
@@ -36,7 +36,7 @@ func TargetPathsFromAttributes(attrs map[string]interface{}) []string {
 	if targets := dataitem.ScanTargetsFromAttributes(attrs); len(targets) > 0 {
 		result := make([]string, 0, len(targets))
 		for _, target := range targets {
-			if path := strings.Trim(strings.TrimSpace(target.Path), "/"); path != "" {
+			if path := strings.Trim(target.Path, "/"); path != "" {
 				result = append(result, path)
 			}
 		}
@@ -62,7 +62,6 @@ func UniqueNonEmpty(values []string) []string {
 	seen := map[string]bool{}
 	result := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
 		if value == "" || seen[value] {
 			continue
 		}
@@ -74,7 +73,7 @@ func UniqueNonEmpty(values []string) []string {
 
 func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
+		if value != "" {
 			return value
 		}
 	}

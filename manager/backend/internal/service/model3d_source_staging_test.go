@@ -69,7 +69,7 @@ func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
 	var prefixes []string
 	for _, attempt := range []int{1, 1, 2} {
 		lease.Attempt = attempt
-		files := []model3DStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture")}
+		files := []model3DStagingFile{stagingModelFile("模型.3DS", "model"), stagingModelFile("textures/TEST.PNG", "texture"), stagingModelFile("textures/ TEST.PNG ", "padded texture")}
 		err := executor.withStagedModel3DSource(context.Background(), lease, "3ds", workflowaccess.KindDirectory, "模型.3DS", files, &recordingModel3DStagingOwner{},
 			func(_ context.Context, source workflowaccess.Source) error {
 				if source.Access.Method != workflowaccess.MethodObjectStore || source.Entrypoint != "模型.3DS" || source.Access.Path != "" {
@@ -79,7 +79,7 @@ func TestModel3DStagingCompositionAndAttemptIsolation(t *testing.T) {
 				if !strings.HasPrefix(prefix, "temp/model3d-input/tenant_7/"+lease.ExecutionID+"/") || !strings.Contains(prefix, "/attempt_") {
 					t.Fatal("temporary input is not execution scoped")
 				}
-				if len(store.objects) != 2 || store.objects["manager/"+prefix+"/模型.3DS"] != "model" || store.objects["manager/"+prefix+"/textures/TEST.PNG"] != "texture" {
+				if len(store.objects) != 3 || store.objects["manager/"+prefix+"/textures/ TEST.PNG "] != "padded texture" || store.objects["manager/"+prefix+"/模型.3DS"] != "model" || store.objects["manager/"+prefix+"/textures/TEST.PNG"] != "texture" {
 					t.Fatal("model dependencies or relative paths changed")
 				}
 				prefixes = append(prefixes, prefix)
@@ -297,7 +297,7 @@ func threeDSStagingInput(refs ...string) []byte {
 }
 
 func Test3DSStagingFreezesParsedBytesAndExactDeclarations(t *testing.T) {
-	for _, refs := range [][]string{{}, {"TEST.PNG"}, {"贴图%20.PNG", "textures/detail.png"}} {
+	for _, refs := range [][]string{{}, {"TEST.PNG"}, {"TEST.PNG", " TEST.PNG "}, {"贴图%20.PNG", "textures/detail.png"}} {
 		input := threeDSStagingInput(refs...)
 		expected := append([]string{}, refs...)
 		if len(expected) > 1 {

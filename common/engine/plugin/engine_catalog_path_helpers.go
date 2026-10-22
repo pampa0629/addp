@@ -77,10 +77,11 @@ func requireCatalogBusinessPath(path EngineCatalogPath, model EngineCatalogModel
 }
 
 // NormalizeFileCatalogPath maps filesystem catalog paths to ADDP semantic paths.
+// Whitespace belongs to physical names and is never trimmed.
 // The storage root is represented by an empty path; "." and "/" are only
 // tolerated as external/root spellings and must not become catalog segments.
 func NormalizeFileCatalogPath(rawPath string) string {
-	trimmed := strings.TrimSpace(rawPath)
+	trimmed := rawPath
 	trimmed = strings.ReplaceAll(trimmed, "\\", "/")
 	trimmed = strings.Trim(trimmed, "/")
 	if trimmed == "" || trimmed == "." {
@@ -88,7 +89,6 @@ func NormalizeFileCatalogPath(rawPath string) string {
 	}
 	parts := make([]string, 0)
 	for _, part := range strings.Split(trimmed, "/") {
-		part = strings.TrimSpace(part)
 		if part == "" || part == "." {
 			continue
 		}
@@ -208,14 +208,14 @@ func ObjectItemPathForBucket(engineID uint, bucket string) func(path string) Eng
 // SplitObjectRefPath parses an external object ref path in bucket/object form.
 // The returned objectPath is bucket-relative and never includes the bucket.
 func SplitObjectRefPath(refPath string) (bucket, objectPath string, err error) {
-	trimmed := strings.Trim(strings.TrimSpace(refPath), "/")
+	trimmed := strings.Trim(refPath, "/")
 	parts := strings.SplitN(trimmed, "/", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("object ref path must be bucket/object: %s", refPath)
 	}
-	bucket = strings.TrimSpace(parts[0])
+	bucket = parts[0]
 	objectPath = strings.Trim(parts[1], "/")
-	if bucket == "" || strings.TrimSpace(objectPath) == "" {
+	if bucket == "" || objectPath == "" {
 		return "", "", fmt.Errorf("object ref path must be bucket/object: %s", refPath)
 	}
 	return bucket, objectPath, nil

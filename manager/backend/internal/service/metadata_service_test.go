@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/nfs"
@@ -837,5 +838,28 @@ func TestExplorerEngineListTenantFiltering(t *testing.T) {
 	}
 	if got, want := len(resourcesTenantThree), 0; got != want {
 		t.Fatalf("GetEngineList(tenant=3) length = %d, want %d", got, want)
+	}
+}
+
+func TestPhysicalWhitespaceDownloadRefsRemainDistinct(t *testing.T) {
+	refs := downloadRefsFromDescriptor(dataitem.ItemDescriptor{Refs: []dataitem.ItemRef{{Path: " models /TEST.PNG", Required: true}, {Path: " models / TEST.PNG ", Required: true}, {Path: " ", Required: true}}})
+	if len(refs) != 3 || refs[0].StorageRef != " models /TEST.PNG" || refs[1].StorageRef != " models / TEST.PNG " || refs[1].FileName != " TEST.PNG " || refs[2].FileName != " " {
+		t.Fatalf("download names changed: %#v", refs)
+	}
+}
+
+func TestPhysicalWhitespaceContentBoundaryDoesNotGrantTrimmedAlias(t *testing.T) {
+	object, raw, err := streamStorageRefPath("minio", 33, "bucket/ ")
+	if err != nil || raw != "bucket/ " || object.StringPath() != raw {
+		t.Fatalf("nonempty object key lost: %q %v", raw, err)
+	}
+	const exact = " models / TEST.PNG "
+	descriptor := dataitem.ItemDescriptor{Layout: "single", PrimaryContentPath: exact, PhysicalPath: exact}
+	if !storageRefBelongsToDataItem("ftp", exact, exact, descriptor) || storageRefBelongsToDataItem("ftp", exact, "models / TEST.PNG", descriptor) {
+		t.Fatal("content boundary conflates padded and unpadded names")
+	}
+	used := map[string]int{}
+	if uniqueZipEntryName("TEST.PNG", used) != "TEST.PNG" || uniqueZipEntryName(" TEST.PNG ", used) != " TEST.PNG " {
+		t.Fatal("ZIP renamed an exact constituent")
 	}
 }

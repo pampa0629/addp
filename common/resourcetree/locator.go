@@ -53,7 +53,6 @@ type ResourceLocator struct {
 // LocatorFromFullName 根据 catalog 的 full_name 与资源类型构造标准 ResourceLocator。
 func LocatorFromFullName(engineID uint, engineType, resourceType, fullName string, itemID *uint) *ResourceLocator {
 	resourceType = strings.TrimSpace(resourceType)
-	fullName = strings.TrimSpace(fullName)
 	if engineID == 0 || resourceType == "" || fullName == "" {
 		return nil
 	}
@@ -90,7 +89,6 @@ func IsRootResourceType(resourceType ResourceType) bool {
 
 // ParseFullNamePath 按 ResourceLocator 规范将 full_name 拆为 path segments。
 func ParseFullNamePath(engineType, resourceType, fullName string) []string {
-	fullName = strings.TrimSpace(fullName)
 	if fullName == "" {
 		return []string{}
 	}
@@ -130,7 +128,7 @@ func splitLocatorSlashPath(value string) []string {
 	parts := strings.Split(trimmed, "/")
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
+		if part != "" {
 			out = append(out, part)
 		}
 	}
@@ -141,7 +139,7 @@ func splitLocatorDotPath(value string) []string {
 	parts := strings.Split(value, ".")
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
+		if part != "" {
 			out = append(out, part)
 		}
 	}

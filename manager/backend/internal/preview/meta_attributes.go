@@ -35,7 +35,7 @@ func itemLayoutFromMetaAttributes(attrs map[string]interface{}) string {
 }
 
 func physicalPathFromMetaAttributes(attrs map[string]interface{}) string {
-	return strings.TrimSpace(resourceutil.StringAttribute(attrs, "physical_path"))
+	return resourceutil.StringAttribute(attrs, "physical_path")
 }
 
 func formatNameFromMetaAttributes(attrs map[string]interface{}) string {

@@ -154,7 +154,7 @@ func containerChildRefsFromMap(child map[string]interface{}) []datatype.Containe
 		if len(ref) == 0 {
 			continue
 		}
-		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
+		path := commonJSON.InterfaceString(ref["path"])
 		if path == "" {
 			continue
 		}

@@ -149,7 +149,7 @@ func canonicalRefGroups(groups []models.ScanRefGroup) []canonicalRefGroup {
 		cRefs := make([]canonicalScanRef, 0, len(refs))
 		for _, ref := range refs {
 			cRefs = append(cRefs, canonicalScanRef{
-				Path:     strings.TrimSpace(ref.Path),
+				Path:     ref.Path,
 				Role:     strings.TrimSpace(ref.Role),
 				Required: ref.Required,
 			})
@@ -164,7 +164,7 @@ func canonicalRefGroups(groups []models.ScanRefGroup) []canonicalRefGroup {
 			return !cRefs[i].Required && cRefs[j].Required
 		})
 		canonical = append(canonical, canonicalRefGroup{
-			Primary: strings.TrimSpace(group.Primary),
+			Primary: group.Primary,
 			Refs:    cRefs,
 		})
 	}

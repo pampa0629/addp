@@ -922,18 +922,18 @@ class FTPConsumerTest(unittest.TestCase):
                         patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([container]))) as inspect:
                     try:
                         with M.changed_texture_fixture(model) as changed:
-                            self.assertEqual(main.read_bytes(), original.replace(b'texture.png', b'newname.png'))
+                            self.assertEqual(main.read_bytes(), original.replace(b'texture.png', b' tex.png   '))
                             self.assertEqual(changed['fingerprint'], model['fingerprint'])
                             self.assertEqual(changed['item_id'], model['item_id'])
                             self.assertNotEqual(changed['sha256'], model['sha256'])
-                            self.assertEqual(changed['composition'][1]['path'], 'models/3ds/newname.png')
-                            self.assertEqual((main.parent / 'newname.png').read_bytes(), (main.parent / 'texture.png').read_bytes())
+                            self.assertEqual(changed['composition'][1]['path'], 'models/3ds/ tex.png   ')
+                            self.assertEqual((main.parent / ' tex.png   ').read_bytes(), (main.parent / 'texture.png').read_bytes())
                             if fail:
                                 raise ExpectedConsumerFailure('synthetic consumer failure')
                     except ExpectedConsumerFailure:
                         self.assertTrue(fail)
                     self.assertEqual(main.read_bytes(), original)
-                    self.assertFalse((main.parent / 'newname.png').exists())
+                    self.assertFalse((main.parent / ' tex.png   ').exists())
                     inspect.assert_called_once_with(['docker', 'inspect', name], check=True, capture_output=True, text=True)
 
     def test_composition_fixture_rejects_foreign_mount_links_and_existing_texture(self):
@@ -949,7 +949,7 @@ class FTPConsumerTest(unittest.TestCase):
                              'Mounts': [{'Source': str(root / 'data'), 'Destination': '/srv/sftpgo/data', 'RW': False}]}
                 main = root / 'data/models/3ds/model.3ds'
                 original = main.read_bytes()
-                replacement = main.parent / 'newname.png'
+                replacement = main.parent / ' tex.png   '
                 if fault == 'foreign_label':
                     container['Config']['Labels']['org.addp.ftp.owner'] = 'foreign'
                 elif fault == 'writable':
@@ -1021,7 +1021,7 @@ class FTPConsumerTest(unittest.TestCase):
         source = report['models'][1]
         report['source_authorizations'] = [{'item_fingerprint': source['fingerprint'], 'request_id': 'grant-A'}]
         changed = copy.deepcopy(source)
-        changed['composition'][1]['path'] = 'models/3ds/newname.png'
+        changed['composition'][1]['path'] = 'models/3ds/ tex.png   '
         events = []
 
         class Authorization:

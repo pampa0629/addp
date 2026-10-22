@@ -27,7 +27,7 @@ func (p *RefFilePreviewProvider) Name() string {
 }
 
 func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	if req == nil || strings.TrimSpace(req.RefPath) == "" {
+	if req == nil || req.RefPath == "" {
 		return nil, fmt.Errorf("ref file preview requires ref_path")
 	}
 	contentCtx, err := (&FileTablePreviewProvider{}).contentContextForPreview(req)

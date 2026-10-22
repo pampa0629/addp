@@ -995,3 +995,14 @@ func TestBuildResourceFactsUsesMetaSchemaWithoutPreviewRows(t *testing.T) {
 		t.Fatalf("nested field facts missing: %#v", facts.Fields)
 	}
 }
+
+func TestPhysicalWhitespacePreviewRefsRemainDistinct(t *testing.T) {
+	attrs := map[string]interface{}{"item": map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": " models /TEST.PNG", "role": "texture"}, map[string]interface{}{"path": " models / TEST.PNG ", "role": "texture_1"}}}, "storage": map[string]interface{}{"physical_path": " models /model.3ds "}}
+	refs := refRefsFromMetaAttributes(attrs)
+	if len(refs) != 2 || refs[0].Ref.Path != " models /TEST.PNG" || refs[1].Ref.Path != " models / TEST.PNG " {
+		t.Fatalf("preview refs changed: %#v", refs)
+	}
+	if got := physicalPathFromMetaAttributes(attrs); got != " models /model.3ds " {
+		t.Fatalf("physical path changed: %q", got)
+	}
+}

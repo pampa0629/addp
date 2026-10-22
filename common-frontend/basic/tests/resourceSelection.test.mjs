@@ -71,3 +71,7 @@ test('resource spatial facts do not infer undeclared geometry field names', () =
 
   assert.deepEqual(geometryColumnFactsFromSelection(selection), { columns: [], selected: '' })
 })
+
+test('display preserves whitespace-only physical segments and filename padding', () => {
+  assert.equal(formatLocatorDisplayPath('addp://engine/33/path/%20/%20TEST.PNG%20?type=file'), ' / TEST.PNG ')
+})

@@ -162,7 +162,7 @@ func refRefsFromMetaAttributes(attrs map[string]interface{}) []format.RelatedRef
 		if len(item) == 0 {
 			continue
 		}
-		path := strings.Trim(strings.TrimSpace(commonJSON.InterfaceString(item["path"])), "/")
+		path := strings.Trim(commonJSON.InterfaceString(item["path"]), "/")
 		if path == "" {
 			continue
 		}

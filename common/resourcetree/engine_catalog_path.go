@@ -47,7 +47,7 @@ func singleLevelServiceCatalogPathFromLocator(model plugin.EngineCatalogModelSpe
 	if err != nil {
 		return plugin.EngineCatalogPath{}, err
 	}
-	name := strings.TrimSpace(loc.Path[0])
+	name := loc.Path[0]
 	if name == "" {
 		return plugin.EngineCatalogPath{}, fmt.Errorf("service catalog leaf name is required")
 	}
@@ -161,7 +161,7 @@ func objectCatalogPathFromLocator(loc *ResourceLocator) (plugin.EngineCatalogPat
 		return plugin.ObjectRootPath(loc.EngineID), nil
 	}
 
-	bucket := strings.TrimSpace(loc.Path[0])
+	bucket := loc.Path[0]
 	if bucket == "" {
 		return plugin.EngineCatalogPath{}, fmt.Errorf("object catalog bucket segment is required")
 	}

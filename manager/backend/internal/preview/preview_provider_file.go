@@ -828,7 +828,7 @@ func refAttributeDescriptors(formatType format.FormatType, refs []format.Related
 		if key == "" {
 			key = fmt.Sprintf("%d", index)
 		}
-		identity := strings.Trim(strings.TrimSpace(descriptor.Path), "/") + "|" + strings.TrimSpace(descriptor.Role)
+		identity := strings.Trim(descriptor.Path, "/") + "|" + strings.TrimSpace(descriptor.Role)
 		if seen[identity] {
 			continue
 		}

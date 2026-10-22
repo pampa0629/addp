@@ -1,6 +1,7 @@
 package resourcetree
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -73,5 +74,43 @@ func TestDataItemIdentityFromCatalogPathRejectsBranchAndWrongModel(t *testing.T)
 	leaf.Segments[len(leaf.Segments)-1].Kind = plugin.EngineCatalogKindCollection
 	if _, err := DataItemIdentityFromCatalogPath(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), leaf); err == nil {
 		t.Fatal("leaf with a mismatched kind was accepted")
+	}
+}
+
+func TestPhysicalWhitespaceNamesRemainDistinctAcrossCatalogLocatorAndIdentity(t *testing.T) {
+	for _, model := range []plugin.EngineCatalogModelSpec{plugin.FileCatalogModel(), plugin.ObjectCatalogModel()} {
+		seen := map[string]bool{}
+		for _, name := range []string{"TEST.PNG", " TEST.PNG", "TEST.PNG ", " TEST.PNG ", " ", "\t资料%2F.PNG\u3000"} {
+			fullName := " models /" + name
+			kind := "file"
+			catalog := plugin.FileItemPath(33, fullName)
+			if model.RootTerm == plugin.EngineCatalogTermService {
+				fullName = "bucket/" + fullName
+				kind = "object"
+				catalog = plugin.ObjectItemPath(33, "bucket", " models /"+name)
+			}
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				loc := LocatorFromFullName(33, "", kind, fullName, nil)
+				if loc == nil || loc.FullName() != fullName {
+					t.Fatalf("full_name changed: %#v, want %q", loc, fullName)
+				}
+				parsed, err := ParseURI(loc.ToURI())
+				if err != nil || !reflect.DeepEqual(parsed.Path, loc.Path) {
+					t.Fatalf("URI round trip: %#v %v", parsed, err)
+				}
+				got, err := EngineCatalogPathFromLocator(model, parsed)
+				if err != nil || !reflect.DeepEqual(got, catalog) {
+					t.Fatalf("catalog changed: %#v want %#v (%v)", got, catalog, err)
+				}
+				identity, err := DataItemIdentityFromCatalogPath(model, got)
+				if err != nil || identity.FullName != fullName || identity.Fingerprint != models.GenerateItemFingerprint(33, fullName) {
+					t.Fatalf("identity changed: %#v (%v)", identity, err)
+				}
+				if seen[identity.Fingerprint] {
+					t.Fatal("distinct names share identity")
+				}
+				seen[identity.Fingerprint] = true
+			})
+		}
 	}
 }

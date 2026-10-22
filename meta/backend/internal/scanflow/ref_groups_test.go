@@ -15,7 +15,7 @@ func TestNormalizedScanRefsAddsPrimaryAndDeduplicates(t *testing.T) {
 		Refs: []models.ScanRef{
 			{Path: "bucket/roads.shp", Role: "main", Required: true},
 			{Path: "bucket/roads.dbf", Role: "sidecar", Required: true},
-			{Path: " ", Role: "sidecar", Required: true},
+			{Path: "", Role: "sidecar", Required: true},
 		},
 	})
 
@@ -164,5 +164,32 @@ func TestObjectRefGroupCandidateSetPreservesDirectoryNamedLikeBucket(t *testing.
 	candidates := ObjectRefGroupCandidateSet(7, "bucket", "bucket/path/roads.shp", nil)
 	if got := candidates.EngineCatalogPathFor("bucket/path/roads.shp").StringPath(); got != "bucket/bucket/path/roads.shp" {
 		t.Fatalf("catalog path = %q, want bucket/bucket/path/roads.shp", got)
+	}
+}
+
+func TestPhysicalWhitespaceScanRefsAndTargets(t *testing.T) {
+	group := models.ScanRefGroup{Primary: " models /model.3ds", Refs: []models.ScanRef{{Path: " models /TEST.PNG", Required: true}, {Path: " models / TEST.PNG ", Required: true}, {Path: " ", Required: true}}}
+	normalized := NormalizeRefGroups([]models.ScanRefGroup{group})
+	if len(normalized) != 1 || !reflect.DeepEqual(normalized[0], group) {
+		t.Fatalf("normalization changed names: %#v", normalized)
+	}
+	refs := NormalizedScanRefs(group)
+	if len(refs) != 4 || refs[2].Path != " models / TEST.PNG " || refs[3].Path != " " {
+		t.Fatalf("refs merged: %#v", refs)
+	}
+	set := FileRefGroupCandidateSet(7, group.Primary, group)
+	for i, ref := range refs {
+		if set.Files[i].Path != ref.Path || set.Files[i].EngineCatalogPath.StringPath() != ref.Path {
+			t.Fatalf("candidate changed: %#v", set.Files[i])
+		}
+	}
+	for _, raw := range []string{" TEST.PNG ", " "} {
+		targets := TargetPathsFromItem(models.MetaItem{FullName: raw})
+		if len(targets) != 1 || targets[0] != raw {
+			t.Fatalf("target changed: %#v", targets)
+		}
+	}
+	if got := UniqueNonEmpty([]string{"TEST.PNG", " TEST.PNG ", " ", ""}); len(got) != 3 {
+		t.Fatalf("selectors merged: %#v", got)
 	}
 }

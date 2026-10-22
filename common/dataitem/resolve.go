@@ -90,8 +90,8 @@ func DescriptorFromAttributes(attrs map[string]interface{}) ItemDescriptor {
 		ScopePath:          scopePath,
 		PhysicalPath:       physicalPath,
 		StoragePath:        storagePath,
-		StorageName:        strings.Trim(strings.TrimSpace(asString(storageAttrs["name"])), "/"),
-		StorageBucket:      strings.Trim(strings.TrimSpace(asString(storageAttrs["bucket"])), "/"),
+		StorageName:        strings.Trim(asString(storageAttrs["name"]), "/"),
+		StorageBucket:      strings.Trim(asString(storageAttrs["bucket"]), "/"),
 		Refs:               refsFromAttributes(itemAttrs["refs"]),
 		SizeBytes:          sizeBytesFromAttributes(storageAttrs),
 	}
@@ -154,7 +154,7 @@ func sizeBytesFromAttributes(storageAttrs map[string]interface{}) *int64 {
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
+		if value != "" {
 			return value
 		}
 	}
@@ -349,8 +349,8 @@ func matchRelatedRefSpec(candidate Candidate, specs map[string]format.RelatedRef
 	sort.Slice(exts, func(i, j int) bool {
 		return len(exts[i]) > len(exts[j])
 	})
-	name := strings.ToLower(strings.TrimSpace(candidate.Name))
-	path := strings.ToLower(strings.TrimSpace(candidate.Path))
+	name := strings.ToLower(candidate.Name)
+	path := strings.ToLower(candidate.Path)
 	for _, ext := range exts {
 		if strings.HasSuffix(name, ext) || strings.HasSuffix(path, ext) {
 			return ext, specs[ext], true
@@ -444,11 +444,11 @@ func asInt64(value interface{}) (int64, bool) {
 }
 
 func normalizeTargetPath(value string) string {
-	return strings.Trim(strings.TrimSpace(value), "/")
+	return strings.Trim(value, "/")
 }
 
 func normalizeStoragePath(value string) string {
-	hadTrailingSlash := strings.HasSuffix(strings.TrimSpace(value), "/")
+	hadTrailingSlash := strings.HasSuffix(value, "/")
 	value = normalizeTargetPath(value)
 	if value != "" && hadTrailingSlash {
 		return value + "/"
@@ -517,9 +517,9 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 			continue
 		}
 		candidateRelativePath := strings.ToLower(strings.TrimPrefix(strings.Trim(candidate.Path, "/"), scopePath+"/"))
-		candidateName := strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Name)))
+		candidateName := strings.ToLower(filepath.Base(candidate.Name))
 		if candidateName == "" {
-			candidateName = strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Path)))
+			candidateName = strings.ToLower(filepath.Base(candidate.Path))
 		}
 		if requiredNames[candidateName] || requiredPaths[candidateRelativePath] {
 			requiredCandidates = append(requiredCandidates, candidate)
@@ -748,7 +748,7 @@ func ruleExtensionSet(extensions []string) map[string]bool {
 func ruleFileNameSet(fileNames []string) map[string]bool {
 	result := map[string]bool{}
 	for _, fileName := range fileNames {
-		normalized := strings.ToLower(strings.TrimSpace(filepath.Base(fileName)))
+		normalized := strings.ToLower(filepath.Base(fileName))
 		if normalized != "" {
 			result[normalized] = true
 		}
@@ -759,7 +759,7 @@ func ruleFileNameSet(fileNames []string) map[string]bool {
 func ruleRelativePathSet(paths []string) map[string]bool {
 	result := map[string]bool{}
 	for _, relativePath := range paths {
-		normalized := strings.ToLower(strings.Trim(strings.ReplaceAll(strings.TrimSpace(relativePath), "\\", "/"), "/"))
+		normalized := strings.ToLower(strings.Trim(strings.ReplaceAll(relativePath, "\\", "/"), "/"))
 		if normalized != "" {
 			result[normalized] = true
 		}
@@ -773,9 +773,9 @@ func requiredFileNamesSatisfied(required map[string]bool, candidates []Candidate
 	}
 	found := map[string]bool{}
 	for _, candidate := range candidates {
-		name := strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Name)))
+		name := strings.ToLower(filepath.Base(candidate.Name))
 		if name == "" {
-			name = strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Path)))
+			name = strings.ToLower(filepath.Base(candidate.Path))
 		}
 		if required[name] && isDirectChildOfScope(scopePath, candidate.Path) {
 			found[name] = true
@@ -799,9 +799,9 @@ func requiredPathsSatisfied(required map[string]bool, candidates []Candidate, sc
 }
 
 func wholeScopeDataRole(candidate Candidate, requiredNames map[string]bool) string {
-	name := strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Name)))
+	name := strings.ToLower(filepath.Base(candidate.Name))
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Path)))
+		name = strings.ToLower(filepath.Base(candidate.Path))
 	}
 	if requiredNames[name] {
 		return "manifest"
@@ -810,12 +810,12 @@ func wholeScopeDataRole(candidate Candidate, requiredNames map[string]bool) stri
 }
 
 func isWholeScopeAuxiliaryCandidate(candidate Candidate, rule *WholeScopeRule) bool {
-	name := strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Name)))
+	name := strings.ToLower(filepath.Base(candidate.Name))
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(filepath.Base(candidate.Path)))
+		name = strings.ToLower(filepath.Base(candidate.Path))
 	}
 	for _, allowed := range rule.IgnoredFileNames {
-		if name == strings.ToLower(strings.TrimSpace(allowed)) {
+		if name == strings.ToLower(allowed) {
 			return true
 		}
 	}
@@ -845,7 +845,7 @@ func hasPartitionLikePath(scopePath, candidatePath string) bool {
 	parts := strings.Split(trimmed, "/")
 	for i := 0; i < len(parts)-1; i++ {
 		part := parts[i]
-		name := strings.TrimSpace(part)
+		name := part
 		if strings.Contains(name, "=") || strings.HasPrefix(name, "_") {
 			return true
 		}
@@ -854,7 +854,7 @@ func hasPartitionLikePath(scopePath, candidatePath string) bool {
 }
 
 func isPartLikeWholeScopeEntry(name string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
+	normalized := strings.ToLower(filepath.Base(name))
 	return strings.HasPrefix(normalized, "part-") || strings.HasPrefix(normalized, "part_")
 }
 

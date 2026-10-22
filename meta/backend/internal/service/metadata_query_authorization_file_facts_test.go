@@ -143,13 +143,12 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			a["item"].(map[string]any)["refs"].([]any)[1].(map[string]any)["required"] = "true"
 		}},
 		{"wrong entrypoint", authorizationfacts.AuthorizationBasisNeedsRefresh, func(a models.JSONMap) { a["storage"].(map[string]any)["physical_path"] = "models" }},
-		{"unrepresentable name is not trimmed into another file", authorizationfacts.AuthorizationBasisNeedsRefresh, func(a models.JSONMap) {
-			a["item"].(map[string]any)["refs"].([]any)[1].(map[string]any)["path"] = "models/ TEST.PNG"
+		{"padded declaration cannot use an unpadded ref", authorizationfacts.AuthorizationBasisIncomplete, func(a models.JSONMap) {
 			a["format_info"].(map[string]any)["3ds"].(map[string]any)["texture_refs"] = []string{" TEST.PNG"}
 		}},
 		{"unsupported format", authorizationfacts.AuthorizationBasisUnsupported, func(a models.JSONMap) { a["item"].(map[string]any)["format"] = "max" }},
 	}
-	for i, ref := range []string{"", "textures/TEST.PNG", "图%20.PNG"} {
+	for i, ref := range []string{"", "textures/TEST.PNG", "图%20.PNG", " TEST.PNG", " TEST.PNG ", " "} {
 		t.Run("exact/"+ref, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(550+i), "3ds")
 			refs := item.Attributes["item"].(map[string]any)["refs"].([]any)

@@ -81,10 +81,10 @@ func NormalizeRefGroups(groups []models.ScanRefGroup) []models.ScanRefGroup {
 	}
 	normalized := make([]models.ScanRefGroup, 0, len(groups))
 	for _, group := range groups {
-		primary := strings.TrimSpace(group.Primary)
+		primary := group.Primary
 		refs := make([]models.ScanRef, 0, len(group.Refs))
 		for _, ref := range group.Refs {
-			path := strings.TrimSpace(ref.Path)
+			path := ref.Path
 			if path == "" {
 				continue
 			}

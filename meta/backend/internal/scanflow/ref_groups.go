@@ -115,7 +115,6 @@ func NormalizedScanRefs(group models.ScanRefGroup) []models.ScanRef {
 	seen := map[string]bool{}
 	refs := make([]models.ScanRef, 0, len(group.Refs)+1)
 	add := func(ref models.ScanRef) {
-		ref.Path = strings.TrimSpace(ref.Path)
 		if ref.Path == "" || seen[ref.Path] {
 			return
 		}
@@ -125,7 +124,7 @@ func NormalizedScanRefs(group models.ScanRefGroup) []models.ScanRef {
 	for _, ref := range group.Refs {
 		add(ref)
 	}
-	primary := strings.TrimSpace(group.Primary)
+	primary := group.Primary
 	if primary == "" {
 		return refs
 	}
@@ -146,11 +145,11 @@ func NormalizedScanRefs(group models.ScanRefGroup) []models.ScanRef {
 }
 
 func ScanRefGroupPrimaryPath(group models.ScanRefGroup) string {
-	if primary := strings.TrimSpace(group.Primary); primary != "" {
+	if primary := group.Primary; primary != "" {
 		return primary
 	}
 	for _, ref := range group.Refs {
-		if path := strings.TrimSpace(ref.Path); path != "" {
+		if path := ref.Path; path != "" {
 			return path
 		}
 	}

@@ -4,13 +4,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanresource"
 )
 
-// SanitizeObjectPath 清理对象路径（去除前后空格和斜杠）。
+// SanitizeObjectPath 清理对象路径结构，保留物理名称中的空白。
 func SanitizeObjectPath(path string) string {
-	path = strings.TrimSpace(path)
 	path = strings.Trim(path, "/")
 	return path
 }
@@ -99,21 +99,7 @@ func JoinFSPath(parent, name string) string {
 
 // SanitizeFSPath 清理文件系统语义路径。根路径用空字符串表达，"." 不进入 full_name。
 func SanitizeFSPath(path string) string {
-	path = strings.TrimSpace(path)
-	path = strings.ReplaceAll(path, "\\", "/")
-	path = strings.Trim(path, "/")
-	if path == "" || path == "." {
-		return ""
-	}
-	parts := make([]string, 0)
-	for _, part := range strings.Split(path, "/") {
-		part = strings.TrimSpace(part)
-		if part == "" || part == "." {
-			continue
-		}
-		parts = append(parts, part)
-	}
-	return strings.Join(parts, "/")
+	return plugin.NormalizeFileCatalogPath(path)
 }
 
 func FilterObjectResourcesForDepth(resources []scanresource.StorageResource, basePath string) []scanresource.StorageResource {

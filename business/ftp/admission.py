@@ -173,6 +173,12 @@ def start():
     # The subsequent native FTP/Provider/Meta checks must see it without restart.
     write_samples(data)
     write(root / 'ftp-model-samples.json', write_model_samples(data))
+    padded = data / 'models' / ' whitespace '
+    padded.mkdir(mode=0o755)
+    for filename in ('TEST.PNG', ' TEST.PNG ', ' ', '资料%2F.png　'):
+        target = padded / filename
+        target.write_bytes(filename.encode('utf-8'))
+        target.chmod(0o644)
     samples = data / 'examples'
     (samples / '中文 空格%样例.csv').write_text('id,name,amount\n1,长沙,100.25\n2,株洲,200.50\n')
     (samples / 'demo.json').write_text('[{"id":1,"name":"长沙"},{"id":2,"name":"株洲"}]')

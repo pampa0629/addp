@@ -114,8 +114,8 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 		1,
 		1,
 		strings.TrimSpace(selection.ChildName),
-		strings.Trim(strings.TrimSpace(selection.RefPath), "/"),
-		strings.Trim(strings.TrimSpace(selection.NestedChildPath), "/"),
+		strings.Trim(selection.RefPath, "/"),
+		strings.Trim(selection.NestedChildPath, "/"),
 		plugin.GraphSampleFilter{},
 		&tenantID,
 	)
@@ -287,8 +287,8 @@ func dataTypeFromAttributes(attributes map[string]interface{}) string {
 
 func normalizeDataProfileSelection(selection DataProfileSelection) DataProfileSelection {
 	selection.ChildName = strings.TrimSpace(selection.ChildName)
-	selection.RefPath = strings.Trim(strings.TrimSpace(selection.RefPath), "/")
-	selection.NestedChildPath = strings.Trim(strings.TrimSpace(selection.NestedChildPath), "/")
+	selection.RefPath = strings.Trim(selection.RefPath, "/")
+	selection.NestedChildPath = strings.Trim(selection.NestedChildPath, "/")
 	return selection
 }
 

@@ -580,7 +580,6 @@ func (h *ExplorerHandler) StorageAsset(c *gin.Context) {
 }
 
 func attachmentContentDisposition(fileName string) string {
-	fileName = strings.TrimSpace(fileName)
 	if fileName == "" || fileName == "." || fileName == "/" {
 		fileName = "download"
 	}
@@ -588,7 +587,7 @@ func attachmentContentDisposition(fileName string) string {
 }
 
 func storageStreamContentDisposition(storageRef, contentType string) string {
-	filename := path.Base(strings.TrimSpace(storageRef))
+	filename := path.Base(storageRef)
 	if filename == "." || filename == "/" || filename == "" {
 		filename = "download"
 	}

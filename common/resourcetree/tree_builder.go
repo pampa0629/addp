@@ -128,7 +128,7 @@ func isCatalogRootMetaNode(node *models.MetaNode) bool {
 	if node == nil {
 		return false
 	}
-	return node.ParentNodeID == nil && strings.TrimSpace(node.FullName) == ""
+	return node.ParentNodeID == nil && node.FullName == ""
 }
 
 func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *TreeNode {
@@ -178,7 +178,7 @@ func isWholeScopeItemNode(node *models.MetaNode) bool {
 }
 
 func sameResourceFullName(left, right string) bool {
-	return strings.Trim(strings.TrimSpace(left), "/") == strings.Trim(strings.TrimSpace(right), "/")
+	return strings.Trim(left, "/") == strings.Trim(right, "/")
 }
 
 func isPathContainerNodeType(nodeType string) bool {

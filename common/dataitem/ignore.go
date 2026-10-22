@@ -12,7 +12,7 @@ type IgnorePolicy interface {
 type DefaultIgnorePolicy struct{}
 
 func (DefaultIgnorePolicy) Ignore(candidate Candidate) (bool, string) {
-	name := strings.TrimSpace(candidate.Name)
+	name := candidate.Name
 	candidatePath := strings.Trim(candidate.Path, "/")
 	if name == "" && candidatePath == "" {
 		return true, "empty_name"
@@ -27,7 +27,6 @@ func (DefaultIgnorePolicy) Ignore(candidate Candidate) (bool, string) {
 }
 
 func IgnoreSystemEntry(name, candidatePath string) (bool, string) {
-	name = strings.TrimSpace(name)
 	candidatePath = strings.Trim(candidatePath, "/")
 	if name == "" {
 		name = path.Base(candidatePath)

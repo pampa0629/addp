@@ -661,3 +661,17 @@ func TestDescriptorFromAttributesNormalizesFormat(t *testing.T) {
 		t.Fatalf("csv format = %q, want csv", csv.Format)
 	}
 }
+
+func TestPhysicalWhitespaceCandidateAndDescriptor(t *testing.T) {
+	for _, name := range []string{"TEST.PNG", " TEST.PNG ", " ", "资料.png\u3000"} {
+		raw := " models /" + name
+		candidate := NormalizeCandidate(Candidate{Name: name, Path: raw})
+		if candidate.Name != name || candidate.Path != raw {
+			t.Fatalf("candidate changed: %#v", candidate)
+		}
+		d := DescriptorFromAttributes(map[string]interface{}{"item": map[string]interface{}{"layout": "single", "refs": []interface{}{map[string]interface{}{"path": raw, "role": "model", "primary": true, "required": true}}}, "storage": map[string]interface{}{"physical_path": raw, "name": name, "path": " models /"}})
+		if d.PhysicalPath != raw || d.PrimaryContentPath != raw || d.StorageName != name || len(d.Refs) != 1 || d.Refs[0].Path != raw {
+			t.Fatalf("descriptor changed: %#v", d)
+		}
+	}
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	ftppkg "github.com/addp/common/engine/plugins/ftp"
+	"github.com/addp/common/resourcetree"
 )
 
 func ownedInfo(t *testing.T, security string) plugin.ConnectionInfo {
@@ -107,6 +108,45 @@ func TestIntegrationProviderCatalogFactsAndContent(t *testing.T) {
 			}
 			if _, err = p.OpenContent(t.Context(), info, root, plugin.ReadOptions{}); err == nil {
 				t.Fatal("directory opened as file")
+			}
+		})
+	}
+}
+
+func TestIntegrationProviderPhysicalWhitespaceNames(t *testing.T) {
+	for _, mode := range []string{"plain", "explicit_tls"} {
+		t.Run(mode, func(t *testing.T) {
+			info := ownedInfo(t, mode)
+			p := &ftppkg.FTPPlugin{}
+			parent := plugin.FileDirectoryPath(99, "models/ whitespace ")
+			entries, err := p.ListChildren(t.Context(), info, parent, plugin.ListOptions{})
+			if err != nil || len(entries) != 4 {
+				t.Fatalf("padded directory listing: %d (%v)", len(entries), err)
+			}
+			for _, entry := range entries {
+				raw := "models/ whitespace /" + entry.Name
+				loc := resourcetree.LocatorFromFullName(99, "ftp", "file", raw, nil)
+				parsed, err := resourcetree.ParseURI(loc.ToURI())
+				if err != nil {
+					t.Fatal(err)
+				}
+				target, err := resourcetree.EngineCatalogPathFromLocator(p.EngineCatalogModel(), parsed)
+				if err != nil {
+					t.Fatal(err)
+				}
+				identity, err := resourcetree.DataItemIdentityFromCatalogPath(p.EngineCatalogModel(), target)
+				if err != nil || identity.FullName != raw {
+					t.Fatalf("identity changed: %#v (%v)", identity, err)
+				}
+				r, err := p.OpenContent(t.Context(), info, target, plugin.ReadOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(r)
+				r.Close()
+				if err != nil || string(body) != entry.Name {
+					t.Fatalf("opened alias: name=%q body=%q (%v)", entry.Name, body, err)
+				}
 			}
 		})
 	}

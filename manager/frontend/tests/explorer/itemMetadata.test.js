@@ -36,3 +36,7 @@ describe('Meta item metadata normalization', () => {
     expect(normalizeMetaItemMetadata(null)).toBeNull()
   })
 })
+
+it('physical full_name keeps leading and trailing whitespace', () => {
+  expect(normalizeMetaItemMetadata({ full_name: ' models / TEST.PNG ' }).full_name).toBe(' models / TEST.PNG ')
+})

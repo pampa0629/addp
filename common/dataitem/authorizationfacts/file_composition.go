@@ -181,8 +181,8 @@ func validateFileCompositionTarget(target plugin.EngineCatalogPath) error {
 	default:
 		return errFileComposition
 	}
-	// Reuse the model's canonical typed shape without passing real names
-	// through its external spelling normalizer (which trims whitespace).
+	// Reuse the model's typed shape. Names above are already validated as
+	// exact segments and do not need external path spelling normalization.
 	for i := 1; i < len(expected.Segments); i++ {
 		expected.Segments[i].Name = target.Segments[i].Name
 	}

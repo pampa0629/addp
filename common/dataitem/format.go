@@ -255,8 +255,6 @@ func ValidateFormatRule(rule FormatRule) error {
 }
 
 func NormalizeCandidate(candidate Candidate) Candidate {
-	candidate.Path = strings.TrimSpace(candidate.Path)
-	candidate.Name = strings.TrimSpace(candidate.Name)
 	if candidate.Name == "" && candidate.Path != "" {
 		candidate.Name = filepath.Base(candidate.Path)
 	}
@@ -264,7 +262,6 @@ func NormalizeCandidate(candidate Candidate) Candidate {
 	if candidate.Extension == "" {
 		candidate.Extension = format.NormalizeExtension(filepath.Ext(candidate.Name))
 	}
-	candidate.BaseName = strings.TrimSpace(candidate.BaseName)
 	if candidate.BaseName == "" && candidate.Name != "" {
 		candidate.BaseName = strings.TrimSuffix(candidate.Name, filepath.Ext(candidate.Name))
 	}

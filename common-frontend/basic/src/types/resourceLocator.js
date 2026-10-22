@@ -297,7 +297,7 @@ export function getFullName(locator) {
  */
 export function formatLocatorDisplayPath(uri, options = {}) {
   const locator = parseLocatorSafe(uri)
-  const path = [...(locator.path || []), ...(options.appendedPath || [])].filter(segment => String(segment).trim() !== '')
+  const path = [...(locator.path || []), ...(options.appendedPath || [])].filter(segment => String(segment) !== '')
   if (path.length === 0) return ''
   const resourceType = String(options.resourceType || locator.type || '').trim().toLowerCase()
   const separator = [ResourceType.TABLE, ResourceType.COLLECTION, ResourceType.GRAPH].includes(resourceType) ? '.' : '/'

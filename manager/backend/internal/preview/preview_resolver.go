@@ -481,9 +481,9 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 			PageSize: pageSize,
 		},
 		TenantID:        tenantID,
-		ChildName:       strings.TrimSpace(childName),
-		RefPath:         strings.Trim(strings.TrimSpace(refPath), "/"),
-		NestedChildPath: strings.Trim(strings.TrimSpace(nestedChildPath), "/"),
+		ChildName:       childName,
+		RefPath:         strings.Trim(refPath, "/"),
+		NestedChildPath: strings.Trim(nestedChildPath, "/"),
 		GraphSample:     graphSample.Clone(),
 	}
 
@@ -980,7 +980,7 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 		MetaScanned:     req.Metadata != nil,
 		ScannedDepth:    req.scannedDepth(),
 		ItemID:          req.MetaItemID,
-		FullName:        strings.TrimSpace(req.ItemFullName),
+		FullName:        req.ItemFullName,
 		ItemFingerprint: strings.TrimSpace(req.ItemFingerprint),
 		EngineType:      strings.ToLower(strings.TrimSpace(req.Engine.EngineType)),
 		SchemaCoverage:  schemaCoverage(req),
@@ -1021,10 +1021,10 @@ func schemaCoverage(req *PreviewResolverRequest) string {
 }
 
 func queryNames(req *PreviewResolverRequest) map[string]string {
-	if req == nil || req.MetaItemID == nil || strings.TrimSpace(req.ItemFullName) == "" {
+	if req == nil || req.MetaItemID == nil || req.ItemFullName == "" {
 		return nil
 	}
-	fullName := strings.TrimSpace(req.ItemFullName)
+	fullName := req.ItemFullName
 	registered, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return nil

@@ -39,7 +39,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	if err != nil {
 		return nil, err
 	}
-	if nestedChildPath := strings.Trim(strings.TrimSpace(req.NestedChildPath), "/"); nestedChildPath != "" {
+	if nestedChildPath := strings.Trim(req.NestedChildPath, "/"); nestedChildPath != "" {
 		if child.DataType != datatype.Container {
 			return nil, fmt.Errorf("nested_child_path requires container child %s", req.ChildName)
 		}
@@ -49,7 +49,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		}
 		child = resolved
 	}
-	if refPath := strings.Trim(strings.TrimSpace(req.RefPath), "/"); refPath != "" {
+	if refPath := strings.Trim(req.RefPath, "/"); refPath != "" {
 		refChild := childInfoForRefPath(child, refPath)
 		resolved, err := resolvePreviewContainerChild(ctx, contentCtx.reader, contentCtx.path, parentFormat, previewRequestForRef(req, refChild))
 		if err != nil {
@@ -70,7 +70,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 }
 
 func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.ContainerChildResource, nestedPath string, req *PreviewRequest) (*format.ContainerChildResource, error) {
-	nestedPath = strings.Trim(strings.TrimSpace(nestedPath), "/")
+	nestedPath = strings.Trim(nestedPath, "/")
 	if nestedPath == "" {
 		return parent, nil
 	}
@@ -199,7 +199,7 @@ func previewContainerChildInfoMap(child datatype.ContainerChildInfo) map[string]
 }
 
 func findPreviewContainerChild(children []map[string]interface{}, childPath string) map[string]interface{} {
-	childPath = strings.Trim(strings.TrimSpace(childPath), "/")
+	childPath = strings.Trim(childPath, "/")
 	for _, child := range children {
 		if containerChildNameMatches(child, childPath) {
 			return child
@@ -340,7 +340,7 @@ func refPathMatches(candidate, target string) bool {
 }
 
 func resourceBase(path string) string {
-	path = strings.Trim(strings.TrimSpace(path), "/")
+	path = strings.Trim(path, "/")
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i] == '/' || path[i] == '\\' {
 			return path[i+1:]
@@ -367,7 +367,7 @@ func previewHintForRefDescriptor(descriptor *format.RefDescriptor, path string) 
 
 func previewRequestForRef(req *PreviewRequest, child map[string]interface{}) *PreviewRequest {
 	next := *req
-	next.ChildName = strings.Trim(strings.TrimSpace(commonJSON.InterfaceString(child["path"])), "/")
+	next.ChildName = strings.Trim(commonJSON.InterfaceString(child["path"]), "/")
 	if next.ChildName == "" {
 		next.ChildName = strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	}

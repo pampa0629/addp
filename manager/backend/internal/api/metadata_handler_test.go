@@ -184,3 +184,12 @@ func TestItemRefreshRejectsMalformedHeaderModeBeforeDependencies(t *testing.T) {
 		}
 	}
 }
+
+func TestPhysicalWhitespaceDownloadHeaderPreservesName(t *testing.T) {
+	if got := attachmentContentDisposition(" TEST.PNG "); got != `attachment; filename=" TEST.PNG "` {
+		t.Fatalf("attachment renamed: %q", got)
+	}
+	if got := storageStreamContentDisposition(" models / TEST.PNG ", "image/png"); got != `inline; filename=" TEST.PNG "` {
+		t.Fatalf("stream renamed: %q", got)
+	}
+}

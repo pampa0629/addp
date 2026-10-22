@@ -467,7 +467,7 @@ func storageRefBelongsToDataItem(engineType, itemStorageRef, requestedStorageRef
 }
 
 func cleanStorageRef(value string) string {
-	value = strings.Trim(strings.ReplaceAll(strings.TrimSpace(value), "\\", "/"), "/")
+	value = strings.Trim(strings.ReplaceAll(value, "\\", "/"), "/")
 	if value == "" {
 		return ""
 	}
@@ -622,7 +622,7 @@ func downloadRefsFromDescriptor(descriptor dataitem.ItemDescriptor) []models.Dow
 	}
 	refs := make([]models.DownloadRef, 0, len(descriptor.Refs))
 	for _, itemRef := range descriptor.Refs {
-		storageRef := strings.Trim(strings.TrimSpace(itemRef.Path), "/")
+		storageRef := strings.Trim(itemRef.Path, "/")
 		if storageRef == "" {
 			continue
 		}
@@ -670,7 +670,7 @@ func normalizeDownloadRefs(engineType, primaryStorageRef string, refs []models.D
 		}
 		seen[storageRef] = true
 		ref.StorageRef = storageRef
-		if strings.TrimSpace(ref.FileName) == "" {
+		if ref.FileName == "" {
 			ref.FileName = path.Base(storageRef)
 		}
 		result = append(result, ref)
@@ -730,14 +730,14 @@ func bundleFileName(storageRef string, descriptor dataitem.ItemDescriptor) strin
 	if formatName != "" && !strings.Contains(strings.ToLower(base), strings.ToLower(formatName)) {
 		base = base + "." + formatName
 	}
-	if strings.TrimSpace(base) == "" {
+	if base == "" {
 		base = "download"
 	}
 	return base + ".zip"
 }
 
 func uniqueZipEntryName(name string, used map[string]int) string {
-	name = strings.Trim(strings.TrimSpace(name), "/")
+	name = strings.Trim(name, "/")
 	if name == "" || name == "." {
 		name = "file"
 	}
@@ -831,7 +831,7 @@ func streamStorageRefPath(engineType string, engineID uint, storageRef string) (
 	}
 	if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermObject) {
 		parts := strings.SplitN(storageRef, "/", 2)
-		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return plugin.EngineCatalogPath{}, "", fmt.Errorf("invalid storage ref for object catalog: %s", storageRef)
 		}
 		return plugin.ObjectItemPath(engineID, parts[0], parts[1]), storageRef, nil

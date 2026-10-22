@@ -51,9 +51,10 @@ func TestNormalizeRefGroups(t *testing.T) {
 	})
 	want := []models.ScanRefGroup{
 		{
-			Primary: "bucket/path/roads.shp",
+			Primary: " bucket/path/roads.shp ",
 			Refs: []models.ScanRef{
-				{Path: "bucket/path/roads.shp", Role: "main", Required: true},
+				{Path: " bucket/path/roads.shp ", Role: "main", Required: true},
+				{Path: " ", Role: "sidecar", Required: true},
 			},
 		},
 	}

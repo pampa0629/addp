@@ -31,12 +31,12 @@ func DataItemIdentityFromCatalogPath(model plugin.EngineCatalogModelSpec, path p
 		return DataItemIdentity{}, fmt.Errorf("catalog model does not declare a leaf")
 	}
 	last := path.Segments[len(path.Segments)-1]
-	if !segmentMatchesCatalogLevel(last, leafLevel) || strings.TrimSpace(last.Name) == "" {
+	if !segmentMatchesCatalogLevel(last, leafLevel) || last.Name == "" {
 		return DataItemIdentity{}, fmt.Errorf("catalog path does not identify the model leaf")
 	}
 	names := make([]string, 0, len(path.Segments)-1)
 	for _, segment := range path.Segments[1:] {
-		name := strings.TrimSpace(segment.Name)
+		name := segment.Name
 		if name == "" {
 			return DataItemIdentity{}, fmt.Errorf("catalog path contains an empty business segment")
 		}

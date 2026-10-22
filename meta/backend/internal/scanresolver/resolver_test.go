@@ -17,8 +17,8 @@ func TestResolveScopePreservesLeafTargets(t *testing.T) {
 	}
 	for _, opts := range []scanflow.Options{
 		{Targets: []string{"bad"}},
-		{EngineID: 7, CatalogPaths: []string{" "}},
-		{EngineID: 7, RefGroups: []models.ScanRefGroup{{Primary: " "}}},
+		{EngineID: 7, CatalogPaths: []string{""}},
+		{EngineID: 7, RefGroups: []models.ScanRefGroup{{Primary: ""}}},
 		{EngineID: 7, Targets: []string{"bad"}},
 		{EngineID: 7, Targets: []string{" "}},
 		{EngineID: 7, Targets: []string{target, "addp://engine/8/path/public/B?type=table"}},
@@ -56,13 +56,13 @@ func TestResolveScopeRefGroups(t *testing.T) {
 	if scope.EngineID != 7 || scope.Mode != scanflow.ModeRefGroups || scope.ScanDepth != "deep" || !scope.Force || scope.Source != "transfer" {
 		t.Fatalf("scope scalar fields = %#v", scope)
 	}
-	if !reflect.DeepEqual(scope.CatalogPaths, []string{"bucket/path"}) {
+	if !reflect.DeepEqual(scope.CatalogPaths, []string{" bucket/path "}) {
 		t.Fatalf("catalog paths = %#v", scope.CatalogPaths)
 	}
-	if len(scope.RefGroups) != 1 || scope.RefGroups[0].Primary != "bucket/path/roads.shp" {
+	if len(scope.RefGroups) != 1 || scope.RefGroups[0].Primary != " bucket/path/roads.shp " {
 		t.Fatalf("ref groups = %#v", scope.RefGroups)
 	}
-	if got := scope.RefGroups[0].Refs; len(got) != 1 || got[0].Path != "bucket/path/roads.shp" || got[0].Role != "main" || !got[0].Required {
+	if got := scope.RefGroups[0].Refs; len(got) != 2 || got[0].Path != " bucket/path/roads.shp " || got[1].Path != " " || got[0].Role != "main" || !got[0].Required {
 		t.Fatalf("refs = %#v", got)
 	}
 }

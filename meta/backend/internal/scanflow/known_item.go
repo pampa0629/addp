@@ -119,7 +119,7 @@ func knownItemPathFromStorage(descriptor dataitem.ItemDescriptor) string {
 
 func knownItemPrimaryRefPath(descriptor dataitem.ItemDescriptor) string {
 	for _, ref := range descriptor.Refs {
-		if ref.Primary && strings.TrimSpace(ref.Path) != "" {
+		if ref.Primary && ref.Path != "" {
 			return strings.Trim(ref.Path, "/")
 		}
 	}

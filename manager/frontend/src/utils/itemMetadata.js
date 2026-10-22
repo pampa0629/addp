@@ -11,7 +11,7 @@ export function normalizeMetaItemMetadata(item) {
     fingerprint: String(item.fingerprint || '').trim(),
     item_type: String(item.item_type || '').trim(),
     item_type_i18n_key: item.item_type ? `engine.term.${item.item_type}` : '',
-    full_name: String(item.full_name || '').trim(),
+    full_name: String(item.full_name || ''),
     row_count: item.row_count ?? null,
     attributes,
     scanned_at: item.scanned_at || null,

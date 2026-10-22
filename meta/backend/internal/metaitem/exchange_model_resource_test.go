@@ -177,3 +177,43 @@ func TestExchangeModelClaimsOnlyExactDeclaredTextures(t *testing.T) {
 		}
 	}
 }
+
+func TestPhysicalWhitespaceModelDependencyMatchesOnlyExactName(t *testing.T) {
+	primary := " models /model.3ds"
+	for _, present := range []bool{false, true} {
+		files := []StorageFileRef{{Name: "model.3ds", Path: primary, Size: 100}, {Name: "TEST.PNG", Path: " models /TEST.PNG", Size: 10}}
+		if present {
+			files = append(files, StorageFileRef{Name: " TEST.PNG ", Path: " models / TEST.PNG ", Size: 25})
+		}
+		result, err := (&commonDataItemResolver{}).ResolveItems(context.Background(), DirectoryResolveInput{DirPath: " models ", Files: files, Options: ResolveOptions{IncludeSingleResources: true}, ContentReader: refMapContentReader{content: map[string][]byte{primary: exchangeSource("3ds", " TEST.PNG ")}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var model *DetectedItem
+		for _, item := range result.Items {
+			if item.PrimaryContentPath == primary {
+				model = item
+			}
+		}
+		if model == nil {
+			t.Fatal("padded parent model missing")
+		}
+		want := 1
+		if present {
+			want = 2
+		}
+		if len(model.RefList) != want {
+			t.Fatalf("present=%v refs=%#v", present, model.RefList)
+		}
+		exactFound := false
+		for _, ref := range model.RefList {
+			exactFound = exactFound || ref.Path == " models / TEST.PNG "
+			if ref.Path == " models /TEST.PNG" {
+				t.Fatal("trimmed alias used as dependency")
+			}
+		}
+		if present != exactFound {
+			t.Fatalf("dependency changed: %#v", model.RefList)
+		}
+	}
+}

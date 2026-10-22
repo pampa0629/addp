@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=ftp
-# ADDP_T2_INPUT_FILES=business/ftp/ business/docker-compose.yml common/engine/certification/ftp/ common/engine/internal/ftpclient/ common/engine/plugins/ftp/ common/engine/contentadapter/ common/format/plugins/csv/ common/format/plugins/json/ common/format/plugins/parquet/ common/format/plugins/threeds/ business/fixtures/manager/addp_online_model_fixture.ifc business/fixtures/manager/addp_online_model_fixture.3ds business/fixtures/manager/addp_online_exchange_texture.png
+# ADDP_T2_INPUT_FILES=business/ftp/ business/docker-compose.yml common/engine/certification/ftp/ common/engine/internal/ftpclient/ common/engine/plugins/ftp/ common/engine/contentadapter/ common/engine/plugin/engine_catalog_path_helpers.go common/resourcetree/ common/dataitem/ common/format/plugins/csv/ common/format/plugins/json/ common/format/plugins/parquet/ common/format/plugins/threeds/ business/fixtures/manager/addp_online_model_fixture.ifc business/fixtures/manager/addp_online_model_fixture.3ds business/fixtures/manager/addp_online_exchange_texture.png
 # Business owner: disposable docker run / docker rm resources, never personal services.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -41,6 +41,7 @@ grep -q -- "--- PASS: TestStrictMLSTFacts " "$ARTIFACT_DIR/admission.log"
 (cd "$ROOT_DIR/common" && GOWORK=off go test -tags ftp_formats ./engine/plugins/ftp -run '^TestIntegrationProvider' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/provider.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/provider.log"
 grep -q -- '--- PASS: TestIntegrationProviderCatalogFactsAndContent ' "$ARTIFACT_DIR/provider.log"
+grep -q -- '--- PASS: TestIntegrationProviderPhysicalWhitespaceNames ' "$ARTIFACT_DIR/provider.log"
 grep -q -- '--- PASS: TestIntegrationProviderSharedFormats ' "$ARTIFACT_DIR/provider.log"
 grep -q -- '--- PASS: TestIntegrationProviderModelInputs ' "$ARTIFACT_DIR/provider.log"
 

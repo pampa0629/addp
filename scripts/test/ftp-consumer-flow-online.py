@@ -682,8 +682,8 @@ def changed_texture_fixture(model):
             png == (fixture / 'addp_online_exchange_texture.png').read_bytes() and
             hashlib.sha256(original).hexdigest() == model['sha256'] and original.count(b'texture.png') == 1,
             'FTP composition mutation only accepts the fixed physical model and texture')
-    changed = original.replace(b'texture.png', b'newname.png')
-    replacement = texture.with_name('newname.png')
+    changed = original.replace(b'texture.png', b' tex.png   ')
+    replacement = texture.with_name(' tex.png   ')
     created = None
     published = False
     try:
@@ -699,7 +699,7 @@ def changed_texture_fixture(model):
         projected.update(sha256=hashlib.sha256(changed).hexdigest(), size=len(changed))
         for ref in projected['composition']:
             if ref['role'] == 'texture':
-                ref['path'] = 'models/3ds/newname.png'
+                ref['path'] = 'models/3ds/ tex.png   '
         yield projected
     finally:
         try:

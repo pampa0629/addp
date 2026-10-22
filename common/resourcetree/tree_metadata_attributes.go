@@ -31,7 +31,7 @@ func formatNameForTreeMetadata(attrs map[string]interface{}) string {
 }
 
 func physicalPathForTreeMetadata(attrs map[string]interface{}) string {
-	return strings.TrimSpace(commonJSON.String(attrs, "storage", "physical_path"))
+	return commonJSON.String(attrs, "storage", "physical_path")
 }
 
 func objectCountForTreeMetadata(attrs map[string]interface{}) int64 {

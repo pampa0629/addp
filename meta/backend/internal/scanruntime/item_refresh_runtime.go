@@ -317,7 +317,7 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 	metaattr.ApplyDynamicSchemaStatistics(attrs, rowCount, estimatedRowCount, sizeBytes)
 	metaattr.ApplyBranchLeafItemAttributes(attrs, item.ItemType)
 
-	fullName := strings.TrimSpace(item.FullName)
+	fullName := item.FullName
 	if fullName == "" {
 		fullName = metapath.ComposeNodeFullName(item.Name, &parentNode, ".")
 	}
@@ -601,7 +601,7 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 		return scanprocessor.Result{}, true, fmt.Errorf("catalog leaf facts refresh returned no facts")
 	}
 
-	fullName := strings.TrimSpace(item.FullName)
+	fullName := item.FullName
 	if fullName == "" {
 		fullName = item.Name
 	}
