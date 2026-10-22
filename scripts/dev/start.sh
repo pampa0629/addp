@@ -87,6 +87,9 @@ fi
 
 source "${SCRIPT_DIR}/worker-units.sh"
 meta_units=$(addp_worker_units meta-worker) || exit 1
+quality_units=$(addp_worker_units quality-worker) || exit 1
+QUALITY_WORKER_UNITS=()
+while IFS= read -r unit; do QUALITY_WORKER_UNITS+=("$unit"); done <<< "$quality_units"
 META_WORKER_UNITS=()
 while IFS= read -r unit; do META_WORKER_UNITS+=("$unit"); done <<< "$meta_units"
 bounded_units=$(addp_worker_units transfer-bounded-worker) || exit 1
@@ -606,6 +609,9 @@ else
 fi
 echo ""
 
+if [ "$START_QUALITY_WORKER" = true ]; then
+  addp_check_worker_inventory quality-worker || exit 1
+fi
 if [ "$START_META_WORKER" = true ]; then
   addp_check_worker_inventory meta-worker || exit 1
 fi
@@ -677,7 +683,7 @@ check_service_running() {
     pid=$(cat "$pidfile" 2>/dev/null)
     if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
       case "$service_name" in
-        meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) addp_worker_pid_owned "$pid" "$(addp_worker_binary "$service_name")" || { echo 'Worker PID ownership changed' >&2; exit 1; } ;;
+        quality-worker-[12]|meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) addp_worker_pid_owned "$pid" "$(addp_worker_binary "$service_name")" || { echo 'Worker PID ownership changed' >&2; exit 1; } ;;
       esac
       if [ -n "$port" ] && declare -F addp_dev_owned_listener >/dev/null; then
         echo "✗ ${service_name} PID 文件中的进程仍在运行，但没有监听分配端口 ${port}" >&2
@@ -1149,7 +1155,14 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   if [ "$START_QUALITY_WORKER" = true ]; then
-    build_if_service_stopped "quality-worker" "" build_worker "quality" "quality/backend" &
+    (
+      for unit in "${QUALITY_WORKER_UNITS[@]}"; do
+        if check_service_running "$unit" ""; then
+          build_worker "quality" "quality/backend"
+          break
+        fi
+      done
+    ) &
     BUILD_PIDS+=($!)
   fi
 
@@ -1462,7 +1475,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     WORKER_START_PIDS+=($!)
   fi
   if [ "$START_QUALITY_WORKER" = true ]; then
-    start_module_workers quality "$QUALITY_PID" "$QUALITY_BACKEND_PORT" quality-worker &
+    start_module_workers quality "$QUALITY_PID" "$QUALITY_BACKEND_PORT" "${QUALITY_WORKER_UNITS[@]}" &
     WORKER_START_PIDS+=($!)
   fi
   if [ "$START_SECURITY_WORKER" = true ]; then
@@ -1708,7 +1721,15 @@ for unit in "${TRANSFER_WORKERS[@]}"; do
   esac
   BACKEND_STARTS+=("$unit:$worker_pid")
 done
-for worker_spec in "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID"; do
+if [ "$START_QUALITY_WORKER" = true ]; then
+  QUALITY_WORKER_PID=''
+  for unit in "${QUALITY_WORKER_UNITS[@]}"; do
+    worker_pid=$(cat ".dev-pids/${unit}.pid")
+    QUALITY_WORKER_PID="${QUALITY_WORKER_PID:+$QUALITY_WORKER_PID,}$worker_pid"
+    BACKEND_STARTS+=("$unit:$worker_pid")
+  done
+fi
+for worker_spec in "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID"; do
   IFS='|' read -r worker_name worker_selected worker_pid_var <<< "$worker_spec"
   if [ "$worker_selected" = true ]; then
     worker_pid=$(cat ".dev-pids/${worker_name}.pid")

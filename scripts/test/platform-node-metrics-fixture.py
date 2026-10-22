@@ -25,6 +25,9 @@ SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
 WORKER_PROFILES = {
+    "quality-workers": {"module": "quality", "ports": {"quality": 19103, "quality-worker-1": 19104, "quality-worker-2": 19105},
+                        "replace": ["quality-worker-1"],
+                        "env": {"ADDP_DEV_QUALITY_WORKER_REPLICAS": "2", "QUALITY_WORKER_CONCURRENCY": "1"}},
     "meta-workers": {"module": "meta", "ports": {"meta": 19103, "meta-worker-1": 19104, "meta-worker-2": 19105},
                      "replace": ["meta-worker-1"],
                      "env": {"ADDP_DEV_META_WORKER_REPLICAS": "2", "META_WORKER_CONCURRENCY": "1"}},

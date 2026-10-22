@@ -1190,7 +1190,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -1994,6 +1994,9 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
             rows.append({"id": i, "instance_id": self.module+"-instance-"+str(i), "module_name": self.module, "role": role,
                          "status": "up", "process_metrics_declared": True, "process_started_at": "2026-10-11T00:00:00Z",
                          "node_id": self.host_id, "declared_node_id": self.host_id, "node_binding_state": "bound", "node_binding_reason": ""})
+        if self.module == 'quality':
+            for row in rows[1:]:
+                row['metadata'] = {'runtime_name': 'quality-bounded'}
         if self.module == 'transfer':
             for i, row in enumerate(rows[1:]):
                 row['metadata'] = {'runtime_name': 'sync' if i < 2 else 'continuous_sync'}
@@ -2103,6 +2106,21 @@ class MetaWorkerAcceptanceTest(unittest.TestCase):
                 with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_workers_browser(value, expected, artifacts)
             (artifacts/'module-workers-list.png').unlink()
             with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_workers_browser(good, expected, artifacts)
+
+
+class QualityWorkerAcceptanceTest(MetaWorkerAcceptanceTest):
+    case = 'quality-workers'
+    module = 'quality'
+
+    def test_worker_endpoint_rejects_another_runtime(self):
+        owners = self.owners()
+        owners[1]['metadata']['runtime_name'] = 'sync'
+        rows = [{"metric": {"instance": "192.0.2.8:"+str(19103+i), "addp_instance_id": owners[i]["instance_id"],
+                            "runtime_instance_id": owners[i]["instance_id"], "module_name": self.module, "runtime_role": "worker"},
+                 "value": [100, "1"]} for i in range(1, len(owners))]
+        with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_NODE_IP='192.0.2.8'):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.worker_slots(unittest.mock.Mock(query=unittest.mock.Mock(return_value=rows)), owners)
 
 
 class TransferWorkerAcceptanceTest(MetaWorkerAcceptanceTest):

@@ -434,7 +434,7 @@ child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2], sys.argv[3]]
 Path('frontend-child.pid').write_text(str(child.pid))
 while True: time.sleep(1)
 ''')
-names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2')
+names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker-1', 'quality-worker-2', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2')
 ports = {}
 for name in names:
     if 'worker' in name:
@@ -454,7 +454,7 @@ from pathlib import Path
 root = Path(__file__).parent
 ports = json.loads((root / 'ports.json').read_text())
 selected = [arg[1:] for arg in sys.argv[1:]]
-for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2'):
+for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker-1', 'quality-worker-2', 'meta', 'meta-worker-1', 'meta-worker-2', 'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2'):
     module = name.split('-')[0]
     if module not in selected: continue
     pidfile = root / '.dev-pids' / (name + '.pid')
@@ -526,6 +526,7 @@ try:
     watcher.start()
     # Swagger failure and invalid parameters must leave ALL existing processes in place.
     for args, extra in ((['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {}),
+                        (['-quality'], {'ADDP_DEV_QUALITY_WORKER_REPLICAS':'3'}),
                         (['-transfer'], {'ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS':'3'}),
                         (['-transfer'], {'ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS':'2','TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID':'fixed'})):
         result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=dict(env, **extra), capture_output=True, text=True)
@@ -533,7 +534,7 @@ try:
         assert snapshot() == before, 'preflight failure stopped existing services'
         ready()
     for args, selected in ((['-asset', '-asset'], {'asset', 'asset-frontend'}),
-                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker-1', 'meta-worker-2'}),
+                           (['-quality', '-meta'], {'quality', 'quality-worker-1', 'quality-worker-2', 'meta', 'meta-worker-1', 'meta-worker-2'}),
                            (['-transfer'], {'transfer', 'transfer-bounded-worker-1', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1', 'transfer-continuous-worker-2'})):
         before = snapshot()
         if 'asset' in selected:
@@ -2230,11 +2231,12 @@ helper = helper.group(0) if helper else ''
 services = ('duckdb', 'manager', 'meta', 'transfer', 'orchestrator', 'develop',
             'service', 'monitor', 'standard', 'model', 'quality', 'security',
             'asset', 'catalog', 'ontology', 'workbench', 'portal', 'graph', 'inference')
-workers = ('meta-worker-1', 'quality-worker', 'security-worker',
+workers = ('meta-worker-1', 'quality-worker-1', 'security-worker',
            'transfer-bounded-worker-1', 'transfer-continuous-worker-1')
 all_names = set(services + workers)
 base = r'''
 set -eu
+QUALITY_WORKER_UNITS=(quality-worker-1)
 META_WORKER_UNITS=(meta-worker-1)
 TRANSFER_BOUNDED_WORKER_UNITS=(transfer-bounded-worker-1)
 TRANSFER_CONTINUOUS_WORKER_UNITS=(transfer-continuous-worker-1)
@@ -2263,6 +2265,7 @@ cases = (
     ('missing-backend', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, {'meta'}, '', ''),
     ('port-conflict', {'meta', 'meta-worker-1'}, {'meta-worker-1'}, set(), 'meta', ''),
     ('build-failure', {'meta', 'meta-worker-1'}, set(), {'meta', 'meta-worker-1'}, '', 'meta'),
+    ('quality-second-missing', {'quality','quality-worker-1','quality-worker-2'}, {'quality','quality-worker-1'}, {'quality-worker-2'}, '', ''),
     ('bounded-second-missing', {'transfer','transfer-bounded-worker-1','transfer-bounded-worker-2'}, {'transfer','transfer-bounded-worker-1'}, {'transfer-bounded-worker-2'}, '', ''),
     ('continuous-second-missing', {'transfer','transfer-continuous-worker-1','transfer-continuous-worker-2'}, {'transfer','transfer-continuous-worker-1'}, {'transfer-continuous-worker-2'}, '', ''),
 
@@ -2275,12 +2278,14 @@ for mode, selected, running, expected, conflict, failed_build in cases:
         if not flag.startswith('START_'):
             continue
         name = flag.removeprefix('START_').removesuffix('_BACKEND').lower().replace('_', '-')
-        unit_name = name+'-1' if name in ('meta-worker', 'transfer-bounded-worker', 'transfer-continuous-worker') else name
+        unit_name = name+'-1' if name in ('quality-worker', 'meta-worker', 'transfer-bounded-worker', 'transfer-continuous-worker') else name
         flags.append(f'{flag}={"true" if unit_name in selected else "false"}')
     ports = {name: str(20000 + index) for index, name in enumerate(sorted(set(
         re.findall(r'\$\{?([A-Z_]+PORT)', source))))}
     unit_setup = ''.join(f'\nTRANSFER_{family.upper()}_WORKER_UNITS=(transfer-{family}-worker-1 transfer-{family}-worker-2)\n'
                          for family in ('bounded','continuous') if f'transfer-{family}-worker-2' in selected)
+    if 'quality-worker-2' in selected:
+        unit_setup += '\nQUALITY_WORKER_UNITS=(quality-worker-1 quality-worker-2)\n'
     script = base+unit_setup+'\n'+'\n'.join(flags)+'\n'+helper+'\n'+phase+'\ntouch completed\n'
     result = subprocess.run(['bash', '-c', script], env=dict(
         os.environ, **ports, CASE_ROOT=str(workspace), BUILD_SCRIPT=str(root/'scripts/dev/build-identity.sh'),

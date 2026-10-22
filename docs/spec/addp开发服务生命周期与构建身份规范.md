@@ -166,12 +166,13 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 
 确定性生命周期与构建回归入口为 `make test-dev-lifecycle`，由 `make test-platform` 纳入 Platform CI；测试在临时工作区使用生命周期夹具，不接管正在运行的开发服务。
 
-## Meta 与 Transfer Worker 启动单元
+## Meta、Transfer 与 Quality Worker 启动单元
 
 原生开发部署分别选择下列 Worker 的副本数，均默认 `1`，只接受规范字符串 `1`、`2`。这些是部署输入，与单个 Worker 的任务并发数分开，不进入模块运行配置或 Monitor 管理 API。非法值在启动设施、构建及重启停机前拒绝。
 
 | Worker | 副本配置 | 唯一启动单元 | 共用产物 |
 | --- | --- | --- | --- |
+| Quality | `ADDP_DEV_QUALITY_WORKER_REPLICAS` | `quality-worker-1`、`quality-worker-2` | `addp-quality-worker` |
 | Meta | `ADDP_DEV_META_WORKER_REPLICAS` | `meta-worker-1`、`meta-worker-2` | `addp-meta-worker` |
 | Transfer 单次同步 | `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS` | `transfer-bounded-worker-1`、`transfer-bounded-worker-2` | `addp-transfer-bounded-worker` |
 | Transfer 持续同步 | `ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS` | `transfer-continuous-worker-1`、`transfer-continuous-worker-2` | `addp-transfer-continuous-worker` |
@@ -180,7 +181,9 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 
 Transfer 持续同步双副本不允许同时设置固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，必须在启动及重启停机前拒绝；沿已有入口为每个进程生成独立租约 Owner，单副本保留该显式配置。单次同步复用既有 claim，持续同步复用既有租约和 fencing；本次不改变任务并发度、租约语义或调度器。
 
-模块级 `stop.sh -meta/-transfer`、`restart.sh -meta/-transfer` 覆盖所选模块全部编号单元，保持其他模块及公共依赖。Backend 先迁移并 Ready、Worker 仅校验 schema 的顺序不变。进程资源观测、System 登记与主机绑定沿既有协议，不新增权限或副本管理实体。首次切换前由部署方停止原服务，再按标准入口启动，不在线接管旧实例。生命周期夹具验证进程隔离，不代替真实登记、主机绑定或多 Worker 业务任务的 Hosted 验收。
+Quality 复用既有 bounded claim、独立 Worker ID 与租约，不改变任务并发和业务执行协议。
+
+模块级 `stop.sh -meta/-transfer/-quality`、`restart.sh -meta/-transfer/-quality` 覆盖所选模块全部编号单元，保持其他模块及公共依赖。Backend 先迁移并 Ready、Worker 仅校验 schema 的顺序不变。进程资源观测、System 登记与主机绑定沿既有协议，不新增权限或副本管理实体。首次切换前由部署方停止原服务，再按标准入口启动，不在线接管旧实例。生命周期夹具验证进程隔离，不代替真实登记、主机绑定或多 Worker 业务任务的 Hosted 验收。
 
 ## 进程身份与运行日志
 

@@ -95,6 +95,7 @@ on:
           - engine-admission
           - meta-workers
           - transfer-workers
+          - quality-workers
 
 permissions:
   contents: read

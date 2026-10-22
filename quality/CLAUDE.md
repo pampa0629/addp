@@ -68,4 +68,6 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 
 Quality migration 16 增加记录级历史异常接受和永久处理审计，SchemaVersion 为 4。表绑定可声明稳定 `record_key`；完整观测保留失败摘要，工单处理携带 version。accepted 不改变规则结论、分数或 error 阻断；新增与恢复后复发的记录重新待处理。具体语义以数据质量规范为准。`make test-quality-postgres` 在测试前后清理测试库中 Quality Schema 和 Quality 执行事实，拒绝开发数据库，避免用修改迁移校验和的方式复验未发布迁移；已有 Quality T2 CI 入口自动覆盖该生命周期。
 
+原生开发 Worker 默认一个，`ADDP_DEV_QUALITY_WORKER_REPLICAS=2` 选择两个；唯一启动单元为 `quality-worker-1/-2`，共用 Worker 产物，每个进程独立登记并消费自己的采集计划，沿既有 `ADDP_HOST_NODE_ID` 主机声明。标准启动补缺失单元，模块停止／重启覆盖全部编号单元；配置、身份及先 Backend Ready 后 Worker 的要求统一见生命周期规范。`make test-dev-lifecycle` 和 `make test-node-metrics-online-runner` 覆盖启动及专项夹具；`platform-node-metrics` 的 `quality-workers` 由专门会话执行真实 Hosted 验收，不等同于质量业务任务的多 Worker 验收。
+
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。

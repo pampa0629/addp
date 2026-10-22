@@ -1991,6 +1991,9 @@ def worker_slots(prom, instances):
             runtime_name = "sync" if units[0].startswith("transfer-bounded-worker-") else "continuous_sync"
             require(result[units[0]].get("metadata", {}).get("runtime_name") == runtime_name,
                     "Transfer source endpoint belongs to another Worker family")
+        if module == "quality":
+            require(result[units[0]].get("metadata", {}).get("runtime_name") == "quality-bounded",
+                    "Quality source endpoint belongs to another Worker runtime")
     require(len({row["instance_id"] for row in result.values()}) == len(result), "Worker endpoints share one identity")
     return result
 
@@ -2129,7 +2132,7 @@ def run_workers_case(base, directory, admin, admin_identity, machine, denied, re
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers"}, "unsupported Hosted metrics acceptance case")
     return value
 
 

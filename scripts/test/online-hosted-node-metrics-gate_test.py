@@ -153,6 +153,15 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertNotIn("metrics-fixture:engine-up", trace)
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
 
+    def test_quality_workers_uses_the_same_owned_deployment_and_cleanup(self):
+        result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="quality-workers")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn("metrics-case:quality-workers", trace)
+        self.assertIn("start:-monitor", trace)
+        self.assertNotIn("metrics-fixture:engine-up", trace)
+        self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
+
     def test_engine_admission_owns_business_and_cleans_all_failure_paths(self):
         for failure in (None,"ADDP_TEST_ENGINE_UP_FAIL","ADDP_TEST_ENGINE_DOWN_FAIL","ADDP_TEST_SUITE_FAIL"):
             if self.host.trace.exists():self.host.trace.unlink()

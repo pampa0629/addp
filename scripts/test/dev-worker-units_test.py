@@ -185,6 +185,12 @@ start_module_workers "$WORKER_MODULE" "'''+str(os.getpid())+'''" 12345 "${META_W
 
 
 
+class QualityWorkerUnitsTest(WorkerUnitsTest):
+    family = 'quality-worker'
+    module = 'quality'
+    setting = 'ADDP_DEV_QUALITY_WORKER_REPLICAS'
+
+
 class BoundedWorkerUnitsTest(WorkerUnitsTest):
     family = 'transfer-bounded-worker'
     module = 'transfer'

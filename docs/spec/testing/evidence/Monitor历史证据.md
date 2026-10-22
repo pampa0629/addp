@@ -389,3 +389,14 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 - `make test-transfer-continuous-online-runner` 退出 0：51 项持续执行 Runner／故障安全／隔离夹具回归及 System Online 身份夹具 Go 测试通过。
 
 首次完整生命周期门禁在新增“第二 Worker 缺失”夹具失败：测试未选中对应 Backend，未进入标准构建阶段，因此没有 events 文件。夹具改为保留 Backend 与第一 Worker、仅缺少第二 Worker后，标准生命周期脚本和完整 `make test-dev-lifecycle` 重新执行通过；未修改产品启动条件或放宽断言。原始日志为 `/tmp/addp-transfer-workers-dev-final.log`、`/tmp/addp-transfer-workers-online-gate.log`、`/tmp/addp-transfer-workers-continuous-gate.log`，输入与日志指纹见 `/tmp/addp-transfer-workers-final-audit.json`。本次只验证本地 T0／T1 与原生临时进程生命周期，不计正式多实例登记／主机绑定 T4、租户同步任务、多 Worker 抢占或 HA 通过。未改个人配置、数据库或运行服务；CI 和 Hosted 结果等专门会话回传，未设置定时任务。
+
+
+## Quality 多 Worker 标准启动、登记与主机绑定入口（2026-10-22）
+
+复用 Meta／Transfer 的唯一启动与观测流程，新增部署输入 `ADDP_DEV_QUALITY_WORKER_REPLICAS`，默认 1、仅允许 1 或 2。单副本亦使用 `quality-worker-1`，双副本追加 `quality-worker-2`，共用原 Worker 二进制；独立 PID、启动身份及采集计划，沿既有主机声明及 Quality 正式登记。标准启动只补缺失单元，所属 Backend Ready 后才启动 Worker；重复启动复用现有实例，运行中缩容、外部 PID、重复 PID 与非法数量封闭拒绝；模块停止／重启覆盖所有编号单元。Quality 的 claim、任务并发、租约及权限未变，旧未编号启动路径已删除。
+
+同一 `platform-node-metrics` 增加 `quality-workers` 专项，沿共用 runner、Console 场景和清理入口验证一个 Backend 与两个 `quality-bounded` Worker，登记与同主机绑定、独立采集身份、当前资源／趋势、停止补回一个 Worker、对等实例保持、主机启停和中心故障恢复。同步手工 workflow 选项与登记检查；原 `test-platform` 已聚合生命周期和 Online runner，不新增调度或第二套入口。
+
+本轮标准本地验证均退出 0：`make test-dev-lifecycle` 包含 124 项启动／配置 Python 检查、59 项基础设施生命周期检查、完整原生进程／局部重启／构建 shell 夹具、Common 三个 package 校验，以及 Security／Meta／Quality／Transfer 的 cmd 编译检查（`-run '^$'` 不计业务用例通过）；`make test-node-metrics-online-runner` 的 138 项身份、TLS、绑定、趋势、浏览器回执及清理反例，加 System Metrics 身份 Go 夹具通过。原始日志 `/tmp/addp-quality-workers-dev.log`、`/tmp/addp-quality-workers-online.log`，输入及日志指纹见 `/tmp/addp-quality-workers-final-audit.json`；受测本批输入在门禁期间未漂移。本地原生进程为隔离临时夹具，未用个人真实服务证明登记／绑定。
+
+真实 `quality-workers` Hosted T4 尚未运行；任务竞争、重复执行、租约接管、跨主机和生产 HA 均不在本批验收结论内。CI 与 Hosted 等专门会话回传；本轮未查询或调度云端验收、未设置定时、未修改个人配置／数据库或重启个人服务。功能清单由维护会话统一更新。

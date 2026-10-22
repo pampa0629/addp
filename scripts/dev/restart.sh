@@ -161,7 +161,7 @@ echo ""
 
 # 全量先停止；局部在所选 Go 模块的 Swagger 检查通过后停止。
 source "${SCRIPT_DIR}/worker-units.sh"
-for family in meta-worker transfer-bounded-worker transfer-continuous-worker; do
+for family in quality-worker meta-worker transfer-bounded-worker transfer-continuous-worker; do
   addp_worker_units "$family" >/dev/null || exit 1
 done
 

@@ -53,6 +53,9 @@ class MetricsFixtureTest(unittest.TestCase):
     def test_meta_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
         self.check_worker_sources('meta-workers')
 
+    def test_quality_worker_sources(self):
+        self.check_worker_sources('quality-workers')
+
     def test_transfer_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
         self.check_worker_sources('transfer-workers')
 

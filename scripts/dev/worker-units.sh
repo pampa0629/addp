@@ -3,6 +3,7 @@
 addp_worker_units() {
   local family="$1" setting count
   case "$family" in
+    quality-worker) setting=ADDP_DEV_QUALITY_WORKER_REPLICAS ;;
     meta-worker) setting=ADDP_DEV_META_WORKER_REPLICAS ;;
     transfer-bounded-worker) setting=ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS ;;
     transfer-continuous-worker) setting=ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS ;;
@@ -24,7 +25,7 @@ addp_worker_units() {
 
 addp_worker_binary() {
   case "$1" in
-    meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) printf '%s\n' "${1%-*}" ;;
+    quality-worker-[12]|meta-worker-[12]|transfer-bounded-worker-[12]|transfer-continuous-worker-[12]) printf '%s\n' "${1%-*}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
