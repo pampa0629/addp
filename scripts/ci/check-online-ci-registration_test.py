@@ -1644,8 +1644,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
         config.write_text("--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader\n", encoding="utf-8")
+        img_owner = self.repository / 'scripts/test/manager-img-online.py'
+        img_browser = browser.with_name('manager-img.spec.js')
+        for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py')):
+            target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
+        owner.write_text(owner.read_text() + '\nimg_scene.run(repository, environment, sys.modules[__name__])\n')
+        make = self.repository / 'Makefile'
+        make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
+            (img_owner, 'cleanup_managed_artifact', 'IMG Hosted subscene'),
+            (img_browser, 'modelPixels', 'IMG Hosted subscene'),
+            (owner, 'img_scene.run(repository, environment, sys.modules[__name__])', 'IMG Hosted subscene'),
             (hosted, "start_online_model3d_runtime", "Hosted profile"),
             (hosted, "bash business/scripts/online-manager-nfs-fixture.sh start", "Hosted profile"),
             (hosted, "bash business/scripts/online-manager-nfs-fixture.sh stop", "Hosted profile"),

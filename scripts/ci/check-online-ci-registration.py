@@ -384,11 +384,25 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "business/scripts/online-manager-nfs-fixture.sh",
         "business/scripts/online-content-boundary-fixture.py",
         "scripts/test/manager-internal-artifact-lineage-online.py",
+        "scripts/test/manager-img-online.py",
+        "scripts/test/manager-img-online_test.py",
         "console/frontend/playwright.online.config.js",
         "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js",
+        "console/frontend/e2e/online/manager-img.spec.js",
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"manager-internal-artifact-lineage requires {relative}")
+    img_owner = (repository / 'scripts/test/manager-img-online.py').read_text(encoding='utf-8')
+    img_browser = (repository / 'console/frontend/e2e/online/manager-img.spec.js').read_text(encoding='utf-8')
+    manager_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
+    make = (repository / 'Makefile').read_text(encoding='utf-8')
+    img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
+    if ("img_scene.run(repository, environment, sys.modules[__name__])" not in manager_owner
+            or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')
+            or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in img_runner.group('body')
+            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'img-source', 'addp.manager-img/v1'))
+            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'download_sha256', 'addp.manager-img-browser/v1'))):
+        raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):
         if flag not in browser_config:

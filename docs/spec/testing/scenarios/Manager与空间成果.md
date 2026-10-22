@@ -8,6 +8,14 @@
 
 ## manager-internal-artifact-lineage
 
+### IMG 原生扫描与 COG 快显
+
+同一 Manager Hosted suite 增加 IMG 子场景，使用既有普通 User、十项权限、Business MinIO、GeoPython 产品 Runtime 与同一部署生命周期，不新增 suite、服务或权限。Runtime 中生成三份自有 256×256 三波段 Byte HFA：WGS84、UTM50N 和无定位影像；全部自包含、同数据类型且无 NoData。真实 Meta 深度扫描须证明 `img/media/single`、HFA 编码、尺寸、波段及明确的源 CRS/范围；无定位样例不得出现推断的空间能力或 COG 生成动作。
+
+两份有定位 IMG 经正式 `generate_raster_cog` action 生成受管 TIFF/COG，核任务 `source_format=img`、原生 Runtime 身份、完整像元/mask/CRS/仿射网格、完整 COG 布局、API/物理哈希和大小、Range 前后缀及越界拒绝。同一普通 User 在真实 Console iframe 显示 WGS84/UTM COG，检查 WebGL 图层的品红/青/黄像素及截图，重开复用同一结果且不产生额外生成请求；原文件下载哈希保持一致。无定位样例只验元数据与不开放地图的边界。生成、页面、复用及退出均核源原字节不变；通过正式 Manager API 删除结果和任务，核内容404、物理对象缺失、源预览模式恢复与零残留。失败仍须尝试本轮已知精确资源清理，保留首个业务错误和清理错误。
+
+IMG 子报告单独使用 `addp.manager-img/v1` 与 `addp.manager-img-browser/v1`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
+
 ### 部署、模型转换与通用清理
 
 Manager 内部产物 T4 使用 `manager-internal-artifact-lineage` 单一 suite 和 GitHub Hosted Linux x86_64 disposable profile，不再由 macOS self-hosted 分发。`online-hosted-manager-gate.sh` 复用共享 Hosted 生命周期，从零建立 Infra、最小权限 User、Tenant 和 Business MinIO Engine；浏览器登录凭据只保存到当次仓库外 owner-only Secret 目录。通过正式构建入口构建 Linux amd64 Model3D 转换器及 Runtime 产品镜像，以镜像默认入口启动 Model3D Runtime；标准开发生命周期启动 System、Gateway、Meta、Manager、Monitor、Console、PointCloud 和 Document；不启动无关模块或模拟转换器。退出时停止应用并销毁 Business MinIO 容器、网络、数据卷及当次 Infra，检查零残留。Business MinIO 的确定性生成 LAS、仓库已跟踪的 3 页 PPTX、带 PNG 贴图的 DAE 与 3DS、仓库自有 IFC4 米制立方体及 zlib 压缩并内嵌 DXT5 红色贴图的单体 OSGB 必须经过同一次真实 Meta 深度扫描，再通过对应 Manager owner action/task 与真实 Runtime 生成 COPC、PDF、GLB。模型断言覆盖四种格式的 `model_3d + single` 分类；DAE/3DS 核对贴图资源引用及 GLB 内嵌 PNG，IFC 核对 STEP schema、实体摘要及米制立方体几何，OSGB 核对 GLB 内嵌 JPEG 与带 UV 的三角形。全部产物核对自包含 GLB 和非空网格、Manager/Monitor 血缘一致，以及 Console iframe 中 GLB 请求成功、模型加载完成和截图。Online Chromium 统一显式使用 SwiftShader 软件 WebGL，在无独立 GPU 的 Hosted Runner 上仍执行真实模型绘制；不屏蔽业务警告或用截图占位。浏览器报告 v5 仅将 Chromium WebGL Driver 的精确 `GPU stall due to ReadPixels` 性能诊断单列，记录来源、观测阶段及各阶段次数（包括栅格重投影/预览与截图），不将预览期间的诊断归因为截图。次数表示浏览器输出的诊断条数，浏览器可能限流，不能推断实际 GPU 读取次数或诊断未再次出现即无读取。共享前端测试工具独占精确消息分类；其余页面警告、错误及失败的业务请求仍使验收失败。重投影 T3 必须核对真实输出像元并断言无 Canvas getImageData 读取，不以诊断分类替代渲染验收。临时产物及任务按本轮捕获 ID 删除，内容和任务分别确认 404，模型源的用户预览模式恢复原值；执行尚未终结或无法确认资源归属时不得报告零残留。确定性脚本测试沿用 `make test-online-runner`，真实运行沿用 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；本次模型扩展首次在 Hosted 环境通过前不计为已完成 T4，也不增加定时调度。

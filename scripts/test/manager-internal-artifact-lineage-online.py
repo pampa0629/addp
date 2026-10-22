@@ -1470,7 +1470,11 @@ def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, time
 
 
 def raster_physical(repository, environment, action, request):
-    artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / f'manager-artifact-physical-{action}.json'
+    source_case = request.get('source_case', '')
+    if source_case and source_case not in ('wgs84', 'utm50n'):
+        raise SuiteError('unknown IMG physical source case')
+    suffix = '-' + source_case if source_case else ''
+    artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / f'manager-artifact-physical-{action}{suffix}.json'
     artifact.unlink(missing_ok=True)
     secret_root = Path(environment['ADDP_ONLINE_SECRET_DIR'])
     request_path = secret_root / 'manager-raster-oracle.json'
@@ -1485,7 +1489,10 @@ def raster_physical(repository, environment, action, request):
     return evidence
 
 
-def generate_raster_cog(client, raster, tenant_id, timeout, physical):
+def generate_raster_cog(client, raster, tenant_id, timeout, physical, source_facts=None):
+    source_facts = source_facts or {'band_count': 2, 'source_srid': 4326, 'extent': [110., 17.76, 112.56, 20.32]}
+    source_srid = source_facts['source_srid']
+    band_count = source_facts['band_count']
     query = urllib.parse.urlencode({'locator': raster.locator})
     capability = _object(client.request('GET', f'/api/v1/manager/quick-view/capability?{query}', (200,)).payload, 'initial raster capability')
     if 'generate_raster_cog' not in _array(capability.get('available_actions'), 'raster actions'):
@@ -1528,14 +1535,14 @@ def generate_raster_cog(client, raster, tenant_id, timeout, physical):
             or _object(ready.get('quick_view'), 'ready raster render info').get('preview_url') != url
             or raster_facts.get('profile') != 'cog' or raster_facts.get('client_read_mode') != 'range'
             or any(raster_facts.get(k) != v or result.get(k) != v for k,v in {
-                'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326}.items())):
+                'width': 256, 'height': 256, 'band_count': band_count, 'source_srid': source_srid}.items())):
         raise SuiteError('ready raster capability must match the persisted COG facts')
     for value in (result, raster_facts, _object(ready['quick_view'], 'raster render facts')):
         extent = _array(value.get('extent'), 'raster extent')
-        if (value.get('extent_srid') != 4326 or len(extent) != 4
+        if (value.get('extent_srid') != source_srid or len(extent) != 4
                 or any(not isinstance(actual, (float, int)) or isinstance(actual, bool)
                        or not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-9)
-                       for actual, expected in zip(extent, [110., 17.76, 112.56, 20.32]))):
+                       for actual, expected in zip(extent, source_facts['extent']))):
             raise SuiteError('Manager COG persisted and rendering extents differ from its grid')
     size = positive_int(result.get('size_bytes'), 'raster COG size')
     full = client.request('GET', url, (200,), headers={'Accept': 'image/tiff'})
@@ -1556,9 +1563,11 @@ def generate_raster_cog(client, raster, tenant_id, timeout, physical):
             'fingerprint': raster.item['fingerprint'], 'size_bytes': size, 'sha256': hashlib.sha256(full.raw).hexdigest()}}
     if runtime.get('execution_id'):
         raster.artifact['runtime_execution_id'] = runtime['execution_id']
+    if source_facts.get('case'):
+        raster.artifact['physical_request']['source_case'] = source_facts['case']
     evidence = physical('verify', raster.artifact['physical_request'])
     if (evidence.get('cog_valid') is not True or evidence.get('source_unchanged') is not True
-            or evidence.get('pixels_verified') != 131072 or evidence.get('size_bytes') != size
+            or evidence.get('pixels_verified') != 65536 * band_count or evidence.get('size_bytes') != size
             or evidence.get('sha256') != raster.artifact['sha256']):
         raise SuiteError('Manager COG physical evidence is incomplete')
     raster.artifact['physical'] = evidence
@@ -2252,6 +2261,11 @@ def main() -> int:
         versions = verify_index_source_versions(client, environment, time.monotonic() + 180)
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
         report = run_scenario(repository, environment, run_browser)
+        import importlib.util
+        img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
+        img_scene = importlib.util.module_from_spec(img_spec)
+        img_spec.loader.exec_module(img_scene)
+        report['img'] = img_scene.run(repository, environment, sys.modules[__name__])
         report["content_boundaries"] = boundaries
         report["index_source_versions"] = versions
     except (OSError, ValueError, SuiteError, subprocess.SubprocessError) as error:

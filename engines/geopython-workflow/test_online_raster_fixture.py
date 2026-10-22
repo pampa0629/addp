@@ -1404,6 +1404,70 @@ def test_manager_cog_rejects_non_cog_layout(manager_physical):
         fixture.manager_worker('verify', manager_physical)
 
 
+def manager_img_target(config, case, corrupt=None):
+    source = config.parent / f'{case}.img'
+    source.write_bytes(LocalMinio.objects['source', 'business', f'raster/img-{case}.img'])
+    output = config.parent / f'{case}.cog.tif'
+    dataset = gdal.Open(str(source))
+    working = config.parent / f'{case}-working.tif'
+    intermediate = gdal.Translate(str(working), dataset, format='GTiff')
+    dataset = None
+    if corrupt == 'pixels': intermediate.GetRasterBand(2).WriteRaster(255, 255, 1, 1, bytes([17]))
+    if corrupt == 'nodata': intermediate.GetRasterBand(1).SetNoDataValue(1)
+    if corrupt == 'grid': intermediate.SetGeoTransform((109., 1., 0., 20., 0., -1.))
+    if corrupt == 'crs':
+        crs = osr.SpatialReference();crs.ImportFromEPSG(3857);intermediate.SetSpatialRef(crs)
+    target = gdal.Translate(str(output), intermediate, format='GTiff' if corrupt == 'layout' else 'COG',
+                            outputType=gdal.GDT_UInt16 if corrupt == 'dtype' else gdal.GDT_Byte,
+                            creationOptions=[] if corrupt == 'layout' else ['BLOCKSIZE=128', 'COMPRESS=DEFLATE'])
+    target = intermediate = None
+    raw = output.read_bytes();fingerprint = ('a' if case == 'wgs84' else 'b') * 64
+    key = f'tenant_42/cog/{fingerprint}/{case}.cog.tif'
+    LocalMinio.objects['infra', 'manager', key] = raw
+    request = {'source_case': case, 'tenant_id': 42, 'fingerprint': fingerprint,
+               'locator': f'addp-infra://minio/manager/{key}?type=object', 'size_bytes': len(raw),
+               'sha256': hashlib.sha256(raw).hexdigest()}
+    fixture.private_json(config.parent / 'manager-raster-request.json', request)
+    return request, key
+
+
+@pytest.mark.parametrize('case', ['wgs84', 'utm50n'])
+def test_manager_img_real_hfa_cog_full_pixels_and_delete(manager_physical, case):
+    seed = fixture.manager_worker('img-source', manager_physical)
+    assert seed['source_unchanged']
+    assert [s['case'] for s in seed['img_sources']] == ['wgs84', 'utm50n', 'unlocated']
+    for facts in seed['img_sources']:
+        assert LocalMinio.objects['source', 'business', facts['object']].startswith(b'EHFA_HEADER_TAG\x00')
+    request, key = manager_img_target(manager_physical, case)
+    evidence = fixture.manager_worker('verify', manager_physical)
+    assert evidence == {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 196608,
+                        'size_bytes': request['size_bytes'], 'sha256': request['sha256'], 'source_case': case}
+    with pytest.raises(fixture.FixtureError, match='still exists physically'):
+        fixture.manager_worker('deleted', manager_physical)
+    del LocalMinio.objects['infra', 'manager', key]
+    assert fixture.manager_worker('deleted', manager_physical) == {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+
+
+@pytest.mark.parametrize('case', ['wgs84', 'utm50n'])
+@pytest.mark.parametrize('corrupt', ['pixels', 'nodata', 'grid', 'crs', 'layout', 'dtype'])
+def test_manager_img_oracle_rejects_corrupted_cog(manager_physical, case, corrupt):
+    manager_img_target(manager_physical, case, corrupt)
+    with pytest.raises(fixture.FixtureError): fixture.manager_worker('verify', manager_physical)
+
+
+def test_manager_img_rejects_source_changes_and_unknown_case(manager_physical):
+    request, _ = manager_img_target(manager_physical, 'wgs84')
+    request['source_case'] = 'unlocated'
+    (manager_physical.parent / 'manager-raster-request.json').unlink()
+    fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
+    with pytest.raises(fixture.FixtureError, match='located source case'):
+        fixture.manager_worker('verify', manager_physical)
+    LocalMinio.objects['source', 'business', 'raster/img-unlocated.img'] += b'changed'
+    for action in ('img-source', 'verify', 'deleted'):
+        with pytest.raises(fixture.FixtureError, match='source changed'):
+            fixture.manager_worker(action, manager_physical)
+
+
 @pytest.fixture
 def multiband_aggregate_artifacts(aggregate_artifacts, tmp_path):
     scene = importlib.import_module('scripts.test.raster-workflow-online')

@@ -1415,7 +1415,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -1501,9 +1501,128 @@ def manager_pdf_worker(action, path):
             'size_bytes': size}
 
 
+MANAGER_IMG_CASES = (
+    ('wgs84', 4326, (113., .0001, 0., 28., 0., -.0001)),
+    ('utm50n', 32650, (500000., 10., 0., 3100000., 0., -10.)),
+    ('unlocated', None, None),
+)
+
+
+def manager_img_pixels(band):
+    colors = ((255, 0, 255), (0, 255, 255), (255, 255, 0), (32, 32, 64))
+    return bytes(colors[(x // 32 + y // 32) % 4][band - 1] for y in range(256) for x in range(256))
+
+
+def manager_seed_imgs(client, bucket, directory):
+    from osgeo import gdal, osr
+    sources = []
+    for case, srid, transform in MANAGER_IMG_CASES:
+        path = Path(directory) / f'{case}.img'
+        dataset = gdal.GetDriverByName('HFA').Create(str(path), 256, 256, 3, gdal.GDT_Byte, ['COMPRESSED=YES'])
+        if srid:
+            crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
+            dataset.SetSpatialRef(crs); dataset.SetGeoTransform(transform)
+        for band in range(1, 4):
+            dataset.GetRasterBand(band).WriteRaster(0, 0, 256, 256, manager_img_pixels(band))
+        dataset.FlushCache()
+        if dataset.GetFileList() != [str(path)]:
+            raise FixtureError('Manager IMG source must be self-contained')
+        dataset = None
+        key = f'raster/img-{case}.img'
+        client.fput_object(bucket, key, str(path), content_type='application/octet-stream')
+        sources.append({'case': case, 'object': key, 'source_srid': srid,
+                        'size_bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+    return sources
+
+
+def manager_img_worker(action, path):
+    from minio import Minio
+    from minio.error import S3Error
+    from osgeo import gdal, osr
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    from urllib.parse import urlsplit, parse_qs, unquote
+    root = Path(path).parent
+    config = json.loads(Path(path).read_text())
+    source = config['source']
+    clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
+               for role, entry in config.items()}
+    seeded = json.loads((root / 'manager-raster-source.json').read_text())['img_sources']
+    if [s['case'] for s in seeded] != [case for case, _, _ in MANAGER_IMG_CASES]:
+        raise FixtureError('Manager IMG source receipt must include all three exact cases')
+    with tempfile.TemporaryDirectory(prefix='manager-img-physical-') as directory:
+        for facts in seeded:
+            local = Path(directory) / (facts['case'] + '.img')
+            if facts['object'] != 'raster/img-' + facts['case'] + '.img':
+                raise FixtureError('Manager IMG source object differs from its exact fixture')
+            clients['source'].fget_object(source['bucket'], facts['object'], str(local))
+            if local.stat().st_size != facts['size_bytes'] or hashlib.sha256(local.read_bytes()).hexdigest() != facts['sha256']:
+                raise FixtureError('Manager IMG source changed')
+        if action == 'img-source':
+            return {'source_unchanged': True, 'img_sources': seeded}
+        request = json.loads((root / 'manager-raster-request.json').read_text())
+        matches = [(case, srid, transform) for case, srid, transform in MANAGER_IMG_CASES if case == request.get('source_case') and srid]
+        if len(matches) != 1:
+            raise FixtureError('Manager IMG output requires one located source case')
+        case, srid, transform = matches[0]
+        parsed = urlsplit(request['locator'])
+        prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
+        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+                or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
+            raise FixtureError('Manager IMG output is not owned by this run')
+        key = unquote(parsed.path.removeprefix('/manager/'))
+        if any(part in ('', '.', '..') for part in key.split('/')):
+            raise FixtureError('Manager IMG output contains unsafe segments')
+        if action == 'deleted':
+            try:
+                clients['infra'].stat_object('manager', key)
+            except S3Error as error:
+                if error.code != 'NoSuchKey': raise
+            else:
+                raise FixtureError('deleted Manager IMG COG still exists physically')
+            if list(clients['infra'].list_objects('manager', prefix=key, recursive=True)):
+                raise FixtureError('Manager IMG COG cleanup left residual objects')
+            return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+        if action != 'verify':
+            raise FixtureError('unknown Manager IMG physical action')
+        target = Path(directory) / 'result.tif'
+        clients['infra'].fget_object('manager', key, str(target))
+        raw = target.read_bytes()
+        if (len(raw) != request['size_bytes'] or clients['infra'].stat_object('manager', key).size != len(raw)
+                or hashlib.sha256(raw).hexdigest() != request['sha256']):
+            raise FixtureError('Manager IMG COG size or HTTP hash mismatch')
+        dataset = gdal.Open(str(target))
+        if dataset is None or (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (256, 256, 3):
+            raise FixtureError('Manager IMG COG dimensions changed')
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
+        crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        original = gdal.Open(str(Path(directory) / (case + '.img')))
+        source_transform = tuple(original.GetGeoTransform())
+        if (not original.GetSpatialRef().IsSame(crs)
+                or source_transform != transform
+                or not dataset.GetSpatialRef().IsSame(original.GetSpatialRef())
+                or tuple(dataset.GetGeoTransform()) != source_transform):
+            raise FixtureError(f'Manager IMG COG CRS or grid changed: fixture_crs={bool(original.GetSpatialRef().IsSame(crs))}, '
+                               f'crs_preserved={bool(dataset.GetSpatialRef().IsSame(original.GetSpatialRef()))}, '
+                               f'source_grid={source_transform}, expected_grid={transform}, target_grid={tuple(dataset.GetGeoTransform())}')
+        _, errors, _ = validate(dataset, full_check=True)
+        if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
+            raise FixtureError('Manager IMG artifact is not a valid COG')
+        for index in range(1, 4):
+            band = dataset.GetRasterBand(index)
+            if (band.DataType != gdal.GDT_Byte or band.GetNoDataValue() is not None
+                    or band.ReadRaster() != manager_img_pixels(index)
+                    or band.GetMaskBand().ReadRaster() != bytes([255]) * 65536):
+                raise FixtureError('Manager IMG COG pixels, dtype, mask or NoData changed')
+        return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 196608,
+                'size_bytes': len(raw), 'sha256': request['sha256'], 'source_case': case}
+
+
 def manager_worker(action, path):
     if action.startswith('pdf-'):
         return manager_pdf_worker(action, path)
+    request_file = Path(path).parent / 'manager-raster-request.json'
+    if action == 'img-source' or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
+        return manager_img_worker(action, path)
     from minio import Minio
     from minio.error import S3Error
     from osgeo import gdal, osr
@@ -1520,7 +1639,8 @@ def manager_worker(action, path):
         if action == 'seed':
             write_source_raster(source_path, 'source.tif', False, -9999.)
             clients['source'].fput_object(source['bucket'], source['object'], str(source_path), content_type='image/tiff')
-            return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size}
+            return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size,
+                    'img_sources': manager_seed_imgs(clients['source'], source['bucket'], directory)}
         clients['source'].fget_object(source['bucket'], source['object'], str(source_path))
         seeded = json.loads((root / 'manager-raster-source.json').read_text())
         if hashlib.sha256(source_path.read_bytes()).hexdigest() != seeded['sha256']:
