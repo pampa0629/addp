@@ -667,6 +667,13 @@ class ModelBundleDownloadTest(unittest.TestCase):
         import re, subprocess
         script = (SCRIPT.parents[2] / 'console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js').read_text()
         code = re.search(r"const code = `([^`]+)`", script).group(1)
+        # Playwright loads this .js suite as CommonJS (Console has no type=module).
+        # Exercise the actual root expression in that environment before invoking Python.
+        expression = re.search(r"\n\s+(.+), path, JSON.stringify\(source.download_members\)", script).group(1)
+        probe = "const {resolve}=require('node:path');const {fileURLToPath}=require('node:url');process.stdout.write("+expression+");"
+        loaded = subprocess.run(['node','--input-type=commonjs','-e',probe], cwd=SCRIPT.parents[2] / 'console/frontend', capture_output=True, text=True)
+        self.assertEqual(loaded.returncode,0,loaded.stderr)
+        self.assertEqual(Path(loaded.stdout),SCRIPT.parents[2])
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'model.zip'
             path.write_bytes(obj_bundle_bytes())

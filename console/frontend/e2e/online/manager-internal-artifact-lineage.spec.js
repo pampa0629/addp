@@ -6,7 +6,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
 const requiredNames = [
@@ -63,7 +62,7 @@ owner=importlib.import_module('scripts.test.manager-internal-artifact-lineage-on
 with open(sys.argv[2],'rb') as source: raw=source.read(65537)
 print(json.dumps(owner.validate_model_bundle(raw,json.loads(sys.argv[3]))))`
     const bundle = JSON.parse(execFileSync('python3', ['-c', code,
-      fileURLToPath(new URL('../../../../', import.meta.url)), path, JSON.stringify(source.download_members)],
+      resolve(process.cwd(), '../..'), path, JSON.stringify(source.download_members)],
       { encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }))
     const phase = process.env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `model-${source.format}-source-${phase}.zip`), bytes)
