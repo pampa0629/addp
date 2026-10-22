@@ -271,3 +271,7 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 ### D8 汇流累积持久化
 
 独立手工 `raster-flow-accumulation-d8-persistence`／`make test-raster-flow-accumulation-d8-online-runner`，600秒预算，沿用Hosted、NFS、同源默认入口Runtime和原普通User十二权限。四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒，严格核网格／CRS、COG及三方大小、精确自动扫描身份、当前执行实际输入血缘与Monitor、源和先前成果不变、失败零发布／零新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项40项、脚本门禁62项及完整Online登记通过，原栅格脚本总门禁退出0；共享重复测试不累加，Go隔离身份T1不计全量IAM。独立Hosted运行及归档审计待验，Linux全量等CI会话回传，不计UI、容量或完整水文体系。
+
+### D8 下游流长持久化
+
+独立手工 `raster-flow-length-d8-persistence`／`make test-raster-flow-length-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。六条COG链覆盖米制／国际英尺／美制测量英尺已登记方向、DEM→流向→流长、填洼→流向→流长及全无效；七类非法方向／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确length任务失败，查询语言不得改写旧错误。独立逐源路径按横纵对角步数核全像元／mask、米制中心距离和严格终点零，保留原网格／CRS，完整COG验证；严格三方相等正整数大小、精确自动扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘、Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项45项、脚本门禁62项与完整Online登记通过。扩展原栅格脚本总门禁未通过：最后215项中的3个未修改原Raster模拟生命周期用例60秒超时，其他16组子门禁通过，不改原限制、不计整套通过；隔离身份Go T1不计全量IAM。独立Hosted运行及归档审计待验，Linux全量等CI会话回传，不计UI或容量。
