@@ -210,8 +210,12 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
   const onChannelMessage = (message) => {
     if (!message || message.sender === instanceID) return
     if (message.type === 'token' && message.token) {
+      if (message.requestId) {
+        tokenRequestResolvers.get(message.requestId)?.(message.token, Number(message.expiresAt || 0), false)
+        return
+      }
       publishToken(message.token, message.expiresAt, 'broadcast', false)
-      tokenRequestResolvers.forEach((resolve) => resolve(message.token, Number(message.expiresAt || 0)))
+      tokenRequestResolvers.forEach((resolve) => resolve(message.token, Number(message.expiresAt || 0), true))
       return
     }
     if (message.type === 'context_changed' && message.token) {
@@ -220,7 +224,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
       return
     }
     if (message.type === 'token-request' && isUsableToken()) {
-      broadcast({ type: 'token', token: runtimeToken, expiresAt: runtimeExpiresAt })
+      broadcast({ type: 'token', requestId: message.requestId, token: runtimeToken, expiresAt: runtimeExpiresAt })
       return
     }
     if (message.type === 'logout' || message.type === 'session-invalid') {
@@ -286,7 +290,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     return token
   }
 
-  function requestPeerToken(timeoutMs = 150, newerThan = null, differentFrom = null) {
+  function requestPeerToken(timeoutMs = 150, { rotationOnly = false, differentFrom = null } = {}) {
     if (!channel) return Promise.resolve(null)
     const requestID = randomID()
     return new Promise((resolve) => {
@@ -294,10 +298,11 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
         tokenRequestResolvers.delete(requestID)
         resolve(null)
       }, timeoutMs)
-      tokenRequestResolvers.set(requestID, (token, expiresAt) => {
-        if (newerThan !== null && (expiresAt <= newerThan || token === differentFrom)) return
+      tokenRequestResolvers.set(requestID, (token, expiresAt, isRotation) => {
+        if (rotationOnly && (!isRotation || token === differentFrom)) return
         clearTimeout(timer)
         tokenRequestResolvers.delete(requestID)
+        if (!isRotation) publishToken(token, expiresAt, 'peer-response', false)
         resolve(token)
       })
       broadcast({ type: 'token-request', requestId: requestID })
@@ -331,8 +336,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     if (isEmbedded()) return requestParentToken({ forceRefresh: force })
     if (refreshPromise) return refreshPromise
     const observedToken = runtimeToken
-    const observedExpiresAt = runtimeExpiresAt
-    const hasUpdatedToken = () => runtimeToken !== observedToken && runtimeExpiresAt > observedExpiresAt && isUsableToken()
+    const hasUpdatedToken = () => runtimeToken !== observedToken && isUsableToken()
     refreshPromise = withRefreshLock(instanceID, async () => {
       if (!force && isUsableToken()) return runtimeToken
       if (hasUpdatedToken()) return runtimeToken
@@ -340,10 +344,10 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
       if (!force) {
         const peerToken = await requestPeerToken(100)
         if (peerToken && isUsableToken()) return peerToken
-      } else if (observedExpiresAt > 0) {
+      } else {
         // Web Lock release can arrive before the prior owner's token broadcast.
-        // Only a token newer than this refresh attempt can satisfy a forced refresh.
-        await requestPeerToken(100, observedExpiresAt, observedToken)
+        // Peer replies are not proof of rotation; only an actual update can satisfy this wait.
+        await requestPeerToken(100, { rotationOnly: true, differentFrom: observedToken })
         if (hasUpdatedToken()) return runtimeToken
       }
       if (typeof refresh !== 'function') throw new Error('auth_refresh_not_configured')

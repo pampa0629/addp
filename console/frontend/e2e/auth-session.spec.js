@@ -142,50 +142,94 @@ test('embedded client retries until the delayed Console coordinator is ready', a
   expect(new Set(requestIDs).size).toBe(1)
 })
 
-test('new tab replaces a revoked peer token before completing session initialization', async ({ context, page }) => {
-  let refreshRequests = 0
-  const identityTokens = []
+for (const peers of [1, 2]) {
+  test(`${peers} stale peers: new tabs refresh once and retry both identity requests exactly once`, async ({ context, page }, testInfo) => {
+    let refreshRequests = 0
+    let rejected = 0
+    let allRejected
+    const initialFailures = new Promise(resolve => { allRejected = resolve })
+    const identityRequests = []
+    const recoveryTabs = []
 
-  await context.route('**/e2e/auth-api/**', async (route) => {
-    const request = route.request()
-    const pathname = new URL(request.url()).pathname
-    if (pathname.endsWith('/refresh')) {
-      refreshRequests += 1
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ access_token: 'fresh-access-token', expires_in: 300 })
-      })
-      return
+    await context.route('**/e2e/auth-api/**', async (route) => {
+      const request = route.request()
+      const pathname = new URL(request.url()).pathname
+      if (pathname.endsWith('/refresh')) {
+        refreshRequests += 1
+        // Hold the authority until both initial reads in every new tab have failed.
+        await initialFailures
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ access_token: 'fresh-access-token', expires_in: 300 })
+        })
+        return
+      }
+
+      const accessToken = (await request.headerValue('authorization'))?.replace(/^Bearer\s+/i, '') || ''
+      identityRequests.push({ tab: recoveryTabs.indexOf(request.frame().page()), path: pathname,
+        status: accessToken === 'fresh-access-token' ? 200 : 401 })
+      if (accessToken !== 'fresh-access-token') {
+        if (++rejected === peers * 2) allRejected()
+        await initialFailures
+        await route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'token_revoked' })
+        })
+        return
+      }
+
+      const body = pathname.endsWith('/users/me')
+        ? { id: 1, username: 'e2e-user' }
+        : { context: { type: 'tenant' }, authorization: { role_assignments: [] } }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+    })
+
+    await page.goto('/e2e/fixtures/auth-fixture.html?role=peer')
+    await expect(page.getByTestId('status')).toHaveText('peer-ready')
+    await expect(page.getByTestId('token')).toHaveText('peer-revoked-token')
+    const peerTabs = [page]
+    if (peers === 2) {
+      const otherPeer = await context.newPage()
+      // A background peer misses the bootstrap queries, then answers during forced recovery.
+      await otherPeer.addInitScript(bootstrapRequests => {
+        const NativeChannel = BroadcastChannel
+        window.BroadcastChannel = class extends NativeChannel {
+          addEventListener(type, listener, ...options) {
+            if (type !== 'message') return super.addEventListener(type, listener, ...options)
+            let requests = 0
+            return super.addEventListener(type, event => {
+              if (event.data?.type === 'token-request' && requests++ < bootstrapRequests) return
+              listener(event)
+            }, ...options)
+          }
+        }
+      }, peers)
+      await otherPeer.goto('/e2e/fixtures/auth-fixture.html?role=peer&peer=second')
+      await expect(otherPeer.getByTestId('status')).toHaveText('peer-ready')
+      await expect(otherPeer.getByTestId('token')).toHaveText('peer-revoked-second-token')
+      peerTabs.push(otherPeer)
     }
 
-    const accessToken = (await request.headerValue('authorization'))?.replace(/^Bearer\s+/i, '') || ''
-    identityTokens.push(accessToken)
-    if (accessToken !== 'fresh-access-token') {
-      await route.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'token_revoked' })
-      })
-      return
+    for (let index = 0; index < peers; index++) recoveryTabs.push(await context.newPage())
+    await Promise.all(recoveryTabs.map(tab => tab.goto('/e2e/fixtures/auth-fixture.html?role=recovery')))
+    for (const tab of recoveryTabs) {
+      await expect(tab.getByTestId('status')).toHaveText('authenticated')
+      await expect(tab.getByTestId('token')).toHaveText('fresh-access-token')
     }
+    for (const peer of peerTabs) await expect(peer.getByTestId('token')).toHaveText('fresh-access-token')
 
-    const body = pathname.endsWith('/users/me')
-      ? { id: 1, username: 'e2e-user' }
-      : { context: { type: 'tenant' }, authorization: { role_assignments: [] } }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+    expect(refreshRequests).toBe(1)
+    expect(identityRequests).toHaveLength(peers * 4)
+    for (let tab = 0; tab < peers; tab++) {
+      for (const path of ['/e2e/auth-api/users/me', '/e2e/auth-api/auth/context']) {
+        expect(identityRequests.filter(request => request.tab === tab && request.path === path)
+          .map(request => request.status)).toEqual([401, 200])
+      }
+    }
+    await testInfo.attach('identity-recovery-chain', {
+      body: JSON.stringify({ refreshRequests, identityRequests }), contentType: 'application/json'
+    })
   })
-
-  await page.goto('/e2e/fixtures/auth-fixture.html?role=peer')
-  await expect(page.getByTestId('status')).toHaveText('peer-ready')
-  await expect(page.getByTestId('token')).toHaveText('peer-revoked-token')
-
-  const newTab = await context.newPage()
-  await newTab.goto('/e2e/fixtures/auth-fixture.html?role=recovery')
-  await expect(newTab.getByTestId('status')).toHaveText('authenticated')
-  await expect(newTab.getByTestId('token')).toHaveText('fresh-access-token')
-
-  expect(identityTokens).toContain('peer-revoked-token')
-  expect(identityTokens).toContain('fresh-access-token')
-  expect(refreshRequests).toBe(1)
-})
+}

@@ -3,7 +3,8 @@ import {
   clearRuntimeAccessToken,
   createBrowserAuthSession,
   createIframeAuthCoordinator,
-  setRuntimeAccessToken
+  setRuntimeAccessToken,
+  subscribeAccessToken
 } from '@common-ui/auth/authSession.js'
 import { createAPIClient, createAuthStore } from '@common-ui/composables/useAuth.js'
 import { listResourceTreeEngines, getResourceTree, getResourceTreeAncestors } from '@common-ui/api/resourceTree.js'
@@ -102,7 +103,8 @@ if (role === 'shared-top-level') {
 } else if (role === 'peer' || role === 'recovery') {
   clearRuntimeAccessToken()
   if (role === 'peer') {
-    setRuntimeAccessToken('peer-revoked-token', Date.now() + 300_000)
+    const secondPeer = new URL(location.href).searchParams.get('peer') === 'second'
+    setRuntimeAccessToken(secondPeer ? 'peer-revoked-second-token' : 'peer-revoked-token', Date.now() + (secondPeer ? 600_000 : 300_000))
   }
 
   const requestJSON = async (path, options = {}) => {
@@ -139,6 +141,7 @@ if (role === 'shared-top-level') {
 
   if (role === 'peer') {
     showResult('peer-ready', store.token)
+    subscribeAccessToken(snapshot => { tokenOutput.textContent = snapshot.token || '' })
   } else {
     try {
       const accessToken = await store.initializeSession()
