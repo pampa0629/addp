@@ -503,3 +503,16 @@ Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和
 - 平台聚合：`make test-platform` 非零。此前本专项需要的配置、依赖／CI 注册、变更选择与安全等子检查通过（T2 注册 22 hosted-service／12 Compose／9 hosted-only／2 owner-managed）；在 Online Raster 既有工具链测试要求 Node 24、当前解释器为 Node 25 时失败，215 项中此项失败。不扩展修复其他专项，不计整套平台通过；末尾授权／Swagger未执行，另以标准 `make test-authorization` 补验最终退出 0，授权与全模块 Swagger 覆盖通过。首次补验隔离快照无 Python venv，Go 授权及全部 Go Swagger 已通过但 Agent/Copilot 覆盖未执行，未计全套通过；仅在副本准备既有 Python 环境后复验，不改用户 venv。
 
 本批只有上述本地 T0/T1/T2/T3 证据，未运行 Hosted、正式身份 T4、容量重跑或真实 72 小时保留／删除，未设置定时或重启个人服务。原 HTTP 两档容量结果不外推新增阶段。其他 Runtime、continuous、SQL Span、Python 异步、长期合并及生产 HA 仍未覆盖，不能将本批记为全链路追踪全部完工；新提交的远端自动 CI 状态另记。
+
+
+### 服务实例 CPU/RSS 真实采样告警链路 T2（2026-10-23）
+
+沿原标准入口新增 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=process-alerts`，只使用门禁自建非 root 容器的 0.25 CPU／128 MiB 原硬上限。三个真实 Common SDK 进程经原 mTLS／唯一 HTTP SD 进入 Prometheus；其中一个 Worker 在加压前固定 CPU 触发／恢复值 0.025／0.008 核，RSS 按真实空闲基线加 12／8 MiB 固定阈值，随后有界计算并持有 24 MiB 匿名内存，释放后由自然新样本判断恢复。测试控制仅存在于测试二进制，单次最多 180 秒，未改生产采集器或个人服务。
+
+冻结基线 `9f6e77140d9576dc8ef2419082f765175232f312` 加本批七项输入，在隔离源码副本执行：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：退出 0，Monitor Go T1 通过。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=process-alerts`：退出 0；48 项配置／分组回归、八项固定窗口测试及真实进程告警专项通过，无专项 Skip。专项实际耗时 245.08 秒：CPU 打开证据为 0.0269–0.0511 核，释放后的恢复证据为 0.00378–0.00400 核；RSS 从约 30.8 MiB 基线增至约 57.6 MiB，恢复证据约 30.4–30.6 MiB。两项均使用推进中的连续样本，CPU 保留完整一分钟，不改写计数器或历史；两个原事件分别恢复，没有新增结束状态。四个 opened／resolved 事件共收到八次回环 TLS 请求，每个事件首次 503、随后成功，投递 ID／事件 ID／正文和持久证据均一致；旧日志订阅未收到该类别，对等 Backend 与 Worker 的三项当前值继续有效。退出明确报告 owned 容器／网络／卷及设施临时目录零残留，并独立按当次项目标签读回核实。
+- `make test-release-runner`：退出 0，62 项发布／登记回归及正式登记检查通过；`make test-workflow-security`：退出 0。新增场景已加入原 Release Metrics 矩阵，仍保持每项 20 分钟及所有分组真实成功才通过的汇总要求；默认全量入口包含原分组及新专项，无第二套执行路线。
+
+原始日志及输入摘要保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-alert-real-r7sgulbj/` 的 `process-alerts-t2.log`、`monitor-go.log`、`release-registration.log`、`workflow-security.log` 与 `inputs.json`；七项工作区输入与冻结副本哈希一致。此结果为真实 SDK／Prometheus／PostgreSQL／签名接收端下的 T2，System 当前用户与身份投影仍是夹具，不替代正式密码／MFA、真实 Console、Hosted T4、生产容量或 T5。本轮未运行其他 Metrics 分组，复用原有证据边界；未查询／调度 CI 或 Hosted，等待专门会话回传，未重启个人服务、未设置定时任务。

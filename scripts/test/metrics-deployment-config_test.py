@@ -182,13 +182,13 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('common/httpmetrics/ common/modulelifecycle/', gate)
         self.assertIn('--case=http-quality) metrics_case=http-quality ;;', gate)
         self.assertIn('export ADDP_METRICS_T2_CASE="$metrics_case"', gate)
-        self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality'", probe)
+        self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts')", probe)
         pg_scope = re.search(r'(?ms)^if \[\[ "\$metrics_case" == all \|\| "\$metrics_case" == postgres-source \]\]; then\n  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true\n.*?^fi$', gate)
         self.assertIsNotNone(pg_scope)
         self.assertIn('postgres-observation-probe.py', pg_scope.group())
         self.assertIn('postgres_directory_probe', pg_scope.group())
         stub = 'python3(){ printf "probe\\n"; }; postgres_directory_probe(){ printf "directory\\n"; }; metrics_case="$1"\n'
-        for case in ('http-quality', 'host-resources', 'all', 'postgres-source'):
+        for case in ('http-quality', 'process-alerts', 'host-resources', 'all', 'postgres-source'):
             completed = subprocess.run(['bash', '-c', stub + pg_scope.group(), '_', case], capture_output=True, text=True, timeout=5)
             self.assertEqual(completed.returncode, 0)
             expected = ['probe'] * pg_scope.group().count('\n  python3 ') + ['directory']
@@ -199,28 +199,34 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         selector = next(index for index, node in enumerate(probe.body)
                         if isinstance(node, ast.If) and any(isinstance(item, ast.Name)
                         and item.id == 'check_native_process_sources' for item in ast.walk(node)))
-        selection = compile(ast.Module(body=probe.body[selector:selector+2], type_ignores=[]), '<metrics case selection>', 'exec')
-        for case in ('all', 'http-quality', 'host-resources'):
+        selection = compile(ast.Module(body=probe.body[selector:selector+3], type_ignores=[]), '<metrics case selection>', 'exec')
+        for case in ('all', 'http-quality', 'process-alerts', 'host-resources'):
             native = mock.Mock()
             environment = mock.Mock(environ={'ADDP_METRICS_T2_CASE': case})
             namespace = {'os': environment, 'check_native_process_sources': native, 'print': mock.Mock()}
-            if case == 'http-quality':
+            if case in ('http-quality', 'process-alerts'):
                 with self.assertRaises(SystemExit) as stopped:
                     exec(selection, namespace)
                 self.assertEqual(stopped.exception.code, 0)
             else:
                 exec(selection, namespace)
-            self.assertEqual(native.call_count, int(case != 'host-resources'))
+            self.assertEqual(native.call_args_list, {
+                'all': [mock.call(), mock.call(process_alerts=True)],
+                'http-quality': [mock.call()],
+                'process-alerts': [mock.call(process_alerts=True)],
+                'host-resources': [],
+            }[case])
         gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         self.assertIn("''|--case=all) metrics_case=all ;;", gate)
         self.assertIn('--case=host-resources) metrics_case=host-resources ;;', gate)
+        self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
 
     def test_ci_requires_every_isolated_metrics_case_and_preserves_budget(self):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, http-quality, host-resources]', cases)
+        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)

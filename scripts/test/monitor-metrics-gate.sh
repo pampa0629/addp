@@ -10,6 +10,7 @@ case "${1:-}" in
   --case=postgres-observation) metrics_case=postgres-observation ;;
   --case=postgres-source) metrics_case=postgres-source ;;
   --case=http-quality) metrics_case=http-quality ;;
+  --case=process-alerts) metrics_case=process-alerts ;;
   --case=host-resources) metrics_case=host-resources ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac

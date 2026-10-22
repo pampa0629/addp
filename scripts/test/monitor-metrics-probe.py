@@ -223,24 +223,38 @@ def discovery_text(text):
     pending.write_text(text)
     pending.replace(WORK / 'source/discovery.json')
 
-def check_native_process_sources():
+def check_native_process_sources(*, process_alerts=False):
     global base
+    alert_binary = WORK / 'process-alert-lifecycle.test'
+    if process_alerts:
+        # Prepare before starting the finite-lived native sources. Compilation
+        # cannot consume their collection or actual lifecycle-test deadline.
+        print('Metrics process alerts T2: prepare lifecycle test', flush=True)
+        subprocess.run(['go', 'test', '-c', './internal/service', '-o', str(alert_binary)],
+                       cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                       env=dict(os.environ, GOWORK='off'), check=True, timeout=180)
     # One Backend and two same-module Worker SDK processes in the owned non-root source
     # container. Loopback-only test ports also exercise Desktop's host transport;
     # there is no business process, workspace mount or extra service.
     source_id = compose('ps', '-q', 'metrics-source').strip()
     source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
+    assert source_inspect['HostConfig']['NanoCpus'] == 250_000_000
+    assert source_inspect['HostConfig']['Memory'] == 128 * 1024**2
     source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
     processes, records = [], []
     try:
         for index in (1, 2, 3):
             path = WORK / 'source' / f'process-{index}.json'
+            for suffix in ('.stop', '.resource-mode'):
+                Path(str(path) + suffix).unlink(missing_ok=True)
             path.write_text('')
             path.chmod(0o666)
             address = source_ip + ':' + str(19440 + index)
             envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
                     'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',
                     'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index), 'ADDP_PROCESS_T2_ROLE': 'backend' if index == 1 else 'worker'}
+            if process_alerts and index == 3:
+                envs['ADDP_PROCESS_T2_RESOURCE_CONTROL'] = '1'
             command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
             for key, value in envs.items(): command.extend(['-e', key + '=' + value])
             command.extend(['metrics-source', '/source/process-source.test', '-test.run=^TestIntegrationMetricsSelfSource$', '-test.timeout=9m'])
@@ -283,6 +297,20 @@ def check_native_process_sources():
         env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
                    MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
                    MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
+        if process_alerts:
+            completed = subprocess.run([str(alert_binary), '-test.run=^TestIntegrationMetricsProcessAlertLifecycle$', '-test.count=1', '-test.timeout=300s', '-test.v'],
+                           cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                           env=dict(env, ADDP_PROCESS_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
+                                    ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
+                                    ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
+                                    ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                                    ADDP_TEST_POSTGRES_SSLMODE='disable'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True, timeout=320)
+            print(completed.stdout, flush=True)
+            completed.check_returncode()
+            assert '--- PASS: TestIntegrationMetricsProcessAlertLifecycle' in completed.stdout
+            assert '--- SKIP:' not in completed.stdout and '[no tests to run]' not in completed.stdout
+            return
         try:
             subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
                            cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
@@ -350,6 +378,7 @@ def check_native_process_sources():
         print('Metrics T2: Backend and two same-module Workers isolated; stopping Backend then one Worker clears only those sources', flush=True)
     finally:
         for process, log, path in processes:
+            Path(str(path) + '.resource-mode').unlink(missing_ok=True)
             Path(str(path) + '.stop').touch()
             try:
                 result = process.wait(timeout=10)
@@ -359,10 +388,12 @@ def check_native_process_sources():
     eventually(valid_sample, 'fixture scope restored after native process checks')
 
 
-if os.environ.get('ADDP_METRICS_T2_CASE') != 'host-resources':
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'http-quality'):
     check_native_process_sources()
-if os.environ.get('ADDP_METRICS_T2_CASE') == 'http-quality':
-    print('Metrics T2: HTTP quality scope complete; remaining host-resource regression belongs to --case=host-resources or --case=all', flush=True)
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'process-alerts'):
+    check_native_process_sources(process_alerts=True)
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts'):
+    print('Metrics T2: native process scope complete; host-resource regression belongs to --case=host-resources or --case=all', flush=True)
     raise SystemExit(0)
 
 

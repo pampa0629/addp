@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -57,10 +58,34 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 	}
 	end := time.Now().Add(8 * time.Minute)
 	requestIndex := 0
+	controlled := os.Getenv("ADDP_PROCESS_T2_RESOURCE_CONTROL") == "1"
+	var extra []byte
+	var activeUntil time.Time
+	activated := false
 	for time.Now().Before(end) {
 		if _, err := os.Stat(path + ".stop"); err == nil {
 			runtime.KeepAlive(allocation)
 			return
+		}
+		if controlled {
+			mode, _ := os.ReadFile(path + ".resource-mode")
+			if string(mode) == "active" && !activated {
+				activated = true
+				activeUntil = time.Now().Add(180 * time.Second)
+				extra = make([]byte, 24<<20)
+				for i := range extra {
+					extra[i] = byte(i)
+				}
+			}
+			if string(mode) != "active" || !time.Now().Before(activeUntil) {
+				if extra != nil {
+					extra = nil
+					debug.FreeOSMemory()
+				}
+				time.Sleep(40 * time.Millisecond)
+				continue
+			}
+			runtime.KeepAlive(extra)
 		}
 		if business != nil {
 			paths := []string{"/items/fixture-id", "/slow", "/failure", "/missing/fixture-id"}

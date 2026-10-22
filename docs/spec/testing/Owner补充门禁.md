@@ -70,7 +70,9 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 ## 平台指标设施独占门禁
 
-默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的三个互补分组：`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警。各分组独占随机 Compose 项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
+默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的四个互补分组：`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=process-alerts` 覆盖真实进程 CPU/RSS 规则触发、恢复与签名通知；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警。各分组独占随机 Compose 项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
+
+进程规则专项只操作上述门禁自建的非 root 来源容器，保持整体 0.25 CPU／128 MiB 硬上限。一个测试 Worker 在固定阈值前取得真实空闲基线，随后执行有界 CPU 工作并持有、触达 24 MiB 匿名内存，最多 180 秒后自动释放；控制文件只由测试二进制消费，不进入生产服务。CPU 保留完整一分钟和连续采样证据，RSS 取实际驻留内存；释放后必须由自然新样本恢复同一事件，两个对等进程不得触发目标规则。独立回环 TLS 接收端验证原始正文的 HMAC、首次 503 的同投递重试、opened/resolved 与持久事件证据一致，以及旧日志订阅不收到新类别；成功、失败路径清除控制文件、测试进程与数据库夹具，外层核验容器／网络／卷零残留。这仍是 System 身份夹具下的 T2，不代表正式身份、真实 Console、生产压力或 Hosted T4；不向个人服务、主机或通知群加压。
 
 PostgreSQL 来源的正式准入探针将 Go 准备与执行分开计时：在本轮私有目录以 `go test -c` 构建测试文件，每次构建准备最多 180 秒；构建失败立即退出，不执行已有文件。随后直接运行该文件，保留 `-test.timeout=30s` 与外层 45 秒进程期限，不将下载和编译占用实际准入测试期限。构建、执行分别记录安全阶段，私有目录仍由原退出路径清除；不修改 mTLS、完整窗口、采样新鲜度或原 20 分钟 Job 上限。
 
