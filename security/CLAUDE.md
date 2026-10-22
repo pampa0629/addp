@@ -388,3 +388,25 @@ Hosted 领域夹具升为 v22，新增 Develop SUBSTRING／COALESCE／CASE／CAS
 同时补齐本会话c015 Transfer文档变更遗漏的Ontology语义审核。逐行对比冻结的543e2accd与c015，文档仅新增已纳管原生源运行前实时结构校验；`transfer.task.create` 当前只保存停止态native定义，不执行、调度或扫描，参数、权限、确认、条件、效果、排除效果和未建模范围不变。config来源冻结到已提交c015及其精确文件Hash，双语Use记录执行边界，平台修订升31；其余来源、Bindings/Coverage及能力定义（除修订号）逐项一致。初次审核说明超出既有512字节约束已精简，未放宽约束或盲重生成来源。Ontology入口文档和固定修订断言同次同步，不改发布/投影机制，不宣称31已在运行时激活。
 
 验证：新主流程用完整合成证据实际调用严格矩阵，旧实现重现提前归属和未调用最终矩阵的红回归；修后111项领域T1通过，证明Mongo写入后才构建一次，缺失/空证据不能完成。其余Security Runner叶级120项及正式CI登记检查通过。标准 `make test-platform-review` 在旧来源上实际红，最终禁缓存入口通过；`make test-module MODULE=ontology GO_ONLY=1` 完整Go T1通过。相关验证在干净a190663c261a7e63ff00885d006138571c41610e测试副本仅应用本会话补丁，未夹带其他会话WIP。此前全仓Go日志中Ontology platform为cached，不能代替遗漏的独立来源门禁，该遗漏及c015实际CI失败保留。完整Security Runner本轮未通过：未改动Public Origin的runtime启动失败清理夹具20秒超时，后继聚合步骤未执行；完整 `make test-platform` 在来源审核已通过后，未改动WorkerUnits生命周期夹具等待启动回执超时，整体验证也未通过。两项不在本轮修复范围，不改其断言或其他suite。日志 `/tmp/addp-p145-report-order-{red,green,platform-review-final,ontology-go,runner,runner-leaves,registration,platform-full}.log`；来源首轮红另为ontology-red，审核说明长度修正前未过另为ontology-green。现有标准入口/自动发现已覆盖，无需新Make目标、workflow、数据库或依赖。产品保护代码输入未变，原Common/Transfer PG证据保留原范围；Ontology PG/Falkor本轮未重跑，真实Security完整T4仍待新版唯一复验。继续由专门CI会话回传，不设定时、不启停本地服务、不扩大权限、源/原值授权或栅格范围。
+
+2026-10-22，本轮约定的逐原因出口验收已闭环：[Hosted 39727724444／119667747241](https://github.com/pampa0629/addp/actions/runs/39727724444/job/119667747241)，`workflow_dispatch` attempt 2，精确源码 `f0f949b5123cb5ad2ff8778d015577d4a5bd0e42`。实际 `Run Hosted Security Online gate` 成功且未跳过；正式Online报告、领域v25、浏览器v9均passed，干净预检和十个服务构建一致，领域耗时1,062,083 ms。成功artifact为 `12406552088`，创建于06:33:26Z，官方元数据的run/head与本次一致；仅使用 `/tmp/addp-ci-20261022-070005/artifacts-39727724444-attempt2/_temp/addp-online-39727724444/`，未混入attempt 1的artifact `12404267981`。attempt 1／Job119655405669在Manager frontend安装时npm ECONNRESET，未进入业务；原失败保留，专门CI协调仅定向重试一次，本会话未重跑验收或改变镜像/代码。
+
+终态独立审计：既有 `/tmp/addp-four-outlet-hosted-audit.py --artifacts <上述目录> --commit f0f949b5123cb5ad2ff8778d015577d4a5bd0e42 --run-id 39727724444 --job-id 119667747241` 通过，并用不调用产品矩阵函数的 `/tmp/addp-p145-owner-close-audit.py` 逐格复核。28格中20格有实际HTTP或执行历史证据，8格严格保留协议层；12条矩阵执行UUID均有效且不重复。Manager/Service各HTTP拒绝为既有精确403/稳定安全错误码、无结果；Develop/Transfer历史原因与preparation阶段匹配，Transfer零条/零字节写入、目标保持。新增Develop未就绪 `f3d3ecd5-157f-4882-a4d5-790c3fd6b567`、不支持操作 `75983c1f-f405-4391-af2c-e14082363345`、结构不匹配 `9b79f106-e87a-45f9-b72b-d13a3393962c` 的Owner/Monitor六图逐张目视确认同一UUID、准确提示/建议和无旧结果；对应Transfer执行分别 `7597a7e8-7e63-48cf-ae98-419d1e5e0fb6`、`f8ea9fb0-95dc-41e3-849c-18ab0e341023`、`d0d711fa-7132-4a8d-99ed-02a5e453982a`，均满足严格零输出/零写入/同一历史与目标不变。结构恢复后正常五行脱敏、保护修订不变。
+
+本次闭合范围如下，T4只代表该单元的既定受控真实入口，T2列仍缺出口HTTP/浏览器T4，不能合计为28格出口通过：
+
+| 原因 | Manager | Develop | Service | Transfer |
+| --- | --- | --- | --- | --- |
+| computed_output_unsupported | T2协议 | T4 | T4 | T4 |
+| lineage_unverified | T2协议 | T4 | T2协议 | T4 |
+| not_ready | T4 | T4 | T4 | T4 |
+| expired | T4 | T4 | T4 | T4 |
+| not_yet_valid | T2协议 | T2协议 | T2协议 | T2协议 |
+| schema_mismatch | T4 | T4 | T4 | T4 |
+| operation_unsupported | T2协议 | T4 | T4 | T4 |
+
+Develop六计算substring/coalesce/case/cast/subquery_alias/union均准备阶段精确拒绝且同一历史无结果；COUNT(*)及非敏感计算仍各五行。普通MySQL直接/混合/通配/别名/分页输出保持原保护，Service分页2/2/1无重漏；SQL支持仍限已证明子集，SM3沿约定共享Go执行，不声称所有算法均在数据库SQL中执行。未就绪四出口使用既定PG零Finding纳管夹具，Transfer计算/操作拒绝使用PG受控查询；不能把它们改记为全部MySQL运行覆盖。PG空间表普通值字段三算法在四出口验证，保留坐标和NULL；不是几何坐标或栅格脱敏。MongoDB三算法验证七行嵌套/稀疏/NULL/相邻字段、Manager/Develop、可证明查询Transfer及Canonical Extended JSONL导出（含int64保持），三次不可证明血缘拒绝零写入；不能据此宣称MongoDB Service各输出或全部数据类型均已覆盖。
+
+保护投影自然到期四出口拒绝、改回长期后的恢复、Security不可达期间实际输出与Owner进程不变、默认保护事务回滚、重启后定义保持继续通过；这里的自然到期不是新增原值授权到期验收。`not_yet_valid`仍只有既有真实PG T2及未来历史用例，没有产品开始时间设置入口，本轮未新增配置或改时钟。21张必需PNG完整并校验尺寸/Hash，另外目视核对Transfer结果阶段拒绝/Monitor同一 `64bb8709-6c05-4436-b7ef-458cdbbc11da`（零读写、保存结果阶段）及Manager五行掩码预览，共目视九图。领域11/11/0、银行卡临时执行资源11/11/0、Mongo任务10/10/0、两组浏览器各2/2/0分别核对，不混合计数；临时策略/基线恢复、Hosted cleanup passed、Infra zero_residuals。归档保留无原值结果断言，本次审计核对当次真实逐值读写断言、报告一致性和截图，未重读已销毁的业务夹具。
+
+审计记录 `/tmp/addp-four-outlet-hosted-39727724444-audit.json`、`/tmp/addp-p145-f0-attempt2-owner-closure.json`、`/tmp/addp-p145-f0-attempt2-artifact-metadata.json`；正式报告/21图在上述attempt2目录，原Job日志 `/tmp/addp-ci-20261022-070005/job-119667747241.log`，首轮npm失败另存 `/tmp/addp-p145-f0-attempt1-job.log`。本次只补新增终态证据，不把此前本地聚合Runner/平台夹具失败改记通过，不扩大为全仓CI、全SQL/引擎/类型/算法/输出、完整角色策略、业务数据静态透明加密或生产/HA认证。原Excel155总述和156动态脱敏仍保持部分实现：SQL改写已有可证明子集，完整按角色匹配/多级策略优先级及静态加密仍有缺口；本轮20格T4通过不消除这些原始要求。没有证据矛盾，无需产品修复或重复运行；结果按AGENTS报P0，只由其维护M列，不设定时、不操作用户本地服务或其他CI。
