@@ -847,6 +847,8 @@
     "process": {
       "title": "Service monitoring",
       "moduleFilter": "Module name (exact match)",
+      "hostNameFilter": "Host or runtime name",
+      "hostNameHint": "Exact match on the declared host name or process runtime hostname, ignoring case; not the display name in host management.",
       "hostIPFilter": "Host IP (exact match)",
       "hostIPHint": "Enter the IPv4 or IPv6 of the host running the instance, without a port or subnet; separate from the registered service address.",
       "invalidQuery": "Invalid query conditions. Check the filter values.",

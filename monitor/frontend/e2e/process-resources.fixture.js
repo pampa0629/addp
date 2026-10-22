@@ -28,6 +28,7 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity(permissions)
     else if (path === '/api/v1/system/platform/module-instances') {
       listCalls.push(Object.fromEntries(url.searchParams))
+      const nodeName = url.searchParams.get('node_name')?.trim().toLowerCase()
       const nodeIP = url.searchParams.get('node_ip')
       // System owns address validation/canonical matching. Node's IP primitives
       // emulate that boundary in this HTTP fixture, not in the product frontend.
@@ -38,6 +39,7 @@ export async function backend(page, options = {}) {
       const filtered = rows.filter(row => {
         const time = url.searchParams.get('time_basis') === 'offline' ? row.stopped_at : row.registered_at
         return (!nodeIP || row.host_node_ips?.some(ip => addresses.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'))) &&
+          (!nodeName || [row.host_node_name, row.runtime_hostname].some(name => name?.toLowerCase() === nodeName)) &&
           (!url.searchParams.has('module_name') || row.module_name === url.searchParams.get('module_name')) &&
           (!url.searchParams.has('role') || row.role === url.searchParams.get('role')) &&
           (!url.searchParams.has('stop_reason') || (row.status === 'down' && row.stop_reason === url.searchParams.get('stop_reason'))) &&

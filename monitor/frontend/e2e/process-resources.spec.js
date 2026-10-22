@@ -781,3 +781,85 @@ test('host IP auto refresh uses only submitted values and combines endpoint, tim
   await expect.poll(() => state.calls.at(-1)).toBe('2')
   expect(state.listCalls.at(-1)).toMatchObject({ node_ip: '192.0.2.8', registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', time_basis: 'offline' })
 })
+
+for (const locale of ['zh-cn', 'en']) test(`host or runtime name uses exact System scope, paging, trends and reset (${locale})`, async ({ page }, info) => {
+  const en = locale === 'en'
+  const state = await backend(page, { locale, instances: [
+    ...Array.from({ length: 21 }, (_, i) => ({ id: i + 1, host_node_name: 'Shared-HOST', registered_host: '', module_url: '' })),
+    { id: 22, host_node_name: 'other', runtime_hostname: 'shared-host', registered_host: '' },
+    { id: 23, host_node_name: 'shared-host-extra', registered_host: 'shared-host' },
+    { id: 24, host_node_name: 'shared-host', status: 'down' },
+    { id: 25, host_node_name: 'shared-host', process_metrics_declared: false }
+  ] })
+  await page.goto('/service-resources?module_name=monitor&role=worker&refresh=off')
+  const input = page.getByRole('textbox', { name: en ? 'Host or runtime name' : '宿主名或运行环境名', exact: true })
+  const search = page.getByRole('button', { name: en ? 'Search' : '搜索', exact: true })
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(20)
+  await input.fill('  SHARED-host  ')
+  await search.click()
+  await expect(page).toHaveURL(url => url.searchParams.get('node_name') === 'SHARED-host' && !url.searchParams.has('page'))
+  await expect(input).toHaveValue('SHARED-host')
+  await expect(page.locator('.el-pagination__total')).toContainText('22')
+  await expect.poll(() => state.calls.at(-1)).toBe(Array.from({ length: 20 }, (_, i) => i + 1).join(','))
+  expect(state.hostReads).toEqual([])
+  await page.locator('.el-pagination .btn-next').click()
+  await expect.poll(() => state.calls.at(-1)).toBe('21,22')
+  await page.reload()
+  await expect(input).toHaveValue('SHARED-host')
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(2)
+  expect(state.listCalls.at(-1)).toMatchObject({ node_name: 'SHARED-host', module_name: 'monitor', role: 'worker', page: '2' })
+  await page.getByTestId('process-list').getByRole('button', { name: en ? 'View trend' : '查看趋势', exact: true }).first().click()
+  await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  expect(state.trendCalls.at(-1)).not.toHaveProperty('node_name')
+  await expect(page).toHaveURL(url => url.searchParams.get('node_name') === 'SHARED-host' && url.searchParams.get('instance_id') === '21')
+  await page.locator('.el-dialog__headerbtn').click()
+  await page.getByRole('button', { name: en ? 'All instances' : '全部实例', exact: true }).click()
+  await expect(page.locator('.el-pagination__total')).toContainText('24')
+  expect(state.listCalls.at(-1)).toMatchObject({ node_name: 'SHARED-host', page: '1' })
+  await input.fill('shared')
+  await search.click()
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(0)
+  await page.getByRole('button', { name: en ? 'Reset' : '重置', exact: true }).click()
+  await expect(page).toHaveURL(/service-resources\?refresh=off$/)
+  await expect(input).toHaveValue('')
+  await expect(page.locator('.el-pagination__total')).toContainText('23')
+  await input.fill('unsaved-name')
+  await page.getByRole('button', { name: en ? 'Reset' : '重置', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(input).toBeVisible()
+  await expect(page.locator('#process-host-name-hint')).toContainText(en ? 'not the display name' : '不是主机管理中的显示名称')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath(`service-host-name-${locale}.png`), fullPage: true })
+})
+
+test('name auto refresh retains the applied value and intersects host IP, endpoint and offline conditions', async ({ page }) => {
+  const common = { host_node_ips: ['192.0.2.7'], registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', stopped_at: '2026-10-22T10:30:00Z' }
+  const state = await backend(page, { instances: [
+    { ...common, id: 1, host_node_name: 'host-a' },
+    { ...common, id: 2, runtime_hostname: 'host-b' },
+    { ...common, id: 3, host_node_name: 'host-b', host_node_ips: ['192.0.2.8'] },
+    { ...common, id: 4, host_node_name: 'host-b', registered_host: 'other.internal' },
+    { ...common, id: 5, host_node_name: 'host-b', stop_reason: 'lease_expired' },
+    { ...common, id: 6, host_node_name: 'host-b', stopped_at: '2026-10-21T10:30:00Z' }
+  ] })
+  await page.clock.install()
+  const query = new URLSearchParams({ node_name: 'HOST-A', node_ip: '192.0.2.7', registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', time_basis: 'offline', time_period: 'custom', time_from: '2026-10-22T10:00:00.000Z', time_to: '2026-10-22T11:00:00.000Z', refresh: '10' })
+  await page.goto('/service-resources?' + query)
+  await expect.poll(() => state.calls.at(-1)).toBe('1')
+  const input = page.getByRole('textbox', { name: '宿主名或运行环境名', exact: true })
+  await input.fill('HOST-B')
+  const count = state.calls.length
+  await page.clock.fastForward(10001)
+  await expect.poll(() => state.calls.length).toBe(count + 1)
+  expect(state.listCalls.at(-1).node_name).toBe('HOST-A')
+  await expect(input).toHaveValue('HOST-B')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect.poll(() => state.calls.at(-1)).toBe('2')
+  expect(state.listCalls.at(-1)).toMatchObject({ node_name: 'HOST-B', node_ip: '192.0.2.7', registered_host: 'db.internal', status: 'down', stop_reason: 'graceful', time_basis: 'offline' })
+  expect(state.hostReads).toEqual([])
+  await page.goto('/service-resources?node_name=host-a&node_name=host-b&refresh=off&status=all')
+  await expect(page).toHaveURL(url => !url.searchParams.has('node_name'))
+  await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(6)
+  expect(state.listCalls.at(-1)).not.toHaveProperty('node_name')
+})

@@ -147,3 +147,21 @@ test('host IP is a System-owned exact query, independent of endpoint and trend f
     assert.equal(resolveProcessRoute({ node_ip }).params.node_ip, node_ip)
   }
 })
+
+test('host or runtime name preserves System matching scope across list queries and route restoration', () => {
+  const state = resolveProcessRoute({ node_name: '  Deployment-HOST  ', node_ip: '192.0.2.7', registered_host: 'db.internal', role: 'worker', status: 'all', stop_reason: 'graceful', time_basis: 'offline', time_period: '1h', page: '2', instance_id: '7', refresh: 'off' })
+  assert.equal(state.nodeName, 'Deployment-HOST')
+  assert.equal(state.query.node_name, 'Deployment-HOST')
+  assert.equal(state.changed, true)
+  assert.equal(resolveProcessRoute(state.query).changed, false)
+  assert.deepEqual(processInstanceParameters(state, Date.parse('2026-10-22T10:00:00Z')), {
+    page: 2, page_size: 20, node_name: 'Deployment-HOST', node_ip: '192.0.2.7', registered_host: 'db.internal', role: 'worker', stop_reason: 'graceful', process_metrics_declared: 'true', time_basis: 'offline', time_from: '2026-10-22T09:00:00.000Z', time_to: '2026-10-22T10:00:00.000Z'
+  })
+  assert.equal(processTrendParameters(7, '5m', stamp).node_name, undefined)
+  for (const node_name of [null, undefined, '', '   ', ['host'], ['host', 'other'], {}]) {
+    const resolved = resolveProcessRoute({ node_name })
+    assert.equal(resolved.nodeName, '')
+    assert.equal(resolved.params.node_name, undefined)
+    assert.equal(resolved.query.node_name, undefined)
+  }
+})
