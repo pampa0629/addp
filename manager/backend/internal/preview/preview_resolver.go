@@ -117,6 +117,7 @@ func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) insta
 type PreviewResolverRequest struct {
 	TrajectorySelection *models.TrajectorySelection
 	CheckTrajectoryRead func() error
+	CheckTableSchema    func([]datatype.FieldInfo) error
 	Locator             *resourcetree.ResourceLocator // 资源定位符
 	Engine              *commonModels.Engine          // 引擎信息
 	Metadata            *commonModels.MetaNode        // 可选：Meta 节点数据
@@ -695,6 +696,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 		KeyValueOptions:     req.KeyValueOptions,
 		TrajectorySelection: req.TrajectorySelection,
 		CheckTrajectoryRead: req.CheckTrajectoryRead,
+		CheckTableSchema:    req.CheckTableSchema,
 		Engine:              managerEngine,
 		EnginePlugin:        plug,
 		Schema:              schema,

@@ -13,6 +13,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	commonauth "github.com/addp/common/middleware/auth"
@@ -190,6 +191,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		if err != nil {
 			protectionRequired(c)
 			return
+		}
+		if gate.Managed {
+			req.CheckTableSchema = func(fields []datatype.FieldInfo) error {
+				_, err := managerprotection.TableRules(req.ItemFingerprint, fields, gate, managerprotection.ActionPreview, time.Now().UTC())
+				return err
+			}
 		}
 	}
 	if err == nil {

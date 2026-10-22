@@ -75,6 +75,11 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
+	if plug.Type() != "postgresql" && req.CheckTableSchema != nil {
+		if err := req.CheckTableSchema(columns); err != nil {
+			return nil, err
+		}
+	}
 	catalogSpatial := plugin.EngineCatalogFactsSpatialInfo(catalogFacts)
 	profileFields := append([]datatype.FieldInfo(nil), columns...)
 	if metaTable := tableInfoFromMetaAttributes(req.Attributes, tableName); metaTable != nil && len(metaTable.Fields) > 0 {

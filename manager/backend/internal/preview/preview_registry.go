@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/dataprofile"
@@ -34,8 +35,11 @@ type PreparedPreviewExecutor func(context.Context, plugin.EnginePlugin, plugin.P
 type PreviewRequest struct {
 	TrajectorySelection *models.TrajectorySelection
 	CheckTrajectoryRead func() error
-	Locator             string
-	Engine              *models.Engine
+	// CheckTableSchema validates live native-table facts before reading rows.
+	// The HTTP owner binds local protection; providers do not own its rules.
+	CheckTableSchema func([]datatype.FieldInfo) error
+	Locator          string
+	Engine           *models.Engine
 	// EnginePlugin is resolved for this concrete Engine Instance. Database
 	// previews must use it instead of looking up a plugin by engine type.
 	EnginePlugin    plugin.EnginePlugin
