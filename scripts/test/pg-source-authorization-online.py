@@ -34,6 +34,9 @@ OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
     'system.engine_access_approval_requirement.update',
     'system.engine.read', 'system.engine_catalog.read', 'system.engine_access_approval_requirement.read',
+    'meta.scan_task.create', 'meta.scan_task.update', 'meta.scan_task.delete',
+    'system.meta_collection_qualification.read', 'system.meta_collection_qualification.approve',
+    'system.meta_collection_qualification.revoke',
     'iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'}
 CONFIRMER_PERMISSIONS = {'catalog.entry.read', 'catalog.entry.update', 'catalog.inventory.read',
                         'catalog.sharing_decision.create'}
@@ -47,6 +50,9 @@ WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_withou
 PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
                      'output_withdrawal_denies_read']
+COLLECTION_CHECKS = ['meta_collection_unapproved_denied', 'meta_collection_approved_repeat',
+                     'meta_collection_copied_task_denied', 'meta_collection_changed_configuration_denied',
+                     'meta_collection_revoked_denied', 'meta_collection_source_rules_unchanged']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -646,6 +652,245 @@ class WorkspaceObservation(BrowserObservation):
         return result
 
 
+class MetaCollectionScenario:
+    """Task-bound governance approval through real Users and the Meta Worker."""
+    def __init__(self, lifecycle, issuer, run_id):
+        self.life, self.issuer = lifecycle, issuer
+        self.route = lifecycle.base + '/meta_collection_qualifications'
+        self.prefix = 'pg_collection_' + run_id + '_' + uuid.uuid4().hex[:12]
+        self.tasks, self.commands, self.executions = {}, {}, {}
+
+    def task_rows(self):
+        return self.life.reader.request('GET', '/api/v1/meta/scan/tasks', (200,), response_type=list).payload
+
+    def recover_tasks(self):
+        rows = self.task_rows()
+        for name, owned in self.tasks.items():
+            matches = [row for row in rows if row.get('name') == name]
+            require(len(matches) <= 1, 'ambiguous collection task recovery')
+            if matches:
+                row = matches[0]
+                require(type(row.get('id')) is int and row['id'] > 0
+                        and row.get('engine_id') == self.life.engine and row.get('tenant_id') == self.life.tenant
+                        and str(row.get('created_by')) == self.issuer
+                        and (owned['id'] is None or owned['id'] == row['id']), 'refusing foreign collection task')
+                owned['id'] = row['id']
+        return rows
+
+    def qualification_rows(self):
+        rows = []
+        for page in range(1, 11):
+            result = self.life.operator.request('GET', self.route + f'?page={page}&page_size=100', (200,)).payload
+            require(type(result.get('total')) is int and result['total'] <= 1000
+                    and result.get('page') == page and result.get('page_size') == 100
+                    and isinstance(result.get('data'), list), 'invalid collection history pagination')
+            rows.extend(result['data'])
+            if len(rows) == result['total']:
+                require(len({row['id'] for row in rows}) == len(rows), 'duplicate qualification history')
+                return rows
+        raise SuiteError('collection history exceeded its bounded pages')
+
+    def row(self, command):
+        rows = [row for row in self.qualification_rows() if row.get('id') == command]
+        require(len(rows) == 1, 'owned collection qualification missing')
+        row, body = rows[0], self.commands[command]
+        require(row.get('engine_id') == str(self.life.engine) and row.get('task_id') == body['task_id']
+                and row.get('task_definition_digest') == body['expected_task_definition_digest']
+                and row.get('purpose') == body['purpose'] and row.get('scan_depth') == 'basic'
+                and row.get('scope_kind') == 'engine' and row.get('granted_by_principal_id') == self.issuer
+                and re.fullmatch(r'[1-9][0-9]*', row.get('engine_version', ''))
+                and re.fullmatch(r'[1-9][0-9]*', row.get('version', ''))
+                and datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
+                    == datetime.fromisoformat(body['expires_at']), 'qualification changed its approved binding')
+        return row
+
+    def create_task(self, suffix):
+        name = self.prefix + suffix
+        body = {'name': name, 'description': 'Disposable Meta collection qualification acceptance',
+                'engine_id': self.life.engine, 'scope': {'type': 'engine'}, 'scan_depth': 'basic',
+                'force': False, 'schedule': '', 'enabled': False}
+        require(not any(row.get('name') == name for row in self.task_rows()), 'collection task already exists')
+        self.tasks[name] = {'id': None, 'body': body}  # Own the unique name before POST, including unknown outcome.
+        row = self.life.operator.request('POST', '/api/v1/meta/scan/tasks', (201,), body).payload
+        self.recover_tasks()
+        require(self.tasks[name]['id'] == row.get('id'), 'created collection task was not recovered exactly')
+        return self.tasks[name]
+
+    def facts(self, task):
+        facts = self.life.operator.request('GET', self.life.base + f'/meta_collection_task_facts/{task}', (200,)).payload
+        require(facts.get('schema_version') == 'meta.scan_task_facts/v1'
+                and facts.get('task_id') == str(task) and facts.get('engine_id') == str(self.life.engine)
+                and facts.get('scope_kind') == 'engine' and facts.get('scan_depth') == 'basic'
+                and type(facts.get('force')) is bool and facts.get('read_options') == {}
+                and re.fullmatch(r'[a-f0-9]{64}', facts.get('task_definition_digest', '')),
+                'System did not return exact PG basic task facts')
+        return facts
+
+    def update(self, task, **changes):
+        task['body'] = dict(task['body'], **changes)
+        row = self.life.operator.request('PUT', f'/api/v1/meta/scan/tasks/{task["id"]}', (200,), task['body']).payload
+        require(row.get('id') == task['id'], 'task update changed identity')
+
+    def trigger(self, task, allowed):
+        execution = self.life.reader.request('POST', f'/api/v1/meta/scan/tasks/{task}/trigger', (200,)).payload['execution_id']
+        require(str(uuid.UUID(execution)) == execution and execution not in self.executions, 'scan execution is not unique')
+        self.executions[execution] = task
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            run = self.life.reader.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+            require(run.get('execution_id') == execution and run.get('source_task_id') == str(task)
+                    and run.get('module') == 'meta' and run.get('task_type') == 'scan'
+                    and run.get('tenant_id') == self.life.tenant and run.get('triggered_by') == int(self.life.recipient)
+                    and run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'},
+                    'collection execution changed its task, actor or scope')
+            if run.get('status') not in {'pending', 'running'}:
+                require(run.get('status') == ('success' if allowed else 'failed') and run.get('completed_at'),
+                        'collection execution did not reach the expected terminal state')
+                metadata = run.get('metadata', {})
+                if allowed:
+                    require(type(metadata.get('items_scanned')) is int and metadata['items_scanned'] >= 2
+                            and type(metadata.get('catalog_nodes_scanned')) is int and metadata['catalog_nodes_scanned'] > 0,
+                            'approved basic task did not enumerate the actual engine')
+                else:
+                    require(run.get('error_details', {}).get('category') == 'permission_denied'
+                            and all(metadata.get(key) in (None, 0) for key in
+                                    ('items_scanned', 'catalog_nodes_scanned', 'fields_scanned')),
+                            'failed scan is not a before-source authorization denial')
+                tasks = [row for row in self.task_rows() if row.get('id') == task]
+                require(len(tasks) == 1 and tasks[0].get('last_execution_id') == execution
+                        and tasks[0].get('last_execution_status') == run['status'], 'task summary did not reach terminal state')
+                return {'execution_id': execution, 'status': run['status'],
+                        'error_category': run.get('error_details', {}).get('category'),
+                        'items_scanned': metadata.get('items_scanned', 0),
+                        'catalog_nodes_scanned': metadata.get('catalog_nodes_scanned', 0)}
+            time.sleep(1)
+        raise SuiteError('collection task exceeded its bounded terminal deadline')
+
+    def revoke(self, command):
+        prior = self.row(command)
+        if prior['status'] == 'active' and datetime.fromisoformat(prior['expires_at'].replace('Z', '+00:00')) > datetime.now(timezone.utc):
+            try:
+                self.life.operator.request('DELETE', self.route + '/' + command, (200,),
+                    {'version': prior['version'], 'reason': 'Disposable Meta collection acceptance cleanup'})
+            except Exception:
+                # A lost DELETE response is resolved by history, never by a blind retry.
+                require(self.row(command).get('status') == 'revoked', 'unknown collection revocation did not commit')
+            current = self.row(command)
+            require(current.get('status') == 'revoked' and current.get('version') == str(int(prior['version']) + 1)
+                    and current.get('revoked_at') and current.get('revoked_by_principal_id') == self.issuer,
+                    'collection revocation did not close the exact version')
+        else:
+            current = prior
+        return current
+
+    def source_snapshot(self):
+        result = []
+        for path in self.life.paths:
+            for kind, recipient in sorted(self.life.recipients):
+                rows = self.life.listing(history=True, catalog_path=path, recipient_type=kind, recipient_id=recipient)
+                require(rows.get('total') == len(rows.get('data', [])), 'source rule history was truncated')
+                result.append(rows)
+                current = self.life.listing(catalog_path=path, recipient_type=kind, recipient_id=recipient)
+                require(current.get('total') == len(current.get('data', [])), 'current source rules were truncated')
+                # Inspection timestamps are observations, not mutable rule facts.
+                result.append([{key: value for key, value in row.get('inspection', {}).items() if key != 'observed_at'}
+                               for row in current['data']])
+        return json.dumps(result, sort_keys=True)
+
+    def run(self, report):
+        report['phase'] = 'meta_collection_qualification'
+        evidence = report['meta_collection'] = {'executions': {}, 'qualification_commands': []}
+        before = self.source_snapshot()
+        task = self.create_task('_primary')
+        evidence['task_id'] = str(task['id'])
+        facts = self.facts(task['id'])
+        evidence['task_definition_digest'] = facts['task_definition_digest']
+        evidence['executions']['unapproved'] = self.trigger(task['id'], False)
+        report['checks'].append(COLLECTION_CHECKS[0])
+        command = str(uuid.uuid4())
+        body = {'command_id': command, 'task_id': str(task['id']),
+                'expected_task_definition_digest': facts['task_definition_digest'],
+                'purpose': 'Disposable PG basic governance qualification',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+        denied = self.life.reader.request('POST', self.route, (403,), body).payload
+        require(set(denied) <= {'error', 'error_code'} and denied.get('error'), 'executor can self-approve or denial leaks data')
+        self.commands[command] = body
+        evidence['qualification_commands'].append(command)
+        issued = self.life.operator.request('POST', self.route, (201,), body).payload
+        original = self.row(command)
+        require(issued == original and original.get('status') == 'active' and original.get('version') == '1',
+                'approval did not persist one immutable qualification')
+        evidence['expires_at'] = original['expires_at']
+        evidence['executions']['approved_first'] = self.trigger(task['id'], True)
+        self.update(task, description='Renamed metadata only; approval must not renew')
+        require(self.facts(task['id']) == facts, 'non-functional task change altered approval digest')
+        evidence['executions']['approved_repeat'] = self.trigger(task['id'], True)
+        require(self.row(command) == original, 'repeat run changed qualification or renewed its expiry')
+        report['checks'].append(COLLECTION_CHECKS[1])
+        copied = self.create_task('_copy')
+        evidence['copy_task_id'] = str(copied['id'])
+        evidence['executions']['copied'] = self.trigger(copied['id'], False)
+        report['checks'].append(COLLECTION_CHECKS[2])
+        self.update(task, force=True)
+        require(self.facts(task['id'])['task_definition_digest'] != facts['task_definition_digest'], 'force change did not change digest')
+        evidence['executions']['changed'] = self.trigger(task['id'], False)
+        require(self.row(command) == original, 'configuration change silently replaced approval')
+        report['checks'].append(COLLECTION_CHECKS[3])
+        self.update(task, force=False)
+        require(self.facts(task['id']) == facts, 'restored functional config differs')
+        revoked = self.revoke(command)
+        replay = self.life.operator.request('POST', self.route, (201,), body).payload
+        require(replay == revoked, 'same command revived or renewed revoked qualification')
+        evidence['executions']['revoked'] = self.trigger(task['id'], False)
+        report['checks'].append(COLLECTION_CHECKS[4])
+        require(self.source_snapshot() == before, 'collection approval modified source Grant/Deny history')
+        evidence['source_rules_unchanged'] = True
+        report['checks'].append(COLLECTION_CHECKS[5])
+
+    def cleanup(self):
+        errors = []
+        for command in self.commands:
+            try:
+                rows = [row for row in self.qualification_rows() if row.get('id') == command]
+                if rows:
+                    self.revoke(command)
+            except Exception:
+                errors.append('collection qualification cleanup failed')
+        try:
+            rows = self.recover_tasks()
+        except Exception:
+            rows = []
+            errors.append('collection task recovery failed')
+        for owned in self.tasks.values():
+            try:
+                task = owned['id']
+                if task is None:
+                    continue
+                qualifications = [row for row in self.qualification_rows() if row.get('task_id') == str(task)]
+                require(all(row['id'] in self.commands for row in qualifications), 'foreign qualification on owned task')
+                require(not any(row['status'] == 'active'
+                                and datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00')) > datetime.now(timezone.utc)
+                                for row in qualifications), 'current collection qualification remains')
+                deadline = time.monotonic() + 120
+                while True:
+                    runs = self.life.reader.request('GET', f'/api/v1/meta/scan/runs?task_id={task}&page_size=100', (200,)).payload
+                    require(runs.get('total') == len(runs.get('items', []))
+                            and all(row.get('source_task_id') == str(task) for row in runs['items']), 'truncated or foreign collection runs')
+                    if not any(row.get('status') in {'pending', 'running'} for row in runs['items']):
+                        break
+                    require(time.monotonic() < deadline, 'collection cleanup left active executions')
+                    time.sleep(1)
+                if any(row.get('id') == task for row in rows):
+                    try:
+                        self.life.operator.request('DELETE', f'/api/v1/meta/scan/tasks/{task}', (200,))
+                    except Exception:
+                        require(not any(row.get('id') == task for row in self.task_rows()), 'unknown task deletion did not commit')
+                require(not any(row.get('id') == task for row in self.task_rows()), 'collection task remains after cleanup')
+            except Exception:
+                errors.append('collection task cleanup or residual verification failed')
+        require(not errors, '; '.join(errors))
+
+
 class Lifecycle:
     def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider,
                  organization_operator, login, username, password):
@@ -662,6 +907,7 @@ class Lifecycle:
         self.source_observations = []
         self.expiry_grant = None
         self.production_tasks = {}
+        self.collection = None
 
     def collect_production_grants(self):
         # Resolve even an unknown start response using only executions of our
@@ -1143,6 +1389,11 @@ class Lifecycle:
 
     def cleanup(self):
         errors = []
+        if self.collection is not None:
+            try:
+                self.collection.cleanup()
+            except Exception:
+                errors.append('Meta collection cleanup failed')
         if self.production_tasks:
             try:
                 # Close our source first. The shared source lock prevents a
@@ -1879,15 +2130,21 @@ def main():
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
         lifecycle.production_flow(report)
+        lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
+        lifecycle.collection.run(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
     finally:
         if lifecycle is not None:
             report.update(grant_commands=lifecycle.grants, deny_commands=lifecycle.denies)
+            if lifecycle.collection is not None:
+                report['meta_collection']['cleanup'] = 'failed'
             try:
                 lifecycle.cleanup()
                 report['cleanup'] = 'zero_current_source_rules'
+                if lifecycle.collection is not None:
+                    report['meta_collection']['cleanup'] = 'zero_current_qualifications_and_tasks'
             except Exception:
                 report.update(result='failed', cleanup='failed')
         if evidence is not None:

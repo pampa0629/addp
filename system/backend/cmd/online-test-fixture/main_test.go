@@ -117,10 +117,12 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 5 || len(sourceInitializerPermissions) != 4 {
+	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 11 || len(sourceInitializerPermissions) != 4 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
-	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read", "system.engine_access_approval_requirement.update"} {
+	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read", "system.engine_access_approval_requirement.update",
+		"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
+		"system.meta_collection_qualification.read", "system.meta_collection_qualification.approve", "system.meta_collection_qualification.revoke"} {
 		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
 			t.Fatalf("operator lacks explicit command permission: %s", key)
 		}
@@ -330,7 +332,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 			}
 			combined = append(combined, key)
 		}
-		if len(combined) != 17 || slices.Contains(combined, "manager.data_item.read") {
+		if len(combined) != 23 || slices.Contains(combined, "manager.data_item.read") {
 			t.Fatal("PG workspace widened its exact operator permissions")
 		}
 		for _, key := range []string{"system.engine.read", "system.engine_catalog.read", "system.engine_access_approval_requirement.read", "iam.tenant_membership.read", "iam.department.read", "iam.project_group.read"} {

@@ -4,6 +4,8 @@ import itertools
 import json
 import tempfile
 import unittest
+import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -1795,6 +1797,198 @@ class PGLoadAuditWindowTest(unittest.TestCase):
         self.assertEqual((serial.file, serial.audit_limit), ('pg-audit-waits.jsonl', 1531))
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.AuditLatencyObservation({}, '33', phase='arbitrary')
+
+
+class MetaCollectionOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.tasks, self.qualifications, self.runs, self.calls = {}, {}, {}, []
+        self.fault, self.lost = None, None
+        self.reader, self.operator = Mock(), Mock()
+        self.life = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
+                                     'external-online-consumer', 'private-password')
+        self.life.listing = Mock(return_value={'total': 1, 'data': [{'request_id': 'persistent-history',
+                                                                   'revocation': {'reason': 'prior suite'}}]})
+        self.scenario = self.life.collection = ONLINE.MetaCollectionScenario(self.life, '35', 'fixture')
+        self.reader.request.side_effect = lambda *a, **kw: self.request('reader', *a, **kw)
+        self.operator.request.side_effect = lambda *a, **kw: self.request('operator', *a, **kw)
+        self.report = {'checks': []}
+        patch.object(ONLINE.time, 'sleep').start()
+        self.addCleanup(patch.stopall)
+
+    def facts(self, task):
+        return {'schema_version': 'meta.scan_task_facts/v1', 'task_id': str(task), 'engine_id': '2',
+                'task_definition_digest': ('b' if self.tasks[task]['parameters']['force'] else 'a') * 64,
+                'scope_kind': 'engine', 'scan_depth': 'basic', 'read_options': {},
+                'force': self.tasks[task]['parameters']['force']}
+
+    def request(self, actor, method, url, expected, body=None, **kwargs):
+        path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
+        self.calls.append((actor, method, path, deepcopy(body)))
+        status, result, operation = 200, {}, None
+        if path == '/api/v1/meta/scan/tasks':
+            if method == 'GET':
+                result = list(self.tasks.values())
+                if self.fault == 'foreign_task':
+                    for row in result:
+                        row['created_by'] = 999
+            else:
+                self.assertEqual(actor, 'operator')
+                task = 100 + len(self.tasks)
+                self.tasks[task] = dict(body, id=task, tenant_id=3, created_by=35,
+                                        parameters={'force': body['force']})
+                status, result, operation = 201, self.tasks[task], 'create'
+        elif path.startswith('/api/v1/meta/scan/tasks/'):
+            task = int(path.split('/')[6])
+            if path.endswith('/trigger'):
+                self.assertEqual(actor, 'reader')
+                current = self.tasks[task]
+                approvals = [row for row in self.qualifications.values() if row['task_id'] == str(task)]
+                state = 'unapproved' if not approvals else 'revoked' if approvals[-1]['status'] == 'revoked' else (
+                    'changed' if current['parameters']['force'] else 'allowed')
+                if current['name'].endswith('_copy'):
+                    state = 'copied'
+                allowed = state == 'allowed' or self.fault == state + '_allowed'
+                execution = str(uuid.uuid4())
+                self.runs[execution] = {'execution_id': execution, 'module': 'meta', 'task_type': 'scan',
+                    'source_task_id': str(task), 'tenant_id': 3, 'triggered_by': 33,
+                    'scan_context': {'engine_id': 2, 'scan_depth': 'basic'},
+                    'status': 'success' if allowed else 'failed', 'completed_at': '2026-10-23T00:00:00Z',
+                    'metadata': {'items_scanned': 3, 'catalog_nodes_scanned': 2} if allowed else {},
+                    'error_details': {} if allowed else {'category': 'connection_failed' if self.fault == 'general_failure' else 'permission_denied'}}
+                if self.fault == 'wrong_task':
+                    self.runs[execution]['source_task_id'] = '999'
+                if self.fault == 'read_before_deny' and not allowed:
+                    self.runs[execution]['metadata'] = {'items_scanned': 1}
+                if self.fault != 'stale_summary':
+                    current.update(last_execution_id=execution, last_execution_status=self.runs[execution]['status'])
+                if state == 'allowed' and self.fault == 'repeat_renews':
+                    approvals[-1]['expires_at'] = '2035-01-01T00:00:00Z'
+                result, operation = self.runs[execution], 'trigger'
+            elif method == 'PUT':
+                self.tasks[task].update(body, parameters={'force': body['force']})
+                result = self.tasks[task]
+            elif method == 'DELETE':
+                self.tasks.pop(task)
+                operation = 'delete'
+        elif '/meta_collection_task_facts/' in path:
+            result = self.facts(int(path.split('/')[-1]))
+        elif '/meta_collection_qualifications' in path:
+            if method == 'GET':
+                result = {'data': list(self.qualifications.values()), 'total': len(self.qualifications),
+                          'page': int(query['page'][0]), 'page_size': 100}
+            elif method == 'POST':
+                if actor == 'reader':
+                    status, result = 403, {'error': 'permission denied', 'error_code': 'permission_denied'}
+                else:
+                    command = body['command_id']
+                    if command not in self.qualifications:
+                        self.qualifications[command] = dict(id=command, engine_id='2', task_id=body['task_id'],
+                            task_definition_digest=body['expected_task_definition_digest'], engine_version='1',
+                            purpose=body['purpose'], scan_depth='basic', scope_kind='engine', status='active', version='1',
+                            granted_at='2026-10-23T00:00:00Z', expires_at=body['expires_at'], granted_by_principal_id='35')
+                    elif self.fault == 'replay_revives':
+                        self.qualifications[command]['status'] = 'active'
+                    status, result, operation = 201, self.qualifications[command], 'approve'
+            else:
+                row = self.qualifications[path.split('/')[-1]]
+                self.assertEqual(body['version'], row['version'])
+                if self.fault != 'revoke_noop':
+                    row.update(status='revoked', version='2', revoked_at='2026-10-23T00:01:00Z',
+                               revoked_by_principal_id='35', revoked_reason=body['reason'])
+                result, operation = row, 'revoke'
+        elif path.startswith('/api/v1/meta/executions/'):
+            result = self.runs[path.split('/')[-1]]
+        elif path == '/api/v1/meta/scan/runs':
+            rows = [row for row in self.runs.values() if row['source_task_id'] == query['task_id'][0]]
+            result = {'items': rows, 'total': len(rows)}
+        else:
+            self.fail('unexpected collection API ' + url)
+        self.assertIn(status, expected)
+        if operation and self.lost == operation:
+            self.lost = None
+            raise ONLINE.SuiteError('unknown ' + operation + ' response')
+        return SimpleNamespace(status=status, payload=deepcopy(result))
+
+    def test_qualification_lifecycle_uses_one_approval_and_current_worker_results(self):
+        self.scenario.run(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
+        self.assertEqual(len(self.qualifications), 1)
+        self.assertEqual(len(self.runs), 6)
+        self.assertTrue(self.report['meta_collection']['source_rules_unchanged'])
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+        self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_rejects_missing_safety_checks_without_counting_partial_pass(self):
+        for fault in ('unapproved_allowed', 'changed_allowed', 'revoked_allowed', 'copied_allowed',
+                      'repeat_renews', 'replay_revives', 'general_failure', 'stale_summary',
+                      'read_before_deny', 'wrong_task', 'foreign_task'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.fault = fault
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
+
+    def test_unknown_write_responses_are_recovered_without_creating_new_commands(self):
+        for operation in ('create', 'approve', 'trigger'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.lost = operation
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run(self.report)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+                self.assertLessEqual(len(self.qualifications), 1)
+
+    def test_unknown_revoke_and_delete_are_read_back_not_retried(self):
+        for operation in ('revoke', 'delete'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.lost = operation
+                self.scenario.run(self.report)
+                self.scenario.cleanup()
+                paths = [path for _, method, path, _ in self.calls if method == 'DELETE']
+                self.assertEqual(len(paths), len(set(paths)))
+                self.assertFalse(self.tasks)
+
+    def test_cleanup_does_not_hide_revocation_or_foreign_qualification_failures(self):
+        self.scenario.run(self.report)
+        row = next(iter(self.qualifications.values()))
+        row.update(status='active', version='1')
+        self.fault = 'revoke_noop'
+        with self.assertRaises(ONLINE.SuiteError):
+            self.scenario.cleanup()
+        self.assertTrue(self.tasks)
+        self.fault = None
+        foreign = deepcopy(row)
+        foreign['id'] = str(uuid.uuid4())
+        self.qualifications[foreign['id']] = foreign
+        with self.assertRaises(ONLINE.SuiteError):
+            self.scenario.cleanup()
+        self.assertEqual(foreign['status'], 'active')
+        self.assertTrue(self.tasks)
+
+    def test_source_history_mutation_is_not_mistaken_for_qualification(self):
+        self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'modified source'):
+            self.scenario.run(self.report)
+        self.scenario.cleanup()
+
+    def test_cleanup_continues_other_tasks_after_one_delete_failure(self):
+        self.scenario.run(self.report)
+        original = self.operator.request.side_effect
+        primary = self.report['meta_collection']['task_id']
+        def failed(*args, **kwargs):
+            if args[:2] == ('DELETE', '/api/v1/meta/scan/tasks/' + primary):
+                raise ONLINE.SuiteError('delete did not commit')
+            return original(*args, **kwargs)
+        self.operator.request.side_effect = failed
+        with self.assertRaises(ONLINE.SuiteError):
+            self.scenario.cleanup()
+        self.assertEqual(list(self.tasks), [int(primary)])
 
 
 class InitialProductionOnlineTest(unittest.TestCase):

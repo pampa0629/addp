@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
@@ -40,6 +43,11 @@ func (s *ScanExecutionService) bindCollectionRead(ctx context.Context, run *exec
 		}
 		observed, err := s.collectionAuthorization.CheckMetaCollection(callCtx, uint(run.TenantID), request)
 		if err != nil {
+			// Preserve a formal denial in the existing safe execution diagnostics;
+			// dependency/transport failures must never be classified as denial.
+			if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusForbidden {
+				return errors.Join(commonapi.ErrForbidden, err)
+			}
 			return err
 		}
 		if observed == nil || observed.ExecutionID != request.ExecutionID || observed.ExecutionPlanDigest != request.ExecutionPlanDigest || observed.QualificationID == "" || observed.ObservedAt.IsZero() {

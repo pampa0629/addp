@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
@@ -75,10 +77,23 @@ func TestGovernanceBasicChecksCurrentQualificationOnEveryRead(t *testing.T) {
 	if err := scanresource.CheckCollectionRead(ctx, resource); !errors.Is(err, commonapi.ErrForbidden) || calls != 3 {
 		t.Fatal("actual Engine differs from frozen plan", err, calls)
 	}
+	resource.Version = 3
+	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
+		rejected = &client.TenantAPIError{Method: "POST", Path: "/runtime/meta_collection_checks", StatusCode: status}
+		err := scanresource.CheckCollectionRead(ctx, resource)
+		if (status == http.StatusForbidden) != errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("HTTP %d lost its exact denial/dependency classification: %v", status, err)
+		}
+		var remote *client.TenantAPIError
+		if !errors.As(err, &remote) || remote.StatusCode != status {
+			t.Fatal("typed upstream evidence was lost", err)
+		}
+	}
+	rejected = nil
 	if err := db.Model(&task).Update("parameters", models.JSONMap{"scan_depth": "deep", "force": false}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.bindCollectionRead(context.Background(), run, lease); !errors.Is(err, commonapi.ErrForbidden) || calls != 3 {
+	if _, err := s.bindCollectionRead(context.Background(), run, lease); !errors.Is(err, commonapi.ErrForbidden) || calls != 5 {
 		t.Fatal("changed task consumed old approval", err, calls)
 	}
 	if taskID := strconv.FormatUint(uint64(task.ID), 10); *run.SourceTaskID != taskID {

@@ -113,6 +113,8 @@ var pgAuthorizationOperatorPermissions = []string{
 	"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release",
 	"catalog.inventory.read",
 	"system.engine_access_approval_requirement.update",
+	"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
+	"system.meta_collection_qualification.read", "system.meta_collection_qualification.approve", "system.meta_collection_qualification.revoke",
 }
 
 var pgAuthorizationConfirmerPermissions = []string{
