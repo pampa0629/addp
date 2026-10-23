@@ -60,7 +60,7 @@ function fileCompositionPrimary(composition) {
   if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== 'model') return boundaryError()
   const target = primary[0].target
   if (!modelPath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
-  if ((target.segments.at(-1).term === 'object' && composition.format === 'dae') || (composition.format === 'ifc' && composition.refs.length !== 1)) return boundaryError()
+  if (composition.format === 'ifc' && composition.refs.length !== 1) return boundaryError()
   const parent = target.segments.slice(0, -1)
   for (const ref of composition.refs) {
     if (!ref || Object.keys(ref).sort().join(',') !== 'primary,required,role,target' || typeof ref.required !== 'boolean' ||

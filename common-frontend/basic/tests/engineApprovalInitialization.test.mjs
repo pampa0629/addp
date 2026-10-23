@@ -132,7 +132,7 @@ const objectFacts = (candidate, format='3ds') => ({...fileFacts(candidate),item_
   ...(format === 'ifc' ? [] : [{target:objectPath(' tex.png   '),role:'texture',required:true,primary:false}])
 ]}}})
 test('object model binding preserves bucket, prefix and names and never accepts wider or mixed targets', async () => {
-  for (const format of ['ifc','3ds']) {
+  for (const format of ['ifc','3ds','dae']) {
     const target = objectPath('model.'+format)
     const candidate = Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`33:models/scene/model.${format}`))).toString('hex')
     const binding = await observeNativeApprovalBinding(target, async (_,fp) => {assert.equal(fp,candidate);return objectFacts(fp,format)})
@@ -148,8 +148,7 @@ test('object model binding preserves bucket, prefix and names and never accepts 
     f => {f.boundary.file_composition.refs[1].target.segments.pop()},
     f => {f.boundary.file_composition.refs[1].target.segments[3].name='../tex.png'}
   ]
-  for (const change of mutations) await assert.rejects(observeNativeApprovalBinding(objectPath('model.3ds'), async (_,fp) => {const f=objectFacts(fp);change(f);return f}))
-  await assert.rejects(observeNativeApprovalBinding(objectPath('model.dae'), async (_,fp)=>objectFacts(fp,'dae')))
+  for (const format of ['3ds','dae']) for (const change of mutations) await assert.rejects(observeNativeApprovalBinding(objectPath('model.'+format), async (_,fp) => {const f=objectFacts(fp,format);change(f);return f}))
   const bucket = objectPath();bucket.segments.splice(2)
   await assert.rejects(readNativeApprovalFacts(bucket,()=>{throw new Error('bucket must not reach facts')}))
 })
