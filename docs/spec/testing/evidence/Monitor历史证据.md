@@ -689,3 +689,10 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 - `make test-monitor-frontend`：退出 0，101 项单元测试、346 项浏览器测试及生产构建通过，见 `frontend-full.log`；上述 7 项包含在 346 项内，不累加为唯一场景数量。完整门禁同时覆盖复用多图定位参数后的主机缩放、图例／悬停及既有进程页面布局／筛选，未改共享渲染器实现。构建保留原有大包提示，不将提示计为失败或性能验收。
 
 证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-trend-zoom-p2lmhr_b/` 保存原始日志、`inputs.json`、`frontend-inputs-sha256.json` 及原表只读行号引用。浏览器使用独立端口和受控 API，成功后由标准入口清理运行目录；不操作 Safari、个人登录态或服务，不重启后端。现有 Monitor 前端标准门禁及 Platform CI 矩阵自动发现新 spec，无新增依赖、入口或 workflow。本轮未查询或触发 CI／Hosted，真实页面验收等专门会话回传，不设置定时。此项前端通过不替代上一批 CPU/RSS 告警真实触发／恢复 T2 或正式身份验收。
+
+
+二次本地窗口（2026-10-23 17:11:14–18:11:14 Asia/Shanghai，用户重新授权）：保留 8 CPU／12 GiB、4 GiB 停止线及既有正式身份范围。第一次实测由 `measure_owned_volumes` 资源采样超时停止，最后成功样本 3,236,450,304 字节，44 项成功样本；自动报告明确失败、清理通过。按已记录子步骤调查，原采样把 Docker 容器创建／启动／退出与 du 放在同一四秒预算。只调整为当次只读辅助容器复用，卷集合变化才重建，采样串行且退出先释放 BuildKit 卷挂载；保留 0.25 CPU／64 MiB、无网络、只读卷及原采样／停止边界，辅助容器 /data 用受限 tmpfs，不产生额外匿名卷。代码 `97714a1ac68624ecaf56573051bb9febcaf2075b`；最终 `make test-infra-runtime-log-lifecycle` 退出 0，42 项入口契约、JS 语法／登记／System ExecutionTrace Go及原60项生命周期通过。
+
+同窗口第二次实际冷构建记录 56 项采样，最长测量 1.139 秒、最大相邻采样完成间隔约4.27秒，约四分钟构建观察未再超时；随后在 product_minio 正确触发 `owned_volume_stop_line_reached`。完整触线样本 4,362,616,832 字节，超过停止线 67,649,536 字节（约64.52 MiB），末次测量0.902秒，运行硬配额3.25 CPU／5.0625 GiB；没有放宽预算或把触线记录作通过。两次均未创建业务部署、未准备正式身份或执行查询，Trace／日志／Console闭环未执行，清理均通过。安全报告／源码哈希／窗口及独立清理回执见 `/tmp/addp-p19-formal-local-20261023-window2/{attempt-1-report.json,attempt-2-report.json,attempt-2-source.json,receipt.json,lifecycle-final.log}`。
+
+当前缺口是既有 MinIO 基础依赖的冷构建已达到本地准备预算。本会话提出仅在核验固定 MinIO／mc 源提交及镜像ID后复用既有产品镜像，本专项后端／前端仍按当前已提交源码构建；该依赖准备范围调整正在等待用户明确确认，尚未实施，不凭已有缓存降低原验证口径，也不续开或延长本窗口。不运行 Hosted、容量或定时，不接管个人服务。
