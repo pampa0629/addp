@@ -322,4 +322,4 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 已批准手工 `raster-stream-shreve-d8-persistence`：沿用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限和600秒预算。六条Shreve保存链加同源默认／显式Strahler两条对照，共八条COG；断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环、双角色非法波段及非法method九类各中英文，共18条准确失败。独立逐源头前向路径oracle核完整量级／mask、出口源头数守恒、非河网供体排除和对角交叉独立，默认／显式Strahler完整物理成果相等且符合独立原规则；严格核COG／网格／CRS、三方相等正整数大小、精确扫描／全部实际输入当前血缘／Monitor、源与先前成果不变及零残留，失败零发布／新增扫描血缘、反向查询不改提交语言。整数越界继续单列Native证据，不模拟Hosted越界或降低产品上限；不改原套件、权限或跨模块产品逻辑，不计UI或容量。本地新夹具与脚本门禁通过，实际Hosted未运行；Linux全量及实际Hosted均等专门CI会话回传，本会话不触发、轮询或设置定时。
 
-本独立夹具本地Native专项53项、标准独立runner65项、Online／Python CI登记及共享栅格总入口24组均通过；原产品Native全量4136项固定证据保留，新Linux全量及实际Hosted待专门CI会话回传。整数累计越界仅列Native受控上界回归，Hosted精确64位非法方向码不等同量级累计越界；完整固定证据见[栅格专题](../../../next/栅格算子体系后续专题.md#shreve-独立持久化验收)。
+本独立夹具本地Native专项53项、标准独立runner65项、Online／Python CI登记及共享栅格总入口24组均通过；原产品Native全量4136项固定证据保留，固定883aed7b5正式Linux全量4189项已通过，实际Hosted仍待专门CI会话回传。整数累计越界仅列Native受控上界回归，Hosted精确64位非法方向码不等同量级累计越界；完整固定证据见[栅格专题](../../../next/栅格算子体系后续专题.md#shreve-独立持久化验收)。
