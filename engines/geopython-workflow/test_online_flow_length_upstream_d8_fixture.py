@@ -207,3 +207,41 @@ def test_flow_length_upstream_d8_fixture_preserves_exact_uint64_nodata_adjacent_
     assert int(band.ReadAsArray()[250,250])==2**53+1
     assert int(band.ReadAsArray()[0,0])==2**53
     band=ds=None
+
+
+def test_flow_length_upstream_d8_fixture_cold_full_verification_builds_equal_geometry_oracle_once(flow_length_upstream_d8_persistence):
+    module,root,initial=flow_length_upstream_d8_persistence
+    module.expected_pixels.cache_clear()
+    module._expected_metre_paths.cache_clear()
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources'] and len(actual['targets'])==6
+    info=module._expected_metre_paths.cache_info()
+    assert info.misses==1 and info.hits==4
+    # Reuse only the immutable mathematical expectation. Every physical target
+    # is still read and checked on every call, including prior success files.
+    actual_again=module.verify(root,list(module.TARGETS))
+    assert actual_again==actual
+
+
+def test_flow_length_upstream_d8_fixture_shared_oracle_rejects_different_direction_geometry(monkeypatch):
+    module=importlib.import_module('business.scripts.online-raster-flow-length-upstream-d8-fixture')
+    original=module.expected_directions
+    def different(name):
+        result=original(name)
+        if name=='dem-length.cog.tif':
+            result=result.copy();result[200,200]=4
+        return result
+    module.expected_pixels.cache_clear()
+    try:
+        monkeypatch.setattr(module,'expected_directions',different)
+        with pytest.raises(module.FixtureError,match='shared oracle geometry differs'):
+            module.expected_pixels('dem-length.cog.tif')
+    finally:
+        module.expected_pixels.cache_clear()
+
+
+def test_flow_length_upstream_d8_fixture_empty_oracle_never_builds_nonempty_paths():
+    module=importlib.import_module('business.scripts.online-raster-flow-length-upstream-d8-fixture')
+    module.expected_pixels.cache_clear();module._expected_metre_paths.cache_clear()
+    assert np.isnan(module.expected_pixels('empty-length.cog.tif')).all()
+    assert module._expected_metre_paths.cache_info().misses==0

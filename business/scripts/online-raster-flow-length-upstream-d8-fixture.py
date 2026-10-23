@@ -175,11 +175,11 @@ def expected_directions(name):
     return expected
 
 
-@lru_cache(maxsize=6)
-def expected_pixels(name):
+@lru_cache(maxsize=1)
+def _expected_metre_paths():
     import math
     import numpy as np
-    directions=expected_directions(name)
+    directions=expected_directions('length.cog.tif')
     valid=np.isfinite(directions)
     destination=np.full(directions.shape,-1,np.int64)
     kind=np.zeros(directions.shape,np.uint8)
@@ -193,7 +193,7 @@ def expected_pixels(name):
     active=np.flatnonzero(valid)
     counts=np.zeros((3,len(active)),np.int64)
     result=np.zeros(directions.size,np.float64)
-    factor=metres_per_unit(name);dx=2*factor;dy=3*factor
+    dx,dy=2.,3.
     for _ in range(directions.size):
         next_pixel=destination.ravel()[active];moving=next_pixel>=0
         active=active[moving];counts=counts[:,moving]
@@ -204,6 +204,24 @@ def expected_pixels(name):
         np.maximum.at(result,active,distance)
     else:raise FixtureError('fixture direction cycle')
     result=np.where(valid,result.reshape(directions.shape),np.nan)
+    result.flags.writeable=False
+    return result
+
+
+@lru_cache(maxsize=6)
+def expected_pixels(name):
+    import numpy as np
+    directions=expected_directions(name)
+    if name=='empty-length.cog.tif':
+        result=np.full(directions.shape,np.nan)
+    else:
+        # These five fixed scenes have the same pixel graph and grid. A uniform
+        # positive linear-unit factor preserves which upstream path is longest.
+        # Reuse only this process-local, immutable mathematical expectation;
+        # verify() still reads and validates every physical COG on every call.
+        if not np.array_equal(directions,expected_directions('length.cog.tif'),equal_nan=True):
+            raise FixtureError('shared oracle geometry differs')
+        result=_expected_metre_paths()*metres_per_unit(name)
     result.flags.writeable=False
     return result
 
