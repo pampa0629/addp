@@ -1,7 +1,8 @@
+import { compareEvaluationPeriods } from '../../../../common-frontend/basic/src/utils/evaluationPeriodComparison.mjs'
 import { normalizeRuntimeInstanceStopReason } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { resolveRuntimeInstanceTime, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
-import { resourceRanges } from './nodeResources.js'
+import { currentResourceValue, resourceRanges } from './nodeResources.js'
 
 export const processMetrics = [
   { key: 'process.cpu.core_equivalents', name: 'cpu', unit: 'cores', windowSeconds: 60 },
@@ -28,25 +29,31 @@ export function resolveProcessRoute(input = {}) {
   const declared = ['true', 'false', 'all'].includes(input.process_metrics_declared) ? input.process_metrics_declared : 'true'
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
+  const compare = Boolean(instanceID && input.compare === 'previous' && supportsProcessComparison(range))
   const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
-  const query = { ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
+  const query = { ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(compare ? { compare: 'previous' } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
   const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
-  return { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, nodeName, nodeIP, role, stopReason, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  return { timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, nodeName, nodeIP, role, stopReason, status, declared, instanceID, range, compare, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 export function processInstanceParameters(state, now = Date.now()) {
   return { ...state.params, ...runtimeInstanceTimeParams(state, now) }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
-export function processTrendParameters(instanceID, range, queriedAt) {
+export function supportsProcessComparison(range) { return ['5m', '1h', '24h'].includes(range) }
+export function processTrendParameters(instanceID, range, queriedAt, compare = false) {
   const end = Math.floor(Date.parse(queriedAt) / 1000) * 1000
-  if (!Number.isSafeInteger(instanceID) || instanceID < 1 || typeof range !== 'string' || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end)) invalid()
-  return { instance_id: String(instanceID), start: new Date(end - resourceRanges[range] * 1000).toISOString().replace('.000Z', 'Z'), end: new Date(end).toISOString().replace('.000Z', 'Z') }
+  if (!Number.isSafeInteger(instanceID) || instanceID < 1 || typeof range !== 'string' || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end) || (compare && !supportsProcessComparison(range))) invalid()
+  return { instance_id: String(instanceID), start: new Date(end - resourceRanges[range] * 1000 * (compare ? 2 : 1)).toISOString().replace('.000Z', 'Z'), end: new Date(end).toISOString().replace('.000Z', 'Z') }
+}
+function processStartCeiling(owner) {
+  const started = Date.parse(owner.process_started_at), fraction = typeof owner.process_started_at === 'string' ? owner.process_started_at.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1] : ''
+  if (!Number.isFinite(started)) invalid()
+  return Math.floor(started / 1000) * 1000 + (fraction && /[1-9]/.test(fraction) ? 1000 : 0)
 }
 export function validateProcessTrend(value, owner, params) {
   const subject = value?.subject, start = Date.parse(value?.start), end = Date.parse(value?.end), queried = Date.parse(value?.queried_at), step = value?.step_seconds
-  const started = Date.parse(owner.process_started_at), fraction = typeof owner.process_started_at === 'string' ? owner.process_started_at.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1] : ''
-  const first = Math.floor(started / 1000) * 1000 + (fraction && /[1-9]/.test(fraction) ? 1000 : 0)
-  if (!Number.isFinite(started) || start !== Math.min(end, Math.max(Date.parse(params.start), first))) invalid()
+  const first = processStartCeiling(owner)
+  if (start !== Math.min(end, Math.max(Date.parse(params.start), first))) invalid()
   if (!subject || subject.kind !== 'module_instance' || subject.id !== owner.id || subject.module_name !== owner.module_name || subject.instance_id !== owner.instance_id || subject.role !== owner.role || value.node_id !== owner.node_id || value.lookback_seconds !== 300 || !Number.isSafeInteger(value.policy_version) || value.policy_version < 0 || !Number.isFinite(queried) || !Number.isFinite(start) || start % 1000 || start < Date.parse(params.start) || start > end || end !== Date.parse(params.end) || end > queried || !Number.isSafeInteger(step) || step < 15 || step % 15 || !Array.isArray(value.series) || value.series.length !== 2) invalid()
   const count = Math.floor((end - start) / (step * 1000)) + 1, seen = new Set()
   if (count < 1 || count > 1000) invalid()
@@ -63,6 +70,18 @@ export function validateProcessTrend(value, owner, params) {
     }
   }
   return value
+}
+export function processTrendComparisons(value, owner, params, range) {
+  if (!supportsProcessComparison(range)) invalid()
+  validateProcessTrend(value, owner, params)
+  const started = processStartCeiling(owner)
+  return Object.fromEntries(processMetrics.slice(0, 2).map(metric => {
+    const points = value.series.find(line => line.metric_key === metric.key).points.map(point => ({
+      at: Date.parse(point.evaluated_at),
+      value: Date.parse(point.evaluated_at) - metric.windowSeconds * 1000 < started ? null : currentResourceValue(point)
+    }))
+    return [metric.key, compareEvaluationPeriods({ start: Date.parse(params.start), end: Date.parse(params.end), gridStart: Date.parse(value.start), periodSeconds: resourceRanges[range], stepSeconds: value.step_seconds, points })]
+  }))
 }
 export function validateProcessInstances(value, page, filters = {}, pageSize = 20) {
   if (!Array.isArray(value?.data) || value.data.length > pageSize || !Number.isSafeInteger(value.total) || value.total < value.data.length || value.page !== page || value.page_size !== pageSize) invalid()

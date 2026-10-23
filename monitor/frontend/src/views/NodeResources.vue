@@ -128,21 +128,9 @@
         </div>
         <p v-if="state.end" class="resource-hint" data-testid="resource-history">{{ t('monitor.resources.history.fixed', { time: date(state.end) }) }}</p>
         <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="error" show-icon :closable="false" data-testid="resource-trend-error" />
-        <section v-if="comparison" class="resource-comparison" data-testid="resource-comparison" :aria-label="t('monitor.resources.comparison.title')">
-          <h4>{{ t(`monitor.resources.comparison.averages.${selectedMetric.name}`) }}</h4>
-          <div class="resource-cards">
-            <article v-for="period in ['current', 'previous']" :key="period" class="resource-card" :data-testid="`resource-compare-${period}`">
-              <h4>{{ t(`monitor.resources.comparison.${period}`) }}</h4>
-              <strong>{{ formatValue({ data_state: 'valid', value: comparison[period].mean }, selectedMetric) }}</strong>
-              <p>{{ date(comparison[period].start) }} — {{ date(comparison[period].end) }}</p>
-              <p>{{ t('monitor.resources.comparison.coverage', { valid: comparison[period].valid, total: comparison[period].total }) }}</p>
-            </article>
-          </div>
-          <p v-if="!comparison.complete" role="status" data-testid="resource-compare-incomplete">{{ t('monitor.resources.comparison.incomplete') }}</p>
-          <p v-else role="status" data-testid="resource-compare-change"><strong>{{ comparisonChange }}</strong></p>
-          <p class="resource-hint">{{ t('monitor.resources.comparison.method', { step: comparison.stepSeconds }) }}</p>
+        <ResourcePeriodComparison v-if="comparison" :comparison="comparison" :title="t(`monitor.resources.comparison.averages.${selectedMetric.name}`)" :format-value="numeric => formatValue({ data_state: 'valid', value: numeric }, selectedMetric)" :change="comparisonChange" prefix="resource-compare" test-id="resource-comparison">
           <p v-if="selectedMetric.windowSeconds" class="resource-hint">{{ t('monitor.resources.comparison.cpuWindow') }}</p>
-        </section>
+        </ResourcePeriodComparison>
         <template v-if="trend">
           <p class="resource-hint" data-testid="resource-trend-window">{{ t('monitor.resources.window', { start: date(comparison?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
           <p class="resource-hint">{{ t('monitor.resources.gaps') }}</p>
@@ -178,6 +166,7 @@
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
+import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -436,10 +425,9 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-metric-heading .el-button { flex-shrink: 0; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }
-.resource-compare-control, .resource-comparison { margin: 16px 0; }
+.resource-compare-control { margin: 16px 0; }
 .resource-compare-control .el-checkbox { height: auto; max-width: 100%; }
 .resource-compare-control :deep(.el-checkbox__label) { white-space: normal; }
-.resource-comparison h4 { margin: 12px 0; }
 .el-alert { margin: 16px 0; }
 @media (max-width: 600px) { .node-resources { padding: 12px; } .resource-cards { grid-template-columns: 1fr; } }
 </style>

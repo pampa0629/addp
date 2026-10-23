@@ -879,6 +879,16 @@
         "sync": "单次同步任务进程",
         "continuous_sync": "持续同步任务进程"
       },
+      "comparison": {
+        "cpu": "CPU 平均核占用对比",
+        "memory": "平均内存占用（RSS）对比",
+        "increased": "较上期增加 {value}",
+        "decreased": "较上期减少 {value}",
+        "smallMemoryChange": "较上期变化不足 0.01 B",
+        "smallCPUChange": "较上期变化不足 0.01 核",
+        "cpuWindow": "每个 CPU 点为此前完整一分钟的平均核占用，不是百分比。",
+        "launch": "两期都必须位于本次进程启动后且评估点齐全；启动前或预热期的数据不参与比较。"
+      },
       "trend": {
         "title": "服务进程趋势",
         "scope": "只显示本次进程启动后的 CPU 和内存。CPU 为一分钟平均核占用；缺少有效采样时曲线保留断点。",

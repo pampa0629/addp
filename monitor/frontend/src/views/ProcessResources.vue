@@ -71,17 +71,23 @@
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
           <div class="process-toolbar">
             <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select>
+            <el-checkbox :model-value="state.compare" :disabled="!supportsProcessComparison(state.range)" data-testid="process-compare" @change="selectComparison">{{ t('monitor.resources.comparison.enable') }}</el-checkbox>
             <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="process-trend-refresh" @update:model-value="selectRefresh" />
             <el-button :disabled="loading" @click="reload">{{ t('common.refresh') }}</el-button>
           </div>
+          <p v-if="state.range === '7d'" class="process-hint" data-testid="process-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
           <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
           <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="warning" :closable="false" data-testid="process-trend-error" />
           <template v-if="trend">
-            <p class="process-hint">{{ t('monitor.resources.window', { start: date(trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
+            <p class="process-hint">{{ t('monitor.resources.window', { start: date(comparisons?.[processMetrics[0].key]?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
             <p class="process-hint">{{ t('monitor.resources.gaps') }}</p>
             <section v-for="chart in trendCharts" :key="chart.metric.key">
               <h3>{{ t(`monitor.process.metrics.${chart.metric.name}`) }}</h3>
               <p class="process-hint">{{ t(`monitor.process.hints.${chart.metric.name}`) }}</p>
+              <ResourcePeriodComparison v-if="chart.comparison" :comparison="chart.comparison" :title="t(`monitor.process.comparison.${chart.metric.name}`)" :format-value="numeric => comparisonValue(numeric, chart.metric)" :change="comparisonChange(chart.comparison, chart.metric)" :prefix="`process-compare-${chart.metric.name}`" :test-id="`process-comparison-${chart.metric.name}`">
+                <p v-if="chart.metric.windowSeconds" class="process-hint">{{ t('monitor.process.comparison.cpuWindow') }}</p>
+                <p v-if="!chart.comparison.complete" class="process-hint">{{ t('monitor.process.comparison.launch') }}</p>
+              </ResourcePeriodComparison>
               <p class="process-hint" data-testid="process-zoom-hint">{{ t('monitor.process.trend.zoomHint') }}</p>
               <div class="process-trend-chart" role="img" :aria-label="t(`monitor.process.metrics.${chart.metric.name}`)" :data-testid="`process-trend-${chart.metric.name}`"><ChartRenderer :rows="chart.rows" :config="chart.config" zoomable :initial-zoom="trendZoom[chart.metric.key] || null" @zoom-change="trendZoom[chart.metric.key] = $event" @invalid="invalidTrend" /></div>
             </section>
@@ -93,6 +99,7 @@
 </template>
 
 <script setup>
+import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -112,7 +119,7 @@ import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
 import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
-import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, processInstanceParameters, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
+import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, processInstanceParameters, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend, processTrendComparisons, supportsProcessComparison } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
@@ -126,6 +133,7 @@ const hostReferences = ref({})
 const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
 const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
+const comparisons = ref(null)
 const trend = ref(null), trendErrorKey = ref('')
 const trendZoom = ref({})
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
@@ -135,10 +143,12 @@ const selectedInstance = computed(() => instances.value.find(row => row.id === s
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2).map(metric => {
   const series = trend.value.series.find(item => item.metric_key === metric.key)
-  const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
-  return { metric, rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.process.metrics.${metric.name}`), unit: scale?.unit || t('monitor.resources.units.cores'), precision: 2 }] } }
+  const comparison = comparisons.value?.[metric.key]
+  const points = series.points.filter(point => !comparison || Date.parse(point.evaluated_at) > Date.parse(comparison.current.start))
+  const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...points.map(point => currentResourceValue(point) ?? 0))) : null
+  return { metric, comparison, rows: resourceChartRows({ points }).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.process.metrics.${metric.name}`), unit: scale?.unit || t('monitor.resources.units.cores'), precision: 2 }] } }
 }))
-function invalidTrend() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
+function invalidTrend() { trend.value = null; comparisons.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 const moduleName = ref(''), registeredHost = ref(''), nodeName = ref(''), nodeIP = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
@@ -147,6 +157,18 @@ function value(row, metric) {
   if (metric.unit === 'bytes') return formatBytes(numeric, 2, locale.value)
   if (metric.unit === 'seconds') return formatDurationSeconds(numeric, locale.value)
   return t('monitor.process.cores', { value: new Intl.NumberFormat(locale.value, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric) })
+}
+function comparisonValue(numeric, metric) {
+  if (numeric === null) return '—'
+  if (metric.unit === 'bytes') return formatBytes(numeric, 2, locale.value)
+  return t('monitor.process.cores', { value: formatFieldPresentationValue(numeric, { precision: 2 }, locale.value) })
+}
+function comparisonChange(comparison, metric) {
+  if (!comparison.complete) return ''
+  const delta = comparison.delta
+  if (delta === 0) return t('monitor.resources.comparison.unchanged')
+  if (Math.round(Math.abs(delta) * 100) === 0) return t(`monitor.process.comparison.${metric.unit === 'cores' ? 'smallCPUChange' : 'smallMemoryChange'}`)
+  return t(`monitor.process.comparison.${delta > 0 ? 'increased' : 'decreased'}`, { value: comparisonValue(Math.abs(delta), metric) })
 }
 function pointState(row, metric) {
   const data = point(row, metric)
@@ -168,8 +190,9 @@ async function loadHosts(rows, ticket) {
   if (current()) hostReferences.value = value
 }
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
-function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
-function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
+function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, compare: instanceID === state.value.instanceID ? state.value.query.compare : undefined, instance_id: String(instanceID), range }).query) }
+function selectComparison(enabled) { return navigate(resolveProcessRoute({ ...state.value.query, compare: enabled ? 'previous' : undefined }).query) }
+function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, compare, ...query } = state.value.query; return navigate(query) }
 function filter() { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query) }
 function setScope(scope) { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
 function stopReasonLabel(row) {
@@ -185,7 +208,7 @@ function resetFilters() {
   moduleName.value = ''; registeredHost.value = ''; nodeName.value = ''; nodeIP.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
   return navigate(resolveProcessRoute({ refresh: state.value.refresh }).query)
 }
-function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
+function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, compare, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
 function processErrorKey(error) {
  if (error.response?.status === 400) return 'monitor.process.invalidQuery'
  const key = resourceErrorKey(error)
@@ -203,7 +226,7 @@ async function reload({ automatic = false } = {}) {
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; refreshBlocked.value = false }
+  if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; refreshBlocked.value = false }
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
@@ -215,7 +238,7 @@ async function reload({ automatic = false } = {}) {
     if (!requests.current(ticket)) return
     validateProcessInstances(list, state.value.page, listParams)
     if (!automatic) { instances.value = list.data; total.value = list.total }
-    let currentSummaries = new Map(), currentTrend = null
+    let currentSummaries = new Map(), currentTrend = null, currentComparisons = null
     if (list.data.length) {
       try {
         const observed = await requests.request(config => api.summaries(list.data.map(row => row.id), config))
@@ -233,24 +256,26 @@ async function reload({ automatic = false } = {}) {
       else if (!observed) trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable'
       else {
         try {
-          const params = processTrendParameters(owner.id, state.value.range, observed.queried_at)
+          const params = processTrendParameters(owner.id, state.value.range, observed.queried_at, state.value.compare)
           const history = await requests.request(config => api.trend(params, config))
           if (!requests.current(ticket)) return
           currentTrend = validateProcessTrend(history, owner, params)
+          if (state.value.compare) currentComparisons = processTrendComparisons(history, owner, params, state.value.range)
         } catch (error) {
           if (!requests.current(ticket)) return
+          currentTrend = null; currentComparisons = null
           trendErrorKey.value = processErrorKey(error)
           if ([401, 403, 404].includes(error.response?.status)) throw error
         }
       }
     }
-    instances.value = list.data; total.value = list.total; summaries.value = currentSummaries; trend.value = currentTrend
+    instances.value = list.data; total.value = list.total; summaries.value = currentSummaries; trend.value = currentTrend; comparisons.value = currentComparisons
     hostReferences.value = {}; void loadHosts(list.data, ticket)
   } catch (error) {
     if (!requests.current(ticket)) return
     errorKey.value = processErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) refreshBlocked.value = true
-    trend.value = null; trendErrorKey.value = errorKey.value
+    trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
@@ -263,6 +288,8 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispos
 <style scoped>
 .process-resources { padding: 24px; color: var(--addp-text-primary); min-width: 0; }
 .process-toolbar, .process-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.process-toolbar .el-checkbox { height: auto; max-width: 100%; }
+.process-toolbar :deep(.el-checkbox__label) { white-space: normal; }
 .process-toolbar h2 { flex: 1; }
 .process-filters .el-input, .process-filters .el-select { width: 200px; max-width: 100%; }
 .collection-filter, .endpoint-filter, .host-name-filter, .host-ip-filter { max-width: 100%; }

@@ -879,6 +879,16 @@
         "sync": "One-shot sync worker",
         "continuous_sync": "Continuous sync worker"
       },
+      "comparison": {
+        "cpu": "Average CPU core usage comparison",
+        "memory": "Average resident memory (RSS) comparison",
+        "increased": "Up {value} from the previous period",
+        "decreased": "Down {value} from the previous period",
+        "smallMemoryChange": "Change from the previous period is less than 0.01 B",
+        "smallCPUChange": "Change from the previous period is less than 0.01 cores",
+        "cpuWindow": "Each CPU point is average core usage over the preceding full minute, not a percentage.",
+        "launch": "Both periods must be after this process started and have complete evaluation points. History before launch and warm-up data are excluded."
+      },
       "trend": {
         "title": "Service process trends",
         "scope": "CPU and memory since this process started. CPU shows one-minute average core usage; missing valid samples remain gaps.",

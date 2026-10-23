@@ -1,3 +1,4 @@
+import { compareEvaluationPeriods } from '../../../../common-frontend/basic/src/utils/evaluationPeriodComparison.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resolveTargetRoute } from './monitoringTargets.js'
 
@@ -125,26 +126,14 @@ export function resourceTrendComparison(value, range) {
   resourceTrendChartRows(value, metric)
   validateResourceTrendWindow(value, value)
   const start = Date.parse(value.start), end = Date.parse(value.end), step = value.step_seconds * 1000
-  const width = resourceRanges[range] * 1000, boundary = end - width, points = value.series.find(line => line.metric_key === metric).points
+  const width = resourceRanges[range] * 1000, points = value.series.find(line => line.metric_key === metric).points
   if (end - start !== width * 2 || start % 1000 !== 0 || end % 1000 !== 0 || !Number.isSafeInteger(value.step_seconds) || value.step_seconds < 15 || value.step_seconds % 15 !== 0 || points.length !== Math.floor((end - start) / step) + 1) throw new Error('invalid_resource_response')
-  const period = (from, to) => ({ start: new Date(from).toISOString(), end: new Date(to).toISOString(), valid: 0, total: 0, mean: null })
-  const previous = period(start, boundary), current = period(boundary, end)
-  let previousSum = 0, currentSum = 0
-  for (let index = 0; index < points.length; index++) {
-    const point = points[index], at = Date.parse(point.evaluated_at), sample = Date.parse(point.sampled_at)
+  const rows = points.map((point, index) => {
+    const at = Date.parse(point.evaluated_at), sample = Date.parse(point.sampled_at)
     if (at !== start + index * step || (point.data_state === 'valid' && (sample > at || at - sample > 60000))) throw new Error('invalid_resource_response')
-    if (index === 0) continue // Both periods are left-open; their shared boundary belongs to the previous period.
-    const target = at <= boundary ? previous : current, numeric = currentResourceValue(point)
-    target.total++
-    if (numeric !== null) {
-      target.valid++
-      if (target === previous) previousSum += numeric
-      else currentSum += numeric
-    }
-  }
-  const complete = previous.total > 0 && current.total > 0 && previous.valid === previous.total && current.valid === current.total
-  if (complete) { previous.mean = previousSum / previous.total; current.mean = currentSum / current.total }
-  return { previous, current, complete, delta: complete ? current.mean - previous.mean : null, stepSeconds: value.step_seconds }
+    return { at, value: currentResourceValue(point) }
+  })
+  return compareEvaluationPeriods({ start, end, periodSeconds: resourceRanges[range], stepSeconds: value.step_seconds, points: rows })
 }
 export function currentResourceValue(point) {
   return point?.data_state === 'valid' && typeof point.value === 'number' && Number.isFinite(point.value) ? point.value : null

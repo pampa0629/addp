@@ -73,7 +73,7 @@ export async function backend(page, options = {}) {
     } else if (path === '/api/v1/monitor/platform/process_resource_trends') {
       const params = Object.fromEntries(url.searchParams), row = rows.find(row => row.id === Number(params.instance_id))
       trendCalls.push(params)
-      const end = Date.parse(params.end), start = Math.max(Date.parse(params.start), Math.ceil(Date.parse(row.process_started_at) / 1000) * 1000), step = 15
+      const end = Date.parse(params.end), start = Math.max(Date.parse(params.start), Math.ceil(Date.parse(row.process_started_at) / 1000) * 1000), step = Math.max(15, Math.ceil((end - Date.parse(params.start)) / 999 / 15000) * 15)
       body = { subject: { kind: 'module_instance', id: row.id, module_name: row.module_name, instance_id: row.instance_id, role: row.role }, node_id: row.node_id, policy_version: 1, lookback_seconds: 300, queried_at: stamp, start: new Date(start).toISOString(), end: params.end, step_seconds: step, series: [
         ['process.cpu.core_equivalents', 'cores', 60, 1.5], ['process.memory.resident_bytes', 'bytes', 0, 1024 ** 3]
       ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: Array.from({ length: Math.floor((end - start) / (step * 1000)) + 1 }, (_, index) => ({ evaluated_at: new Date(start + index * step * 1000).toISOString(), sampled_at: index === 2 ? null : new Date(start + index * step * 1000).toISOString(), value: index === 2 ? null : value, data_state: index === 2 ? 'no_data' : 'valid' })) })) }

@@ -696,3 +696,17 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 同窗口第二次实际冷构建记录 56 项采样，最长测量 1.139 秒、最大相邻采样完成间隔约4.27秒，约四分钟构建观察未再超时；随后在 product_minio 正确触发 `owned_volume_stop_line_reached`。完整触线样本 4,362,616,832 字节，超过停止线 67,649,536 字节（约64.52 MiB），末次测量0.902秒，运行硬配额3.25 CPU／5.0625 GiB；没有放宽预算或把触线记录作通过。两次均未创建业务部署、未准备正式身份或执行查询，Trace／日志／Console闭环未执行，清理均通过。安全报告／源码哈希／窗口及独立清理回执见 `/tmp/addp-p19-formal-local-20261023-window2/{attempt-1-report.json,attempt-2-report.json,attempt-2-source.json,receipt.json,lifecycle-final.log}`。
 
 当前缺口是既有 MinIO 基础依赖的冷构建已达到本地准备预算。本会话提出仅在核验固定 MinIO／mc 源提交及镜像ID后复用既有产品镜像，本专项后端／前端仍按当前已提交源码构建；该依赖准备范围调整正在等待用户明确确认，尚未实施，不凭已有缓存降低原验证口径，也不续开或延长本窗口。不运行 Hosted、容量或定时，不接管个人服务。
+
+
+## 服务进程 CPU／RSS 相邻时段比较（本地）
+
+2026-10-23，沿用户确认的均值与原单位变化量口径，当前运行实例支持 5 分钟／1 小时／24 小时与上一等长时段比较。CPU 用核、RSS 用 IEC 容量，按未舍入评估点均值计算本期减上期；零基线有效，不给增长百分比。两期任一点缺样、陈旧或启动裁剪时不出均值／差值，各指标独立显示有效／预期点数；CPU 启动保护沿后端曲线评估时刻，抓取新鲜度独立核验。结果和时间就近展示，图中仅显示本期；缩放不重算比较。主机与服务共用 `common-frontend/basic/src/utils/evaluationPeriodComparison.mjs` 及 Monitor 唯一 `ResourcePeriodComparison.vue`，旧主机均值循环与重复卡片已删除。
+
+冻结输入基线 `fb3d25f4b52324273d1fdcc3cb27c30df695b569`，仅叠加本批文件；证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-comparison-s_1g44u9`，`inputs.json` 记录本批最终文件，`frontend-full-inputs-sha256.json` 与 `frontend-inputs-sha256.json` 分别记录完整门禁及最终针对性回归的 435 项输入。交付前与共享工作区核验无前端输入漂移。实际命令均使用 Node v24.19.0：
+
+- `make test-common-frontend`：272 项通过；共享均值、分界点归属、缺样、启动裁剪网格及唯一消费路径由确定性测试覆盖。
+- `make test-monitor-frontend`：首次完整版本 109 项 T1、361 项浏览器 T3 及构建通过，见 `monitor-frontend-full.log`。此后仅修正比较函数内 CPU 预热判断的时间依据，并新增对应边界测试，没有把这份完整门禁记成最终源码重新全跑。
+- 最终 `npm --prefix monitor/frontend test`：110 项 T1 通过；`npm --prefix monitor/frontend run test:e2e -- process-comparison.spec.js resource-comparison.spec.js`：33 项 T3 通过（15 项服务比较及 18 项主机比较回归）；`npm --prefix monitor/frontend run build`：通过。见 `final-monitor-unit.log`、`final-comparison-browser.log`、`final-build.log`。新增用例在独立副本恢复旧抓取时间判断时失败（`startup-regression-red.log`），最终评估时间判断通过。该末次修改只影响启用服务比较的分支，最终定向回归覆盖此分支，其余未变分支沿用前述完整门禁有效证据，不重复累计测试项。
+- `make test-frontend-ci-registration`：20 项检查通过，21 个前端登记检查通过；共享／Monitor 现有自动发现和 Platform 前端编排覆盖本批，不新增 Makefile 或 workflow 路径。受影响的是新增共享纯计算的直接消费者 Monitor，未改动其他模块的导出或消费行为。
+
+最终 T3 使用 HTTP 协议夹具与真实共享图表，覆盖两种语言／窄屏、原单位升降及零值、两期缺样、启动裁剪、48 小时查询的自适应步长、7 天拒绝比较、URL／刷新／关闭、身份及错误清除、缩放不重算比较；复制保存并人工检查了 `screenshots/` 下中英文卡片截图。未连接个人库或重启个人服务，未运行本批正式身份真实数据／长窗 T4 或 Hosted，CI／Hosted 等专门会话回传；此结果不覆盖尚未通过的 CPU／RSS 告警实源触发恢复 T2，不证明同比或长期留存已实现。原表第 18 行（B 列 17）仍为部分实现。
