@@ -1,4 +1,4 @@
-"""Source preflight for the initial static DAE/3DS conversion scope."""
+"""Source preflight for the admitted static DAE/3DS/OBJ conversion scope."""
 from __future__ import annotations
 
 import math
@@ -8,11 +8,15 @@ import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+from obj_model import validate_obj_source
+
 MAX_SUMMARY_BYTES = 64 << 20
 NS = "{http://www.collada.org/2005/11/COLLADASchema}"
 
 
 def validate_source(path: Path, source_format: str) -> list[str]:
+    if source_format == "obj":
+        return validate_obj_source(path)
     if path.stat().st_size > MAX_SUMMARY_BYTES:
         raise ValueError("source summary exceeds 64 MiB")
     data = path.read_bytes()

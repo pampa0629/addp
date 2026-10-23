@@ -224,8 +224,9 @@ def test_obj_missing_material_library_is_rejected(tmp_path):
     source = source_dir / "model.obj"
     source.write_text("mtllib missing.mtl\nv 0 0 0\n", encoding="utf-8")
     plan = directory_plan(source_dir, tmp_path / "model.glb", "obj", "glb", entrypoint=source.name)
-    with pytest.raises(ConverterError, match="material libraries"):
+    with pytest.raises(ConverterError) as failure:
         invoke_operator("obj_to_glb", {"access_plan": plan}, runner=lambda *_: CommandResult(0))
+    assert failure.value.error_code == "UNSUPPORTED_MODEL_SOURCE"
 
 
 def test_obj_transparent_textured_material_is_repaired(tmp_path):

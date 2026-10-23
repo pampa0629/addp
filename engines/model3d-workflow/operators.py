@@ -740,10 +740,8 @@ def _mesh_model_to_glb(
 
     try:
         source_path = str(_stage_model_source(access_plan, temp_dir))
-        if source_label.lower() == "obj":
-            _validate_obj_material_libraries(Path(source_path))
         source_texture_refs = []
-        if source_label.lower() in {"dae", "3ds"}:
+        if source_label.lower() in {"dae", "3ds", "obj"}:
             try:
                 source_texture_refs = validate_source(Path(source_path), source_label.lower())
             except (ValueError, OSError) as error:
@@ -804,48 +802,6 @@ def _validate_glb_artifact(path: Path, *, basic_static: bool = False) -> dict[st
         return validate_glb(path, basic_static=basic_static)
     except (ValueError, OSError, TypeError, AttributeError) as error:
         raise ConverterError("INVALID_GLB", "GLB output failed artifact validation", details=str(error), http_status=500) from error
-
-
-def _validate_obj_material_libraries(source_path: Path) -> None:
-    if not source_path.is_file():
-        return
-    refs = _obj_material_library_refs(source_path)
-    if not refs:
-        return
-    missing = []
-    for ref in refs:
-        ref_path = Path(ref.replace("\\", "/"))
-        if ref_path.is_absolute():
-            candidate = ref_path
-        else:
-            candidate = source_path.parent / ref_path
-        if not candidate.is_file():
-            missing.append(ref)
-    if missing:
-        raise ConverterError(
-            "MISSING_OBJ_MATERIAL_LIBRARY",
-            "OBJ declares material libraries that are missing",
-            details=", ".join(missing),
-        )
-
-
-def _obj_material_library_refs(source_path: Path) -> list[str]:
-    refs: list[str] = []
-    seen: set[str] = set()
-    with source_path.open("r", encoding="utf-8", errors="ignore") as handle:
-        for line in handle:
-            statement = line.split("#", 1)[0].strip()
-            if not statement:
-                continue
-            parts = statement.split()
-            if len(parts) < 2 or parts[0].lower() != "mtllib":
-                continue
-            for ref in parts[1:]:
-                ref = ref.strip()
-                if ref and ref not in seen:
-                    refs.append(ref)
-                    seen.add(ref)
-    return refs
 
 
 def _repair_obj_glb_fully_transparent_textured_materials(glb_path: Path) -> dict[str, Any]:

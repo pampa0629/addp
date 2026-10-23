@@ -66,6 +66,11 @@ docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow
 docker run -i --rm --network none --platform "${PLATFORM}" \
   -v "${ROOT_DIR}/business/fixtures/manager/addp_online_model_fixture.osgb:/fixture/model.osgb:ro" \
   -v "${ENGINE_DIR}/tests/fixtures/mesh:/fixture/mesh:ro" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_multi_material.obj:/fixture/obj/model.obj:ro" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_multi_material_red.mtl:/fixture/obj/paint red.mtl:ro" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_multi_material_blue.mtl:/fixture/obj/paint blue.mtl:ro" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_obj_red.png:/fixture/obj/red/color.png:ro" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_obj_blue.png:/fixture/obj/blue/color.png:ro" \
   --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
 from pathlib import Path
 import operators
@@ -74,6 +79,8 @@ import subprocess
 import tempfile
 import hashlib
 import io
+import base64
+import json
 from PIL import Image
 from openskp import create
 from skp_converter import convert
@@ -203,6 +210,91 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit('FBX/OBJ/3DS source files were modified')
     print('Final Runtime FBX/OBJ/3DS geometry, embedded PNG and failure preservation smoke passed')
 
+    # Two sibling MTLs with spaces and two different textures sharing a basename
+    # must survive the same official operator, without native path fallback.
+    dual_source = Path(tmp) / 'obj-exact-composition'
+    dual_source.mkdir()
+    dual_obj = dual_source / 'model.obj'
+    for name in ['model.obj', 'paint red.mtl', 'paint blue.mtl', 'red/color.png', 'blue/color.png']:
+        destination = dual_source / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((Path('/fixture/obj') / name).read_bytes())
+    dual_hashes = {str(p.relative_to(dual_source)): hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in dual_source.rglob('*') if p.is_file()}
+    dual_target = Path(tmp) / 'obj-exact-composition.glb'
+    dual_plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                 'source': {'kind': 'directory', 'format': 'obj', 'entrypoint': dual_obj.name,
+                            'access': {'method': 'mounted_path', 'path': str(dual_source)}},
+                 'target': {'kind': 'file', 'format': 'glb', 'name': dual_target.name,
+                            'write_mode': 'create',
+                            'access': {'method': 'mounted_path', 'path': str(dual_target)}}}
+    operators.invoke_operator('obj_to_glb', {'access_plan': dual_plan}, timeout_seconds=60)
+    dual_doc = validate_glb(dual_target, basic_static=True)
+    dual_scene = trimesh.load(dual_target, force='scene')
+    if any(abs(a-b) > 1e-6 for a,b in zip(dual_scene.extents, (2, 1, 0))):
+        raise SystemExit('OBJ multi-MTL world coordinates changed')
+    dual_primitives = [p for m in dual_doc['meshes'] for p in m['primitives']]
+    if len(dual_primitives) != 2 or len(dual_doc.get('images', [])) != 2:
+        raise SystemExit('OBJ multi-MTL meshes or distinct embedded images were lost')
+    _, dual_chunks = operators._read_glb(dual_target)
+    observed_colors = set()
+    for primitive in dual_primitives:
+        position = dual_doc['accessors'][primitive['attributes']['POSITION']]
+        if position['count'] != 3 or 'TEXCOORD_0' not in primitive['attributes']:
+            raise SystemExit('OBJ multi-MTL vertex/UV facts differ')
+        color = 'red' if abs(position['min'][0]) < 1e-6 else 'blue'
+        if abs(position['min'][0] - (0 if color == 'red' else 1)) > 1e-6:
+            raise SystemExit('OBJ multi-MTL primitive source position differs')
+        material = dual_doc['materials'][primitive['material']]['pbrMetallicRoughness']
+        image_index = dual_doc['textures'][material['baseColorTexture']['index']]['source']
+        view = dual_doc['bufferViews'][dual_doc['images'][image_index]['bufferView']]
+        offset = view.get('byteOffset', 0)
+        embedded = dual_chunks[1][1][offset:offset + view['byteLength']]
+        if embedded != (dual_source / color / 'color.png').read_bytes():
+            raise SystemExit('OBJ multi-MTL source PNG bytes or material assignment differ')
+        with Image.open(io.BytesIO(embedded)) as image:
+            expected = (220, 30, 60) if color == 'red' else (30, 70, 220)
+            if image.size != (2, 2) or image.convert('RGB').tobytes() != bytes(expected) * 4:
+                raise SystemExit('OBJ multi-MTL embedded pixels differ')
+        observed_colors.add(color)
+    if observed_colors != {'red', 'blue'}:
+        raise SystemExit('OBJ same-basename textures were confused')
+    prior_dual = dual_target.read_bytes()
+    dual_plan['target']['write_mode'] = 'replace'
+    dual_plan['source']['entrypoint'] = 'rejected.obj'
+    (dual_source / 'nested').mkdir()
+    (dual_source / 'nested/paint.mtl').write_text('newmtl nested\n')
+    for library, texture in [('nested/paint.mtl', None), ('rejected.mtl', 'missing.png'),
+                             ('rejected.mtl', '../not-authorized.png')]:
+        (dual_source / 'rejected.obj').write_text(f'mtllib {library}\nv 0 0 0\n')
+        if texture:
+            (dual_source / 'rejected.mtl').write_text(f'newmtl rejected\nmap_Kd {texture}\n')
+        calls = []
+        def forbidden_runner(command, timeout_seconds):
+            calls.append(command)
+            raise AssertionError('Rejected OBJ input reached the native converter')
+        try:
+            operators.invoke_operator('obj_to_glb', {'access_plan': dual_plan}, runner=forbidden_runner)
+        except operators.ConverterError as error:
+            if error.error_code != 'UNSUPPORTED_MODEL_SOURCE' or calls or dual_target.read_bytes() != prior_dual:
+                raise SystemExit('OBJ rejected dependencies changed the published artifact')
+        else:
+            raise SystemExit('OBJ nested/missing/escaping dependency was silently accepted')
+    if any(hashlib.sha256((dual_source / name).read_bytes()).hexdigest() != digest
+           for name, digest in dual_hashes.items()):
+        raise SystemExit('OBJ multi-MTL source bytes changed')
+    print('Final Runtime OBJ exact composition: two sibling MTLs, nested same-basename PNGs, '
+          'geometry/UV/material/pixel/source-byte and failure-preservation smoke passed')
+    print('OBJ_EXACT_COMPOSITION_PROOF=' + json.dumps({
+        'schema_version': 'addp.model3d-obj-product-probe/v1', 'result': 'passed',
+        'source_sha256': dual_hashes, 'glb_size': len(prior_dual),
+        'glb_sha256': hashlib.sha256(prior_dual).hexdigest(),
+        'glb_base64': base64.b64encode(prior_dual).decode('ascii'),
+        'operator_sha256': hashlib.sha256(Path('/app/operators.py').read_bytes()).hexdigest(),
+        'validator_sha256': hashlib.sha256(Path('/app/obj_model.py').read_bytes()).hexdigest(),
+        'converter_sha256': hashlib.sha256(Path(operators._mesh_converter_bin(None)).read_bytes()).hexdigest(),
+    }, sort_keys=True))
+
     source = Path(tmp) / "tiny.splat"
     target = Path(tmp) / "tiny.ksplat"
     record = bytearray(32)
@@ -233,7 +325,6 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit("SKP smoke conversion has incorrect metre scale")
     print("SKP parser, GLB publication validation and metre scale smoke passed")
 
-    import json
     from operators import ConverterError
     fixture = Path('/app/max-fixture')
     max_source = fixture / 'horsewalk02.max'

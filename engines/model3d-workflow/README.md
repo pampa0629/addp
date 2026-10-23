@@ -147,6 +147,10 @@ make test-model3d-workflow
 
 产品构建的最终 Runtime 转换检查还覆盖 FBX／OBJ 静态网格：FBX 使用 Assimp `v5.4.3`（提交 `c35200e38ea8f058812b83de2ef32c6093b0ece2`）的 [box.fbx](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/models/FBX/box.fbx)，保留在 `tests/fixtures/mesh/`，源 SHA-256 为 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`；原始许可完整保留在同目录 `LICENSE-assimp.txt`。上游 [独立断言](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/unit/utFBXImporterExporter.cpp#L67) 为一个网格、36 个顶点和 12 个三角面。OBJ 使用 ADDP 自建三角形及漫反射 PNG，核对源坐标、三角面、UV 贴图引用、实际内嵌像素与不透明度。两者经正式 access plan 和 operator 发布，并验证源字节不变、无效输入失败且保留旧产物；不扩大为动画、全部 FBX 版本、复杂材质或 Manager Hosted 页面已验收。
 
+OBJ 的 FTP/NFS/MinIO 精确组成路线与 Go 格式层使用同一语义：OBJ 必须以 `.obj` 为实际入口，每行 `mtllib` 的整行余部是一个原始文件名；首期一个或多个 MTL 必须位于 OBJ 同目录，PNG/JPEG 可位于子目录。Runtime 只打开明确依赖，目录描述符和 no-follow/nonblock 约束拒绝软链接、FIFO、错大小写和越界；MTL 合计预算在读取内容前核对，不使用同 basename 材质库或贴图兜底。旧的按空格拆分材质库校验已删除，OBJ 复用 `validate_source` 与同一 Assimp→GLB 发布主路径。声明贴图而转换器输出无贴图时拒绝发布；复杂材质仍受现有 GLB 基本静态门禁限制。
+
+产品构建还必须通过两份带空格名称的同目录 MTL、两个子目录中同 basename 异色 PNG 的正式 `obj_to_glb` 探针：核对两面几何、UV、材质对应的实际 PNG 原字节和像元、源文件不变，以及嵌套 MTL／缺图／越界在调用转换器前拒绝并保留旧产物。该构建验证与 Hosted 真实认证、源授权、缓存和退出清理分别认定；不把本机构建或源校验单元测试记为跨模块 T4。
+
 FBX／OBJ 构建检查比较源角点坐标、三角面、UV 与实际贴图像素，允许语义等价的顶点合并，不把上游导入器测试中的顶点数直接作为 GLB 存储要求。Linux ARM64 构建、Linux x86_64 产品链路与 Manager 页面验收分别认定。
 
 同一产品构建运行文件存在性回归，模拟 `stat()` 失败但输出结构残留普通文件标志，并核对真实文件、目录及缺失路径；最终 Runtime 使用真实 Assimp 反复转换带相对 PNG 引用的 3DS，核对几何、UV、内嵌像素、源文件不变和失败时旧产物保留。原有 FBX／OBJ／OSGB／SKP／MAX 检查继续执行。Linux amd64 的 Manager 页面与对象存储完整链路仍由原 Hosted suite 验收，构建检查不能替代 T4。
