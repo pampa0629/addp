@@ -1494,6 +1494,51 @@ class PGBrowserObservationTest(unittest.TestCase):
                     observations=[{'closed_type': 'department', 'refreshes': 1, 'preview_status': 200},
                                   {'closed_type': 'project_group', 'refreshes': 1, 'preview_status': 403}])
 
+    def test_collection_browser_exact_report_and_private_operator_login(self):
+        environment = dict(self.environment, ADDP_ONLINE_PG_OPERATOR_USERNAME='external-online-pg-authorizer',
+                           ADDP_ONLINE_PG_OPERATOR_PASSWORD='operator-private-password')
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
+             patch.object(ONLINE.os, 'killpg'):
+            with ONLINE.CollectionObservation(2, '35', 1, 42, 'a' * 64, 'governance', '2099-01-01T00:00:00Z') as browser:
+                browser.command_id = str(uuid.uuid4())
+                expected = dict(browser.binding, schema_version='addp.pg-collection-browser/v1', result='passed',
+                    command_id=browser.command_id, checks=ONLINE.COLLECTION_BROWSER_CHECKS[:-1],
+                    login_requests=1, approval_requests=2, revocation_requests=1,
+                    dropped_approval_responses=1, navigation_writes=0, unchanged_identity=True)
+                browser.evidence.write_text(json.dumps(expected))
+                self.assertEqual(browser.finish(), expected)
+                env = popen.call_args.kwargs['env']
+                self.assertFalse(any('TOKEN' in key or 'SECRET' in key for key in env))
+                self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', env)
+                self.assertEqual(env['ADDP_ONLINE_PG_OPERATOR_PASSWORD'], 'operator-private-password')
+                for changes in ({'command_id': str(uuid.uuid4())}, {'checks': []}, {'approval_requests': 3},
+                                {'revocation_requests': 0}, {'dropped_approval_responses': 0},
+                                {'navigation_writes': 1}, {'unchanged_identity': False}, {'login_requests': 2},
+                                {'task_id': '43'}, {'raw_token': 'untrusted'}):
+                    browser.evidence.write_text(json.dumps(dict(expected, **changes)))
+                    with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
+                        browser.finish()
+                self.process.poll.return_value = 0
+
+    def test_collection_command_must_match_exact_pre_registered_scope_and_expiry(self):
+        with patch.dict(ONLINE.os.environ, self.environment):
+            browser = ONLINE.CollectionObservation(2, '35', 1, 42, 'a' * 64, 'governance', '2099-01-01T00:00:00Z')
+            body = {'command_id': str(uuid.uuid4()), 'task_id': '42', 'expected_task_definition_digest': 'a' * 64,
+                    'purpose': 'governance', 'expires_at': '2099-01-01T08:00:00+08:00'}
+            browser.read_ready = Mock(return_value=dict(browser.marker('command'), command=body))
+            self.assertEqual(browser.capture_command(), body)
+            for changes in ({'task_id': '43'}, {'purpose': 'different'}, {'expected_task_definition_digest': 'b' * 64},
+                            {'expires_at': '2099-01-01T00:00:00.000000001Z'}, {'command_id': 'unknown'},
+                            {'engine_id': 'foreign'}):
+                browser.command_id = None
+                browser.read_ready.return_value = dict(browser.marker('command'), command=dict(body, **changes))
+                with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
+                    browser.capture_command()
+                self.assertIsNone(browser.command_id)
+            browser.read_ready.return_value = dict(browser.marker('command'), command=body, raw_token='forbidden')
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'binding'):
+                browser.capture_command()
+
     def test_control_binding_private_process_scope_and_exact_report(self):
         with patch.dict(ONLINE.os.environ, self.environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
              patch.object(ONLINE.os, 'killpg') as kill:
@@ -1926,6 +1971,84 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.assertFalse(self.tasks)
         self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
         self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def browser_fixture(self, failure=None):
+        self.report['meta_collection'] = {'qualification_commands': []}
+        browser = Mock()
+        body, committed = {}, {}
+        def factory(tenant, issuer, engine, task, digest, purpose, expiry):
+            self.assertEqual((tenant, issuer, engine), (3, '35', 2))
+            body.update(command_id=str(uuid.uuid4()), task_id=str(task), expected_task_definition_digest=digest,
+                        purpose=purpose, expires_at=expiry)
+        # Special methods are looked up on the type, not the instance dictionary.
+        class Context:
+            def __enter__(self): return browser
+            def __exit__(self, *args): return False
+        def create(*args):
+            factory(*args)
+            return Context()
+        def capture():
+            if failure == 'capture': raise ONLINE.SuiteError('browser stopped before send')
+            return deepcopy(body)
+        def release(kind):
+            if kind == 'command':
+                self.assertEqual(self.scenario.commands[body['command_id']], body)
+                self.assertIn(body['command_id'], self.report['meta_collection']['qualification_commands'])
+                result = self.request('operator', 'POST', self.scenario.route, (201,), body)
+                committed.update(result.payload)
+                if failure == 'after_commit': raise ONLINE.SuiteError('browser stopped after commit')
+        def wait(kind):
+            if failure == kind: raise ONLINE.SuiteError('browser stopped at ' + kind)
+            if kind == 'approved':
+                self.request('operator', 'POST', self.scenario.route, (201,), body)
+                if failure == 'recovery_renews': self.qualifications[body['command_id']]['expires_at'] = '2099-01-01T00:00:00Z'
+            if kind == 'revoked':
+                self.request('operator', 'DELETE', self.scenario.route + '/' + body['command_id'], (200,),
+                             {'version': '1', 'reason': 'Disposable PG browser qualification withdrawal'})
+        browser.capture_command.side_effect = capture
+        browser.release.side_effect = release
+        browser.committed_row.side_effect = lambda: deepcopy(committed)
+        browser.wait.side_effect = wait
+        browser.finish.side_effect = ONLINE.SuiteError('incomplete browser report') if failure == 'finish' else None
+        browser.finish.return_value = {'result': 'passed'}
+        return create
+
+    def test_browser_approval_controls_current_worker_results_and_one_cleanup_identity(self):
+        with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture()):
+            self.scenario.run_browser(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_BROWSER_CHECKS)
+        self.assertEqual(len(self.qualifications), 1)
+        self.assertEqual(len(self.runs), 5)
+        self.assertTrue(self.report['meta_collection']['browser_flow']['source_rules_unchanged'])
+        self.assertEqual([row['status'] for row in self.runs.values()], ['failed', 'success', 'success', 'failed', 'failed'])
+        approvals = [body for _, method, path, body in self.calls if method == 'POST' and path == self.scenario.route]
+        self.assertEqual(len(approvals), 2)
+        self.assertEqual(approvals[0], approvals[1])
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+
+    def test_browser_failures_preserve_pre_send_cleanup_even_after_committed_lost_response(self):
+        for failure in ('capture', 'after_commit', 'approved', 'revoked', 'finish'):
+            with self.subTest(failure=failure):
+                self.setUp()
+                with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture(failure)), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_browser(self.report)
+                self.assertFalse(self.report['checks'])
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_browser_recovery_cannot_renew_and_corrupt_binding_does_not_authorize_blind_cleanup(self):
+        with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture('recovery_renews')), \
+             self.assertRaisesRegex(ONLINE.SuiteError, 'approved binding'):
+            self.scenario.run_browser(self.report)
+        self.assertFalse(self.report['checks'])
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
+            self.scenario.cleanup()
+        self.assertTrue(self.tasks)
+        self.assertFalse(any(method == 'DELETE' for _, method, _, _ in self.calls))
 
     def test_equivalent_post_and_history_timestamp_zones_preserve_full_qualification_binding(self):
         self.fault = 'different_timestamp_zone'

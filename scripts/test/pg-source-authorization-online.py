@@ -53,6 +53,9 @@ PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_
 COLLECTION_CHECKS = ['meta_collection_unapproved_denied', 'meta_collection_approved_repeat',
                      'meta_collection_copied_task_denied', 'meta_collection_changed_configuration_denied',
                      'meta_collection_revoked_denied', 'meta_collection_source_rules_unchanged']
+COLLECTION_BROWSER_CHECKS = ['collection_workspace_read_only_navigation', 'collection_browser_exact_task_facts',
+    'collection_browser_same_command_recovery', 'collection_browser_record_reload',
+    'collection_browser_revoke_and_history', 'collection_browser_worker_boundary']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -583,14 +586,17 @@ class BrowserObservation:
         require(kind in {'department', 'project_group'}, 'invalid browser member-exit phase')
         return dict(self.binding, phase=kind)
 
-    def wait(self, kind):
+    def read_ready(self, kind):
         ready = self.control / ('ready-' + kind + '.json')
         deadline = time.monotonic() + 120
         while not ready.exists():
             require(self.process.poll() is None and time.monotonic() < deadline,
                     'browser did not reach its member-exit observation: ' + kind)
             time.sleep(.2)
-        require(json.loads(ready.read_text()) == self.marker(kind), 'browser control binding changed')
+        return json.loads(ready.read_text())
+
+    def wait(self, kind):
+        require(self.read_ready(kind) == self.marker(kind), 'browser control binding changed')
 
     def release(self, kind):
         path = self.control / ('release-' + kind + '.tmp')
@@ -649,6 +655,64 @@ class WorkspaceObservation(BrowserObservation):
         expected = dict(self.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
                         checks=WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
         require(result == expected, 'PG browser workspace evidence is incomplete or changed identity')
+        return result
+
+
+class CollectionObservation(BrowserObservation):
+    """Real approval UI; register its command before allowing its network send."""
+    def __init__(self, tenant, issuer, engine, task, digest, purpose, expires_at):
+        super().__init__(tenant, issuer, '')
+        self.binding.pop('locator')
+        self.binding.update(engine_id=str(engine), task_id=str(task), task_definition_digest=digest,
+                            purpose=purpose, expires_at=expires_at)
+        self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-collection-browser.json'
+        self.test_name = 'PG collection qualification workspace'
+        self.login_keys = ('ADDP_ONLINE_PG_OPERATOR_USERNAME', 'ADDP_ONLINE_PG_OPERATOR_PASSWORD')
+        self.command_id = None
+
+    def marker(self, kind):
+        require(kind in {'command', 'committed', 'approved', 'revoked'}, 'invalid collection browser phase')
+        return dict(self.binding, phase=kind)
+
+    def capture_command(self):
+        marker = self.read_ready('command')
+        require(isinstance(marker, dict) and set(marker) == set(self.marker('command')) | {'command'}
+                and {key: value for key, value in marker.items() if key != 'command'} == self.marker('command'),
+                'collection browser command binding changed')
+        body = marker['command']
+        expected = {'task_id': self.binding['task_id'],
+            'expected_task_definition_digest': self.binding['task_definition_digest'],
+            'purpose': self.binding['purpose'], 'expires_at': self.binding['expires_at']}
+        require(isinstance(body, dict) and set(body) == set(expected) | {'command_id'}
+                and isinstance(body.get('command_id'), str)
+                and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', body['command_id'])
+                and all(body.get(key) == value for key, value in expected.items() if key != 'expires_at')
+                and collection_instant(body.get('expires_at')) == collection_instant(expected['expires_at']),
+                'browser approval changed its inspected task, purpose or exact expiry')
+        self.command_id = body['command_id']
+        return body
+
+    def committed_row(self):
+        marker = self.read_ready('committed')
+        require(isinstance(marker, dict) and set(marker) == set(self.marker('committed')) | {'qualification'}
+                and {key: value for key, value in marker.items() if key != 'qualification'} == self.marker('committed')
+                and isinstance(marker.get('qualification'), dict), 'collection committed response binding changed')
+        return marker['qualification']
+
+    def finish(self):
+        try:
+            require(self.process.wait(timeout=180) == 0, 'PG collection browser acceptance failed')
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError('PG collection browser acceptance timed out') from error
+        require(self.command_id is not None and self.evidence.is_file(), 'PG collection browser report missing')
+        result = json.loads(self.evidence.read_text())
+        expected = dict(self.binding, schema_version='addp.pg-collection-browser/v1', result='passed',
+            command_id=self.command_id, checks=COLLECTION_BROWSER_CHECKS[:-1], login_requests=1,
+            approval_requests=2, revocation_requests=1, dropped_approval_responses=1,
+            navigation_writes=0, unchanged_identity=True)
+        require(result == expected and all(type(result.get(key)) is int for key in (
+            'login_requests', 'approval_requests', 'revocation_requests', 'dropped_approval_responses', 'navigation_writes'))
+            and result.get('unchanged_identity') is True, 'PG collection browser evidence incomplete or changed binding')
         return result
 
 
@@ -930,6 +994,54 @@ class MetaCollectionScenario:
         require(self.source_snapshot() == before, 'collection approval modified source Grant/Deny history')
         evidence['source_rules_unchanged'] = True
         report['checks'].append(COLLECTION_CHECKS[5])
+
+    def run_browser(self, report):
+        report['phase'] = 'meta_collection_browser'
+        evidence = report['meta_collection']['browser_flow'] = {'executions': {}}
+        before = self.source_snapshot()
+        task = self.create_task('_browser')
+        facts = self.facts(task['id'])
+        evidence['task_id'] = str(task['id'])
+        evidence['executions']['unapproved'] = self.trigger(task['id'], False)
+        expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).replace(microsecond=0).isoformat()
+        with CollectionObservation(self.life.tenant, self.issuer, self.life.engine, task['id'],
+                facts['task_definition_digest'], 'Disposable PG browser basic qualification', expires) as browser:
+            body = browser.capture_command()
+            command = body['command_id']
+            require(command not in self.commands, 'browser reused an existing qualification command')
+            self.commands[command] = body  # Own the UI command before allowing any POST.
+            report['meta_collection']['qualification_commands'].append(command)
+            evidence['command_id'] = command
+            browser.release('command')
+            committed = browser.committed_row()
+            original = self.row(command)
+            require(same_collection_row(committed, original) and original['status'] == 'active'
+                    and original['version'] == '1', 'lost browser response did not commit the exact qualification')
+            browser.release('committed')
+            browser.wait('approved')
+            require(same_collection_row(self.row(command), original), 'browser recovery changed immutable approval')
+            evidence['executions']['approved_first'] = self.trigger(task['id'], True)
+            evidence['executions']['approved_repeat'] = self.trigger(task['id'], True)
+            self.update(task, force=True)
+            require(self.facts(task['id'])['task_definition_digest'] != facts['task_definition_digest'], 'browser task force did not change digest')
+            evidence['executions']['changed'] = self.trigger(task['id'], False)
+            require(same_collection_row(self.row(command), original), 'UI or execution silently renewed qualification')
+            self.update(task, force=False)
+            require(self.facts(task['id']) == facts, 'browser task config did not restore exactly')
+            browser.release('approved')
+            browser.wait('revoked')
+            revoked = self.row(command)
+            require(revoked['status'] == 'revoked' and revoked['version'] == '2'
+                    and revoked.get('revoked_by_principal_id') == self.issuer
+                    and revoked.get('revoked_reason') == 'Disposable PG browser qualification withdrawal'
+                    and collection_instant(revoked['expires_at']) == collection_instant(original['expires_at']),
+                    'UI revocation changed expiry or failed to close exact qualification')
+            evidence['executions']['revoked'] = self.trigger(task['id'], False)
+            browser.release('revoked')
+            evidence['browser'] = browser.finish()
+        require(self.source_snapshot() == before, 'collection browser modified source Grant/Deny rules')
+        evidence['source_rules_unchanged'] = True
+        report['checks'].extend(COLLECTION_BROWSER_CHECKS)
 
     def cleanup(self):
         errors = []
@@ -2216,6 +2328,7 @@ def main():
         lifecycle.production_flow(report)
         lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
         lifecycle.collection.run(report)
+        lifecycle.collection.run_browser(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

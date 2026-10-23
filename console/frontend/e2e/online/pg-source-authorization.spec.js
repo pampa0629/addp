@@ -6,6 +6,184 @@ import { isAnonymousRefreshResponse, login } from './transfer-browser-support.js
 // Login diagnostics may contain fill arguments; only explicitly verified screenshots are public.
 test.use({ screenshot: 'off' })
 
+test('PG collection qualification workspace approves, recovers and revokes the exact basic task', async ({ page, context }) => {
+  if (process.env.ADDP_ONLINE_HOSTED !== '1' || process.env.ADDP_ONLINE_TEST !== '1') throw new Error('dedicated Hosted entry required')
+  const binding = JSON.parse(process.env.ADDP_PG_BROWSER_BINDING)
+  const control = process.env.ADDP_PG_BROWSER_CONTROL
+  if (!control || !binding.run_id || !binding.task_id || !binding.task_definition_digest || !binding.expires_at) throw new Error('incomplete collection browser binding')
+  const base = `/api/v1/system/engines/${binding.engine_id}`
+  const route = base + '/meta_collection_qualifications'
+  const checks = [], writes = [], failures = []
+  let phase = 'login', loginRequests = 0, approvals = 0, revocations = 0, dropped = 0, command = null, original = null, businessStarted = false
+  const destination = resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pg-collection-browser.json')
+  async function checkpoint(kind, extra = {}) {
+    const marker = { ...binding, phase: kind }
+    const temporary = resolve(control, `ready-${kind}.tmp`)
+    writeFileSync(temporary, JSON.stringify({ ...marker, ...extra }))
+    renameSync(temporary, resolve(control, `ready-${kind}.json`))
+    await expect.poll(() => {
+      const file = resolve(control, `release-${kind}.json`)
+      return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+    }, { timeout: 120_000, intervals: [100] }).toEqual(marker)
+  }
+  context.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/v1/system/login' && request.method() === 'POST') loginRequests++
+    if (path === '/api/v1/system/auth/context' && request.headers().authorization) businessStarted = true
+  })
+  context.on('response', response => {
+    if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400 &&
+        !isAnonymousRefreshResponse(response, businessStarted)) failures.push('unexpected_api_failure')
+  })
+  page.on('pageerror', () => failures.push('uncaught_browser_error'))
+  // Pass the UI's real credential and body unchanged. Block any unrelated mutation.
+  await page.route('**/api/v1/**', async intercepted => {
+    const request = intercepted.request(), path = new URL(request.url()).pathname, method = request.method()
+    if (method === 'GET' || (method === 'POST' && ['/api/v1/system/login', '/api/v1/system/refresh',
+      '/api/v1/system/auth/context-selections', '/api/v1/system/auth/mfa-verifications'].includes(path))) return intercepted.continue()
+    try {
+      if (method === 'POST' && path === route) {
+        const body = request.postDataJSON()
+        if (command === null) {
+          command = body
+          await checkpoint('command', { command }) // Owner registers exact cleanup identity before send.
+        }
+        expect(body).toEqual(command)
+        approvals++
+        expect(approvals).toBeLessThanOrEqual(2)
+        writes.push({ method, path })
+        if (approvals === 1) {
+          const response = await intercepted.fetch({ maxRedirects: 0, maxRetries: 0 })
+          expect(response.status()).toBe(201)
+          original = await response.json()
+          await checkpoint('committed', { qualification: original })
+          dropped++
+          return intercepted.abort('failed') // Committed response loss, not a synthetic approval.
+        }
+        return intercepted.continue()
+      }
+      if (method === 'DELETE' && command && path === route + '/' + command.command_id) {
+        expect(request.postDataJSON()).toEqual({ version: original.version, reason: 'Disposable PG browser qualification withdrawal' })
+        revocations++
+        expect(revocations).toBe(1)
+        writes.push({ method, path })
+        return intercepted.continue()
+      }
+      failures.push('unowned_api_mutation')
+      return intercepted.abort('blockedbyclient')
+    } catch {
+      failures.push('approval_transport_binding_failed')
+      await intercepted.abort('failed')
+    }
+  })
+  const record = (result, unchanged = false) => writeFileSync(destination, JSON.stringify({ ...binding,
+    schema_version: 'addp.pg-collection-browser/v1', result, command_id: command?.command_id, checks,
+    login_requests: loginRequests, approval_requests: approvals, revocation_requests: revocations,
+    dropped_approval_responses: dropped, navigation_writes: writes.filter(row =>
+      row.path !== route && row.path !== route + '/' + command?.command_id).length,
+    unchanged_identity: unchanged, ...(result === 'failed' ? { phase } : {}) }))
+  try {
+    await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    const url = `/system/engines/${binding.engine_id}?tab=collection-qualifications`
+    await login(page, process.env.ADDP_ONLINE_PG_OPERATOR_USERNAME, process.env.ADDP_ONLINE_PG_OPERATOR_PASSWORD, url)
+    const system = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const workspace = system.getByTestId('meta-collection-qualifications')
+    await expect(workspace).toBeVisible()
+    const moduleFrame = () => page.frames().find(frame => frame.url().includes('/module-ui/system/'))
+    const session = await moduleFrame().evaluate(sessionSnapshot, 'system-auth')
+    expect(session).toMatchObject({ principal_id: binding.principal_id, tenant_id: binding.tenant_id, persisted_token: false })
+    for (const action of ['read', 'approve', 'revoke']) expect(session.permissions).toContain(`system.meta_collection_qualification.${action}`)
+    expect(session.permissions).not.toContain('manager.data_item.read')
+    const tabs = workspace.getByTestId('collection-workspace-tabs')
+    const tab = name => tabs.getByText(name, { exact: true }).click()
+    const records = workspace.getByTestId('collection-records')
+    const row = () => records.locator('.el-table__body-wrapper tbody tr').filter({ hasText: binding.purpose })
+    async function read(action) {
+      const pending = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === route)
+      await action(); const response = await pending; expect(response.status()).toBe(200); return response.json()
+    }
+    phase = 'navigation'
+    await expect(records).toBeVisible()
+    await tab('新增批准'); await expect(records).toHaveCount(0)
+    await read(() => tab('资格记录'))
+    await read(() => workspace.getByTestId('collection-refresh').click())
+    expect(writes).toEqual([])
+    checks.push('collection_workspace_read_only_navigation')
+    phase = 'inspect'
+    await tab('新增批准')
+    await expect(workspace.getByTestId('collection-approve')).toBeDisabled()
+    await workspace.getByTestId('collection-task').fill(binding.task_id)
+    const inspected = page.waitForResponse(response => new URL(response.url()).pathname === base + '/meta_collection_task_facts/' + binding.task_id)
+    await workspace.getByTestId('collection-inspect').click()
+    const factsResponse = await inspected
+    expect(factsResponse.status()).toBe(200)
+    expect(await factsResponse.json()).toMatchObject({ task_id: binding.task_id, engine_id: binding.engine_id,
+      task_definition_digest: binding.task_definition_digest, scope_kind: 'engine', scan_depth: 'basic', force: false, read_options: {} })
+    await expect(workspace.getByTestId('collection-facts')).toContainText('整个引擎')
+    await expect(workspace.getByTestId('collection-facts')).toContainText('基础识别（basic）')
+    expect(writes).toEqual([])
+    checks.push('collection_browser_exact_task_facts')
+    phase = 'approve_and_recover'
+    await workspace.getByTestId('collection-purpose').fill(binding.purpose)
+    const date = new Date(binding.expires_at), pad = value => String(value).padStart(2, '0')
+    const local = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    const input = workspace.locator('.el-date-editor input')
+    await input.fill(local); await input.press('Enter')
+    await workspace.getByTestId('collection-approve').click()
+    await expect(workspace.getByTestId('collection-retry')).toBeVisible()
+    await expect(workspace.getByTestId('collection-task')).toBeDisabled()
+    await read(() => tab('资格记录'))
+    await expect(row()).toHaveCount(1)
+    await tab('新增批准')
+    expect(approvals).toBe(1)
+    const recovered = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === route)
+    await workspace.getByTestId('collection-retry').click()
+    const restored = await recovered
+    expect(restored.status()).toBe(201)
+    // The owner has the first committed response and compares every field and exact nanoseconds.
+    const recoveredRow = await restored.json()
+    for (const key of ['id', 'task_id', 'engine_id', 'task_definition_digest', 'version', 'status', 'purpose']) expect(recoveredRow[key]).toEqual(original[key])
+    await expect(row()).toHaveCount(1)
+    await expect(row()).toContainText('期限内、未撤销')
+    checks.push('collection_browser_same_command_recovery')
+    await checkpoint('approved') // Owner verifies repeat success and configuration-change denial.
+    phase = 'reload_and_cancel'
+    await page.reload()
+    await expect(row()).toContainText('期限内、未撤销')
+    await read(() => workspace.getByTestId('collection-refresh').click())
+    expect(approvals).toBe(2)
+    await row().getByTestId('collection-revoke').click()
+    const revoke = workspace.getByTestId('collection-revocation')
+    await revoke.getByTestId('collection-revoke-reason').fill('Cancelled draft must never write')
+    await revoke.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(revoke).toHaveCount(0)
+    expect(revocations).toBe(0)
+    checks.push('collection_browser_record_reload')
+    phase = 'revoke'
+    await row().getByTestId('collection-revoke').click()
+    await revoke.getByTestId('collection-revoke-reason').fill('Disposable PG browser qualification withdrawal')
+    const revokedResponse = page.waitForResponse(response => response.request().method() === 'DELETE' && new URL(response.url()).pathname === route + '/' + command.command_id)
+    await revoke.getByTestId('collection-revoke-confirm').click()
+    expect((await revokedResponse).status()).toBe(200)
+    await expect(row()).toContainText('已撤销')
+    await expect(row().getByTestId('collection-revoke')).toHaveCount(0)
+    await read(() => workspace.getByTestId('collection-refresh').click())
+    await expect(row()).toHaveCount(1)
+    await expect(row()).toContainText('已撤销')
+    checks.push('collection_browser_revoke_and_history')
+    await checkpoint('revoked')
+    const current = await moduleFrame().evaluate(sessionSnapshot, 'system-auth')
+    expect({ ...current, fingerprint: null }).toEqual({ ...session, fingerprint: null })
+    expect(writes).toEqual([{ method: 'POST', path: route }, { method: 'POST', path: route }, { method: 'DELETE', path: route + '/' + command.command_id }])
+    expect(failures).toEqual([])
+    expect(loginRequests).toBe(1)
+    record('passed', true)
+  } catch {
+    record('failed')
+    throw new Error(`PG collection qualification workspace failed at ${phase}; inspect bounded evidence`)
+  }
+})
+
 test('PG authorization workspace filters and revokes the exact Grant through real System and Manager pages', async ({ page, browser }) => {
   if (process.env.ADDP_ONLINE_HOSTED !== '1' || process.env.ADDP_ONLINE_TEST !== '1') throw new Error('dedicated Hosted entry required')
   const binding = JSON.parse(process.env.ADDP_PG_BROWSER_BINDING)
