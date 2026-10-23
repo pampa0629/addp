@@ -291,6 +291,7 @@ class Lifecycle:
         if p.returncode:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
+            self.last_failure['diagnostic_markers']=[marker for marker in ('permission denied','is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory') if marker.encode() in raw.lower()]
             if args[0] == 'du':
                 diagnostics=[line for line in raw.decode(errors='replace').splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
                 self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
@@ -527,6 +528,7 @@ def build(life):
     verify_minio_product(life)
     # Reject product configuration errors before the expensive compilation.
     life.deployment_documents=prepare_deployment_documents(life,env)
+    verify_telemetry_configuration(life)
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -610,6 +612,23 @@ def start_deployment(compose):
     for group in [('loki','runtime-log-api','tempo','trace-query','alloy'),('system-backend',),
                   ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
         compose('up','-d','--wait','--no-build',*group)
+
+
+def verify_telemetry_configuration(life):
+    for name in ('loki','trace-query'):
+        life.phase='telemetry_configuration_'+name.replace('-','_')
+        service=life.deployment_documents[name]
+        args=['run','--name',life.run_id+'-validate-'+name,'--label',f'{LABEL}={life.run_id}',
+            '--label',LABEL+'.role=oneshot','--cpus','.25','--memory','512m','--network','none',
+            '--read-only','--tmpfs','/tmp:size=16m,mode=1777']
+        if service.get('user'):args+=['--user',service['user']]
+        for capability in service.get('cap_drop',[]):args+=['--cap-drop',capability]
+        for mount in service.get('volumes',[]):
+            if mount['type']=='bind':args+=['--mount',f'type=bind,source={mount["source"]},target={mount["target"]},readonly']
+        for key,value in service.get('environment',{}).items():args+=['-e',key+'='+str(value)]
+        if name=='loki':args += [service['image'],'-config.file=/etc/loki/runtime.yml','-config.expand-env=true','-verify-config=true']
+        else:args += ['--add-host','tempo:127.0.0.1','--entrypoint','nginx',service['image'],'-t']
+        life.docker(*args,timeout=30)
 
 
 def prepare_deployment_documents(life, env):

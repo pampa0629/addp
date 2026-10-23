@@ -246,6 +246,20 @@ class LocalTraceAdmissionTests(unittest.TestCase):
 
 
 class LocalTraceIsolationTests(unittest.TestCase):
+    def test_telemetry_configuration_probes_use_product_mounts_identity_and_no_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.docker=mock.Mock(return_value='verified')
+            life.deployment_documents={name:{'image':'pinned-'+name,'user':'501:20','cap_drop':['ALL'],
+                'environment':{'TEST_KEY':'private-placeholder'},'volumes':[{'type':'bind','source':directory,'target':'/configuration','read_only':True}]} for name in ('loki','trace-query')}
+            m.verify_telemetry_configuration(life)
+            self.assertEqual(life.docker.call_count,2)
+            for call in life.docker.call_args_list:
+                args=call.args
+                self.assertNotIn('--rm',args);self.assertIn('none',args);self.assertIn('--read-only',args)
+                self.assertIn('501:20',args);self.assertIn('ALL',args);self.assertIn(m.LABEL+'.role=oneshot',args)
+            self.assertIn('-verify-config=true',life.docker.call_args_list[0].args)
+            self.assertEqual(life.docker.call_args_list[1].args[-1],'-t')
+
     def test_product_trace_template_workspace_is_declared_without_selecting_capacity(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.command=mock.Mock(return_value='PATH=/tools\0')
@@ -573,19 +587,20 @@ class LocalTraceCleanupTests(unittest.TestCase):
             self.assertEqual(removed, ['network', 'volume'])
             self.assertFalse(work.exists())
 
-    def test_failed_command_exposes_only_exit_and_output_hash(self):
+    def test_failed_command_exposes_only_exit_hash_and_fixed_diagnostic_markers(self):
         with tempfile.TemporaryDirectory() as directory:
             life = bare_lifecycle(directory)
             process = mock.Mock(pid=654321, returncode=17)
             process.poll.return_value = 17
             def start(*args, **kwargs):
-                kwargs['stdout'].write(b'password=PRIVATE-SENTINEL token=PRIVATE-TOKEN')
+                kwargs['stdout'].write(b'permission denied password=PRIVATE-SENTINEL token=PRIVATE-TOKEN')
                 return process
             with mock.patch.object(m.time, 'monotonic', return_value=1), mock.patch.object(m.subprocess, 'Popen', side_effect=start):
                 with self.assertRaisesRegex(m.GateError, '^command_failed_17$'):
                     life.command(['synthetic-private-command'])
-            self.assertEqual(set(life.last_failure), {'exit_code', 'output_sha256'})
+            self.assertEqual(set(life.last_failure), {'exit_code', 'output_sha256','diagnostic_markers'})
             self.assertEqual(life.last_failure['exit_code'], 17)
+            self.assertEqual(life.last_failure['diagnostic_markers'],['permission denied'])
             self.assertRegex(life.last_failure['output_sha256'], r'^[a-f0-9]{64}$')
             self.assertNotIn('PRIVATE', repr(life.last_failure))
 
