@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "f277fa89403e7744ea20d82273e06a6e174c381a",
-      "sha256": "781f6fe01bc9fa098612d88031183b743f3015efd5a58f54271f6ae2c38c553d",
+      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
+      "sha256": "d44d16ed3521375262036492174f9a9ecfe1dbc41ead612511a7c21cd5d83943",
       "use": {
-        "zh-cn": "委托创建仍限定 bounded/snapshot、禁用调度与扫描。普通 User 的创建、更新和恢复仅同步传递当前凭据，为自有定时绑定主体；失效凭据保留 401。人工执行及结构审批固化各自当前 User 来源。创建只保存停止态定义，不创建执行或扫描；配置预检权限与三态限制不变。",
-        "en": "Delegated creation remains bounded/snapshot with scheduling and scanning disabled. Ordinary User creation, updates and resume synchronously pass current credentials to bind owner schedule subjects; expired credentials retain 401. Manual execution and schema approval freeze their current User origin. Creation persists a stopped definition without execution or scan; precheck permissions and tri-state limits are unchanged."
+        "zh-cn": "委托创建仍限租户内停止态 bounded/snapshot/native table，无调度、扫描或执行。同步请求固化当前 AuthContext；人工角色执行与错误分类不扩张创建 Tool 权限，角色方式不接受委托身份。",
+        "en": "Delegated creation remains tenant-scoped stopped bounded/snapshot/native table without scheduling, scanning or execution. Synchronous requests carry current AuthContext; manual role execution and error classification do not widen create Tool permissions, and role choices reject delegated identity."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "f277fa89403e7744ea20d82273e06a6e174c381a",
-      "sha256": "d4e80b4d768cd03e48e29e5f1f9657a24e8f86b21a18043bf8ea3b3096cf18c3",
+      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
+      "sha256": "83b81308733e91b2adac40afec274a9163c79a6db98cfd9b14bc812b4708323e",
       "use": {
-        "zh-cn": "持久化停止态定义，不创建 execution。bounded 定时由 System 绑定当前 User 与摘要，更新在锁定事务替换主体、暂停清除。恢复只更新未来调度及授权，允许当前执行继续且不改其身份或配置。无 Cron 创建和委托切片不进入调度授权；人工执行与审批仍固化各自当前 User 来源。",
-        "en": "Persist a stopped definition without execution. System binds bounded schedules to the current User and hash; locked updates replace the subject and pause clears it. Resume updates only future scheduling and authorization, preserving an active execution, its identity and inputs. No-Cron creation and the delegated slice do not authorize schedules; manual execution and approval retain their current User origin."
+        "zh-cn": "创建仍只保存 idle/stopped 定义。无角色选择不新增角色或 EA 依赖；显式角色方式在持久化前复核当前第一方 User，委托不借用他人角色。手动执行／重试和模块导出的 EA 绑定属于未建模执行范围，调度授权与创建效果不变。",
+        "en": "Creation still only persists an idle/stopped definition. Default choices add no role or EA dependency; explicit role choices validate the current first-party User before persistence without borrowing roles for delegation. Manual execution/retry and module export EA binding remain unmodeled execution behavior; schedule authorization and creation effects are unchanged."
       }
     },
     {
@@ -47,11 +47,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/api/delegated_task_test.go",
       "anchor": "func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(",
-      "commit": "5fe18874318b4935846c0454a88a89860c673ce5",
-      "sha256": "3c1d9c11a0c0522a85a613b0b1005a07912228fa09adfdaebc80d39ba50ba857",
+      "commit": "6a188526a38cccddb788f69751854df4fad812ca",
+      "sha256": "3fc4d752ca3cbc86be8bee179bf6e2072b8f3add4dcbc593ec6f2b4c3dc91cc2",
       "use": {
-        "zh-cn": "验证创建成功、禁止参数及零 execution；组织范围角色已退出合法 AuthContext，在认证边界拒绝，租户功能与资源条件仍独立核验。",
-        "en": "Verify creation, rejected parameters and zero executions. Organization-scoped roles are invalid AuthContext inputs and fail at authentication; tenant functions and resource conditions remain independent."
+        "zh-cn": "正式委托路由覆盖创建停止态与拒绝错误范围、执行、计划、扫描；新增角色选择请求必须 409，且零本人角色请求、不增加定义或执行。",
+        "en": "The formal delegated route covers stopped creation and rejects wrong scopes, execution, schedules and scanning; a role-choice request must return 409 with no current-user role lookup or additional definition/execution."
       }
     },
     {
@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "477199916679b23644d3cab2321bf6c0c4d7f593",
-      "sha256": "2003049e4fb773d433dbaa3dc91e43484188a6c5ee7e73aba57764a4dba55478",
+      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
+      "sha256": "7c875861d80e2a5839dd1e5c66b3538821f1b0b2a5692a625f2660b4b27035a7",
       "use": {
-        "zh-cn": "快照目标apply_mode仍只接受replace/append；复核CSV/TSV从Meta继承编码，以及有效任务header优先于严格Meta native.has_header和默认值。encoded读取不扩张native table创建范围、权限、条件或执行保证。",
-        "en": "Transfer Planner admits only replace/append as snapshot target apply modes. Reviewed CSV/TSV Meta encoding consumption and encoded source selection of a valid task header before strict Meta native.has_header and the default; native table creation scope, permissions, conditions and execution guarantees are unchanged."
+        "zh-cn": "来源可携带可选字段角色选择，不改变 native table、bounded/snapshot、目标 replace/append 或查询绑定验证。角色资格由 Owner 和共享本人角色契约核验，不由配置自报；CSV/TSV 表头继承及 encoded 未建模范围保持。",
+        "en": "Source endpoints may carry optional field role choices without changing native table, bounded/snapshot, target replace/append or query binding validation. The Owner and shared current-user contract verify role eligibility rather than trusting config; CSV/TSV header inheritance and unmodeled encoded scope remain unchanged."
       }
     },
     {
@@ -352,6 +352,32 @@
         "zh-cn": "T3 用生产 UI 和协议客户端、受控 HTTP/SSE 记录实时 DOM 顺序，并核对刷新后的参数、引用和顺序；禁止夹具访问个人服务，不宣称自由模型或 Hosted T4 验收",
         "en": "T3 production UI and protocol client with controlled HTTP/SSE record live DOM order and verify reloaded arguments, reference and order; fixtures forbid personal service calls and do not prove free-model or hosted T4 acceptance"
       }
+    },
+    {
+      "id": "role_protection",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/role_protection_service.go",
+      "anchor": "func (s *TaskService) validateRoleTask(",
+      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
+      "use": {
+        "zh-cn": "角色方式保存只消费当前第一方 User 的角色事实；无选择直接返回。角色手动执行需独立 EA，不赋予委托创建运行权。",
+        "en": "Role-choice saves consume only current first-party User role facts; absent choices return directly. Manual role execution requires separate EA and does not grant delegated creation execution rights."
+      },
+      "sha256": "74cb68a5a297a1a725435729625ba73c988cc22d1782dca92735af286d064b85"
+    },
+    {
+      "id": "current_user_roles",
+      "owner": "common",
+      "kind": "implementation",
+      "path": "common/client/system_current_subject_roles.go",
+      "anchor": "func (c *SystemServiceClient) ResolveCurrentSubjectRoles(",
+      "commit": "50446c02787d75857e83987ce4c872ca5d406145",
+      "use": {
+        "zh-cn": "本人角色读取要求未到期第一方 Tenant User，拒绝 Delegated／Service，不替换服务令牌、不保存凭据；不授予数据或执行权限。",
+        "en": "Current role reads require a live first-party Tenant User and reject Delegated/Service identities without substituting service tokens or retaining credentials; no data or execution permission is granted."
+      },
+      "sha256": "e213a8e4bd66e48b7759ab025dfb26305cd73df875a1d3726ba6a42e65cf35e4"
     }
   ],
   "bindings": [
@@ -378,7 +404,9 @@
       "sources": [
         "manifest",
         "handler",
-        "owner_test"
+        "owner_test",
+        "role_protection",
+        "current_user_roles"
       ]
     },
     {
@@ -663,7 +691,9 @@
       "subject": "effect/task_definition.persisted",
       "sources": [
         "service",
-        "owner_test"
+        "owner_test",
+        "role_protection",
+        "current_user_roles"
       ]
     },
     {
@@ -685,7 +715,9 @@
       "sources": [
         "handler",
         "service",
-        "owner_test"
+        "owner_test",
+        "role_protection",
+        "current_user_roles"
       ]
     },
     {
@@ -716,7 +748,9 @@
       "subject": "excluded_effect/permission.granted",
       "sources": [
         "manifest",
-        "tool_test"
+        "tool_test",
+        "role_protection",
+        "current_user_roles"
       ]
     },
     {
@@ -765,7 +799,12 @@
         "handler",
         "owner_test",
         "policy_spec",
-        "planner", "conditions", "condition_test", "skill"
+        "planner",
+        "conditions",
+        "condition_test",
+        "skill",
+        "role_protection",
+        "current_user_roles"
       ]
     },
     {
@@ -810,6 +849,19 @@
       },
       "sources": [
         "config"
+      ]
+    },
+    {
+      "id": "transfer.role_protection",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "当前第一方 User 的角色专用字段方式、手动 EA 执行及导出交付尚未纳入本委托创建能力；不借用发布人、服务或委托人角色。",
+        "en": "Current first-party User role-specific field choices, manual EA execution and export delivery are not modeled by this delegated creation capability; publisher, service or delegator roles are not borrowed."
+      },
+      "sources": [
+        "role_protection",
+        "current_user_roles",
+        "owner_test"
       ]
     }
   ]
