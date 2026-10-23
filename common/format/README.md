@@ -575,3 +575,5 @@ DAE / 3DS 的 `Model3DInfoProvider` 解析预算为 64 MiB；模型字段写入 
 3DS 另实现 `Model3DCompositionProvider`，只消费调用方绑定到一个主文件的 `io.ReaderAt` 与已观察大小，返回完整原生贴图声明，不返回网格统计或授权结果。基础识别只读取必要 chunk 头和材质声明，跳过几何 payload；逻辑长度 64 MiB、实际读取 256 KiB／4096 次、嵌套 64 层、声明 200 条／每条 4096 字节是硬预算，任何错误均不返回部分声明。Meta 独占目录／refs 匹配、claims 和持久化，不将此接口当作读取许可；无 range 能力不转为全文件读取。现有 deep 模型统计仍由 `Model3DInfoProvider` 独占。
 
 DAE 同样实现 `Model3DCompositionProvider`，通过调用方绑定的 range reader 完整解析不超过 64 MiB 的 XML（XML 无 3DS chunk 的可跳跃结构）。只返回原始 `texture_refs`，至多 200 条、单条 4096 字节，禁止 DTD/实体和不完整 XML；不输出深度网格摘要或访问依赖。Meta 负责依赖匹配及失败快照替换；FTP/NFS 执行校验同一主文件并暂存批准清单，不重读后发现更多文件。
+
+OBJ 复用同一单文档接口返回完整 `mtllib` 原始声明，MTL 的 `obj.ReadMTLTextureRefs` 是 OBJ 格式包的结构解析 helper，不另注册 MTL 数据格式，也不接收自由路径回调。调用方逐个绑定明确的 MTL range reader，并独立证明目录/批准范围与合计预算；格式包不访问依赖、引擎、权限或 Meta。名字、选项、完整性和硬预算以[OBJ 格式规范](../../docs/spec/builtin-formats/三维模型与场景.md#obj-精确组成授权)为准；深度几何 `scan_complete` 与基础 `composition_complete` 不共用含义。
