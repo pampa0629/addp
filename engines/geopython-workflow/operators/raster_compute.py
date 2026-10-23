@@ -2996,14 +2996,21 @@ def _d8_stream_order_error(code):
     return ValueError(_D8_STREAM_ORDER_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _d8_strahler_order(directions, streams):
-    """Rank an explicit stream subgraph; validate the complete D8 graph first."""
-    valid, downstream, indegree = _d8_graph(directions, _d8_stream_order_error)
-    order = _d8_topological_order(valid, downstream, indegree, _d8_stream_order_error)
+def _d8_stream_graph(directions, streams, error):
+    """Validate the whole D8 graph and closed downstream membership of a stream mask."""
+    valid, downstream, indegree = _d8_graph(directions, error)
+    order = _d8_topological_order(valid, downstream, indegree, error)
     river = streams.ravel()
     edges = np.flatnonzero(river & (downstream >= 0))
     if np.any(~river[downstream[edges]]):
-        raise _d8_stream_order_error('break')
+        raise error('break')
+    return valid, downstream, order
+
+
+def _d8_strahler_order(directions, streams):
+    """Rank an explicit stream subgraph; validate the complete D8 graph first."""
+    valid, downstream, order = _d8_stream_graph(directions, streams, _d8_stream_order_error)
+    river = streams.ravel()
     levels = np.zeros(directions.size, dtype=np.int64)
     highest_count = np.zeros(directions.size, dtype=np.uint8)
     for cell in order:
@@ -3025,25 +3032,75 @@ def _d8_strahler_order(directions, streams):
     return result
 
 
-def raster_stream_order_d8(input_raster, stream_raster, band, stream_band):
-    """Fixed Strahler ranks on aligned, coverage-identical 0/1 stream masks."""
-    source, directions, _ = _d8_direction_source(input_raster, band, _d8_stream_order_error)
+def _d8_stream_sources(input_raster, stream_raster, band, stream_band, error):
+    """One admission path for all explicit D8 stream-mask consumers."""
+    source, directions, _ = _d8_direction_source(input_raster, band, error)
     stream_source = _open(stream_raster)
     try:
         _require_same_grid(source, stream_source)
     except ValueError as cause:
-        raise _d8_stream_order_error('alignment') from cause
+        raise error('alignment') from cause
     stream_source = None
     # Reuse the same native-NoData, mask, alpha, scale and band reader. This
     # reader does not interpret direction codes; the full graph is checked below.
     _, values, _ = _d8_direction_source(stream_raster, stream_band,
-        lambda code: _d8_stream_order_error('alignment' if code == 'grid' else 'mask_' + code))
+        lambda code: error('alignment' if code == 'grid' else 'mask_' + code))
     valid = np.isfinite(directions)
     if not np.array_equal(np.isfinite(values), valid):
-        raise _d8_stream_order_error('coverage')
+        raise error('coverage')
     if np.any(valid & ~np.isin(values, (0, 1))):
-        raise _d8_stream_order_error('mask_values')
-    return _d8_output(source, _d8_strahler_order(directions, values == 1))
+        raise error('mask_values')
+    return source, directions, values == 1
+
+
+def raster_stream_order_d8(input_raster, stream_raster, band, stream_band):
+    """Fixed Strahler ranks on aligned, coverage-identical 0/1 stream masks."""
+    source, directions, streams = _d8_stream_sources(
+        input_raster, stream_raster, band, stream_band, _d8_stream_order_error)
+    return _d8_output(source, _d8_strahler_order(directions, streams))
+
+
+_D8_STREAM_LINK_MESSAGES = {
+    key: (zh.replace('D8 Strahler 河流分级', 'D8 河段编号'),
+          en.replace('D8 Strahler stream order', 'D8 stream link'))
+    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items() if key != 'overflow'
+}
+_D8_STREAM_LINK_MESSAGES['overflow'] = (
+    'D8 河段编号的河段数超过Float64精确整数上限2^53−1',
+    'D8 stream link count exceeds the Float64 exact integer limit 2^53-1')
+
+
+def _d8_stream_link_error(code):
+    return ValueError(_D8_STREAM_LINK_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_stream_links(directions, streams):
+    """Number stream starts in row/column order; confluences own the downstream segment."""
+    valid, downstream, order = _d8_stream_graph(directions, streams, _d8_stream_link_error)
+    river = streams.ravel()
+    incoming = np.zeros(directions.size, dtype=np.uint8)
+    donors = np.flatnonzero(river & (downstream >= 0))
+    np.add.at(incoming, downstream[donors], 1)
+    starts = np.flatnonzero(river & (incoming != 1))
+    if starts.size > _D8_MAX_EXACT_COUNT:
+        raise _d8_stream_link_error('overflow')
+    labels = np.zeros(directions.size, dtype=np.int64)
+    labels[starts] = np.arange(1, starts.size + 1, dtype=np.int64)
+    for cell in order:
+        if river[cell]:
+            target = int(downstream[cell])
+            if target >= 0 and incoming[target] == 1:
+                labels[target] = labels[cell]
+    result = labels.reshape(directions.shape).astype(np.float64)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_stream_link_d8(input_raster, stream_raster, band, stream_band):
+    """Label an explicit stream mask without filling gaps or producing vector lines."""
+    source, directions, streams = _d8_stream_sources(
+        input_raster, stream_raster, band, stream_band, _d8_stream_link_error)
+    return _d8_output(source, _d8_stream_links(directions, streams))
 
 
 def _terrain(input_raster, elevation_unit, band, processing, **options):
@@ -3189,6 +3246,7 @@ _SPECS = [
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 Strahler 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段；固定Strahler，最高同级至少两条才升级')], 'raster', ['read']),
+    (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -3217,7 +3275,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'foreground_value': 1})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
-    if name == 'raster_stream_order_d8':
+    if name in ('raster_stream_order_d8', 'raster_stream_link_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_watershed_d8':
         examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1})
