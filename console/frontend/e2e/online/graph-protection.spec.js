@@ -33,6 +33,7 @@ test('ordinary Service graph reader verifies the real page and original DTO addr
     if (response.status() >= 400 && !isAnonymousRefreshResponse(response) &&
         !(protectedPhase && pathname === path && response.status() === 500)) errors.push('unexpected HTTP failure')
   })
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const detailResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/service/graph/${expected.service_id}`)
   await login(page, required('ADDP_ONLINE_GRAPH_SERVICE_USERNAME'), required('ADDP_ONLINE_GRAPH_SERVICE_PASSWORD'),
     `/service/graph-services/${expected.service_id}`)
@@ -49,8 +50,10 @@ test('ordinary Service graph reader verifies the real page and original DTO addr
     const direct = await api.post(definition.endpoints.execute, { data: body })
     expect(direct.status()).toBe(protectedPhase ? 500 : 200)
     const dtoPayload = await direct.json()
+    const runQuery = frame.getByRole('button', { name: '执行查询', exact: true })
+    await expect(runQuery).toBeVisible()
     const pending = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === path)
-    await frame.getByRole('button', { name: '执行查询', exact: true }).click()
+    await runQuery.click()
     const executed = await pending
     expect(new URL(executed.url()).origin).toBe(required('CONSOLE_URL'))
     expect(executed.status()).toBe(protectedPhase ? 500 : 200)
