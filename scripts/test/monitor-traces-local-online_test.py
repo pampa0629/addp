@@ -149,13 +149,23 @@ class FormalAPI:
         life = SimpleNamespace(run_id='local-trace-fixture', wait=lambda seconds: self.waits.append(seconds))
         env = {'POSTGRES_USER': 'fixture', 'POSTGRES_PASSWORD': 'fixture-private-password'}
         report = {}
-        with patch.object(M, 'login', side_effect=lambda env, who, platform=False: (self.client(who), identity(who))), \
+        with patch.object(M, 'login', side_effect=lambda env, who, platform=False, life=None: (self.client(who), identity(who))), \
              patch.object(M.time, 'monotonic', new=Clock()), patch.object(M.time, 'sleep'):
             retained = M.run(life, env, report)
         return retained, report
 
 
 class LocalExecutionTraceOwnerTests(unittest.TestCase):
+    def test_guard_failure_stops_http_before_any_new_business_request(self):
+        calls=[]
+        client=SimpleNamespace(request=lambda *a,**k:calls.append(a))
+        def failed():raise RuntimeError('resource_guard_failed')
+        life=SimpleNamespace(request_timeout=failed,check=lambda:None)
+        M.guard_client(client,life)
+        with self.assertRaisesRegex(RuntimeError,'resource_guard_failed'):
+            client.request('POST','/owned-mutation',(201,),{})
+        self.assertEqual(calls,[])
+
     def test_real_owner_dtos_parent_child_and_natural_failure_sampling(self):
         server = FormalAPI()
         retained, report = server.run()
@@ -220,11 +230,12 @@ class LocalExecutionTraceOwnerTests(unittest.TestCase):
                  'ADDP_EXECUTION_TRACE_USER_USERNAME':'fixture','ADDP_EXECUTION_TRACE_USER_PASSWORD':'fixture-private-password',
                  'ADDP_EXECUTION_TRACE_TENANT_ID':'7'}
             clients=[]
+            life=SimpleNamespace(local_clients=clients,local_definitions=[],phase='test',
+                                 request_timeout=lambda:10,check=lambda:None)
             for _ in range(4):
-                client,context=M.login(env,'USER');clients.append(client)
+                client,context=M.login(env,'USER',life=life);clients.append(client)
                 self.assertEqual(context['context']['tenant_id'],'7')
             self.assertEqual(len({id(c.browser_opener) for c in clients}),4)
-            life=SimpleNamespace(local_clients=clients,local_definitions=[],phase='test')
             report={'assertions':{}}
             M.finish(life,env,report)
             self.assertEqual(len(revoked),4)

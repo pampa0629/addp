@@ -32,16 +32,29 @@ def permissions(context):
     return {p for a in context.get('authorization', {}).get('role_assignments', []) for p in a.get('permissions', [])}
 
 
-def login(env, who, platform=False):
+def guard_client(client, life):
+    request = client.request
+    def guarded(*args, **kwargs):
+        client.timeout = life.request_timeout()
+        reply = request(*args, **kwargs)
+        life.check()
+        return reply
+    client.request = guarded
+    return client
+
+
+def login(env, who, platform=False, life=None):
     # Every login has a separate real HttpOnly refresh-cookie jar. Bearer
     # business requests still reuse the shared owner API client.
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     def exchange(path, body):
         request=urllib.request.Request(env['GATEWAY_URL']+path,data=json.dumps(body).encode(),method='POST',
                                        headers={'Content-Type':'application/json','Accept':'application/json'})
-        with opener.open(request,timeout=10) as response:
+        with opener.open(request,timeout=life.request_timeout() if life else 10) as response:
             require(response.status==200,'formal_login_http_status')
-            return json.load(response)
+            reply = json.load(response)
+        if life:life.check()
+        return reply
     prefix = 'ADDP_EXECUTION_TRACE_' + who
     reply = exchange('/api/v1/system/login', {
         'username': env[prefix+'_USERNAME'], 'password': env[prefix+'_PASSWORD']})
@@ -52,7 +65,7 @@ def login(env, who, platform=False):
         # Formal TOTP anti-replay remains active, including subsequent browser login.
         remaining=30-time.time()%30
         if remaining < 2:
-            time.sleep(remaining+.1)
+            life.wait(remaining+.1) if life else time.sleep(remaining+.1)
         counter=struct.pack('>Q', int(time.time())//30)
         key=base64.b32decode(env[prefix+'_TOTP'], casefold=False)
         digest=hmac.new(key,counter,hashlib.sha1).digest(); offset=digest[-1]&15
@@ -64,6 +77,7 @@ def login(env, who, platform=False):
     require(isinstance(token,str) and token.startswith('addp_at_'),'formal_access_token_required')
     client=API.GatewayClient(env['GATEWAY_URL'],token,10)
     client.browser_opener=opener
+    if life:guard_client(client,life)
     identity=client.request('GET','/api/v1/system/auth/context',(200,)).payload
     require(identity.get('principal',{}).get('type')=='user' and identity.get('delegation') is None,'nondelegated_user_required')
     require(identity.get('token',{}).get('type')=='first_party_access_token','password_issued_token_required')
@@ -120,10 +134,10 @@ def checkpoint_rows(client, instance, execution_id, start, end, trace_id=None):
 
 def run(life, env, report):
     life.phase='formal_password_and_authcontext'
-    admin,admin_identity=login(env,'ADMIN',True)
-    negative,negative_identity=login(env,'SECURITY',True)
-    user,user_identity=login(env,'USER')
-    preparer,preparer_identity=login(env,'PREPARER')
+    admin,admin_identity=login(env,'ADMIN',True,life)
+    negative,negative_identity=login(env,'SECURITY',True,life)
+    user,user_identity=login(env,'USER',life=life)
+    preparer,preparer_identity=login(env,'PREPARER',life=life)
     require({'monitor.trace.read','platform.module_log.read'}<=permissions(admin_identity),'administrator_diagnostic_permissions_missing')
     require(not {'monitor.trace.read','platform.module_log.read'}.intersection(permissions(negative_identity)|permissions(user_identity)),'negative_identity_has_platform_diagnostic_permission')
     require(permissions(user_identity)=={
@@ -255,7 +269,7 @@ def finish(life,env,report):
     for client in (admin,negative,user,preparer):
         request=urllib.request.Request(env['GATEWAY_URL']+'/api/v1/system/logout',data=b'',method='POST',
                                        headers={'Authorization':'Bearer '+client.token})
-        with client.browser_opener.open(request,timeout=10) as response:
+        with client.browser_opener.open(request,timeout=life.request_timeout()) as response:
             require(response.status==204,'formal_logout_did_not_close_cookie_session')
         client.request('GET','/api/v1/system/auth/context',(401,))
     report['assertions'].update(formal_definitions_deleted=True,logout_old_session_denied=True)

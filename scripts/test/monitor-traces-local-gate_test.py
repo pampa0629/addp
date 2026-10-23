@@ -227,7 +227,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertEqual(life.samples[-1]['volume_allocated_bytes'], m.VOLUME_STOP - 4096)
             usage = next(args for args, _ in calls if args[0] == 'run')
             self.assertIn('none', usage)
-            self.assertIn('.05', usage)
+            self.assertIn(str(m.SAMPLER_CPU), usage)
             self.assertIn('64m', usage)
             self.assertTrue(all('readonly' in arg for arg in usage if arg.startswith('type=volume,')))
 
@@ -262,12 +262,30 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             life = bare_lifecycle(directory)
             life.sample = mock.Mock(side_effect=m.GateError('owned_volume_stop_line_reached'))
-            life.monitor()
+            with mock.patch.object(m.time,'monotonic',return_value=1):
+                life.monitor()
             self.assertEqual(life.failure, 'owned_volume_stop_line_reached')
             with mock.patch.object(m.time, 'monotonic', return_value=1), mock.patch.object(m.subprocess, 'Popen') as start:
                 with self.assertRaises(m.GateError):
                     life.command(['never-start-this'])
             start.assert_not_called()
+
+    def test_sampler_reserve_fits_runtime_browser_and_build_aggregate_limits(self):
+        running={k:v for k,v in m.LIMITS.items() if k not in ('runtime-log-store-init','trace-store-init')}
+        self.assertLessEqual(sum(v[0] for v in running.values()) + .5 + m.SAMPLER_CPU, 8)
+        self.assertLessEqual(sum(v[1] for v in running.values()) + 1024 + 64, 12*1024)
+        self.assertLessEqual(3+3+m.SAMPLER_CPU,8)
+
+    def test_sampler_timeout_reports_the_failed_operation_and_stops_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            life.sample_operation='measure_owned_volumes'
+            life.sample=mock.Mock(side_effect=m.GateError('command_deadline_exceeded'))
+            with mock.patch.object(m.time,'monotonic',return_value=1):
+                life.monitor()
+                self.assertEqual(life.failure,'resource_sample_deadline_exceeded')
+                self.assertEqual(life.resource_failure['operation'],'measure_owned_volumes')
+                with self.assertRaises(m.GateError):life.request_timeout()
 
     def test_sampling_duration_is_deducted_from_the_five_second_interval(self):
         with tempfile.TemporaryDirectory() as directory:

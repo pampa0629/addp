@@ -55,6 +55,7 @@ OWN_INPUTS = (
 )
 MAX_SECONDS = 3600
 VOLUME_STOP = 4 * 1024**3
+SAMPLER_CPU = .25
 
 
 class GateError(RuntimeError):
@@ -228,6 +229,10 @@ class Lifecycle:
         require(time.monotonic() - self.started < MAX_SECONDS, "total_deadline_exceeded")
         require(self.failure is None, self.failure or "resource_guard_failed")
 
+    def request_timeout(self, seconds=10):
+        self.check()
+        return min(seconds, MAX_SECONDS - (time.monotonic() - self.started))
+
     def wait(self, seconds):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -287,14 +292,18 @@ class Lifecycle:
         return int(output.split()[0])*1024
 
     def sample(self):
-        deadline = time.monotonic()+4
+        began = time.monotonic()
+        deadline = began+4
         def remaining():
             value=deadline-time.monotonic()
             require(value>0, 'resource_sample_deadline_exceeded')
             return value
+        self.sample_operation = 'list_owned_containers'
         ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
+        self.sample_operation = 'inspect_owned_containers'
         rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
         cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
+        self.sample_operation = 'list_owned_volumes'
         volumes = self.owned('volume', timeout=remaining())
         if self.builder_ids:
             for row in rows:
@@ -306,14 +315,16 @@ class Lifecycle:
         if volumes:
             # A separate tiny container uses the same immutable MinIO image only for du.
             args = ['run', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
-                    '--label', LABEL+'.role=oneshot', '--cpus', '.05', '--memory', '64m', '--network', 'none', '--entrypoint', '/bin/sh']
+                    '--label', LABEL+'.role=oneshot', '--cpus', str(SAMPLER_CPU), '--memory', '64m', '--network', 'none', '--entrypoint', '/bin/sh']
             for i, name in enumerate(sorted(set(volumes))):
                 args += ['--mount', f'type=volume,source={name},target=/space/{i},readonly']
             args += [self.minio_image, '-ec', 'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'']
+            self.sample_operation = 'measure_owned_volumes'
             total = int(float(self.docker(*args, guarded=False, timeout=remaining()).strip()))
+        self.sample_operation = 'measure_private_bindings'
         total += self.owned_bind_bytes(timeout=remaining())
         now = time.monotonic()
-        self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'cpu_hard_limit': cpu,
+        self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'sample_duration_seconds': round(now-began, 3), 'cpu_hard_limit': cpu,
                              'memory_hard_limit_bytes': memory, 'volume_allocated_bytes': total})
         require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
 
@@ -321,9 +332,15 @@ class Lifecycle:
         while not self.stop.is_set():
             began=time.monotonic()
             try:
+                self.check()
                 self.sample()
             except Exception as error:
                 self.failure = str(error) if isinstance(error, GateError) else 'resource_sample_failed'
+                if self.failure == 'command_deadline_exceeded':
+                    self.failure = 'resource_sample_deadline_exceeded'
+                self.resource_failure = {'operation':getattr(self,'sample_operation','admission'),
+                    'error_code':self.failure,'elapsed_seconds':round(time.monotonic()-self.started,2),
+                    'sample_duration_seconds':round(time.monotonic()-began,3)}
                 return
             self.stop.wait(max(0, 4-time.monotonic()+began))
 
@@ -615,6 +632,9 @@ def main():
         config=setup(life,env,images)
         report['module_commits']=life.module_commits
         identity(life,env)
+        # Shared HTTP helpers must never send local Bearer credentials through
+        # a shell-configured public proxy. This process owns only this fixture.
+        os.environ['NO_PROXY']=os.environ['no_proxy']='127.0.0.1,localhost'
         business=module('monitor-traces-local-online',life.checkout)
         browser=business.run(life,env,report)
         life.phase='real_console_browser'
@@ -644,6 +664,7 @@ def main():
         if hasattr(life,'last_failure'):report['command_failure']=life.last_failure
     finally:
         report['resource_samples']=life.samples
+        if hasattr(life,'resource_failure'):report['resource_guard_failure']=life.resource_failure
         errors=life.cleanup()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'
