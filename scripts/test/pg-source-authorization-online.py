@@ -652,6 +652,27 @@ class WorkspaceObservation(BrowserObservation):
         return result
 
 
+def collection_instant(value):
+    """One RFC3339 interpretation, without Python's fractional-second truncation."""
+    match = re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})', value) if type(value) is str else None
+    require(match is not None, 'invalid qualification timestamp')
+    try:
+        whole = datetime.fromisoformat(match[1] + match[3].replace('Z', '+00:00')).astimezone(timezone.utc)
+    except ValueError:
+        raise SuiteError('invalid qualification timestamp') from None
+    return whole, int((match[2] or '').ljust(9, '0'))
+
+
+def same_collection_row(left, right):
+    if set(left) != set(right):
+        return False
+    left, right = dict(left), dict(right)
+    for key in ('granted_at', 'expires_at', 'revoked_at'):
+        if key in left:
+            left[key], right[key] = collection_instant(left[key]), collection_instant(right[key])
+    return left == right
+
+
 class MetaCollectionScenario:
     """Task-bound governance approval through real Users and the Meta Worker."""
     def __init__(self, lifecycle, issuer, run_id):
@@ -678,10 +699,12 @@ class MetaCollectionScenario:
                 owned['id'] = row['id']
         return rows
 
-    def qualification_rows(self):
+    def qualification_rows(self, diagnostic=None):
         rows = []
         for page in range(1, 11):
-            result = self.life.operator.request('GET', self.route + f'?page={page}&page_size=100', (200,)).payload
+            path = self.route + f'?page={page}&page_size=100'
+            result = (self.life.operator.request('GET', path, (200,)).payload if diagnostic is None else
+                      self.observed_request(diagnostic, 'GET', path, client=self.life.operator))
             require(type(result.get('total')) is int and result['total'] <= 1000
                     and result.get('page') == page and result.get('page_size') == 100
                     and isinstance(result.get('data'), list), 'invalid collection history pagination')
@@ -691,18 +714,29 @@ class MetaCollectionScenario:
                 return rows
         raise SuiteError('collection history exceeded its bounded pages')
 
-    def row(self, command):
-        rows = [row for row in self.qualification_rows() if row.get('id') == command]
+    def row(self, command, diagnostic=None):
+        rows = [row for row in self.qualification_rows(diagnostic) if row.get('id') == command]
+        if diagnostic is not None:
+            diagnostic.update(stage='history_row_identity', matching_rows=len(rows))
         require(len(rows) == 1, 'owned collection qualification missing')
         row, body = rows[0], self.commands[command]
+        if diagnostic is not None:
+            diagnostic.update(stage='history_row_binding', binding={
+                'engine': row.get('engine_id') == str(self.life.engine), 'task': row.get('task_id') == body['task_id'],
+                'digest': row.get('task_definition_digest') == body['expected_task_definition_digest'],
+                'purpose': row.get('purpose') == body['purpose'], 'depth': row.get('scan_depth') == 'basic',
+                'scope': row.get('scope_kind') == 'engine', 'approver': row.get('granted_by_principal_id') == self.issuer,
+                'engine_version': bool(re.fullmatch(r'[1-9][0-9]*', row.get('engine_version', ''))),
+                'version': bool(re.fullmatch(r'[1-9][0-9]*', row.get('version', ''))),
+                'expiry': collection_instant(row.get('expires_at')) == collection_instant(body['expires_at'])})
         require(row.get('engine_id') == str(self.life.engine) and row.get('task_id') == body['task_id']
                 and row.get('task_definition_digest') == body['expected_task_definition_digest']
                 and row.get('purpose') == body['purpose'] and row.get('scan_depth') == 'basic'
                 and row.get('scope_kind') == 'engine' and row.get('granted_by_principal_id') == self.issuer
                 and re.fullmatch(r'[1-9][0-9]*', row.get('engine_version', ''))
                 and re.fullmatch(r'[1-9][0-9]*', row.get('version', ''))
-                and datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
-                    == datetime.fromisoformat(body['expires_at']), 'qualification changed its approved binding')
+                and collection_instant(row['expires_at']) == collection_instant(body['expires_at']),
+                'qualification changed its approved binding')
         return row
 
     def create_task(self, suffix):
@@ -732,9 +766,9 @@ class MetaCollectionScenario:
         row = self.life.operator.request('PUT', f'/api/v1/meta/scan/tasks/{task["id"]}', (200,), task['body']).payload
         require(row.get('id') == task['id'], 'task update changed identity')
 
-    def observed_request(self, attempt, method, path):
+    def observed_request(self, attempt, method, path, *, client=None, expected=(200,), body=None):
         try:
-            result = self.life.reader.request(method, path, (200,))
+            result = (self.life.reader if client is None else client).request(method, path, expected, body)
         except SuiteError as error:
             # Client errors can contain transport text. Publish only bounded
             # machine status/code, never the exception, response body or URL.
@@ -855,16 +889,27 @@ class MetaCollectionScenario:
         require(set(denied) <= {'error', 'error_code'} and denied.get('error'), 'executor can self-approve or denial leaks data')
         self.commands[command] = body
         evidence['qualification_commands'].append(command)
-        issued = self.life.operator.request('POST', self.route, (201,), body).payload
-        original = self.row(command)
-        require(issued == original and original.get('status') == 'active' and original.get('version') == '1',
+        approval = evidence['approval'] = {'stage': 'operator_post', 'command_id': command}
+        issued = self.observed_request(approval, 'POST', self.route, client=self.life.operator, expected=(201,), body=body)
+        approval.update(stage='history_read', post_status=approval['http_status'])
+        original = self.row(command, approval)
+        approval.update(stage='post_history_comparison', raw_equal=issued == original,
+                        semantic_equal=same_collection_row(issued, original), key_set_matches=set(issued) == set(original),
+                        initial_state_matches=original.get('status') == 'active' and original.get('version') == '1',
+                        differing_fields=[key for key in sorted(set(issued) | set(original))
+                            if issued.get(key) != original.get(key) and key in {
+                                'id', 'engine_id', 'task_id', 'task_definition_digest', 'engine_version', 'scan_depth',
+                                'scope_kind', 'purpose', 'status', 'version', 'granted_at', 'expires_at',
+                                'granted_by_principal_id', 'revoked_at', 'revoked_by_principal_id', 'revoked_reason'}])
+        require(approval['semantic_equal'] and original.get('status') == 'active' and original.get('version') == '1',
                 'approval did not persist one immutable qualification')
+        approval['stage'] = 'verified'
         evidence['expires_at'] = original['expires_at']
         evidence['executions']['approved_first'] = self.trigger(task['id'], True)
         self.update(task, description='Renamed metadata only; approval must not renew')
         require(self.facts(task['id']) == facts, 'non-functional task change altered approval digest')
         evidence['executions']['approved_repeat'] = self.trigger(task['id'], True)
-        require(self.row(command) == original, 'repeat run changed qualification or renewed its expiry')
+        require(same_collection_row(self.row(command), original), 'repeat run changed qualification or renewed its expiry')
         report['checks'].append(COLLECTION_CHECKS[1])
         copied = self.create_task('_copy')
         evidence['copy_task_id'] = str(copied['id'])
@@ -873,13 +918,13 @@ class MetaCollectionScenario:
         self.update(task, force=True)
         require(self.facts(task['id'])['task_definition_digest'] != facts['task_definition_digest'], 'force change did not change digest')
         evidence['executions']['changed'] = self.trigger(task['id'], False)
-        require(self.row(command) == original, 'configuration change silently replaced approval')
+        require(same_collection_row(self.row(command), original), 'configuration change silently replaced approval')
         report['checks'].append(COLLECTION_CHECKS[3])
         self.update(task, force=False)
         require(self.facts(task['id']) == facts, 'restored functional config differs')
         revoked = self.revoke(command)
         replay = self.life.operator.request('POST', self.route, (201,), body).payload
-        require(replay == revoked, 'same command revived or renewed revoked qualification')
+        require(same_collection_row(replay, revoked), 'same command revived or renewed revoked qualification')
         evidence['executions']['revoked'] = self.trigger(task['id'], False)
         report['checks'].append(COLLECTION_CHECKS[4])
         require(self.source_snapshot() == before, 'collection approval modified source Grant/Deny history')

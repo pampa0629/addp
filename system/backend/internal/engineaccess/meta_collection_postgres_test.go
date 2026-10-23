@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -141,6 +143,43 @@ func exerciseMetaCollectionQualifications(t *testing.T, db *gorm.DB, tenantID, a
 		if err != nil || approved.ID != input.CommandID || approved.Version != 1 || approved.ScanDepth != "basic" {
 			t.Fatalf("approve=%+v err=%v", approved, err)
 		}
+		readback, _, err := svc.ListMetaCollections(ctx, actor, input.EngineID, 1, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored *MetaCollectionQualification
+		for i := range readback {
+			if readback[i].ID == approved.ID {
+				stored = &readback[i]
+			}
+		}
+		if stored == nil || !stored.GrantedAt.Equal(approved.GrantedAt) || !stored.ExpiresAt.Equal(approved.ExpiresAt) {
+			t.Fatal("approval and persisted history disagree on exact timestamps")
+		}
+		wire := func(row *MetaCollectionQualification) map[string]any {
+			t.Helper()
+			raw, err := json.Marshal(row)
+			var result map[string]any
+			if err != nil || json.Unmarshal(raw, &result) != nil {
+				t.Fatal("qualification JSON encoding failed")
+			}
+			return result
+		}
+		issuedWire, storedWire := wire(approved), wire(stored)
+		if len(issuedWire) != len(storedWire) {
+			t.Fatal("approval/history JSON field sets differ")
+		}
+		different := []string{}
+		for key, value := range issuedWire {
+			if !reflect.DeepEqual(value, storedWire[key]) {
+				if key != "granted_at" && key != "expires_at" {
+					t.Fatalf("approval/history changed non-temporal field %s", key)
+				}
+				different = append(different, key)
+			}
+		}
+		sort.Strings(different)
+		t.Logf("approval/history JSON differing fields=%v; granted_at and expires_at instants identical", different)
 		for _, run := range []execution.MetaCollectionAccessRequest{request, newRun("41")} {
 			observation, err := svc.CheckMetaCollection(ctx, runtime, run)
 			if err != nil || observation.QualificationID != approved.ID.String() {

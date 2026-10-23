@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -1889,6 +1889,13 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                     elif self.fault == 'replay_revives':
                         self.qualifications[command]['status'] = 'active'
                     status, result, operation = 201, self.qualifications[command], 'approve'
+                    if self.fault == 'different_timestamp_zone':
+                        # The POST's UTC time and a database read's local time
+                        # can encode exactly the same instant differently.
+                        result = deepcopy(result)
+                        for key in ('granted_at', 'expires_at', 'revoked_at'):
+                            if key in result:
+                                self.qualifications[command][key] = datetime.fromisoformat(result[key].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=8))).isoformat()
             else:
                 row = self.qualifications[path.split('/')[-1]]
                 self.assertEqual(body['version'], row['version'])
@@ -1919,6 +1926,75 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.assertFalse(self.tasks)
         self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
         self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_equivalent_post_and_history_timestamp_zones_preserve_full_qualification_binding(self):
+        self.fault = 'different_timestamp_zone'
+        self.scenario.run(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_CHECKS)
+        self.assertEqual(len(self.qualifications), 1)
+        self.assertFalse(self.report['meta_collection']['approval']['raw_equal'])
+        self.assertTrue(self.report['meta_collection']['approval']['semantic_equal'])
+        self.assertEqual(self.report['meta_collection']['approval']['stage'], 'verified')
+        self.scenario.cleanup()
+
+    def test_qualification_equality_preserves_all_fields_and_nanosecond_expiry(self):
+        original = {'id': 'stable-command', 'status': 'active', 'version': '1', 'task_definition_digest': 'a' * 64,
+                    'expires_at': '2026-10-23T03:33:18.123456700Z'}
+        same = dict(original, expires_at='2026-10-23T11:33:18.1234567+08:00')
+        self.assertTrue(ONLINE.same_collection_row(original, same))
+        for changes in ({'expires_at': '2026-10-23T03:33:18.123456701Z'}, {'status': 'revoked'},
+                        {'version': '2'}, {'task_definition_digest': 'b' * 64}, {'unexpected': True}):
+            with self.subTest(changes=changes):
+                self.assertFalse(ONLINE.same_collection_row(original, dict(same, **changes)))
+        for invalid in ('2026-10-23T03:33:18', '2026-10-23T03:33:18.1234567890Z', '2026-99-23T03:33:18Z', None):
+            with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.same_collection_row(original, dict(same, expires_at=invalid))
+
+    def test_operator_approval_failure_preserves_http_stage_and_command_for_cleanup(self):
+        original = self.operator.request.side_effect
+        def failed(method, url, *args, **kwargs):
+            if method == 'POST' and url.endswith('/meta_collection_qualifications'):
+                raise ONLINE.SuiteError('POST /api/v1/system/engines/2/meta_collection_qualifications returned HTTP 503 (meta_collection_facts_unavailable)')
+            return original(method, url, *args, **kwargs)
+        self.operator.request.side_effect = failed
+        with self.assertRaises(ONLINE.SuiteError):
+            self.scenario.run(self.report)
+        approval = self.report['meta_collection']['approval']
+        self.assertEqual(approval['stage'], 'operator_post')
+        self.assertEqual(approval['http_status'], 503)
+        self.assertEqual(approval['http_error_code'], 'meta_collection_facts_unavailable')
+        self.assertIn(approval['command_id'], self.scenario.commands)
+        self.assertEqual(self.report['checks'], [ONLINE.COLLECTION_CHECKS[0]])
+        self.scenario.cleanup()
+
+    def test_approval_readback_failure_reports_unique_row_or_field_binding_and_still_cleans(self):
+        for fault in ('missing_row', 'wrong_digest'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                original = self.operator.request.side_effect
+                injected = False
+                def changed(method, url, *args, **kwargs):
+                    nonlocal injected
+                    result = original(method, url, *args, **kwargs)
+                    if not injected and method == 'GET' and '/meta_collection_qualifications?' in url:
+                        injected = True
+                        if fault == 'missing_row':
+                            result.payload.update(data=[], total=0)
+                        else:
+                            result.payload['data'][0]['task_definition_digest'] = 'f' * 64
+                    return result
+                self.operator.request.side_effect = changed
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run(self.report)
+                approval = self.report['meta_collection']['approval']
+                self.assertEqual(approval['post_status'], 201)
+                self.assertEqual(approval['http_status'], 200)
+                self.assertEqual(approval['stage'], 'history_row_identity' if fault == 'missing_row' else 'history_row_binding')
+                if fault == 'wrong_digest':
+                    self.assertFalse(approval['binding']['digest'])
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
 
     def test_rejects_missing_safety_checks_without_counting_partial_pass(self):
         for fault in ('unapproved_allowed', 'changed_allowed', 'revoked_allowed', 'copied_allowed',
