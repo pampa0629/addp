@@ -18,6 +18,8 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 
 ## 运行角色
 
+敏感数据发现的过程事件复用 `common.execution_events`：实际 claim 与 `started` 同事务，成功时与 Finding、Enrollment 当前来源和保护投影一起提交 `completed`，既有失败及租约重试耗尽分别提交唯一 `failed`。错配或过期 lease 不得追加，事件写入失败回滚对应事务。仍按现有 `max_attempts` 恢复：回到 pending 时不伪造 execution 终态事件，新 attempt 实际 claim 后记录自己的 started。心跳不产生事件；本切片不新增百分比或 Runtime 步骤，不保存字段、样本、Detector 配置、专业结果或授权信息。读取复用已有 Owner 读取裁决，30 天事件维护不改变专业证据、执行概览或审计生命周期。验证沿 `make test-module MODULE=security GO_ONLY=1` 和 `make test-security-postgres`；新增 `TestDiscoveryExecutionEventsAgainstPostgres` 纳入后者既有服务测试筛选，既有 Go／Security PostgreSQL CI 自动覆盖。确定性测试不能代替真实 Gateway／Worker／Monitor T4。
+
 - Backend：端口 `8194`，API 前缀 `/api/v1/security`，维护控制面事实。
 - Worker：独立运行角色；通过 `common.task_executions` 领取 `security/sensitive_data_discovery` 有界执行，使用 `addp-security` Tenant Service Access Token 精确读取 Meta 技术事实，并且只对已显式纳管的文档按 fingerprint 读取临时受控正文样本；通用租约过期后按 `max_attempts` 重试或失败收口，不运行定时调度或 TaskProvider。
 - Frontend：端口 `5191`，通过 Console iframe 集成；产品入口固定收敛为“分类分级体系”“敏感数据定义”“受保护资源”。`/classification-grading` 以可恢复 `tab` 组织低频维护的 SecurityClassification 和 SecurityGrade；`/sensitive-data-definitions` 以 SensitiveDataType 为主视图，把 Detector 作为“识别方式”、把 ProtectionBaseline 作为“默认保护”收进对应敏感类型，不再保留 `/protection-baselines` 产品路由；“受保护资源”统一承载 Assessment 调整、按需读取的不可变修订历史与只能收紧的 ProtectionPolicy 编辑，并把 acknowledgement 表述为保护规则“待同步/已同步”，不使用“待安装/已安装”或“已生效”，也不能表述成某个具体请求或该 Owner 所有数据形态均已执行成功。旧的实体级分类、等级、敏感类型和独立保护基线页面路径不恢复，也不保留兼容入口。

@@ -53,9 +53,15 @@ func (s *DiscoveryService) ClaimNext(ctx context.Context, workerID string, now t
 			Module: commonexecution.ModuleSecurity, TaskType: commonexecution.TaskTypeSensitiveDataDiscovery,
 			Source: commonexecution.ModuleSecurity, WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
 		})
-		return err
+		if err != nil || item == nil {
+			return err
+		}
+		return commonexecution.AppendBoundedEvent(ctx, tx, *lease, commonexecution.EventInput{Kind: "started"})
 	})
-	return item, lease, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return item, lease, nil
 }
 
 func (s *DiscoveryService) Renew(ctx context.Context, lease commonexecution.Lease, expiresAt time.Time) error {
@@ -95,7 +101,7 @@ func (s *DiscoveryService) RecoverExpired(ctx context.Context, now time.Time, li
 				if item.StartedAt != nil {
 					fields["execution_time_ms"] = now.UTC().Sub(item.StartedAt.UTC()).Milliseconds()
 				}
-				if err := commonexecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+				if err := commonexecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
 					return err
 				}
 			}
@@ -198,7 +204,7 @@ func (s *DiscoveryService) Execute(ctx context.Context, item *commonexecution.Ta
 		}
 		duration := now.Sub(started).Milliseconds()
 		count := int64(len(findings))
-		return commonexecution.CompleteWithLease(ctx, tx, lease, commonexecution.ExecutionStatusSuccess, now, map[string]interface{}{
+		return commonexecution.CompleteWithEvent(ctx, tx, lease, commonexecution.ExecutionStatusSuccess, now, map[string]interface{}{
 			"progress": 100, "execution_time_ms": duration, "rows_affected": count,
 			"metadata": commonmodels.JSONMap{"finding_count": len(findings), "source_snapshot_hash": sourceSnapshotHash, "observed_at": observedAt},
 		})
@@ -291,7 +297,7 @@ func countExactASCIIDigitRuns(text string, exact int) int {
 
 func (s *DiscoveryService) completeFailure(ctx context.Context, lease commonexecution.Lease, started time.Time, code string) error {
 	now := s.now().UTC()
-	err := commonexecution.CompleteWithLease(ctx, s.db, lease, commonexecution.ExecutionStatusFailed, now, map[string]interface{}{
+	err := commonexecution.CompleteWithEvent(ctx, s.db, lease, commonexecution.ExecutionStatusFailed, now, map[string]interface{}{
 		"progress": 100, "execution_time_ms": now.Sub(started).Milliseconds(),
 		"error_details": commonmodels.JSONMap{"error_code": code},
 	})

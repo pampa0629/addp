@@ -794,7 +794,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 
 func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	db := openSecurityTestDB(t)
-	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	sourceTaskID := "enrollment-recovery"
 	execution := commonexecution.TaskExecution{
 		TenantID: 7, ExecutionID: "security-discovery-recovery",
@@ -810,11 +810,14 @@ func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	}
 	discoveries := NewDiscoveryService(db, nil)
 
-	first, _, err := discoveries.ClaimNext(context.Background(), "worker-a", now.Add(time.Minute), time.Minute)
+	first, _, err := discoveries.ClaimNext(context.Background(), "worker-a", now, time.Minute)
 	if err != nil || first == nil || first.Attempt != 1 {
 		t.Fatalf("first claim = %#v, err=%v", first, err)
 	}
-	if count, err := discoveries.RecoverExpired(context.Background(), now.Add(3*time.Minute), 100); err != nil || count != 1 {
+	if err := db.Model(&commonexecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", now.Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count, err := discoveries.RecoverExpired(context.Background(), time.Now().UTC(), 100); err != nil || count != 1 {
 		t.Fatalf("first recovery = %d, %v", count, err)
 	}
 	var stored commonexecution.TaskExecution
@@ -825,11 +828,14 @@ func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 		t.Fatalf("retried execution = %#v", stored)
 	}
 
-	second, _, err := discoveries.ClaimNext(context.Background(), "worker-b", now.Add(4*time.Minute), time.Minute)
+	second, _, err := discoveries.ClaimNext(context.Background(), "worker-b", time.Now().UTC(), time.Minute)
 	if err != nil || second == nil || second.Attempt != 2 {
 		t.Fatalf("second claim = %#v, err=%v", second, err)
 	}
-	failedAt := now.Add(6 * time.Minute)
+	failedAt := time.Now().UTC()
+	if err := db.Model(&commonexecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", failedAt.Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
 	if count, err := discoveries.RecoverExpired(context.Background(), failedAt, 100); err != nil || count != 1 {
 		t.Fatalf("second recovery = %d, %v", count, err)
 	}
