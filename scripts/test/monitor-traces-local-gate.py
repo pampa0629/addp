@@ -288,6 +288,8 @@ class Lifecycle:
         if p.returncode:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
+            if args[0] == 'du':
+                self.last_failure['du_missing_file'] = b'No such file or directory' in raw
             raise GateError('command_failed_' + str(p.returncode))
         return raw.decode(errors='replace')
 
@@ -311,6 +313,15 @@ class Lifecycle:
     def sample(self):
         with self.sample_lock:
             return self._sample()
+
+    def reclaim_cache(self, args):
+        # Reclamation can unlink a file while du is traversing it. Serialize
+        # this run's explicit deletions with measurements; keep the extra wait
+        # below one second so the four-second scan still fits five seconds.
+        with self.sample_lock:
+            self.check()
+            self.command(args, timeout=.75)
+            self._sample()
 
     def _sample(self):
         began = time.monotonic()
@@ -534,7 +545,7 @@ def build(life):
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
-    shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
+    life.reclaim_cache(['rm','-rf',str(life.checkout/'.cache/go-build')])
     life.phase='product_images'
     services=BACKENDS+FRONTENDS
     references=[f'localhost:5001/addp-{name}:{life.run_id}' for name in services]
@@ -545,7 +556,7 @@ def build(life):
                       ' --registry localhost:5001 --tag '+life.run_id],env=build_env,timeout=600)
         # Only this run's cache is pruned, keeping the approved disk stop line
         # meaningful without accumulating nine independent npm build trees.
-        life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
+        life.reclaim_cache(['docker','buildx','prune','--builder',life.builder,'--all','--force'])
     images={name:life.docker('image','inspect',tag,'--format','{{.Id}}').strip() for name,tag in zip(services,references)}
     life.builder_stopped=True
     life.docker('buildx','stop',life.builder)

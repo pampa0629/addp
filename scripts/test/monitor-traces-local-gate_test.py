@@ -358,6 +358,24 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertNotIn('PRIVATE-SENTINEL',json.dumps(life.resource_failure))
             self.assertEqual(life.samples,[])
 
+    def test_explicit_cache_reclamation_and_measurement_share_lock_and_short_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            observed=[]
+            def command(args, **kwargs):
+                self.assertFalse(life.sample_lock.acquire(blocking=False))
+                self.assertLessEqual(kwargs['timeout'],1)
+                observed.append('delete')
+            def sample():
+                self.assertFalse(life.sample_lock.acquire(blocking=False))
+                observed.append('measure')
+            life.command=command; life._sample=sample
+            with mock.patch.object(m.time,'monotonic',return_value=1):
+                life.reclaim_cache(['rm','-rf','/owned/cache'])
+            self.assertEqual(observed,['delete','measure'])
+            self.assertTrue(life.sample_lock.acquire(blocking=False))
+            life.sample_lock.release()
+
     def test_every_resource_sampling_command_has_a_short_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             life, calls = self.sample_lifecycle(directory, 1024)
