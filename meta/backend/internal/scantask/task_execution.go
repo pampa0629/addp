@@ -1,10 +1,12 @@
 package scantask
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	metaModels "github.com/addp/meta/internal/models"
@@ -101,6 +103,11 @@ func RunningExecutionFields(now time.Time) map[string]interface{} {
 func FailedExecutionFields(resp *metaModels.ScanResponse, storageType string, scanErr error, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
 	errorDetails := commonModels.JSONMap{
 		"message": scanErr.Error(),
+	}
+	if errors.Is(scanErr, commonapi.ErrForbidden) {
+		// Safe execution observations consume this existing machine code. Do not
+		// infer denial from localized prose or turn dependency failures into it.
+		errorDetails["code"] = "dispatch_denied"
 	}
 	if count, samples := scanflow.FailedTargetDetails(scanErr); count > 0 {
 		errorDetails["failed_targets_count"] = count

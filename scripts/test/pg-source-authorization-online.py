@@ -659,6 +659,7 @@ class MetaCollectionScenario:
         self.route = lifecycle.base + '/meta_collection_qualifications'
         self.prefix = 'pg_collection_' + run_id + '_' + uuid.uuid4().hex[:12]
         self.tasks, self.commands, self.executions = {}, {}, {}
+        self.attempts = []
 
     def task_rows(self):
         return self.life.reader.request('GET', '/api/v1/meta/scan/tasks', (200,), response_type=list).payload
@@ -731,22 +732,57 @@ class MetaCollectionScenario:
         row = self.life.operator.request('PUT', f'/api/v1/meta/scan/tasks/{task["id"]}', (200,), task['body']).payload
         require(row.get('id') == task['id'], 'task update changed identity')
 
+    def observed_request(self, attempt, method, path):
+        try:
+            result = self.life.reader.request(method, path, (200,))
+        except SuiteError as error:
+            # Client errors can contain transport text. Publish only bounded
+            # machine status/code, never the exception, response body or URL.
+            match = re.search(r' returned HTTP ([1-5][0-9]{2}) \(([A-Za-z0-9_.-]{1,80})\)$', str(error))
+            if match:
+                attempt.update(http_status=int(match[1]), http_error_code=match[2])
+            else:
+                attempt['request_failed'] = True
+            raise
+        attempt['http_status'] = result.status
+        return result.payload
+
     def trigger(self, task, allowed):
-        execution = self.life.reader.request('POST', f'/api/v1/meta/scan/tasks/{task}/trigger', (200,)).payload['execution_id']
+        attempt = {'task_id': str(task), 'expected_terminal': 'success' if allowed else 'failed', 'stage': 'trigger'}
+        self.attempts.append(attempt)  # Keep the failing attempt, not only successful return values.
+        created = self.observed_request(attempt, 'POST', f'/api/v1/meta/scan/tasks/{task}/trigger')
+        attempt['stage'] = 'execution_identity'
+        execution = created['execution_id']
         require(str(uuid.UUID(execution)) == execution and execution not in self.executions, 'scan execution is not unique')
         self.executions[execution] = task
+        attempt['execution_id'] = execution
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
-            run = self.life.reader.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
-            require(run.get('execution_id') == execution and run.get('source_task_id') == str(task)
-                    and run.get('module') == 'meta' and run.get('task_type') == 'scan'
-                    and run.get('tenant_id') == self.life.tenant and run.get('triggered_by') == int(self.life.recipient)
-                    and run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'},
-                    'collection execution changed its task, actor or scope')
+            attempt['stage'] = 'execution_read'
+            run = self.observed_request(attempt, 'GET', f'/api/v1/meta/executions/{execution}')
+            attempt['stage'] = 'execution_binding'
+            binding = {'execution': run.get('execution_id') == execution, 'task': run.get('source_task_id') == str(task),
+                       'module': run.get('module') == 'meta', 'task_type': run.get('task_type') == 'scan',
+                       'tenant': run.get('tenant_id') == self.life.tenant,
+                       'actor': run.get('triggered_by') == int(self.life.recipient),
+                       'scope': run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}}
+            metadata = run.get('metadata', {})
+            category = run.get('error_details', {}).get('category')
+            safe_categories = {'permission_denied', 'execution_failed', 'owner_unavailable', 'connection_failed',
+                               'timeout', 'cancelled', 'invalid_input', 'coordinator_lost', 'resource_exhausted'}
+            attempt.update(binding=binding,
+                status=run.get('status') if run.get('status') in {'pending', 'running', 'success', 'failed', 'timeout', 'cancelled'} else 'invalid',
+                completed=bool(run.get('completed_at')),
+                error_category=category if category in safe_categories else 'absent_or_unknown',
+                counters={key: value if type(value) is int and 0 <= value <= 10**9 else 'absent_or_invalid'
+                          for key in ('items_scanned', 'catalog_nodes_scanned', 'fields_scanned')
+                          for value in [metadata.get(key)]})
+            require(all(binding.values()), 'collection execution changed its task, actor or scope')
             if run.get('status') not in {'pending', 'running'}:
+                attempt['stage'] = 'terminal_state'
                 require(run.get('status') == ('success' if allowed else 'failed') and run.get('completed_at'),
                         'collection execution did not reach the expected terminal state')
-                metadata = run.get('metadata', {})
+                attempt['stage'] = 'source_result' if allowed else 'authorization_denial'
                 if allowed:
                     require(type(metadata.get('items_scanned')) is int and metadata['items_scanned'] >= 2
                             and type(metadata.get('catalog_nodes_scanned')) is int and metadata['catalog_nodes_scanned'] > 0,
@@ -756,9 +792,12 @@ class MetaCollectionScenario:
                             and all(metadata.get(key) in (None, 0) for key in
                                     ('items_scanned', 'catalog_nodes_scanned', 'fields_scanned')),
                             'failed scan is not a before-source authorization denial')
+                attempt['stage'] = 'task_summary'
                 tasks = [row for row in self.task_rows() if row.get('id') == task]
-                require(len(tasks) == 1 and tasks[0].get('last_execution_id') == execution
-                        and tasks[0].get('last_execution_status') == run['status'], 'task summary did not reach terminal state')
+                attempt['summary_matches'] = (len(tasks) == 1 and tasks[0].get('last_execution_id') == execution
+                                              and tasks[0].get('last_execution_status') == run['status'])
+                require(attempt['summary_matches'], 'task summary did not reach terminal state')
+                attempt['stage'] = 'verified'
                 return {'execution_id': execution, 'status': run['status'],
                         'error_category': run.get('error_details', {}).get('category'),
                         'items_scanned': metadata.get('items_scanned', 0),
@@ -799,7 +838,7 @@ class MetaCollectionScenario:
 
     def run(self, report):
         report['phase'] = 'meta_collection_qualification'
-        evidence = report['meta_collection'] = {'executions': {}, 'qualification_commands': []}
+        evidence = report['meta_collection'] = {'executions': {}, 'qualification_commands': [], 'attempts': self.attempts}
         before = self.source_snapshot()
         task = self.create_task('_primary')
         evidence['task_id'] = str(task['id'])

@@ -2,9 +2,12 @@ package scantask
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -127,5 +130,27 @@ func TestExecutionStatusFields(t *testing.T) {
 	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, now)
 	if _, ok := backfill["next_run_at"]; ok {
 		t.Fatalf("backfill fields = %#v", backfill)
+	}
+}
+
+func TestTypedDenialRetainsSafeObservationCategory(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct {
+		name, category string
+		err            error
+	}{
+		{"localized forbidden", "permission_denied", commonapi.ErrForbidden},
+		{"System collection HTTP403", "permission_denied", errors.Join(commonapi.ErrForbidden, &client.TenantAPIError{StatusCode: http.StatusForbidden})},
+		{"System collection HTTP503", "execution_failed", &client.TenantAPIError{StatusCode: http.StatusServiceUnavailable}},
+		{"transport unavailable", "connection_failed", errors.New("connection refused")},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			fields := FailedExecutionFields(nil, "postgresql", scenario.err, time.Now(), 1, time.Now())
+			details := fields["error_details"].(commonModels.JSONMap)
+			observed := commonExecution.Observe(&commonExecution.TaskExecution{Status: "failed", ErrorDetails: details})
+			if observed.ErrorDetails["category"] != scenario.category {
+				t.Fatalf("typed failure projected as %v, expected %s", observed.ErrorDetails, scenario.category)
+			}
+		})
 	}
 }

@@ -1977,6 +1977,43 @@ class MetaCollectionOnlineTest(unittest.TestCase):
             self.scenario.run(self.report)
         self.scenario.cleanup()
 
+    def test_failed_attempt_retains_exact_stage_without_raw_response_or_exception(self):
+        for fault, stage in (('unapproved_allowed', 'terminal_state'), ('wrong_task', 'execution_binding'),
+                             ('general_failure', 'authorization_denial'), ('stale_summary', 'task_summary')):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.fault = fault
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run(self.report)
+                attempt = self.report['meta_collection']['attempts'][0]
+                self.assertEqual(attempt['stage'], stage)
+                self.assertEqual(attempt['http_status'], 200)
+                self.assertEqual(attempt['execution_id'], next(iter(self.runs)))
+                self.assertNotIn('unapproved', self.report['meta_collection']['executions'])
+                self.assertNotIn('private-password', json.dumps(self.report))
+
+    def test_non_200_trigger_still_fails_and_only_publishes_bounded_machine_error(self):
+        for message, expected in (('POST /api/v1/meta/scan/tasks/100/trigger returned HTTP 500 (internal_error)',
+                                   {'http_status': 500, 'http_error_code': 'internal_error'}),
+                                  ('transport failed: token=private-secret https://private.invalid',
+                                   {'request_failed': True})):
+            with self.subTest(message=message):
+                self.setUp()
+                original = self.reader.request.side_effect
+                def failed(method, url, *args, **kwargs):
+                    if url.endswith('/trigger'):
+                        raise ONLINE.SuiteError(message)
+                    return original(method, url, *args, **kwargs)
+                self.reader.request.side_effect = failed
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run(self.report)
+                attempt = self.report['meta_collection']['attempts'][0]
+                self.assertEqual(attempt['stage'], 'trigger')
+                self.assertTrue(all(attempt[key] == value for key, value in expected.items()))
+                self.assertNotIn('private-secret', json.dumps(self.report))
+                self.assertFalse(self.report['checks'])
+                self.scenario.cleanup()
+
     def test_cleanup_continues_other_tasks_after_one_delete_failure(self):
         self.scenario.run(self.report)
         original = self.operator.request.side_effect

@@ -166,6 +166,12 @@ func exerciseCollectionDeniedAttempt(t *testing.T, db *gorm.DB) {
 			if current.Status != "failed" || current.CompletedAt == nil || current.ErrorDetails["message"] == nil {
 				t.Fatalf("denial left nonterminal execution: %+v", current)
 			}
+			if !scenario.unavailable && !scenario.deletedBeforeClaim && !scenario.deletedAfterClaim {
+				observed := execution.Observe(&current)
+				if observed.ErrorDetails["category"] != "permission_denied" || observed.ErrorDetails["code"] != "dispatch_denied" {
+					t.Fatalf("persisted formal denial lost its safe diagnostic category: %+v", observed.ErrorDetails)
+				}
+			}
 			if err := db.Unscoped().First(&task, task.ID).Error; err != nil {
 				t.Fatal(err)
 			}
