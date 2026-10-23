@@ -68,3 +68,24 @@ func TestProcessThresholdUnitsWindowsAndMissingSamples(t *testing.T) {
 		t.Fatal("absolute memory contract")
 	}
 }
+
+func TestProcessThresholdScrapeJitterRequiresCompletePostRuleWindow(t *testing.T) {
+	at := time.Unix(1800000000, 0).UTC()
+	policy := models.ProcessThresholdPolicy{TriggerValue: .025, RecoveryValue: .008, TriggerSeconds: 15, RecoverySeconds: 15}
+	line := resourcequery.Series{MetricKey: "process.cpu.core_equivalents", Unit: "cores", WindowSeconds: 60}
+	for i, age := range []time.Duration{31010 * time.Millisecond, 16 * time.Second, 1003 * time.Millisecond} {
+		sampled, value := at.Add(-age), .004
+		line.Points = append(line.Points, resourcequery.Point{EvaluatedAt: at.Add(time.Duration(i-2) * 15 * time.Second), SampledAt: &sampled, Value: &value, DataState: "valid"})
+	}
+	two := line
+	two.Points = line.Points[1:]
+	if result := evaluateProcessThreshold(two, policy, at.Add(-92*time.Second), at, true); result.Verdict != PlatformAlertUnknown {
+		t.Fatal("14.997 seconds cannot be rounded into a complete recovery window", result)
+	}
+	if result := evaluateProcessThreshold(line, policy, at.Add(-92*time.Second), at, true); result.Verdict != PlatformAlertNormal || result.Samples != 3 {
+		t.Fatal("third advancing idle sample must establish strict recovery", result)
+	}
+	if result := evaluateProcessThreshold(line, policy, at.Add(-90*time.Second), at, true); result.Verdict != PlatformAlertUnknown {
+		t.Fatal("complete rate values cannot bypass the post-rule minute boundary", result)
+	}
+}

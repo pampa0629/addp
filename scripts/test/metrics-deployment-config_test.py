@@ -170,6 +170,49 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         namespace['query']('up')
         self.assertNotIn('time', requests[-1])
 
+    def native_cpu_history_check(self, query, name='native_process_cpu_history_ready'):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(path.read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+        namespace = {'query': query, 'math': __import__('math'), 'time': mock.Mock(time=lambda: 100.9), 'json': json, 'datetime': __import__('datetime')}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        return namespace[name]
+
+    def test_native_cpu_history_accepts_genuine_zero_only_for_all_exact_sources(self):
+        records = [{'instance_id': f'native-{i}', 'instance': f'127.0.0.1:{19440+i}'} for i in (1, 2, 3)]
+        rows = [{'metric': {'addp_instance_id': r['instance_id'], 'instance': r['instance']}, 'value': [100, '0']} for r in records]
+        query = mock.Mock(return_value=rows)
+        self.assertTrue(self.native_cpu_history_check(query)(records))
+        expression = query.call_args.args[0]
+        self.assertIn('count_over_time(process_cpu_seconds_total', expression)
+        self.assertIn('[1m])>=4', expression)
+        self.assertIn('offset 1m', expression)
+        self.assertEqual(query.call_args.kwargs, {'at': 100})
+
+    def test_native_cpu_history_rejects_missing_duplicate_and_replaced_sources(self):
+        records = [{'instance_id': f'native-{i}', 'instance': f'127.0.0.1:{19440+i}'} for i in (1, 2, 3)]
+        rows = [{'metric': {'addp_instance_id': r['instance_id'], 'instance': r['instance']}} for r in records]
+        for response in ([], rows[:2], [rows[0], rows[0], rows[2]],
+                         rows[:2]+[{'metric': {'addp_instance_id': 'old-worker', 'instance': records[2]['instance']}}],
+                         rows[:2]+[{'metric': {'addp_instance_id': records[2]['instance_id'], 'instance': '127.0.0.1:19999'}}]):
+            with self.subTest(response=response):
+                self.assertFalse(self.native_cpu_history_check(mock.Mock(return_value=response))(records))
+
+    def test_native_cpu_history_diagnostics_keep_numeric_windows_without_private_labels(self):
+        records = [{'instance_id': 'native-3', 'instance': 'private-host:19443', 'started_at': '2026-10-23T05:00:00Z'}]
+        query = mock.Mock(side_effect=[
+            [{'value': [100, '101.25']}],
+            [{'metric': {'addp_probe': 'cpu_window_samples', 'instance': 'private-host:19443'}, 'value': [100, '2']},
+             {'metric': {'addp_probe': 'untrusted', 'secret': 'never-log-this'}, 'value': [100, 'not-a-number']}],
+        ])
+        result = self.native_cpu_history_check(query, 'native_process_history_diagnostics')(records)
+        self.assertEqual(result['center_unix'], [101.25])
+        self.assertEqual(result['processes'][0]['cpu_window_samples'], [2.0])
+        self.assertEqual(result['processes'][0]['cpu_previous_age'], [])
+        self.assertNotIn('private-host', json.dumps(result))
+        self.assertNotIn('never-log-this', json.dumps(result))
+        self.assertEqual(query.call_count, 2)
+
     def test_http_quality_uses_native_source_and_standard_lifecycle_registration(self):
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
         selected = re.findall(r"'\^TestIntegrationMetrics\(([^)]+)\)\$'", probe)

@@ -73,41 +73,88 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 	backend := metricsIntegrationBackend(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 270*time.Second)
 	t.Cleanup(cancel)
+	began := time.Now()
 	lease, declared := time.Now().UTC().Add(10*time.Minute), true
 	users := &processUsers{rows: []client.RuntimeInstanceReference{{ID: 3, ModuleName: r.Module, InstanceID: r.Instance, Role: r.Role, Status: "up", LeaseExpiresAt: lease, ProcessStartedAt: &r.Started, ProcessMetricsDeclared: &declared}}}
 	identities := &resourceRuleIdentity{processFacts: []commonmodels.ObservabilityModuleIdentity{{ModuleName: r.Module, InstanceID: r.Instance, Role: r.Role, LeaseExpiresAt: lease, ProcessStartedAt: &r.Started, ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://" + r.Address + "/metrics"}}}}
 	observations := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), nil, nil, nil, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}), ProcessObservationDependencies{Users: users, Identities: identities, Backend: backend})
 	rules := NewProcessAlertRuleService(f.db, observations, identities, f.n)
+	scope := resourcequery.ProcessScope{ID: 3, ModuleName: r.Module, InstanceID: r.Instance, Role: r.Role, StartedAt: r.Started, Instance: r.Address}
+	logRules := func() {
+		var saved []models.ProcessAlertRule
+		if err := f.db.Find(&saved).Error; err != nil {
+			t.Log("rule diagnostics unavailable")
+			return
+		}
+		for _, rule := range saved {
+			value := "missing"
+			if rule.LastValue != nil {
+				value = strconv.FormatFloat(*rule.LastValue, 'g', -1, 64)
+			}
+			t.Logf("rule metric=%s verdict=%s reason=%s value=%s evaluated=%v window_since=%v", rule.MetricKey, rule.LastVerdict, rule.LastError, value, rule.LastEvaluatedAt, rule.WindowSince)
+		}
+	}
 	wait := func(label string, check func() bool) {
 		t.Helper()
+		phase := time.Now()
 		deadline := time.Now().Add(100 * time.Second)
+		nextReport := phase.Add(15 * time.Second)
 		for !check() {
 			if time.Now().After(deadline) || ctx.Err() != nil {
-				var saved []models.ProcessAlertRule
-				f.db.Find(&saved)
-				for _, rule := range saved {
-					t.Log("rule", rule.MetricKey, rule.LastVerdict, rule.LastError, rule.LastValue)
+				logRules()
+				// Bounded failure evidence through the same production query; no
+				// endpoints, labels or credentials are written to the test output.
+				diagnostic, done := context.WithTimeout(context.Background(), 5*time.Second)
+				at := time.Now().UTC().Truncate(time.Second)
+				plan, e := resourcequery.NewProcessTrendPlan(at.Add(-120*time.Second), at, at, resourcequery.DefaultBudget())
+				if e == nil {
+					var lines []resourcequery.Series
+					lines, e = backend.ProcessTrend(diagnostic, plan, scope, resourcequery.DefaultBudget())
+					for _, line := range lines {
+						for _, point := range line.Points {
+							value := "missing"
+							if point.Value != nil {
+								value = strconv.FormatFloat(*point.Value, 'g', -1, 64)
+							}
+							t.Logf("native window metric=%s window_seconds=%d evaluated=%v sampled=%v state=%s value=%s", line.MetricKey, line.WindowSeconds, point.EvaluatedAt, point.SampledAt, point.DataState, value)
+						}
+					}
 				}
-				t.Fatal(label, "timed out", ctx.Err())
+				done()
+				if e != nil {
+					t.Log("native window diagnostics unavailable")
+				}
+				t.Fatal(label, "timed out", ctx.Err(), "phase elapsed", time.Since(phase), "total elapsed", time.Since(began))
+			}
+			if time.Now().After(nextReport) {
+				t.Log(label, "pending at", time.Now().UTC(), "total elapsed", time.Since(began))
+				logRules()
+				nextReport = time.Now().Add(15 * time.Second)
 			}
 			time.Sleep(time.Second)
 		}
-		t.Log(label)
+		t.Log(label, "at", time.Now().UTC(), "phase elapsed", time.Since(phase), "total elapsed", time.Since(began))
 	}
-	scope := resourcequery.ProcessScope{ID: 3, ModuleName: r.Module, InstanceID: r.Instance, Role: r.Role, StartedAt: r.Started, Instance: r.Address}
-	baseline := map[string]float64{}
-	wait("complete native idle CPU/RSS baseline", func() bool {
+	readBaseline := func() map[string]float64 {
 		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget())
 		if e != nil {
 			t.Fatal(e)
 		}
-		baseline = map[string]float64{}
+		values := map[string]float64{}
+		if rows[3].Collection.State != "collecting" {
+			return values
+		}
 		for _, line := range rows[3].Series {
 			if len(line.Points) == 1 && line.Points[0].DataState == "valid" && line.Points[0].Value != nil {
-				baseline[line.MetricKey] = *line.Points[0].Value
+				values[line.MetricKey] = *line.Points[0].Value
 			}
 		}
-		return rows[3].Collection.State == "collecting" && len(baseline) == 3
+		return values
+	}
+	baseline := map[string]float64{}
+	wait("complete native idle CPU/RSS baseline", func() bool {
+		baseline = readBaseline()
+		return len(baseline) == 3
 	})
 	if baseline["process.cpu.core_equivalents"] >= .008 || baseline["process.memory.resident_bytes"] <= 0 {
 		t.Fatal("native idle baseline exceeds fixed test policy", baseline)
@@ -218,10 +265,27 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 		}
 		return rows
 	}
+	initialized := time.Now().UTC()
 	runCtx, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() { defer close(done); rules.Run(runCtx) }()
 	t.Cleanup(func() { stop(); <-done })
+	// Source readiness predates the rules. Their first complete post-create
+	// CPU window is a separate prerequisite to the continuous verdict window;
+	// real scrape jitter can require three samples to span a full 15 seconds.
+	wait("complete post-create native CPU window", func() bool {
+		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget())
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, line := range rows[3].Series {
+			if line.MetricKey == "process.cpu.core_equivalents" && len(line.Points) == 1 {
+				point := line.Points[0]
+				return point.DataState == "valid" && point.SampledAt != nil && point.SampledAt.Add(-time.Minute).After(initialized)
+			}
+		}
+		return false
+	})
 	wait("idle native samples evaluated normal without incidents", func() bool {
 		var count int64
 		f.db.Model(&models.ProcessAlertRule{}).Where("id IN ? AND last_verdict='normal'", ids).Count(&count)
@@ -231,6 +295,7 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 	if err = os.WriteFile(modeFile, []byte("active"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("native work requested", started, "process started", r.Started)
 	wait("real native CPU and RSS opened two isolated incidents", func() bool {
 		rows := read()
 		return len(rows) == 2 && rows[0].Status == "open" && rows[1].Status == "open"
@@ -260,6 +325,15 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 	if err = os.Remove(modeFile); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("native work release requested", released, "total elapsed", time.Since(began))
+	wait("native allocation release observed in genuine RSS", func() bool {
+		value, ok := readBaseline()["process.memory.resident_bytes"]
+		if ok && value < baseline["process.memory.resident_bytes"]+8*(1<<20) {
+			t.Log("native release RSS", value)
+			return true
+		}
+		return false
+	})
 	wait("released native CPU/RSS resolved the same two incidents", func() bool {
 		rows := read()
 		return len(rows) == 2 && rows[0].ID == opened[0].ID && rows[1].ID == opened[1].ID && rows[0].Status == "resolved" && rows[1].Status == "resolved"

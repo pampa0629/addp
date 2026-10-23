@@ -518,6 +518,21 @@ Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和
 原始日志及输入摘要保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-alert-real-r7sgulbj/` 的 `process-alerts-t2.log`、`monitor-go.log`、`release-registration.log`、`workflow-security.log` 与 `inputs.json`；七项工作区输入与冻结副本哈希一致。此结果为真实 SDK／Prometheus／PostgreSQL／签名接收端下的 T2，System 当前用户与身份投影仍是夹具，不替代正式密码／MFA、真实 Console、Hosted T4、生产容量或 T5。本轮未运行其他 Metrics 分组，复用原有证据边界；未查询／调度 CI 或 Hosted，等待专门会话回传，未重启个人服务、未设置定时任务。
 
 
+### CPU/RSS 告警专项的就绪分段与失败诊断（2026-10-23）
+
+专门 CI 会话回传 [39879255330 / 120203117355](https://github.com/pampa0629/addp/actions/runs/39879255330/job/120203117355)（`691441e81c5069f2d2d10903b0623d49135fdf17`）和此前同症状失败：已打开两个原事件并持久化签名通知，RSS 恢复，CPU 仍为 risk，场景在 270 秒退出。旧日志只打印 LastValue 指针，没有 CPU 数值或实际释放时刻，不能据此断言 CPU 未释放或生产恢复逻辑错误。代码确认冷来源的完整 CPU 基线与规则创建后预热串行消耗同一场景预算；本机新增诊断还确认抓取的毫秒抖动可使相邻样本只有 14.997 秒，严格持续窗口需要第三个样本。
+
+本批只调整测试设施：准备阶段以原 65 秒等待确认三个精确来源的完整 CPU 历史；Go 场景区分规则创建后完整 CPU 窗口、空闲正常、真实 RSS 释放和同一事件恢复。保留来源八分钟寿命、270 秒总预算、各阶段 100 秒、可执行测试 300 秒、0.25 CPU／128 MiB、固定阈值、全部生命周期与签名投递断言。未修改生产采集／查询／告警判断、权限或个人服务。失败日志增加规则数值、评估／采样时刻及有界窗口查询；来源准备失败的诊断只保留固定信号与数值，不输出端点、任意标签或凭据。
+
+冻结基线 `0c3946573e375da4cbd10bd78793e2eeaf17ed34` 加本批输入，证据目录为 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-alert-repair-x2oq49qd/`：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：最终输入退出 0，见 `monitor-go-t1-final.log`。新增确定性回归验证不足 15 秒不能舍入恢复、第三个推进样本及规则创建后完整 CPU 分钟边界。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=process-alerts` 的最终尝试：前置 51 项配置回归通过，包括真实零、缺失／重复／替换来源拒绝及诊断去除私有标签；整轮未通过。`TestIntegrationMetricsNetworkWindow` 的 promtool 已打印 SUCCESS，但容器命令在原 30 秒期限被终止，后续固定窗口进程亦未正常结束；尚未进入 CPU/RSS 专项。见 `process-alerts-t2-final.log`，不能把前置单测或 SUCCESS 文本计为 T2 通过。
+- 此前两次编排尝试分别在空闲预热 100.40／100.43 秒失败，均未加压；前者证明缺样期间起点重置，后者记录低于固定恢复阈值的有效 CPU 值但严格连续窗口仍未就绪。第三次在 65 秒 CPU 来源准备阶段失败，旧版未保留该阶段的原始数值，原因未确认；新诊断的安全序列化仅有单测证据，不能反推这次准备失败已修复。见 `process-alerts-overlap-failed.log`、`process-alerts-cadence-failed.log`、`process-alerts-source-readiness-failed.log`。
+- 四次项目的容器／网络／卷已逐项按精确 Compose 项目标签核对为零，见 `failed-project-cleanup.json`。最终尝试的自动清理曾失败，后续确认无容器、网络无端点且归属标签匹配后，仅删除该项目遗留网络／卷；人工清零不改变原门禁失败结果。
+
+当前结论为测试编排修正与诊断代码已落地、Go／配置回归通过；最终版本的真实 CPU/RSS 触发与恢复 T2 **尚未通过**，Linux CI 与正式身份 T4 也未确认。源码输入见 `input-sha256.json`；未自行查询、触发 CI／Hosted 或设置定时，等待专门会话回传，不将上述历史 T2 通过外推到本批。
+
 ### 正式身份的本机执行 Trace／日志闭环（2026-10-23）
 
 用户确认仅在本机一次性隔离部署，先修规范与标准入口，再验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询与精确日志关联。新增人工 `make test-monitor-traces-local`；静态／准入／守卫／业务契约标准入口 `make test-monitor-traces-local-runner` 聚合到既有 Infra runtime-log lifecycle / Platform，CI 登记明确拒绝公共 workflow 调用真实入口。所有构建与运行容器、浏览器共享 8 CPU／12 GiB 上限，独占卷达到 4 GiB 即停止，最长 60 分钟后进入不可跳过的清理；不运行 Hosted、容量、定时或个人服务重启。

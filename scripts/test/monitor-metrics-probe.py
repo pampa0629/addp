@@ -223,6 +223,40 @@ def discovery_text(text):
     pending.write_text(text)
     pending.replace(WORK / 'source/discovery.json')
 
+def native_process_cpu_history_ready(records):
+    # Fixture readiness only: preserve genuine zero counters and require both
+    # four recent samples and a minute-old boundary for each exact live source.
+    # The Go test still applies every production identity/freshness/reset guard.
+    cpu = 'process_cpu_seconds_total{job="addp_nodes",addp_monitor_kind="process_resources"}'
+    rows = query(cpu + ' and (count_over_time(' + cpu + '[1m])>=4) and (' + cpu + ' offset 1m)', at=math.floor(time.time()))
+    return (len(rows) == len(records) == 3 and
+            {(row['metric']['addp_instance_id'], row['metric']['instance']) for row in rows} ==
+            {(record['instance_id'], record['instance']) for record in records})
+
+
+def native_process_history_diagnostics(records):
+    diagnostic = {'host_unix': time.time(), 'center_unix': [float(row['value'][1]) for row in query('vector(time())')], 'processes': []}
+    for record in records:
+        selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_instance_id='+json.dumps(record['instance_id'])+',instance='+json.dumps(record['instance'])+'}'
+        cpu = 'process_cpu_seconds_total'+selector
+        signals = {'up_count': 'count(up'+selector+')',
+                   'up': 'max(up'+selector+')',
+                   'identity_count': 'count(addp_process_identity_info'+selector+')',
+                   'cpu_count': 'count('+cpu+')',
+                   'cpu_window_samples': 'min(count_over_time('+cpu+'[1m]))',
+                   'cpu_resets': 'max(resets('+cpu+'[1m]))',
+                   'cpu_rate': 'max(rate('+cpu+'[1m]))',
+                   'cpu_delta': 'max('+cpu+')-max('+cpu+' offset 1m)',
+                   'cpu_age': 'time()-max(timestamp('+cpu+'))',
+                   'cpu_previous_age': 'time()-max(timestamp('+cpu+' offset 1m))',
+                   'start_difference': 'max(process_start_time_seconds'+selector+')-'+str(datetime.datetime.fromisoformat(record['started_at'].replace('Z', '+00:00')).timestamp())}
+        # One bounded request per source. Only fixed signal names and numbers
+        # survive; no endpoint, arbitrary metric label or credential is logged.
+        rows = query(' or '.join('label_replace(('+expression+'),"addp_probe",'+json.dumps(key)+',"","")' for key, expression in signals.items()), at=math.floor(time.time()))
+        diagnostic['processes'].append({key: [float(row['value'][1]) for row in rows if row['metric'].get('addp_probe') == key] for key in signals})
+    return diagnostic
+
+
 def check_native_process_sources(*, process_alerts=False):
     global base
     alert_binary = WORK / 'process-alert-lifecycle.test'
@@ -298,6 +332,18 @@ def check_native_process_sources(*, process_alerts=False):
                    MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
                    MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
         if process_alerts:
+            # RSS appears on the first scrape; it cannot establish CPU history.
+            # Finish fixture readiness in the existing 65s preparation wait,
+            # before the unchanged 270s Go lifecycle/300s executable budgets.
+            try:
+                eventually(lambda: native_process_cpu_history_ready(records),
+                           'three exact native sources have complete minute-old CPU history before alert lifecycle')
+            except AssertionError:
+                try:
+                    print('Metrics T2 CPU preparation diagnostics: '+json.dumps(native_process_history_diagnostics(records), sort_keys=True), flush=True)
+                except Exception:
+                    print('Metrics T2 CPU preparation diagnostics unavailable', flush=True)
+                raise
             completed = subprocess.run([str(alert_binary), '-test.run=^TestIntegrationMetricsProcessAlertLifecycle$', '-test.count=1', '-test.timeout=300s', '-test.v'],
                            cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                            env=dict(env, ADDP_PROCESS_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
