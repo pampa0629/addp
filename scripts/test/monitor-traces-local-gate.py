@@ -222,6 +222,9 @@ class Lifecycle:
         self.failure = None
         self.samples = []
         self.thread = None
+        self.sample_lock = threading.Lock()
+        self.sampler_volumes = ()
+        self.sampler_started = False
         self.sample_deadline = None
         self.checkout = self.work / 'source'
 
@@ -292,6 +295,10 @@ class Lifecycle:
         return int(output.split()[0])*1024
 
     def sample(self):
+        with self.sample_lock:
+            return self._sample()
+
+    def _sample(self):
         began = time.monotonic()
         deadline = began+4
         def remaining():
@@ -313,14 +320,26 @@ class Lifecycle:
                     volumes += builder_volumes
         total = 0
         if volumes:
-            # A separate tiny container uses the same immutable MinIO image only for du.
-            args = ['run', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
-                    '--label', LABEL+'.role=oneshot', '--cpus', str(SAMPLER_CPU), '--memory', '64m', '--network', 'none', '--entrypoint', '/bin/sh']
-            for i, name in enumerate(sorted(set(volumes))):
-                args += ['--mount', f'type=volume,source={name},target=/space/{i},readonly']
-            args += [self.minio_image, '-ec', 'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'']
+            # Keep Docker create/start outside repeated du measurements. Rebuild
+            # this owned read-only helper only when its exact mount set changes.
+            volumes = tuple(sorted(set(volumes)))
+            if volumes != self.sampler_volumes:
+                self.sample_operation = 'prepare_volume_sampler'
+                if self.sampler_started:
+                    self.docker('rm','-fv',self.run_id+'-space',guarded=False,timeout=remaining())
+                    self.sampler_started = False
+                args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
+                        '--label', LABEL+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
+                        '--network', 'none', '--tmpfs', '/data:rw,noexec,nosuid,size=1m', '--entrypoint', '/bin/sh']
+                for i, name in enumerate(volumes):
+                    args += ['--mount', f'type=volume,source={name},target=/space/{i},readonly']
+                args += [self.minio_image, '-ec', 'while :; do sleep 3600; done']
+                self.docker(*args,guarded=False,timeout=remaining())
+                self.sampler_started = True
+                self.sampler_volumes = volumes
             self.sample_operation = 'measure_owned_volumes'
-            total = int(float(self.docker(*args, guarded=False, timeout=remaining()).strip()))
+            total = int(float(self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
+                'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()))
         self.sample_operation = 'measure_private_bindings'
         total += self.owned_bind_bytes(timeout=remaining())
         now = time.monotonic()
@@ -351,6 +370,15 @@ class Lifecycle:
             self.thread.join(timeout=6)
             if self.thread.is_alive():
                 errors.append('resource_guard_not_stopped')
+        # Release read-only mounts before Buildx removes its state volume,
+        # including a helper created just before its client timed out.
+        try:
+            helpers=self.docker('ps','-aq','--filter',f'label={LABEL}={self.run_id}',
+                '--filter','name=^'+self.run_id+'-space$',guarded=False).split()
+            if helpers:self.docker('rm','-fv',*helpers,guarded=False)
+            self.sampler_started=False
+        except GateError:
+            errors.append('volume_sampler')
         try:
             self.docker('buildx', 'rm', '-f', self.builder, guarded=False)
         except GateError:

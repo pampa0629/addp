@@ -40,6 +40,9 @@ def bare_lifecycle(directory):
     life.failure = None
     life.samples = []
     life.thread = None
+    life.sample_lock = threading.Lock()
+    life.sampler_volumes = ()
+    life.sampler_started = False
     life.minio_image = 'sha256:synthetic-pinned-minio'
     life.owned_bind_bytes = lambda **kwargs: 0
     return life
@@ -209,7 +212,11 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             if args[0] == 'inspect':
                 return json.dumps([row()])
             if args[0] == 'run':
+                return 'owned-sampler-id'
+            if args[0] == 'exec':
                 return str(allocation)
+            if args[0] == 'rm':
+                return ''
             raise AssertionError(args)
         life.docker = docker
         return life, calls
@@ -230,6 +237,23 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertIn(str(m.SAMPLER_CPU), usage)
             self.assertIn('64m', usage)
             self.assertTrue(all('readonly' in arg for arg in usage if arg.startswith('type=volume,')))
+
+    def test_repeated_sampling_reuses_readonly_helper_and_remounts_changed_owned_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,calls=self.sample_lifecycle(directory,1024)
+            with mock.patch.object(m.time,'monotonic',return_value=1):
+                life.sample()
+                life.sample()
+                life.owned=lambda kind,**kw:['owned-id'] if kind=='container' else ['owned-volume','new-owned-volume']
+                life.sample()
+            runs=[args for args,_ in calls if args[0]=='run']
+            executions=[args for args,_ in calls if args[0]=='exec']
+            removals=[args for args,_ in calls if args[0]=='rm']
+            self.assertEqual(len(runs),2)
+            self.assertEqual(len(executions),3)
+            self.assertEqual(len(removals),1)
+            self.assertTrue(all('readonly' in arg for args in runs for arg in args if arg.startswith('type=volume,')))
+            self.assertTrue(all('/data:rw,noexec,nosuid,size=1m' in args for args in runs))
 
     def test_builder_volume_ownership_does_not_capture_application_volumes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -301,6 +325,25 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
 
 
 class LocalTraceCleanupTests(unittest.TestCase):
+    def test_sampler_mount_is_released_before_builder_state_volume_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory)/'owned';work.mkdir()
+            life=bare_lifecycle(work)
+            alive=True
+            def docker(*args,**kwargs):
+                nonlocal alive
+                if args[0]=='ps':
+                    return 'owned-sampler' if alive and 'name=^'+life.run_id+'-space$' in args else ''
+                if args[:2]==('rm','-fv'):
+                    self.assertEqual(args[2:],('owned-sampler',));alive=False;return ''
+                if args[:2]==('buildx','rm'):
+                    self.assertFalse(alive,'sampler still pins builder state volume');return ''
+                if args[0] in ('container','network','volume') and args[1]=='ls':return ''
+                raise AssertionError(args)
+            life.docker=docker
+            self.assertEqual(life.cleanup(),[])
+            self.assertFalse(alive)
+
     def test_removal_is_filtered_and_zero_is_verified(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory) / 'private'; work.mkdir()
