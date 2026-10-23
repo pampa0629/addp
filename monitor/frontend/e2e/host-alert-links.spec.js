@@ -24,7 +24,7 @@ for (const locale of ['zh-cn', 'en']) test(`saved trigger evidence and fixed tre
   await expect(page.getByTestId('resource-history')).toBeVisible()
   const trendReads = () => state.resourceState.reads.filter(row => row.path.endsWith('/resource_trends'))
   await expect.poll(() => trendReads().length).toBeGreaterThan(0)
-  expect(trendReads().at(-1).query).toMatchObject({ node_id: node, metrics: 'node.memory.used_percent', start: '2026-10-06T22:50:00.000Z', end: historicalEnd })
+  expect(trendReads().at(-1).query).toMatchObject({ node_id: node, metrics: 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent', start: '2026-10-06T22:50:00.000Z', end: historicalEnd })
   const end = new URL(page.url()).searchParams.get('end')
   expect(end).toBe(historicalEnd)
   expect(new URL(page.url()).searchParams.get('refresh')).toBe('off')
@@ -133,7 +133,7 @@ test('historical gaps stay empty and a response from another window is rejected'
   await expect(page.getByTestId('resource-evidence')).toContainText('缺失')
   await expect(page.getByTestId('resource-evidence').locator('tbody > tr').nth(1)).toContainText('—')
   await page.route('**/api/v1/monitor/platform/resource_trends?**', async route => {
-    const response = observations(node, ['node.memory.used_percent'], true, '', state.resourceState.serverEnd)
+    const response = observations(node, ['node.memory.total_bytes', 'node.memory.available_bytes', 'node.memory.used_percent'], true, '', state.resourceState.serverEnd)
     response.start = '2026-10-06T22:50:00.000Z'
     await route.fulfill({ json: response })
   })

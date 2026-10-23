@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { tmpdir } from 'node:os'
+import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { identity, node, resourceBackend, resourcePermissions, secondNode, setIdentity } from './node-resources.fixture'
 import { id as targetID } from './monitoring-targets.fixture'
@@ -33,7 +34,7 @@ test('resource quantities use binary capacity and elapsed time while load is not
   await page.getByRole('option', { name: '内存总量', exact: true }).click()
   await page.getByText('查看采样明细', { exact: true }).click()
   await expect(page.getByTestId('resource-evidence')).toContainText('16.00 GiB')
-  expect(state.reads.find(item => item.path.endsWith('resource_trends') && item.query.metrics === 'node.memory.total_bytes')).toBeTruthy()
+  expect(state.reads.find(item => item.path.endsWith('resource_trends') && item.query.metrics === 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent')).toBeTruthy()
 })
 
 test('lists owner nodes without fanout and opens nine metrics with server-anchored trends', async ({ page }) => {
@@ -51,7 +52,7 @@ test('lists owner nodes without fanout and opens nine metrics with server-anchor
   const instant = state.reads.find(item => item.path.endsWith('resource_observations'))
   expect(instant.query.metrics.split(',')).toHaveLength(9)
   const trend = state.reads.find(item => item.path.endsWith('resource_trends'))
-  expect(trend.query).toMatchObject({ node_id: node, metrics: 'node.memory.used_percent', start: '2026-10-06T23:00:00.000Z', end: '2026-10-07T00:00:00.000Z' })
+  expect(trend.query).toMatchObject({ node_id: node, metrics: 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent', start: '2026-10-06T23:00:00.000Z', end: '2026-10-07T00:00:00.000Z' })
   await page.getByText('查看采样明细', { exact: true }).click()
   await expect(page.getByTestId('resource-evidence')).toContainText('缺失')
   await page.screenshot({ path: join(tmpdir(), 'addp-node-resources-desktop.png'), animations: 'disabled' })
@@ -961,4 +962,70 @@ test('host list refresh choice survives detail navigation and reload; off produc
   const count = summaryReads(state).length
   await page.clock.fastForward(60001)
   expect(summaryReads(state)).toHaveLength(count)
+})
+
+
+for (const locale of ['zh-cn', 'en']) test(`memory capacity and usage share aligned dual axes with independent gaps (${locale})`, async ({ page }) => {
+  const keys = ['node.memory.total_bytes', 'node.memory.available_bytes', 'node.memory.used_percent']
+  let capacity = 64 * 1024 ** 3, gap = false, misaligned = false
+  const state = await resourceBackend(page, { locale, trendResponse(body) {
+    for (const line of body.series) for (const [index, point] of line.points.entries()) {
+      const value = line.metric_key === keys[0] ? capacity : line.metric_key === keys[1] ? capacity / 2 : 50
+      const missing = gap && line.metric_key === keys[1] && index === line.points.length - 1
+      Object.assign(point, { value: missing ? null : value, sampled_at: missing ? null : point.evaluated_at, data_state: missing ? 'no_data' : 'valid' })
+    }
+    body.series.reverse()
+    if (misaligned) body.series[0].points[1].evaluated_at = '2026-10-06T23:59:46Z'
+  } })
+  const refresh = () => page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  const chartProps = () => page.locator('.chart-renderer').evaluate(element => {
+    const { rows, config, valueAxes } = element.__vueParentComponent.props
+    return { rows, config, valueAxes }
+  })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.goto(`/node-resources/${node}?range=5m&refresh=off`)
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect(page.getByTestId('resource-paired-hint')).toContainText(locale === 'en' ? 'Left axis: memory capacity (GiB); right axis: memory usage (%)' : '左轴：内存容量（GiB）；右轴：内存使用率（%）')
+  await expect(page.getByTestId('resource-trend-memoryTotal')).toContainText('64.00 GiB')
+  await expect(page.getByTestId('resource-trend-memoryAvailable')).toContainText('32.00 GiB')
+  await expect(page.getByTestId('resource-trend-memoryUsed')).toContainText('50.00 %')
+  const props = await chartProps()
+  expect(props.valueAxes).toEqual([{ measures: ['memoryTotal', 'memoryAvailable'], label: locale === 'en' ? 'Memory capacity' : '内存容量', min: 0 }, { measures: ['memoryUsed'], min: 0, max: 100 }])
+  expect(props.rows.at(-1)).toMatchObject({ memoryTotal: 64, memoryAvailable: 32, memoryUsed: 50 })
+  expect(props.config.field_presentations.slice(1).map(item => item.unit)).toEqual(['GiB', 'GiB', '%'])
+  expect(state.reads.filter(item => item.path.endsWith('resource_trends'))).toHaveLength(1)
+  expect(state.reads.filter(item => item.path.endsWith('resource_trends'))[0].query.metrics).toBe(keys.join(','))
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: locale === 'en' ? 'Available memory' : '可用内存', exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('metric') === keys[1])
+  await page.reload()
+  await page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true }).click()
+  await expect(page.getByTestId('resource-evidence')).toContainText('32.00 GiB')
+  await page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true }).click()
+  await page.getByTestId('resource-chart').scrollIntoViewIfNeeded()
+  const screenshot = join(mkdtempSync(join(tmpdir(), 'addp-memory-axes-')), `${locale}.png`)
+  await page.getByTestId('resource-chart').screenshot({ path: screenshot, animations: 'disabled' })
+  console.log(`Memory axes screenshot: ${screenshot}`)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  gap = true
+  await refresh()
+  await expect(page.getByTestId('resource-trend-memoryAvailable').locator('strong')).toHaveText('—')
+  await expect.poll(async () => (await chartProps()).rows.at(-1)).toMatchObject({ memoryTotal: 64, memoryAvailable: null, memoryUsed: 50 })
+  capacity = 2 * 1024 ** 4; gap = false
+  await refresh()
+  await expect(page.getByTestId('resource-paired-hint')).toContainText('TiB')
+  expect((await chartProps()).rows.at(-1)).toMatchObject({ memoryTotal: 2, memoryAvailable: 1, memoryUsed: 50 })
+  misaligned = true
+  await refresh()
+  await expect(page.getByTestId('resource-trend-error')).toBeVisible()
+  await expect(page.getByTestId('resource-chart')).toHaveCount(0)
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  misaligned = false
+  await refresh()
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  state.trendMode = 'denied'
+  await refresh()
+  await expect(page.getByTestId('resource-error')).toBeVisible()
+  await expect(page.getByTestId('resource-chart')).toHaveCount(0)
+  await expect(page.getByTestId('resource-paired-values')).toHaveCount(0)
 })

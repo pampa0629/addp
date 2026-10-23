@@ -16,7 +16,8 @@ echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, Tool
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   config: { type: Object, required: true },
-  hasMore: { type: Boolean, default: false }
+  hasMore: { type: Boolean, default: false },
+  valueAxes: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['invalid', 'result-select'])
 const { locale } = useI18n()
@@ -31,7 +32,7 @@ function hasRenderableSize(target) {
 }
 
 async function render() {
-  const validation = validateChartResult(props.rows, props.config, props.hasMore)
+  const validation = validateChartResult(props.rows, props.config, props.hasMore, props.valueAxes)
   if (!validation.valid) {
     chart?.clear()
     emit('invalid', validation.reason)
@@ -46,7 +47,7 @@ async function render() {
       if (selection) emit('result-select', selection)
     })
   }
-  chart.setOption(buildChartOption(props.rows, props.config, locale.value, chartTheme()), true)
+  chart.setOption(buildChartOption(props.rows, props.config, locale.value, { ...chartTheme(), valueAxes: props.valueAxes }), true)
 }
 
 function chartTheme() {
@@ -77,7 +78,7 @@ onMounted(() => {
   resizeObserver.observe(element.value)
   render()
 })
-watch(() => [props.rows, props.config, props.hasMore, locale.value], render, { deep: true })
+watch(() => [props.rows, props.config, props.hasMore, props.valueAxes, locale.value], render, { deep: true })
 onBeforeUnmount(() => {
   themeObserver?.disconnect()
   resizeObserver?.disconnect()

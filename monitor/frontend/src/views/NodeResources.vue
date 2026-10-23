@@ -147,13 +147,13 @@
           <p class="resource-hint" data-testid="resource-trend-window">{{ t('monitor.resources.window', { start: date(comparison?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
           <p class="resource-hint">{{ t('monitor.resources.gaps') }}</p>
           <template v-if="chartMetrics.length > 1">
-            <p class="resource-hint" data-testid="resource-paired-hint">{{ t('monitor.resources.pairedThroughput', { unit: chartScale.unit + '/s' }) }}</p>
+            <p class="resource-hint" data-testid="resource-paired-hint">{{ memoryTrend ? t('monitor.resources.memoryAxes', { unit: chartScale.unit }) : t('monitor.resources.pairedThroughput', { unit: chartScale.unit + '/s' }) }}</p>
             <div class="resource-toolbar" data-testid="resource-paired-values">
               <p v-for="metric in chartMetrics" :key="metric.key" :data-testid="`resource-trend-${metric.name}`" :title="date(trendPoint(metric.key)?.evaluated_at)">{{ t(`monitor.resources.metrics.${metric.name}`) }}: <strong>{{ formatValue(trendPoint(metric.key), metric) }}</strong></p>
             </div>
           </template>
           <div class="resource-chart" role="img" :aria-label="t('monitor.resources.trend')" data-testid="resource-chart">
-            <ChartRenderer :rows="chartRows" :config="chartConfig" @invalid="invalidChart" />
+            <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" @invalid="invalidChart" />
           </div>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.evidence')" name="evidence">
@@ -219,10 +219,16 @@ const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensi
 const chartMetrics = computed(() => resourceTrendMetrics(state.value.metric))
 const trendPoints = computed(() => (trend.value?.series.find(line => line.metric_key === state.value.metric)?.points || []).filter(point => !comparison.value || Date.parse(point.evaluated_at) > Date.parse(comparison.value.current.start)))
 const rawChartRows = computed(() => (trend.value ? resourceTrendChartRows(trend.value, state.value.metric) : []).filter(row => !comparison.value || Date.parse(row.evaluated_at) > Date.parse(comparison.value.current.start)))
-const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...rawChartRows.value.flatMap(row => chartMetrics.value.map(metric => row[metric.name] ?? 0)))) : null)
-const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (chartScale.value?.divisor || 1)])) })))
+const byteMetrics = computed(() => chartMetrics.value.filter(metric => ['bytes', 'bytes_per_second'].includes(metric.unit)))
+const memoryTrend = computed(() => state.value.metric.startsWith('node.memory.'))
+const chartScale = computed(() => byteMetrics.value.length ? scaleByteValue(Math.max(0, ...rawChartRows.value.flatMap(row => byteMetrics.value.map(metric => row[metric.name] ?? 0)))) : null)
+const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (byteMetrics.value.includes(metric) ? chartScale.value.divisor : 1)])) })))
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
-const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(chartScale.value ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }))] }))
+const chartAxes = computed(() => memoryTrend.value ? [
+  { measures: byteMetrics.value.map(metric => metric.name), label: t('monitor.resources.memoryCapacity'), min: 0 },
+  { measures: ['memoryUsed'], min: 0, max: 100 },
+] : [])
+const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }))] }))
 const evidenceRows = computed(() => trendPoints.value.slice((evidencePage.value - 1) * 20, evidencePage.value * 20))
 const comparisonChange = computed(() => {
   const delta = comparison.value?.delta

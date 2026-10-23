@@ -38,6 +38,7 @@ export const networkMetrics = [
   { key: 'node.network.receive_bytes_per_second', name: 'networkReceive', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
   { key: 'node.network.transmit_bytes_per_second', name: 'networkTransmit', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
 ]
+export const memoryMetrics = resourceMetrics.filter(metric => metric.key.startsWith('node.memory.'))
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
 export const summaryMetrics = resourceMetrics.filter(metric => ['node.cpu.busy_percent', 'node.memory.used_percent'].includes(metric.key))
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
@@ -102,7 +103,7 @@ export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {
 }
 
 export function resourceTrendMetrics(key) {
-  for (const pair of [diskMetrics.slice(0, 2), networkMetrics]) if (pair.some(metric => metric.key === key)) return pair
+  for (const pair of [memoryMetrics, diskMetrics.slice(0, 2), networkMetrics]) if (pair.some(metric => metric.key === key)) return pair
   const metric = allResourceMetrics.find(item => item.key === key)
   if (!metric) throw new Error('invalid_resource_response')
   return [metric]
@@ -118,12 +119,13 @@ export function resourceTrendChartRows(value, key) {
 }
 
 export function resourceTrendComparison(value, range) {
-  const metric = value?.series?.[0]?.metric_key
+  const metric = value?.series?.find(line => supportsResourceComparison(line.metric_key, range))?.metric_key
   if (!supportsResourceComparison(metric, range)) throw new Error('invalid_resource_response')
-  validateResourceResponse(value, value.subject?.node_id, [metric], true)
+  validateResourceResponse(value, value.subject?.node_id, resourceTrendMetrics(metric).map(item => item.key), true)
+  resourceTrendChartRows(value, metric)
   validateResourceTrendWindow(value, value)
   const start = Date.parse(value.start), end = Date.parse(value.end), step = value.step_seconds * 1000
-  const width = resourceRanges[range] * 1000, boundary = end - width, points = value.series[0].points
+  const width = resourceRanges[range] * 1000, boundary = end - width, points = value.series.find(line => line.metric_key === metric).points
   if (end - start !== width * 2 || start % 1000 !== 0 || end % 1000 !== 0 || !Number.isSafeInteger(value.step_seconds) || value.step_seconds < 15 || value.step_seconds % 15 !== 0 || points.length !== Math.floor((end - start) / step) + 1) throw new Error('invalid_resource_response')
   const period = (from, to) => ({ start: new Date(from).toISOString(), end: new Date(to).toISOString(), valid: 0, total: 0, mean: null })
   const previous = period(start, boundary), current = period(boundary, end)

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceTrendComparison } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceTrendComparison, resourceTrendMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
@@ -508,7 +508,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       expect(batch).toHaveLength(6)
       expect(curves).toHaveLength(1)
       const curve = curves[0], statistics = resourceTrendComparison(curve.value, '5m')
-      expect(curve.query.metrics).toBe(metric)
+      expect(curve.query.metrics).toBe(resourceTrendMetrics(metric).map(item => item.key).join(','))
       expect(Date.parse(curve.query.end) - Date.parse(curve.query.start)).toBe(600_000)
       for (const period of ['current', 'previous']) {
         const card = monitor.getByTestId(`resource-compare-${period}`)

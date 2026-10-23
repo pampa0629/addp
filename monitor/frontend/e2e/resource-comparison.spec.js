@@ -7,9 +7,9 @@ function completeTrend(body, params, previous = 30, current = 40) {
   const start = Date.parse(params.get('start')), end = Date.parse(params.get('end')), width = end - start
   const step = Math.max(15, Math.ceil(width / 1000 / 999 / 15) * 15)
   body.step_seconds = step
-  body.series[0].points = Array.from({ length: Math.floor(width / (step * 1000)) + 1 }, (_, index) => {
+  for (const line of body.series) line.points = Array.from({ length: Math.floor(width / (step * 1000)) + 1 }, (_, index) => {
     const at = start + index * step * 1000, stamp = new Date(at).toISOString()
-    return { evaluated_at: stamp, sampled_at: stamp, value: at <= start + width / 2 ? previous : current, data_state: 'valid' }
+    return { evaluated_at: stamp, sampled_at: stamp, value: line.unit === 'bytes' ? 2 ** 34 : at <= start + width / 2 ? previous : current, data_state: 'valid' }
   })
 }
 const reads = state => state.reads.filter(row => row.path.endsWith('/resource_trends'))
@@ -27,7 +27,7 @@ for (const locale of ['zh-cn', 'en']) test(`comparison shows local period means 
   await expect(panel).toContainText(locale === 'en' ? 'evaluated every 15 seconds' : '每 15 秒评估一次')
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   expect(reads(state)).toHaveLength(1)
-  expect(reads(state)[0].query).toEqual({ node_id: node, metrics: 'node.memory.used_percent', start: '2026-10-06T23:50:00.000Z', end: '2026-10-07T00:00:00.000Z' })
+  expect(reads(state)[0].query).toEqual({ node_id: node, metrics: 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent', start: '2026-10-06T23:50:00.000Z', end: '2026-10-07T00:00:00.000Z' })
   await page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true }).click()
   await expect(page.getByTestId('resource-evidence')).toContainText('40.00 %')
   await expect(page.getByTestId('resource-evidence')).not.toContainText('30.00 %')
@@ -103,7 +103,7 @@ for (const stateName of ['no_data', 'stale', 'not_connected']) test(`${stateName
   let missingIndex = 1
   await resourceBackend(page, { trendResponse(body, params) {
     completeTrend(body, params)
-    const point = body.series[0].points[missingIndex]
+    const point = body.series.find(line => line.unit === 'percent').points[missingIndex]
     Object.assign(point, { data_state: stateName, value: stateName === 'stale' ? point.value : null, sampled_at: stateName === 'stale' ? new Date(Date.parse(point.evaluated_at) - 61000).toISOString() : null })
   } })
   await page.goto(comparisonURL)
@@ -122,8 +122,8 @@ for (const failure of ['budget', 'unavailable', 'denied', 'invalid-grid', 'expir
   let invalid = false
   const state = await resourceBackend(page, { trendResponse(body, params) {
     completeTrend(body, params)
-    if (invalid && failure === 'invalid-grid') body.series[0].points.pop()
-    if (invalid && failure === 'expired-valid') body.series[0].points[5].sampled_at = body.start
+    if (invalid && failure === 'invalid-grid') body.series.find(line => line.unit === 'percent').points.pop()
+    if (invalid && failure === 'expired-valid') body.series.find(line => line.unit === 'percent').points[5].sampled_at = body.start
   } })
   await page.goto(comparisonURL)
   await expect(page.getByTestId('resource-compare-change')).toBeVisible()
@@ -180,4 +180,20 @@ test('a delayed comparison cannot repopulate results after switching to a non-co
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   await expect(page.getByTestId('resource-comparison')).toHaveCount(0)
   await expect(page).not.toHaveURL(/compare=/)
+})
+
+
+test('capacity gaps do not suppress a complete usage comparison or invent capacity values', async ({ page }) => {
+  await resourceBackend(page, { trendResponse(body, params) {
+    completeTrend(body, params)
+    for (const line of body.series.filter(line => line.unit === 'bytes')) {
+      Object.assign(line.points[1], { value: null, sampled_at: null, data_state: 'no_data' })
+    }
+    body.series.reverse()
+  } })
+  await page.goto(comparisonURL)
+  await expect(page.getByTestId('resource-compare-change')).toHaveText('较上期上升 10.00 个百分点')
+  await expect(page.getByTestId('resource-compare-current').locator('strong')).toHaveText('40.00 %')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect(page.getByTestId('resource-paired-hint')).toContainText('右轴：内存使用率（%）')
 })

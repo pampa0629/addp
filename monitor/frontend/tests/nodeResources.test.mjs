@@ -13,7 +13,7 @@ test('device throughput requests both directions in one fixed scope without chan
     assert.equal(params.device, 'exact-device')
     assert.equal(Date.parse(params.end) - Date.parse(params.start), 604800000)
   }
-  for (const key of ['node.memory.used_percent', 'node.disk.io_busy_percent', 'node.filesystem.used_percent']) {
+  for (const key of ['node.cpu.busy_percent', 'node.disk.io_busy_percent', 'node.filesystem.used_percent']) {
     assert.deepEqual(resourceTrendMetrics(key).map(metric => metric.key), [key])
   }
   assert.throws(() => resourceTrendMetrics('arbitrary.metric'))
@@ -89,7 +89,7 @@ function comparisonResponse(range = '5m', step = 15, values = (at, boundary) => 
     return { evaluated_at: stamp, sampled_at: stamp, value: values(at, boundary), data_state: 'valid' }
   })
   return { ...params, subject: { kind: 'node', node_id: 'node-id' }, queried_at: params.end, step_seconds: step,
-    series: [{ metric_key: params.metrics, dimensions: {}, unit: 'percent', window_seconds: 0, points }] }
+    series: params.metrics.split(',').sort(key => key.endsWith('used_percent') ? -1 : 1).map(key => ({ metric_key: key, dimensions: {}, unit: key.endsWith('used_percent') ? 'percent' : 'bytes', window_seconds: 0, points: points.map(point => ({ ...point, value: key.endsWith('used_percent') ? point.value : 2 ** 34 })) })) }
 }
 
 test('comparison restores only supported periods and metrics and uses one doubled window', () => {
@@ -379,4 +379,23 @@ test('a historical curve cannot contain a different window, future sample or reo
    const bad = structuredClone(response); mutate(bad)
    assert.throws(() => validateResourceTrendWindow(bad, window))
  }
+})
+
+
+test('memory trends use a single aligned three-measure query while comparison reads only usage', () => {
+  const keys = ['node.memory.total_bytes', 'node.memory.available_bytes', 'node.memory.used_percent']
+  for (const key of keys) assert.equal(trendParameters('node-id', key, '5m', '2026-10-07T00:00:00Z').metrics, keys.join(','))
+  const response = comparisonResponse()
+  response.series.reverse()
+  Object.assign(response.series.find(line => line.metric_key === keys[1]).points[1], { value: null, sampled_at: null, data_state: 'no_data' })
+  const compared = resourceTrendComparison(response, '5m')
+  assert.equal(compared.complete, true)
+  assert.equal(compared.delta, 10)
+  const rows = resourceTrendChartRows(response, keys[2])
+  assert.deepEqual([rows[1].memoryTotal, rows[1].memoryAvailable, rows[1].memoryUsed], [2 ** 34, null, 30])
+  const bad = structuredClone(response)
+  bad.series[0].points[1].evaluated_at = bad.series[0].points[0].evaluated_at
+  assert.throws(() => resourceTrendComparison(bad, '5m'))
+  response.series.pop()
+  assert.throws(() => resourceTrendChartRows(response, keys[2]))
 })

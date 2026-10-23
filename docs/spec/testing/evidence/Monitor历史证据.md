@@ -554,3 +554,18 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 
 第三次在 product_compile 阶段由守卫自动报 `owned_volume_stop_line_reached`，业务部署／身份／查询均未执行；报告 `local-report-window-final.json` 明确失败且 zero_owned_resources=true。最近成功样本为 4,235,309,056 字节（低于 4 GiB），独立只读 du 随后观察到私有目录 4,266,260 KiB（约 4.07 GiB）；旧守卫在触线断言前未追加触线样本，不能用最近成功样本冒充峰值，已将样本落盘移到断言之前并增回归。只读主仓库 `.git` 约 1.2 GiB，因此快照唯一切换为同提交的 file:// 浅克隆（depth=1、no-local），不复制无关历史，也不放宽资源／时间／验收断言；标准 runner 仍通过。下一次继续沿首次绝对截止时间与同样停止线，不能计为容量或正式身份已通过。
+
+
+### 内存容量与使用率双 Y 轴（2026-10-23）
+
+主机资源页选择任一内存指标时，沿一次既有固定查询取得总量、可用量和使用率。共享 ChartRenderer 的显式 `valueAxes` 展示属性统一绘图：左轴为按有效容量样本选择的 IEC 单位，右轴固定 0–100%；只换算字节值，百分比不缩放。各序列按指标身份与同一评估网格对齐，缺样各自断线，错位或缺序列拒绝整图；采样明细仍由 URL 所选指标决定。相邻时段比较只读取使用率，容量缺样不伪造比例或阻止本已完整的使用率比较。不新增指标、接口、权限、采集或 Workbench 持久化配置，不推定内存泄漏。
+
+本地冻结输入根为 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-memory-dual-axis-bwf4sj9m`，基线 `34dc7b291515c59f30ce93d03578f82dd2b26f45`；`inputs-final.json` 记录本批文件摘要，`snapshot-final` 只叠加本批改动，未纳入共享工作区其他 owner 的 WIP。验证结果：
+
+- `make test-common-frontend`：261 项通过，无失败／跳过；双轴映射、范围与配置拒绝、单位、数值、null、主题及旧单轴语义均有确定性验证（`common.log`）。
+- `make test-monitor-frontend` 首轮确定性测试 100/101；旧单指标断言同步后，最终 `npm test` 为 101/101，通过（`unit-final.log`）。首轮浏览器 299/301，另两项失败均为告警跳转测试仍预期单一使用率查询；同步为三指标组合，并保留完整的错误时窗拒绝夹具后，沿标准 `npm run test:e2e -- host-alert-links.spec.js resource-comparison.spec.js` 复验 29/29（含新增容量缺样不影响使用率比较场景，`affected-browser-final.log`）。其余输入未变的 273 项沿全量通过证据复用，合计 302 个唯一场景具有通过结果；未再重复整轮，不将最初失败的聚合命令记作通过。初始失败与截图保留在 `monitor-fixed.log` 及 `addp-monitor-playwright-results-VV4xu8`。
+- 新增中英文 620 像素窄屏实图已逐一核对左右轴、图例与刻度；浏览器同时验证乱序响应、GiB→TiB 容量单位变化、百分比保持、可用量独立缺样、刷新恢复、URL 重载、采样明细及撤权清除。截图：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-memory-axes-9q4js8/zh-cn.png`、`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-memory-axes-CR6PqE/en.png`。
+- Monitor 最终 `npm run build` 通过（`build-final.log`）；Console 标准浏览器入口 `npm run test:e2e -- process-resource-navigation.spec.js --grep 'exact managed host'` 1/1，通过，核对同一 iframe、实际主机趋势及返回筛选（`console-navigation.log`）。
+- `make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）；现有共享依赖扩散与 Monitor 前端登记已覆盖本批，无需新增 workflow。Hosted 既有脚本的内存比较查询预期同步复用同一指标组合；`make test-node-metrics-online-runner` 的 138 项确定性测试与 Metrics Go 身份夹具通过（`online-runner.log`），不是实际 Hosted 结果。
+
+以上仅为本地 T1/T3 和验收脚本的确定性验证，不计真实身份／数据源 T4 或生产 T5。本轮未查询、触发或重跑云端 CI／Hosted，未设置定时任务，未重启个人服务。CI 和 Hosted 结果由专门会话回传。

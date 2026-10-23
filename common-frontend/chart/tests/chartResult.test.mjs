@@ -164,3 +164,39 @@ test('theme colors reach all chart text and tooltip surfaces', () => {
     }
   }
 })
+
+
+test('explicit capacity and percent axes retain units, values, null gaps and independent scales', () => {
+  const rows = [{ at: 'A', total: 64, available: null, used: 25 }, { at: 'B', total: null, available: 0, used: 0 }]
+  const config = { chart_type: 'line', dimension: 'at', measures: ['total', 'available', 'used'], field_presentations: [
+    { field: 'total', label: '内存总量', unit: 'GiB', precision: 2 },
+    { field: 'available', label: '可用内存', unit: 'GiB', precision: 2 },
+    { field: 'used', label: '内存使用率', unit: '%', precision: 2 },
+  ] }
+  const valueAxes = [{ measures: ['total', 'available'], label: '内存容量', min: 0 }, { measures: ['used'], min: 0, max: 100 }]
+  assert.equal(validateChartResult(rows, config, false, valueAxes).valid, true)
+  for (const locale of ['zh-CN', 'en']) {
+    const option = buildChartOption(rows, config, locale, { valueAxes, secondaryTextColor: 'theme-secondary' })
+    assert.deepEqual(option.yAxis.map(axis => [axis.position, axis.min, axis.max]), [['left', 0, undefined], ['right', 0, 100]])
+    assert.equal(option.yAxis[0].name, locale === 'en' ? '内存容量 (GiB)' : '内存容量（GiB）')
+    assert.equal(option.yAxis[1].name, locale === 'en' ? '内存使用率 (%)' : '内存使用率（%）')
+    assert.equal(option.yAxis[1].axisLabel.formatter(25), '25.00')
+    assert.equal(option.yAxis[1].nameTextStyle.color, 'theme-secondary')
+    assert.equal(option.yAxis[1].splitLine.show, false)
+    assert.deepEqual(option.series.map(line => line.yAxisIndex), [0, 0, 1])
+    assert.deepEqual(option.series.map(line => line.data), [[64, null], [null, 0], [25, 0]])
+    assert.ok(option.series.every(line => line.connectNulls === false))
+    assert.equal(option.series[0].tooltip.valueFormatter(64, 0), '64.00 GiB')
+    assert.equal(option.series[2].tooltip.valueFormatter(25, 0), '25.00 %')
+  }
+  for (const valueAxes of [null, [{ measures: ['total'] }], [{ measures: ['total', 'available', 'used'] }],
+    [{ measures: ['total', 'available'] }, { measures: ['used', 'used'] }],
+    [{ measures: ['total', 'available'] }, { measures: ['used'], min: 100, max: 0 }],
+    [{ measures: ['total', 'available'] }, { measures: ['used'], max: Infinity }],
+    [{ measures: ['total', 'available'] }, { measures: ['used'], label: '' }],
+    [{ measures: ['total', 'available'] }, { measures: ['used'], arbitrary: true }],
+    [{ measures: ['total'] }, { measures: ['available'] }, { measures: ['used'] }]]) {
+    assert.equal(validateChartResult(rows, config, false, valueAxes).reason, 'invalid_config')
+  }
+  assert.equal(validateChartResult([], { chart_type: 'pie', dimension: 'at', measures: ['used'] }, false, [{ measures: ['used'] }]).valid, false)
+})

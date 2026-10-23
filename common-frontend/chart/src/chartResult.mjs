@@ -2,7 +2,7 @@ import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationVa
 
 const CHART_TYPES = new Set(['bar', 'line', 'pie'])
 
-export function validateChartResult(rows, config, hasMore = false) {
+export function validateChartResult(rows, config, hasMore = false, valueAxes = []) {
   if (hasMore) return { valid: false, reason: 'partial_result' }
   if (!Array.isArray(rows) || !config || !CHART_TYPES.has(config.chart_type)) {
     return { valid: false, reason: 'invalid_config' }
@@ -15,6 +15,7 @@ export function validateChartResult(rows, config, hasMore = false) {
   if (config.chart_type === 'pie' && config.measures.length !== 1) {
     return { valid: false, reason: 'invalid_config' }
   }
+  if (!validValueAxes(config, valueAxes)) return { valid: false, reason: 'invalid_config' }
   for (const row of rows) {
     for (const measure of config.measures) {
       if (row?.[measure] === null && config.chart_type !== 'pie') continue
@@ -26,6 +27,24 @@ export function validateChartResult(rows, config, hasMore = false) {
     }
   }
   return { valid: true, reason: '' }
+}
+
+function validValueAxes(config, axes) {
+  if (!Array.isArray(axes) || axes.length > 2) return false
+  if (!axes.length) return true
+  if (config.chart_type === 'pie') return false
+  const seen = new Set(), presentations = config.field_presentations || []
+  for (const axis of axes) {
+    if (!axis || Object.keys(axis).some(key => !['measures', 'label', 'min', 'max'].includes(key)) || !Array.isArray(axis.measures) || !axis.measures.length || (axis.label !== undefined && (typeof axis.label !== 'string' || !axis.label.trim()))) return false
+    if (['min', 'max'].some(key => axis[key] !== undefined && !Number.isFinite(axis[key])) || (axis.min !== undefined && axis.max !== undefined && axis.min >= axis.max)) return false
+    const first = fieldPresentationFor(axis.measures[0], presentations)
+    for (const measure of axis.measures) {
+      const presentation = fieldPresentationFor(measure, presentations)
+      if (!config.measures.includes(measure) || seen.has(measure) || presentation?.unit !== first?.unit || presentation?.precision !== first?.precision) return false
+      seen.add(measure)
+    }
+  }
+  return seen.size === config.measures.length
 }
 
 export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
@@ -60,10 +79,25 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
       }]
     }
   }
-  const primaryMeasurePresentation = config.measures.length === 1 ? fieldPresentationFor(config.measures[0], presentations) : null
-  const primaryMeasureAxisPresentation = primaryMeasurePresentation
-    ? { ...primaryMeasurePresentation, unit: '' }
-    : null
+  const valueAxes = options.valueAxes || []
+  const makeAxis = (measures, axis = {}, index = 0) => {
+    const presentation = fieldPresentationFor(measures[0], presentations)
+    const labeled = measures.length === 1 || Boolean(axis.label)
+    return {
+      ...axisStyle,
+      type: 'value',
+      nameTextStyle: { ...axisStyle.nameTextStyle, align: index ? 'right' : 'left' },
+      splitLine: { show: index === 0, lineStyle: { color: options.splitLineColor } },
+      ...(valueAxes.length ? { position: index ? 'right' : 'left' } : {}),
+      ...(Number.isInteger(presentation?.precision) && labeled ? { minInterval: 10 ** -presentation.precision } : {}),
+      ...(labeled ? {
+        name: axisTitle(measures[0], axis.label ? [{ field: measures[0], label: axis.label }] : presentations, presentation, locale),
+        axisLabel: { ...axisStyle.axisLabel, formatter: value => formatFieldPresentationValue(value, { ...presentation, unit: '' }, locale) },
+      } : {}),
+      ...(axis.min !== undefined ? { min: axis.min } : {}),
+      ...(axis.max !== undefined ? { max: axis.max } : {}),
+    }
+  }
   return {
     textStyle,
     tooltip: { ...tooltipStyle, trigger: 'axis' },
@@ -77,24 +111,13 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
       nameGap: 32,
       data: labels,
     },
-    yAxis: {
-      ...axisStyle,
-      type: 'value',
-      nameTextStyle: { ...axisStyle.nameTextStyle, align: 'left' },
-      splitLine: { lineStyle: { color: options.splitLineColor } },
-      ...(Number.isInteger(primaryMeasurePresentation?.precision)
-        ? { minInterval: 10 ** -primaryMeasurePresentation.precision }
-        : {}),
-      ...(config.measures.length === 1 ? {
-        name: axisTitle(config.measures[0], presentations, primaryMeasurePresentation, locale),
-        axisLabel: { ...axisStyle.axisLabel, formatter: (value) => formatFieldPresentationValue(value, primaryMeasureAxisPresentation, locale) },
-      } : {}),
-    },
+    yAxis: valueAxes.length ? valueAxes.map((axis, index) => makeAxis(axis.measures, axis, index)) : makeAxis(config.measures),
     series: config.measures.map((measure) => {
       const presentation = fieldPresentationFor(measure, presentations)
       return {
         name: fieldPresentationLabel(measure, presentations),
         type: config.chart_type,
+        ...(valueAxes.length ? { yAxisIndex: valueAxes.findIndex(axis => axis.measures.includes(measure)) } : {}),
         ...selection,
         ...(config.chart_type === 'bar' ? {
           label: {
