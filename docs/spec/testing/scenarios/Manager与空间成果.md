@@ -290,7 +290,9 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 独立手工 `raster-stream-order-d8-persistence`／`make test-raster-stream-order-d8-online-runner`，600秒业务预算，复用现有Hosted／NFS、同源默认入口产品Runtime及普通User原12权限。六条COG链：已登记D8＋二值多级河网、汇流累积→重分类接分级、DEM→流向→累积→重分类→分级、填洼接同链、空河网、全无效。八类断流／非二值掩膜／有效覆盖不一致／完整网格不一致／非法D8方向（含UInt64 NoData相邻大整数）／循环／非法方向波段／非法掩膜波段各按中英文提交，共16条grade任务准确失败，反向查询不改写旧错误。
 
-515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。入口／夹具／Native recipe／手工Hosted／输入影响与CI一致性登记已完成，本地Native专项48 passed／3083 deselected／5.33秒（0失败／跳过，不是新全量）、脚本门禁63项／23.076秒与完整登记、Python CI登记10项通过，记录输入无漂移；标准共享栅格脚本总入口完整退出0，20组子门禁（含原215项模拟生命周期）及隔离身份Go T1通过，输入无漂移；不累加共享重复用例、不计全量IAM／数据库集成，实际Hosted与归档终审仍待验，Linux与既有Hosted等专门CI会话回传；不改产品、权限或原套件，不计UI或容量。
+515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。入口／夹具／Native recipe／手工Hosted／输入影响与CI一致性登记已完成，本地Native专项48 passed／3083 deselected／5.33秒（0失败／跳过，不是新全量）、脚本门禁63项／23.076秒与完整登记、Python CI登记10项通过，记录输入无漂移；标准共享栅格脚本总入口完整退出0，20组子门禁（含原215项模拟生命周期）及隔离身份Go T1通过，输入无漂移；不累加共享重复用例、不计全量IAM／数据库集成，实际Hosted已在固定 `bde58e038751d932888bd7696046715e4ba21410` 通过并完成领域终审，Linux全量仍等专门CI会话回传；不改产品、权限或原套件，不计UI或容量。
+
+固定Hosted [39880792263／120177404317](https://github.com/pampa0629/addp/actions/runs/39880792263/job/120177404317) 的六条COG链及十六条中英文准确失败均通过，预检与业务436228毫秒，保持600秒预算。三方大小10788／10936／10860／10845／10715／10741字节；完整像元／mask、Strahler汇合／河网闭包／零背景、精确扫描与当前执行实际输入血缘／Monitor、源及先前成果不变、反向查询不改提交语言、失败零发布扫描血缘和Runtime／NFS／部署／Infra清理均通过。七Backend与默认入口产品Runtime同源码，普通User33／Tenant2原12权限；官方ZIP摘要、解包文件、域报告与原始Job JSON和逐条失败日志已独立核验。online-report SHA-256：`b2b5637e03923dd36238122e18a6ac8c804ff3ba2c6859ddf99163c4987ed1df`。归档无TIFF，未作离线像元复算；不计Linux全量、UI、容量、加权汇流或业务DELETE。
 
 ## raster-flow-accumulation-weighted-d8-persistence
 
