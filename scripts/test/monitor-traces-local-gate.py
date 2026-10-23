@@ -96,6 +96,18 @@ def effective_docker_endpoint(environment, context_reader):
     return endpoint
 
 
+def private_docker_client(life, endpoint):
+    directory=life.work/'docker-client'
+    directory.mkdir(mode=0o700)
+    config={'auths':{},'cliPluginsExtraDirs':[str(Path.home()/'.docker/cli-plugins')]}
+    path=directory/'config.json'
+    with open(path,'x',opener=lambda p,f:os.open(p,f,0o600)) as stream:
+        json.dump(config,stream)
+    life.env.pop('DOCKER_CONTEXT',None)
+    life.env.update(DOCKER_HOST=endpoint,DOCKER_CONFIG=str(directory))
+    return directory
+
+
 def validate_resources(rows, allowed_exits=()):
     cpu = memory = 0
     for row in rows:
@@ -223,7 +235,7 @@ class Lifecycle:
 
     def private_json(self, name, value):
         p = self.work / name
-        with p.open('x', opener=lambda path, flags: os.open(path, flags, 0o600)) as f:
+        with open(p, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as f:
             json.dump(value, f)
         return p
 
@@ -503,7 +515,11 @@ def identity(life, env):
 
 def main():
     require(len(sys.argv)==1,'local_entry_has_no_capacity_or_hosted_options')
-    life=Lifecycle();report={'schema':'addp.execution-trace-local/v1','run_id':life.run_id,'result':'failed',
+    remaining=int(os.environ.get('MONITOR_TRACE_LOCAL_REMAINING_SECONDS',str(MAX_SECONDS)))
+    require(0<remaining<=MAX_SECONDS,'remaining_budget_cannot_exceed_sixty_minutes')
+    life=Lifecycle()
+    life.started-=MAX_SECONDS-remaining
+    report={'schema':'addp.execution-trace-local/v1','run_id':life.run_id,'result':'failed',
                             'formal_runner_t4':False,'hosted':False,'capacity':False}
     destination=os.environ.get('MONITOR_TRACE_LOCAL_REPORT')
     target=Path(tempfile.gettempdir())/(life.run_id+'-report.json')
@@ -519,8 +535,7 @@ def main():
         raise
     try:
         endpoint=effective_docker_endpoint(os.environ,lambda name: json.loads(life.docker('context','inspect',*([name] if name else [])))[0]['Endpoints']['docker']['Host'])
-        life.env.pop('DOCKER_CONTEXT',None)
-        life.env['DOCKER_HOST']=endpoint
+        private_docker_client(life,endpoint)
         validate_profile(os.environ,platform.machine(),life.docker('info','--format','{{.Architecture}}').strip())
         commit,env,images=build(life)
         life.source_commit=commit
@@ -561,7 +576,7 @@ def main():
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'
         target.parent.mkdir(parents=True,exist_ok=True)
-        with target.open('x',opener=lambda path,flags:os.open(path,flags,0o600)) as f:json.dump(report,f,indent=2)
+        with open(target,'x',opener=lambda path,flags:os.open(path,flags,0o600)) as f:json.dump(report,f,indent=2)
     print('Local execution Trace: '+report['result']+'; report='+str(target),flush=True)
     return 0 if report['result']=='passed' else 1
 

@@ -390,3 +390,26 @@ class LocalTraceCommittedSourceTests(unittest.TestCase):
                 self.assertIn('Makefile',m.committed_inputs(life,'fixed-commit'))
                 life.command.return_value='old unrelated entry'
                 with self.assertRaisesRegex(m.GateError,'committed_local_integration_missing'):m.committed_inputs(life,'fixed-commit')
+
+
+class LocalTracePrivateFilesTests(unittest.TestCase):
+    def test_private_json_is_exclusive_and_owner_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            path=life.private_json('input.json',{'safe':'value'})
+            self.assertEqual(path.stat().st_mode&0o777,0o600)
+            self.assertEqual(path.stat().st_nlink,1)
+            self.assertEqual(json.loads(path.read_text()),{'safe':'value'})
+            with self.assertRaises(FileExistsError):life.private_json('input.json',{})
+    def test_public_docker_client_never_loads_personal_credential_helpers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.env={'DOCKER_CONTEXT':'personal','HOME':'/personal'}
+            path=m.private_docker_client(life,'unix:///local/socket')
+            self.assertEqual(path.stat().st_mode&0o777,0o700)
+            config=json.loads((path/'config.json').read_text())
+            self.assertEqual(config['auths'],{})
+            self.assertNotIn('credsStore',config);self.assertNotIn('credHelpers',config)
+            self.assertEqual((path/'config.json').stat().st_mode&0o777,0o600)
+            self.assertEqual(life.env['DOCKER_HOST'],'unix:///local/socket')
+            self.assertEqual(life.env['DOCKER_CONFIG'],str(path))
+            self.assertNotIn('DOCKER_CONTEXT',life.env)
