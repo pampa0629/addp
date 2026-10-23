@@ -111,7 +111,7 @@ System 核对已封存且未撤销、未过期的 user 来源授权，排除 Not
 
 ### 5.2.3 精确组成模型快显执行授权
 
-已验收接入范围为真实 FTP、NFS 引擎的 IFC／3DS 单体 GLB 生成，二者共用精确组成、执行授权与受控暂存链。NFS 仅通过 Provider 读取已核验的普通文件，删除这两个格式的宿主挂载路径直传入口；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 已于 2026-10-22 确认沿同一路线扩展（基础扫描完整 XML 上限 64 MiB，仅认领明确 PNG/JPEG，组成变化重新批准），实现及真实运行结果须独立登记；MinIO 的 IFC／3DS 按同一契约接入；其余 NFS／MinIO 格式不在本轮迁移范围。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
+已验收接入范围为真实 FTP／NFS 引擎的 IFC／3DS／DAE 及 MinIO 的 IFC／3DS 单体 GLB 生成，共用精确组成、执行授权与受控暂存链；固定样例与真实运行边界见[验收证据索引](testing/验收证据索引.md)。NFS 仅通过 Provider 读取已核验的普通文件，上述三个格式不再通过宿主挂载路径直传；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 基础扫描完整 XML 上限为 64 MiB，仅认领明确 PNG/JPEG，组成变化须重新批准。其余格式不在本轮迁移范围。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
 
 MinIO 保留 `service → bucket → prefix → object` 的真实目录类型，组成绑定主对象与 Meta 基础扫描确认的精确依赖对象，不把对象伪装成 file。IFC 仅含主对象；3DS 通过同一格式 Provider 读取主对象结构声明，既不列举授权范围外的前缀，也不读取贴图内容来发现组成。桶根模型、完整 refs 采集与前缀采集沿用同一规则；不完整、变化或无法精确表示的组成拒绝授权。System 仅准入 MinIO IFC／3DS 主对象，桶与前缀不能作为模型批准目标。
 
@@ -220,7 +220,7 @@ Explicit Deny 的建立／解除使用各自独立 Permission 与引擎管理资
 
 **唯一目标与分工。** Meta 保存 DataItem 的身份、布局、入口、组成边界和识别状态；System 保存稳定数据项引用、授权认可的最小边界绑定、批准要求、Grant／Deny 与审计；Catalog 是可选业务批准入口；实际读取 owner 执行统一规则。System 不跨 schema 查 Meta，不复制完整目录或 whole 叶子清单，也不重新探测格式。
 
-Meta 向 System 精确投影当前数据项身份、可执行组成边界与基础识别状态；唯一事实契约见[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)。System 绑定被批准的最小边界及其摘要，真实读取使用同一边界表示；状态完整与摘要一致均不能代替当前权限及 Security 校验。当前实施和端到端验收聚焦 PostgreSQL 的 server → schema → 普通 table `single`，先打通事实查询、批准绑定、Manager 真实读取与收权闭环。共享事实协议及 System 持久化约束也能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），但这不代表对应引擎的实际读取入口已执行源规则，不将其列为已完成的数据授权接入。不同目标仍须分别验证，不能仅凭相同名称跨类型或跨 namespace 复用批准。文件 single、multi／whole 及其他消费入口尚未覆盖，不直接复用完整 Meta 详情、Catalog 变化源或浏览器自报描述。
+Meta 向 System 精确投影当前数据项身份、可执行组成边界与基础识别状态；唯一事实契约见[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)。System 绑定被批准的最小边界及其摘要，真实读取使用同一边界表示；状态完整与摘要一致均不能代替当前权限及 Security 校验。当前已验证目标包括 PostgreSQL 的 server → schema → 普通 table `single`，以及下述单体模型规则限定的 FTP／NFS／MinIO 文件／对象 `single`；事实查询、批准绑定、Manager 真实读取与收权闭环按引擎分别验收。共享事实协议及 System 持久化约束也能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），但这不代表对应引擎的实际读取入口已执行源规则，不将其列为已完成的数据授权接入。不同目标仍须分别验证，不能仅凭相同名称跨类型或跨 namespace 复用批准。未明确列入单体模型规则的文件 single、multi／whole 及其他消费入口尚未覆盖，不直接复用完整 Meta 详情、Catalog 变化源或浏览器自报描述。
 
 **Grant 与 Deny 的不同匹配语义。** Grant 绑定被批准的 DataItem 身份及边界摘要；同一数据项的布局、入口或合法组成约束变化后，旧 Grant 不覆盖新边界，须显式重新批准。Deny 绑定同 Tenant、同 Engine 内的稳定 DataItem 身份、接收主体和动作；在期限及主体条件仍满足时，不因边界摘要变化、重新扫描或重新签发 Grant 而失效，直到显式解除或自然到期。建立时记录的边界可以用于审计，但不能成为继续命中该拒绝的必要条件。换 Engine、改名或来源重绑按既有身份规则处理，不把原规则猜测转移到另一个数据项。解除 Deny 不恢复已撤销、到期或边界不匹配的 Grant；未可靠确认当前身份与边界时仍拒绝读取，不以 Deny 未找到作为允许依据。
 
@@ -234,9 +234,9 @@ Meta 向 System 精确投影当前数据项身份、可执行组成边界与基�
 | `multi` | 主 ref 与明确相关 refs 组成一个 DataItem，例如 Shapefile | 原批准组成约束内的成员更新 | 用部分文件许可拼出整体，向范围外追加 refs |
 | `whole` | 格式／引擎认定的整体 scope，例如 OSGB Scene、栅格镶嵌 | 既定合法范围内新增 OSGB、TIFF、瓦片 | 换 Engine／根范围、扩大组成规则、引入范围外资源 |
 
-**文件批准快照与同次读取。** 文件组成沿现有不可变 Grant 记录保存 `file_composition` 最小批准快照，不另建文件 ACL 或纹理 Grant。请求仍绑定主文件对应 DataItem、预期边界摘要和原批准要求版本；完整快照只从 System 独立读取的 Meta 完整事实冻结，不接受浏览器提交替代事实。历史记录及撤销不要求 Meta 保留旧组成。当前读取按主文件定位候选，但必须证明其是同一完整数据项的主入口，再以完整组成计算边界并消费同一 Grant／Deny 规则；不能用某条纹理 ref 反推主项许可，也不能把单文件旧 Grant 升格成组合许可。受管模型内容请求的 `expected_source` 在同一次 System 裁决中比较当前完整组成及 Engine 版本；即使变化后的新边界另有 Grant，旧生成边界也不得获准。跨 Meta 读取在 IAM 事务外，随后重新核验原凭据、当前 Engine 及源规则，不跨 owner 持锁。此文件分支接入 FTP／NFS IFC／3DS 的直接批准与内容读取；Catalog 文件办理和文件任务产出初始授权分别后续接入，不因共享目标已能表达便默认为已支持。原生表／集合的已验证边界摘要保持不变。
+**文件批准快照与同次读取。** 文件组成沿现有不可变 Grant 记录保存 `file_composition` 最小批准快照，不另建文件 ACL 或纹理 Grant。请求仍绑定主文件对应 DataItem、预期边界摘要和原批准要求版本；完整快照只从 System 独立读取的 Meta 完整事实冻结，不接受浏览器提交替代事实。历史记录及撤销不要求 Meta 保留旧组成。当前读取按主文件定位候选，但必须证明其是同一完整数据项的主入口，再以完整组成计算边界并消费同一 Grant／Deny 规则；不能用某条纹理 ref 反推主项许可，也不能把单文件旧 Grant 升格成组合许可。受管模型内容请求的 `expected_source` 在同一次 System 裁决中比较当前完整组成及 Engine 版本；即使变化后的新边界另有 Grant，旧生成边界也不得获准。跨 Meta 读取在 IAM 事务外，随后重新核验原凭据、当前 Engine 及源规则，不跨 owner 持锁。此文件分支接入 FTP／NFS IFC／3DS／DAE 及 MinIO IFC／3DS 的直接批准与内容读取；Catalog 文件办理和文件任务产出初始授权分别后续接入，不因共享目标已能表达便默认为已支持。原生表／集合的已验证边界摘要保持不变。
 
-System 正式授权页面复用现有共享资源选择器、事实观察与 Grant 命令。FTP／NFS 目录仅用于浏览，不批量展开为读取许可；只可选择 IFC／3DS 以及本轮已确认追加的 DAE 主文件候选，仍须由正式事实接口证明其为完整 single DataItem 的唯一主入口。确认框展示 Meta 返回的整个组成清单及接收方、期限；不允许选中独立纹理后借用模型许可，不向浏览器开放自报组成。文件分支仅办理直接批准，不能在页面选择尚未接入的 Catalog 文件办理；PG 普通表及 schema 展开语义不变。前端接线、本地确定性门禁和真实运行验收分别记录，不能以页面可选代替实际授权生效。
+System 正式授权页面复用现有共享资源选择器、事实观察与 Grant 命令。FTP／NFS 目录及 MinIO 桶／前缀仅用于浏览，不批量展开为读取许可；只可选择 FTP／NFS IFC／3DS／DAE 主文件及 MinIO IFC／3DS 主对象候选，仍须由正式事实接口证明其为完整 single DataItem 的唯一主入口。确认框展示 Meta 返回的整个组成清单及接收方、期限；不允许选中独立纹理后借用模型许可，不向浏览器开放自报组成。文件分支仅办理直接批准，不能在页面选择尚未接入的 Catalog 文件办理；PG 普通表及 schema 展开语义不变。前端接线、本地确定性门禁和真实运行验收分别记录，不能以页面可选代替实际授权生效。
 
 组成的规范 JSON 本身至多 64 KiB，完整授权事实／批准 Binding 信封至多 128 KiB，后者给主项身份与摘要字段留出空间。工厂、严格 wire 和统一 Meta Client 使用同一预算，不出现“工厂接受、加信封后读不回”的合法边界；超预算拒绝，不截断 refs 或静默减少授权组成。
 
