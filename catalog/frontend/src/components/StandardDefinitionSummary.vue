@@ -7,7 +7,7 @@
    <span>{{ t(state.revision.isCurrent ? 'catalog.standardDefinition.current' : 'catalog.standardDefinition.notCurrent') }}</span>
   </div>
   <el-button v-if="state.status === 'unavailable'" link @click="load">{{ t('catalog.common.retry') }}</el-button>
-  <el-button v-if="canOpen" link type="primary" @click="openConsoleRoute(state.config.detailPath)">{{ t('catalog.standardDefinition.open') }}</el-button>
+  <el-button v-if="canOpen" link type="primary" @click="openDefinition">{{ t('catalog.standardDefinition.open') }}</el-button>
  </section>
 </template>
 <script setup>
@@ -22,6 +22,7 @@ const auth = useAuthStore()
 const { t } = useI18n()
 const state = reactive({ status: 'loading', version: 0, text: '', revision: null, config: null })
 const canOpen = computed(() => state.config && allowsConsoleRoute(state.config.detailPath, auth.contextType, auth.permissions))
+const openDefinition = () => { if (canOpen.value) openConsoleRoute(state.config.detailPath) }
 const load = () => loadStandardDefinition(state, { source: props.source, hasPermission: permission => auth.hasPermission(permission), read: path => client.get(path) })
 watch([() => props.source, () => auth.permissions.join(','), () => auth.authContext?.context?.tenant_id, () => auth.contextType], load, { immediate: true })
 onBeforeUnmount(() => { state.version++ })

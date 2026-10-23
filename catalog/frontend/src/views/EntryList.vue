@@ -258,7 +258,7 @@
           <template #default="{ row }">{{ entryTypeLabel(row.entry_type) }}</template>
         </el-table-column>
         <el-table-column v-if="filters.view === 'governance'" prop="business_description" :label="t('catalog.edit.businessDescription')" min-width="300" show-overflow-tooltip>
-          <template #default="{ row }"><el-link v-if="standardResourcePresentation(row.entry_type, row.source_identity)" :disabled="!authStore.hasPermission(standardResourcePresentation(row.entry_type, row.source_identity).permission)" type="primary" @click="openStandardDefinition(row)">{{ t('catalog.standardDefinition.open') }}</el-link><span v-else>{{ row.business_description || '-' }}</span></template>
+          <template #default="{ row }"><el-link v-if="standardResourcePresentation(row.entry_type, row.source_identity)" :disabled="!canOpenStandardDefinition(row)" type="primary" @click="openStandardDefinition(row)">{{ t('catalog.standardDefinition.open') }}</el-link><span v-else>{{ row.business_description || '-' }}</span></template>
         </el-table-column>
         <el-table-column v-if="filters.view === 'inventory'" prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130">
           <template #default="{ row }"><el-tag :type="sourceTagType(row.source_status)">{{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}</el-tag></template>
@@ -503,9 +503,13 @@ function optionsWithSelectedEntryType(options, selectedEntryType) {
   return result
 }
 
+function canOpenStandardDefinition(row) {
+ const config = standardResourcePresentation(row.entry_type, row.source_identity)
+ return Boolean(config && allowsConsoleRoute(config.detailPath, authStore.contextType, authStore.permissions))
+}
 function openStandardDefinition(row) {
  const config = standardResourcePresentation(row.entry_type, row.source_identity)
- if (config && allowsConsoleRoute(config.detailPath, authStore.contextType, authStore.permissions)) openConsoleRoute(config.detailPath)
+ if (canOpenStandardDefinition(row)) openConsoleRoute(config.detailPath)
 }
 function entryTypeLabel(type) { return catalogEntryTypeLabel(type, t) }
 

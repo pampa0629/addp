@@ -586,7 +586,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Bell, Edit, MoreFilled, Refresh, Star } from '@element-plus/icons-vue'
-import { navigateConsoleModuleRoute, openConsoleRoute, resolveCanonicalTabRouteState, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
+import { navigateConsoleModuleRoute, openConsoleRoute, allowsConsoleRoute, resolveCanonicalTabRouteState, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
 import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
@@ -730,7 +730,10 @@ const sourceEngineName = computed(() => {
   if (engine?.status === 'current' && engine.name) return engine.name
   return t(engine?.status === 'missing' ? 'catalog.entry.sourceEngineMissing' : 'catalog.entry.sourceEngineUnavailable')
 })
-const ownerDetailUrl = computed(() => resolveConsoleRouteUrl(entry.value?.source_resolution?.detail_path || ''))
+const ownerDetailUrl = computed(() => {
+  const path = entry.value?.source_resolution?.detail_path || ''
+  return allowsConsoleRoute(path, authStore.contextType, authStore.permissions) ? resolveConsoleRouteUrl(path) : ''
+})
 const sourceResolutionText = computed(() => {
   const status = entry.value?.source_resolution?.status || 'unavailable'
   return t(`catalog.entry.owner${status.charAt(0).toUpperCase()}${status.slice(1)}`, { module: ownerModuleName.value })

@@ -102,7 +102,7 @@ function adoptedPath(item, evidence) {
  return standardResourcePresentation(item.source_type, item.source_identity, evidence.revision_id)?.detailPath || ''
 }
 function canOpenEvidence(item, evidence) { return allowsConsoleRoute(adoptedPath(item, evidence), auth.contextType, auth.permissions) }
-function openEvidence(item, evidence) { openConsoleRoute(adoptedPath(item, evidence)) }
+function openEvidence(item, evidence) { if (canOpenEvidence(item, evidence)) openConsoleRoute(adoptedPath(item, evidence)) }
 function refresh() { refreshToken.value++; loadDomains() }
 watch([() => state.value.domainId, () => state.value.view, () => auth.permissions.join(','), () => auth.authContext?.context?.tenant_id, () => auth.contextType, () => refreshToken.value, () => invalidDomain.value], () => {
  const canonical = domainOverviewQuery(state.value)

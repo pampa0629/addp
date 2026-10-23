@@ -705,6 +705,8 @@ Model `business_entity|logical_model` 与 Standard 五类标准的主业务域�
 
 专业来源摘要中的 `engine_id`、`runtime_engine_id` 使用同一 System 引擎引用解析能力，在详情 `source_resolution.engine_references` 中按原字段名返回动态名称、类型及解析状态，不改写 owner 摘要或来源快照。业务域复用当前 Standard 层级名称；指标分类与计量单位分别通过当前 User 的 `standard.metric.read`、`standard.unit.read` 读取 Standard 公开接口，无权限或读取失败显示名称不可用，不扩权代查。
 
+Catalog 资源列表、详情和业务域总览的专业源链接统一复用共享 `allowsConsoleRoute`，按目标 Console 路由、当前身份上下文和完整入口权限判断可用性；不得用单个对象读取权限替代页面入口规则。详情与确定修订链接遵循相同规则，权限变化后响应式更新，程序化跳转时再次判断；未登记路由关闭入口。专业摘要的读取仍按 owner API 的对象读取权限独立判断，缺少页面依赖权限不隐藏已获准读取的摘要，也不授予额外权限。
+
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 
 `GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。任务结果、分页计数和精确 `entry_id` 筛选必须复用条目详情的当前可见性，不能列出调用者无法打开的条目或泄露其任务数量。具有显式 `catalog.inventory.read` 的租户治理人员可发现本租户责任部门已失效的条目及任务，不依赖原部门成员关系；普通部门治理人员仍只看到当前可见条目的任务。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，有盘点权限时使用盘点视图，否则使用已编目资源视图，不提供 UUID 手工输入。
