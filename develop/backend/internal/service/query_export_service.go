@@ -10,27 +10,37 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
 	"strconv"
 )
 
 var (
+	ErrQueryExportUnsupported = errors.New("query export unsupported")
 	ErrQueryExportInvalid     = errors.New("invalid query export")
 	ErrQueryExportNotFound    = errors.New("query execution not found")
 	ErrQueryExportUnavailable = errors.New("query export unavailable")
 )
 
 type QueryExportService struct {
-	executor  *DevExecutor
-	artifacts *exportartifact.Service
+	executor   *DevExecutor
+	artifacts  *exportartifact.Service
+	descriptor func(context.Context, uint, uint) (*commonModels.EngineRuntimeDescriptor, error)
 }
 
 func NewQueryExportService(executor *DevExecutor, artifacts *exportartifact.Service) *QueryExportService {
-	return &QueryExportService{executor: executor, artifacts: artifacts}
+	s := &QueryExportService{executor: executor, artifacts: artifacts}
+	if executor != nil && executor.sqlEngine != nil && executor.sqlEngine.systemService != nil {
+		s.descriptor = func(ctx context.Context, tenant, engine uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			return executor.sqlEngine.systemService.WithTenantID(tenant).GetEngineRuntimeDescriptor(ctx, engine)
+		}
+	}
+	return s
 }
 
 func (s *QueryExportService) Create(ctx context.Context, executionID string, req models.CreateQueryExportRequest, tenantID, userID uint) (*models.CreateQueryExportResponse, error) {
@@ -87,6 +97,9 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	if !ok || parseErr != nil || parsedSource.EngineID != uint(queryEngineID) {
 		return nil, fmt.Errorf("%w: federated or unresolved query engine", ErrQueryExportInvalid)
 	}
+	if err := s.validateExportCapability(ctx, tenantID, uint(queryEngineID), language); err != nil {
+		return nil, err
+	}
 	formatType := format.FormatType(strings.ToLower(strings.TrimSpace(req.Format)))
 	if formatType == "" {
 		formatType = format.FormatCSV
@@ -135,6 +148,33 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 		return nil, fmt.Errorf("%w: %v", ErrQueryExportUnavailable, err)
 	}
 	return queryExportResponse(created), nil
+}
+
+// Check the frozen execution's engine before issuing authority or creating a session.
+func (s *QueryExportService) validateExportCapability(ctx context.Context, tenantID, engineID uint, language string) error {
+	if s.descriptor == nil {
+		return ErrQueryExportUnavailable
+	}
+	descriptor, err := s.descriptor(ctx, tenantID, engineID)
+	if err != nil || descriptor == nil || descriptor.ID != engineID {
+		return ErrQueryExportUnavailable
+	}
+	if descriptor.Capabilities == nil {
+		return ErrQueryExportUnsupported
+	}
+	caps, err := plugin.ParseEngineCapabilities(string(*descriptor.Capabilities))
+	if err != nil {
+		return ErrQueryExportUnavailable
+	}
+	if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported || !caps.Compute.Query.ReadSession {
+		return ErrQueryExportUnsupported
+	}
+	for _, supported := range caps.Compute.Query.Languages {
+		if strings.EqualFold(strings.TrimSpace(supported), language) {
+			return nil
+		}
+	}
+	return ErrQueryExportUnsupported
 }
 
 func queryExportIdentityProjection(columns []string) []commonClient.TransferExecutionTransform {

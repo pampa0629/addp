@@ -90,6 +90,7 @@ const (
 	MsgQueryConfirmationRequired              = "develop.query.confirmation_required"
 	MsgQueryExportInvalid                     = "develop.query.export_invalid"
 	MsgQueryExportNotFound                    = "develop.query.export_not_found"
+	MsgQueryExportUnsupported                 = "develop.query.export_unsupported"
 	MsgQueryExportUnavailable                 = "develop.query.export_unavailable"
 	MsgQueryResultProtectionRequired          = "develop.query.result_protection_required"
 	MsgNotebookExecutionForbidden             = "develop.notebook.execution_permission_denied"

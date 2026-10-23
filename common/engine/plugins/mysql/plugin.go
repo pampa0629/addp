@@ -36,6 +36,7 @@ type MySQLPlugin struct{}
 var (
 	_ plugin.BoundedWatermarkReadProvider        = (*MySQLPlugin)(nil)
 	_ plugin.SpatialFeatureReadProvider          = (*MySQLPlugin)(nil)
+	_ plugin.QueryReadSessionProvider            = (*MySQLPlugin)(nil)
 	_ plugin.TableReadSessionProvider            = (*MySQLPlugin)(nil)
 	_ plugin.TableUpsertProvider                 = (*MySQLPlugin)(nil)
 	_ plugin.PartitionedTableChangeApplyProvider = (*MySQLPlugin)(nil)
@@ -90,6 +91,7 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 		BulkWrite:                 true,
 		BatchWrite:                true,
 		TableReadSession:          true,
+		QueryReadSession:          true,
 		TableReadSpatialTransform: true,
 		TableWriteSession:         true,
 		TableWritePrepare:         true,

@@ -16,6 +16,7 @@ export function queryCapabilityForEngine(engine) {
   if (!query?.supported) {
     return {
       languages: [],
+      readSession: false,
       defaultLanguage: '',
       identifierQuotes: {},
       resultKinds: [],
@@ -27,6 +28,7 @@ export function queryCapabilityForEngine(engine) {
   const declaredDefault = String(query.default_language || '').trim().toLowerCase()
   return {
     languages,
+    readSession: query.read_session === true,
     defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : (languages[0] || ''),
     identifierQuotes: normalizeIdentifierQuotes(query.identifier_quotes, languages),
     resultKinds: Array.from(new Set((query.result_kinds || []).map(value => String(value).trim().toLowerCase()).filter(Boolean))),

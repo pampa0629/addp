@@ -2396,6 +2396,13 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "422":
+          description: 当前引擎不支持完整查询结果导出 | Engine does not support full query result
+            export
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "503":
           description: Service Unavailable
           schema:

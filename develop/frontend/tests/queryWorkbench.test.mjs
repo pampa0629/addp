@@ -41,6 +41,7 @@ const capability = queryCapabilityForEngine({
 })
 assert.deepEqual(capability, {
   languages: ['cypher'],
+  readSession: false,
   defaultLanguage: 'cypher',
   identifierQuotes: { cypher: '`' },
   resultKinds: ['graph', 'table'],
@@ -254,3 +255,6 @@ assert.equal(hasEditorDefault({ type: 'string', default: null }), false)
 assert.equal(hasEditorDefault({ type: 'relation', default: { locator: 'addp://engine/32/path/business/source?type=table' } }), true)
 
 console.log('query workbench tests passed')
+
+assert.equal(queryCapabilityForEngine({ capabilities: { compute: { query: { supported: true, read_session: true, languages: ["sql"] } } } }).readSession, true)
+assert.equal(queryCapabilityForEngine({}).readSession, false)

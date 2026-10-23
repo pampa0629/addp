@@ -52,7 +52,12 @@ func newQueryExportServiceForTest(t *testing.T, db *gorm.DB, repository *commonE
 		"develop",
 		"/api/v1/develop/exports",
 	)
-	return NewQueryExportService(NewDevExecutor(nil, repository, nil, nil, nil, nil, nil, nil), artifacts)
+	s := NewQueryExportService(NewDevExecutor(nil, repository, nil, nil, nil, nil, nil, nil), artifacts)
+	s.descriptor = func(_ context.Context, _, id uint) (*commonModels.EngineRuntimeDescriptor, error) {
+		caps := commonModels.JSONString(`{"compute":{"query":{"supported":true,"read_session":true,"languages":["sql"]}}}`)
+		return &commonModels.EngineRuntimeDescriptor{ID: id, Capabilities: &caps}, nil
+	}
+	return s
 }
 
 func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
@@ -112,6 +117,21 @@ func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
 	if _, err := exporter.Create(denied, execution.ExecutionID, models.CreateQueryExportRequest{Format: "csv", FileName: "stolen"}, 7, 10); !errors.Is(err, ErrQueryExportNotFound) || transfer.request != nil {
 		t.Fatalf("unauthorized export started: err=%v request=%#v", err, transfer.request)
 	}
+
+	validDescriptor := exporter.descriptor
+	for _, queryCaps := range []string{`{"supported":true,"languages":["sql"]}`, `{"supported":true,"read_session":true,"languages":["mql"]}`} {
+		exporter.descriptor = func(_ context.Context, _, id uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			caps := commonModels.JSONString(`{"compute":{"query":` + queryCaps + `}}`)
+			return &commonModels.EngineRuntimeDescriptor{ID: id, Capabilities: &caps}, nil
+		}
+		_, err := exporter.Create(WithExecutionAuthContext(t.Context(), authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})), execution.ExecutionID, models.CreateQueryExportRequest{Format: "csv", FileName: "unsupported"}, 7, 9)
+		var sessions int64
+		db.Table("export_sessions").Count(&sessions)
+		if !errors.Is(err, ErrQueryExportUnsupported) || transfer.request != nil || sessions != 0 {
+			t.Fatal("unsupported engine created export or returned availability failure", err, sessions)
+		}
+	}
+	exporter.descriptor = validDescriptor
 	result, err := exporter.Create(WithExecutionAuthContext(context.Background(), authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})), execution.ExecutionID, models.CreateQueryExportRequest{
 		Format: "csv", FileName: "orders",
 	}, 7, 9)
@@ -215,5 +235,20 @@ func TestQueryExportRejectsUnsuccessfulExecution(t *testing.T) {
 		Format: "csv", FileName: "orders.csv",
 	}, 7, 9); err == nil || !errors.Is(err, ErrQueryExportInvalid) {
 		t.Fatalf("Create() error = %v", err)
+	}
+}
+
+func TestQueryExportCapabilityDistinguishesDescriptorOutage(t *testing.T) {
+	s := &QueryExportService{}
+	if !errors.Is(s.validateExportCapability(t.Context(), 7, 11, "sql"), ErrQueryExportUnavailable) {
+		t.Fatal("missing descriptor service accepted")
+	}
+	for _, descriptor := range []*commonModels.EngineRuntimeDescriptor{nil, {ID: 12}, {ID: 11, Capabilities: func() *commonModels.JSONString { value := commonModels.JSONString(`{broken`); return &value }()}} {
+		s.descriptor = func(context.Context, uint, uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			return descriptor, nil
+		}
+		if !errors.Is(s.validateExportCapability(t.Context(), 7, 11, "sql"), ErrQueryExportUnavailable) {
+			t.Fatal("invalid descriptor misreported as unsupported")
+		}
 	}
 }

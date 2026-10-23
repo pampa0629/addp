@@ -81,6 +81,7 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "缺少角色专用导出执行权限 | Missing role-specific export execution permissions"
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @Failure 422 {object} map[string]string "当前引擎不支持完整查询结果导出 | Engine does not support full query result export"
 // @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read","develop.task.execute","develop.data_read.execute"]
@@ -102,26 +103,32 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 	}
 	result, err := h.queryExports.Create(exportUserContext(c), c.Param("execution_id"), req, tenantIDValue(c), commonAuth.GetUserID(c))
 	if err != nil {
-		if writeQueryProtectionError(c, err) {
-			return
-		}
-		switch {
-		case errors.Is(err, service.ErrQueryExportNotFound):
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": commoni18n.T(c, developi18n.MsgQueryExportNotFound), "error_code": "query_export_source_not_found",
-			})
-		case errors.Is(err, service.ErrQueryExportInvalid):
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": commoni18n.T(c, developi18n.MsgQueryExportInvalid), "error_code": "invalid_query_export", "details": err.Error(),
-			})
-		default:
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable", "details": err.Error(),
-			})
-		}
+		queryExportCreateError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, result)
+}
+
+func queryExportCreateError(c *gin.Context, err error) {
+	if writeQueryProtectionError(c, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, service.ErrQueryExportUnsupported):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryExportUnsupported), "error_code": "query_export_unsupported"})
+	case errors.Is(err, service.ErrQueryExportNotFound):
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryExportNotFound), "error_code": "query_export_source_not_found",
+		})
+	case errors.Is(err, service.ErrQueryExportInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryExportInvalid), "error_code": "invalid_query_export", "details": err.Error(),
+		})
+	default:
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable", "details": err.Error(),
+		})
+	}
 }
 
 // GetQueryExport 获取当前用户的查询导出会话。

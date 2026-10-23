@@ -76,6 +76,9 @@ other = "当前查询结果不能导出，请重新执行查询后再试"
 [develop.query.export_not_found]
 other = "查询执行不存在或已不可访问"
 
+[develop.query.export_unsupported]
+other = "当前引擎暂不支持导出完整查询结果；普通查询仍可使用。这不是数据访问权限或脱敏授权不足。"
+
 [develop.query.export_unavailable]
 other = "完整结果导出服务暂时不可用，请稍后重试"
 

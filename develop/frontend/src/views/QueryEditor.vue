@@ -245,7 +245,8 @@
             <QueryResult
               :result="executionResult"
               :custom-content="resultViewMode === 'graph' && hasGraphData"
-              :full-export-supported="!federatedQuery"
+              :full-export-supported="queryFullExportSupported"
+              :full-export-unavailable-reason="!federatedQuery && !queryFullExportSupported ? t('develop.queryResult.exportUnsupported') : ''"
               @export-full="openFullExportDialog"
             >
               <GraphResultView
@@ -1079,6 +1080,7 @@ const selectedQueryContext = computed(() => {
 })
 const selectedCapability = computed(() => queryCapabilityForEngine(selectedTarget.value?.engine))
 const federatedQuery = computed(() => Boolean(selectedCapability.value.federation?.supported))
+const queryFullExportSupported = computed(() => !federatedQuery.value && selectedCapability.value.readSession && selectedCapability.value.languages.includes(currentQueryLanguage.value))
 const catalogTreeEngineIds = computed(() => federatedQuery.value
   ? catalogEngineIds.value
   : (selectedEngineId.value ? [selectedEngineId.value] : []))

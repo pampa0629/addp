@@ -12,6 +12,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/authorization/authtest"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
@@ -26,8 +27,9 @@ import (
 
 func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
 	for _, engineType := range []string{"mysql", "postgresql"} {
-		for _, computed := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/computed=%t", engineType, computed), func(t *testing.T) {
+		for _, scenario := range []struct{ computed, readSession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+			computed, readSession := scenario.computed, scenario.readSession
+			t.Run(fmt.Sprintf("%s/computed=%t/read_session=%t", engineType, computed, readSession), func(t *testing.T) {
 				db := newTransferTaskHandlerTestDB(t)
 				auth := authtest.NewTenantUserAuthContext("7", "91", []string{"transfer.task.create"})
 				system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -64,7 +66,16 @@ func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
 					t.Fatal(err)
 				}
 				svc := service.NewTaskService(db, nil, nil)
-				svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1}})
+				registered, err := engineplugin.Get(engineType)
+				if err != nil {
+					t.Fatal(err)
+				}
+				caps := registered.Capabilities()
+				if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.ReadSession {
+					t.Fatal("registered SQL engine must declare query read_session")
+				}
+				caps.Compute.Query.ReadSession = readSession
+				svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1, Capabilities: &caps}})
 				router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 				request := httptest.NewRequest(http.MethodPost, "/api/v1/transfer/task-definitions", strings.NewReader(string(body)))
 				request.Header.Set("Content-Type", "application/json")
@@ -72,13 +83,13 @@ func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, request)
 				wantStatus, wantTasks := http.StatusCreated, int64(1)
-				if engineType == "mysql" {
+				if !readSession {
 					wantStatus, wantTasks = http.StatusBadRequest, 0
 					var failure map[string]interface{}
 					if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil {
 						t.Fatal(err)
 					}
-					if failure["error"] != `invalid transfer task config: query source engine "mysql" does not declare query read_session` {
+					if failure["error"] != fmt.Sprintf("invalid transfer task config: query source engine %q does not declare query read_session", engineType) {
 						t.Fatalf("unexpected rejection: %s", response.Body)
 					}
 					t.Logf("reproduced configuration response: HTTP %d %s", response.Code, response.Body)

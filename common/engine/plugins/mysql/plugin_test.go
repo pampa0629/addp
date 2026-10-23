@@ -86,3 +86,13 @@ func TestMySQLCapabilitiesDeclareAtomicPartitionedTableChangeApply(t *testing.T)
 		}
 	}
 }
+
+func TestMySQLCapabilitiesDeclareQueryReadSession(t *testing.T) {
+	p := &MySQLPlugin{}
+	if !p.Capabilities().Compute.Query.ReadSession {
+		t.Fatal("query read session not declared")
+	}
+	if _, ok := any(p).(plugin.QueryReadSessionProvider); !ok {
+		t.Fatal("provider missing")
+	}
+}

@@ -716,6 +716,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "422": {
+                        "description": "当前引擎不支持完整查询结果导出 | Engine does not support full query result export",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {

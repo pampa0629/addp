@@ -133,7 +133,7 @@ if [ "$recovery_mode" = cleanup ]; then
     exit 0
 fi
 
-test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|ResultSchema|OutputRewrite)$'
+test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|ResultSchema|OutputRewrite|QueryReadSession)$'
 if [ "$test_group" = typed-write ]; then
     test_pattern='^TestIntegrationMySQLTypedJSONWrites$'
 fi

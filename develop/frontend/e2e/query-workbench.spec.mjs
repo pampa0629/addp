@@ -430,6 +430,30 @@ test('renders the desktop workbench and a bounded table result without overlap',
   await expectNoDocumentOverflow(page)
 })
 
+for (const readSession of [false, true]) test(`full export follows the engine read-session capability (${readSession})`, async ({ page }) => {
+  const engine = { ...ENGINE, capabilities: { compute: { query: { ...ENGINE.capabilities.compute.query, read_session: readSession } } } }
+  await installMockBackend(page, { resultKind: 'table', engines: [engine] })
+  await page.goto('/sql', { waitUntil: 'networkidle' })
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+  const exportButton = page.getByRole('button', { name: '导出全部结果', exact: true })
+  if (readSession) {
+    await expect(exportButton).toBeEnabled()
+    await exportButton.click()
+    await expect(page.getByRole('dialog', { name: '导出全部结果', exact: true })).toBeVisible()
+  } else {
+    await expect(exportButton).toBeDisabled()
+    await exportButton.locator('..').hover()
+    await expect(page.getByRole('tooltip', { name: '当前引擎暂不支持导出完整查询结果；普通查询仍可使用。', exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: '导出全部结果', exact: true })).toHaveCount(0)
+  }
+})
+
 test('graph results follow every theme without replacing the canvas or clearing selection', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'graph' })
   await page.goto('/sql')

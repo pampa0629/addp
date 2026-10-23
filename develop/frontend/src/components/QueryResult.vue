@@ -36,15 +36,14 @@
             <el-icon><View /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-button
-          v-if="canExportFullResult"
-          size="small"
-          :aria-label="t('develop.queryResult.exportFull')"
-          @click="emit('export-full')"
-        >
-          <el-icon><Download /></el-icon>
-          {{ t('develop.queryResult.exportFull') }}
-        </el-button>
+        <el-tooltip v-if="canExportFullResult" :disabled="fullExportSupported" :content="fullExportUnavailableReason">
+          <span>
+            <el-button size="small" :disabled="!fullExportSupported" :aria-label="t('develop.queryResult.exportFull')" @click="emit('export-full')">
+              <el-icon><Download /></el-icon>
+              {{ t('develop.queryResult.exportFull') }}
+            </el-button>
+          </span>
+        </el-tooltip>
       </div>
     </div>
 
@@ -151,6 +150,7 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  fullExportUnavailableReason: { type: String, default: '' },
   fullExportSupported: {
     type: Boolean,
     default: false
@@ -167,7 +167,7 @@ const canExportFullResult = computed(() => Boolean(
   props.result?.success
   && props.result?.result_kind === 'table'
   && props.result?.execution_id
-  && props.fullExportSupported
+  && (props.fullExportSupported || props.fullExportUnavailableReason)
 ))
 const loadedRowCount = computed(() => hasRows.value ? props.result.rows.length : 0)
 const showPagination = computed(() => loadedRowCount.value > pageSizeOptions[0])

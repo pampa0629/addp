@@ -669,6 +669,8 @@ type QueryReadSession interface {
 
 查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。PostgreSQL 从同一 PreparedQuery 取出已绑定 SQL 与参数，使用数据库强制的 repeatable-read 只读事务和服务器游标返回批次；不得为打开会话重新绑定或重新准备 SQL。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
 
+MySQL 查询读取会话同样只消费一次 PreparedQuery，在数据库强制的 repeatable-read 只读事务内校验输出保护前置条件并打开单一流式结果集；不使用预览循环或追加分页，不在内存聚合完整结果。各批必须执行该 PreparedQuery 的输出 finalizer，保留 decimal／bigint 精度、SQL NULL 和二进制值，取消、失败或提前关闭须回收结果集、事务与连接。未提供事务内真实来源证明时，不声明 ReadSessionEvidence，不把预查 ReadSet 伪装为生产来源证据。
+
 PostgreSQL 查询读取会话按实际结果列的数据库类型保留值表示：BYTEA（包括别名和返回 BYTEA 的表达式）必须返回独立的 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节不得混同；文本、精确 numeric、JSON 和空间结果沿用各自原有表示，不能把所有驱动字节切片一律转为字符串。字段映射仅声明目标类型，不能修复读取时已丢失的二进制语义。
 
 PostgreSQL 表和查询读取均使用同一只读 repeatable-read 事务中的服务器游标。打开游标后以该事务目录事实核验 `ReadSessionEvidence`，而不是把 `PreparedQuery.ReadSet()` 的预查结果当作实际读取证据；原计划的预执行保护门禁仍然独立保留。证明失败通过事务内 savepoint 回收证明查询的失败，不污染已有游标或补造来源；查询读取仍消费原一次性 PreparedQuery，不重新绑定参数或提交另一份业务查询。

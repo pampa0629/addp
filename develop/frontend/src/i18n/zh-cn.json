@@ -199,6 +199,7 @@
       "rowsAffected": "影响行数",
       "executionTime": "执行时间",
       "exportFull": "导出全部结果",
+      "exportUnsupported": "当前引擎暂不支持导出完整查询结果；普通查询仍可使用。",
       "exportFullHint": "系统将使用本次查询的语句、参数和数据表输入重新读取全部结果，生成临时 CSV 文件并自动下载到本地。",
       "exportFullSubmitted": "全部结果导出已提交，完成后将自动下载",
       "exportFullFailed": "导出全部结果失败",

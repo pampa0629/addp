@@ -199,6 +199,7 @@
       "rowsAffected": "Rows affected",
       "executionTime": "Execution time",
       "exportFull": "Export All Results",
+      "exportUnsupported": "This engine does not support full query result export yet. Ordinary queries remain available.",
       "exportFullHint": "The system rereads all results using this query, its parameters, and table inputs, creates a temporary CSV file, and downloads it automatically.",
       "exportFullSubmitted": "Full result export submitted; the file will download when ready",
       "exportFullFailed": "Failed to export all results",
