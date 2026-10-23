@@ -72,6 +72,7 @@ export async function resourceBackend(page, options = {}) {
         const result = codes[mode]; status = result[0]; body = { error_code: result[1], error: mode }
       }
       if (mode === 'invalid') body.subject.node_id = secondNode
+      if (!trend && status === 200) options.observationResponse?.(body, url.searchParams)
       if (trend && status === 200 && state.trendResponse) state.trendResponse(body, url.searchParams)
       if (trend && heldTrend) await heldTrend
     } else throw new Error(`Unexpected resource fixture API ${path}`)

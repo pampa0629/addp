@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
+import { allResourceMetrics, summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
 import { resourceTrendMetrics, resourceTrendChartRows } from '../src/utils/nodeResources.js'
 
@@ -398,4 +398,13 @@ test('memory trends use a single aligned three-measure query while comparison re
   assert.throws(() => resourceTrendComparison(bad, '5m'))
   response.series.pop()
   assert.throws(() => resourceTrendChartRows(response, keys[2]))
+})
+
+test('TCP is a bounded integer host gauge, separate from device network rates and comparisons', () => {
+  const metric = allResourceMetrics.find(item => item.key === 'node.tcp.current_connections')
+  assert.equal(metric.unit, 'connections'); assert.equal(metric.precision, 0)
+  const state = resolveResourceRoute({ metric: metric.key, device: 'eth0', range: '1h', compare: 'previous' }, true)
+  assert.deepEqual(state.dimensions, {})
+  assert.equal(state.compare, false)
+  assert.deepEqual(resourceTrendMetrics(metric.key).map(item => item.key), [metric.key])
 })

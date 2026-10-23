@@ -66,7 +66,11 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		}
 		ready := len(rows) == len(keys)
 		for _, row := range rows {
-			ready = ready && row.Points[0].DataState == "valid"
+			if restricted && row.MetricKey == "node.tcp.current_connections" {
+				ready = ready && row.Points[0].DataState == "no_data" && row.Points[0].Value == nil && row.Points[0].SampledAt == nil
+			} else {
+				ready = ready && row.Points[0].DataState == "valid"
+			}
 		}
 		if ready {
 			break
@@ -75,6 +79,9 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 			t.Fatalf("native catalog full-window readiness: %+v", rows)
 		}
 		time.Sleep(time.Second)
+	}
+	if !restricted {
+		testTCPPromtool(t)
 	}
 	collection, err := c.Collection(context.Background(), scope, now, b)
 	expectedFilesystem := "available"
@@ -115,6 +122,12 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		}
 		for _, row := range rows {
 			point := row.Points[len(row.Points)-1]
+			if restricted && row.MetricKey == "node.tcp.current_connections" {
+				if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
+					t.Fatalf("restricted TCP fabricated host statistics: %+v", point)
+				}
+				continue
+			}
 			if point.DataState != "valid" || point.SampledAt == nil || point.Value == nil {
 				t.Fatalf("native evidence metric=%s trend=%v point=%+v", row.MetricKey, trend, point)
 			}
@@ -566,4 +579,48 @@ func TestIntegrationMetricsFilesystemInodes(t *testing.T) {
 	tests = append(tests, map[string]any{"name": "unmounted inode creates gaps", "interval": "15s", "input_series": inputs("100 stale _", "80 stale _", "0 stale _"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": []any{}}}})
 	runPromtoolCases(t, "filesystem-inodes", tests, false)
 	t.Logf("pinned promtool passed %d inode capacity/evidence scenarios", len(tests))
+}
+
+// Reached through the existing host-resources T2 entry, once for the full source.
+func testTCPPromtool(t *testing.T) {
+	p, err := NewPlan([]string{"node.tcp.current_connections"}, testTime, testTime, testTime, false, nil, DefaultBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := Scope{NodeID: testNode, Instance: "host:9100"}
+	expression, err := p.Expression(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := scope.selector("node_netstat_Tcp_CurrEstab")
+	tests := []any{}
+	for _, tc := range []struct {
+		name, value                 string
+		duplicate, foreign, missing bool
+	}{
+		{"valid zero", "0 0 0", false, false, false}, {"valid count", "19 20 21", false, false, false},
+		{"duplicate raw source", "19 19 19", true, false, false}, {"other host", "19 19 19", false, true, false}, {"missing collector", "", false, false, true},
+	} {
+		inputs := []any{}
+		expected := []any{}
+		source := raw
+		if tc.foreign {
+			source = strings.ReplaceAll(source, testNode, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+		}
+		if !tc.missing {
+			inputs = append(inputs, map[string]any{"series": source, "values": tc.value})
+		}
+		if tc.duplicate {
+			inputs = append(inputs, map[string]any{"series": strings.TrimSuffix(raw, "}") + `,producer="duplicate"}`, "values": tc.value})
+		}
+		if !tc.duplicate && !tc.foreign && !tc.missing {
+			value := float64(21)
+			if strings.HasPrefix(tc.value, "0") {
+				value = 0
+			}
+			expected = append(expected, map[string]any{"labels": `{addp_component="value",addp_metric="node.tcp.current_connections"}`, "value": value}, map[string]any{"labels": `{addp_component="sampled_at",addp_metric="node.tcp.current_connections"}`, "value": 30})
+		}
+		tests = append(tests, map[string]any{"name": tc.name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": expected}}})
+	}
+	runPromtoolCases(t, "tcp-current", tests, false)
 }

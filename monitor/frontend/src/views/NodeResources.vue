@@ -41,7 +41,9 @@
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
           <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadSummary') }}</p>
+          <p v-if="metric.name === 'tcpConnections'" class="resource-hint">{{ t('monitor.resources.tcpSummary') }}</p>
           <p>{{ t(`monitor.resources.states.${point(metric.key).data_state}`) }}</p>
+          <p v-if="metric.name === 'tcpConnections' && point(metric.key).data_state === 'no_data'" class="resource-hint" data-testid="resource-tcp-unavailable">{{ t('monitor.resources.tcpUnavailable') }}</p>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.sampling')" name="sampling">
               <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>

@@ -461,6 +461,17 @@ test('platform node resources through real Console password MFA and Monitor ifra
       expect(anchor).toBeTruthy()
       expect([300_000, 3_600_000]).toContain(Date.parse(item.query.end) - Date.parse(item.query.start))
     }
+    await monitor.getByTestId('resource-metric').click()
+    await monitor.getByRole('option', { name: 'TCP 当前连接数', exact: true }).click()
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await expect(monitor.getByTestId('resource-tcpConnections').locator('strong')).toHaveText(/^[\d,]+ 条$/)
+    await expect(monitor.getByTestId('resource-tcpConnections')).toContainText('ESTABLISHED + CLOSE_WAIT')
+    await Promise.all(pending)
+    expect(resources.some(item => item.path.endsWith('resource_trends') && item.query.metrics === 'node.tcp.current_connections')).toBe(true)
+    await page.screenshot({ path: resolve(artifact, 'node-resources-tcp.png'), animations: 'disabled' })
+    await monitor.getByTestId('resource-metric').click()
+    await monitor.getByRole('option', { name: 'CPU 忙碌率（1 分钟）', exact: true }).click()
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     save('natural-auto-refresh-and-off-restore')
     const beforeAuto = scalarResourceReceipts(resources, expected.node.node_id).length
     const priorEnd = scalarResourceReceipts(resources, expected.node.node_id).at(-1).value.end

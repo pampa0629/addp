@@ -45,7 +45,7 @@ PROCESS_METRICS = {"process.cpu.core_equivalents": ("cores", 60),
 METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent", "node.memory.total_bytes": "bytes",
            "node.memory.available_bytes": "bytes", "node.memory.used_percent": "percent",
            "node.load.average_1m": "load", "node.load.average_5m": "load",
-           "node.load.average_15m": "load", "node.uptime_seconds": "seconds"}
+           "node.load.average_15m": "load", "node.uptime_seconds": "seconds", "node.tcp.current_connections": "connections"}
 FILESYSTEM_METRICS = {"node.filesystem."+key: unit for key, unit in (("total_bytes", "bytes"), ("free_bytes", "bytes"), ("available_bytes", "bytes"), ("used_bytes", "bytes"), ("used_percent", "percent"))}
 INODE_METRICS = {"node.filesystem."+key: unit for key, unit in (("inodes_total", "inodes"), ("inodes_free", "inodes"), ("inodes_used", "inodes"), ("inodes_used_percent", "percent"))}
 DISK_METRICS = {"node.disk."+key: unit for key, unit in (("read_bytes_per_second", "bytes_per_second"), ("write_bytes_per_second", "bytes_per_second"), ("io_busy_percent", "percent"), ("read_mean_duration_milliseconds", "milliseconds"), ("write_mean_duration_milliseconds", "milliseconds"))}
@@ -322,7 +322,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
                 sampled = utc_timestamp(sample)
                 require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sampled <= evaluated, "invalid resource evidence")
                 require(expected[key] != "percent" or number <= 100, "invalid resource percentage")
-                require(expected[key] != "inodes" or (number <= 2**53-1 and number == math.floor(number)), "invalid inode integer")
+                require(expected[key] not in {"inodes", "connections"} or (number <= 2**53-1 and number == math.floor(number)), "invalid resource integer")
                 age = (evaluated if trend else queried)-sampled
                 require((state == "valid" and age <= 60) or (state == "stale" and age > 60), "freshness state lacks evidence")
                 valid += int(state == "valid")
@@ -876,8 +876,8 @@ def validate_resource_browser(value, expected, artifacts):
             and after == before + 1, "host list auto refresh batch references invalid")
     require(utc_timestamp(summaries[after]["value"]["data"][0]["end"]) > utc_timestamp(summaries[before]["value"]["data"][0]["end"]), "host list automatic server window did not advance")
     rows = value.get("resources")
-    # The original 26 rounds plus exactly three comparison rounds, each with six reads.
-    require(isinstance(rows, list) and 8 <= len(rows) <= 174, "browser resource evidence missing or unbounded")
+    # The original 26 rounds, two TCP selection/restore rounds and three comparison rounds, each with six reads.
+    require(isinstance(rows, list) and 8 <= len(rows) <= 186, "browser resource evidence missing or unbounded")
     comparison_indices, comparison = validate_resource_comparison_browser(value, expected, artifacts)
     instants, trends = [], []
     for row_index, row in enumerate(rows):
@@ -888,7 +888,7 @@ def validate_resource_browser(value, expected, artifacts):
         require(set(query) <= allowed_query, "browser query contains unapproved input")
         require(trend or row.get("path") == OBSERVATIONS, "browser resource path mismatch")
         keys = query.get("metrics", "").split(",")
-        require((trend and len(keys) == 1 and keys[0] in {"node.memory.used_percent", "node.cpu.busy_percent", "node.filesystem.used_percent", "node.filesystem.inodes_used_percent", *DISK_METRICS, *NETWORK_METRICS})
+        require((trend and len(keys) == 1 and keys[0] in {"node.tcp.current_connections", "node.memory.used_percent", "node.cpu.busy_percent", "node.filesystem.used_percent", "node.filesystem.inodes_used_percent", *DISK_METRICS, *NETWORK_METRICS})
                 or (not trend and set(keys) in (set(METRICS), set(FILESYSTEM_METRICS), set(INODE_METRICS), set(DISK_METRICS), set(NETWORK_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
         duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
         require(not trend or duration in ({600} if row_index in comparison_indices else {300, 3600}), "browser range mismatch")
@@ -914,8 +914,8 @@ def validate_resource_browser(value, expected, artifacts):
     require(any(set(row["metric_key"] for row in item["series"]) == set(DISK_METRICS) for item in instants), "browser disk table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(NETWORK_METRICS) for item in instants), "browser network table evidence missing")
     require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
-    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
+    require(len(instants) >= 2 and {("node.tcp.current_connections", 300), ("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")

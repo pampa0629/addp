@@ -693,6 +693,7 @@
       "pairedThroughput": "Compare both directions of the same device. Chart unit: {unit}. Each point is the average rate over the last complete minute, not cumulative traffic. Values below show the last evaluation in the period.",
       "cpuBusyHint": "Average non-idle time across cores over the last minute, including I/O wait and steal time; incomplete windows show no data.",
       "metrics": {
+        "tcpConnections": "Current TCP connections",
         "cpuBusy": "CPU busy (1 minute)",
         "cores": "CPU logical cores",
         "memoryTotal": "Total memory",
@@ -731,7 +732,10 @@
         "hour": "hours",
         "day": "days"
       },
+      "tcpSummary": "ESTABLISHED + CLOSE_WAIT; excludes listeners and TIME_WAIT.",
+      "tcpUnavailable": "The current source has no usable host TCP statistics. This does not mean zero connections.",
       "units": {
+        "connections": "connections",
         "cores": "cores",
         "bytes": "B",
         "percent": "%",

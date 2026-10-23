@@ -94,7 +94,7 @@ func TestIntegrationMetricsDiskIOWindow(t *testing.T) {
 func TestDiskIOCatalogAndIdleNormalization(t *testing.T) {
 	keys := []string{"node.disk.io_busy_percent", "node.disk.read_mean_duration_milliseconds", "node.disk.write_mean_duration_milliseconds"}
 	p, err := NewPlan(keys, testTime, testTime, testTime, false, Dimensions{"device": "sda"}, DefaultBudget())
-	if err != nil || p.SeriesUpperBound != 3 || len(Catalog()) != 25 {
+	if err != nil || p.SeriesUpperBound != 3 || len(Catalog()) != 26 {
 		t.Fatal(p, err)
 	}
 	rows := []string{}

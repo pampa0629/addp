@@ -63,6 +63,7 @@ var definitions = []Definition{
 	{"node.load.average_5m", "load", 0},
 	{"node.load.average_15m", "load", 0},
 	{"node.uptime_seconds", "seconds", 0},
+	{"node.tcp.current_connections", "connections", 0},
 	{"node.disk.read_bytes_per_second", "bytes_per_second", 60},
 	{"node.disk.write_bytes_per_second", "bytes_per_second", 60},
 	{"node.disk.io_busy_percent", "percent", 60},
@@ -285,6 +286,8 @@ func (p Plan) Expression(s Scope) (string, error) {
 				value, stamp = gauge("node_load5")
 			case "node.load.average_15m":
 				value, stamp = gauge("node_load15")
+			case "node.tcp.current_connections":
+				value, stamp = gauge("node_netstat_Tcp_CurrEstab")
 			case "node.uptime_seconds":
 				boot, ts := gauge("node_boot_time_seconds")
 				value = `(time()-` + boot + `)`

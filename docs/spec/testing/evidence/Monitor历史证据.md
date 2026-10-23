@@ -740,3 +740,19 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 冻结基线 `d23233e15e61eb77d5bef576043eef11ec210a99`，证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-interactions-rest-5ixp4m82`；`inputs.json` 记录本批文件，`frontend-inputs-sha256.json` 记录 432 项前端输入，提交前与共享工作区一致。Node v24.19.0 下，最终标准入口 `npm --prefix monitor/frontend run test:e2e -- host-trend-interactions.spec.js` 48/48 通过（`interaction-final-browser.log`，4.2 分钟，42 个中英文指标组合、2 个原比较回归和 4 个错误／撤权场景；不将此前 40 项聚合重复累计）。`npm --prefix monitor/frontend test` 110/110 通过，`make test-frontend-ci-registration` 的 20 项及 21 个前端登记检查通过（`unit.log`、`registration.log`）；原有 Playwright glob 和 Monitor CI 自动覆盖本文件，无需另加编排。42 张窄屏实图保存在 `screenshots/`，负载和 inode 截图已人工核对。
 
 本批仅为受控 HTTP 夹具加真实图表的本地 T3 与 T1／登记证据；产品源码未变，未重建或重跑输入未变的其余模块／前端全集。未运行 T2、真实身份／来源 T4、Hosted 或生产 T5，未追查／重跑 CI、设置定时任务或重启个人服务。历史加载／动画偶发失败仍不能由本次通过推定根因已修复。原表第 38 行图例／悬停本地专项缺口可关闭，真实运行、留存与原行其他缺口保留。
+
+
+## 主机 TCP 当前连接数（本地）
+
+2026-10-23，按用户确认口径新增固定主机标量 `node.tcp.current_connections`，单位 `connections`，只读当前宿主网络命名空间的 ESTABLISHED＋CLOSE_WAIT，不含监听／TIME_WAIT。复用唯一 `resourcequery` gauge、节点与来源身份、预算、新鲜度、即时和趋势 API；固定主机目录由 25 项增至 26 项，标量由九项增至十项。整数须在 0～2^53−1，合法零值保留，缺样不变成零；采集器缺失、重复原始序列及外来节点不能构造有效值。受限 Docker Desktop 来源不开放 netstat，不补容器命名空间统计，返回 `no_data`。页面新增就近口径／缺样提示、即时卡片及同一趋势、缩放、图例与悬停能力。CPU／内存摘要、TOP5、告警、生产权限及身份不变。
+
+冻结产品基线 `3f0105d08bf2fa632f1888c5a9331c062cf89240`，仅叠加本批文件，证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-tcp-current-7nslrz9k`；`inputs.json` 记录本批文件，`product-inputs-sha256.json` 记录 2118 项产品、测试及共享依赖输入，提交前与共享工作区一致。登记检查另同步当时最新已提交编排输入，版本见 `registration-head.txt`；未混入其他会话未提交实现。实际验证：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。固定目录、节点／来源隔离、整数／安全上限、负值／非有限值、缺样／陈旧／未来样本均有确定性用例；默认跳过的集成用例不算 T2。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 的全来源即时及趋势、受限 Desktop 的 TCP 无数据分支通过；同一入口执行五个固定 promtool 场景：有效零、有效数量、重复来源、外来节点和缺失采集器。原有主机来源故障恢复及预算回归通过，退出核验当次容器／网络／卷和临时文件零残留。这是本地隔离 T2，不是原生 Linux 正式身份页面 T4，亦不作为服务实例 CPU／RSS 告警实源验收结果。
+- Node v24.19.0 下 `make test-monitor-frontend`：111 项 T1、405 项浏览器 T3 及构建全部通过（`frontend-full.log`）。覆盖 TCP 中英文整数／零值、来源缺失后恢复、错误小数／负数／越界拒绝，及真实鼠标图例／悬停／缩放；其余主机、服务和错误／撤权场景一并回归。`screenshots/` 保留中英文 TCP 窄屏趋势实图，中文精确整数与单位已人工核对。页面测试使用受控 HTTP 夹具，不冒充真实来源页面。
+- `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：最终生成成功，90 个公开路由方法覆盖一致（`swagger-generation-final.log`、`swagger-coverage.log`）；生成工具固定 module v1.16.6。首次未复制根 go.work 的生成失败仅为临时副本准备错误，保留在 `swagger-generation.log`，不计为通过证据。
+- `make test-node-metrics-online-runner`：最终 139 项本地入口／身份／收据守卫及 System 既有 Metrics Go 夹具通过（`online-runner-final.log`）；`make test-frontend-ci-registration`：20 项检查、21 个前端登记通过（`registration-final.log`）。原有 Monitor 指标 T2、前端及 Console／Online 路径自动发现覆盖本批，无新增 workflow 或标准测试入口。
+- `npm test -- --testNamePattern='Online scalar resource receipt identity'`（Console frontend）：最终 8 项指定收据测试通过（`console-receipts-final.log`），包含精确十项且拒绝旧九项请求；其余 186 项因过滤未执行，不计为 Console 全量通过。
+
+用户同日确认原一次性 `platform-node-metrics` 临时平台管理员限定用途增加当次主机 TCP 当前值、趋势和同一真实 Console 页面。规范与标准 runner 已同步精确十项标量；仅为多出的 TCP 选中与恢复两轮各六读，将原 174 项收据上限调整为 186，仍严格拒绝未授权指标、重复／缺失、错误节点或 query。总预算、密码／MFA、独立 Prometheus、节点范围、无租户业务及退出清零保持原约束。本会话没有触发或轮询 CI／Hosted，没有设置定时任务或重启个人服务；真实身份／来源 T4 及 CI 等专门会话回传，生产 T5 未运行。原表第 37 行（B36，主机实时资源总览列表）的 TCP 指标能力已落地，但主机列表仍只展示核心摘要，综合健康评分与完整总览列仍未实现；第 38 行（B37，资源趋势曲线图）新增 TCP 本地证据，不由本次结果推导留存、长期比较或其他真实运行范围通过。

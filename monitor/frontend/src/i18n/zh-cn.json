@@ -693,6 +693,7 @@
       "pairedThroughput": "同图对比同一设备的两个方向，图表单位：{unit}。每个点是最近完整一分钟的平均速率，不是累计流量；下方数值为时段末次评估值。",
       "cpuBusyHint": "最近一分钟各核非空闲时间的平均比例，包含 IO 等待和被虚拟化环境占用的时间；窗口不足时显示无数据。",
       "metrics": {
+        "tcpConnections": "TCP 当前连接数",
         "cpuBusy": "CPU 忙碌率（1 分钟）",
         "cores": "CPU 逻辑核数",
         "memoryTotal": "内存总量",
@@ -731,7 +732,10 @@
         "hour": "小时",
         "day": "天"
       },
+      "tcpSummary": "ESTABLISHED + CLOSE_WAIT，不含监听和 TIME_WAIT。",
+      "tcpUnavailable": "当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0。",
       "units": {
+        "connections": "条",
         "cores": "核",
         "bytes": "B",
         "percent": "%",

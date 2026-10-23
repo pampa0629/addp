@@ -12,7 +12,8 @@ export const resourceMetrics = [
   { key: 'node.load.average_1m', name: 'load1m', unit: 'load', precision: 2 },
   { key: 'node.load.average_5m', name: 'load5m', unit: 'load', precision: 2 },
   { key: 'node.load.average_15m', name: 'load15m', unit: 'load', precision: 2 },
-  { key: 'node.uptime_seconds', name: 'uptime', unit: 'seconds', precision: 0 }
+  { key: 'node.uptime_seconds', name: 'uptime', unit: 'seconds', precision: 0 },
+  { key: 'node.tcp.current_connections', name: 'tcpConnections', unit: 'connections', precision: 0 }
 ]
 export const filesystemMetrics = [
   { key: 'node.filesystem.used_percent', name: 'filesystemUsedPercent', unit: 'percent', precision: 2 },
@@ -164,7 +165,7 @@ export function validateResourceResponse(value, nodeID, keys, trend = false, dim
     seen.add(series.metric_key + resourceDimensionID(series.dimensions))
     for (const point of series.points) {
       if (!['valid', 'stale', 'no_data', 'not_connected'].includes(point.data_state) || !Number.isFinite(Date.parse(point.evaluated_at)) || (point.sampled_at !== null && !Number.isFinite(Date.parse(point.sampled_at))) || (point.value !== null && (typeof point.value !== 'number' || !Number.isFinite(point.value))) || (point.data_state === 'valid' && (point.value === null || point.sampled_at === null))) throw new Error('invalid_resource_response')
-      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100) || (series.unit === 'inodes' && !Number.isSafeInteger(point.value)))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (grouped && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
+      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100) || (['inodes', 'connections'].includes(series.unit) && !Number.isSafeInteger(point.value)))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (grouped && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
     }
   }
   const metricGroups = keys.map(key => value.series.filter(series => series.metric_key === key).map(series => resourceDimensionID(series.dimensions)).sort())

@@ -19,11 +19,12 @@ function interactionTrend(body, params, comparison = false) {
     const value = key === 'node.memory.total_bytes' ? 64 * 1024 ** 3 : key === 'node.memory.available_bytes' ? (32 + index / 4) * 1024 ** 3
       : line.unit === 'load' || line.unit === 'milliseconds' ? index === 0 ? 0 : index / 4 + 0.25
       : line.unit === 'cores' ? index === 0 ? 0 : 18
+      : line.unit === 'connections' ? index === 0 ? 0 : 19 + index
       : line.unit === 'seconds' ? index === 0 ? 0 : 3600 + index * step
       : line.unit === 'inodes' ? index === 0 ? 0 : 1000 + index
       : line.unit === 'percent' ? percent : (key.includes('write_') || key.includes('transmit_') ? 2 + index / 4 : index / 4) * 1024 ** 2
     const data_state = !comparison && index === 1 && (key.includes('available_') || !key.startsWith('node.memory.')) ? 'no_data'
-      : !comparison && index === 2 && (key === 'node.disk.io_busy_percent' || line.unit === 'milliseconds' || key === 'node.cpu.logical_cores' || key.startsWith('node.load.') || key.startsWith('node.filesystem.') || key === 'node.uptime_seconds' || key.endsWith('used_percent') || key.includes('write_') || key.includes('transmit_') || key.startsWith('node.cpu.')) ? 'stale' : 'valid'
+      : !comparison && index === 2 && (key === 'node.disk.io_busy_percent' || line.unit === 'milliseconds' || key === 'node.cpu.logical_cores' || key === 'node.tcp.current_connections' || key.startsWith('node.load.') || key.startsWith('node.filesystem.') || key === 'node.uptime_seconds' || key.endsWith('used_percent') || key.includes('write_') || key.includes('transmit_') || key.startsWith('node.cpu.')) ? 'stale' : 'valid'
     return { evaluated_at: stamp, sampled_at: data_state === 'no_data' ? null : data_state === 'stale' ? new Date(at - 61000).toISOString() : stamp,
       value: data_state === 'no_data' ? null : data_state === 'stale' ? line.unit === 'percent' ? 99.99 : 999999 : value, data_state }
   })
@@ -48,6 +49,7 @@ async function assertTooltip(page, props, index, locale, hidden = []) {
 const interactionCases = [
   ['cpu', 'node.cpu.busy_percent', {}, ['%'], [8.25]],
   ['cores', 'node.cpu.logical_cores', {}, ['cores'], [18]],
+  ['tcp', 'node.tcp.current_connections', {}, ['connections'], [27]],
   ['disk-busy', 'node.disk.io_busy_percent', { device: 'sda' }, ['%'], [8.25]],
   ['disk-read-duration', 'node.disk.read_mean_duration_milliseconds', { device: 'sda' }, ['ms'], [2.25]],
   ['disk-write-duration', 'node.disk.write_mean_duration_milliseconds', { device: 'sda' }, ['ms'], [2.25]],
@@ -71,7 +73,7 @@ for (const locale of ['zh-cn', 'en']) for (const [family, key, dimensions, units
   expect(props.rows).toHaveLength(21)
   expect(props.rows[8].evaluated_at).toBe('2026-10-06T23:57:00.000Z')
   expect(props.config.measures.map(measure => props.rows[8][measure])).toEqual(sample)
-  expect(props.config.field_presentations.slice(1).map(field => field.unit)).toEqual(units.map(unit => unit === 'load' ? locale === 'en' ? 'tasks' : '个任务' : unit === 'duration' ? locale === 'en' ? 'hours' : '小时' : unit === 'inodes' ? locale === 'en' ? 'inodes' : '个' : unit === 'cores' ? locale === 'en' ? 'cores' : '核' : unit))
+  expect(props.config.field_presentations.slice(1).map(field => field.unit)).toEqual(units.map(unit => unit === 'load' ? locale === 'en' ? 'tasks' : '个任务' : unit === 'duration' ? locale === 'en' ? 'hours' : '小时' : unit === 'inodes' ? locale === 'en' ? 'inodes' : '个' : unit === 'cores' ? locale === 'en' ? 'cores' : '核' : unit === 'connections' ? locale === 'en' ? 'connections' : '条' : unit))
   expect(reads(state).at(-1).query).toMatchObject(dimensions)
   if (props.config.measures.length === 1) expect(reads(state).at(-1).query.metrics).toBe(key)
   const measure = props.config.measures[0]

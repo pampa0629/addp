@@ -7,7 +7,7 @@ const receipt = (metrics = resourceMetrics, query = {}) => ({ path: '/api/v1/mon
   query: { node_id: node, metrics: metrics.map(row => row.key).join(','), ...query }, value: { receipt: 'unchanged-body' } })
 
 describe('Online scalar resource receipt identity', () => {
-  it.each(['network-last', 'scalar-last', 'filesystem-last'])('keeps nine scalar metrics with %s completion order', order => {
+  it.each(['network-last', 'scalar-last', 'filesystem-last'])('keeps ten scalar metrics with %s completion order', order => {
     const scalar = receipt(), network = receipt(networkMetrics), filesystem = receipt(filesystemMetrics)
     const rows = order === 'network-last' ? [scalar, filesystem, network]
       : order === 'scalar-last' ? [network, filesystem, scalar] : [network, scalar, filesystem]
@@ -23,6 +23,12 @@ describe('Online scalar resource receipt identity', () => {
     const rows = [receipt(resourceMetrics.slice(1)), receipt([...resourceMetrics, resourceMetrics[0]]),
       receipt([...resourceMetrics.slice(1), resourceMetrics[1]]), receipt([...resourceMetrics, ...networkMetrics])]
     expect(scalarResourceReceipts(rows, node)).toEqual([])
+  })
+  it('requires the exact ten current scalars including TCP, rejecting the old nine-key request', () => {
+    expect(resourceMetrics).toHaveLength(10)
+    expect(resourceMetrics.find(metric => metric.key === 'node.tcp.current_connections')?.unit).toBe('connections')
+    expect(scalarResourceReceipts([receipt(resourceMetrics.filter(metric => metric.key !== 'node.tcp.current_connections'))], node)).toEqual([])
+    expect(scalarResourceReceipts([receipt()], node)).toHaveLength(1)
   })
   it('does not borrow another host, trend, endpoint or query scope', () => {
     const rows = [receipt(resourceMetrics, { node_id: 'another-host' }), receipt(resourceMetrics, { end: '2026-10-19T00:00:00Z' }),

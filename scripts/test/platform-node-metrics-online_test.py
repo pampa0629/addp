@@ -659,6 +659,20 @@ for(const failBody of [false,true]){
                 "end": stamp, "step_seconds": 15 if trend else 0, "series": rows,
                 **({} if trend else {"collection": {"state": "not_connected" if disconnected else "collecting", "sampled_at": None if disconnected else stamp, "filesystem": "unknown" if disconnected else "available", "network": "unknown" if disconnected else "available"}})}
 
+    def test_tcp_host_count_is_integer_and_within_closed_scalar_catalog(self):
+        key = "node.tcp.current_connections"
+        self.assertEqual(ONLINE.METRICS[key], "connections")
+        self.assertEqual(len(ONLINE.METRICS), 10)
+        node = {"node_id": "node-id", "version": 1}
+        for number in (0, 19, 2**53-1):
+            value = self.resource_reply([key])
+            value["series"][0]["points"][0]["value"] = number
+            ONLINE.assert_resources(value, node, keys=[key])
+        for number in (-1, 1.5, 2**53):
+            value = self.resource_reply([key])
+            value["series"][0]["points"][0]["value"] = number
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_resources(value, node, keys=[key])
+
     def test_resource_collection_requires_network_evidence_and_rejects_old_success(self):
         node = {"node_id": "node-id", "version": 1}
         for mutation in (lambda c: c.pop("network"), lambda c: c.update(network="unexpected"),
@@ -999,7 +1013,7 @@ for(const failBody of [false,true]){
         admin["principal"]["id"], security["principal"]["id"] = "admin-id", "security-id"
         instant = self.resource_reply()
         rows = [{"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.METRICS)}, "value": instant}]
-        for key, span in (("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ONLINE.ALL_METRICS if key in ONLINE.DISK_METRICS or key in ONLINE.NETWORK_METRICS)):
+        for key, span in (("node.tcp.current_connections", 300), ("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ONLINE.ALL_METRICS if key in ONLINE.DISK_METRICS or key in ONLINE.NETWORK_METRICS)):
             value = self.resource_reply([key], trend=True)
             end = datetime.datetime.fromisoformat(value["end"].replace("Z", "+00:00"))
             start = end - datetime.timedelta(seconds=span)
@@ -1033,7 +1047,7 @@ for(const failBody of [false,true]){
             "iframe_preserved": True, "off_restored": True, "off_no_requests": True, "before_index": 0, "after_index": 1}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
-            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
+            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
@@ -1070,7 +1084,7 @@ for(const failBody of [false,true]){
                          lambda v: v["resources"][1]["query"].update(end="2026-10-06T00:01:01Z"),
                          lambda v: v["resources"][1]["value"]["series"][0]["points"].pop(),
                          lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
-                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*175), lambda v: v.pop("auto_refresh"),
+                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*187), lambda v: v.pop("auto_refresh"),
                          lambda v: v["auto_refresh"].update(off_no_requests=False),
                          lambda v: v.pop("host_list_auto_refresh"),
                          lambda v: v["host_list_auto_refresh"].update(off_no_requests=False),

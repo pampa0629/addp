@@ -37,7 +37,7 @@ test('resource quantities use binary capacity and elapsed time while load is not
   expect(state.reads.find(item => item.path.endsWith('resource_trends') && item.query.metrics === 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent')).toBeTruthy()
 })
 
-test('lists owner nodes without fanout and opens nine metrics with server-anchored trends', async ({ page }) => {
+test('lists owner nodes without fanout and opens ten metrics with server-anchored trends', async ({ page }) => {
   const state = await resourceBackend(page)
   await page.goto('/node-resources?page=2&search=节点')
   await expect(page.getByRole('button', { name: '查看资源' })).toHaveCount(2)
@@ -50,7 +50,7 @@ test('lists owner nodes without fanout and opens nine metrics with server-anchor
   await expect(page.getByTestId('resource-memoryAvailable')).toContainText('—')
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   const instant = state.reads.find(item => item.path.endsWith('resource_observations'))
-  expect(instant.query.metrics.split(',')).toHaveLength(9)
+  expect(instant.query.metrics.split(',')).toHaveLength(10)
   const trend = state.reads.find(item => item.path.endsWith('resource_trends'))
   expect(trend.query).toMatchObject({ node_id: node, metrics: 'node.memory.total_bytes,node.memory.available_bytes,node.memory.used_percent', start: '2026-10-06T23:00:00.000Z', end: '2026-10-07T00:00:00.000Z' })
   await page.getByText('查看采样明细', { exact: true }).click()
