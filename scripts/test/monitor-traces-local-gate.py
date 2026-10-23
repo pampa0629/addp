@@ -274,10 +274,10 @@ class Lifecycle:
             args += [self.minio_image, '-ec', 'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'']
             total = int(float(self.docker(*args, guarded=False, timeout=remaining()).strip()))
         total += self.owned_bind_bytes(timeout=remaining())
-        require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
         now = time.monotonic()
         self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'cpu_hard_limit': cpu,
                              'memory_hard_limit_bytes': memory, 'volume_allocated_bytes': total})
+        require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
 
     def monitor(self):
         while not self.stop.is_set():
@@ -376,7 +376,7 @@ def build(life):
     life.phase = 'source_snapshot'
     commit = life.command(['git', 'rev-parse', 'HEAD']).strip()
     life.input_hashes=committed_inputs(life,commit)
-    life.command(['bash','-c','umask 022; exec "$@"','_', 'git', 'clone', '--local', '--no-hardlinks', '--single-branch', '--branch', 'main', str(ROOT), str(life.checkout)])
+    life.command(['bash','-c','umask 022; exec "$@"','_', 'git', 'clone', '--no-local', '--depth', '1', '--single-branch', '--branch', 'main', ROOT.as_uri(), str(life.checkout)])
     require(life.command(['git', 'rev-parse', 'HEAD']).strip() == commit, 'snapshot_commit_changed')
     env = defaults(life)
     life.env = env

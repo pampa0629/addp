@@ -196,6 +196,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 life, _ = self.sample_lifecycle(directory, allocated)
                 with mock.patch.object(m.time, 'monotonic', return_value=1), self.assertRaises(m.GateError):
                     life.sample()
+                self.assertEqual(life.samples[-1]['volume_allocated_bytes'],allocated)
             life, calls = self.sample_lifecycle(directory, m.VOLUME_STOP - 4096)
             with mock.patch.object(m.time, 'monotonic', return_value=1):
                 life.sample()
