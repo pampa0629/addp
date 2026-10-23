@@ -445,6 +445,7 @@
 | Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |
 | Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |
 | line point intersection check | 线交检查 | 检查单个线图层内不同源要素的精确点状交会，按无序要素对及 XY 去重后逐点关联双方来源。 | 只报告平面交会事实，包含十字、T 形和端点接触；不提取重合线段端点、不检查线内自交、不打断或自动判定质量。 |
+| isolated line self-intersection check | 线内自交 | 检查单个线要素内部非相邻线段或不同部件的孤立点交会，每源按 XY 去重。 | 排除正常相邻接点、闭环首尾接点以及位于正长度自叠线（含端点）上的点；只诊断，不打断或修复，不等同几何有效性或业务质量。 |
 | Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |
 | execution input contract | 执行输入契约 | 某个具体任务定义允许调用方在单次 execution 中覆盖的公开输入 Schema、默认值和 UI 语义。 | 保存的任务定义必须始终可直接执行；未提交的输入使用任务保存值，提交值只影响本次 execution。工作流中未被内部连线占用的可序列化 Public Operator 参数默认进入该契约。 |
 | execution output contract | 执行输出契约 | 某个具体任务定义对外承诺的、可被 Orchestrator 后续 Step 引用的稳定执行结果 Schema。 | 只允许声明可跨任务边界传递的持久结果或稳定引用，例如 ResourceLocator；不得暴露 DataFrame、GeoDataFrame 或运行时私有内存句柄。 |

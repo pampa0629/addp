@@ -2041,3 +2041,168 @@ def test_line_intersection_async_runtime_discovery_and_required_identity(tmp_pat
     tasks[1]['params'].pop('id_field')
     failed=execute_workflow({'tasks':tasks})
     assert failed['status']=='failed' and 'id_field' in str(failed)
+
+
+
+def line_self_intersection(frame, id_field="route_key"):
+    return get_operator("check_line_self_intersection")(input_gdf=frame,id_field=id_field)
+
+
+@pytest.mark.parametrize("shape,expected",[
+    (LineString([(0,0),(2,2),(0,2),(2,0)]),[(1,1)]),
+    (LineString([(0,0),(1,0),(1,1),(0,1),(1,0),(2,0)]),[(1,0)]),
+    (MultiLineString([[(0,0),(2,0)],[(1,-1),(1,1)],[(2,0),(3,1)]]),[(1,0),(2,0)]),
+    (MultiLineString([[(0,0),(2,0)],[(2,0),(2,2)],[(2,2),(0,2)],[(0,2),(0,0)]]),[(0,0),(0,2),(2,0),(2,2)]),
+])
+def test_line_self_intersection_reports_nonadjacent_and_cross_part_isolated_contacts(shape,expected):
+    frame=line_overlap_frame([shape],["线路甲"]);before=frame.copy(deep=True)
+    result=line_self_intersection(frame)
+    assert result.columns.tolist()==["source_id","geometry"]
+    assert result.source_id.tolist()==["线路甲"]*len(expected)
+    assert [list(point.coords)[0] for point in result.geometry]==expected
+    assert result.geometry.geom_type.tolist()==["Point"]*len(expected) and result.crs==frame.crs
+    assert_geodataframe_equal(frame,before)
+    reversed_frame=frame.copy();reversed_frame[frame.geometry.name]=shapely.reverse(frame.geometry.array)
+    assert_geodataframe_equal(line_self_intersection(reversed_frame),result)
+
+
+@pytest.mark.parametrize("shape",[
+    LineString([(0,0),(1,0),(2,1)]),
+    LineString([(0,0),(1,0),(1,0),(2,1)]),
+    LineString([(0,0),(0,0),(2,0),(2,2),(0,2),(0,0),(0,0)]),
+    LineString([(0,0),(2,0),(2,2),(0,2),(0,0)]),
+    LineString([(0,0),(4,0),(0,0)]),
+    MultiLineString([[(0,0),(1,0),(2,0)],[(0,0),(1,0),(2,0)]]),
+    MultiLineString([[(0,0),(4,0)],[(4,0),(2,0),(0,0)]]),
+    MultiLineString([[(0,0),(2,0)],[(0,2**-40),(2,2**-40)]]),
+])
+def test_line_self_intersection_excludes_normal_vertices_closed_seams_retracing_and_near_parts(shape):
+    assert line_self_intersection(line_overlap_frame([shape])).empty
+
+
+@pytest.mark.parametrize("x,expected",[(1,[(1,0)]),(2,[]),(3,[]),(4,[]),(5,[(5,0)])])
+def test_line_self_intersection_excludes_overlap_positions_including_endpoints_and_other_branches(x,expected):
+    shape=MultiLineString([[(0,0),(4,0)],[(2,0),(6,0)],[(x,-1),(x,1)]])
+    result=line_self_intersection(line_overlap_frame([shape]))
+    assert list(zip(result.geometry.x,result.geometry.y))==expected
+
+
+def test_line_self_intersection_collects_adjacent_retracing_before_filtering_crossings():
+    frame=line_overlap_frame([MultiLineString([[(0,0),(4,0),(0,0)],[(2,-1),(2,1)]])])
+    assert line_self_intersection(frame).empty
+    assert self_overlap(frame).overlap_length.tolist()==[4]
+
+
+def test_line_self_intersection_preserves_isolated_crossing_beside_overlap_and_tiny_coverage():
+    shape=MultiLineString([[(0,0),(4,0)],[(2,0),(6,0)],[(3,-1),(3,1)],
+        [(10,0),(12,2),(10,2),(12,0)]])
+    result=line_self_intersection(line_overlap_frame([shape]))
+    assert list(zip(result.geometry.x,result.geometry.y))==[(11,1)]
+    tiny=2**-600
+    frame=line_overlap_frame([MultiLineString([[(0,0),(tiny,0)],[(tiny,0),(0,0)],
+        [(tiny/2,-tiny),(tiny/2,tiny)]])])
+    assert line_self_intersection(frame).empty
+
+
+@pytest.mark.parametrize("crs",["EPSG:3857","EPSG:2263"])
+def test_line_self_intersection_preserves_binary_distinct_points_without_threshold(crs):
+    tiny=2**-40
+    shape=MultiLineString([[(0,0),(1,0)],[(0,-1),(0,1)],[(tiny,-1),(tiny,1)]])
+    result=line_self_intersection(line_overlap_frame([shape],crs=crs))
+    assert list(zip(result.geometry.x,result.geometry.y))==[(0,0),(tiny,0)] and result.crs==crs
+
+
+def test_line_self_intersection_does_not_compare_distinct_features_or_deduplicate_between_sources():
+    cross=line_overlap_frame([LineString([(0,0),(2,0)]),LineString([(1,-1),(1,1)])])
+    assert line_self_intersection(cross).empty and len(line_intersection(cross))==1
+    bow=LineString([(0,0),(2,2),(0,2),(2,0)])
+    frame=line_overlap_frame([bow,bow],["乙","甲"]);frame.index=[5,5]
+    result=line_self_intersection(frame)
+    assert result.source_id.tolist()==["乙","甲"] and list(zip(result.geometry.x,result.geometry.y))==[(1,1)]*2
+
+
+@pytest.mark.parametrize("ids",[pd.Series([2**60,2**60+1],dtype="Int64"),pd.Series(["甲","乙"],dtype="string")])
+def test_line_self_intersection_keeps_identifier_type_and_empty_schema(ids):
+    bow=LineString([(0,0),(2,2),(0,2),(2,0)])
+    frame=line_overlap_frame([bow,LineString([(0,0),(1,0)])],ids)
+    for source in [frame.iloc[:0],frame.iloc[1:],frame]:
+        result=line_self_intersection(source)
+        assert result.columns.tolist()==["source_id","geometry"] and result.source_id.dtype==ids.dtype and result.crs==source.crs
+    assert line_self_intersection(frame).source_id.tolist()==ids.iloc[:1].tolist()
+
+
+@pytest.mark.parametrize("ids",[[1,1],[None,1],[" ","x"],[[1],[2]]])
+def test_line_self_intersection_rejects_invalid_identifiers(ids):
+    with pytest.raises(ValueError,match="identifiers"):
+        line_self_intersection(line_overlap_frame([LineString([(0,0),(1,0)])]*2,ids))
+
+
+@pytest.mark.parametrize("field",[None,"","missing","boundary"])
+def test_line_self_intersection_requires_explicit_nongeometry_identity(field):
+    with pytest.raises(ValueError,match="id_field"):
+        line_self_intersection(line_overlap_frame([LineString([(0,0),(1,0)])]),field)
+
+
+@pytest.mark.parametrize("crs",[None,"EPSG:4326"])
+def test_line_self_intersection_rejects_nonprojected_crs(crs):
+    with pytest.raises(ValueError,match="projected"):
+        line_self_intersection(line_overlap_frame([],crs=crs))
+
+
+@pytest.mark.parametrize("shape",[None,LineString(),Point(0,0),box(0,0,1,1),
+    shapely.from_wkt("MULTILINESTRING (EMPTY, (0 0, 1 0))"),LineString([(0,0),(0,0)]),
+    LineString([(0,0,1),(1,0,1)]),shapely.from_wkt("LINESTRING M (0 0 1, 1 0 1)"),
+    LineString([(0,0),(float('inf'),1)])])
+def test_line_self_intersection_rejects_unsupported_geometry(shape):
+    with pytest.raises(ValueError):line_self_intersection(line_overlap_frame([shape]))
+
+
+def test_line_self_intersection_requires_active_geodataframe_and_unique_columns():
+    operator=get_operator("check_line_self_intersection")
+    with pytest.raises(ValueError):operator(input_gdf=pd.DataFrame(),id_field="route_key")
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    with pytest.raises(ValueError):operator(input_gdf=pd.concat([frame,frame[['route_key']]],axis=1),id_field="route_key")
+    with pytest.raises(ValueError):operator(input_gdf=frame.drop(columns='boundary'),id_field="route_key")
+
+
+def test_line_self_intersection_matches_independent_integer_grid_oracle():
+    horizontal=[(0,4,0),(2,6,2),(-2,2,4)];vertical=[(1,-1,5),(3,0,4),(5,1,3)]
+    parts=[[(a,y),(b,y)] for a,b,y in horizontal]+[[(x,a),(x,b)] for x,a,b in vertical]
+    expected=sorted({(x,y) for a,b,y in horizontal for x,c,d in vertical if a<=x<=b and c<=y<=d})
+    result=line_self_intersection(line_overlap_frame([MultiLineString(parts)]))
+    assert list(zip(result.geometry.x,result.geometry.y))==expected
+
+
+@pytest.mark.parametrize("empty",[False,True])
+def test_line_self_intersection_workflow_native_point_save_reload_and_discovery(tmp_path,empty):
+    import api_server
+    from osgeo import ogr
+    tiny=2**-40
+    shape=MultiLineString([[(0,0),(1,0)],[(0,-1),(0,1)],[(tiny,-1),(tiny,1)]])
+    if empty:shape=LineString([(0,0),(1,0),(1,0),(2,1)])
+    source=line_overlap_frame([shape],["原线甲"]);source.to_file(tmp_path/'source.gpkg',layer='routes',driver='GPKG')
+    original=(tmp_path/'source.gpkg').read_bytes();connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+           {'id':'check','operator':'check_line_self_intersection','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']},
+           {'id':'save','operator':'save','params':{'input_df':{'$ref':'check'},'connection_info':connection,'path':'points.gpkg','mode':'fail'},'depends_on':['check']}]
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='success',execution.get('error')
+    dataset=ogr.Open(str(tmp_path/'points.gpkg'));layer=dataset.GetLayer(0)
+    assert layer.GetFeatureCount()==(0 if empty else 2) and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert [field.name for field in layer.schema]==['source_id']
+    assert layer.GetGeomType()==(ogr.wkbUnknown if empty else ogr.wkbPoint)
+    if not empty:
+        for feature,x in zip(layer,[0,tiny]):
+            point=feature.GetGeometryRef()
+            assert feature.GetField('source_id')=='原线甲' and point.GetGeometryName()=='POINT' and point.IsValid()
+            assert point.GetCoordinateDimension()==2 and point.GetPoint_2D()==(x,0)
+    dataset=None
+    assert (tmp_path/'source.gpkg').read_bytes()==original
+    tasks[1]['params'].pop('id_field');tasks[2]['params']['path']='rejected.gpkg'
+    assert execute_workflow({'tasks':tasks})['status']=='failed' and not (tmp_path/'rejected.gpkg').exists()
+    with api_server.app.test_client() as client:
+        op=next(o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='check_line_self_intersection')
+        assert op['display_name']=='线内自交' and op['category_path']==['矢量处理','几何处理']
+        assert op['execution_modes']==['workflow'] and op['effects']==['read']
+        assert [(p['name'],p['param_type'],p['required']) for p in op['parameters']]==[('input_gdf','input',True),('id_field','param',True)]
+        assert [(p['name'],p['type'],p['is_default']) for p in op['output_ports']]==[('result','geodataframe',True)]
+        assert client.post('/api/operators/check_line_self_intersection/invoke',json={'params':{}}).status_code==403

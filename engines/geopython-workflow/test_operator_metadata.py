@@ -1066,7 +1066,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据清洗"), "fill_null drop_duplicates"),
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
-        (("矢量处理", "几何处理"), "buffer centroid simplify convex_hull envelope voronoi batch_buffer batch_centroid dissolve polygonize check_geometry repair_geometry snap_geometry check_polygon_overlap check_polygon_gap check_dangling_points check_line_overlap check_line_self_overlap check_line_intersection"),
+        (("矢量处理", "几何处理"), "buffer centroid simplify convex_hull envelope voronoi batch_buffer batch_centroid dissolve polygonize check_geometry repair_geometry snap_geometry check_polygon_overlap check_polygon_gap check_dangling_points check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
         (("矢量处理", "叠加分析"), "intersection union difference clip"),
         (("矢量处理", "空间关系"), "contains intersects distance_to"),
         (("矢量处理", "几何量测"), "get_area get_length get_bounds"),

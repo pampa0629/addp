@@ -356,6 +356,66 @@ def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDat
     )
 
 
+def _line_intersection_parts(intersection):
+    """Extract actual point/line leaves without turning line vertices into points."""
+    pending = [intersection]
+    while pending:
+        part = pending.pop()
+        if part.is_empty:
+            continue
+        if part.geom_type in {"Point", "LineString"}:
+            yield part
+        elif part.geom_type in {"MultiPoint", "MultiLineString", "GeometryCollection"}:
+            pending.extend(part.geoms)
+
+
+def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report isolated internal point meetings, excluding every self-overlap position."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    sources, points = [], []
+    for row, shape in enumerate(geometry.array):
+        segments, adjacent = [], set()
+        for part in shapely.get_parts(shape):
+            offset = len(segments)
+            segments.extend(shapely.LineString([start, end]) for start, end in pairwise(part.coords) if start != end)
+            count = len(segments) - offset
+            adjacent.update((index, index + 1) for index in range(offset, offset + count - 1))
+            if count > 1 and part.coords[0] == part.coords[-1]:
+                adjacent.add((offset, offset + count - 1))
+        tree = shapely.STRtree(segments)
+        coordinates, seen_lines, lines = set(), set(), []
+        for a, segment in enumerate(segments):
+            candidates = tree.query(segment)
+            for b in np.sort(candidates[candidates > a]):
+                for part in _line_intersection_parts(shapely.intersection(segment, segments[b])):
+                    if part.geom_type == "Point":
+                        if (a, b) not in adjacent:
+                            coordinates.add((part.x, part.y))
+                    else:
+                        # Adjacent retracing also contributes overlap coverage.
+                        vertices = tuple(part.coords)
+                        key = min(vertices, vertices[::-1])
+                        if key not in seen_lines:
+                            seen_lines.add(key)
+                            lines.append(part)
+        shared = shapely.union_all(lines) if lines else None
+        for coordinate in sorted(coordinates):
+            point = shapely.Point(coordinate)
+            if shared is not None and shapely.intersects(shared, point):
+                continue
+            sources.append(row)
+            points.append(point)
+    result = gpd.GeoDataFrame(
+        {"source_id": ids.iloc[sources].reset_index(drop=True)},
+        geometry=gpd.GeoSeries(points, crs=geometry.crs),
+    )
+    _finite_xy_geometry(result, "result")
+    return result
+
+
 def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report exact isolated point intersections for distinct original feature pairs."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -369,14 +429,9 @@ def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
         for b in np.sort(candidates[candidates > a]):
             # Intersect whole features, so shared line vertices never become
             # artificial point diagnostics through segment-by-segment pairing.
-            pending = [shapely.intersection(shape, geometry.array[b])]
-            coordinates = set()
-            while pending:
-                part = pending.pop()
-                if part.geom_type == "Point" and not part.is_empty:
-                    coordinates.add((part.x, part.y))
-                elif part.geom_type in {"MultiPoint", "GeometryCollection"}:
-                    pending.extend(part.geoms)
+            coordinates = {(part.x, part.y)
+                           for part in _line_intersection_parts(shapely.intersection(shape, geometry.array[b]))
+                           if part.geom_type == "Point"}
             for coordinate in sorted(coordinates):
                 left.append(a)
                 right.append(b)
@@ -624,6 +679,22 @@ CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
     use_cases=["定位部分重合或完全重复的线及双方来源", "检查反向重复线和共线段后由业务确认"],
     notes=["每对按源行位置只输出一次，多段归入一行，每对同一位置长度只计一次", "三条共同重合的线逐对输出三行，长度总和不是全图层去重长度", "长度采用源投影水平单位，不换算米、不忽略微小重合", "点接触不报；不设容差、不检查单要素内部重复、不自动修复或改写源", "不扩展 Quality 规则，保存另接 save；索引及结果驻内存，不承诺固定容量"],
     workflow_example={"id": "check_line_overlaps", "operator": "check_line_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
+
+CHECK_LINE_SELF_INTERSECTION_METADATA = OperatorMetadata(
+    name="check_line_self_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="线内自交", brief_description="检查单个线要素内部孤立点交会，每源按 XY 去重，只检查不修复",
+    execution_modes=["workflow"], effects=["read"],
+    overview="报告非相邻段和不同部件的孤立点交会。排除正常折点、闭环首尾和正长度自叠线上的点，"
+             "重合位置即使另有支线交会也不另报，不改变源线。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个线图层", notes="有效有限二维 LineString/MultiLineString，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id/Point，每源逐点去重，保留来源类型和源 CRS", is_default=True)],
+    use_cases=["定位线路内部的孤立自交点与重复到访点", "核对同一多部件线内部点接触的来源"],
+    notes=["相邻正长度段的正常接点与闭环首尾不报；零长度段不打断相邻关系", "不同部件端点接触可报；不将部件间接点当成同部件正常折点", "自叠线及端点上的点统一排除，交给线内自叠，不生成重合线端点诊断", "按源行位置、XY排序；不跨源比较、不输出次数/段号或质量结论", "无容差、精度网格或舍入；不打断、吸附或修复，保存另接 save", "每源原始段、索引、唯一交集及成果驻内存，候选可平方增长，不承诺固定容量"],
+    workflow_example={"id": "check_self_crossings", "operator": "check_line_self_intersection", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
 )
 
 CHECK_LINE_INTERSECTION_METADATA = OperatorMetadata(
@@ -1273,4 +1344,5 @@ OPERATORS = dict([
     register_operator(CHECK_LINE_OVERLAP_METADATA, check_line_overlap),
     register_operator(CHECK_LINE_SELF_OVERLAP_METADATA, check_line_self_overlap),
     register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),
+    register_operator(CHECK_LINE_SELF_INTERSECTION_METADATA, check_line_self_intersection),
 ])
