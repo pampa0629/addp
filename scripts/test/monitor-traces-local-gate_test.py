@@ -344,6 +344,20 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 life.sample()
             self.assertEqual(life.builder_volumes, {'owned-buildkit-state'})
 
+    def test_invalid_volume_measurement_preserves_only_safe_diagnostics_and_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, _ = self.sample_lifecycle(directory, 'du: PRIVATE-SENTINEL: missing\n1024')
+            with mock.patch.object(m.time,'monotonic',return_value=1):
+                life.monitor()
+            self.assertEqual(life.failure,'owned_volume_measurement_invalid')
+            self.assertEqual(life.resource_failure['exception_type'],'GateError')
+            measured=life.resource_failure['measurement']
+            self.assertEqual(measured['line_count'],2)
+            self.assertTrue(measured['du_diagnostic'])
+            self.assertEqual(len(measured['output_sha256']),64)
+            self.assertNotIn('PRIVATE-SENTINEL',json.dumps(life.resource_failure))
+            self.assertEqual(life.samples,[])
+
     def test_every_resource_sampling_command_has_a_short_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             life, calls = self.sample_lifecycle(directory, 1024)

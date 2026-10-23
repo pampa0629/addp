@@ -352,8 +352,14 @@ class Lifecycle:
                 self.sampler_started = True
                 self.sampler_volumes = volumes
             self.sample_operation = 'measure_owned_volumes'
-            total = int(float(self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
-                'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()))
+            measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
+                'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
+            try:
+                total = int(float(measured))
+            except (ValueError, OverflowError):
+                self.measurement_failure = {'output_sha256':hashlib.sha256(measured.encode()).hexdigest(),
+                    'line_count':len(measured.splitlines()),'du_diagnostic':any(line.startswith('du:') for line in measured.splitlines())}
+                raise GateError('owned_volume_measurement_invalid') from None
         self.sample_operation = 'measure_private_bindings'
         total += self.owned_bind_bytes(timeout=remaining())
         now = time.monotonic()
@@ -373,7 +379,9 @@ class Lifecycle:
                     self.failure = 'resource_sample_deadline_exceeded'
                 self.resource_failure = {'operation':getattr(self,'sample_operation','admission'),
                     'error_code':self.failure,'elapsed_seconds':round(time.monotonic()-self.started,2),
-                    'sample_duration_seconds':round(time.monotonic()-began,3)}
+                    'sample_duration_seconds':round(time.monotonic()-began,3), 'exception_type':type(error).__name__}
+                if hasattr(self,'measurement_failure'):
+                    self.resource_failure['measurement']=self.measurement_failure
                 return
             self.stop.wait(max(0, 4-time.monotonic()+began))
 
