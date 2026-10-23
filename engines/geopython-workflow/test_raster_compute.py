@@ -7677,8 +7677,17 @@ def test_d8_weighted_exact_coverage_no_missing_weight_as_zero(tmp_path,invalid,l
     if invalid in ('nodata','mask','alpha'):
         ds=gdal.Open(str(paths[1]),gdal.GA_Update);band=ds.GetRasterBand(1)
         if invalid=='nodata':band.SetNoDataValue(-99)
-        if invalid=='mask':band.CreateMaskBand(gdal.GMF_PER_DATASET);band.GetMaskBand().WriteArray(np.array([[0,255]],dtype=np.uint8))
+        if invalid=='mask':
+            # GDAL <=3.8 defaults to an external .msk, outside the single-file input contract.
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+                assert band.CreateMaskBand(gdal.GMF_PER_DATASET)==gdal.CE_None
+            band.GetMaskBand().WriteArray(np.array([[0,255]],dtype=np.uint8))
         band=ds=None
+        if invalid=='mask':
+            ds=gdal.Open(str(paths[1]))
+            assert ds.GetFileList()==[str(paths[1])]
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),[[0,255]])
+            ds=None
         if invalid=='alpha':
             path=paths[1];ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,2,gdal.GDT_Float64)
             ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
@@ -7687,6 +7696,31 @@ def test_d8_weighted_exact_coverage_no_missing_weight_as_zero(tmp_path,invalid,l
         inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
         with pytest.raises(ValueError,match='有效覆盖' if language=='zh-cn' else 'effective coverage'):compute.raster_flow_accumulation_weighted_d8(*inputs,1,1)
         assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('mask_storage',['YES','NO'],ids=['internal','external'])
+def test_d8_weighted_mask_storage_respects_single_file_admission(tmp_path,mask_storage):
+    import operators.raster_compute as compute
+    paths=_weighted_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
+    ds=gdal.Open(str(paths[1]),gdal.GA_Update)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK',mask_storage):
+        assert ds.CreateMaskBand(gdal.GMF_PER_DATASET)==gdal.CE_None
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(np.array([[0,255]],dtype=np.uint8));ds=None
+    ds=gdal.Open(str(paths[1]));files=set(ds.GetFileList())
+    assert files=={str(paths[1])}|({str(paths[1])+'.msk'} if mask_storage=='NO' else set())
+    np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),[[0,255]]);ds=None
+    original={name:Path(name).read_bytes() for name in files}
+    with raster_workspace():
+        source=raster_load(source_plan(paths[0]));prior=set(source.workspace.iterdir())
+        if mask_storage=='NO':
+            with pytest.raises(ValueError,match='self-contained; external sidecars'):
+                raster_load(source_plan(paths[1]))
+        else:
+            weights=raster_load(source_plan(paths[1]));prior=set(source.workspace.iterdir())
+            with raster_error_language('en'),pytest.raises(ValueError,match='effective coverage'):
+                compute.raster_flow_accumulation_weighted_d8(source,weights,1,1)
+        assert set(source.workspace.iterdir())==prior
+    assert {name:Path(name).read_bytes() for name in files}==original
 
 
 @pytest.mark.parametrize('role',['direction','weights'])
