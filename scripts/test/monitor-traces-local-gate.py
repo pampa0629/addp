@@ -812,7 +812,17 @@ def main():
             if state.get('service') in TRACE+BACKENDS+FRONTENDS and state['id'] not in life.builder_ids and state.get('status') in ('exited','dead') and state.get('exit_code'):
                 try:
                     raw=life.docker('logs','--tail','20',state['id'],guarded=False,timeout=min(1,remaining)).encode()
-                    diagnostics.append({'service':state['service'],'output_sha256':hashlib.sha256(raw).hexdigest(),'markers':diagnostic_markers(raw)})
+                    item={'service':state['service'],'output_sha256':hashlib.sha256(raw).hexdigest(),'markers':diagnostic_markers(raw)}
+                    diagnostics.append(item)
+                    inspected=json.loads(life.docker('inspect',state['id'],guarded=False,timeout=1))[0]
+                    item['runtime_user']=inspected['Config'].get('User','')
+                    item['data_mounts']=[]
+                    for mount in inspected.get('Mounts',[]):
+                        if mount['Type']=='volume' and mount.get('Name') in life.sampler_volumes:
+                            index=life.sampler_volumes.index(mount['Name'])
+                            value=life.docker('exec',life.run_id+'-space','stat','-c','%u %g %a','/space/'+str(index),guarded=False,timeout=1).strip()
+                            if re.fullmatch(r'[0-9]+ [0-9]+ [0-7]+',value):
+                                uid,gid,mode=value.split();item['data_mounts'].append({'target':mount['Destination'],'uid':int(uid),'gid':int(gid),'mode':mode,'writable':mount.get('RW')})
                 except GateError:pass
         if diagnostics:report['failed_service_diagnostics']=diagnostics
     finally:
