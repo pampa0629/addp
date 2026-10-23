@@ -492,7 +492,10 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         running={k:v for k,v in m.LIMITS.items() if k not in ('runtime-log-store-init','trace-store-init')}
         self.assertLessEqual(sum(v[0] for v in running.values()) + .5 + m.SAMPLER_CPU, 8)
         self.assertLessEqual(sum(v[1] for v in running.values()) + 1024 + 64, 12*1024)
-        self.assertLessEqual(3+3+m.SAMPLER_CPU,8)
+        dependencies={k:v for k,v in m.LIMITS.items() if k in m.TRACE+('postgres','business-postgres','redis') and k not in ('runtime-log-store-init','trace-store-init')}
+        rows=[row(cpu,memory*1024**2) for cpu,memory in dependencies.values()]+[row(1,2*1024**3),row(1,2*1024**3),row(m.SAMPLER_CPU,64*1024**2)]
+        m.validate_resources(rows)
+        with self.assertRaisesRegex(m.GateError,'aggregate_hard_limit_exceeded'):m.validate_resources(rows+[row(1)])
 
     def test_sampler_timeout_reports_the_failed_operation_and_stops_requests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -705,11 +708,13 @@ class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
                 self.assertIn('--wait',args)
                 self.assertFalse({'runtime-log-store-init','trace-store-init'}.intersection(args))
             calls.append(args)
+        m.start_dependencies(compose)
         m.start_deployment(compose)
         self.assertEqual(calls[1:3],[('run','--no-deps','runtime-log-store-init'),('run','--no-deps','trace-store-init')])
         self.assertTrue(all(name in calls[0] for name in ('postgres','business-postgres','redis','minio')))
         self.assertIn('alloy',calls[3])
         self.assertIn('system-backend',calls[4])
+        self.assertFalse(any(set(call).intersection(m.TRACE+('postgres','business-postgres','redis')) for call in calls[4:]))
     def test_private_writable_directories_are_part_of_the_same_stop_line(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory)

@@ -346,6 +346,8 @@ class Lifecycle:
             require(value>0, 'resource_sample_deadline_exceeded')
             return value
         self.sample_operation = 'list_owned_containers'
+        if self.builder_created and not self.builder_ids:
+            self.builder_ids.update(self.docker('ps','-aq','--filter','name=^buildx_buildkit_'+self.builder+'0$',guarded=False,timeout=remaining()).split())
         ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
         self.sample_operation = 'inspect_owned_containers'
         rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
@@ -534,6 +536,14 @@ def build(life):
     # Reject product configuration errors before the expensive compilation.
     life.deployment_documents=prepare_deployment_documents(life,env)
     verify_telemetry_configuration(life)
+    references={name:f'localhost:5001/addp-{name}:{life.run_id}' for name in BACKENDS+FRONTENDS}
+    prepare_isolated_configuration(life,env,references)
+    life.sample()
+    life.thread=threading.Thread(target=life.monitor,daemon=True)
+    life.thread.start()
+    life.phase='isolated_dependencies_start'
+    start_dependencies(life.compose)
+    life.dependencies_ready=True
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -542,7 +552,7 @@ def build(life):
         '{"HTTPProxy":{{json .HTTPProxy}},"HTTPSProxy":{{json .HTTPSProxy}}}')))
     proxy_options=[part for key,value in proxies.items() for part in ('--driver-opt','env.'+key+'='+value)]
     life.docker('buildx', 'create', '--name', life.builder, '--driver', 'docker-container', '--driver-opt',
-                'network=host,cpu-period=100000,cpu-quota=300000,memory=5g', *proxy_options, '--buildkitd-config', str(config))
+                'network=host,cpu-period=100000,cpu-quota=100000,memory=2g', *proxy_options, '--buildkitd-config', str(config))
     life.builder_created = True
     life.docker('buildx', 'inspect', life.builder, '--bootstrap')
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
@@ -553,8 +563,6 @@ def build(life):
     life.builder_stopped=False
     life.docker('buildx','inspect',life.builder,'--bootstrap')
     life.sample()
-    life.thread = threading.Thread(target=life.monitor, daemon=True)
-    life.thread.start()
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
     wrapper = shim/'docker'
@@ -562,7 +570,7 @@ def build(life):
        'if a and a[0]=="build":\n'
        ' p=[v for k in ("HTTP_PROXY","HTTPS_PROXY") if os.environ.get("TRACE_LOCAL_"+k) for key in (k,k.lower()) for v in ("--build-arg",key+"="+os.environ["TRACE_LOCAL_"+k])]\n'
        ' a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*p,*a[1:]]\n'
-       'elif a and a[0]=="run": a=["run","--cpus","3","--memory","5g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*[v for v in a[1:] if v!="--rm"]]\n'
+       'elif a and a[0]=="run": a=["run","--cpus","1","--memory","2g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*[v for v in a[1:] if v!="--rm"]]\n'
        'if a and a[0]=="run":\n'
        ' a=[v+":ro" if v.endswith(":/go/pkg/mod") else v for v in a]\n'
        'os.execv(os.environ["TRACE_LOCAL_DOCKER"],[os.environ["TRACE_LOCAL_DOCKER"],*a])\n')
@@ -576,11 +584,11 @@ def build(life):
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_compile'
-    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
+    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '1', '--memory', '2g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
                 '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
                 '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
-                '-e', 'GOMAXPROCS=3', '-e', 'GOFLAGS=-p=3', 'golang:1.24',
+                '-e', 'GOMAXPROCS=1', '-e', 'GOFLAGS=-p=1', 'golang:1.24',
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
@@ -610,12 +618,15 @@ def build(life):
     return commit,env,images
 
 
-def start_deployment(compose):
+def start_dependencies(compose):
     compose('up','-d','--wait','--no-build','postgres','business-postgres','redis','minio')
     for name in ('runtime-log-store-init','trace-store-init'):
         compose('run','--no-deps',name)
-    for group in [('loki','runtime-log-api','tempo','trace-query','alloy'),('system-backend',),
-                  ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
+    compose('up','-d','--wait','--no-build','loki','runtime-log-api','tempo','trace-query','alloy')
+
+
+def start_deployment(compose):
+    for group in [('system-backend',),('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
         compose('up','-d','--wait','--no-build',*group)
 
 
@@ -673,7 +684,7 @@ def prepare_deployment_documents(life, env):
     return documents
 
 
-def setup(life, env, images):
+def prepare_isolated_configuration(life, env, images):
     documents=life.deployment_documents
     for name in ('minio','runtime-log-store-init','trace-store-init'):
         images[name]=life.minio_image
@@ -682,7 +693,16 @@ def setup(life, env, images):
     # System log reads use the standard product runtime source path, not host logs.
     config['services']['system-backend']['environment'].update(LOKI_URL='http://runtime-log-api:3100',LOKI_READ_TOKEN=env['LOKI_READ_TOKEN'])
     path=life.private_json('compose.json',config)
+    life.deployment_config=config
+    life.compose_path=path
     life.compose=lambda *args:life.command(['docker','compose','--env-file','/dev/null','-f',str(path),*args],env=env,timeout=300)
+    return config
+
+
+def setup(life, env, images):
+    config=life.deployment_config
+    for name,image in images.items():config['services'][name]['image']=image
+    life.compose_path.write_text(json.dumps(config))
     life.phase='isolated_deployment_start'
     start_deployment(life.compose)
     rows=json.loads(life.docker('inspect',*[life.run_id+'-'+name for name in BACKENDS]))
@@ -802,6 +822,7 @@ def main():
         if hasattr(life,'resource_failure'):report['resource_guard_failure']=life.resource_failure
         if hasattr(life,'failed_container_states'):report['failed_container_states']=life.failed_container_states
         if hasattr(life,'builder_stop_states'):report['builder_stop_states']=life.builder_stop_states
+        report['dependencies_ready']=getattr(life,'dependencies_ready',False)
         errors=life.cleanup()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'
