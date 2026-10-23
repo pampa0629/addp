@@ -218,10 +218,18 @@ class LocalTraceAdmissionTests(unittest.TestCase):
     def test_builder_stop_captures_exact_fixed_state_before_validating(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.builder_ids={'owned-id'}
-            life.docker=mock.Mock(side_effect=['',json.dumps([row(status='exited',exit_code=137)])])
+            life.docker=mock.Mock(side_effect=[json.dumps([row()]),'',json.dumps([row(status='exited',exit_code=137)])])
             with self.assertRaisesRegex(m.GateError,'owned_container_failed'):life.stop_builder()
             self.assertTrue(life.builder_stopped)
             self.assertEqual(life.builder_stop_states,[{'id':'owned-id','status':'exited','exit_code':137,'oom':False}])
+
+    def test_only_exact_planned_builder_may_use_verified_stop_exit_one(self):
+        m.validate_resources([row(status='exited',exit_code=1)],allowed_exits=('owned-id',))
+        for bad,allowed in [(row(status='exited',exit_code=1),('foreign-id',)),
+                            (row(status='exited',exit_code=1,oom=True),('owned-id',)),
+                            (row(status='dead',exit_code=1),('owned-id',)),
+                            (row(status='exited',exit_code=137),('owned-id',))]:
+            with self.subTest(bad=bad),self.assertRaises(m.GateError):m.validate_resources([bad],allowed)
 
     def test_long_running_product_exit_zero_is_still_a_stop_condition(self):
         for name in ('system-backend', 'gateway', 'tempo', 'alloy'):

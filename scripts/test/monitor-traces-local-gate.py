@@ -167,7 +167,10 @@ def validate_resources(rows, allowed_exits=()):
         host, state = row['HostConfig'], row['State']
         require(not state.get('OOMKilled'), 'owned_container_oom')
         if state.get('Status') in ('exited', 'dead'):
-            require(state.get('ExitCode') == 0, 'owned_container_failed')
+            # BuildKit's verified normal `buildx stop` exits 1. Only that
+            # explicitly stopped, exact owned builder may use this status.
+            planned_builder = row.get('Id') in allowed_exits
+            require(state.get('ExitCode') == 0 or planned_builder and state.get('Status')=='exited' and state.get('ExitCode')==1, 'owned_container_failed')
             labels=row.get('Config',{}).get('Labels',{}) or {}
             require(row.get('Id') in allowed_exits or labels.get('com.docker.compose.service') in ('runtime-log-store-init','trace-store-init') or labels.get(LABEL+'.role')=='oneshot', 'owned_service_exited')
         if not state.get('Running'):
@@ -316,6 +319,8 @@ class Lifecycle:
             return self._sample()
 
     def stop_builder(self):
+        before=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
+        require(all(r['State'].get('Running') and not r['State'].get('OOMKilled') for r in before),'builder_not_running_before_stop')
         self.builder_stopped=True
         self.docker('buildx','stop',self.builder)
         rows=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
