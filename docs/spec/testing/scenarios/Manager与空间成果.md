@@ -284,3 +284,10 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 ### D8 上游最长流长持久化
 
 独立手工 `raster-flow-length-upstream-d8-persistence`／`make test-raster-flow-length-upstream-d8-online-runner`，600秒预算；复用Hosted、NFS、同源默认入口Runtime、普通User原12权限。米制／国际英尺／美制测量英尺已登记方向、DEM接流向、填洼接流向及全无效六条COG链，七类非法方向码／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交共14条准确length任务失败。独立逐源路径全像元oracle核横纵对角米制中心距离、无入流零、汇合取最长以及开放终点保留上游长度；完整mask／原网格／CRS／Float64／NaN／COG及金字塔、严格artifact／物理／Meta相等正整数大小、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与Runtime／NFS／部署／Infra清理均须满足。查询语言不改写旧失败；不修改产品算法、原套件、权限或跨模块产品逻辑。入口、夹具、Native recipe与手工Hosted登记已实现。本地标准Native新增夹具专项48项通过（2844项筛除不计通过），标准脚本门禁62项与完整Online登记通过，Python CI登记10项通过；记录输入无漂移。原Hosted 39860314938／120109037203在固定0efc18c4bd3165896fbc50017b95501200f9bb72达到600秒总截止，整套失败，清理通过；完成六成果调用／扫描；Runtime返回十条预期参数错误，末条后续断言未收口，十四条失败链未跑完，不计业务通过。仅优化夹具新worker对五个相同图的重复预期路径枚举：逐像元确认几何相同后，进程内共享不可变米制数学预期并分别换算单位，每轮仍重新读取和完整复核物理成果及源文件。新增三项回归及既有48项GDAL夹具均通过（标准Native专项51 passed／3032 deselected／36.86秒，0失败／跳过、输入无漂移）；不改600秒、十二权限、样本、产品或严格断言。修后标准脚本门禁62项／23.525秒及完整Online登记通过，输入无漂移；唯一必要Hosted复验待完成，Linux全量仍等专门CI会话回传，不计UI或容量。
+
+
+### raster-stream-order-d8-persistence
+
+独立手工 `raster-stream-order-d8-persistence`／`make test-raster-stream-order-d8-online-runner`，600秒业务预算，复用现有Hosted／NFS、同源默认入口产品Runtime及普通User原12权限。六条COG链：已登记D8＋二值多级河网、汇流累积→重分类接分级、DEM→流向→累积→重分类→分级、填洼接同链、空河网、全无效。八类断流／非二值掩膜／有效覆盖不一致／完整网格不一致／非法D8方向（含UInt64 NoData相邻大整数）／循环／非法方向波段／非法掩膜波段各按中英文提交，共16条grade任务准确失败，反向查询不改写旧错误。
+
+515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。入口／夹具／Native recipe／手工Hosted／输入影响与CI一致性登记已完成，本地Native专项48 passed／3083 deselected／5.33秒（0失败／跳过，不是新全量）、脚本门禁63项／23.076秒与完整登记、Python CI登记10项通过，记录输入无漂移；标准共享栅格脚本总入口完整退出0，20组子门禁（含原215项模拟生命周期）及隔离身份Go T1通过，输入无漂移；不累加共享重复用例、不计全量IAM／数据库集成，实际Hosted与归档终审仍待验，Linux与既有Hosted等专门CI会话回传；不改产品、权限或原套件，不计UI或容量。

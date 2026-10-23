@@ -174,6 +174,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-stream-order-d8-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-stream-order-d8-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "raster-band-recommendation-workflow": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-band-recommendation-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
