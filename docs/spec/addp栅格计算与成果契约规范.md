@@ -105,6 +105,7 @@
 | D8 加权汇流累积 | 显式D8方向＋同网格同覆盖权重 → raster_flow_accumulation_weighted_d8 → raster_save；不计自身，权重有限非负，缺失权重／非法路线失败 |
 | D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
 | D8 Strahler 河流分级 | 显式D8流向＋同网格0／1河网掩膜 → raster_stream_order_d8 → raster_save；最高同级入流至少两条才升级，断流失败不补线 |
+| D8 指定汇水点汇水区 | 显式D8方向＋同网格同覆盖的唯一正编号标记 → raster_watershed_d8 → raster_save；保留用户编号、包含点自身，嵌套点失败，未选范围有效0 |
 | D8 上游最长流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_upstream_d8 → raster_save；汇合取最长中心间路径，统一米制，无入流0，非法方向／循环失败 |
 | D8 汇水分区 | raster_load → 可选显式填洼／D8流向 → raster_drainage_basins_d8 → raster_save；每个开放终点独立分区，按出口行列顺序从1编号，非法方向／循环失败 |
 | DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
@@ -255,3 +256,5 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 D8加权汇流累积首期已实现，显式双输入、不计自身、非负有限权重、覆盖完全一致及完整D8路线校验见[算子契约](workflow/栅格算子契约.md)。本地标准 `make test-geopython-workflow` 全量 **3296 passed／21 warnings／710.94秒**，0失败／跳过／筛除，进度计数一致且验证输入无漂移；独立逐源路径核完整像元／mask、全1权重与无权累积一致、出口总量守恒，以及真实COG、双语异步失败和清理。Linux全量继续等CI会话回传，独立Hosted入口及夹具已实现、本地通过，尚未实际运行，不计平台扫描血缘、UI或容量。
 
 独立 `raster-flow-accumulation-weighted-d8-persistence` 已获用户授权：复用Hosted隔离生命周期、NFS、同源默认入口产品Runtime和普通用户原12权限，独立600秒业务预算。六条COG保存链为直接非负权重、全1权重、权重重分类、DEM→D8流向→加权累积、填洼接上述链、全无效；每条都核当前执行两份实际注册输入的血缘。负权重、缺失／非有限权重、网格不一致、非法D8码（含原始UInt64 NoData邻接大整数）、循环、非法方向波段、非法权重波段、累计溢出八类各中英文提交，共16条准确失败。逐源路径oracle核完整权重和／mask、合法零、自身排除、全1等价、出口守恒、单位／网格／CRS、COG／金字塔、artifact／物理／Meta相等正整数大小、精确扫描与父执行／用户／租户／引擎、当前执行两源血缘／Monitor、源及先前成果不变和全部清理。失败不发布、不新增扫描或派生血缘，反向语言查询不改提交错误；不变更原套件／权限／跨模块产品逻辑，不计UI或容量。入口与夹具已实现、本地标准门禁通过，实际Hosted未运行；Linux全量和既有Hosted仍等专门CI会话回传。
+
+D8指定汇水点汇水区首期按已确认范围实施：保留用户唯一正编号，包含点自身的完整上游归属，嵌套点明确失败，未选有效范围零、原无效NaN；完整准入与失败规则见[算子契约](workflow/栅格算子契约.md)，实现及验证状态见[后续专题](../next/栅格算子体系后续专题.md#d8-指定汇水点汇水区首期)。本地标准 `make test-geopython-workflow` 隔离候选全量3553项／21 warnings／735.99秒通过，0失败／跳过／筛除且验证输入无漂移；完整像元／mask独立路径、严格编号／嵌套失败、中英诊断及真实异步COG保存清理已验。Linux与其余Hosted仍等CI会话回传，本算子独立Hosted尚未新增／运行，不计平台扫描／血缘、UI或容量。

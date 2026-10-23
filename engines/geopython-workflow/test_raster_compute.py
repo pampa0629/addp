@@ -7824,3 +7824,318 @@ def test_d8_weighted_discovery_two_inputs_required_and_single_route():
     assert set(params)=={'input_raster','weights_raster','band','weights_band'} and all(p['required'] for p in params.values())
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','weights_raster'))
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'weights_raster':{'$ref':'weights'},'band':1,'weights_band':1}
+
+
+# Independent per-origin walks: no production graph, reverse ordering or labels.
+def _watershed_walk_oracle(directions, points):
+    steps={1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    valid=np.isfinite(directions);result=np.where(valid,0.,np.nan)
+    for row,col in np.argwhere(valid):
+        y,x=int(row),int(col);seen=set()
+        while True:
+            assert (y,x) not in seen and valid[y,x];seen.add((y,x))
+            if points[y,x]>0:result[row,col]=points[y,x];break
+            if directions[y,x]==0:break
+            dy,dx=steps[directions[y,x]];y,x=y+dy,x+dx
+            assert 0<=y<directions.shape[0] and 0<=x<directions.shape[1]
+    return result
+
+
+def _watershed_files(tmp_path,directions,points):
+    return tuple(create_raster(tmp_path/(name+'.tif'),values,(500000,2,0,3000000,0,-3),'EPSG:3857')
+                 for name,values in (('directions',directions),('points',points)))
+
+
+@pytest.mark.parametrize('seed',range(12))
+def test_d8_watershed_random_forest_complete_walk_oracle(tmp_path,seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);directions=np.zeros((9,11));rows,cols=np.indices(directions.shape)
+    rank=np.minimum.reduce((rows,cols,8-rows,10-cols))
+    for row,col in np.argwhere(rank>0):
+        candidates=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if rank[row+dy,col+dx]<rank[row,col]]
+        directions[row,col]=rng.choice(candidates)
+    directions[4,5]=np.nan
+    for row,col in np.argwhere(np.isfinite(directions)&(directions!=0)):
+        dy,dx=_STRAHLER_STEPS[directions[row,col]]
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    points=np.where(np.isfinite(directions),0.,np.nan)
+    outlets=np.argwhere(directions==0);chosen=rng.choice(len(outlets),size=5,replace=False)
+    for label,index in zip((900,7,2**53-1,83,2),chosen):points[tuple(outlets[index])]=label
+    paths=_watershed_files(tmp_path,directions,points);before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        result=compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1))
+        np.testing.assert_array_equal(actual,_watershed_walk_oracle(directions,points))
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+        for y,x in np.argwhere(points>0):assert actual[y,x]==points[y,x]
+        assert set(actual[np.isfinite(actual)])<=set([0.,900.,7.,float(2**53-1),83.,2.]);ds=None
+    assert [p.read_bytes() for p in paths]==before
+
+
+def test_d8_watershed_intermediate_points_share_final_outlet_without_overlap():
+    import operators.raster_compute as compute
+    directions=np.full((3,5),np.nan);directions[0,0]=2;directions[1,1]=2;directions[2,:]=[1,1,1,1,0]
+    points=np.where(np.isfinite(directions),0.,np.nan);points[1,1]=900;points[2,1]=7
+    expected=np.full((3,5),np.nan);expected[0,0]=expected[1,1]=900;expected[2,:]=[7,7,0,0,0]
+    np.testing.assert_array_equal(compute._d8_watershed(directions,points),expected)
+
+
+@pytest.mark.parametrize('dy,dx,code',[(dy,dx,code) for code,(dy,dx) in _STRAHLER_STEPS.items()])
+def test_d8_watershed_all_eight_directions_includes_selected_cell(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    points=np.where(np.isfinite(directions),0.,np.nan);points[1+dy,1+dx]=2**53-1
+    np.testing.assert_array_equal(compute._d8_watershed(directions,points),np.where(np.isfinite(directions),float(2**53-1),np.nan))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['nested','nested_gap','duplicate','empty','all_invalid','negative','fraction','too_large','coverage','code','terminal','outside','invalid_target','cycle'])
+def test_d8_watershed_invalid_points_and_complete_graph_fail_before_output(tmp_path,language,case):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,1.,0.]]);points=np.array([[0.,777.,0.,0.]])
+    if case=='nested':points[0,2]=9
+    if case=='nested_gap':points[0,3]=9
+    if case=='duplicate':directions=np.array([[0.,0.,0.,0.]]);points[0,3]=777
+    if case=='empty':points[:]=0
+    if case=='all_invalid':directions[:]=np.nan;points[:]=np.nan
+    if case=='negative':points[0,0]=-1
+    if case=='fraction':points[0,0]=.5
+    if case=='too_large':points[0,0]=2**53
+    if case=='coverage':points[0,3]=np.nan
+    if case=='code':directions[0,2]=3
+    if case=='terminal':directions=np.ones((3,4));directions[:,-1]=0;directions[1,1]=0;points=np.zeros((3,4));points[0,0]=777
+    if case=='outside':directions[0,3]=1
+    if case=='invalid_target':directions[0,2]=np.nan;points[0,2]=np.nan
+    if case=='cycle':directions[0,3]=16
+    key={'nested_gap':'nested','all_invalid':'empty','negative':'points_values','fraction':'points_values','too_large':'points_values','outside':'target','invalid_target':'target'}.get(case,case)
+    paths=_watershed_files(tmp_path,directions,points)
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as caught:compute.raster_watershed_d8(*inputs,1,1)
+        assert str(caught.value)==compute._D8_WATERSHED_MESSAGES[key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('role',['direction','points'])
+@pytest.mark.parametrize('band',[None,0,-1,True,1.,'1',2])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_both_bands_explicit_bilingual(tmp_path,role,band,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[1.,0.]]),np.array([[0.,42.]]))
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths]
+        with pytest.raises(ValueError) as caught:compute.raster_watershed_d8(*inputs,band if role=='direction' else 1,band if role=='points' else 1)
+        assert str(caught.value)==compute._D8_WATERSHED_MESSAGES['band' if role=='direction' else 'points_band'][language=='en']
+
+
+@pytest.mark.parametrize('change',['dimensions','origin','resolution','crs','rotation'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_full_grid_must_match(tmp_path,change,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[1.,0.]]),np.array([[0.,42.]]))
+    if change=='dimensions':create_raster(paths[1],np.array([[0.,0.,42.]]),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    else:
+        ds=gdal.Open(str(paths[1]),gdal.GA_Update)
+        if change=='origin':ds.SetGeoTransform((500001,2,0,3000000,0,-3))
+        if change=='resolution':ds.SetGeoTransform((500000,3,0,3000000,0,-3))
+        if change=='rotation':ds.SetGeoTransform((500000,2,.1,3000000,0,-3))
+        if change=='crs':srs=osr.SpatialReference();srs.ImportFromEPSG(32650);ds.SetProjection(srs.ExportToWkt())
+        ds=None
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+    assert str(caught.value)==compute._D8_WATERSHED_MESSAGES['alignment'][language=='en']
+
+
+@pytest.mark.parametrize('role',['direction','points'])
+@pytest.mark.parametrize('change',['alpha','complex','complex_alpha','scale','offset','geographic','no_crs','south_up','rotation'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_admission_no_implicit_transform(tmp_path,role,change,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[1.,0.]]),np.array([[0.,42.]]));path=paths[role=='points']
+    ds=gdal.Open(str(path),gdal.GA_Update)
+    if change=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if change=='scale':ds.GetRasterBand(1).SetScale(2)
+    if change=='offset':ds.GetRasterBand(1).SetOffset(1)
+    if change=='no_crs':ds.SetProjection('')
+    if change=='geographic':srs=osr.SpatialReference();srs.ImportFromEPSG(4326);ds.SetProjection(srs.ExportToWkt())
+    if change=='south_up':ds.SetGeoTransform((500000,2,0,3000000,0,3))
+    if change=='rotation':ds.SetGeoTransform((500000,2,.1,3000000,0,-3))
+    ds=None
+    if change in ('complex','complex_alpha'):
+        ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,2 if change=='complex_alpha' else 1,gdal.GDT_CFloat64)
+        ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt());ds.GetRasterBand(1).WriteArray(np.array([[1+0j,0+0j]]))
+        if change=='complex_alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).Fill(255)
+        ds=None
+    key='scale' if change in ('scale','offset') else 'complex' if change.startswith('complex') else 'alpha' if change=='alpha' else 'grid'
+    if role=='points':key='alignment' if key=='grid' else 'points_'+key
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+    assert str(caught.value)==compute._D8_WATERSHED_MESSAGES[key][language=='en']
+
+
+@pytest.mark.parametrize('dtype',['Int64','UInt64'])
+@pytest.mark.parametrize('value',[2**53-1,2**53,2**53+1])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_native_nodata_and_exact_id_limit(tmp_path,dtype,value,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,np.nan]]),np.array([[1.,np.nan]]))
+    ds=gdal.GetDriverByName('GTiff').Create(str(paths[1]),2,1,1,getattr(gdal,'GDT_'+dtype))
+    ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
+    nodata=2**53+2;band=ds.GetRasterBand(1)
+    (band.SetNoDataValueAsInt64 if dtype=='Int64' else band.SetNoDataValueAsUInt64)(nodata)
+    band.WriteArray(np.array([[value,nodata]],dtype=np.int64 if dtype=='Int64' else np.uint64));band=ds=None
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths]
+        if value>2**53-1:
+            with pytest.raises(ValueError) as caught:compute.raster_watershed_d8(*inputs,1,1)
+            assert str(caught.value)==compute._D8_WATERSHED_MESSAGES['points_values'][language=='en']
+        else:
+            result=compute.raster_watershed_d8(*inputs,1,1);ds=gdal.Open(str(result.path))
+            np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),[[float(value),np.nan]]);ds=None
+
+
+def test_d8_watershed_multiband_same_file_alpha_mask_and_valid_zero(tmp_path):
+    import operators.raster_compute as compute
+    values=np.zeros((3,7));values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
+    alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
+    mask=np.full(values.shape,255,np.uint8);mask[1,5]=0
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    points=np.where(valid,0.,values);points[0,0]=2**53-1;points[2,2]=42
+    path=create_raster(tmp_path/'multi.tif',np.stack([np.full(values.shape,3.),values,points,alpha]),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(3).SetUnitType('foot')
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_watershed_d8(source,source,2,3);ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.where(valid,points,np.nan))
+        assert ds.GetRasterBand(1).GetUnitType()=='';ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('stage',['read','graph','write','metadata'])
+def test_d8_watershed_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[1.,0.]]),np.array([[0.,42.]]));before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        def fail(*args,**kwargs):raise RuntimeError('injected watershed '+stage)
+        if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
+        if stage=='graph':monkeypatch.setattr(compute,'_d8_graph',fail)
+        if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
+        if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
+        with pytest.raises(RuntimeError,match='injected watershed'):compute.raster_watershed_d8(*inputs,1,1)
+        assert set(inputs[0].workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+def test_d8_watershed_cross_block_complete_cog_and_long_path(tmp_path):
+    import operators.raster_compute as compute
+    directions=np.full((515,519),np.nan);directions[508:,:]=1;directions[508:,-1]=0;directions[510,0]=np.nan
+    points=np.where(np.isfinite(directions),0.,np.nan)
+    for row,label in ((508,91),(510,7),(512,2**53-1),(514,3)):points[row,512]=label
+    paths=_watershed_files(tmp_path,directions,points);before=[p.read_bytes() for p in paths];target=tmp_path/'watershed.cog.tif'
+    with raster_workspace():
+        result=compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));actual=read_band_values(ds.GetRasterBand(1));expected=_watershed_walk_oracle(directions,points)
+        np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+        band=ds.GetRasterBand(1);assert band.GetOverviewCount()>0 and band.GetUnitType()=='' and band.GetColorTable() is None
+        for i in range(band.GetOverviewCount()):
+            overview=band.GetOverview(i).ReadAsArray();assert set(overview[np.isfinite(overview)])<=set([0.,91.,7.,float(2**53-1),3.])
+        band=ds=None
+    assert [p.read_bytes() for p in paths]==before
+    route=np.ones((1,100001));route[0,-1]=0;markers=np.zeros_like(route);markers[0,-2]=777
+    output=compute._d8_watershed(route,markers);np.testing.assert_array_equal(output[0,:-1],np.full(100000,777.));assert output[0,-1]==0
+
+
+@pytest.mark.parametrize('case',['direct','dem','filled','reclass','nested','duplicate','empty','cycle'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_real_async_composition_cog_and_failure_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    import operators.raster_compute as compute
+    directions=np.ones((9,11));directions[:,-1]=0;points=np.zeros((9,11));points[4,5]=777
+    if case=='nested':points[4,9]=9
+    if case=='duplicate':points[0,0]=777
+    if case=='empty':points[:]=0
+    if case=='cycle':directions[0,1]=16
+    values=np.tile(np.arange(11,0,-1,dtype=float),(9,1))
+    if case=='filled':values[:]=10;values[1:-1,1:-1]=-2
+    if case=='reclass':points[4,5]=1
+    paths=_watershed_files(tmp_path,values if case in ('dem','filled') else directions,points)
+    before=[p.read_bytes() for p in paths];target=tmp_path/'watershed.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[0])}},
+           {'id':'points','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}}];prior='source';point_node='points'
+    if case=='filled':tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='fill'
+    if case in ('dem','filled'):
+        tasks.append({'id':'direction','operator':'raster_flow_direction_d8','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='direction'
+        directions=_d8_bellman_ford_oracle(_fill_level_reachability_oracle(values) if case=='filled' else values)
+    if case=='reclass':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['points'],'params':{'input_raster':{'$ref':'points'},'band':1,'rules':[{'value':0,'class':0},{'value':1,'class':777}]}});point_node='classes';points=np.where(points==1,777.,0.)
+    tasks.extend([{'id':'watershed','operator':'raster_watershed_d8','depends_on':[prior,point_node],'params':{'input_raster':{'$ref':prior},'points_raster':{'$ref':point_node},'band':1,'points_band':1}},
+        {'id':'save','operator':'raster_save','depends_on':['watershed'],'params':{'input_raster':{'$ref':'watershed'},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_watershed_d8':workspaces.extend([params['input_raster'].workspace,params['points_raster'].workspace])
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('nested','duplicate','empty','cycle');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists();assert '任务 watershed 执行失败: '+compute._D8_WATERSHED_MESSAGES[case][language=='en'] in status['error']
+    else:
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_watershed_walk_oracle(directions,points))
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(directions));assert ds.GetRasterBand(1).GetUnitType()=='';ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_watershed_d8/invoke',json={'params':{}}).status_code==403
+
+
+def test_d8_watershed_discovery_required_dual_inputs_and_single_route():
+    spec=next(item for item in list_operators() if item['id']=='raster_watershed_d8')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','points_raster','band','points_band'} and all(p['required'] for p in params.values())
+    assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','points_raster'))
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'points_raster':{'$ref':'points'},'band':1,'points_band':1}
+
+
+@pytest.mark.parametrize('dtype',['Int64','UInt64'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_watershed_direction_native_nodata_cannot_hide_adjacent_illegal_code(tmp_path,dtype,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[np.nan,1.,0.]]),np.array([[np.nan,0.,42.]]))
+    ds=gdal.GetDriverByName('GTiff').Create(str(paths[0]),3,1,1,getattr(gdal,'GDT_'+dtype));ds.SetGeoTransform((500000,2,0,3000000,0,-3))
+    srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt());band=ds.GetRasterBand(1)
+    (band.SetNoDataValueAsInt64 if dtype=='Int64' else band.SetNoDataValueAsUInt64)(2**53)
+    band.WriteArray(np.array([[2**53,2**53+1,0]],dtype=np.int64 if dtype=='Int64' else np.uint64));band=ds=None
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+    assert str(caught.value)==compute._D8_WATERSHED_MESSAGES['code'][language=='en']
+
+
+@pytest.mark.parametrize('epsg',[3857,2277,2227])
+def test_d8_watershed_linear_units_do_not_change_user_ids(tmp_path,epsg):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[1.,1.,0.]]),np.array([[0.,42.,0.]]))
+    srs=osr.SpatialReference();srs.ImportFromEPSG(epsg)
+    for path in paths:
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.SetProjection(srs.ExportToWkt());ds.GetRasterBand(1).SetUnitType('foot');ds=None
+    with raster_workspace():
+        result=compute.raster_watershed_d8(*[raster_load(source_plan(p)) for p in paths],1,1);ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),[[42.,42.,0.]])
+        assert ds.GetSpatialRef().IsSame(srs) and ds.GetRasterBand(1).GetUnitType()=='';ds=None
+
+
+def test_d8_watershed_distant_nested_points_rejected_without_recursion():
+    import operators.raster_compute as compute
+    directions=np.ones((1,100001));directions[0,-1]=0;points=np.zeros_like(directions);points[0,0]=91;points[0,-1]=7
+    with pytest.raises(ValueError,match='嵌套'):compute._d8_watershed(directions,points)

@@ -2888,6 +2888,83 @@ def raster_drainage_basins_d8(input_raster, band):
     return _d8_output(source, _d8_drainage_basins(directions))
 
 
+_D8_WATERSHED_MESSAGES = {
+    key: (zh.replace('D8 汇流累积', 'D8 指定汇水点汇水区'),
+          en.replace('D8 flow accumulation', 'D8 specified-outlet watershed'))
+    for key, (zh, en) in _D8_ACC_MESSAGES.items() if key != 'overflow'
+}
+_D8_WATERSHED_MESSAGES.update({
+    'alignment': ('D8 指定汇水点汇水区的流向与标记必须具有相同尺寸、完整仿射网格和等价CRS，请先显式对齐',
+                  'D8 specified-outlet watershed requires direction and points to have the same dimensions, full affine grid and equivalent CRS; align explicitly'),
+    'points_band': ('D8 指定汇水点汇水区必须显式选择有效的一基汇水点标记数据波段',
+                    'D8 specified-outlet watershed requires an explicit valid one-based points data band'),
+    'points_complex': ('D8 指定汇水点汇水区不支持复数标记或复数alpha波段',
+                       'D8 specified-outlet watershed does not support complex points or complex alpha bands'),
+    'points_alpha': ('D8 指定汇水点汇水区不能选择alpha波段作为汇水点标记',
+                     'D8 specified-outlet watershed cannot use an alpha band as points'),
+    'points_scale': ('D8 指定汇水点汇水区前必须显式应用标记scale/offset',
+                     'D8 specified-outlet watershed requires points scale/offset to be applied first'),
+    'coverage': ('D8 指定汇水点汇水区的流向与标记必须具有完全相同的有效覆盖，不能取交集或将缺失标记补零',
+                 'D8 specified-outlet watershed requires exactly the same effective coverage for direction and points; do not intersect coverage or fill missing points with zero'),
+    'points_values': ('D8 指定汇水点汇水区的有效标记必须为0至2^53−1内的精确整数，0为未选择',
+                      'D8 specified-outlet watershed requires exact integer point values from 0 to 2^53-1; zero means unselected'),
+    'empty': ('D8 指定汇水点汇水区必须至少选择一个有效汇水点',
+              'D8 specified-outlet watershed requires at least one effective selected point'),
+    'duplicate': ('D8 指定汇水点汇水区的正编号必须全图唯一，一个编号只能标记一个像元',
+                  'D8 specified-outlet watershed requires globally unique positive IDs, one cell per ID'),
+    'nested': ('D8 指定汇水点汇水区不支持嵌套汇水点：一个指定点不能沿下游到达另一指定点',
+               'D8 specified-outlet watershed does not support nested points: a selected point cannot reach another selected point downstream'),
+})
+
+
+def _d8_watershed_error(code):
+    return ValueError(_D8_WATERSHED_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_watershed(directions, points):
+    """Full upstream watersheds of unique, nonnested user IDs on a validated graph."""
+    valid, downstream, indegree = _d8_graph(directions, _d8_watershed_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_watershed_error)
+    if not np.array_equal(np.isfinite(points), valid):
+        raise _d8_watershed_error('coverage')
+    values = points[valid]
+    if np.any((values < 0) | (values > _D8_MAX_EXACT_COUNT) | (values != np.floor(values))):
+        raise _d8_watershed_error('points_values')
+    selected = values[values > 0]
+    if selected.size == 0:
+        raise _d8_watershed_error('empty')
+    if np.unique(selected).size != selected.size:
+        raise _d8_watershed_error('duplicate')
+    labels = np.zeros(directions.size, dtype=np.int64)
+    original = points.ravel()
+    for cell in order[::-1]:
+        target = int(downstream[cell])
+        inherited = labels[target] if target >= 0 else 0
+        if original[cell] > 0:
+            if inherited != 0:
+                raise _d8_watershed_error('nested')
+            labels[cell] = int(original[cell])
+        else:
+            labels[cell] = inherited
+    result = labels.reshape(directions.shape).astype(np.float64)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_watershed_d8(input_raster, points_raster, band, points_band):
+    """Preserve explicit outlet IDs; never snap points, truncate or split nested watersheds."""
+    source, directions, _ = _d8_direction_source(input_raster, band, _d8_watershed_error)
+    points_source = _open(points_raster)
+    try:
+        _require_same_grid(source, points_source)
+    except ValueError as cause:
+        raise _d8_watershed_error('alignment') from cause
+    points_source = None
+    _, points, _ = _d8_direction_source(points_raster, points_band,
+        lambda code: _d8_watershed_error('alignment' if code == 'grid' else 'points_' + code))
+    return _d8_output(source, _d8_watershed(directions, points))
+
+
 _D8_STREAM_ORDER_MESSAGES = {
     key: (zh.replace('D8 汇流累积', 'D8 Strahler 河流分级'),
           en.replace('D8 flow accumulation', 'D8 Strahler stream order'))
@@ -3110,6 +3187,7 @@ _SPECS = [
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
+    (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 Strahler 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段；固定Strahler，最高同级至少两条才升级')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -3141,6 +3219,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1})
     if name == 'raster_stream_order_d8':
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
+    if name == 'raster_watershed_d8':
+        examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1})
     if name == 'raster_flow_accumulation_weighted_d8':
         examples.update({'weights_raster': {'$ref': 'weights'}, 'band': 1, 'weights_band': 1})
     if name == 'raster_nibble':
