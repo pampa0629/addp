@@ -152,9 +152,9 @@
               <p v-for="metric in chartMetrics" :key="metric.key" :data-testid="`resource-trend-${metric.name}`" :title="date(trendPoint(metric.key)?.evaluated_at)">{{ t(`monitor.resources.metrics.${metric.name}`) }}: <strong>{{ formatValue(trendPoint(metric.key), metric) }}</strong></p>
             </div>
           </template>
-          <p v-if="zoomableTrend" class="resource-hint" data-testid="resource-zoom-hint">{{ t('monitor.resources.zoomHint') }}</p>
+          <p class="resource-hint" data-testid="resource-zoom-hint">{{ t('monitor.resources.zoomHint') }}</p>
           <div class="resource-chart" role="img" :aria-label="t('monitor.resources.trend')" data-testid="resource-chart">
-            <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" :max-rows="networkTrend ? 1000 : undefined" :show-value-labels="!networkTrend" :zoomable="zoomableTrend" :initial-zoom="trendZoom" @zoom-change="trendZoom = $event" @invalid="invalidChart" />
+            <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" :max-rows="networkTrend ? 1000 : undefined" :show-value-labels="!networkTrend" zoomable :initial-zoom="trendZoom" @zoom-change="trendZoom = $event" @invalid="invalidChart" />
           </div>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.evidence')" name="evidence">
@@ -224,7 +224,6 @@ const rawChartRows = computed(() => (trend.value ? resourceTrendChartRows(trend.
 const byteMetrics = computed(() => chartMetrics.value.filter(metric => ['bytes', 'bytes_per_second'].includes(metric.unit)))
 const memoryTrend = computed(() => state.value.metric.startsWith('node.memory.'))
 const networkTrend = computed(() => state.value.metric.startsWith('node.network.'))
-const zoomableTrend = computed(() => ['node.cpu.', 'node.memory.', 'node.disk.', 'node.network.'].some(prefix => state.value.metric.startsWith(prefix)))
 const chartScale = computed(() => byteMetrics.value.length ? scaleByteValue(Math.max(0, ...rawChartRows.value.flatMap(row => byteMetrics.value.map(metric => row[metric.name] ?? 0)))) : null)
 const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (byteMetrics.value.includes(metric) ? chartScale.value.divisor : 1)])) })))
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })

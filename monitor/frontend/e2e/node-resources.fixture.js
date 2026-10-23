@@ -6,7 +6,7 @@ export const resourcePermissions = ['platform.host_node.read', 'monitor.resource
 import { observations, mount, serverEnd } from './resource-observations.fixture'
 export { observations, mount, serverEnd }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', summaryMode: options.summaryMode || '', listNodes: options.nodes, trendMode: options.trendMode || '', trendResponse: options.trendResponse, diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', summaryMode: options.summaryMode || '', listNodes: options.nodes, trendMode: options.trendMode || '', trendResponse: options.trendResponse, diskDevices: options.diskDevices, mounts: options.mounts, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
   let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
   let releaseSummary, heldSummary = options.holdSummary ? new Promise(resolve => { releaseSummary = resolve }) : null
@@ -56,6 +56,10 @@ export async function resourceBackend(page, options = {}) {
       if (!trend && state.targetID) body.target_id = state.targetID
       const family = keys[0].startsWith('node.network.') ? 'network' : keys[0].startsWith('node.filesystem.') ? 'filesystem' : null
       if (!trend && family && state[`${family}Collection`]) body.collection = { ...body.collection, ...state[`${family}Collection`] }
+      if (state.mounts && keys.every(key => key.startsWith('node.filesystem.'))) {
+        const mounts = trend ? state.mounts.filter(mount => ['device', 'mountpoint', 'fstype'].every(key => mount[key] === url.searchParams.get(key))) : state.mounts
+        body.series = body.series.flatMap(series => mounts.map(mount => ({ ...series, dimensions: mount })))
+      }
       if (state.diskDevices && keys.every(key => key.startsWith('node.disk.'))) {
         const devices = trend ? state.diskDevices.filter(device => device.device === url.searchParams.get('device')) : state.diskDevices
         body.series = body.series.flatMap(series => devices.map(device => ({ ...series, dimensions: { device: device.device }, points: series.points.map(point => {

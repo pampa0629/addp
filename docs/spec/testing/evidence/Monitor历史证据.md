@@ -629,3 +629,19 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 最初单项测试将陈旧百分比夹具错误设为超过 100，页面按原响应校验拒绝整图，日志 `interaction-cpu-initial.log` 及报告 `addp-monitor-playwright-results-OkYGg3` 保留。夹具修正为范围内的陈旧百分比，仍要求该点不显示数值，未放宽产品校验、等待或断言；随后专项通过。默认终端 Node 为 v25.2.1，之前的 22 项及新增断言后 11 项通过保留在 `interaction-browser.log`／`interaction-browser-final.log`，最终交付结果以符合仓库工具链的上述 Node 24 门禁为准。
 
 本批仅为受控 HTTP 夹具的本地 T1/T3、构建及登记证据，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或其余领域浏览器全集，未重跑输入未变的共享组件单测。未查询／触发／重跑 CI 或 Hosted，未设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补上述四类主机图表的图例筛选与悬停本地验收，不代表所有图表、真实运行及原行其他缺口均已完成；CI 和 Hosted 等专门会话回传。
+
+
+### 负载、运行时长与文件系统趋势统一时间缩放（2026-10-23）
+
+主机页全部既有趋势统一开启现有共享 ChartRenderer 滑块，删除原 CPU／内存／磁盘／网络类别开关；新增覆盖负载、运行时长、文件系统容量／比例及 inode 数量／比例，不新增 renderer、指标、API、查询或权限。沿既有相对视口、图旁说明、原查询步长和完整结果；刷新保留，指标组、主机、时间、比较模式或身份改变及查询失败时重置。文件系统沿完整 device／mountpoint／fstype 区分对象，容量与 inode 的不同指标切换重置；不按挂载名猜同一资源。原有负载任务数、时长秒、容量 IEC、比例与数量口径均未改变。
+
+冻结根 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-all-trend-zoom-kztnpbgt`，基线 `dcf9b22460d42ff3d8782051e214cf5da1746ab6`，`inputs-final.json` 为四项实现／测试／规范输入摘要，交付前与工作区逐文件一致；快照不包含其他会话 WIP。所有命令使用已安装 Node v24.11.1（`fnm exec --using v24.11.1`），沿标准入口及独立端口运行：
+
+- Monitor `npm test` 101/101、`npm run build`、`make test-frontend-ci-registration` 的 20 项及 21 个前端登记均通过（`unit.log`、`build.log`、`registration.log`）；构建仅有既有 chunk 大小提示。共享 renderer 产品代码、依赖及测试注册入口未改，既有 Monitor owner／Playwright 自动发现覆盖本批，无需新增 workflow。
+- `npm run test:e2e -- node-resources.spec.js network-bars.spec.js host-resource-zoom.spec.js host-trend-interactions.spec.js resource-comparison.spec.js` 首轮 119/120，一项在窄屏切换后的同步布局检查失败，不能记聚合通过（`browser-final.log`，失败报告 `addp-monitor-playwright-results-6Mdfe1`）。完成下述诊断并仅修测试的绘制完成条件后，`npm run test:e2e -- host-resource-zoom.spec.js` 最终 22/22，通过（`zoom-final.log`）；其余 98 项输入未变，复用本轮通过证据，合计 120 个唯一相关场景具备通过结果，不声称首轮命令成功或整个 Monitor 浏览器全集通过。
+- 缩放矩阵覆盖中英文 620 像素、七天 984 点、负载小数、运行时长、文件系统 GiB／百分比与 inode 整数／百分比、真实鼠标拖动、不新增请求或裁剪数据、主题及宽窄切换、刷新保留、缺样断点、范围／错误重置。新增受控两挂载点夹具沿真实表格按钮选择，验证刷新保留、挂载变更及容量／inode 切换重置与精确请求维度；现有自动刷新场景增加负载缩放恢复，原 CPU／内存／磁盘／网络和时段比较／撤权回归保留。
+- 最终十二张新类别中英文稳定实图已逐一核对单位、曲线和滑块，路径见 `zoom-final.log` 中 load／uptime／filesystem-percent／filesystem-capacity／inode-percent／inode-count 截图条目，均在上述冻结根同一 macOS 临时目录父级；未将沿用的运行时长秒轴改为其他时间单位。
+
+失败诊断保留 `layout-diagnostic.log`、`resize-event-diagnostic.log`、`resize-observer-diagnostic.log`。首次观察未重现瞬态，不据单次通过宣称已定位；随后在宽屏实际绘制完成再缩回窄屏的事件采样中，记录 viewport=620、容器=572、Canvas=852、页面 scrollWidth=876，绘制完成后 Canvas=572、页面=620。共享 ResizeObserver 按既有异步路径正常恢复；旧测试在两次视口设置后立即检查页面宽度，未等待实际绘制。最终用同一默认断言预算等待两次 Canvas／容器宽度一致且页面无溢出，不加重试、延长超时、放宽宽度限制或修改产品布局。三个诊断场景不是交付通过计数；本批最初负载／挂载专项 3/3 另存 `zoom-focused.log`。
+
+以上为本地 T1/T3、构建及登记证据，浏览器为受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或未涉及 owner 的门禁，未把缩放接入外推为专业图表或全部原始功能完成。未查询／触发／重跑 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补主机负载／时长／文件系统共享缩放的本地结果；真实页面与来源验收仍等专门会话回传。
