@@ -48,15 +48,87 @@ def bare_lifecycle(directory):
     return life
 
 
-class LocalTraceAdmissionTests(unittest.TestCase):
-    def test_public_build_diagnostics_keep_only_fixed_failure_categories(self):
-        self.assertEqual(m.public_build_failure(b'ERROR: failed to authorize: unexpected status 429 Too Many Requests'),
-                         ['registry_rate_limited', 'registry_authorization_failed'])
-        self.assertEqual(m.public_build_failure(b'fatal: unable to access https://credential@example.invalid/private'),
-                         ['git_transport_failed'])
-        self.assertEqual(m.public_build_failure(b'password=private secret=private SQL=private'),
-                         ['public_build_failure_unclassified'])
+class MinioProductContractTests(unittest.TestCase):
+    recipe = (m.ROOT/'scripts/infra/Dockerfile.minio').read_text()
+    image_id = 'sha256:'+'a'*64
 
+    def fixture(self,directory,*,metadata=None,versions=None):
+        life=bare_lifecycle(directory)
+        path=life.checkout/'scripts/infra/Dockerfile.minio'
+        path.parent.mkdir(parents=True);path.write_text(self.recipe)
+        expected=m.minio_product_contract(self.recipe)
+        calls=[]
+        def docker(*args,**kwargs):
+            calls.append((args,kwargs))
+            if args[:2]==('image','inspect'):
+                self.assertEqual(args[2],'addp-minio:'+expected['minio']['release'])
+                return json.dumps(metadata or {'id':self.image_id,'architecture':'arm64','os':'linux'})
+            if args[0]=='run':
+                name=args[args.index('--entrypoint')+1].rsplit('/',1)[-1]
+                self.assertEqual(args[-2:],(self.image_id,'--version'))
+                value=expected[name]
+                return (versions or {}).get(name,name+' version '+value['release']+' (commit-id='+value['source_commit']+')\nPRIVATE-SENTINEL\n')
+            raise AssertionError(args)
+        life.docker=docker
+        return life,calls
+
+    def test_authoritative_recipe_pins_both_release_source_commits(self):
+        expected=m.minio_product_contract(self.recipe)
+        self.assertEqual(expected['minio']['source_commit'],'9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a')
+        self.assertEqual(expected['mc']['source_commit'],'7394ce0dd2a80935aded936b09fa12cbb3cb8096')
+
+    def test_ambiguous_or_unpinned_recipe_is_rejected(self):
+        for value in (self.recipe+self.recipe,self.recipe.replace('github.com/minio/minio.git','github.com/other/minio.git'),
+                      self.recipe.replace('9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a','unpinned')):
+            with self.subTest(value=value[:20]),self.assertRaises(m.GateError):m.minio_product_contract(value)
+
+    def test_probes_bind_the_same_id_are_readonly_offline_and_keep_only_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,calls=self.fixture(directory)
+            m.verify_minio_product(life)
+            self.assertEqual(life.minio_image,self.image_id)
+            self.assertEqual(set(life.minio_provenance['components']),{'minio','mc'})
+            self.assertNotIn('PRIVATE-SENTINEL',json.dumps(life.minio_provenance))
+            runs=[args for args,_ in calls if args[0]=='run']
+            self.assertEqual(len(runs),2)
+            for args in runs:
+                self.assertEqual(args[args.index('--pull')+1],'never')
+                self.assertEqual(args[args.index('--network')+1],'none')
+                self.assertIn('--read-only',args)
+                self.assertIn('/data:rw,noexec,nosuid,size=1m',args)
+                self.assertEqual(args[args.index('--cpus')+1],'.25')
+                self.assertEqual(args[args.index('--memory')+1],'256m')
+
+    def test_wrong_platform_or_mutable_identity_never_runs_a_probe(self):
+        for metadata in ({'id':self.image_id,'architecture':'amd64','os':'linux'},
+                         {'id':'mutable:tag','architecture':'arm64','os':'linux'},
+                         {'id':self.image_id,'architecture':'arm64','os':'darwin'}):
+            with tempfile.TemporaryDirectory() as directory:
+                life,calls=self.fixture(directory,metadata=metadata)
+                with self.assertRaisesRegex(m.GateError,'minio_product_image_identity_invalid'):m.verify_minio_product(life)
+                self.assertEqual(len(calls),1)
+
+    def test_wrong_release_or_embedded_source_is_rejected_without_fallback(self):
+        for name,expected in m.minio_product_contract(self.recipe).items():
+            versions=(name+' version RELEASE.2000-01-01T00-00-00Z (commit-id='+expected['source_commit']+')\n',
+                      name+' version '+expected['release']+' (commit-id='+'b'*40+')\n')
+            for value in versions:
+                with tempfile.TemporaryDirectory() as directory:
+                    life,calls=self.fixture(directory,versions={name:value})
+                    with self.assertRaisesRegex(m.GateError,'minio_product_'+name+'_version_mismatch'):m.verify_minio_product(life)
+                    self.assertEqual([args[0] for args,_ in calls],['image']+['run']*(1 if name=='minio' else 2))
+                    self.assertFalse(hasattr(life,'minio_provenance'))
+
+    def test_missing_product_image_refuses_without_pulling_or_building(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=self.fixture(directory)
+            life.docker=mock.Mock(side_effect=m.GateError('command_failed_1'))
+            with self.assertRaises(m.GateError):m.verify_minio_product(life)
+            life.docker.assert_called_once()
+            self.assertEqual(life.docker.call_args.args[:2],('image','inspect'))
+
+
+class LocalTraceAdmissionTests(unittest.TestCase):
     def test_build_proxy_uses_only_credential_free_local_daemon_transport(self):
         self.assertEqual(m.daemon_build_proxies({}), {})
         proxy = 'http://http.docker.internal:3128'

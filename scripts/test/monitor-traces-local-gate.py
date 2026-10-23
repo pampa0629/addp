@@ -42,7 +42,7 @@ OWN_INPUTS = (
     'Makefile', 'scripts/ci/check-online-ci-registration.py', 'scripts/ci/check-execution-trace-local-registration_test.py',
     'scripts/test/monitor-traces-local-gate.py', 'scripts/test/monitor-traces-local-gate_test.py',
     'scripts/test/monitor-traces-local-online.py', 'scripts/test/monitor-traces-local-online_test.py',
-    'scripts/test/monitor-traces-gate.sh', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
+    'scripts/test/monitor-traces-gate.sh', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
     'common/httptrace/tracetest/runtime.go', 'develop/backend/internal/repository/execution_repository.go',
     'develop/backend/internal/repository/execution_trace.go', 'develop/backend/internal/repository/execution_trace_test.go',
     'develop/backend/internal/service/execution_trace.go', 'develop/backend/internal/service/execution_trace_test.go',
@@ -62,27 +62,43 @@ class GateError(RuntimeError):
     """Only fixed, non-secret diagnostics cross the private evidence boundary."""
 
 
-def public_build_failure(raw):
-    """Classify public-image failures without retaining raw command output."""
-    patterns = (
-        ('registry_rate_limited', r'toomanyrequests|too many requests|\b429\b'),
-        ('registry_authorization_failed', r'failed to authorize|unauthorized|authentication required'),
-        ('registry_image_unavailable', r'manifest unknown|not found|no match for platform'),
-        ('network_dns_failed', r'no such host|temporary failure in name resolution|could not resolve'),
-        ('network_tls_failed', r'x509:|certificate verify failed|tls handshake'),
-        ('network_connection_failed', r'connection refused|connection reset|i/o timeout|context deadline exceeded|unexpected eof'),
-        ('git_transport_failed', r'rpc failed|fatal:|unable to access'),
-        ('go_dependency_failed', r'go: .*: (?:reading|verifying)|proxy.golang.org|sum.golang.org'),
-        ('build_driver_failed', r'unknown flag|unknown command|no builder|not a docker command'),
-        ('build_resource_failed', r'no space left|out of memory|cannot allocate memory|killed'),
-    )
-    text = raw.decode(errors='replace').lower()
-    return [code for code, pattern in patterns if re.search(pattern, text)] or ['public_build_failure_unclassified']
-
-
 def require(condition, code):
     if not condition:
         raise GateError(code)
+
+
+def minio_product_contract(source):
+    pattern = (r'git clone --depth 1 --branch (?P<release>\S+) '
+        r'https://github\.com/minio/(?P<name>minio|mc)\.git (?P=name) &&\s*\\\s*'
+        r'test "\$\(git -C (?P=name) rev-parse HEAD\)" = (?P<commit>[0-9a-f]{40})\b')
+    rows = [match.groupdict() for match in re.finditer(pattern,source)]
+    require(len(rows)==2 and {row['name'] for row in rows}=={'minio','mc'},'minio_product_recipe_invalid')
+    require(all(re.fullmatch(r'RELEASE\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z',row['release']) for row in rows),
+            'minio_product_recipe_invalid')
+    return {row['name']:{'release':row['release'],'source_commit':row['commit']} for row in rows}
+
+
+def verify_minio_product(life):
+    expected=minio_product_contract((life.checkout/'scripts/infra/Dockerfile.minio').read_text())
+    tag='addp-minio:'+expected['minio']['release']
+    metadata=json.loads(life.docker('image','inspect',tag,'--format',
+        '{"id":{{json .Id}},"architecture":{{json .Architecture}},"os":{{json .Os}}}'))
+    image_id=metadata.get('id','')
+    require(re.fullmatch(r'sha256:[0-9a-f]{64}',image_id) and metadata.get('architecture')=='arm64' and
+            metadata.get('os')=='linux','minio_product_image_identity_invalid')
+    proof={'image_id':image_id,'platform':'linux/arm64','components':{}}
+    for name in ('minio','mc'):
+        output=life.docker('run','--rm','--pull','never','--name',life.run_id+'-verify-'+name,
+            '--label',f'{LABEL}={life.run_id}','--label',LABEL+'.role=oneshot',
+            '--cpus','.25','--memory','256m','--network','none','--read-only',
+            '--tmpfs','/data:rw,noexec,nosuid,size=1m','--tmpfs','/tmp:rw,noexec,nosuid,size=16m',
+            '--entrypoint','/usr/local/bin/'+name,image_id,'--version',timeout=30)
+        rows=re.findall(r'^'+name+r' version (\S+) \(commit-id=([0-9a-f]{40})\)\r?$',output,re.M)
+        require(len(rows)==1 and rows[0]==(expected[name]['release'],expected[name]['source_commit']),
+                'minio_product_'+name+'_version_mismatch')
+        proof['components'][name]={**expected[name],'version_output_sha256':hashlib.sha256(output.encode()).hexdigest()}
+    life.minio_image=image_id
+    life.minio_provenance=proof
 
 
 def module(name, root=ROOT):
@@ -272,8 +288,6 @@ class Lifecycle:
         if p.returncode:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
-            if self.phase == 'product_minio':
-                self.last_failure['public_build_diagnostic'] = public_build_failure(raw)
             raise GateError('command_failed_' + str(p.returncode))
         return raw.decode(errors='replace')
 
@@ -463,6 +477,9 @@ def build(life):
     require(life.command(['git', 'rev-parse', 'HEAD']).strip() == commit, 'snapshot_commit_changed')
     env = defaults(life)
     life.env = env
+    life.source_commit = commit
+    life.phase = 'prebuilt_minio_verification'
+    verify_minio_product(life)
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -477,8 +494,6 @@ def build(life):
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
     require(len(ids) == 1, 'owned_builder_identity_missing')
     life.builder_ids = set(json.loads(life.docker('inspect', *ids))[0]['Id'] for _ in [0])
-    # This immutable MinIO image is the standard source-built product, not a stand-in service.
-    life.minio_image = life.docker('image', 'inspect', 'addp-minio:RELEASE.2025-10-15T17-29-55Z', '--format', '{{.Id}}').strip()
     life.sample()
     life.thread = threading.Thread(target=life.monitor, daemon=True)
     life.thread.start()
@@ -502,12 +517,6 @@ def build(life):
     client_proxies=daemon_build_proxies({'HTTPProxy':os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy'),
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
-    life.phase='product_minio'
-    minio_tag=life.run_id+'-minio:local'
-    life.tags.append(minio_tag)
-    life.command(['docker','build','-f','scripts/infra/Dockerfile.minio','-t',minio_tag,'scripts/infra'],env=build_env,timeout=1200)
-    life.minio_image=life.docker('image','inspect',minio_tag,'--format','{{.Id}}').strip()
-    life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     life.phase='product_compile'
     life.docker('run', '--rm', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
@@ -692,6 +701,8 @@ def main():
         if hasattr(life,'last_failure'):report['command_failure']=life.last_failure
     finally:
         report['resource_samples']=life.samples
+        if hasattr(life,'source_commit'):report['source_commit']=life.source_commit
+        if hasattr(life,'minio_provenance'):report['minio_product']=life.minio_provenance
         if hasattr(life,'resource_failure'):report['resource_guard_failure']=life.resource_failure
         errors=life.cleanup()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
