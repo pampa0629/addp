@@ -147,13 +147,13 @@
           <p class="resource-hint" data-testid="resource-trend-window">{{ t('monitor.resources.window', { start: date(comparison?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
           <p class="resource-hint">{{ t('monitor.resources.gaps') }}</p>
           <template v-if="chartMetrics.length > 1">
-            <p class="resource-hint" data-testid="resource-paired-hint">{{ memoryTrend ? t('monitor.resources.memoryAxes', { unit: chartScale.unit }) : t('monitor.resources.pairedThroughput', { unit: chartScale.unit + '/s' }) }}</p>
+            <p class="resource-hint" data-testid="resource-paired-hint">{{ memoryTrend ? t('monitor.resources.memoryAxes', { unit: chartScale.unit }) : t(networkTrend ? 'monitor.resources.networkBars' : 'monitor.resources.pairedThroughput', { unit: chartScale.unit + '/s' }) }}</p>
             <div class="resource-toolbar" data-testid="resource-paired-values">
               <p v-for="metric in chartMetrics" :key="metric.key" :data-testid="`resource-trend-${metric.name}`" :title="date(trendPoint(metric.key)?.evaluated_at)">{{ t(`monitor.resources.metrics.${metric.name}`) }}: <strong>{{ formatValue(trendPoint(metric.key), metric) }}</strong></p>
             </div>
           </template>
           <div class="resource-chart" role="img" :aria-label="t('monitor.resources.trend')" data-testid="resource-chart">
-            <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" @invalid="invalidChart" />
+            <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" :max-rows="networkTrend ? 1000 : undefined" :show-value-labels="!networkTrend" :zoomable="networkTrend" :initial-zoom="networkZoom" @zoom-change="networkZoom = $event" @invalid="invalidChart" />
           </div>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.evidence')" name="evidence">
@@ -205,6 +205,7 @@ const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesys
 const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref('')
 const comparison = ref(null)
+const networkZoom = ref(null)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
 const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
@@ -221,14 +222,15 @@ const trendPoints = computed(() => (trend.value?.series.find(line => line.metric
 const rawChartRows = computed(() => (trend.value ? resourceTrendChartRows(trend.value, state.value.metric) : []).filter(row => !comparison.value || Date.parse(row.evaluated_at) > Date.parse(comparison.value.current.start)))
 const byteMetrics = computed(() => chartMetrics.value.filter(metric => ['bytes', 'bytes_per_second'].includes(metric.unit)))
 const memoryTrend = computed(() => state.value.metric.startsWith('node.memory.'))
+const networkTrend = computed(() => state.value.metric.startsWith('node.network.'))
 const chartScale = computed(() => byteMetrics.value.length ? scaleByteValue(Math.max(0, ...rawChartRows.value.flatMap(row => byteMetrics.value.map(metric => row[metric.name] ?? 0)))) : null)
 const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (byteMetrics.value.includes(metric) ? chartScale.value.divisor : 1)])) })))
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
 const chartAxes = computed(() => memoryTrend.value ? [
   { measures: byteMetrics.value.map(metric => metric.name), label: t('monitor.resources.memoryCapacity'), min: 0 },
   { measures: ['memoryUsed'], min: 0, max: 100 },
-] : [])
-const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }))] }))
+] : networkTrend.value ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.networkAxis'), min: 0 }] : [])
+const chartConfig = computed(() => ({ chart_type: networkTrend.value ? 'bar' : 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }))] }))
 const evidenceRows = computed(() => trendPoints.value.slice((evidencePage.value - 1) * 20, evidencePage.value * 20))
 const comparisonChange = computed(() => {
   const delta = comparison.value?.delta
@@ -402,6 +404,8 @@ async function reload({ automatic = false } = {}) {
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
   } finally { if (requestScope.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
+watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, networkTrend.value]), identity], () => { networkZoom.value = null }, { flush: 'sync' })
+watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) networkZoom.value = null }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })

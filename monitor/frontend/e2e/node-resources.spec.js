@@ -596,6 +596,8 @@ for (const locale of ['zh-cn', 'en']) for (const [family, device, keys, names, l
   await expect(page.getByTestId('resource-paired-hint')).toContainText('MiB/s')
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   expect(state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1).query).toMatchObject({ metrics: keys.join(','), device })
+  const renderer = await page.locator('.chart-renderer').evaluate(element => ({ type: element.__vueParentComponent.props.config.chart_type, labels: element.__vueParentComponent.props.showValueLabels }))
+  expect(renderer).toEqual({ type: family === 'network' ? 'bar' : 'line', labels: family !== 'network' })
   const sampling = page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true })
   await sampling.click()
   await expect(page.getByTestId('resource-evidence')).toContainText('0.00 B/s')

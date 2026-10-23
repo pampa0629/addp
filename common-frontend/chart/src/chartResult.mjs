@@ -2,12 +2,13 @@ import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationVa
 
 const CHART_TYPES = new Set(['bar', 'line', 'pie'])
 
-export function validateChartResult(rows, config, hasMore = false, valueAxes = []) {
+export function validateChartResult(rows, config, hasMore = false, valueAxes = [], maxRows) {
   if (hasMore) return { valid: false, reason: 'partial_result' }
   if (!Array.isArray(rows) || !config || !CHART_TYPES.has(config.chart_type)) {
     return { valid: false, reason: 'invalid_config' }
   }
-  const limit = config.chart_type === 'pie' ? 20 : config.chart_type === 'line' ? 1000 : 500
+  if (maxRows !== undefined && (config.chart_type === 'pie' || !Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > 1000)) return { valid: false, reason: 'invalid_config' }
+  const limit = maxRows ?? (config.chart_type === 'pie' ? 20 : config.chart_type === 'line' ? 1000 : 500)
   if (rows.length > limit) return { valid: false, reason: 'result_limit' }
   if (!config.dimension || !Array.isArray(config.measures) || config.measures.length === 0) {
     return { valid: false, reason: 'invalid_config' }
@@ -102,7 +103,16 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
     textStyle,
     tooltip: { ...tooltipStyle, trigger: 'axis' },
     legend,
-    grid: { left: 24, right: 24, top: 32, bottom: 64, containLabel: true },
+    grid: { left: 24, right: 24, top: 32, bottom: options.zoomable ? 112 : 64, containLabel: true },
+    ...(options.zoomable ? { dataZoom: [{
+      type: 'slider', filterMode: 'none', left: 24, right: 24, bottom: 32, height: 18, showDetail: false,
+      start: options.zoomStart ?? 0, end: options.zoomEnd ?? 100,
+      backgroundColor: options.backgroundColor, borderColor: options.borderColor, fillerColor: options.splitLineColor,
+      handleStyle: { color: options.secondaryTextColor, borderColor: options.borderColor },
+      moveHandleStyle: { color: options.secondaryTextColor },
+      dataBackground: { lineStyle: { color: options.secondaryTextColor }, areaStyle: { color: options.backgroundColor } },
+      selectedDataBackground: { lineStyle: { color: options.textColor }, areaStyle: { color: options.backgroundColor } },
+    }] } : {}),
     xAxis: {
       ...axisStyle,
       type: 'category',
@@ -121,7 +131,7 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
         ...selection,
         ...(config.chart_type === 'bar' ? {
           label: {
-            show: true,
+            show: options.showValueLabels !== false,
             position: 'top',
             ...textStyle,
             formatter: ({ dataIndex }) => formatFieldPresentationValue(rows[dataIndex]?.[measure], presentation, locale),

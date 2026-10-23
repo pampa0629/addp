@@ -200,3 +200,58 @@ test('explicit capacity and percent axes retain units, values, null gaps and ind
   }
   assert.equal(validateChartResult([], { chart_type: 'pie', dimension: 'at', measures: ['used'] }, false, [{ measures: ['used'] }]).valid, false)
 })
+
+
+test('a host can declare a bounded dense Cartesian grid without changing default chart limits', () => {
+  const rows = Array.from({ length: 1000 }, (_, at) => ({ at, receive: at === 1 ? null : 0, transmit: at }))
+  const config = { chart_type: 'bar', dimension: 'at', measures: ['receive', 'transmit'] }
+  assert.equal(validateChartResult(rows, config).reason, 'result_limit')
+  assert.equal(validateChartResult(rows, config, false, [], 1000).valid, true)
+  assert.equal(validateChartResult([...rows, rows[0]], config, false, [], 1000).reason, 'result_limit')
+  assert.equal(validateChartResult(rows.slice(0, 101), config, false, [], 100).reason, 'result_limit')
+  assert.equal(validateChartResult(rows, config, true, [], 1000).reason, 'partial_result')
+  for (const limit of [0, -1, 1.5, 1001, Infinity, NaN, '1000', null]) {
+    assert.equal(validateChartResult([], config, false, [], limit).reason, 'invalid_config')
+  }
+  assert.equal(validateChartResult([], { ...config, chart_type: 'pie', measures: ['receive'] }, false, [], 1000).reason, 'invalid_config')
+})
+
+test('dense grouped bars keep exact values, gaps, units and tooltips when persistent labels are hidden', () => {
+  const rows = [{ at: 'A', receive: 0, transmit: 2 }, { at: 'B', receive: null, transmit: 1 }]
+  const config = { chart_type: 'bar', dimension: 'at', measures: ['receive', 'transmit'], field_presentations: [
+    { field: 'receive', label: 'Receive', unit: 'MiB/s', precision: 2 },
+    { field: 'transmit', label: 'Transmit', unit: 'MiB/s', precision: 2 },
+  ] }
+  const valueAxes = [{ measures: config.measures, label: 'Network rate', min: 0 }]
+  const option = buildChartOption(rows, config, 'en', { valueAxes, showValueLabels: false })
+  assert.equal(option.yAxis[0].name, 'Network rate (MiB/s)')
+  assert.equal(option.yAxis[0].min, 0)
+  assert.deepEqual(option.series.map(series => series.data), [[0, null], [2, 1]])
+  for (const series of option.series) {
+    assert.equal(series.type, 'bar')
+    assert.equal(series.label.show, false)
+    assert.equal(series.stack, undefined)
+    assert.equal(series.yAxisIndex, 0)
+  }
+  assert.equal(option.series[0].tooltip.valueFormatter(0, 0), '0.00 MiB/s')
+  assert.equal(option.series[0].tooltip.valueFormatter(null, 1), '—')
+  assert.equal(option.series[1].tooltip.valueFormatter(2, 0), '2.00 MiB/s')
+  assert.equal(buildChartOption(rows, config).series[0].label.show, true)
+})
+
+
+test('optional zoom changes only the viewport, retains complete rows and follows theme colors', () => {
+  const rows = Array.from({ length: 984 }, (_, at) => ({ at, value: at === 1 ? null : at }))
+  const config = { chart_type: 'bar', dimension: 'at', measures: ['value'] }
+  const theme = { zoomable: true, zoomStart: 95, zoomEnd: 100, secondaryTextColor: 'secondary', borderColor: 'border', backgroundColor: 'surface', splitLineColor: 'grid' }
+  const option = buildChartOption(rows, config, 'en', theme)
+  assert.equal(option.dataZoom[0].filterMode, 'none')
+  assert.deepEqual([option.dataZoom[0].start, option.dataZoom[0].end], [95, 100])
+  assert.deepEqual(option.series[0].data, rows.map(row => row.value))
+  assert.equal(option.dataZoom[0].handleStyle.color, 'secondary')
+  assert.equal(option.dataZoom[0].backgroundColor, 'surface')
+  assert.equal(option.grid.bottom, 112)
+  const plain = buildChartOption(rows, config)
+  assert.equal(plain.dataZoom, undefined)
+  assert.equal(plain.grid.bottom, 64)
+})

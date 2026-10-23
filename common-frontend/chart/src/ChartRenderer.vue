@@ -7,19 +7,23 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { buildChartOption, resultSelectionFromChartEvent, validateChartResult } from './chartResult.mjs'
 
-echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+echarts.use([BarChart, LineChart, PieChart, DataZoomComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   config: { type: Object, required: true },
   hasMore: { type: Boolean, default: false },
-  valueAxes: { type: Array, default: () => [] }
+  valueAxes: { type: Array, default: () => [] },
+  maxRows: { type: Number, default: undefined },
+  showValueLabels: { type: Boolean, default: true },
+  zoomable: { type: Boolean, default: false },
+  initialZoom: { type: Object, default: null }
 })
-const emit = defineEmits(['invalid', 'result-select'])
+const emit = defineEmits(['invalid', 'result-select', 'zoom-change'])
 const { locale } = useI18n()
 const element = ref(null)
 let chart = null
@@ -32,7 +36,7 @@ function hasRenderableSize(target) {
 }
 
 async function render() {
-  const validation = validateChartResult(props.rows, props.config, props.hasMore, props.valueAxes)
+  const validation = validateChartResult(props.rows, props.config, props.hasMore, props.valueAxes, props.maxRows)
   if (!validation.valid) {
     chart?.clear()
     emit('invalid', validation.reason)
@@ -42,12 +46,20 @@ async function render() {
   if (!hasRenderableSize(element.value)) return
   if (!chart) {
     chart = echarts.init(element.value)
+    chart.on('datazoom', () => {
+      const zoom = chart.getOption()?.dataZoom?.[0]
+      if (props.zoomable && zoom) emit('zoom-change', { start: zoom.start, end: zoom.end })
+    })
     chart.on('click', (event) => {
       const selection = resultSelectionFromChartEvent(event, props.rows.length)
       if (selection) emit('result-select', selection)
     })
   }
-  chart.setOption(buildChartOption(props.rows, props.config, locale.value, { ...chartTheme(), valueAxes: props.valueAxes }), true)
+  const zoom = props.zoomable ? chart.getOption()?.dataZoom?.[0] || props.initialZoom : null
+  chart.setOption(buildChartOption(props.rows, props.config, locale.value, {
+    ...chartTheme(), valueAxes: props.valueAxes, showValueLabels: props.showValueLabels,
+    zoomable: props.zoomable, zoomStart: zoom?.start, zoomEnd: zoom?.end,
+  }), true)
 }
 
 function chartTheme() {
@@ -78,7 +90,7 @@ onMounted(() => {
   resizeObserver.observe(element.value)
   render()
 })
-watch(() => [props.rows, props.config, props.hasMore, props.valueAxes, locale.value], render, { deep: true })
+watch(() => [props.rows, props.config, props.hasMore, props.valueAxes, props.maxRows, props.showValueLabels, props.zoomable, locale.value], render, { deep: true })
 onBeforeUnmount(() => {
   themeObserver?.disconnect()
   resizeObserver?.disconnect()

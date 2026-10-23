@@ -50,7 +50,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 企业目录来源：`GET /catalog-resources/changes` 返回 QueryService 最小摘要变化；`POST /runtime/catalog-references/resolve` 动态返回当前最小摘要。两个路由只接受 `addp-catalog` 和 `service.catalog.read`，不得返回 SQL、协议、输出契约或 Consumer Descriptor。
 - 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`POST /api/query/:serviceName/query`。 列表可同时传入正整数 `metric_implementation_id` 与 `metric_revision_id`，仅返回当前租户内绑定该确切修订的 analytical 服务（包括停用服务）；两项必须同时提供，不完整、重复或非法值返回 400。筛选与 search、分页共同作用，total 为筛选后总数。
 - 管理 API：查询服务、图查询服务、注册服务、瓦片服务与图层按 ID 读取或写入时，必须以 AuthContext 的当前 Tenant 限定资源；`/tile-layers/:serviceId/:layerId` 还须校验图层所属服务与路径一致，跨租户或不匹配返回 404。注册服务的公开代理端点属于单独的外部消费边界。
-- 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
+- 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。 DTO/页面路径差异、认证与保护及分层证据统一见[图查询服务验收入口](docs/testing/验收方法与排查.md#图查询服务验收入口)，不将管理接口或其他图模块的验证视为此消费链路已通过。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
 - 瓦片服务管理：`POST/GET /tile`、`GET /tile/search`、`GET /tile/by-name/:serviceName`、`GET/PUT/DELETE /tile/:id`、`/tile-layers/:serviceId`。
 - 数据查询辅助：`POST /data/query`、`POST /data/aggregate`、`GET /data/structure`，资源输入统一为 `locator`，由后端派生执行所需 `engine_id/schema/table`。
@@ -102,7 +102,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 make test-module MODULE=service
 ```
 
-API 样例先完成[公共准备](docs/API测试指南.md#公共准备)，再进入对应协议专题；Go T1、PostgreSQL、前端与跨模块运行的验证范围统一见[验收方法与排查](docs/testing/验收方法与排查.md#标准入口与证据)。健康就绪、单次请求或模拟上游不代替实际业务验收，未运行、失败或跳过项不计为通过。
+API 样例先完成[公共准备](docs/API测试指南.md#公共准备)，再进入对应协议专题；Go T1、PostgreSQL、前端与跨模块运行的验证范围统一见[验收方法与排查](docs/testing/验收方法与排查.md#标准入口与证据)。业务验收统一遵循[API 测试指南的能力与验收边界](docs/API测试指南.md#能力与验收边界)，代理须分别验证请求体完整转发、客户端响应完整性与中断失败。健康就绪、单次请求或模拟上游不代替实际业务验收，未覆盖、未运行、失败或跳过项分别记录，不计为通过。
 
 运行日志按实例可信来源和权限查询，沿[失败定位](docs/testing/验收方法与排查.md#失败定位)与[运行日志规范](../docs/spec/addp模块服务运行日志规范.md)核对，不将固定模块文件当作所有部署的日志来源。
 

@@ -9,7 +9,7 @@ Service 负责将受管数据或确定计算来源发布为可消费服务，并
 | QueryService | 表、普通/联邦 SQL 或确定指标实现修订的查询与有界导出。 | [查询发布与执行](architecture/查询发布与执行.md)、[指标来源与版本](architecture/指标来源与版本.md) |
 | TileService / TileServiceLayer | 多图层二维动态 MVT 或业务 PMTiles 发布。 | [瓦片发布与缓存](architecture/瓦片发布与缓存.md) |
 | RegisteredService / RegisteredServiceLayer | 第三方端点、上游认证配置和能力解析结果；公开代理有独立的访问边界。 | [注册服务](tables/registered_services表.md)、[注册图层](tables/registered_service_layers表.md) |
-| GraphQueryService | 图引擎的 shape / cypher 查询定义与输出配置。 | [当前图服务模型](../backend/internal/models/graph_query_service.go)、[模块契约](../CLAUDE.md) |
+| GraphQueryService | 图引擎的 shape / cypher 查询定义与输出配置。 | [当前图服务模型](../backend/internal/models/graph_query_service.go)、[模块契约](../CLAUDE.md)、[验收入口与边界](testing/验收方法与排查.md#图查询服务验收入口) |
 
 服务分类不等于所有协议、格式和权限路径均已接通。当前入口、Consumer Descriptor 与未决消费边界以各专题及模块契约为准。
 
@@ -24,6 +24,8 @@ Service 负责将受管数据或确定计算来源发布为可消费服务，并
 | Console 入口、表单流程、模块分层与协作 | [管理界面与模块协作](architecture/管理界面与模块协作.md) |
 | 当前表、字段、索引及写入一致性 | [数据库架构](数据库架构.md)及其表说明 |
 | 当前 API 路由、DTO 与模块规则 | [Service 模块说明](../CLAUDE.md)、[当前 Router](../backend/internal/api/router.go) |
+| 协议样例、入口/身份、代理完整性与能力验收边界 | [API 测试指南](API测试指南.md)及其现行测试专题 |
+| 模块门禁、真实链路、客户端互通与故障排查 | [标准入口与证据](testing/验收方法与排查.md#标准入口与证据)、[验收方法与排查](testing/验收方法与排查.md) |
 | 待确认的能力范围与专题归属 | [后续能力清单](service后续能力清单.md) |
 
 表结构、接口请求/响应和数据库迁移以各自的权威正文为准。管理 API 使用当前 Tenant AuthContext 与精确 Permission；公开消费、源数据和数据保护仍各自核验，不从服务状态、目录可见或配置保存推导已获授权。
@@ -32,4 +34,4 @@ Service 负责将受管数据或确定计算来源发布为可消费服务，并
 
 固定协议和能力以当前路由、模型及实现为据。字段/来源不完整、修订撤回、依赖漂移或版本冲突按 owner 契约拒绝；未接通的栅格渲染、TMS 路由、缓存 TTL 判定和公开代理控制不计为已实现或已验收。
 
-实现验证使用根 Makefile 的现有标准入口，按[测试与验收规范](../../docs/spec/addp测试与验收规范.md)识别受影响门禁。指标选择与预览的具体验证入口见[指标来源与版本](architecture/指标来源与版本.md)。
+实现验证使用根 Makefile 的现有标准入口，按[测试与验收规范](../../docs/spec/addp测试与验收规范.md)识别受影响门禁；业务结论统一遵循[API 测试指南的验收边界](API测试指南.md#能力与验收边界)。指标选择与预览的具体验证入口见[指标来源与版本](architecture/指标来源与版本.md)，编译预览或确定性夹具成功不代替真实数据与完整链路验收。
