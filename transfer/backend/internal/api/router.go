@@ -89,6 +89,8 @@ func SetupRouter(
 	capabilityHandler := NewTransferCapabilityHandler()
 	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(fieldDefinitionRecommendationService)
 
+	protected.GET("/source-protection-options", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.SourceProtectionOptions)
+	protected.POST("/source-protection-checks", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.CheckSourceProtection)
 	protected.GET("/capabilities", capabilityHandler.Get)
 	protected.POST("/task-config-checks", permission(transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read"), taskHandler.CheckTaskConfig)
 	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)

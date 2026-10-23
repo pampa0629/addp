@@ -39,7 +39,7 @@ func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalEx
 	installActiveTransferProjectionForComponent(t, store, model, path, fields, dataprotection.Component{
 		Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
 	})
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}}.descriptor)
 	protect, err := gate.PrepareBoundedEncodedRecordProtection(t.Context(), 7, map[string]interface{}{
 		"source": map[string]interface{}{"locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"},
 	}, fields)
@@ -115,10 +115,10 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 	installActiveTransferProjectionForComponent(t, store, model, path, fields, dataprotection.Component{
 		Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
 	})
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}}.descriptor)
 	protector, err := gate.PrepareBoundedTableProtection(t.Context(), 7, map[string]interface{}{
 		"source": map[string]interface{}{"locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("prepare bounded table protection: %v", err)
 	}

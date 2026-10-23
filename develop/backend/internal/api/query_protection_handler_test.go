@@ -1,6 +1,8 @@
 package api
 
 import (
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,19 @@ func TestQueryMaskingCandidatesRejectSubjectSelectorsAndDuplicateSources(t *test
 		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/query-protection-options"+query, nil))
 		if response.Code != 400 || !strings.Contains(response.Body.String(), "query_protection_choice_invalid") || response.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal("candidate selectors reached a service", response.Code)
+		}
+	}
+}
+
+func TestProtectionResponseDistinguishesIAMDenialFromMaskingConflict(t *testing.T) {
+	for _, item := range []struct {
+		err    error
+		status int
+	}{{commonAPI.ErrForbidden, 403}, {commonAPI.ErrUnauthorized, 401}, {dataprotection.ErrRoleOptionUnavailable, 409}, {dataprotection.ErrRoleOptionIneligible, 409}} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		if !writeQueryProtectionError(ctx, item.err) || recorder.Code != item.status {
+			t.Fatal("IAM denial was confused with protection conflict", item.err, recorder.Code)
 		}
 	}
 }

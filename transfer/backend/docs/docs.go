@@ -884,6 +884,178 @@ const docTemplate = `{
                 ]
             }
         },
+        "/source-protection-checks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据保护 | Data protection"
+                ],
+                "summary": "核验本人导出脱敏选择 | Check my export masking selection",
+                "parameters": [
+                    {
+                        "description": "源与字段选项引用 | Source and field option references",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferSourceProtectionSelection"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.execute"
+                ]
+            }
+        },
+        "/source-protection-options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据保护 | Data protection"
+                ],
+                "summary": "本人导出脱敏候选 | My export masking options",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "精确源数据项 | Exact source data item",
+                        "name": "source_locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferProtectionOptions"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.execute"
+                ]
+            }
+        },
         "/task-config-checks": {
             "post": {
                 "security": [
@@ -2148,6 +2320,11 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "system.execution_authorization.create",
+                    "develop.data_read.execute",
+                    "develop.data_write.execute"
+                ],
                 "x-addp-required-permissions": [
                     "transfer.task.execute"
                 ]
@@ -2496,6 +2673,67 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "client.ExecutionEngineAccessScope": {
+            "type": "object",
+            "properties": {
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.IssuedExecutionAuthorization": {
+            "type": "object",
+            "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.ExecutionEngineAccessScope"
+                    }
+                },
+                "actor_principal_id": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
+                },
+                "issued_authorization_version": {
+                    "type": "string"
+                },
+                "source_definition_id": {
+                    "type": "string"
+                },
+                "source_definition_version": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.TransferExecutionConfig": {
             "type": "object",
             "properties": {
@@ -2547,6 +2785,12 @@ const docTemplate = `{
                 "policy": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "protection_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleChoice"
+                    }
                 },
                 "query": {
                     "$ref": "#/definitions/client.TransferExecutionQuery"
@@ -2673,6 +2917,116 @@ const docTemplate = `{
                 }
             }
         },
+        "client.TransferProtectionOptions": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleOptions"
+                    }
+                }
+            }
+        },
+        "client.TransferSourceProtectionSelection": {
+            "type": "object",
+            "properties": {
+                "protection_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleChoice"
+                    }
+                },
+                "source_locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.FieldRoleChoice": {
+            "type": "object",
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "selection": {
+                    "$ref": "#/definitions/dataprotection.RoleOptionSelection"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
+        "dataprotection.FieldRoleOptions": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component_key": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleOptionCandidate"
+                    }
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
+        "dataprotection.ResourceReference": {
+            "type": "object",
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_identity": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.RoleOptionCandidate": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.RoleOptionSelection": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "option_id": {
+                    "type": "string"
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                }
+            }
+        },
         "execution.DiagnosticStep": {
             "type": "object",
             "properties": {
@@ -2721,6 +3075,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "step_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.InternalTaskScope": {
+            "type": "object",
+            "properties": {
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string"
+                },
+                "task_type": {
                     "type": "string"
                 }
             }
@@ -2914,6 +3288,9 @@ const docTemplate = `{
                 },
                 "config": {
                     "$ref": "#/definitions/client.TransferExecutionConfig"
+                },
+                "execution_authorization": {
+                    "$ref": "#/definitions/client.IssuedExecutionAuthorization"
                 },
                 "export_session": {
                     "$ref": "#/definitions/client.TransferExportSessionReference"
@@ -3628,6 +4005,12 @@ const docTemplate = `{
                 "policy": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "protection_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleChoice"
+                    }
                 },
                 "query": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferQuerySourceDoc"

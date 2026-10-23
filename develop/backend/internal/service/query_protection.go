@@ -85,6 +85,9 @@ func (s *SQLEngineService) queryProtectionTarget(ctx context.Context, tenant, en
 }
 
 func (s *SQLEngineService) ValidateQueryProtectionChoices(ctx context.Context, tenant, user uint, bearer string, task *models.DevTask) error {
+	if err := s.ValidateExportProtectionChoices(ctx, tenant, user, bearer, task); err != nil {
+		return err
+	}
 	choices, err := models.QueryProtectionChoices(task.Content)
 	if err != nil {
 		return err

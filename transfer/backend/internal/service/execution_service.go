@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -25,11 +26,12 @@ import (
 
 // ExecutionService 执行记录服务（使用统一执行表）
 type ExecutionService struct {
-	db                *gorm.DB
-	taskExecutionRepo *commonExecution.TaskExecutionRepository // 统一执行记录仓库
-	taskRepo          *repository.TaskRepository
-	logger            *slog.Logger
-	activeLeases      sync.Map
+	prepareRoleExecution func(context.Context, *models.TransferTask, *commonExecution.TaskExecution) error
+	db                   *gorm.DB
+	taskExecutionRepo    *commonExecution.TaskExecutionRepository // 统一执行记录仓库
+	taskRepo             *repository.TaskRepository
+	logger               *slog.Logger
+	activeLeases         sync.Map
 }
 
 func (s *ExecutionService) BindBoundedLease(executionID uint, lease commonExecution.Lease) {
@@ -660,6 +662,16 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, RetryOfExecutionID: &oldExecution.ExecutionID,
 		TriggeredBy: &triggeredBy, ExecutionConfig: task.Config, CreatedAt: now, UpdatedAt: now,
+	}
+	if choices, err := models.SourceProtectionChoices(task.Config); err != nil {
+		return nil, err
+	} else if len(choices) > 0 {
+		if s.prepareRoleExecution == nil {
+			return nil, dataprotection.ErrRoleOptionIneligible
+		}
+		if err := s.prepareRoleExecution(ctx, task, record); err != nil {
+			return nil, err
+		}
 	}
 	if _, _, err := s.taskRepo.ClaimExecution(ctx, task.ID, tenantID, record, incrementalSourceIdentity(task)); err != nil {
 		return nil, fmt.Errorf("claim retry execution: %w", err)

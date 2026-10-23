@@ -1,5 +1,45 @@
 basePath: /api/v1/transfer
 definitions:
+  client.ExecutionEngineAccessScope:
+    properties:
+      effects:
+        items:
+          type: string
+        type: array
+      engine_id:
+        type: string
+    type: object
+  client.IssuedExecutionAuthorization:
+    properties:
+      accesses:
+        items:
+          $ref: '#/definitions/client.ExecutionEngineAccessScope'
+        type: array
+      actor_principal_id:
+        type: string
+      audience:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      internal_task:
+        $ref: '#/definitions/execution.InternalTaskScope'
+      issued_authorization_version:
+        type: string
+      source_definition_id:
+        type: string
+      source_definition_version:
+        type: string
+      source_type:
+        type: string
+      tenant_id:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
   client.TransferExecutionConfig:
     properties:
       batch_size:
@@ -35,6 +75,10 @@ definitions:
       policy:
         additionalProperties: true
         type: object
+      protection_choices:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleChoice'
+        type: array
       query:
         $ref: '#/definitions/client.TransferExecutionQuery'
       representation:
@@ -117,6 +161,77 @@ definitions:
         example: ""
         type: string
     type: object
+  client.TransferProtectionOptions:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleOptions'
+        type: array
+    type: object
+  client.TransferSourceProtectionSelection:
+    properties:
+      protection_choices:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleChoice'
+        type: array
+      source_locator:
+        type: string
+    type: object
+  dataprotection.FieldRoleChoice:
+    properties:
+      component_key:
+        type: string
+      selection:
+        $ref: '#/definitions/dataprotection.RoleOptionSelection'
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
+  dataprotection.FieldRoleOptions:
+    properties:
+      assessment_revision:
+        type: integer
+      component_key:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/dataprotection.RoleOptionCandidate'
+        type: array
+      policy_id:
+        type: string
+      policy_revision:
+        type: integer
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
+  dataprotection.ResourceReference:
+    properties:
+      component_key:
+        type: string
+      owner_module:
+        type: string
+      resource_identity:
+        type: string
+      resource_type:
+        type: string
+    type: object
+  dataprotection.RoleOptionCandidate:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  dataprotection.RoleOptionSelection:
+    properties:
+      assessment_revision:
+        type: integer
+      option_id:
+        type: string
+      policy_id:
+        type: string
+      policy_revision:
+        type: integer
+    type: object
   execution.DiagnosticStep:
     properties:
       duration:
@@ -149,6 +264,19 @@ definitions:
       occurred_at:
         type: string
       step_id:
+        type: string
+    type: object
+  execution.InternalTaskScope:
+    properties:
+      digest:
+        type: string
+      generation:
+        type: string
+      resource_id:
+        type: string
+      revision:
+        type: string
+      task_type:
         type: string
     type: object
   execution.ReadGrant:
@@ -277,6 +405,8 @@ definitions:
         type: integer
       config:
         $ref: '#/definitions/client.TransferExecutionConfig'
+      execution_authorization:
+        $ref: '#/definitions/client.IssuedExecutionAuthorization'
       export_session:
         $ref: '#/definitions/client.TransferExportSessionReference'
       name:
@@ -780,6 +910,10 @@ definitions:
       policy:
         additionalProperties: true
         type: object
+      protection_choices:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleChoice'
+        type: array
       query:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferQuerySourceDoc'
       representation:
@@ -2475,6 +2609,117 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.configuration.update
+  /source-protection-checks:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 源与字段选项引用 | Source and field option references
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.TransferSourceProtectionSelection'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 核验本人导出脱敏选择 | Check my export masking selection
+      tags:
+      - 数据保护 | Data protection
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
+  /source-protection-options:
+    get:
+      parameters:
+      - description: 精确源数据项 | Exact source data item
+        in: query
+        name: source_locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.TransferProtectionOptions'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 本人导出脱敏候选 | My export masking options
+      tags:
+      - 数据保护 | Data protection
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
   /task-config-checks:
     post:
       consumes:
@@ -3344,6 +3589,10 @@ paths:
       tags:
       - 任务管理 | Task Management
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - system.execution_authorization.create
+      - develop.data_read.execute
+      - develop.data_write.execute
       x-addp-required-permissions:
       - transfer.task.execute
   /task-definitions/{id}/stop:

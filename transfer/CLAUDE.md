@@ -79,6 +79,14 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - 执行管理：`POST /executions/:execution_id/retry`、`GET /executions/:execution_id/progress|events` 按统一 `execution_id` 定位执行记录；当前没有真实 worker 中断能力，因此不提供 cancel/stop API，TaskProvider 保持 `supports_cancel=false`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
+### 角色专用导出选择
+
+当前第一方登录用户可在任务配置中一次选择并保存 `config.source.protection_choices`，空选择采用导出默认保护。复用共享 FieldMaskingChoices 与 Common 选项解析，候选与检查分别为 `GET /source-protection-options?source_locator=...` 和 `POST /source-protection-checks`，均按当前账号核验、沿用 transfer.task.execute，不接受用户／角色选择器。来源保护只读取 System Runtime Descriptor，不为判断字段保护获取连接凭据。
+
+首期只开放手动 bounded/snapshot/native table 及其 PreparedQuery 来源；保存及名称更新重新校验，切换来源／模式不丢弃旧选择，定时、委托、编排、continuous、增量与 encoded/record 来源不消费特殊方式。启动和手动重试在同步用户请求内签发 audience=transfer 的本次执行授权，要求现有 system.execution_authorization.create、transfer.task.execute 和实际源读／目标写效果资格；不增加角色或权限。缺执行权限返回权限拒绝，角色／选项失效返回保护选择冲突，两者不混淆。
+
+Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角色，以该用户 EA 获取源和目标引擎访问，在字段映射与 Writer 前应用 export 保护。选项、资格或来源失效明确拒绝，不回落默认。Develop 全量导出使用独立 export 选择与共享会话精确摘要核验来源，再绑定签发的真实用户执行授权；默认导出仅保留已有观察来源，不自动提升为执行权限。原值授权、应用凭据和角色变更不在本轮范围。T1、真实 PostgreSQL 和前端门禁见 Security 同日记录；真实账号全链路 T4 需单独验收，不能由上述门禁推定。
+
 ## 执行规则
 
 - 服务代发导出必须按已认证 Client ID 推导 Manager／Develop owner，再从 System 活动模块注册信息解析 Backend 地址，使用 Transfer tenant Service Token 核验导出会话、预绑定 execution UUID、完整请求摘要和待执行状态。核验得到的用户只写入 `triggered_by`，不能写入执行授权 actor 字段。请求不接受自报用户或回调地址；无来源的机器执行不声明人类发起用户，不能为旧记录猜测归属。

@@ -59,10 +59,10 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	}
 	store := transferProjectionStore(t)
 	installActiveTransferProjection(t, store, model, sourcePath, fields)
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}.descriptor)
 	protector, err := gate.PrepareBoundedTableProtection(ctx, 7, map[string]interface{}{
 		"source": map[string]interface{}{"locator": fmt.Sprintf("addp://engine/11/path/%s/%s?type=table", schema, sourceTable)},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +102,60 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	if phone != "136****4499" {
 		t.Fatalf("exported phone = %q, want masked value", phone)
 	}
+
+	t.Run("role_choices_native_and_query_real_output", func(t *testing.T) {
+		roleStore := transferProjectionStore(t)
+		choice := installTransferRoleOption(t, roleStore, model, sourcePath, fields)
+		roleGate := NewGate(roleStore, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}.descriptor)
+		roles := []string{"custom.analytics"}
+		resolve := func(context.Context) (*dataprotection.QueryRoleSelection, error) {
+			return &dataprotection.QueryRoleSelection{Choices: []dataprotection.FieldRoleChoice{choice}, RoleKeys: roles, ExpiresAt: time.Now().Add(time.Minute)}, nil
+		}
+		config := map[string]any{"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"}, "source": map[string]any{"locator": fmt.Sprintf("addp://engine/11/path/%s/%s?type=table", schema, sourceTable), "data_type": "table", "representation": "native", "protection_choices": []dataprotection.FieldRoleChoice{choice}}}
+		for _, querySource := range []bool{false, true} {
+			roles = []string{"custom.analytics"}
+			protected, err := roleGate.PrepareBoundedTableProtection(ctx, 7, config, resolve)
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine, err := executor.NewTableTransferExecutor("postgresql", "postgresql", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine.SourceProtector = protected
+			name := fmt.Sprintf("persons_role_%t", querySource)
+			target := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermSchema, schema, plugin.EngineCatalogTermTable, plugin.EngineCatalogKindTable, name)
+			source := executor.TableSourcePlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: sourcePath, TableInfo: &datatype.TableInfo{Name: sourceTable, Fields: fields}}
+			if querySource {
+				source.Kind = executor.TableEndpointQuery
+				source.Query = fmt.Sprintf(`SELECT id,phone FROM "%s"."%s"`, schema, sourceTable)
+				source.RuntimeQuery = &plugin.QueryRequest{EngineID: 11, Language: "sql", Query: source.Query, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true}}
+				source.ExpectedQueryReadSet, _ = plugin.NewQueryReadSet(sourcePath)
+			}
+			plan := executor.TableTransferPlan{Source: source, Target: executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: target}, BatchSize: 1}
+			metrics, err := engine.Execute(ctx, plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if metrics.RecordsWritten != 1 {
+				t.Fatal("selected output not written")
+			}
+			var actual string
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT phone FROM "%s"."%s"`, schema, name)).Scan(&actual); err != nil || len(actual) != 64 {
+				t.Fatal("real target did not receive selected SM3", err)
+			}
+			roles = []string{"custom.reader"}
+			plan.Target.DeleteBeforeWrite = true
+			metrics, err = engine.Execute(ctx, plan)
+			if err == nil || metrics != nil && (metrics.RecordsRead != 0 || metrics.RecordsWritten != 0) {
+				t.Fatal("revoked role crossed target boundary", err)
+			}
+			var retained string
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT phone FROM "%s"."%s"`, schema, name)).Scan(&retained); err != nil || retained != actual {
+				t.Fatal("rejected role altered target", err)
+			}
+		}
+	})
 
 	t.Run("native_live_schema_drift_before_target_mutation", func(t *testing.T) {
 		var originalOID uint32
@@ -271,9 +325,9 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 			installActiveTransferProjectionForComponentAt(t, expiredStore, model, sourcePath, fields, dataprotection.Component{
 				Key: "phone", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
 			}, time.Now().UTC().Add(-2*time.Hour))
-			bound, err := NewGate(expiredStore, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}).PrepareBoundedTableProtection(ctx, 7, map[string]interface{}{
+			bound, err := NewGate(expiredStore, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}.descriptor).PrepareBoundedTableProtection(ctx, 7, map[string]interface{}{
 				"source": map[string]interface{}{"locator": fmt.Sprintf("addp://engine/11/path/%s/%s?type=table", schema, sourceTable)},
-			})
+			}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

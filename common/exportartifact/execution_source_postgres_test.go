@@ -1,12 +1,14 @@
 package exportartifact
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -41,7 +43,7 @@ func TestExportExecutionSourceAgainstPostgres(t *testing.T) {
 	}
 	// A pre-existing session with unknown provenance must survive schema installation,
 	// without acquiring a guessed user binding for an already-created execution.
-	if err := tx.Exec("ALTER TABLE " + table + " DROP COLUMN execution_request_digest").Error; err != nil {
+	if err := tx.Exec("ALTER TABLE " + table + " DROP COLUMN execution_request_digest, DROP COLUMN protection").Error; err != nil {
 		t.Fatal(err)
 	}
 	oldID := uuid.NewString()
@@ -63,6 +65,14 @@ func TestExportExecutionSourceAgainstPostgres(t *testing.T) {
 	if err := store.Create(t.Context(), session); err != nil {
 		t.Fatal(err)
 	}
+	selection := &client.TransferSourceProtectionSelection{SourceLocator: "addp://engine/11/path/public/persons?type=table", Choices: []dataprotection.FieldRoleChoice{{Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}, ComponentKey: "phone", Selection: dataprotection.RoleOptionSelection{PolicyID: "policy", PolicyRevision: 1, AssessmentRevision: 1, OptionID: "hash"}}}}
+	if err := tx.Table(table).Where("id = ?", session.ID).Update("protection", gorm.Expr("?::jsonb", string(mustProtectionJSON(t, selection)))).Error; err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Get(t.Context(), session.ID, 7, 9)
+	if err != nil || stored.Protection == nil || stored.Protection.SourceLocator != selection.SourceLocator || len(stored.Protection.Choices) != 1 {
+		t.Fatal("role selection did not survive PostgreSQL storage", err)
+	}
 	request := client.ExportExecutionSourceRequest{ExecutionID: session.TransferExecutionID, RequestDigest: session.ExecutionRequestDigest}
 	for _, tenant := range []uint{7, 8} {
 		got, err := store.GetExecutionSource(t.Context(), session.ID, tenant, request)
@@ -77,4 +87,13 @@ func TestExportExecutionSourceAgainstPostgres(t *testing.T) {
 	if got, err := store.GetExecutionSource(t.Context(), session.ID, 7, request); err != nil || got != nil {
 		t.Fatal("final session accepted")
 	}
+}
+
+func mustProtectionJSON(t *testing.T, selection *client.TransferSourceProtectionSelection) []byte {
+	t.Helper()
+	raw, err := json.Marshal(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

@@ -74,7 +74,8 @@ common/
 - `common/config` 承载部署配置读取和进程启动辅助；模块端口事实必须来自各模块已加载的配置，不维护第二张模块默认端口表。
 - `common/secretcipher` 只承载跨模块敏感配置值的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。
 - `common/dataprotection` 只承载 Security 与参与 Owner 共享的保护投影契约、校验、确定性算法和存量 payload 一次性协议转换，不读写 Security 业务事实；通用本地投影存储的 DDL、有序迁移、结构校验和迁移锁只允许在 `common/dataprotection/projectionstore` 定义，Owner 不得复制或扩展私有列。Owner 可注入事务变化屏障，使派生结果收敛与投影 cursor 原子提交，但屏障实现和派生业务语义仍归 Owner。
-- `projectionstore.PrepareTableProtection` 与查询保护复用字段角色选项解析和精确消费校验，显式接收请求作用域选择；空选择使用默认保护，非空选择逐批复核当前投影与资格期限，来源未命中或角色／修订失效拒绝输出。真实角色事实与 execution/attempt/lease 的核验属于消费 Owner，共享层不按任务创建人推断资格。原生选择的 SQLite 与真实 PostgreSQL 回归由 Common Go 和既有 `--test projection-store` 入口发现；这不表示 Transfer 任务选择或全量导出已接入。
+- `projectionstore.PrepareTableProtection` 与查询保护复用字段角色选项解析和精确消费校验，显式接收请求作用域选择；空选择使用默认保护，非空选择逐批复核当前投影与资格期限，来源未命中或角色／修订失效拒绝输出。真实角色事实与 execution/attempt/lease 的核验属于消费 Owner，共享层不按任务创建人推断资格。原生选择的 SQLite 与真实 PostgreSQL 回归由 Common Go 和既有 `--test projection-store` 入口发现；Transfer 的业务接入和验收范围见其 CLAUDE。
+- `exportartifact` 的角色专用会话只保存源 locator／字段选项引用，并将本次用户 Transfer 执行授权事实纳入请求摘要；Get/Open 必须由 Owner 提供当前用户核验回调，没有回调拒绝交付。默认会话不增加角色依赖。Common 不长期保存角色快照或用户令牌，也不把会话发起人 User ID 当作执行权限。
 - 数据保护拦截的具体原因必须保留为 `common/dataprotection` 或 Provider 的类型化错误链，不能解析错误正文猜测到期、敏感计算或数据权限。`common/execution` 统一映射受控诊断 reason，Owner 只补充实际阶段和稳定错误码；闭合原因与共享中英文展示见[执行监控规范](../docs/spec/tasks/执行监控.md)。未证明具体原因保留通用保护提示，不改变任何保护决定或补造历史事实。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - `common/dataprotection/projectionstore.InflightReads` 是 Owner 本进程按 Tenant 追踪在途保护读取的唯一计数实现；Begin 必须先于保护门禁，幂等 end 必须覆盖最终输出。Owner 仍负责持久 cursor 刷新、跨进程有效 execution lease 核对和回执；计数不产生资源授权。

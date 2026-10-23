@@ -24,6 +24,9 @@
       "passwordRequired": "Please enter password"
     },
     "query": {
+      "queryMaskingTab": "Query method",
+      "exportMaskingTab": "Full export method",
+      "exportMaskingHint": "Export has independent protection rules. Save your choice once for reuse; leave unselected for default export protection. Special methods require Transfer execution permissions for the current account.",
       "maskingLoadFailed": "Unable to load current selectable masking methods. Retry.",
       "title": "Query Development",
       "selectDataSource": "Select data source",

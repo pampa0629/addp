@@ -121,7 +121,7 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 }
 
 func (s *ExportService) GetExport(ctx context.Context, id, tenantID, userID uint) (*ExportSessionResponse, error) {
-	response, err := s.artifacts.Get(ctx, id, tenantID, userID)
+	response, err := s.artifacts.Get(ctx, id, tenantID, userID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (s *ExportService) ResolveExecutionSource(ctx context.Context, id, tenantID
 }
 
 func (s *ExportService) OpenExportFile(ctx context.Context, id, tenantID, userID uint) (*ExportFile, error) {
-	return s.artifacts.Open(ctx, id, tenantID, userID)
+	return s.artifacts.Open(ctx, id, tenantID, userID, nil)
 }
 
 func managerExportResponse(response *exportartifact.SessionResponse) *ExportSessionResponse {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/addp/common/dataprotection"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -23,7 +24,7 @@ func TestPrepareBoundedTableSourceProtectionUsesPreparedQueryAcrossEngines(t *te
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			gate := &recordingSourceProtectionGate{}
-			if _, err := prepareBoundedTableSourceProtection(t.Context(), gate, 7, map[string]interface{}{"source": map[string]interface{}{"locator": "fixture"}}, test.kind); err != nil {
+			if _, err := prepareBoundedTableSourceProtection(t.Context(), gate, 7, map[string]interface{}{"source": map[string]interface{}{"locator": "fixture"}}, test.kind, nil); err != nil {
 				t.Fatal(err)
 			}
 			if gate.prepareCalls != test.wantPrepare || gate.resourceCalls != test.wantResource {
@@ -43,7 +44,7 @@ func (g *recordingSourceProtectionGate) RequireSourceConfig(context.Context, uin
 	return nil
 }
 
-func (g *recordingSourceProtectionGate) PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}) (executor.TableSourceProtector, error) {
+func (g *recordingSourceProtectionGate) PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}, func(context.Context) (*dataprotection.QueryRoleSelection, error)) (executor.TableSourceProtector, error) {
 	g.prepareCalls++
 	return nil, nil
 }

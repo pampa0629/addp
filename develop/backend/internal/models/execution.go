@@ -51,6 +51,7 @@ type CreateQueryExportRequest struct {
 }
 
 type CreateQueryExportResponse struct {
+	RequiresCurrentUser bool   `json:"requires_current_user,omitempty"`
 	ID                  uint   `json:"id"`
 	Format              string `json:"format"`
 	FileName            string `json:"file_name"`

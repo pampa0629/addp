@@ -312,7 +312,7 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 		return
 	}
 
-	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), execution.ID, tenantID, userID)
+	newExecution, err := h.executionService.RetryExecution(transferTaskAuthorizationContext(c), execution.ID, tenantID, userID)
 	if err != nil {
 		if errors.Is(err, service.ErrCDCSchemaChangeBlocked) {
 			c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.schema_change_blocked")})

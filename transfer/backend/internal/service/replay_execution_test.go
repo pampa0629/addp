@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/addp/common/dataprotection"
 	"io"
 	"log/slog"
 	"net/http"
@@ -29,7 +30,7 @@ func (allowTransferSourceProtectionGate) RequireSourceConfig(context.Context, ui
 	return nil
 }
 
-func (allowTransferSourceProtectionGate) PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}) (executor.TableSourceProtector, error) {
+func (allowTransferSourceProtectionGate) PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}, func(context.Context) (*dataprotection.QueryRoleSelection, error)) (executor.TableSourceProtector, error) {
 	return nil, nil
 }
 

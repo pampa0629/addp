@@ -7,12 +7,15 @@ import (
 	"sort"
 	"strings"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
+	"strconv"
 )
 
 var (
@@ -59,10 +62,11 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	if !ok {
 		return nil, fmt.Errorf("%w: query execution content is unavailable", ErrQueryExportInvalid)
 	}
-	choices, choiceErr := models.QueryProtectionChoices(content)
-	if choiceErr != nil || len(choices) > 0 {
-		return nil, fmt.Errorf("%w: role-selected masking is not supported by the Transfer export path", ErrQueryExportInvalid)
+	choices, choiceErr := models.QueryExportProtectionChoices(content)
+	if choiceErr != nil {
+		return nil, choiceErr
 	}
+
 	query := strings.TrimSpace(interfaceString(content["query"]))
 	language := strings.ToLower(strings.TrimSpace(interfaceString(content["query_type"])))
 	if query == "" || language == "" {
@@ -90,14 +94,37 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	if formatType != format.FormatCSV {
 		return nil, fmt.Errorf("%w: unsupported query export format", ErrQueryExportInvalid)
 	}
+	var authorize func(context.Context, string, commonClient.TransferExecutionConfig) (*commonClient.IssuedExecutionAuthorization, error)
+	if len(choices) > 0 {
+		if err := s.validateProtection(ctx, &commonClient.TransferSourceProtectionSelection{SourceLocator: sourceLocator, Choices: choices}); err != nil {
+			return nil, err
+		}
+		authorize = func(issueCtx context.Context, id string, config commonClient.TransferExecutionConfig) (*commonClient.IssuedExecutionAuthorization, error) {
+			engine := s.executor.sqlEngine
+			if engine == nil || engine.executionAuthorizations == nil {
+				return nil, dataprotection.ErrRoleOptionIneligible
+			}
+			bearer, _ := ctx.Value(exportUserTokenKey{}).(string)
+			issued, err := engine.executionAuthorizations.Issue(issueCtx, bearer, commonClient.IssueExecutionAuthorizationRequest{Audience: "transfer", ExecutionID: id, ExpiresIn: 3600, Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: strconv.FormatUint(uint64(parsedSource.EngineID), 10), Effects: []string{"read"}}}})
+			if status, ok := commonClient.SystemAPIStatusCode(err); err != nil && ok && status == 403 {
+				return nil, commonAPI.ErrForbidden
+			} else if err != nil && ok && status == 401 {
+				return nil, commonAPI.ErrUnauthorized
+			}
+			if err != nil || issued == nil || facts.Context.TenantMembershipID == nil || issued.TenantMembershipID != *facts.Context.TenantMembershipID || issued.IssuedAuthorizationVersion != facts.Authorization.AuthorizationVersion {
+				return nil, dataprotection.ErrRoleOptionIneligible
+			}
+			return issued, nil
+		}
+	}
 	created, err := s.artifacts.Create(ctx, exportartifact.CreateRequest{
-		TenantID: tenantID, UserID: userID, SourceRef: execution.ExecutionID, Format: formatType,
+		AuthorizeExecution: authorize, TenantID: tenantID, UserID: userID, SourceRef: execution.ExecutionID, Format: formatType,
 		FileName: strings.TrimSpace(req.FileName), ExecutionName: "develop_query_export_" + execution.ExecutionID,
 		ExecutionConfig: commonClient.TransferExecutionConfig{
 			Runtime: commonClient.TransferExecutionRuntime{Boundary: commonExecution.ExecutionBoundaryBounded},
 			Load:    commonClient.TransferExecutionLoad{Mode: "snapshot"},
 			Source: commonClient.TransferExecutionEndpoint{
-				Locator: sourceLocator, DataType: "table", Representation: "native",
+				Locator: sourceLocator, DataType: "table", Representation: "native", ProtectionChoices: choices,
 				Query: &commonClient.TransferExecutionQuery{Language: language, Statement: query, Parameters: effectiveParameters, Inputs: queryInputs},
 			},
 			Target:     commonClient.TransferExecutionEndpoint{DataType: "table", Representation: "encoded", Format: string(formatType), Policy: map[string]interface{}{"apply_mode": "replace"}},
@@ -124,7 +151,7 @@ func queryExportIdentityProjection(columns []string) []commonClient.TransferExec
 }
 
 func (s *QueryExportService) Get(ctx context.Context, id, tenantID, userID uint) (*models.CreateQueryExportResponse, error) {
-	response, err := s.artifacts.Get(ctx, id, tenantID, userID)
+	response, err := s.artifacts.Get(ctx, id, tenantID, userID, s.validateProtection)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +169,7 @@ func (s *QueryExportService) Open(ctx context.Context, id, tenantID, userID uint
 	if _, err := s.Get(ctx, id, tenantID, userID); err != nil {
 		return nil, err
 	}
-	return s.artifacts.Open(ctx, id, tenantID, userID)
+	return s.artifacts.Open(ctx, id, tenantID, userID, s.validateProtection)
 }
 
 func queryExportResponse(response *exportartifact.SessionResponse) *models.CreateQueryExportResponse {
@@ -150,7 +177,7 @@ func queryExportResponse(response *exportartifact.SessionResponse) *models.Creat
 		return nil
 	}
 	return &models.CreateQueryExportResponse{
-		ID: response.ID, Format: response.Format, FileName: response.FileName,
+		RequiresCurrentUser: response.RequiresCurrentUser, ID: response.ID, Format: response.Format, FileName: response.FileName,
 		TransferExecutionID: response.TransferExecutionID, Status: response.Status,
 		ErrorMessage: response.ErrorMessage, DownloadURL: response.DownloadURL,
 		CreatedAt: response.CreatedAt, UpdatedAt: response.UpdatedAt,

@@ -223,6 +223,12 @@
         <span class="form-hint">{{ t('transfer.taskWizard.continuousPollBatchSizeHint') }}</span>
       </el-form-item>
     </el-form>
+    <el-collapse v-model="maskingPanels">
+      <el-collapse-item name="masking" :title="t('transfer.taskWizard.exportMaskingTitle')">
+        <p class="field-hint">{{ t('transfer.taskWizard.exportMaskingHint') }}</p>
+        <FieldMaskingChoices v-model="wizardState.sourceProtectionChoices.value" :fields="maskingFields" :loading="maskingLoading" :error="maskingError" @refresh="refreshMasking" />
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 
@@ -230,7 +236,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import { ScheduleConfig } from '@common-ui'
+import { ScheduleConfig, FieldMaskingChoices } from '@common-ui'
+import { taskAPI } from '@/api/tasks'
 
 const { t } = useI18n()
 
@@ -240,6 +247,35 @@ const props = defineProps({
     required: true
   }
 })
+
+const maskingPanels = ref(props.wizardState.sourceProtectionChoices.value.length ? ['masking'] : [])
+const maskingFields = ref([])
+const maskingLoading = ref(false)
+const maskingError = ref('')
+let maskingSequence = 0
+const protectionSource = computed(() => props.wizardState.taskConfig.value.config.source)
+const maskingSupported = computed(() => props.wizardState.runtimeBoundary.value === 'bounded' && props.wizardState.loadMode.value === 'snapshot' && protectionSource.value.data_type === 'table' && protectionSource.value.representation === 'native')
+async function refreshMasking() {
+  const sequence = ++maskingSequence
+  maskingFields.value = []
+  maskingError.value = ''
+  if (!maskingSupported.value || !protectionSource.value.locator) {
+    maskingError.value = t('transfer.taskWizard.exportMaskingUnsupported')
+    maskingLoading.value = false
+    return
+  }
+  maskingLoading.value = true
+  try {
+    const response = await taskAPI.protectionOptions(protectionSource.value.locator)
+    if (sequence === maskingSequence) maskingFields.value = (response.data || response).fields
+  } catch (error) {
+    if (sequence === maskingSequence) maskingError.value = error.response?.data?.error || t('transfer.taskWizard.exportMaskingLoadFailed')
+  } finally { if (sequence === maskingSequence) maskingLoading.value = false }
+}
+watch([maskingPanels, () => protectionSource.value.locator, maskingSupported], () => {
+  if (maskingPanels.value.includes('masking')) refreshMasking()
+  else { ++maskingSequence; maskingLoading.value = false }
+}, { immediate: true })
 
 const formRef = ref(null)
 const scheduleMode = ref(props.wizardState.schedule.value ? 'cron' : 'once')

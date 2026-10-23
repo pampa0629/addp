@@ -128,3 +128,10 @@ other = "Task execution failed; inspect the owner execution diagnostics"
 other = "Runtime diagnostics are temporarily unavailable"
 [transfer.production_receipt.unavailable]
 other = "No verifiable successful production receipt is available for this execution"
+
+[transfer.protection.invalid]
+other = "The masking choice or source is no longer available. Refresh the options and save again."
+[transfer.protection.ineligible]
+other = "Your current roles or execution authorization do not permit the selected export method. Check your roles and execution permissions."
+[transfer.protection.unavailable]
+other = "Export protection could not be verified. Try again later."

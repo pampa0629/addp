@@ -256,7 +256,13 @@ tenant + assessment_id + consumer_owner + action
 
 ProtectionProjection 唯一运行协议升级为 `addp.protection_projection/v5`。规则的可选 `role_options` 对象携带 `policy_id`、`policy_revision`、`assessment_revision` 和 `options`；仅正式结构化字段的四个消费动作可携带，剖析、索引与 Graph 不携带。每个选项均须通过当前基线及类型校验；基线变化导致选项不再合法时编译器移除该项，已保存选择因选项不存在而拒绝，不改变其他默认操作。选项身份引用为 `{policy_id, policy_revision, assessment_revision, option_id}`，Owner 仍需绑定精确源字段、动作、Tenant 和当前有效投影。Common 的显式解析只返回该选项的 mask 决策，不经过原值豁免；无选择继续原默认决策。解析函数不认证调用方，Owner 必须先核验角色事实及其执行租约、主体、Tenant 和有效期，禁止把请求正文角色数组直接送入匹配。
 
-Develop 业务选择首期保存在 Query 的 `content.protection_choices`，每项为精确源 `target`、`component_key` 与既有选项身份/修订。空集合使用默认保护；每个源字段至多一项，不能提交算法、参数、角色或原值效果。保存及更新（包括仅改名称而保留选择）必须按当前登录用户的本人角色事实和当前本地投影核验。候选只针对用户显式选中的确定来源，不枚举租户全部受保护资源；执行仍须由同一 PreparedQuery 的已证明 ReadSet/OutputLineage 命中精确来源，选择未消费、来源不匹配、角色或修订失效均明确拒绝，不忽略旧选择。首期不扩张 Notebook、定时、委托、Service 应用或其他出口的特殊方式；Develop 全量导出由 Transfer 执行，保存了特殊方式的查询暂明确拒绝导出，不丢弃选择改用默认方式。
+Develop 业务选择首期保存在 Query 的 `content.protection_choices`，每项为精确源 `target`、`component_key` 与既有选项身份/修订。空集合使用默认保护；每个源字段至多一项，不能提交算法、参数、角色或原值效果。保存及更新（包括仅改名称而保留选择）必须按当前登录用户的本人角色事实和当前本地投影核验。候选只针对用户显式选中的确定来源，不枚举租户全部受保护资源；执行仍须由同一 PreparedQuery 的已证明 ReadSet/OutputLineage 命中精确来源，选择未消费、来源不匹配、角色或修订失效均明确拒绝，不忽略旧选择。Notebook、定时、委托与 Service 应用不属于当前角色选择范围。Develop 查询与 Transfer 导出是独立出口：查询使用 `content.protection_choices`，全量导出使用另行保存的 `content.export_protection_choices`，未选导出方式时采用导出默认保护，不把查询选项当作导出选项。
+
+Transfer 首期业务选择保存在 `config.source.protection_choices`，只开放当前第一方登录用户手动发起的 bounded/snapshot/native table（含同一 PreparedQuery 查询源）路径；候选及保存核验只针对显式选择的精确源 DataItem，复用 System 本人当前角色事实与本地 export 投影。选择只保存字段及选项身份／修订，不保存角色快照、令牌或算法参数。切换来源、运行边界或加载方式不能自动丢弃旧选择；不支持的形态、调度、委托、应用或编排入口显式拒绝。没有选择的现有默认链路不增加角色依赖。
+
+用户手动启动角色专用 Transfer 任务、或 Develop 创建角色专用全量导出时，在当前同步用户请求内签发 audience=transfer、绑定本次 execution UUID 和实际源读／业务目标写引擎效果的现有 Execution Authorization。使用者必须具备 system.execution_authorization.create、transfer.task.execute 和对应效果资格，不借用机器、创建人或发布人角色，不补授权限。导出 Owner 先按当前 User 验证选项，再为共享导出会话生成的确切 UUID 签发授权；授权事实纳入完整请求摘要，Transfer 仍通过精确会话来源核对发起人，随后将事实写入统一执行记录。Worker 必须按同一 execution/attempt/lease 取得 System 当前角色事实，每批输出刷新资格并复核本地投影，失效拒绝交付，不能回退默认。
+
+Develop 对导出候选、保存及文件交付的复核是同步 BFF 调用：只原样转发当前已认证 User Bearer 给 Transfer 的定向候选／选择核验接口，不转发 User ID 或角色断言，不保留凭据或改用 Service Token。导出会话只额外保留源 locator 与所选字段引用，Get/Open 对角色专用文件必须按当前用户再核验；后台文件生成成功不构成后续下载资格。角色专用下载使用现有同一路由的 User Bearer 调用，不能仅凭不携带完整角色事实的 Resource Ticket 交付；浏览器经共享认证客户端取得文件 Blob 后触发下载，不把令牌放入 URL。无选择的默认会话不调用该核验。查询实时选择、导出选择与默认历史预览分别遵守各自出口，不长期保存受保护字段原值。
 
 原生表／集合读取与查询读取复用同一字段选择、角色选项解析和精确来源消费校验。`PrepareTableProtection` 显式接收已核验的请求作用域选择；无选择沿用字段默认决策，有选择时来源未受管、字段未命中、出口不匹配、角色事实到期或选项修订变化均拒绝。分批输出在交付前复核当前投影中的选项，不能把准备阶段的选项永久冻结到后续批次。角色事实的获取与执行租约复核仍由 Owner 负责，共享层不以 User ID、角色名称或历史任务创建者推断资格。
 

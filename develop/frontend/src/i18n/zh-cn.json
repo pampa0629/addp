@@ -24,6 +24,9 @@
       "passwordRequired": "请输入密码"
     },
     "query": {
+      "queryMaskingTab": "查询方式",
+      "exportMaskingTab": "全量导出方式",
+      "exportMaskingHint": "导出采用独立保护规则。选择一次并保存，后续导出自动复用；未选择时使用导出默认保护。特殊方式需要当前账号具备 Transfer 执行权限。",
       "maskingLoadFailed": "无法加载当前可选脱敏方式，请重试。",
       "title": "查询开发",
       "selectDataSource": "选择数据源",

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
@@ -51,6 +52,14 @@ func (h *QueryHandler) QueryProtectionOptions(c *gin.Context) {
 }
 
 func writeQueryProtectionError(c *gin.Context, err error) bool {
+	if errors.Is(err, commonAPI.ErrForbidden) {
+		commonAPI.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+		return true
+	}
+	if errors.Is(err, commonAPI.ErrUnauthorized) {
+		commonAPI.UnauthorizedError(c, commoni18n.T(c, commoni18n.MsgUnauthorized))
+		return true
+	}
 	key, code := "", ""
 	switch {
 	case errors.Is(err, dataprotection.ErrRoleOptionIneligible):

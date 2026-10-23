@@ -565,7 +565,7 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 	switch devType {
 	case commonExecution.TaskTypeQuery:
 		if err := validateAllowedFields(content, "content", map[string]struct{}{
-			"query": {}, "query_type": {}, "query_parameters": {}, "target_locator": {}, "protection_choices": {},
+			"query": {}, "query_type": {}, "query_parameters": {}, "target_locator": {}, "protection_choices": {}, "export_protection_choices": {},
 		}); err != nil {
 			return err
 		}
@@ -994,7 +994,11 @@ func (s *DevTaskService) validateSavedQueryChoices(ctx context.Context, bearer s
 	if err != nil {
 		return err
 	}
-	if len(choices) == 0 {
+	exportChoices, err := models.QueryExportProtectionChoices(task.Content)
+	if err != nil {
+		return err
+	}
+	if len(choices) == 0 && len(exportChoices) == 0 {
 		return nil
 	}
 	if s.queryProtection == nil {

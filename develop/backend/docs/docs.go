@@ -701,6 +701,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "缺少角色专用导出执行权限 | Missing role-specific export execution permissions",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -721,6 +727,10 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "system.execution_authorization.create",
+                    "transfer.task.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read",
                     "develop.task.execute",
@@ -922,7 +932,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-conditional-permissions": [
-                    "develop.data_read.execute"
+                    "develop.data_read.execute",
+                    "transfer.task.execute"
                 ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
@@ -931,7 +942,7 @@ const docTemplate = `{
         },
         "/exports/{id}/file": {
             "get": {
-                "description": "路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.",
+                "description": "路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.\n角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -2847,6 +2858,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable",
                         "schema": {
@@ -2855,6 +2872,9 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "transfer.task.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.create"
                 ]
@@ -2965,6 +2985,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable",
                         "schema": {
@@ -2973,6 +2999,9 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "transfer.task.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.update"
                 ]
@@ -4338,6 +4367,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "requires_current_user": {
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -4400,6 +4432,12 @@ const docTemplate = `{
         "github_com_addp_develop_backend_internal_models.DevTaskContentSwagger": {
             "type": "object",
             "properties": {
+                "export_protection_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleChoice"
+                    }
+                },
                 "inputs": {
                     "type": "object"
                 },

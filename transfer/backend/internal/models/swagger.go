@@ -1,5 +1,7 @@
 package models
 
+import "github.com/addp/common/dataprotection"
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Code    int    `json:"code" example:"400"`
@@ -75,14 +77,15 @@ type TransferChangeDetectionDoc struct {
 
 // TransferSourceEndpointDoc 描述 Transfer source endpoint；source 必须指向已存在资源。
 type TransferSourceEndpointDoc struct {
-	Locator        string                   `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
-	DataType       string                   `json:"data_type" example:"table"`
-	Representation string                   `json:"representation" example:"encoded" enums:"native,encoded"`
-	Format         string                   `json:"format,omitempty" example:"shapefile"`
-	Options        map[string]interface{}   `json:"options,omitempty"`
-	Policy         map[string]interface{}   `json:"policy,omitempty"`
-	Query          *TransferQuerySourceDoc  `json:"query,omitempty"`
-	ChangeStream   *TransferChangeStreamDoc `json:"change_stream,omitempty"`
+	ProtectionChoices []dataprotection.FieldRoleChoice `json:"protection_choices,omitempty"`
+	Locator           string                           `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
+	DataType          string                           `json:"data_type" example:"table"`
+	Representation    string                           `json:"representation" example:"encoded" enums:"native,encoded"`
+	Format            string                           `json:"format,omitempty" example:"shapefile"`
+	Options           map[string]interface{}           `json:"options,omitempty"`
+	Policy            map[string]interface{}           `json:"policy,omitempty"`
+	Query             *TransferQuerySourceDoc          `json:"query,omitempty"`
+	ChangeStream      *TransferChangeStreamDoc         `json:"change_stream,omitempty"`
 }
 
 type TransferQuerySourceDoc struct {

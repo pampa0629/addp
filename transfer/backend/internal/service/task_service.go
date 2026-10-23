@@ -12,6 +12,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonAuthorization "github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -60,6 +61,7 @@ type TaskExecutionEngine interface {
 
 // TaskService 任务服务
 type TaskService struct {
+	roleProtection   *RoleProtectionService
 	taskAuthorizer   TaskSubjectAuthorizer
 	configChecker    *TaskConfigCheckService
 	db               *gorm.DB
@@ -159,6 +161,7 @@ func (s *TaskService) GetDeadLetter(ctx context.Context, taskID, tenantID uint, 
 // SetExecutionService 设置执行服务（在创建后注入，避免循环依赖）
 func (s *TaskService) SetExecutionService(executionService *ExecutionService) {
 	s.executionService = executionService
+	executionService.prepareRoleExecution = s.authorizeRoleExecution
 }
 
 // CreateTask 创建任务
@@ -217,6 +220,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		return nil, err
 	}
 
+	if err := s.validateRoleTask(ctx, task); err != nil {
+		return nil, err
+	}
 	if err := s.authorizeSchedule(ctx, task); err != nil {
 		return nil, err
 	}
@@ -353,6 +359,9 @@ func (s *TaskService) updateTaskDefinition(ctx context.Context, task *models.Tra
 		return nil, err
 	}
 	task.NextRunAt = nextRunAt
+	if err := s.validateRoleTask(ctx, task); err != nil {
+		return nil, err
+	}
 	if err := s.authorizeSchedule(ctx, task); err != nil {
 		return nil, err
 	}
@@ -377,6 +386,9 @@ func normalizeTransferTaskType(taskType *string) error {
 }
 
 func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
+	if _, err := models.SourceProtectionChoices(config); err != nil {
+		return err
+	}
 	boundary, boundaryErr := planner.TaskRuntimeBoundary(config)
 	if boundaryErr != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, boundaryErr)
@@ -574,6 +586,20 @@ func (s *TaskService) CreateAdHocExecution(
 		}},
 		CreatedAt: now, UpdatedAt: now,
 	}
+	choices, err := models.SourceProtectionChoices(config)
+	if err != nil {
+		return nil, err
+	}
+	if len(choices) > 0 {
+		if req.ExportSession == nil || source != "develop" || req.ExecutionAuthorization == nil {
+			return nil, dataprotection.ErrRoleOptionIneligible
+		}
+		if err := attachRoleAuthorization(record, req.ExecutionAuthorization); err != nil {
+			return nil, err
+		}
+	} else if req.ExecutionAuthorization != nil {
+		return nil, dataprotection.ErrRoleOptionUnavailable
+	}
 	if err := s.executionService.taskExecutionRepo.Create(ctx, record); err != nil {
 		return nil, fmt.Errorf("create ad-hoc transfer execution: %w", err)
 	}
@@ -728,6 +754,9 @@ func (s *TaskService) startTaskWithContext(
 		if err := commonExecution.ApplyUserOrigin(ctx, executionRecord); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.authorizeRoleExecution(ctx, task, executionRecord); err != nil {
+		return nil, err
 	}
 	if hasTargetOverride {
 		executionRecord.MaxAttempts = 1

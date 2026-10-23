@@ -37,9 +37,11 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService, operatorDiscovery
 // @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
 // @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
 // @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 403 {object} models.ErrorResponse "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method"
 // @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.create"]
+// @x-addp-conditional-permissions ["transfer.task.execute"]
 // @Router /task-definitions [post]
 func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	var req models.CreateDevTaskRequest
@@ -78,9 +80,11 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
 // @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 403 {object} models.ErrorResponse "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method"
 // @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.update"]
+// @x-addp-conditional-permissions ["transfer.task.execute"]
 // @Router /task-definitions/{id} [put]
 func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)

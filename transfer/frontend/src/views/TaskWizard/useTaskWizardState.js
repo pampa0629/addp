@@ -64,6 +64,7 @@ export function useTaskWizardState() {
   const continuousPollBatchSize = ref(1000)
 
   const sourceConfig = ref({})
+  const sourceProtectionChoices = ref([])
   const sourceEngineID = ref(null)
   const sourceEngineType = ref('')
   const sourceEngineCapabilities = ref(null)
@@ -256,6 +257,7 @@ export function useTaskWizardState() {
 
   const taskConfig = computed(() => {
     const sourceEndpoint = buildSourceEndpoint()
+    if (sourceProtectionChoices.value.length) sourceEndpoint.protection_choices = JSON.parse(JSON.stringify(sourceProtectionChoices.value))
     const targetEndpoint = buildTargetEndpoint()
 
     const config = {
@@ -1017,6 +1019,7 @@ export function useTaskWizardState() {
     // Source 配置
     if (task.config?.source) {
       const source = task.config.source
+      sourceProtectionChoices.value = structuredClone(source.protection_choices || [])
       const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
 			sourceEngineType.value = normalizeEngineType(engineDescriptors.source?.engine_type || '')
@@ -1415,6 +1418,7 @@ export function useTaskWizardState() {
     formatCapabilitiesLoaded.value = false
 		databaseCDCCapability.value = null
     sourceConfig.value = {}
+    sourceProtectionChoices.value = []
     targetEngineID.value = null
     targetEngineType.value = ''
     targetEngineCapabilities.value = null
@@ -1447,6 +1451,7 @@ export function useTaskWizardState() {
     continuousInitialPosition,
     continuousPollBatchSize,
     sourceConfig,
+    sourceProtectionChoices,
     sourceEngineID,
     sourceEngineType,
     sourceEngineCapabilities,

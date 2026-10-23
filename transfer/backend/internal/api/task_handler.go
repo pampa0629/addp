@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -311,6 +312,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.execute"]
+// @x-addp-conditional-permissions ["system.execution_authorization.create","develop.data_read.execute","develop.data_write.execute"]
 // @Router /task-definitions/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
@@ -322,7 +324,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
 
-	execution, err := h.taskService.StartTask(transferUserOriginContext(c), id, tenantID, userID)
+	execution, err := h.taskService.StartTask(transferTaskAuthorizationContext(c), id, tenantID, userID)
 	if err != nil {
 		logger.L().Error("transfer task start failed", "task_id", id, "tenant_id", tenantID, "error", err)
 		respondTaskServiceError(c, err)
@@ -765,6 +767,10 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, dataprotection.ErrRoleOptionIneligible) || errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+		writeTransferProtectionError(c, err)
+		return
+	}
 	if errors.Is(err, commonAPI.ErrUnauthorized) {
 		commonAPI.UnauthorizedError(c, i18nmiddleware.T(c, i18nmiddleware.MsgUnauthorized))
 		return
@@ -937,5 +943,6 @@ func transferTaskAuthorizationContext(c *gin.Context) context.Context {
 	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
 		token = parts[1]
 	}
-	return service.WithTaskAuthorizationToken(transferUserOriginContext(c), token)
+	facts, _ := commonAuth.AuthContextFromGin(c)
+	return service.WithTaskAuthorizationToken(service.WithProtectionAuthContext(transferUserOriginContext(c), facts), token)
 }

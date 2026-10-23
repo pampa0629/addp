@@ -64,7 +64,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
-	protectionGate := transferprotection.NewGate(protectionStore, systemClient)
+	protectionGate := transferprotection.NewGate(protectionStore, transferprotection.EngineDescriptorLookup(systemRuntimeClient))
 	executionEngineService := service.NewExecutionEngineService(taskRepo, repository.NewSyncStateRepository(db), executionService, systemClient, systemRuntimeClient, metaClient)
 	executionEngineService.SetImportSourceVerifier(commonClient.NewManagerImportSourceClient(systemRuntimeClient, tokenSource))
 	executionEngineService.SetConfig(cfg)

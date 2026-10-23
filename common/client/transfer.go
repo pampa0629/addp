@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
@@ -73,12 +74,13 @@ type TriggerTaskResponse struct {
 // It deliberately exposes the stable transfer endpoint contract instead of a
 // Transfer task definition or its private database identity.
 type CreateTransferExecutionRequest struct {
-	Name             string                          `json:"name" binding:"required"`
-	Config           TransferExecutionConfig         `json:"config" binding:"required"`
-	BatchSize        int                             `json:"batch_size,omitempty"`
-	AutoScanMetadata bool                            `json:"auto_scan_metadata,omitempty"`
-	TenantID         uint                            `json:"-"`
-	ExportSession    *TransferExportSessionReference `json:"export_session,omitempty"`
+	ExecutionAuthorization *IssuedExecutionAuthorization   `json:"execution_authorization,omitempty"`
+	Name                   string                          `json:"name" binding:"required"`
+	Config                 TransferExecutionConfig         `json:"config" binding:"required"`
+	BatchSize              int                             `json:"batch_size,omitempty"`
+	AutoScanMetadata       bool                            `json:"auto_scan_metadata,omitempty"`
+	TenantID               uint                            `json:"-"`
+	ExportSession          *TransferExportSessionReference `json:"export_session,omitempty"`
 }
 
 type TransferExecutionConfig struct {
@@ -99,15 +101,16 @@ type TransferExecutionLoad struct {
 }
 
 type TransferExecutionEndpoint struct {
-	Locator        string                  `json:"locator,omitempty"`
-	ParentLocator  string                  `json:"parent_locator,omitempty"`
-	Name           string                  `json:"name,omitempty"`
-	DataType       string                  `json:"data_type"`
-	Representation string                  `json:"representation"`
-	Format         string                  `json:"format,omitempty"`
-	Options        map[string]interface{}  `json:"options,omitempty"`
-	Policy         map[string]interface{}  `json:"policy,omitempty"`
-	Query          *TransferExecutionQuery `json:"query,omitempty"`
+	ProtectionChoices []dataprotection.FieldRoleChoice `json:"protection_choices,omitempty"`
+	Locator           string                           `json:"locator,omitempty"`
+	ParentLocator     string                           `json:"parent_locator,omitempty"`
+	Name              string                           `json:"name,omitempty"`
+	DataType          string                           `json:"data_type"`
+	Representation    string                           `json:"representation"`
+	Format            string                           `json:"format,omitempty"`
+	Options           map[string]interface{}           `json:"options,omitempty"`
+	Policy            map[string]interface{}           `json:"policy,omitempty"`
+	Query             *TransferExecutionQuery          `json:"query,omitempty"`
 }
 
 type TransferExecutionQuery struct {

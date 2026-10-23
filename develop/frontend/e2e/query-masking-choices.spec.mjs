@@ -7,10 +7,10 @@ const engine = { id: 11, name: 'PostgreSQL Demo', engine_type: 'postgresql', lif
 const reply = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 
 for (const locale of ['zh-cn', 'en']) test(`saved masking choice survives reload and is reused without a per-query prompt (${locale})`, async ({ page }, testInfo) => {
-  const updates = [], executions = [], observations = [], errors = []
+  const updates = [], executions = [], observations = [], exportObservations = [], errors = []
   page.on('pageerror', error => errors.push(error.message))
   let revision = 1
-  let task = { id: 17, name: 'role-choice-query', dev_type: 'query', timeout: 300, content: { query: 'SELECT phone FROM public.customers', query_type: 'sql', target_locator: locator, query_parameters: [], protection_choices: [] }, execution_config: { engine_id: 11 } }
+  let task = { id: 17, name: 'role-choice-query', dev_type: 'query', timeout: 300, content: { query: 'SELECT phone FROM public.customers', query_type: 'sql', target_locator: locator, query_parameters: [], protection_choices: [], export_protection_choices: [] }, execution_config: { engine_id: 11 } }
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), locale)
   await page.route('**/api/v1/**', route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname
@@ -30,35 +30,48 @@ for (const locale of ['zh-cn', 'en']) test(`saved masking choice survives reload
       observations.push(Object.fromEntries(url.searchParams))
       return reply(route, { fields: [{ ...field, policy_revision: revision }] })
     }
+    if (path === '/api/v1/transfer/source-protection-options') {
+      exportObservations.push(Object.fromEntries(url.searchParams))
+      return reply(route, { fields: [{ ...field, policy_id: 'export-policy', options: [{ id: 'export-hash', name: '导出统计哈希' }] }] })
+    }
     if (path === '/api/v1/develop/query-preflight') return reply(route, { allowed: true, effect: 'read', statement: 'select', schema_coverage: 'complete', diagnostics: [], risk_level: 'low', requires_confirmation: false })
     if (path === '/api/v1/develop/executions' && req.method() === 'POST') { executions.push(req.postDataJSON()); return reply(route, { execution_id: 'role-choice-execution' }) }
     if (path.startsWith('/api/v1/develop/executions/')) return reply(route, { execution_id: 'role-choice-execution', module: 'develop', task_type: 'query', status: 'success', progress: 100, metadata: { result: { result_kind: 'table', columns: ['phone'], fields: [{ name: 'phone', type: 'string' }], rows_count: 1, summary: { preview_rows: [{ phone: 'fixture-hash' }] } } } })
     if (path.startsWith('/api/v1/meta/resource-tree/')) return reply(route, { id: 'engine', label: engine.name, type: 'database', locator: 'addp://engine/11/path?type=server', children: [] })
     return reply(route, {})
   })
-  const labels = locale === 'zh-cn' ? { methods: '脱敏方式', save: '保存查询', execute: '执行', refresh: '刷新方式', defaults: '默认方式' } : { methods: 'Masking methods', save: 'Save Query', execute: 'Execute', refresh: 'Refresh methods', defaults: 'Default method' }
+  const labels = locale === 'zh-cn' ? { methods: '脱敏方式', save: '保存查询', execute: '执行', refresh: '刷新方式', defaults: '默认方式', queryTab: '查询方式', exportTab: '全量导出方式' } : { methods: 'Masking methods', save: 'Save Query', execute: 'Execute', refresh: 'Refresh methods', defaults: 'Default method', queryTab: 'Query method', exportTab: 'Full export method' }
   await page.goto('/sql?action=edit&id=17')
   await expect(page.locator('.query-task-name')).toHaveText('role-choice-query')
   await page.getByRole('button', { name: labels.methods, exact: true }).click()
   const drawer = page.getByRole('dialog', { name: labels.methods, exact: true })
-  await expect(drawer.getByText('phone', { exact: true })).toBeVisible()
-  await drawer.locator('.el-select').click()
+  const queryPanel = drawer.getByRole('tabpanel', { name: labels.queryTab, exact: true })
+  const exportPanel = drawer.getByRole('tabpanel', { name: labels.exportTab, exact: true })
+  await expect(queryPanel.getByText('phone', { exact: true })).toBeVisible()
+  await queryPanel.locator('.el-select').click()
   await page.getByRole('option', { name: '统计哈希', exact: true }).click()
+  await drawer.getByRole('tab', { name: labels.exportTab, exact: true }).click()
+  await exportPanel.locator('.el-select').click()
+  await page.getByRole('option', { name: '导出统计哈希', exact: true }).click()
+  await drawer.getByRole('tab', { name: labels.queryTab, exact: true }).click()
   await drawer.getByRole('button', { name: /close|关闭/i }).click()
   await page.getByRole('button', { name: labels.save, exact: true }).click()
   await expect.poll(() => updates.length).toBe(1)
   const expected = [{ target: field.target, component_key: 'phone', selection: { policy_id: field.policy_id, assessment_revision: 1, policy_revision: 1, option_id: 'hash-uuid' } }]
   expect(updates[0].content.protection_choices).toEqual(expected)
+  const exportExpected = [{ target: field.target, component_key: 'phone', selection: { policy_id: 'export-policy', assessment_revision: 1, policy_revision: 1, option_id: 'export-hash' } }]
+  expect(updates[0].content.export_protection_choices).toEqual(exportExpected)
   await page.reload()
   await expect(page.locator('.query-task-name')).toHaveText('role-choice-query')
   await page.getByRole('button', { name: labels.execute, exact: true }).click()
   await expect.poll(() => executions.length).toBe(1)
   expect(executions[0].content.protection_choices).toEqual(expected)
+  expect(executions[0].content.export_protection_choices).toEqual(exportExpected)
   expect(JSON.stringify(executions[0])).not.toContain('role_keys')
   revision = 2
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: /^(脱敏方式|Masking methods)/ }).click()
-  await expect(drawer.locator('.el-select')).toContainText(locale === 'zh-cn' ? '已保存的选择当前不可用' : 'A saved choice is unavailable')
+  await expect(queryPanel.locator('.el-select')).toContainText(locale === 'zh-cn' ? '已保存的选择当前不可用' : 'A saved choice is unavailable')
   expect(task.content.protection_choices).toEqual(expected)
   expect(observations.every(item => item.engine_id === '11' && item.target_locator === locator && Object.keys(item).length === 2)).toBe(true)
   const bounds = await drawer.boundingBox(); expect(Math.round(bounds.width)).toBeLessThanOrEqual(390)
@@ -66,11 +79,13 @@ for (const locale of ['zh-cn', 'en']) test(`saved masking choice survives reload
   await expect.poll(async () => { const box = await drawer.boundingBox(); return Math.round(box.x) >= 0 && Math.round(box.x + box.width) <= 390 }).toBe(true)
   await expect(page.locator('.el-message--error')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath(`masking-choice-stale-${locale}.png`) })
-  await drawer.locator('.el-select').click()
+  await queryPanel.locator('.el-select').click()
   await page.getByRole('option', { name: labels.defaults, exact: true }).click()
   await drawer.getByRole('button', { name: /close|关闭/i }).click()
   await page.getByRole('button', { name: labels.save, exact: true }).click()
   await expect.poll(() => updates.length).toBe(2)
   expect(updates[1].content.protection_choices).toEqual([])
+  expect(updates[1].content.export_protection_choices).toEqual(exportExpected)
+  expect(exportObservations.every(item => item.source_locator === locator && Object.keys(item).length === 1)).toBe(true)
   expect(errors).toEqual([])
 })

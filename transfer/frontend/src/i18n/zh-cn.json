@@ -458,6 +458,10 @@
       "failed": "传输任务创建失败"
     },
     "taskWizard": {
+      "exportMaskingTitle": "导出脱敏方式",
+      "exportMaskingHint": "不选择时采用导出默认保护；特殊方式随任务保存，执行时按当前账号的角色及执行权限复核。切换来源或模式不会自动丢弃已有选择。",
+      "exportMaskingUnsupported": "角色专用方式仅支持有界、快照、原生数据表来源。已有选择需显式移除后才能使用其他模式。",
+      "exportMaskingLoadFailed": "无法获取导出脱敏候选；可继续使用默认保护，已有特殊选择需重新核对。",
       "aiAssistant": "AI传输助手",
       "closeAiAssistant": "关闭 AI传输助手",
       "aiBoundaryTitle": "仅生成待确认草稿",

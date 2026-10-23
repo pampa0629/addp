@@ -22,8 +22,11 @@ type fakeEngineGetter struct {
 	engine *commonmodels.Engine
 }
 
-func (g fakeEngineGetter) GetEngineForTenant(context.Context, uint, uint) (*commonmodels.Engine, error) {
-	return g.engine, nil
+func (g fakeEngineGetter) descriptor(context.Context, uint, uint) (*commonmodels.EngineRuntimeDescriptor, error) {
+	if g.engine == nil {
+		return nil, nil
+	}
+	return &commonmodels.EngineRuntimeDescriptor{ID: g.engine.ID, EngineType: g.engine.EngineType}, nil
 }
 
 func TestSourceLocatorUsesTheSingleTaskSourceContract(t *testing.T) {
@@ -50,7 +53,7 @@ func TestSourceLocatorUsesTheSingleTaskSourceContract(t *testing.T) {
 func TestGateDeniesOnlyTheExactManagedTransferSource(t *testing.T) {
 	store := transferProjectionStore(t)
 	installTransferProjection(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"))
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}}.descriptor)
 
 	err := gate.RequireLocator(t.Context(), 7, "addp://engine/11/path/Outdoor/Persons?type=collection")
 	if !errors.Is(err, dataprotection.ErrDenied) {
@@ -69,10 +72,10 @@ func TestGatePreparesBoundedNativeAndQueryExportProtection(t *testing.T) {
 		{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true},
 	}
 	installActiveTransferProjection(t, store, model, path, fields)
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}.descriptor)
 	bound, err := gate.PrepareBoundedTableProtection(t.Context(), 7, map[string]interface{}{
 		"source": map[string]interface{}{"locator": "addp://engine/11/path/outdoor/persons?type=table"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +128,7 @@ func TestGatePreparesBoundedMongoEncodedRecordExportProtection(t *testing.T) {
 	installActiveTransferProjectionForComponent(t, store, model, path, fields, dataprotection.Component{
 		Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
 	})
-	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}}.descriptor)
 	protect, err := gate.PrepareBoundedEncodedRecordProtection(t.Context(), 7, map[string]interface{}{
 		"source": map[string]interface{}{"locator": "addp://engine/11/path/Outdoor/Persons?type=collection"},
 	}, fields)
@@ -212,7 +215,7 @@ func installActiveTransferProjectionForComponentAt(t *testing.T, store *projecti
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		TargetEngineID: 1,
+		TargetEngineID: path.EngineID,
 		SchemaVersion:  dataprotection.ProjectionSchemaV5, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: exportAction, Component: component, Decision: dataprotection.Decision{

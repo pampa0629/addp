@@ -459,6 +459,8 @@ definitions:
         type: string
       id:
         type: integer
+      requires_current_user:
+        type: boolean
       status:
         type: string
       transfer_execution_id:
@@ -501,6 +503,10 @@ definitions:
     type: object
   github_com_addp_develop_backend_internal_models.DevTaskContentSwagger:
     properties:
+      export_protection_choices:
+        items:
+          $ref: '#/definitions/dataprotection.FieldRoleChoice'
+        type: array
       inputs:
         type: object
       notebook_path:
@@ -2380,6 +2386,10 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "403":
+          description: 缺少角色专用导出执行权限 | Missing role-specific export execution permissions
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -2396,6 +2406,9 @@ paths:
       tags:
       - Execution
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - system.execution_authorization.create
+      - transfer.task.execute
       x-addp-required-permissions:
       - develop.task.read
       - develop.task.execute
@@ -2589,13 +2602,14 @@ paths:
       x-addp-auth-mode: permission
       x-addp-conditional-permissions:
       - develop.data_read.execute
+      - transfer.task.execute
       x-addp-required-permissions:
       - develop.task.read
   /exports/{id}/file:
     get:
-      description: 路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound
-        Resource Ticket validation, recheck current professional read access to the
-        original own query execution.
+      description: |-
+        路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.
+        角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.
       parameters:
       - description: 导出会话 ID | Export session ID
         in: path
@@ -3894,6 +3908,11 @@ paths:
           description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "403":
+          description: 缺少所选导出方式的执行权限 | Missing execution permissions for the selected
+            export method
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "409":
           description: 脱敏方式或当前角色资格不可用 | Masking method or current role eligibility
             unavailable
@@ -3903,6 +3922,8 @@ paths:
       tags:
       - DevTask
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - transfer.task.execute
       x-addp-required-permissions:
       - develop.task.create
   /task-definitions/{id}:
@@ -3976,6 +3997,11 @@ paths:
           description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "403":
+          description: 缺少所选导出方式的执行权限 | Missing execution permissions for the selected
+            export method
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "409":
           description: 脱敏方式或当前角色资格不可用 | Masking method or current role eligibility
             unavailable
@@ -3985,6 +4011,8 @@ paths:
       tags:
       - DevTask
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - transfer.task.execute
       x-addp-required-permissions:
       - develop.task.update
   /task-definitions/{id}/execute:

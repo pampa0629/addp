@@ -13,6 +13,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/instanceprovider"
@@ -49,7 +50,7 @@ type ExecutionEngineService struct {
 
 type sourceProtectionGate interface {
 	RequireSourceConfig(context.Context, uint, map[string]interface{}) error
-	PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}) (executor.TableSourceProtector, error)
+	PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}, func(context.Context) (*dataprotection.QueryRoleSelection, error)) (executor.TableSourceProtector, error)
 	PrepareBoundedEncodedRecordProtection(context.Context, uint, map[string]interface{}, []datatype.FieldInfo) (engineplugin.EncodedRecordTransform, error)
 }
 
@@ -115,6 +116,9 @@ func (s *ExecutionEngineService) ExecuteExecution(ctx context.Context, execution
 			return err
 		}
 		return s.executeBoundedReplay(ctx, task, executionID, execution.ExecutionConfig)
+	}
+	if _, err := models.SourceProtectionChoices(execution.ExecutionConfig); err != nil {
+		return fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
 	}
 	runtimeTask := *task
 	runtimeTask.Config = execution.ExecutionConfig
@@ -185,7 +189,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
 		}
-		resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
+		var resolver planner.EngineResolver = planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 		return s.executeCommonRawCopyTask(ctx, task, executionID, rawSpec, resolver)
 	}
 
@@ -196,7 +200,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 			s.updateExecutionError(ctx, task, executionID, wrapped)
 			return wrapped
 		}
-		resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
+		var resolver planner.EngineResolver = planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 		return s.executeCommonEncodedRecordExportTask(ctx, task, executionID, recordSpec, resolver)
 	}
 
@@ -225,7 +229,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return s.executeTargetOverrideTableTransferTask(ctx, task, execution, executionID, spec, targetOverride)
 	}
 
-	resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
+	var resolver planner.EngineResolver = planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 	if planner.IsWatermarkIncrementalSpec(spec) {
 		if s.protectionGate == nil {
 			return fmt.Errorf("transfer source protection gate is not configured")
@@ -234,6 +238,14 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 			return err
 		}
 		return s.executeWatermarkIncrementalTask(ctx, task, executionID, spec, resolver)
+	}
+	if choices, err := models.SourceProtectionChoices(task.Config); err != nil {
+		return err
+	} else if len(choices) > 0 {
+		resolver, err = s.roleEngineResolver(ctx, execution, spec)
+		if err != nil {
+			return fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
+		}
 	}
 	return s.executeCommonTableTransferTask(ctx, task, execution, executionID, spec, resolver)
 }
@@ -507,7 +519,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		err = s.verifyInfraImportSource(ctx, execution, spec.Source.Locator)
 	} else {
 		tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
-			ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind,
+			ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind, s.executionRoleResolver(execution, task.Config),
 		)
 	}
 	if err != nil {
@@ -560,6 +572,7 @@ func prepareBoundedTableSourceProtection(
 	tenantID uint,
 	config map[string]interface{},
 	sourceKind executor.TableEndpointKind,
+	roles func(context.Context) (*dataprotection.QueryRoleSelection, error),
 ) (executor.TableSourceProtector, error) {
 	if gate == nil {
 		return nil, fmt.Errorf("transfer source protection gate is not configured")
@@ -571,7 +584,7 @@ func prepareBoundedTableSourceProtection(
 		}
 		return nil, nil
 	case executor.TableEndpointNative, executor.TableEndpointQuery:
-		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config)
+		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config, roles)
 		if err != nil {
 			return nil, fmt.Errorf("prepare bounded table source protection: %w", err)
 		}

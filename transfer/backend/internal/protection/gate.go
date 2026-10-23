@@ -3,9 +3,12 @@ package protection
 import (
 	"context"
 	"fmt"
+	"github.com/addp/transfer/internal/models"
+	"slices"
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
@@ -19,16 +22,20 @@ var ErrSourceRequired = fmt.Errorf("%w: source protection gate is required", exe
 
 const exportAction = "export"
 
-type EngineGetter interface {
-	GetEngineForTenant(context.Context, uint, uint) (*commonmodels.Engine, error)
+type EngineDescriptorGetter func(context.Context, uint, uint) (*commonmodels.EngineRuntimeDescriptor, error)
+
+func EngineDescriptorLookup(client *commonClient.SystemServiceClient) EngineDescriptorGetter {
+	return func(ctx context.Context, tenant, engine uint) (*commonmodels.EngineRuntimeDescriptor, error) {
+		return client.WithTenantID(tenant).GetEngineRuntimeDescriptor(ctx, engine)
+	}
 }
 
 type Gate struct {
 	store   *projectionstore.Store
-	engines EngineGetter
+	engines EngineDescriptorGetter
 }
 
-func NewGate(store *projectionstore.Store, engines EngineGetter) *Gate {
+func NewGate(store *projectionstore.Store, engines EngineDescriptorGetter) *Gate {
 	return &Gate{store: store, engines: engines}
 }
 
@@ -37,6 +44,11 @@ func NewGate(store *projectionstore.Store, engines EngineGetter) *Gate {
 // configurations. It must run in every data-plane process before source data
 // is read.
 func (g *Gate) RequireSourceConfig(ctx context.Context, tenantID uint, config map[string]interface{}) error {
+	if choices, err := models.SourceProtectionChoices(config); err != nil {
+		return err
+	} else if len(choices) > 0 {
+		return dataprotection.ErrRoleOptionUnavailable
+	}
 	locator, err := SourceLocator(config)
 	if err != nil {
 		return err
@@ -58,7 +70,7 @@ func (g *Gate) RequireLocator(ctx context.Context, tenantID uint, locatorURI str
 // PrepareBoundedTableProtection binds one bounded snapshot execution to the
 // exact source engine model and locator. Native and query sources then prepare
 // their local result protector at the last point before opening the reader.
-func (g *Gate) PrepareBoundedTableProtection(ctx context.Context, tenantID uint, config map[string]interface{}) (executor.TableSourceProtector, error) {
+func (g *Gate) PrepareBoundedTableProtection(ctx context.Context, tenantID uint, config map[string]interface{}, roles func(context.Context) (*dataprotection.QueryRoleSelection, error)) (executor.TableSourceProtector, error) {
 	locator, err := SourceLocator(config)
 	if err != nil {
 		return nil, err
@@ -67,8 +79,15 @@ func (g *Gate) PrepareBoundedTableProtection(ctx context.Context, tenantID uint,
 	if err != nil {
 		return nil, err
 	}
+	choices, err := models.SourceProtectionChoices(config)
+	if err != nil {
+		return nil, err
+	}
+	if len(choices) > 0 && roles == nil {
+		return nil, dataprotection.ErrRoleOptionIneligible
+	}
 	return &boundedTableProtection{
-		store: g.store, tenantID: int64(tenantID), model: model, sourcePath: path,
+		store: g.store, tenantID: int64(tenantID), model: model, sourcePath: path, choices: choices, roles: roles,
 	}, nil
 }
 
@@ -111,8 +130,8 @@ func (g *Gate) resolveLocator(ctx context.Context, tenantID uint, locatorURI str
 	if err != nil || locator.EngineID == 0 {
 		return engineplugin.EngineCatalogModelSpec{}, engineplugin.EngineCatalogPath{}, fmt.Errorf("%w: invalid source locator", ErrSourceRequired)
 	}
-	engine, err := g.engines.GetEngineForTenant(ctx, tenantID, locator.EngineID)
-	if err != nil || engine == nil {
+	engine, err := g.engines(ctx, tenantID, locator.EngineID)
+	if err != nil || engine == nil || engine.ID != locator.EngineID {
 		return engineplugin.EngineCatalogModelSpec{}, engineplugin.EngineCatalogPath{}, fmt.Errorf("%w: resolve source engine: %v", ErrSourceRequired, err)
 	}
 	enginePlugin, err := engineplugin.Get(engine.EngineType)
@@ -132,6 +151,8 @@ func (g *Gate) resolveLocator(ctx context.Context, tenantID uint, locatorURI str
 }
 
 type boundedTableProtection struct {
+	choices    []dataprotection.FieldRoleChoice
+	roles      func(context.Context) (*dataprotection.QueryRoleSelection, error)
 	store      *projectionstore.Store
 	tenantID   int64
 	model      engineplugin.EngineCatalogModelSpec
@@ -142,14 +163,24 @@ func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Conte
 	if p == nil || !sameCatalogPath(p.sourcePath, path) {
 		return nil, fmt.Errorf("%w: native source path does not match task source", ErrSourceRequired)
 	}
-	return p.store.PrepareTableProtection(ctx, p.tenantID, p.model, path, fields, exportAction, nil, time.Now().UTC())
+	selection, err := p.selection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	protect, err := p.store.PrepareTableProtection(ctx, p.tenantID, p.model, path, fields, exportAction, selection, time.Now().UTC())
+	return p.wrap(ctx, protect, selection, err)
 }
 
 func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, prepared engineplugin.PreparedQuery) (*dataprotection.PreparedTableProtection, error) {
 	if p == nil {
 		return nil, ErrSourceRequired
 	}
-	return p.store.PrepareQueryProtection(ctx, p.tenantID, p.model, prepared, exportAction, dataprotection.SubjectReference{}, nil, time.Now().UTC())
+	selection, err := p.selection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	protect, err := p.store.PrepareQueryProtection(ctx, p.tenantID, p.model, prepared, exportAction, dataprotection.SubjectReference{}, selection, time.Now().UTC())
+	return p.wrap(ctx, protect, selection, err)
 }
 
 func sameCatalogPath(left, right engineplugin.EngineCatalogPath) bool {
@@ -178,4 +209,46 @@ func SourceLocator(config map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("%w: source locator is missing", ErrSourceRequired)
 	}
 	return locator, nil
+}
+
+func (g *Gate) RoleOptions(ctx context.Context, tenant int64, target dataprotection.ResourceReference, action string, roles []string, now time.Time) ([]dataprotection.FieldRoleOptions, error) {
+	return g.store.RoleOptions(ctx, tenant, target, action, roles, now)
+}
+func (g *Gate) ValidateRoleChoices(ctx context.Context, tenant int64, selection *dataprotection.QueryRoleSelection, action string, now time.Time) error {
+	return g.store.ValidateRoleChoices(ctx, tenant, selection, action, now)
+}
+func (p *boundedTableProtection) selection(ctx context.Context) (*dataprotection.QueryRoleSelection, error) {
+	if len(p.choices) == 0 {
+		return nil, nil
+	}
+	if p.roles == nil {
+		return nil, dataprotection.ErrRoleOptionIneligible
+	}
+	selection, err := p.roles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if selection == nil || !slices.Equal(selection.Choices, p.choices) {
+		return nil, dataprotection.ErrRoleOptionUnavailable
+	}
+	if err := p.store.ValidateRoleChoices(ctx, p.tenantID, selection, exportAction, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return selection, nil
+}
+func (p *boundedTableProtection) wrap(ctx context.Context, protect *dataprotection.PreparedTableProtection, selection *dataprotection.QueryRoleSelection, err error) (*dataprotection.PreparedTableProtection, error) {
+	if err != nil || selection == nil {
+		return protect, err
+	}
+	apply := protect.Apply
+	protect.Apply = func(result *engineplugin.QueryResult) error {
+		current, err := p.selection(ctx)
+		if err != nil {
+			return err
+		}
+		selection.RoleKeys = append([]string(nil), current.RoleKeys...)
+		selection.ExpiresAt = current.ExpiresAt
+		return apply(result)
+	}
+	return protect, nil
 }

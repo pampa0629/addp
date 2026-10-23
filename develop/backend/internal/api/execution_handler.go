@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime"
@@ -77,11 +78,13 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 // @Param execution_id path string true "查询执行 ID | Query execution ID"
 // @Param body body models.CreateQueryExportRequest true "导出格式与文件名 | Export format and file name"
 // @Success 202 {object} models.CreateQueryExportResponse
+// @Failure 403 {object} models.ErrorResponse "缺少角色专用导出执行权限 | Missing role-specific export execution permissions"
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read","develop.task.execute","develop.data_read.execute"]
+// @x-addp-conditional-permissions ["system.execution_authorization.create","transfer.task.execute"]
 // @Router /executions/{execution_id}/exports [post]
 func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 	if h == nil || h.queryExports == nil {
@@ -97,8 +100,11 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 		})
 		return
 	}
-	result, err := h.queryExports.Create(c.Request.Context(), c.Param("execution_id"), req, tenantIDValue(c), commonAuth.GetUserID(c))
+	result, err := h.queryExports.Create(exportUserContext(c), c.Param("execution_id"), req, tenantIDValue(c), commonAuth.GetUserID(c))
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, service.ErrQueryExportNotFound):
 			c.JSON(http.StatusNotFound, gin.H{
@@ -128,14 +134,14 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
-// @x-addp-conditional-permissions ["develop.data_read.execute"]
+// @x-addp-conditional-permissions ["develop.data_read.execute","transfer.task.execute"]
 // @Router /exports/{id} [get]
 func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 	id, ok := queryExportSessionID(c)
 	if !ok {
 		return
 	}
-	result, err := h.queryExports.Get(c.Request.Context(), id, tenantIDValue(c), commonAuth.GetUserID(c))
+	result, err := h.queryExports.Get(exportUserContext(c), id, tenantIDValue(c), commonAuth.GetUserID(c))
 	if err != nil {
 		queryExportError(c, err)
 		return
@@ -154,13 +160,14 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
+// @Description 角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.
 // @Router /exports/{id}/file [get]
 func (h *ExecutionHandler) DownloadQueryExport(c *gin.Context) {
 	id, ok := queryExportSessionID(c)
 	if !ok {
 		return
 	}
-	file, err := h.queryExports.Open(c.Request.Context(), id, tenantIDValue(c), commonAuth.GetUserID(c))
+	file, err := h.queryExports.Open(exportUserContext(c), id, tenantIDValue(c), commonAuth.GetUserID(c))
 	if err != nil {
 		queryExportError(c, err)
 		return
@@ -184,6 +191,9 @@ func queryExportSessionID(c *gin.Context) (uint, bool) {
 }
 
 func queryExportError(c *gin.Context, err error) {
+	if writeQueryProtectionError(c, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, exportartifact.ErrSessionNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryExportNotFound), "error_code": "query_export_not_found"})
@@ -788,4 +798,9 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 		Status:      commonExecution.ExecutionStatusPending,
 		ExecutionID: executionID,
 	})
+}
+
+func exportUserContext(c *gin.Context) context.Context {
+	bearer, _ := requestUserAccessToken(c)
+	return service.WithExportUserToken(c.Request.Context(), bearer)
 }

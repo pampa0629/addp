@@ -129,3 +129,12 @@ other = "任务执行失败，请查看所属模块的执行诊断"
 other = "运行诊断暂时不可用"
 [transfer.production_receipt.unavailable]
 other = "本次执行尚无可核验的成功产出回执"
+
+[transfer.protection.invalid]
+other = "角色脱敏选择或来源已失效，请刷新候选并重新保存。"
+
+[transfer.protection.ineligible]
+other = "当前账号的角色或执行授权不满足所选导出方式，请检查角色及执行权限。"
+
+[transfer.protection.unavailable]
+other = "暂时无法核验导出保护，请稍后重试。"

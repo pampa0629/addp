@@ -128,6 +128,8 @@ Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `O
 
 Develop 查询的角色可选脱敏方式沿用同一普通查询路径。候选 `GET /query-protection-options` 仅观察用户显式选中数据项，使用本人当前角色自查；`content.protection_choices` 只保存精确源字段与方式身份／修订。保存、仅改名称的更新与执行均重新核验，后台执行只能使用绑定当前 Execution Authorization、attempt、lease 的角色事实，不借用任务作者、Worker 或发布人角色。未选择继续默认保护；旧引用、资格失效、未消费来源、派生／opaque 来源或不支持路径明确拒绝，不自动换默认算法。特殊方式首期覆盖 SQL／MQL 的已证明直接字段及别名，联邦、关系结果写入、Notebook 与经 Transfer 执行的全量导出不消费此选择。
 
+Develop 全量导出与查询方式独立：`content.export_protection_choices` 保存精确源字段和 Transfer export 选项，保存及名称更新通过同步 BFF 原样转发当前已认证 User Bearer 复核，不借用 Service Token。前端在同一共享选择抽屉分别展示查询与导出方式，保存后由后续查询执行快照冻结；全量导出使用该快照，未选导出方式则采用导出默认保护。角色专用导出按本次共享会话的确切 UUID 签发用户 Transfer EA，需要现有执行授权创建、Transfer 执行和源引擎读资格；源、主体、Membership／Version 或资格不一致拒绝。Get/Open 在实际交付前再次核验；特殊文件使用同一文件路由的当前 User Bearer，经共享认证客户端获取 Blob 后下载，Resource Ticket 不能替代完整角色资格。普通默认导出继续既有路径。历史预览始终默认脱敏，查询专用选项不跨出口复用。
+
 实时所选脱敏结果与历史默认预览由同一次 PreparedQuery 分别形成；共享计划仅延后所选字段的原生变换，其余仍走原 SQL／Go 协同保护，不伪造 allow、不重跑查询、不对掩码再次哈希。交付沿现有 5 分钟／大小有界进程内缓存，每次读取核对当前 User 角色及本地投影；失效或淘汰明确要求重新查询。其他字段既有临时原值授权仍独立复核，撤销／到期的原值逐字段从后续快照移除；CAS 与每版独立计时标识防止并发旧读取恢复原值或延长暂存。持久执行历史始终只含默认脱敏预览；详情与 Monitor 共用 `protection_role_choice_unavailable` 中英文说明。
 
 Backend 与查询执行进程共用的数据库连接必须使用 `common/logger.WithoutSQLValues`：ORM 查询日志保留 SQL 结构、级别、耗时和行数，不展开绑定参数；错误只记录固定类别、类型或合法 SQLSTATE，避免驱动回显查询结果参数。过滤不改变绑定值、事务、持久历史和调用方错误链；`Debug/LogMode` 不能移除过滤。执行事务的日志非泄露与数据完整性由 SQLite 和既有 Develop PostgreSQL 门禁共同验证。

@@ -1,7 +1,10 @@
 package dataprotection
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"time"
 )
@@ -69,4 +72,23 @@ func (s *QueryRoleSelection) Validate(now time.Time) error {
 		}
 	}
 	return nil
+}
+
+// DecodeFieldRoleChoices is the sole strict decoder for persisted Owner choices.
+// Missing properties are handled by the Owner; an explicit null is invalid.
+func DecodeFieldRoleChoices(raw any) ([]FieldRoleChoice, error) {
+	encoded, err := json.Marshal(raw)
+	if err != nil || len(encoded) > 128<<10 {
+		return nil, ErrRoleOptionUnavailable
+	}
+	var choices []FieldRoleChoice
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&choices) != nil || choices == nil || decoder.Decode(new(any)) != io.EOF {
+		return nil, ErrRoleOptionUnavailable
+	}
+	if err := ValidateFieldRoleChoices(choices); err != nil {
+		return nil, err
+	}
+	return choices, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/addp/common/dataprotection"
 	"math"
 	pathpkg "path"
 	"path/filepath"
@@ -44,18 +45,19 @@ type EngineRef struct {
 // EndpointSpec 是 Transfer 任务 JSON 中 source / target 的业务端点描述。
 // Source 使用 locator 指向已存在资源；target 使用 parent_locator + name 表达待写入资源。
 type EndpointSpec struct {
-	Locator         string                 `json:"locator"`
-	ParentLocator   string                 `json:"parent_locator,omitempty"`
-	Name            string                 `json:"name,omitempty"`
-	DataType        string                 `json:"data_type"`
-	Representation  string                 `json:"representation"`
-	Format          format.FormatType      `json:"format,omitempty"`
-	Options         map[string]interface{} `json:"options,omitempty"`
-	Policy          map[string]interface{} `json:"policy,omitempty"`
-	Query           *QuerySourceSpec       `json:"query,omitempty"`
-	OverridePolicy  string                 `json:"override_policy,omitempty"`
-	Attributes      map[string]interface{} `json:"-"`
-	ManagedExisting bool                   `json:"-"`
+	ProtectionChoices []dataprotection.FieldRoleChoice `json:"protection_choices,omitempty"`
+	Locator           string                           `json:"locator"`
+	ParentLocator     string                           `json:"parent_locator,omitempty"`
+	Name              string                           `json:"name,omitempty"`
+	DataType          string                           `json:"data_type"`
+	Representation    string                           `json:"representation"`
+	Format            format.FormatType                `json:"format,omitempty"`
+	Options           map[string]interface{}           `json:"options,omitempty"`
+	Policy            map[string]interface{}           `json:"policy,omitempty"`
+	Query             *QuerySourceSpec                 `json:"query,omitempty"`
+	OverridePolicy    string                           `json:"override_policy,omitempty"`
+	Attributes        map[string]interface{}           `json:"-"`
+	ManagedExisting   bool                             `json:"-"`
 }
 
 type QuerySourceSpec struct {

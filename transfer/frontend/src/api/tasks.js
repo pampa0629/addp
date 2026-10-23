@@ -2,6 +2,10 @@ import client from './client'
 
 // 任务管理 API
 export const taskAPI = {
+  protectionOptions(sourceLocator) {
+    return client.get('/transfer/source-protection-options', { params: { source_locator: sourceLocator } })
+  },
+
   // 获取任务列表
   list(params) {
     return client.get('/transfer/task-definitions', { params })

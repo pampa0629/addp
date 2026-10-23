@@ -49,3 +49,5 @@ export const updateQueryTask = (id, taskData) => {
 export const getQueryProtectionOptions = (engineId, targetLocator) => client.get('/develop/query-protection-options', {
   params: { engine_id: engineId, target_locator: targetLocator }
 })
+
+export const getExportProtectionOptions = (sourceLocator) => client.get('/transfer/source-protection-options', { params: { source_locator: sourceLocator } })

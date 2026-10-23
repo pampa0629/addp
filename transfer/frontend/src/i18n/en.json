@@ -541,6 +541,10 @@
       "failed": "Transfer task creation failed"
     },
     "taskWizard": {
+      "exportMaskingTitle": "Export masking method",
+      "exportMaskingHint": "Leave unselected for default export protection. Special methods are saved with the task and rechecked against the executing user’s current roles and execution permissions. Changing the source or mode does not discard saved choices.",
+      "exportMaskingUnsupported": "Role-specific methods require a bounded snapshot with a native table source. Explicitly remove saved choices before using another mode.",
+      "exportMaskingLoadFailed": "Could not load export masking options. Default protection remains available; saved special choices must be checked again.",
       "aiAssistant": "AI Transfer Assistant",
       "closeAiAssistant": "Close AI Transfer Assistant",
       "aiBoundaryTitle": "Draft only, always confirm",

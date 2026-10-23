@@ -62,11 +62,12 @@ func ExportRequestDigest(request *CreateTransferExecutionRequest) (string, error
 		return "", errors.New("export execution request is required")
 	}
 	encoded, err := json.Marshal(struct {
-		Name             string                  `json:"name"`
-		Config           TransferExecutionConfig `json:"config"`
-		BatchSize        int                     `json:"batch_size"`
-		AutoScanMetadata bool                    `json:"auto_scan_metadata"`
-	}{request.Name, request.Config, request.BatchSize, request.AutoScanMetadata})
+		Name                   string                        `json:"name"`
+		Config                 TransferExecutionConfig       `json:"config"`
+		BatchSize              int                           `json:"batch_size"`
+		AutoScanMetadata       bool                          `json:"auto_scan_metadata"`
+		ExecutionAuthorization *IssuedExecutionAuthorization `json:"execution_authorization,omitempty"`
+	}{request.Name, request.Config, request.BatchSize, request.AutoScanMetadata, request.ExecutionAuthorization})
 	if err != nil {
 		return "", err
 	}

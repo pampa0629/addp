@@ -12,6 +12,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/mimetype"
@@ -38,21 +39,22 @@ var (
 // Session is the shared control-plane record for a short-lived export artifact.
 // Repositories choose the owning module table explicitly; Session has no global table.
 type Session struct {
-	ID                     uint                 `json:"id" gorm:"primaryKey"`
-	TenantID               uint                 `json:"tenant_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:1"`
-	UserID                 uint                 `json:"user_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:2"`
-	SourceRef              string               `json:"source_ref" gorm:"column:source_item_locator;type:text;not null"`
-	Format                 string               `json:"format" gorm:"size:64;not null"`
-	FileName               string               `json:"file_name" gorm:"size:512;not null"`
-	TargetParentLocator    string               `json:"target_parent_locator" gorm:"type:text;not null"`
-	TargetLocator          string               `json:"target_locator" gorm:"type:text;not null"`
-	ArtifactManifest       commonModels.JSONMap `json:"artifact_manifest,omitempty" gorm:"type:jsonb"`
-	TransferExecutionID    string               `json:"transfer_execution_id" gorm:"size:64;not null;index"`
-	ExecutionRequestDigest string               `json:"-" gorm:"size:64;not null;default:''"`
-	Status                 string               `json:"status" gorm:"size:32;not null;index:idx_export_sessions_scope_status_created,priority:3"`
-	ErrorMessage           string               `json:"error_message,omitempty" gorm:"type:text"`
-	CreatedAt              time.Time            `json:"created_at" gorm:"index:idx_export_sessions_scope_status_created,priority:4,sort:desc"`
-	UpdatedAt              time.Time            `json:"updated_at"`
+	Protection             *commonClient.TransferSourceProtectionSelection `json:"-" gorm:"serializer:json;type:jsonb"`
+	ID                     uint                                            `json:"id" gorm:"primaryKey"`
+	TenantID               uint                                            `json:"tenant_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:1"`
+	UserID                 uint                                            `json:"user_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:2"`
+	SourceRef              string                                          `json:"source_ref" gorm:"column:source_item_locator;type:text;not null"`
+	Format                 string                                          `json:"format" gorm:"size:64;not null"`
+	FileName               string                                          `json:"file_name" gorm:"size:512;not null"`
+	TargetParentLocator    string                                          `json:"target_parent_locator" gorm:"type:text;not null"`
+	TargetLocator          string                                          `json:"target_locator" gorm:"type:text;not null"`
+	ArtifactManifest       commonModels.JSONMap                            `json:"artifact_manifest,omitempty" gorm:"type:jsonb"`
+	TransferExecutionID    string                                          `json:"transfer_execution_id" gorm:"size:64;not null;index"`
+	ExecutionRequestDigest string                                          `json:"-" gorm:"size:64;not null;default:''"`
+	Status                 string                                          `json:"status" gorm:"size:32;not null;index:idx_export_sessions_scope_status_created,priority:3"`
+	ErrorMessage           string                                          `json:"error_message,omitempty" gorm:"type:text"`
+	CreatedAt              time.Time                                       `json:"created_at" gorm:"index:idx_export_sessions_scope_status_created,priority:4,sort:desc"`
+	UpdatedAt              time.Time                                       `json:"updated_at"`
 }
 
 type Store interface {
@@ -249,17 +251,21 @@ type Service struct {
 	downloadBase string
 }
 
+type ProtectionValidator func(context.Context, *commonClient.TransferSourceProtectionSelection) error
+
 type CreateRequest struct {
-	TenantID        uint
-	UserID          uint
-	SourceRef       string
-	Format          format.FormatType
-	FileName        string
-	ExecutionName   string
-	ExecutionConfig commonClient.TransferExecutionConfig
+	AuthorizeExecution func(context.Context, string, commonClient.TransferExecutionConfig) (*commonClient.IssuedExecutionAuthorization, error)
+	TenantID           uint
+	UserID             uint
+	SourceRef          string
+	Format             format.FormatType
+	FileName           string
+	ExecutionName      string
+	ExecutionConfig    commonClient.TransferExecutionConfig
 }
 
 type SessionResponse struct {
+	RequiresCurrentUser bool   `json:"requires_current_user,omitempty"`
 	ID                  uint   `json:"id"`
 	SourceRef           string `json:"source_ref"`
 	Format              string `json:"format"`
@@ -323,6 +329,20 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 	transferRequest := &commonClient.CreateTransferExecutionRequest{
 		Name: executionName, Config: config, AutoScanMetadata: false, BatchSize: 1000, TenantID: req.TenantID,
 	}
+	if len(config.Source.ProtectionChoices) > 0 {
+		if req.AuthorizeExecution == nil || dataprotection.ValidateFieldRoleChoices(config.Source.ProtectionChoices) != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		issued, err := req.AuthorizeExecution(ctx, session.TransferExecutionID, config)
+		if err != nil {
+			return nil, err
+		}
+		if err := commonClient.ValidateTransferUserAuthorization(issued, req.TenantID, req.UserID, session.TransferExecutionID); err != nil {
+			return nil, err
+		}
+		transferRequest.ExecutionAuthorization = issued
+		session.Protection = &commonClient.TransferSourceProtectionSelection{SourceLocator: config.Source.Locator, Choices: append([]dataprotection.FieldRoleChoice(nil), config.Source.ProtectionChoices...)}
+	}
 	var err error
 	session.ExecutionRequestDigest, err = commonClient.ExportRequestDigest(transferRequest)
 	if err != nil {
@@ -348,10 +368,18 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 	return s.response(session), nil
 }
 
-func (s *Service) Get(ctx context.Context, id, tenantID, userID uint) (*SessionResponse, error) {
+func (s *Service) Get(ctx context.Context, id, tenantID, userID uint, validate ProtectionValidator) (*SessionResponse, error) {
 	session, err := s.getSession(ctx, id, tenantID, userID)
 	if err != nil {
 		return nil, err
+	}
+	if session.Protection != nil {
+		if validate == nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		if err := validate(ctx, session.Protection); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.refresh(ctx, session); err != nil {
 		return nil, err
@@ -359,10 +387,18 @@ func (s *Service) Get(ctx context.Context, id, tenantID, userID uint) (*SessionR
 	return s.response(session), nil
 }
 
-func (s *Service) Open(ctx context.Context, id, tenantID, userID uint) (*File, error) {
+func (s *Service) Open(ctx context.Context, id, tenantID, userID uint, validate ProtectionValidator) (*File, error) {
 	session, err := s.getSession(ctx, id, tenantID, userID)
 	if err != nil {
 		return nil, err
+	}
+	if session.Protection != nil {
+		if validate == nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
+		if err := validate(ctx, session.Protection); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.refresh(ctx, session); err != nil {
 		return nil, err
@@ -431,7 +467,7 @@ func (s *Service) refresh(ctx context.Context, session *Session) error {
 
 func (s *Service) response(session *Session) *SessionResponse {
 	response := &SessionResponse{
-		ID: session.ID, SourceRef: session.SourceRef, Format: session.Format, FileName: session.FileName,
+		RequiresCurrentUser: session.Protection != nil, ID: session.ID, SourceRef: session.SourceRef, Format: session.Format, FileName: session.FileName,
 		TransferExecutionID: session.TransferExecutionID, Status: session.Status, ErrorMessage: session.ErrorMessage,
 		CreatedAt: session.CreatedAt.Format(time.RFC3339), UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
 	}

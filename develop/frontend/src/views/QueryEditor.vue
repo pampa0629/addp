@@ -738,7 +738,15 @@
       </el-tooltip>
     </div>
     <el-drawer v-model="maskingDrawerVisible" :title="t('fieldMaskingChoices.title')" size="min(480px, 100vw)" class="addp-drawer">
-      <FieldMaskingChoices v-model="protectionChoices" :fields="maskingFields" :loading="maskingLoading" :error="maskingError" :disabled="executing" @refresh="refreshMaskingOptions" />
+      <el-tabs>
+        <el-tab-pane :label="t('develop.query.queryMaskingTab')">
+          <FieldMaskingChoices v-model="protectionChoices" :fields="maskingFields" :loading="maskingLoading" :error="maskingError" :disabled="executing" @refresh="refreshMaskingOptions" />
+        </el-tab-pane>
+        <el-tab-pane :label="t('develop.query.exportMaskingTab')">
+          <p>{{ t('develop.query.exportMaskingHint') }}</p>
+          <FieldMaskingChoices v-model="exportProtectionChoices" :fields="exportMaskingFields" :loading="exportMaskingLoading" :error="exportMaskingError" :disabled="executing" @refresh="refreshExportMaskingOptions" />
+        </el-tab-pane>
+      </el-tabs>
     </el-drawer>
     <StatusAnnouncer :message="announcement" />
     <ProtectionAccessRequestDialog v-model="plaintextRequestVisible" :target-identity="plaintextTargetIdentity" initial-owner="develop" :api="client" />
@@ -780,6 +788,7 @@ import {
   isEngineSelectable,
   listResourceTreeEngines,
   downloadFromUrl,
+  downloadAuthenticatedExport,
   parseLocator,
   useResizable,
   waitForExportSession,
@@ -789,7 +798,7 @@ import { GraphResultView } from '@addp/common-frontend/graph'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { getSampleQuery, getQueryProtectionOptions, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
+import { getSampleQuery, getQueryProtectionOptions, getExportProtectionOptions, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
 import { createExecution, createQueryExport, getQueryResult, getQueryExport } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
@@ -875,6 +884,11 @@ const resultViewMode = ref('table')
 const catalogSelection = ref(null)
 const targetLocator = ref('')
 const protectionChoices = ref([])
+const exportProtectionChoices = ref([])
+const exportMaskingFields = ref([])
+const exportMaskingLoading = ref(false)
+const exportMaskingError = ref('')
+let exportMaskingSequence = 0
 const maskingDrawerVisible = ref(false)
 const maskingFields = ref([])
 const maskingLoading = ref(false)
@@ -893,6 +907,20 @@ const refreshMaskingOptions = async () => {
   } catch (error) {
     if (sequence === maskingRequestSequence) maskingError.value = error.response?.data?.error || t('develop.query.maskingLoadFailed')
   } finally { if (sequence === maskingRequestSequence) maskingLoading.value = false }
+}
+const refreshExportMaskingOptions = async () => {
+  const sequence = ++exportMaskingSequence
+  const locator = catalogSelection.value?.identity?.locator || targetLocator.value
+  exportMaskingFields.value = []
+  exportMaskingError.value = ''
+  if (!locator) { exportMaskingError.value = t('fieldMaskingChoices.sourceRequired'); exportMaskingLoading.value = false; return }
+  exportMaskingLoading.value = true
+  try {
+    const response = await getExportProtectionOptions(locator)
+    if (sequence === exportMaskingSequence) exportMaskingFields.value = response.fields
+  } catch (error) {
+    if (sequence === exportMaskingSequence) exportMaskingError.value = error.response?.data?.error || t('develop.query.maskingLoadFailed')
+  } finally { if (sequence === exportMaskingSequence) exportMaskingLoading.value = false }
 }
 watch([catalogSelection, targetLocator, canRequestPlaintext],async ([selection, savedLocator, permitted])=>{
   const sequence=++plaintextTargetSequence
@@ -1172,6 +1200,7 @@ const currentSnapshot = computed(() => JSON.stringify({
   target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
   query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
+      export_protection_choices: exportProtectionChoices.value,
 }))
 const isDirty = computed(() => queryTaskRouteReady.value && savedSnapshot.value !== currentSnapshot.value)
 
@@ -1344,6 +1373,7 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   diagnosticAnalysis.value = null
   targetLocator.value = ''
   protectionChoices.value = []
+  exportProtectionChoices.value = []
   initialCatalogLocator.value = ''
   queryContent.value = ''
   queryParameters.value = []
@@ -1694,7 +1724,8 @@ const submitQuery = async (parameters = {}) => {
         query_type: currentQueryLanguage.value,
         target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
         query_parameters: queryParameters.value.map(queryParameterPayload),
-      protection_choices: protectionChoices.value
+      protection_choices: protectionChoices.value,
+      export_protection_choices: exportProtectionChoices.value
       },
       execution_config: { engine_id: selectedEngineId.value },
       parameters,
@@ -1801,7 +1832,8 @@ const submitFullExport = async ({ format: exportFormat, fileName }) => {
       failedMessage: t('develop.queryResult.exportFullFailed'),
       timeoutMessage: t('develop.queryResult.exportTimeout')
     })
-    downloadFromUrl(ready.download_url, ready.file_name || normalizedFileName)
+    if (ready.requires_current_user) await downloadAuthenticatedExport(client, ready, { signal: fullExportAbortController.signal, failedMessage: t('develop.queryResult.exportFullFailed') })
+    else downloadFromUrl(ready.download_url, ready.file_name || normalizedFileName)
     ElMessage.success(t('develop.queryResult.exportDownloaded'))
     announcement.value = t('develop.queryResult.exportDownloaded')
   } catch (error) {
@@ -2277,7 +2309,8 @@ const handleSaveTask = async (taskData) => {
       query_type: currentQueryLanguage.value,
       target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
       query_parameters: queryParameters.value.map(queryParameterPayload),
-      protection_choices: protectionChoices.value
+      protection_choices: protectionChoices.value,
+      export_protection_choices: exportProtectionChoices.value
     })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
@@ -2345,6 +2378,7 @@ const persistCurrentQueryTask = async () => {
       target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
       query_parameters: queryParameters.value.map(queryParameterPayload),
       protection_choices: protectionChoices.value,
+      export_protection_choices: exportProtectionChoices.value,
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -2374,6 +2408,7 @@ const loadTask = async (taskId) => {
   const engineID = task.execution_config?.engine_id
   selectedQueryTarget.value = engineID ? `engine:${engineID}` : ''
   protectionChoices.value = structuredClone(task.content?.protection_choices || [])
+  exportProtectionChoices.value = structuredClone(task.content?.export_protection_choices || [])
   targetLocator.value = task.content?.target_locator || ''
   initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
@@ -2393,6 +2428,7 @@ const resetQueryEditorForCreate = async () => {
   executionParameterOverrides.value = {}
   targetLocator.value = ''
   protectionChoices.value = []
+  exportProtectionChoices.value = []
   initialCatalogLocator.value = ''
   catalogSelection.value = null
   fieldRequestSequence += 1
@@ -2450,6 +2486,9 @@ onMounted(async () => {
 watch([maskingDrawerVisible, selectedEngineId, () => catalogSelection.value?.identity?.locator, targetLocator], () => {
   ++maskingRequestSequence
   maskingFields.value = []
+  exportMaskingFields.value = []
+  ++exportMaskingSequence
+  if (maskingDrawerVisible.value) refreshExportMaskingOptions()
   if (maskingDrawerVisible.value) refreshMaskingOptions()
 })
 
