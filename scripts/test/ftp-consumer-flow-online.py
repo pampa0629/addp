@@ -1196,6 +1196,8 @@ def validate_source_download(observed, source, artifact_dir):
                     actual = content.read(len(original) + 1)
                 require(actual == original and hashlib.sha256(actual).digest() == hashlib.sha256(original).digest(),
                         'FTP source ZIP member bytes or SHA-256 differ from the physical seed')
+    except SuiteError:
+        raise
     except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, ValueError, OSError) as error:
         raise SuiteError('FTP logical source ZIP is invalid or corrupt') from error
 

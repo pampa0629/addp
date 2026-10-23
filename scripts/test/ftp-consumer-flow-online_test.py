@@ -882,7 +882,21 @@ class FTPConsumerTest(unittest.TestCase):
             (artifacts / proof['artifact']).write_bytes(b'not a ZIP')
             proof.update(size=9, sha256=hashlib.sha256(b'not a ZIP').hexdigest())
             (artifacts / 'ftp-3ds-source.json').write_text(json.dumps(proof))
-            with self.assertRaises(M.SuiteError):
+            with self.assertRaisesRegex(M.SuiteError, 'invalid or corrupt'):
+                M.validate_source_download(proof, source, artifacts)
+
+    def test_logical_source_zip_reports_flattened_obj_members_without_masking_the_cause(self):
+        source = next(row for row in M.prepare_models(FakeClient().items, 17, model_samples()) if row['format'] == 'obj')
+        fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+        flattened = [('model.obj', (fixture / 'addp_online_multi_material.obj').read_bytes()),
+                     ('paint red.mtl', (fixture / 'addp_online_multi_material_red.mtl').read_bytes()),
+                     ('paint blue.mtl', (fixture / 'addp_online_multi_material_blue.mtl').read_bytes()),
+                     ('color.png', (fixture / 'addp_online_obj_red.png').read_bytes()),
+                     ('color-2.png', (fixture / 'addp_online_obj_blue.png').read_bytes())]
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            proof = source_download_proof(source, artifacts, flattened)
+            with self.assertRaisesRegex(M.SuiteError, 'must contain exactly the confirmed primary and dependencies'):
                 M.validate_source_download(proof, source, artifacts)
 
     def test_basic_ifc_accepts_single_identity_without_fabricated_deep_metadata(self):
