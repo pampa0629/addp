@@ -67,6 +67,11 @@ def require(condition, code):
         raise GateError(code)
 
 
+def diagnostic_markers(raw):
+    return [marker for marker in ('permission denied','operation not permitted','chown','setgid','setuid','cannot load certificate',
+        'is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory') if marker.encode() in raw.lower()]
+
+
 def minio_product_contract(source):
     pattern = (r'git clone --depth 1 --branch (?P<release>\S+) '
         r'https://github\.com/minio/(?P<name>minio|mc)\.git (?P=name) &&\s*\\\s*'
@@ -291,7 +296,7 @@ class Lifecycle:
         if p.returncode:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
-            self.last_failure['diagnostic_markers']=[marker for marker in ('permission denied','is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory') if marker.encode() in raw.lower()]
+            self.last_failure['diagnostic_markers']=diagnostic_markers(raw)
             if args[0] == 'du':
                 diagnostics=[line for line in raw.decode(errors='replace').splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
                 self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
@@ -777,6 +782,16 @@ def main():
     except BaseException as error:
         report.update(stage=life.phase,error_code=str(error) if isinstance(error,GateError) and re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__)
         if hasattr(life,'last_failure'):report['command_failure']=life.last_failure
+        diagnostics=[]
+        for state in getattr(life,'failed_container_states',[]):
+            remaining=MAX_SECONDS-(time.monotonic()-life.started)
+            if remaining<=0:break
+            if state.get('service') in TRACE+BACKENDS+FRONTENDS and state['id'] not in life.builder_ids and state.get('status') in ('exited','dead') and state.get('exit_code'):
+                try:
+                    raw=life.docker('logs','--tail','20',state['id'],guarded=False,timeout=min(1,remaining)).encode()
+                    diagnostics.append({'service':state['service'],'output_sha256':hashlib.sha256(raw).hexdigest(),'markers':diagnostic_markers(raw)})
+                except GateError:pass
+        if diagnostics:report['failed_service_diagnostics']=diagnostics
     finally:
         report['resource_samples']=life.samples
         if hasattr(life,'source_commit'):report['source_commit']=life.source_commit
