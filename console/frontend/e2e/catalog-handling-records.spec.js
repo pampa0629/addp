@@ -89,8 +89,36 @@ test('my handling records show recipients and each authoritative outcome without
 })
 
 test('handling detail keeps readable information first, copies exact IDs on demand and reloads using only GET', async ({ page, context }) => {
+  // Release each iframe write only after the host has read the old native
+  // clipboard. This deterministically exercises click-before-write completion,
+  // without faking clipboard contents or depending on a machine-speed delay.
+  await page.addInitScript(() => {
+    const clipboard = navigator.clipboard
+    if (!clipboard) return
+    if (window === window.top) {
+      const probe = window.__catalogClipboardTiming = { pending: [], started: [], completed: [], staleReads: [] }
+      const readText = clipboard.readText.bind(clipboard)
+      clipboard.readText = async () => {
+        const previous = await readText()
+        const waiting = probe.pending.splice(0)
+        if (waiting.length) probe.staleReads.push(previous)
+        waiting.forEach(release => release())
+        return previous
+      }
+    } else {
+      const writeText = clipboard.writeText.bind(clipboard)
+      clipboard.writeText = async value => {
+        const probe = window.top.__catalogClipboardTiming
+        probe.started.push(value)
+        await new Promise(resolve => probe.pending.push(resolve))
+        await writeText(value)
+        probe.completed.push(value)
+      }
+    }
+  })
   const fixture = await openRecords(page), { catalog, records } = fixture
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.evaluate(() => navigator.clipboard.writeText('before-catalog-copy'))
   await records.getByTestId('sharing-open-request').first().click()
   const detail = catalog.getByTestId('sharing-request-detail')
   await expect(detail).toContainText('户外开发者 · outdoor-develop (当前账号)')
@@ -99,9 +127,17 @@ test('handling detail keeps readable information first, copies exact IDs on dema
   await expect(detail.getByTestId('sharing-copy-request-id')).toBeHidden()
   await detail.getByRole('button', { name: '技术信息', exact: true }).click()
   await detail.getByTestId('sharing-copy-request-id').click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(rows[0].request_id)
+  await expect(catalog.locator('.el-message--success')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(rows[0].request_id)
   await detail.getByTestId('sharing-copy-decision-id').click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(decisionID)
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(decisionID)
+  expect(await page.evaluate(() => {
+    const { started, completed, staleReads } = window.__catalogClipboardTiming
+    return { started, completed, staleReads }
+  })).toEqual({
+    started: [rows[0].request_id, decisionID], completed: [rows[0].request_id, decisionID],
+    staleReads: ['before-catalog-copy', rows[0].request_id]
+  })
   await page.reload()
   await expect(detail).toContainText('户外开发者 · outdoor-develop (当前账号)')
   await expect(detail.getByTestId('sharing-copy-request-id')).toBeHidden()
