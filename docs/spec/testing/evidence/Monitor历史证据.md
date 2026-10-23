@@ -543,7 +543,15 @@ Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和
 - 此前两次编排尝试分别在空闲预热 100.40／100.43 秒失败，均未加压；前者证明缺样期间起点重置，后者记录低于固定恢复阈值的有效 CPU 值但严格连续窗口仍未就绪。第三次在 65 秒 CPU 来源准备阶段失败，旧版未保留该阶段的原始数值，原因未确认；新诊断的安全序列化仅有单测证据，不能反推这次准备失败已修复。见 `process-alerts-overlap-failed.log`、`process-alerts-cadence-failed.log`、`process-alerts-source-readiness-failed.log`。
 - 四次项目的容器／网络／卷已逐项按精确 Compose 项目标签核对为零，见 `failed-project-cleanup.json`。最终尝试的自动清理曾失败，后续确认无容器、网络无端点且归属标签匹配后，仅删除该项目遗留网络／卷；人工清零不改变原门禁失败结果。
 
-当前结论为测试编排修正与诊断代码已落地、Go／配置回归通过；最终版本的真实 CPU/RSS 触发与恢复 T2 **尚未通过**，Linux CI 与正式身份 T4 也未确认。源码输入见 `input-sha256.json`；未自行查询、触发 CI／Hosted 或设置定时，等待专门会话回传，不将上述历史 T2 通过外推到本批。
+该批次当时的结论为测试编排修正与诊断代码已落地、Go／配置回归通过；该批输入的真实 CPU/RSS 触发与恢复 T2 **未通过**，Linux CI 与正式身份 T4 也未确认。源码输入见 `input-sha256.json`；未自行查询、触发 CI／Hosted 或设置定时，不将上述历史 T2 通过外推到该批。后续固定版本的 Linux 通过证据见下一节，不改变本段各次失败及清理记录。
+
+### 服务实例 CPU/RSS 告警原生 Linux 固定版本复核（2026-10-23）
+
+专门 CI 会话回传 [Release 39908130012 / job 120318541196](https://github.com/pampa0629/addp/actions/runs/39908130012/job/120318541196)，push、attempt 1，实际检出 `dfa4ad16105d0421af13e55f3e4099acdd6751a2`。已独立复核原始日志与该提交的测试源码：`Verify isolated metrics lifecycle` 实际运行 `make test-monitor-metrics`、`MONITOR_METRICS_TEST_ARGS=--case=process-alerts`，`TestIntegrationMetricsProcessAlertLifecycle` PASS，213.73 秒；退出报告 owned 容器／网络／卷及设施临时文件零残留。此处接收并复核既有运行，没有再次查询、调度 CI／Hosted 或设置定时。
+
+规则在加压前固定 CPU 触发／恢复 0.025／0.008 核，RSS 为真实空闲基线加 12／8 MiB，连续窗口各 15 秒；保留完整一分钟 CPU 历史、原资源上限与生命周期断言。真实计算／持有匿名内存后打开两个独立事件，CPU 触发证据 0.03378～0.05800 核，RSS 62,111,744 B；释放后确认真实 RSS 回落，原两个事件恢复，CPU 恢复证据 0.00267 核，RSS 34,353,152～36,708,352 B。触发／恢复各证据窗口含两个推进样本，恢复样本均在释放之后。四个不可变 opened／resolved 事件、四项成功投递、八次签名 TLS 收件断言通过，每事件首次 503 后重试的投递 ID、事件 ID 及正文一致；旧日志订阅零误投，另外两个进程继续采集，测试清理断言当次规则零残留。
+
+原始日志与独立审计位于 `/tmp/addp-ci-20261023-120029/`：`job-120318541196.log` SHA-256 为 `75c5b5f66faa6585d7cbf4a16024aebec2c5024740dfe7d3a05e58134cb56571`，`dfa4-process-alert-lifecycle-frozen.go.txt` 为 `15605f1114d79fba801d09df548c558f4df111e6c1eba235379493732ffb010e`，后者与 `git show dfa4ad16105d0421af13e55f3e4099acdd6751a2:monitor/backend/internal/service/process_alert_lifecycle_prometheus_test.go` 的哈希一致。另有 `Monitor-dfa4-real-process-independent-audit.json` 与 `monitor-dfa4-artifacts.json`；该 run 无下载产物，证据为原始日志及固定源码断言。该结果仅证明该 SHA 的原生 Linux 实源 T2，身份仍为 T2 夹具，不替代正式密码／MFA 页面 T4、长时段、生产容量或当前 HEAD 全批验证；`6dba`／`691`／`9e5`／`d01`／`f6` 等原失败保留，不以此次成功推定其历史根因均已修复。主机五项列表摘要、热力面板及后续前端修复另按各自证据判断。
 
 ### 正式身份的本机执行 Trace／日志闭环（2026-10-23）
 
