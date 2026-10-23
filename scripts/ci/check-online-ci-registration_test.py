@@ -376,6 +376,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_stream_order_d8_profile(self.repository,registered)
             target.write_text(original)
+
+    def test_stream_link_d8_requires_manual_nfs_full_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-stream-link-d8-gate.sh','scripts/test/raster-stream-link-d8-persistence-online.py',
+            'business/scripts/online-raster-stream-link-d8-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_stream_link_d8_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-stream-link-d8-persistence'}
+        CHECK.validate_raster_stream_link_d8_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-stream-link-d8-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-stream-link-d8-online-runner'),(paths[2],'test_online_stream_link_d8_fixture.py'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'validate_scan(scanned,scan,identifier'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[5],'backward_oracle'),(paths[5],'walk_oracle'),(paths[5],'DIRECT_STARTS'),(paths[4],'start_order_verified'),(paths[4],'unique_coverage_verified'),(paths[5],'link_evidence'),(paths[5],'np.array_equal(actual,expected,equal_nan=True)'),(paths[4],'stream_links_verified'),(paths[4],'source_edges(client'),(paths[4],'stream_closure_verified'),(paths[4],'invalid_diagnostic'),(paths[4],'elevation_unit'),(paths[4],'SubmittedLanguageClient'),(paths[4],"for language in ('zh-cn','en')"),(paths[4],'case_inputs(name)'),(paths[4],'stream_raster'),(paths[4],'stream_band'),(paths[4],'confluence_verified'),(paths[4],'zero_background_verified'),(paths[5],'empty-links.cog.tif'),(paths[5],'invalid-links.cog.tif'),(paths[5],'binary_values'),(paths[4],'fixture.artifact_expectation(name)'),(paths[6],'root_squash'),(paths[7],'test_stream_link_d8_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_stream_link_d8_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_flow_accumulation_weighted_d8_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
