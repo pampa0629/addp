@@ -68,8 +68,20 @@
 | [39026543398](https://github.com/pampa0629/addp/actions/runs/39026543398) | 原文未单列 SHA | 整轮失败：隔离入口漏启 Security，在 Owner 故障阶段之前退出；清理及 Infra 零残留，不计 Owner 故障通过。后续场景预检 Security，并只读等待独占部署的 Transfer projection initialized，不写保护事实或连接本地共享业务库。 |
 | [39082349255](https://github.com/pampa0629/addp/actions/runs/39082349255) | `009ceea39` | Owner503 八项页面检查与同进程停止/恢复通过，三张截图、领域/Infra 清理通过；整轮仍失败，原因是把运行中 CDC 错误要求为 running 终态事件，后续 CDC/审批/调度未运行。修正要求 CDC 仍运行且无终态；终态执行仍恰有一个匹配终态事件。 |
 | [39083559464](https://github.com/pampa0629/addp/actions/runs/39083559464) | `946c4d13e` | 完整隔离 Hosted T4 通过：14 业务检查、真实 Owner503 八项页面检查、撤权/Monitor-only、Kafka 恢复、CDC 审批与双向扫描隔离、调度当前主体、删定义后历史。相同 Owner PID 停止/恢复证明 true，归档 `12121475487` 的三张截图已目视核验；业务残留 0、cleanup passed、外层 Infra zero_residuals。保留产品历史，不外推 Notebook、其他 Owner 或 T5。 |
+| [39905778336 / Job120257300658](https://github.com/pampa0629/addp/actions/runs/39905778336/job/120257300658) | `5be2c2e0e9c6fb1f49da54a076753f2568462fd4` | 整套失败：14 项检查及四份浏览器分项报告通过，新增多页／保存游标撤权及不可见总数已有分项证据；但旧验收白名单拒绝 Transfer 已声明的专业 `initial_authorization.status/code`，成功的定时执行在校验及清理历史读取时被拒绝，task 3 未完成删除。领域 cleanup failed、残留 1；外层部署销毁不能抵消该失败，不计整套通过。 |
+| [39923509570 / Job120314175151](https://github.com/pampa0629/addp/actions/runs/39923509570/job/120314175151) | `9e67500b26136ef909086d70ee9536d925ff3581` | 固定版本完整 Hosted T4 通过：六服务同提交，场景 176.851 秒，16 项唯一检查、四份真实浏览器报告一致通过。补齐保存游标撤权、不可见总数、定时扫描与父子读取隔离及删定义后历史；任务 3／2／1 均 verified_absent，领域残留 0、无不确定写入，部署清理及 Infra zero_residuals。官方归档 `12493568384`，范围及限制见下文。 |
 
 Owner503 场景使用正式普通 User 与真实 Monitor 响应；故障夹具仅停止当次隔离部署中经 pidfd、可执行文件、UID、数据库和私有目录核验的 Transfer Backend，再恢复同一进程。浏览器分别验证终态详情、运行树、非空列表的清空与重新裁决；独立网络中断仅影响事件读取，不冒充 Owner 503。控制文件只在当次私有目录，公开回执不包含 Token、业务样本或完整接口响应。标准入口仍为既有 transfer-continuous-events Hosted suite 与 `make test-transfer-continuous-online-runner`。
+
+### 2026-10-23 固定版本租户日志终审
+
+对 `39923509570` 的官方归档及原始 Job 日志完成独立核验。归档 SHA-256 为 `5c32cadccc438db1e7c1e16cd5edd9056c0169c1a87fa75dbeb2efe57902be2d`；原始标准输出中的 suite JSON、`transfer-continuous-events.json` 与外层 `suite_report` 完全一致，源码干净且 System、Gateway、Meta、Transfer、Monitor、Security 六服务均为上述完整提交。四份浏览器报告逐一核对本轮 Run ID、Tenant、Principal、execution UUID 及各自的闭合检查集合，Owner 不可用详情清空及恢复诊断截图已目视复核，恢复来源绑定以本轮报告和 DOM 断言为据。既有标准入口仍为 `make test-online ONLINE_SUITE=transfer-continuous-events`，由原 Hosted 生命周期执行；修复提交的 `make test-transfer-continuous-online-runner` 已通过 57 项确定性回归及 System 身份夹具 Go 测试，本次终审没有重跑或再次触发。
+
+同一 Tenant 2 普通读取 User 37 在 Owner 与 Monitor 实际读取每页 2 条、共 2 页 4 条事件；正式撤权后旧 Token 为 401，重新登录的同一 Monitor-only User 使用保存的第一页游标仍被 Owner 403／Monitor 404 拒绝，执行列表总数为 0。同租户无 Owner 权限及跨租户身份也返回空列表与零总数。真实 Owner 进程停止／同 PID 恢复、详情／树／步骤／事件与列表旧内容清空、独立事件网络故障，以及 Worker SIGKILL 后换 PID、租约收敛及新 execution 恢复均通过。Kafka、CDC 独立审批人及精确扫描边界沿原断言保持。
+
+此前未达到的定时子阶段本次完整通过：普通 User 33 的 `scheduled` 执行、实际父／Meta scan 绑定、peer 可读父而 scan 为 404、物理行集、调度暂停及目标精确扫描均有报告证据。最后的 `deleted_definition_history_retained_with_owner_permissions` 实际执行。逐项清理回执为 scheduled 3、CDC 2、Kafka 1 全部 `verified_absent`，原始 Backend 日志有三次 DELETE 200 及各自随后 GET 404；suite 的 `cleanup=passed`、`residual_resources=0`、`uncertain_mutation=false` 与外层部署清理、Infra 零残留分别核验。
+
+该通过只覆盖固定版本、此套件的真实身份与拓扑，不外推当前后续 HEAD、其他 Owner、Security 日志专项、Notebook 运行许可、容量、长时间运行、HA 或生产 T5。API 每页 2 条的多页证据不代表超过 100 条的浏览器加载更多、每日 1000 条截断或完整节点历史已验。`history_cleanup=pending_deployment_destruction` 表示本轮保留历史后随独占部署销毁，不能写成执行历史留存清理已验；30 天事件物理维护周期及 180 天概览整树安全删除仍未由此 T4 证明。旧 `5be2c2e0e` 失败保留，不由此次通过覆盖。
 
 ## 分项与未通过范围
 
