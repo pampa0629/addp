@@ -61,6 +61,10 @@ class LocalTraceAdmissionTests(unittest.TestCase):
                          {'HTTP_PROXY': proxy, 'HTTPS_PROXY': proxy})
         self.assertEqual(m.daemon_build_proxies({'HTTPSProxy': 'http.docker.internal:3128'}),
                          {'HTTPS_PROXY': proxy})
+        self.assertEqual(m.daemon_build_proxies({'HTTPSProxy': 'http://127.0.0.1:17890'},client=True),
+                         {'HTTPS_PROXY':'http://127.0.0.1:17890'})
+        with self.assertRaises(m.GateError):
+            m.daemon_build_proxies({'HTTPSProxy':proxy},client=True)
         for value in ('http://user:secret@http.docker.internal:3128', 'http://foreign.invalid:3128',
                       'http://http.docker.internal:3128/?secret=value', 'file:///private/proxy'):
             with self.subTest(value=value), self.assertRaises(m.GateError):

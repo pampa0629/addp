@@ -115,7 +115,7 @@ def effective_docker_endpoint(environment, context_reader):
     return endpoint
 
 
-def daemon_build_proxies(info):
+def daemon_build_proxies(info, *, client=False):
     """Reuse only the local daemon's credential-free public build transport."""
     result = {}
     for field, key in (('HTTPProxy', 'HTTP_PROXY'), ('HTTPSProxy', 'HTTPS_PROXY')):
@@ -124,8 +124,8 @@ def daemon_build_proxies(info):
             continue
         value = value if '://' in value else 'http://' + value
         parsed = urllib.parse.urlsplit(value)
-        require(parsed.scheme in ('http', 'https') and parsed.hostname in
-                ('http.docker.internal', 'localhost', '127.0.0.1', '::1') and
+        hosts = ('localhost', '127.0.0.1', '::1') if client else ('http.docker.internal', 'localhost', '127.0.0.1', '::1')
+        require(parsed.scheme in ('http', 'https') and parsed.hostname in hosts and
                 not parsed.username and not parsed.password and parsed.path in ('', '/') and
                 not parsed.query and not parsed.fragment, 'credential_free_local_daemon_proxy_required')
         result[key] = value
@@ -451,7 +451,12 @@ def build(life):
     wrapper.chmod(0o700)
     life.public_modcache=Path(life.command(['go','env','GOMODCACHE']).strip()).resolve()
     require(life.public_modcache.is_dir() and (life.public_modcache/'cache/download').is_dir(), 'public_readonly_go_cache_required')
-    build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
+    # Registry token exchange occurs in the host Buildx client. A daemon-only
+    # proxy hostname is not a host client transport; select the separately
+    # validated credential-free loopback proxy instead of inheriting the shell.
+    client_proxies=daemon_build_proxies({'HTTPProxy':os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy'),
+                                       'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
+    build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_minio'
     minio_tag=life.run_id+'-minio:local'
     life.tags.append(minio_tag)
