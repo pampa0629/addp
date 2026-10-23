@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { node, resourceBackend } from './node-resources.fixture'
-import { trackResourceChart, resourceChartProps, resourceChartZoom, dragResourceChartZoom } from './resource-chart.fixture'
+import { trackResourceChart, resourceChartProps, resourceChartState, dragResourceChartZoom } from './resource-chart.fixture'
 
 test.beforeEach(({ page }) => trackResourceChart(page))
 
@@ -25,7 +25,7 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
     if (mode === 'foreign') body.series[0].dimensions.device = 'another-interface'
   } })
   const chartProps = () => resourceChartProps(page)
-  const zoomState = () => resourceChartZoom(page)
+  const zoomState = () => resourceChartState(page)
   let savedZoom
   const refresh = () => page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
   await page.setViewportSize({ width: 620, height: 900 })

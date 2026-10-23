@@ -614,3 +614,18 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 初始新增场景为 8/9，自动刷新场景失败于测试夹具读取不到图引擎模块；日志 `zoom-browser.log` 与报告 `addp-monitor-playwright-results-ymYElk` 保留。查明 Playwright 虚拟时钟同时替换 Performance 的资源读取接口并返回空数组；共享测试 helper 改为从页面实际资源请求记录模块 URL，再查询真实图实例，不保留性能表 fallback，也不改变产品逻辑、等待预算、重试或业务断言。修正后自动刷新专项 1/1（`automatic-zoom.log`），随后上述最终 96 项整组通过；最初失败不计通过。测试时钟只在隔离浏览器验证刷新，不是定时任务。
 
 以上为本地 T1/T3 与构建／登记证据，浏览器使用受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；本批未新跑 T2，原指标口径和来源未变。未查询、触发或重跑 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库；云端结果等专门会话回传。清单第 38 行仅补 CPU／内存／磁盘共享时间缩放子项，不能将所有图表缩放、完整图例交互验收或原行其他缺口一并记为完成。
+
+
+### 主机趋势图例筛选与悬停交互验收（2026-10-23）
+
+沿现有共享 ChartRenderer 补齐主机 CPU、内存、磁盘及网卡趋势的真实鼠标交互验收，产品渲染器、页面、指标、API、权限及查询均未修改。测试共用唯一 `resource-chart.fixture.js`，将原缩放专用状态读取统一为图表状态读取，按真实绘制图例的边界点击，并用图引擎坐标转换定位原始评估点后移动鼠标；不以 dispatchAction 模拟点击或直接调用 tooltip formatter 代替交互。已有缩放与网卡测试同步使用该 helper，旧函数路径删除。
+
+冻结根 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-trend-interactions-mlaz8a33`，基线 `3217e418c76a837ce91e0865969341b52ba5ca03`；`inputs-final.json` 记录四项测试输入，交付前逐项哈希一致。标准入口提供独立回环 Vite 端口、源码及缓存隔离和退出清理，没有访问个人 Console 或登录态。本轮最终使用已安装的 Node v24.11.1（`fnm exec --using v24.11.1` 仅影响当次命令，遵从根 `.node-version`，不修改全局配置）。
+
+- `npm run test:e2e -- host-trend-interactions.spec.js network-bars.spec.js host-resource-zoom.spec.js`：最终 22/22，通过，无失败／跳过（`browser-node24.log`）。新增 11 项覆盖四类主机图表的中英文 620 像素场景、单项隐藏／全部隐藏／恢复、悬停时间与精确值及单位、真实零／空值／陈旧值、缩放后原始索引、内存左右轴单位、采样明细和 URL／查询次数不变；CPU／内存完整时段比较结果不受显隐／悬停／缩放影响，查询失败及身份撤销清除可见提示与旧图。原 11 项缩放／网卡场景同时通过，未外推全模块或其他趋势图。
+- Monitor `npm test`：101/101，通过（`unit-node24.log`）；`npm run build` 通过，仅有既有 chunk 大小提示（`build-node24.log`）。`make test-frontend-ci-registration`：20 项及 21 个前端登记检查通过（`registration-node24.log`）；新增 spec 沿既有 Playwright 自动发现，未新增入口、依赖或 workflow。
+- 已逐一查看最终八张悬停稳定截图，确认中文／英文时间、CPU 百分比、内存 GiB 与百分比、磁盘及网卡 MiB/s 均清楚，缩放后图例和提示可见。截图父目录为上述冻结根的同一 macOS 临时目录父级：中文 `addp-trend-interaction-wE3AC0/cpu-zh-cn.png`、`addp-trend-interaction-WtUfKD/memory-zh-cn.png`、`addp-trend-interaction-VPTfxJ/disk-zh-cn.png`、`addp-trend-interaction-uMrVNX/network-zh-cn.png`；英文 `addp-trend-interaction-Oiz3T8/cpu-en.png`、`addp-trend-interaction-tQcryg/memory-en.png`、`addp-trend-interaction-XnPQa1/disk-en.png`、`addp-trend-interaction-2TGDiL/network-en.png`。
+
+最初单项测试将陈旧百分比夹具错误设为超过 100，页面按原响应校验拒绝整图，日志 `interaction-cpu-initial.log` 及报告 `addp-monitor-playwright-results-OkYGg3` 保留。夹具修正为范围内的陈旧百分比，仍要求该点不显示数值，未放宽产品校验、等待或断言；随后专项通过。默认终端 Node 为 v25.2.1，之前的 22 项及新增断言后 11 项通过保留在 `interaction-browser.log`／`interaction-browser-final.log`，最终交付结果以符合仓库工具链的上述 Node 24 门禁为准。
+
+本批仅为受控 HTTP 夹具的本地 T1/T3、构建及登记证据，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或其余领域浏览器全集，未重跑输入未变的共享组件单测。未查询／触发／重跑 CI 或 Hosted，未设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补上述四类主机图表的图例筛选与悬停本地验收，不代表所有图表、真实运行及原行其他缺口均已完成；CI 和 Hosted 等专门会话回传。
