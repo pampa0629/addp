@@ -90,7 +90,7 @@ func (g *Gate) PrepareBoundedEncodedRecordProtection(
 	if err != nil {
 		return nil, err
 	}
-	protect, err := g.store.PrepareTableProtection(ctx, int64(tenantID), model, path, fields, exportAction, time.Now().UTC())
+	protect, err := g.store.PrepareTableProtection(ctx, int64(tenantID), model, path, fields, exportAction, nil, time.Now().UTC())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
 	}
@@ -142,7 +142,7 @@ func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Conte
 	if p == nil || !sameCatalogPath(p.sourcePath, path) {
 		return nil, fmt.Errorf("%w: native source path does not match task source", ErrSourceRequired)
 	}
-	return p.store.PrepareTableProtection(ctx, p.tenantID, p.model, path, fields, exportAction, time.Now().UTC())
+	return p.store.PrepareTableProtection(ctx, p.tenantID, p.model, path, fields, exportAction, nil, time.Now().UTC())
 }
 
 func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, prepared engineplugin.PreparedQuery) (*dataprotection.PreparedTableProtection, error) {

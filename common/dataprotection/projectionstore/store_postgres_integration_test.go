@@ -194,7 +194,7 @@ func TestProjectionStoreFutureReasonHistoryAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protected, refusal := reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", time.Now().UTC())
+	protected, refusal := reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", nil, time.Now().UTC())
 	if protected != nil || !errors.Is(refusal, dataprotection.ErrNotYetValid) {
 		t.Fatalf("future projection did not refuse preparation: %v", refusal)
 	}
@@ -245,7 +245,7 @@ func TestProjectionStoreFutureReasonHistoryAgainstPostgres(t *testing.T) {
 	if err := reader.ApplyBatch(t.Context(), 7, "future", batch, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", time.Now().UTC())
+	protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", nil, time.Now().UTC())
 	if err != nil || protected == nil {
 		t.Fatalf("normal revision did not recover: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestProjectionStoreReasonMatrixAgainstPostgres(t *testing.T) {
 					if err := reader.ApplyBatch(t.Context(), 7, "matrix", batch, now); err != nil {
 						t.Fatal(err)
 					}
-					protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, outlet.action, now)
+					protected, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, outlet.action, nil, now)
 					if err != nil || protected == nil {
 						t.Fatalf("normal revision did not recover: %v", err)
 					}

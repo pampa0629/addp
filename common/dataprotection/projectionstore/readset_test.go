@@ -44,7 +44,7 @@ func TestProtectionGateReasonsUseCurrentFacts(t *testing.T) {
 			fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
 			now := time.Now().UTC()
 			if name == "initial_sync" {
-				_, err := store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", now)
+				_, err := store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", nil, now)
 				if !errors.Is(err, ErrNotInitialized) || !errors.Is(err, dataprotection.ErrNotReady) {
 					t.Fatalf("lost initial sync: %v", err)
 				}
@@ -82,7 +82,7 @@ func TestProtectionGateReasonsUseCurrentFacts(t *testing.T) {
 			if name == "unsupported_operation" {
 				err = store.RequireCatalogPathUnmanaged(t.Context(), 7, model, path, now)
 			} else {
-				_, err = store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", now)
+				_, err = store.PrepareTableProtection(t.Context(), 7, model, path, fields, "query", nil, now)
 			}
 			if !errors.Is(err, want) {
 				t.Fatalf("wrong protection reason: %v", err)
@@ -147,7 +147,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 			if query {
 				return store.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, nil, at)
 			}
-			return store.PrepareTableProtection(t.Context(), 7, model, path, fields, action, at)
+			return store.PrepareTableProtection(t.Context(), 7, model, path, fields, action, nil, at)
 		}
 		protect, err := prepare(validAt)
 		if err != nil {
@@ -274,7 +274,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 			if query {
 				protect, err = reader.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, nil, time.Now().UTC())
 			} else {
-				protect, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, action, time.Now().UTC())
+				protect, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, action, nil, time.Now().UTC())
 			}
 			if err != nil {
 				t.Fatalf("prepare renewed output restarted=%t query=%t: %v", restarted, query, err)
@@ -485,7 +485,7 @@ func TestPrepareTableProtectionMasksManagedNativeRows(t *testing.T) {
 	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	protect, err := store.PrepareTableProtection(t.Context(), 7, model, path, fields, "export", time.Now().UTC())
+	protect, err := store.PrepareTableProtection(t.Context(), 7, model, path, fields, "export", nil, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +525,7 @@ func TestPrepareTableProtectionDoesNotValidateUnmanagedPathFields(t *testing.T) 
 		t.Fatal(err)
 	}
 	unmanagedPath := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Activities")
-	protect, err := store.PrepareTableProtection(t.Context(), 7, model, unmanagedPath, nil, "export", time.Now().UTC())
+	protect, err := store.PrepareTableProtection(t.Context(), 7, model, unmanagedPath, nil, "export", nil, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}

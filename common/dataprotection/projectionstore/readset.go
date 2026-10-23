@@ -203,8 +203,12 @@ func (s *Store) PrepareTableProtection(
 	path plugin.EngineCatalogPath,
 	fields []datatype.FieldInfo,
 	action string,
+	selection *dataprotection.QueryRoleSelection,
 	now time.Time,
 ) (*dataprotection.PreparedTableProtection, error) {
+	if err := selection.Validate(now); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(action) == "" {
 		return nil, errors.New("protection table gate requires an action")
 	}
@@ -212,6 +216,9 @@ func (s *Store) PrepareTableProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
+		if selection != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
@@ -220,6 +227,9 @@ func (s *Store) PrepareTableProtection(
 	}
 	gate := s.Gate(tenantID, target, now)
 	if !gate.Managed {
+		if selection != nil {
+			return nil, dataprotection.ErrRoleOptionUnavailable
+		}
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
@@ -236,7 +246,37 @@ func (s *Store) PrepareTableProtection(
 	source := plugin.QueryOutputSource{
 		Path: path, Fields: append([]datatype.FieldInfo(nil), fields...), IdentityOutput: true,
 	}
-	derived := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
+	plan := querySourceProtection{target: target, source: source, rules: rules}
+	if err := validateConsumedRoleChoices([]querySourceProtection{plan}, selection, action); err != nil {
+		return nil, err
+	}
+	chosen, err := planRoleRules(plan, selection, action)
+	if err != nil {
+		return nil, err
+	}
+	derived := dataprotection.QueryOutputDerivedFields(source, action, chosen, dataprotection.SubjectReference{}, now)
+	apply := func(selected bool) func(*plugin.QueryResult) error {
+		return func(result *plugin.QueryResult) error {
+			if err := validateOutputProjections(gate.Projections); err != nil {
+				return err
+			}
+			activeRules := rules
+			if selected {
+				if err := s.ValidateRoleChoices(ctx, tenantID, selection, action, time.Now().UTC()); err != nil {
+					return err
+				}
+				var err error
+				activeRules, err = planRoleRules(plan, selection, action)
+				if err != nil {
+					return err
+				}
+			}
+			if err := dataprotection.ProtectQueryResultSource(result, source, action, activeRules, dataprotection.SubjectReference{}); err != nil {
+				return fmt.Errorf("protect table result: %w", err)
+			}
+			return nil
+		}
+	}
 
 	return &dataprotection.PreparedTableProtection{DerivedFields: derived, ValidateSourceSchema: func(current []datatype.FieldInfo) error {
 		if _, err := dataprotection.TableSchemaSnapshotHash(current); err != nil {
@@ -248,15 +288,7 @@ func (s *Store) PrepareTableProtection(
 			}
 		}
 		return nil
-	}, Apply: func(result *plugin.QueryResult) error {
-		if err := validateOutputProjections(gate.Projections); err != nil {
-			return err
-		}
-		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules, dataprotection.SubjectReference{}); err != nil {
-			return fmt.Errorf("protect table result: %w", err)
-		}
-		return nil
-	}}, nil
+	}, Apply: apply(true), ApplyDefault: apply(false)}, nil
 }
 
 // A successful read admission does not extend a projection's lifetime. Check
