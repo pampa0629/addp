@@ -1096,3 +1096,15 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         assert all(len(name) == 4 for name in path)
         assert operator["category"] == path[-1]
     assert "crs_to_projjson" not in expected
+
+
+def test_d8_stream_order_exposes_one_method_selector_and_keeps_strahler_default():
+    operators={item['id']:item for item in list_operators()}
+    spec=operators['raster_stream_order_d8'];params={p['name']:p for p in spec['parameters']}
+    assert spec['description']=='D8 河流分级'
+    assert params['method']['type']=='string' and params['method']['param_type']=='param'
+    assert params['method']['required'] is False and params['method']['default']=='strahler'
+    assert params['method']['enum']==['strahler','shreve']
+    assert spec['detailed_description']['workflow_example']['params']['method']=='strahler'
+    assert 'raster_stream_shreve_d8' not in operators and 'raster_shreve_d8' not in operators
+    assert 'method' not in {p['name'] for p in operators['raster_stream_link_d8']['parameters']}

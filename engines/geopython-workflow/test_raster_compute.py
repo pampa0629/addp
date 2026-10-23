@@ -7222,7 +7222,7 @@ def test_d8_strahler_random_forest_matches_independent_recursive_oracle(seed):
         if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
     # Independent threshold from per-origin counts produces downstream-closed streams.
     counts=_accumulation_walk_oracle(directions);streams=np.where(np.isfinite(directions),(counts>=seed%4).astype(float),np.nan)
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,streams==1),_strahler_recursive_oracle(directions,streams))
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1),_strahler_recursive_oracle(directions,streams))
 
 
 @pytest.mark.parametrize('dy,dx,code',[(dy,dx,code) for code,(dy,dx) in _STRAHLER_STEPS.items()])
@@ -7230,14 +7230,14 @@ def test_d8_strahler_all_eight_routes_source_and_outlet_grade_one(dy,dx,code):
     import operators.raster_compute as compute
     directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
     expected=np.where(np.isfinite(directions),1.,np.nan)
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.isfinite(directions)),expected)
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.isfinite(directions)),expected)
 
 
 def test_d8_strahler_diagonal_crossings_and_neighbours_are_not_confluences():
     import operators.raster_compute as compute
     directions=np.array([[2.,8.],[0.,0.]])
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.ones((2,2),bool)),np.ones((2,2)))
-    np.testing.assert_array_equal(compute._d8_strahler_order(np.zeros((1,3)),np.ones((1,3),bool)),np.ones((1,3)))
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.ones((2,2),bool)),np.ones((2,2)))
+    np.testing.assert_array_equal(compute._d8_stream_order(np.zeros((1,3)),np.ones((1,3),bool)),np.ones((1,3)))
 
 
 @pytest.mark.parametrize('directions,streams',[(np.array([[1.,1.,0.]]),np.array([[0.,1.,1.]])),
@@ -7251,28 +7251,29 @@ def test_d8_strahler_axes_empty_streams_and_all_invalid(tmp_path,directions,stre
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_strahler_recursive_oracle(directions,streams));ds=None
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_both_bands_explicit_valid_and_bilingual(tmp_path,role,band,language,operator):
+def test_d8_streams_both_bands_explicit_valid_and_bilingual(tmp_path,role,band,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
         with pytest.raises(ValueError,match='波段' if language=='zh-cn' else 'band'):
-            getattr(compute,operator)(source,mask,band if role=='direction' else 1,band if role=='mask' else 1)
+            getattr(compute,operator)(source,mask,band if role=='direction' else 1,band if role=='mask' else 1,**({'method':method} if method else {}))
         assert set(source.workspace.iterdir())==prior
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('case',['code','terminal','outside','invalid','cycle','cycle-with-outlet','break'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_full_graph_and_stream_break_fail_even_off_network(tmp_path,case,language,operator):
+def test_d8_streams_full_graph_and_stream_break_fail_even_off_network(tmp_path,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     directions=np.array([[1.,1.,0.]])
     if case=='code':directions[0,0]=3
     if case=='terminal':directions=np.zeros((3,3))
@@ -7286,35 +7287,37 @@ def test_d8_streams_full_graph_and_stream_break_fail_even_off_network(tmp_path,c
     key={'invalid':'target','outside':'target','cycle-with-outlet':'cycle'}.get(case,case)
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1)
+        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1,**({'method':method} if method else {}))
         assert str(error.value)==messages[key][language=='en']
         assert set(source.workspace.iterdir())==prior
     assert [p.read_bytes() for p in paths]==before
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('bad',[-1,2,255,.25,2**53,np.nan,np.inf])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_nonbinary_mask_and_coverage_mismatch_fail_closed(tmp_path,bad,language,operator):
+def test_d8_streams_nonbinary_mask_and_coverage_mismatch_fail_closed(tmp_path,bad,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.array([[bad,1.]]));key='mask_values' if math.isfinite(bad) else 'coverage'
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1)
+        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1,**({'method':method} if method else {}))
         assert str(error.value)==messages[key][language=='en']
         assert set(source.workspace.iterdir())==prior
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('case',['scale','offset','alpha','complex','rotated','geographic','no-crs','south-up'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_band_encoding_and_projected_grid_admission(tmp_path,role,case,language,operator):
+def test_d8_streams_band_encoding_and_projected_grid_admission(tmp_path,role,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
     path=paths[role=='mask'];ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,gdal.GDT_CFloat64 if case=='complex' else gdal.GDT_Float64)
     ds.SetGeoTransform((500000,2,.1 if case=='rotated' else 0,3000000,0,3 if case=='south-up' else -3))
@@ -7329,18 +7332,19 @@ def test_d8_streams_band_encoding_and_projected_grid_admission(tmp_path,role,cas
     if role=='mask':key='alignment' if key=='grid' else 'mask_'+key
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1)
+        with pytest.raises(ValueError) as error:getattr(compute,operator)(source,mask,1,1,**({'method':method} if method else {}))
         assert str(error.value)==messages[key][language=='en']
         assert set(source.workspace.iterdir())==prior
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('case',['dimensions','origin','resolution','crs','mask_missing','direction_missing'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_requires_exact_grid_and_effective_coverage(tmp_path,case,language,operator):
+def test_d8_streams_requires_exact_grid_and_effective_coverage(tmp_path,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     directions=np.array([[1.,1.,0.]]);streams=np.ones((1,3))
     if case=='mask_missing':streams[0,1]=np.nan
     if case=='direction_missing':directions[0,0]=np.nan
@@ -7354,32 +7358,34 @@ def test_d8_streams_requires_exact_grid_and_effective_coverage(tmp_path,case,lan
         ds=None
     key='coverage' if case.endswith('missing') else 'alignment'
     with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as error:
-        getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1)
+        getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1,**({'method':method} if method else {}))
     assert str(error.value)==messages[key][language=='en']
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_streams_native_nodata_does_not_hide_adjacent_large_invalid_code(tmp_path,role,dtype,language,operator):
+def test_d8_streams_native_nodata_does_not_hide_adjacent_large_invalid_code(tmp_path,role,dtype,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[np.nan,1.,0.]]),np.array([[np.nan,1.,1.]]));path=paths[role=='mask']
     ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype);ds.SetGeoTransform((500000,2,0,3000000,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
     band=ds.GetRasterBand(1);array=np.array([[2**53,2**53+1,0 if role=='direction' else 1]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64);band.WriteArray(array)
     (band.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else band.SetNoDataValueAsUInt64)(2**53);band=ds=None
     with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as error:
-        getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1)
+        getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1,**({'method':method} if method else {}))
     assert str(error.value)==messages['code' if role=='direction' else 'mask_values'][language=='en']
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
-def test_d8_streams_effective_mask_alpha_nodata_valid_zero_and_selected_bands(tmp_path,operator):
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+def test_d8_streams_effective_mask_alpha_nodata_valid_zero_and_selected_bands(tmp_path,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     values=np.zeros((3,7));values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
     alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
     mask=np.full(values.shape,255,np.uint8);mask[1,5]=0
@@ -7390,16 +7396,17 @@ def test_d8_streams_effective_mask_alpha_nodata_valid_zero_and_selected_bands(tm
         with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
         ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;paths.append(path)
     with raster_workspace():
-        result=getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],2,2);ds=gdal.Open(str(result.path))
+        result=getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],2,2,**({'method':method} if method else {}));ds=gdal.Open(str(result.path))
         np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.where(valid,0.,np.nan));ds=None
 
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('stage',['read','graph','write','metadata'])
-def test_d8_streams_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage,operator):
+def test_d8_streams_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)));before=[p.read_bytes() for p in paths]
     with raster_workspace():
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
@@ -7408,9 +7415,10 @@ def test_d8_streams_injected_failure_cleans_private_outputs(tmp_path,monkeypatch
         if stage=='graph':monkeypatch.setattr(compute,'_d8_stream_graph',fail)
         if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
         if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
-        with pytest.raises(RuntimeError,match='injected stream-order failure'):getattr(compute,operator)(source,mask,1,1)
+        with pytest.raises(RuntimeError,match='injected stream-order failure'):getattr(compute,operator)(source,mask,1,1,**({'method':method} if method else {}))
         assert set(source.workspace.iterdir())==prior
     assert [p.read_bytes() for p in paths]==before
+
 
 
 
@@ -7455,7 +7463,7 @@ def test_d8_strahler_duplicate_lower_orders_do_not_upgrade_unique_highest():
     directions[4,3]=64;streams[4,3]=1
     expected=_strahler_recursive_oracle(directions,streams)
     assert expected[2,2]==2 and expected[2,4]==expected[4,3]==1 and expected[3,3]==2
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,streams==1),expected)
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1),expected)
 
 
 def test_d8_strahler_multiple_equal_highest_inflows_increment_once():
@@ -7465,13 +7473,13 @@ def test_d8_strahler_multiple_equal_highest_inflows_increment_once():
     directions[2,2]=1;directions[2,3:5]=1;directions[2,5]=0
     expected=_strahler_recursive_oracle(directions,np.where(np.isfinite(directions),1.,np.nan))
     assert expected[2,2]==2 and expected[2,5]==2
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.isfinite(directions)),expected)
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.isfinite(directions)),expected)
 
 
 def test_d8_strahler_long_route_avoids_recursion():
     import operators.raster_compute as compute
     directions=np.ones((2,4097));directions[0,-1]=4;directions[1,:]=16;directions[1,0]=0
-    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.ones(directions.shape,bool)),np.ones(directions.shape))
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.ones(directions.shape,bool)),np.ones(directions.shape))
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
@@ -7488,24 +7496,26 @@ def test_d8_strahler_exact_output_limit_fails_before_publication(tmp_path,monkey
         assert set(source.workspace.iterdir())==prior
 
 
-@pytest.mark.parametrize('operator',['raster_stream_order_d8','raster_stream_link_d8'])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
 @pytest.mark.parametrize('epsg',[3857,2222,2277])
-def test_d8_streams_linear_unit_independence_preserves_source_crs(tmp_path,epsg,operator):
+def test_d8_streams_linear_unit_independence_preserves_source_crs(tmp_path,epsg,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     directions,streams=_strahler_tree();paths=_strahler_files(tmp_path,directions,streams)
     for path in paths:
         ds=gdal.Open(str(path),gdal.GA_Update);crs=osr.SpatialReference();crs.ImportFromEPSG(epsg);ds.SetProjection(crs.ExportToWkt());ds.GetRasterBand(1).SetUnitType('classification');ds=None
     with raster_workspace():
-        result=getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
-        np.testing.assert_array_equal(read_band_values(band),(_stream_link_walk_oracle(directions,streams) if operator=='raster_stream_link_d8' else _strahler_recursive_oracle(directions,streams)))
+        result=getattr(compute,operator)(*[raster_load(source_plan(p)) for p in paths],1,1,**({'method':method} if method else {}));ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),(_stream_link_walk_oracle(directions,streams) if operator=='raster_stream_link_d8' else _shreve_headwater_walk_oracle(directions,streams) if method=='shreve' else _strahler_recursive_oracle(directions,streams)))
         assert ds.GetSpatialRef().GetAuthorityCode(None)==str(epsg) and band.GetUnitType()=='';band=ds=None
 
 
 
-@pytest.mark.parametrize('case',['saved','threshold','dem','filled','empty','break','cycle','coverage'])
+
+@pytest.mark.parametrize('method',['strahler','shreve'])
+@pytest.mark.parametrize('case',['saved','threshold','dem','filled','empty','break','cycle','coverage','method'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure_cleanup(tmp_path,monkeypatch,case,language):
+def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure_cleanup(tmp_path,monkeypatch,case,language,method):
     import api_server,workflow_engine
     directions=np.ones((9,11));directions[:,-1]=0;streams=np.ones(directions.shape)
     if case=='cycle':directions[0,1]=16;streams[:]=0
@@ -7527,7 +7537,7 @@ def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure
             {'id':'streams','operator':'raster_reclassify','depends_on':['accumulate'],'params':{'input_raster':{'$ref':'accumulate'},'band':1,'rules':[{'min':None,'max':2,'class':0},{'min':2,'max':None,'class':1}]}}])
         streams=np.where(_accumulation_walk_oracle(directions)>=2,1.,0.)
     else:tasks.append({'id':'streams','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}})
-    tasks.extend([{'id':'grade','operator':'raster_stream_order_d8','depends_on':[prior,'streams'],'params':{'input_raster':{'$ref':prior},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}},
+    tasks.extend([{'id':'grade','operator':'raster_stream_order_d8','depends_on':[prior,'streams'],'params':{'input_raster':{'$ref':prior},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1,'method':'invalid' if case=='method' else method}},
         {'id':'save','operator':'raster_save','depends_on':['grade'],'params':{'input_raster':{'$ref':'grade'},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
     workspaces=[];execute=workflow_engine._execute_operator
     def capture(name,params):
@@ -7541,14 +7551,14 @@ def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure
         status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
         if status['status'] in ('success','failed'):break
         time.sleep(.01)
-    failed=case in ('break','cycle','coverage');assert status['status']==('failed' if failed else 'success'),status
+    failed=case in ('break','cycle','coverage','method');assert status['status']==('failed' if failed else 'success'),status
     assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
     if failed:
         assert not target.exists()
         import operators.raster_compute as compute
-        assert '任务 grade 执行失败: '+compute._D8_STREAM_ORDER_MESSAGES[case][language=='en'] in status['error']
+        assert '任务 grade 执行失败: '+(compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES)[case][language=='en'] in status['error']
     else:
-        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_strahler_recursive_oracle(directions,streams))
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),(_shreve_headwater_walk_oracle(directions,streams) if method=='shreve' else _strahler_recursive_oracle(directions,streams)))
         assert ds.GetRasterBand(1).GetUnitType()=='';ds=None
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
@@ -7561,9 +7571,12 @@ def test_d8_streams_discovery_single_route_and_two_required_raster_inputs(operat
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
     assert spec['category_path']==['栅格处理','像元计算']
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','stream_raster','band','stream_band'} and all(p['required'] for p in params.values())
+    required={'input_raster','stream_raster','band','stream_band'}
+    assert set(params)==required|({'method'} if operator=='raster_stream_order_d8' else set())
+    assert all(params[p]['required'] for p in required)
+    if operator=='raster_stream_order_d8':assert params['method']['required'] is False and params['method']['default']=='strahler' and params['method']['enum']==['strahler','shreve']
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','stream_raster'))
-    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1,**({'method':'strahler'} if operator=='raster_stream_order_d8' else {})}
 
 
 
@@ -8410,3 +8423,158 @@ def test_d8_stream_link_real_async_two_input_save_threshold_composition_and_fail
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
     assert client.post('/api/operators/raster_stream_link_d8/invoke',json={'params':{}}).status_code==403
+
+
+# Shreve oracle counts headwater contributions by independent forward walks,
+# rather than reusing the production topological sums or intermediate levels.
+def _shreve_headwater_walk_oracle(directions,streams):
+    valid=np.isfinite(directions);river=streams==1;heads=[]
+    for row,col in np.argwhere(river):
+        incoming=[]
+        for code,(dy,dx) in _STRAHLER_STEPS.items():
+            y,x=int(row)-dy,int(col)-dx
+            if 0<=y<river.shape[0] and 0<=x<river.shape[1] and river[y,x] and directions[y,x]==code:incoming.append((y,x))
+        if not incoming:heads.append((int(row),int(col)))
+    result=np.where(valid,0.,np.nan)
+    for row,col in heads:
+        seen=set()
+        while True:
+            assert river[row,col] and (row,col) not in seen
+            seen.add((row,col));result[row,col]+=1
+            if directions[row,col]==0:break
+            dy,dx=_STRAHLER_STEPS[directions[row,col]];row,col=row+dy,col+dx
+    assert sum(result[(directions==0)&river])==len(heads)
+    return result
+
+
+@pytest.mark.parametrize('prune_lower',[False,True])
+def test_d8_shreve_actual_headwaters_nested_confluences_and_strahler_default_preserved(tmp_path,prune_lower):
+    import operators.raster_compute as compute
+    directions,streams=_strahler_tree()
+    if prune_lower:
+        for cell in ((5,1),(5,3),(4,2)):streams[cell]=0
+    paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths]
+    expected=_shreve_headwater_walk_oracle(directions,streams)
+    assert expected[2,2]==2 and expected[3,3]==(3 if prune_lower else 5)
+    assert expected[3,4]==(3 if prune_lower else 5) and np.all(expected[3,6:]==(4 if prune_lower else 6))
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths]
+        for method in (None,'strahler','shreve'):
+            result=compute.raster_stream_order_d8(source,mask,1,1,**({'method':method} if method else {}))
+            ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+            np.testing.assert_array_equal(read_band_values(band),expected if method=='shreve' else _strahler_recursive_oracle(directions,streams))
+            np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+            assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetUnitType()==''
+            assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+            band=ds=None
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('seed',range(36))
+def test_d8_shreve_random_forest_full_magnitudes_and_headwater_conservation(seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);rows,cols=np.indices((9,11));rank=np.minimum.reduce((rows,cols,8-rows,10-cols));directions=np.zeros((9,11))
+    for row,col in np.argwhere(rank>0):
+        choices=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if rank[row+dy,col+dx]<rank[row,col]];directions[row,col]=rng.choice(choices)
+    directions[4,5]=np.nan
+    for row,col in np.argwhere(np.isfinite(directions)&(directions!=0)):
+        dy,dx=_STRAHLER_STEPS[directions[row,col]]
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    counts=_accumulation_walk_oracle(directions);streams=np.where(np.isfinite(directions),(counts>=seed%5).astype(float),np.nan)
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1,'shreve'),_shreve_headwater_walk_oracle(directions,streams))
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1),compute._d8_stream_order(directions,streams==1,'strahler'))
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1),_strahler_recursive_oracle(directions,streams))
+
+
+@pytest.mark.parametrize('dy,dx,code',[(dy,dx,code) for code,(dy,dx) in _STRAHLER_STEPS.items()])
+def test_d8_shreve_eight_directions_centres_and_open_outlet_one(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.isfinite(directions),'shreve'),np.where(np.isfinite(directions),1.,np.nan))
+
+
+@pytest.mark.parametrize('directions,streams',[(np.array([[1.,1.,0.]]),np.array([[0.,1.,1.]])),(np.array([[4.],[4.],[0.]]),np.ones((3,1))),
+    (np.array([[0.]]),np.array([[1.]])),(np.zeros((2,3)),np.zeros((2,3))), (np.full((4,5),np.nan),np.full((4,5),np.nan)),
+    (np.array([[2.,8.],[0.,0.]]),np.ones((2,2)))])
+def test_d8_shreve_axes_empty_invalid_crossing_and_adjacent_outlets(tmp_path,directions,streams):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,directions,streams)
+    with raster_workspace():
+        result=compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],1,1,method='shreve');ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_shreve_headwater_walk_oracle(directions,streams));ds=None
+
+
+def _shreve_seven_sources():
+    directions=np.full((3,3),np.nan);directions[1,1]=0
+    for code,(dy,dx) in list(_STRAHLER_STEPS.items())[:-1]:directions[1-dy,1-dx]=code
+    return directions,np.where(np.isfinite(directions),1.,np.nan)
+
+
+def test_d8_shreve_all_tributaries_add_even_when_equal_and_open_terminal_is_confluence():
+    import operators.raster_compute as compute
+    directions,streams=_shreve_seven_sources();expected=_shreve_headwater_walk_oracle(directions,streams)
+    assert expected[1,1]==7 and compute._d8_stream_order(directions,streams==1)[1,1]==2
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,streams==1,'shreve'),expected)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('limit',[0,1,6,7])
+def test_d8_shreve_exact_integer_limit_at_source_and_confluence_before_output(tmp_path,monkeypatch,language,limit):
+    import operators.raster_compute as compute
+    directions,streams=_shreve_seven_sources();paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths]
+    monkeypatch.setattr(compute,'_D8_MAX_EXACT_COUNT',limit)
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        if limit<7:
+            with pytest.raises(ValueError) as caught:compute.raster_stream_order_d8(source,mask,1,1,method='shreve')
+            assert str(caught.value)==compute._D8_SHREVE_MESSAGES['overflow'][language=='en'] and set(source.workspace.iterdir())==prior
+        else:
+            result=compute.raster_stream_order_d8(source,mask,1,1,method='shreve');ds=gdal.Open(str(result.path))
+            np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_shreve_headwater_walk_oracle(directions,streams));ds=None
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('method',[None,True,False,0,1,1.5,[],{},'','SHREVE','Shreve',' shreve','shreve ','strahler\n','unknown'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_shreve_method_is_exact_and_rejected_before_opening_inputs(monkeypatch,method,language):
+    import operators.raster_compute as compute
+    def unexpected(*args,**kwargs):raise AssertionError('invalid method must not open inputs')
+    monkeypatch.setattr(compute,'_d8_stream_sources',unexpected)
+    with raster_error_language(language),pytest.raises(ValueError) as caught:compute.raster_stream_order_d8(None,None,1,1,method=method)
+    assert str(caught.value)==compute._D8_STREAM_ORDER_MESSAGES['method'][language=='en']
+
+
+def test_d8_shreve_cross_block_complete_cog_mask_nearest_pyramid_and_unchanged_prior_output(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    height,width=517,519;directions=np.ones((height,width));directions[:,-1]=0
+    streams=np.zeros(directions.shape);streams[255,:513]=streams[257,:513]=streams[254,:513]=1;streams[256,512:]=1
+    directions[255,512]=4;directions[257,512]=64;directions[254,512]=4
+    directions[510,510]=np.nan;directions[510,509]=0;streams[510,510]=np.nan
+    expected=streams.copy();expected[255,512]=2;expected[256,512:]=3
+    paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths];target=tmp_path/'shreve.cog.tif'
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths];calls=[];original=gdal.Band.ReadAsArray
+        def read(self,*args,**kwargs):
+            if len(args)>=4:calls.append(args[2:4])
+            return original(self,*args,**kwargs)
+        monkeypatch.setattr(gdal.Band,'ReadAsArray',read)
+        result=compute.raster_stream_order_d8(source,mask,1,1,method='shreve');assert calls and all(w<=512 and h<=512 for w,h in calls)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.) and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetUnitType()==''
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None and band.GetOverviewCount()>0
+        for index in range(band.GetOverviewCount()):
+            overview=read_band_values(band.GetOverview(index));assert set(np.unique(overview[np.isfinite(overview)]))<={0.,1.,2.,3.}
+        assert not validate(ds,full_check=True)[1];band=ds=None;snapshot=target.read_bytes()
+        compute.raster_stream_order_d8(source,mask,1,1,method='shreve');assert target.read_bytes()==snapshot
+    assert [p.read_bytes() for p in paths]==before and not result.path.exists()
+
+
+def test_d8_shreve_long_single_route_is_one_headwater_without_recursion():
+    import operators.raster_compute as compute
+    directions=np.ones((1,100001));directions[0,-1]=0
+    np.testing.assert_array_equal(compute._d8_stream_order(directions,np.ones(directions.shape,bool),'shreve'),np.ones(directions.shape))

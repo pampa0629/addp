@@ -2992,8 +2992,20 @@ _D8_STREAM_ORDER_MESSAGES.update({
 })
 
 
-def _d8_stream_order_error(code):
-    return ValueError(_D8_STREAM_ORDER_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+_D8_STREAM_ORDER_MESSAGES['method'] = (
+    'D8 河流分级的method必须是strahler或shreve',
+    'D8 stream order method must be strahler or shreve',
+)
+_D8_SHREVE_MESSAGES = {
+    key: (zh.replace('D8 Strahler 河流分级', 'D8 Shreve 河流量级').replace('级别', '量级'),
+          en.replace('D8 Strahler stream order', 'D8 Shreve stream magnitude'))
+    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items()
+}
+
+
+def _d8_stream_order_error(code, method='strahler'):
+    messages = _D8_SHREVE_MESSAGES if method == 'shreve' else _D8_STREAM_ORDER_MESSAGES
+    return ValueError(messages[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
 def _d8_stream_graph(directions, streams, error):
@@ -3007,22 +3019,28 @@ def _d8_stream_graph(directions, streams, error):
     return valid, downstream, order
 
 
-def _d8_strahler_order(directions, streams):
-    """Rank an explicit stream subgraph; validate the complete D8 graph first."""
-    valid, downstream, order = _d8_stream_graph(directions, streams, _d8_stream_order_error)
+def _d8_stream_order(directions, streams, method='strahler'):
+    """One validated stream traversal for Strahler rank or Shreve source magnitude."""
+    error = lambda code: _d8_stream_order_error(code, method)
+    valid, downstream, order = _d8_stream_graph(directions, streams, error)
     river = streams.ravel()
     levels = np.zeros(directions.size, dtype=np.int64)
-    highest_count = np.zeros(directions.size, dtype=np.uint8)
+    highest_count = np.zeros(directions.size, dtype=np.uint8) if method == 'strahler' else None
     for cell in order:
         if not river[cell]:
             continue
-        level = max(1, int(levels[cell]) + int(highest_count[cell] >= 2))
+        level = max(1, int(levels[cell]) + int(highest_count[cell] >= 2)) if method == 'strahler' else max(1, int(levels[cell]))
         if level > _D8_MAX_EXACT_COUNT:
-            raise _d8_stream_order_error('overflow')
+            raise error('overflow')
         levels[cell] = level
         target = int(downstream[cell])
         if target >= 0:
-            if level > levels[target]:
+            if method == 'shreve':
+                total = int(levels[target]) + level
+                if total > _D8_MAX_EXACT_COUNT:
+                    raise error('overflow')
+                levels[target] = total
+            elif level > levels[target]:
                 levels[target] = level
                 highest_count[target] = 1
             elif level == levels[target]:
@@ -3053,17 +3071,19 @@ def _d8_stream_sources(input_raster, stream_raster, band, stream_band, error):
     return source, directions, values == 1
 
 
-def raster_stream_order_d8(input_raster, stream_raster, band, stream_band):
-    """Fixed Strahler ranks on aligned, coverage-identical 0/1 stream masks."""
+def raster_stream_order_d8(input_raster, stream_raster, band, stream_band, method='strahler'):
+    """Compute Strahler rank (default) or Shreve magnitude without filling gaps."""
+    if not isinstance(method, str) or method not in ('strahler', 'shreve'):
+        raise _d8_stream_order_error('method')
     source, directions, streams = _d8_stream_sources(
-        input_raster, stream_raster, band, stream_band, _d8_stream_order_error)
-    return _d8_output(source, _d8_strahler_order(directions, streams))
+        input_raster, stream_raster, band, stream_band, lambda code: _d8_stream_order_error(code, method))
+    return _d8_output(source, _d8_stream_order(directions, streams, method))
 
 
 _D8_STREAM_LINK_MESSAGES = {
     key: (zh.replace('D8 Strahler 河流分级', 'D8 河段编号'),
           en.replace('D8 Strahler stream order', 'D8 stream link'))
-    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items() if key != 'overflow'
+    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items() if key not in ('overflow', 'method')
 }
 _D8_STREAM_LINK_MESSAGES['overflow'] = (
     'D8 河段编号的河段数超过Float64精确整数上限2^53−1',
@@ -3245,7 +3265,7 @@ _SPECS = [
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
-    (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 Strahler 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段；固定Strahler，最高同级至少两条才升级')], 'raster', ['read']),
+    (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -3277,6 +3297,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1})
     if name in ('raster_stream_order_d8', 'raster_stream_link_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
+    if name == 'raster_stream_order_d8':
+        examples.update({'method': 'strahler'})
     if name == 'raster_watershed_d8':
         examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1})
     if name == 'raster_flow_accumulation_weighted_d8':
