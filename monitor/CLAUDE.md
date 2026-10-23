@@ -55,6 +55,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - `addp-prometheus` 仅以独立 Platform Service Access Token 读取原生 HTTP SD，不获目标管理或后台身份权限；成功空列表与失败分开，保存版本不是 Prometheus 生效回执。凭据、证书和 Secret 文件由各自部署/配置 owner 管理。
 - `scripts/infra/node-metrics.py` 是独立来源部署入口；原生 Linux 与 Desktop VM 身份分别确认。Desktop 当前七采集器含 diskstats，只表示 VM 内核块设备视图，不代表 Mac 本机或单容器，也不提供 filesystem/inode/netdev/netstat。
 - 固定目录当前共 26 项；TCP 当前连接数为宿主网络统计中的 ESTABLISHED＋CLOSE_WAIT 整数，不含监听和 TIME_WAIT，受限 Desktop 缺少该来源时显示无数据而非零。CPU、负载、容量/inode、磁盘吞吐/IO 时间、网卡吞吐及进程 CPU/RSS/时长使用各自单位与完整窗口，不跨设备层累加、不用共享挂载或进程 RSS 推导集群容量。资源查询与采集证据共用现有 mTLS、预算与期限，指标和公式只由 resourcequery 维护。
+- 主机列表摘要显式请求核数、CPU 忙碌率、内存总量／使用率及运行时长五项，默认每页 20 台；`resource_summaries` 必须携带 node_ids 和闭合 metrics 子集，批次按节点数乘指标数预检预算。TOP5 与采集配置页仍只选择 CPU／内存百分比两项，不因列表扩列增加读取；所有消费者共用同一批量查询内核，禁止省略指标或逐行补查。
 - `/engine-resources` 提供 Infra／Business PostgreSQL 的十二项专业指标、当前页四项摘要和当前数据库容器段最长七天趋势。System 逐请求裁决当前 User 的引擎部署读取，私有投影只用于发现且查询后重核；同一 HTTP SD、mTLS、端点去重和资源预算，不增加手填目标或租户用量归算。SQL 快照不完整、过期、统计重置或权限变化均不保留旧值。来源/查询实链专项沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`。
 - 平台 HTTP 质量入口为 `/http-quality`，使用独立七项 HTTP 目录和固定 1/5/15 分钟窗口，模板排行最多十项；Gateway ingress 与 Backend 分层读取。统计读取与 HTTP 规则分别授权，当前 User 的实例裁决和后台最小身份投影不得混用；契约见正式规范 6.4。Go 使用 Common 唯一采集工厂，Python 未接入，Tenant 发布服务质量归 Service。
 - 本地 HTTP 专项使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，复用专属指标链与规则/outbox 测试库，跳过 PostgreSQL 专业来源探针及后续主机回归；完整回归仍用默认入口。该分项不代表正式身份 T4。

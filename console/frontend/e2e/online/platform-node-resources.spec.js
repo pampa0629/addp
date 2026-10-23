@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceTrendComparison, resourceTrendMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { hostListMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceTrendComparison, resourceTrendMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
@@ -398,14 +398,17 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('resource-search')).toBeVisible()
     await expect(monitor.getByRole('button', { name: '查看资源' })).toHaveCount(1)
     await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')
-    await expect(monitor.getByTestId('resource-node-list').locator('strong')).toHaveCount(2)
-    for (const value of await monitor.getByTestId('resource-node-list').locator('strong').allTextContents()) expect(value).toMatch(/^\d[\d,]*\.\d{2} %$/)
+    await expect(monitor.getByTestId('resource-node-list').locator('strong')).toHaveCount(5)
+    for (const metric of ['cpuBusy', 'memoryUsed']) await expect(monitor.getByTestId(`resource-summary-${metric}`)).toHaveText(/^\d[\d,]*\.\d{2} %$/)
+    await expect(monitor.getByTestId('resource-summary-cores')).toHaveText(/^[\d,]+ 核$/)
+    await expect(monitor.getByTestId('resource-summary-memoryTotal')).toHaveText(/[KMGT]iB$/)
+    await expect(monitor.getByTestId('resource-summary-uptime')).not.toHaveText('—')
     await Promise.all(pending)
     expect(resources).toHaveLength(0)
     expect(summaries).toHaveLength(1)
-    expect(summaries[0].query).toEqual({ node_ids: expected.node.node_id })
+    expect(summaries[0].query).toEqual({ node_ids: expected.node.node_id, metrics: hostListMetrics.map(metric => metric.key).join(',') })
     expect(summaries[0].value.data).toHaveLength(1)
-    expect(summaries[0].value.data[0].series.map(row => row.metric_key).sort()).toEqual(summaryMetrics.map(row => row.key).sort())
+    expect(summaries[0].value.data[0].series.map(row => row.metric_key).sort()).toEqual(hostListMetrics.map(row => row.key).sort())
     await page.screenshot({ path: resolve(artifact, 'node-resources-list.png'), animations: 'disabled' })
     const documentOrigin = () => monitor.locator('body').evaluate(() => performance.timeOrigin)
     const documentID = await documentOrigin()

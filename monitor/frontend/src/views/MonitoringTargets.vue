@@ -96,7 +96,7 @@ import { validateHostCollection } from '../../../../common-frontend/basic/src/ut
 import { loadHostReferences } from '../utils/hostReferences'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds, validateTargetCollectionReference } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
-import { validateCollection, validateResourceResponse, validateResourceSummaries, resourceErrorKey } from '../utils/nodeResources'
+import { pressureMetrics, validateCollection, validateResourceResponse, validateResourceSummaries, resourceErrorKey } from '../utils/nodeResources'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 
@@ -212,9 +212,9 @@ async function loadListCollections(savedTargets, hosts, generation, ticket) {
   const controller = new AbortController()
   listCollectionController = controller; pending.add(controller); listCollectionLoading.value = true
   try {
-    const response = await hostsAPI.summaries(nodes.map(row => row.node_id), { signal: controller.signal })
+    const response = await hostsAPI.summaries(nodes.map(row => row.node_id), pressureMetrics.map(metric => metric.key), { signal: controller.signal })
     if (generation !== epoch || ticket !== listTicket) return
-    const observations = validateResourceSummaries(response, nodes), next = new Map()
+    const observations = validateResourceSummaries(response, nodes, pressureMetrics), next = new Map()
     for (const target of targets) {
       const value = observations.get(target.subject.node_id)
       try {

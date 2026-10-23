@@ -93,7 +93,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	}
 	otherScope := scope
 	otherScope.NodeID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-	summaries, err := c.Summaries(queryContext, []Scope{scope, otherScope}, now, b)
+	summaries, err := c.Summaries(queryContext, []Scope{scope, otherScope}, HostListMetrics(), now, b)
 	if err != nil || len(summaries) != 2 || summaries[scope.NodeID].Collection.State != "collecting" || summaries[otherScope.NodeID].Collection.State != "no_sample" {
 		t.Fatalf("native summary scope evidence: %+v %v", summaries, err)
 	}

@@ -5919,15 +5919,23 @@ paths:
       - monitor.resource_observation.read
   /platform/resource_summaries:
     get:
-      description: 固定 CPU 一分钟忙碌率、内存使用率及采集证据；共享整批预算、超时与并发租约，逐节点由 System 核验当前用户。停用节点或目标不查询历史。|
-        Fixed one-minute CPU busy and memory used percentages with collection evidence;
-        shared batch budget, timeout and concurrency lease, with current-user System
-        authorization for every node. Disabled nodes or targets do not reuse history.
+      description: '显式选择 CPU 核数、一分钟忙碌率、内存总量、内存使用率、运行时长五项标量的非空无重复子集；节点数乘指标数计入整批预算，逐节点由
+        System 核验当前用户。停用节点或目标不查询历史。| Explicit non-empty distinct subset of five scalars:
+        logical CPU cores, one-minute CPU busy percentage, total memory, memory used
+        percentage and uptime. Node count times metric count shares one batch budget;
+        current-user System authorization for every node. Disabled nodes or targets
+        do not reuse history.'
       parameters:
-      - description: 逗号分隔的 1–100 个不重复节点 UUID；两项指标乘节点数计入预算 | 1–100 distinct comma-separated
-          node UUIDs; two metrics times node count count against budget
+      - description: 逗号分隔的 1–100 个不重复节点 UUID；所选指标乘节点数计入预算 | 1–100 distinct comma-separated
+          node UUIDs; selected metrics times node count count against budget
         in: query
         name: node_ids
+        required: true
+        type: string
+      - description: 逗号分隔的固定五项摘要指标的非空无重复子集 | Non-empty distinct comma-separated subset
+          of the fixed five summary metrics
+        in: query
+        name: metrics
         required: true
         type: string
       produces:

@@ -13,6 +13,7 @@ import (
 
 func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T) {
 	second := "22222222-2222-4222-8222-222222222222"
+	keys := HostListMetrics()
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -37,7 +38,7 @@ func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T)
 				}
 			}
 		} else {
-			for _, key := range SummaryMetrics() {
+			for _, key := range keys {
 				for _, component := range []string{"value", "sampled_at"} {
 					raw := "0"
 					if component == "sampled_at" {
@@ -57,7 +58,7 @@ func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T)
 	}))
 	defer server.Close()
 	c := &Client{origin: server.URL, http: server.Client()}
-	rows, err := c.Summaries(context.Background(), []Scope{{testNode, "host-a:9100"}, {second, "host-b:9100"}}, testTime, DefaultBudget())
+	rows, err := c.Summaries(context.Background(), []Scope{{testNode, "host-a:9100"}, {second, "host-b:9100"}}, keys, testTime, DefaultBudget())
 	if err != nil || calls != 2 || len(rows) != 2 || rows[testNode].Collection.State != "collecting" || rows[second].Collection.State != "no_sample" {
 		t.Fatal(rows, err, calls)
 	}
@@ -75,16 +76,16 @@ func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T)
 
 func TestSummaryBudgetsAndWireLabelsAreClosed(t *testing.T) {
 	b := DefaultBudget()
-	if _, err := NewSummaryPlan(50, testTime, b); err != nil {
+	if _, err := NewSummaryPlan(50, PressureMetrics(), testTime, b); err != nil {
 		t.Fatal(err)
 	}
 	for _, count := range []int{0, 51, 101} {
-		if _, err := NewSummaryPlan(count, testTime, b); err == nil {
+		if _, err := NewSummaryPlan(count, PressureMetrics(), testTime, b); err == nil {
 			t.Fatal("unbounded count accepted", count)
 		}
 	}
 	b.MaxTotalPoints = 3
-	if _, err := NewSummaryPlan(2, testTime, b); !errors.Is(err, ErrBudget) {
+	if _, err := NewSummaryPlan(2, PressureMetrics(), testTime, b); !errors.Is(err, ErrBudget) {
 		t.Fatal(err)
 	}
 	data := collectionWire(t, map[string]string{"up_count": "0"})
@@ -107,5 +108,24 @@ func TestSummaryBudgetsAndWireLabelsAreClosed(t *testing.T) {
 	data.Data.Result = append(data.Data.Result, data.Data.Result[0])
 	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 1, "addp_summary_node"); !errors.Is(err, ErrBudget) {
 		t.Fatal("per-node wire bound bypass", err)
+	}
+}
+
+func TestSummaryProjectionReservesTheWholeRequestedBatch(t *testing.T) {
+	b := DefaultBudget()
+	if p, err := NewSummaryPlan(20, HostListMetrics(), testTime, b); err != nil || len(p.Metrics) != 5 {
+		t.Fatal(p, err)
+	}
+	if _, err := NewSummaryPlan(21, HostListMetrics(), testTime, b); !errors.Is(err, ErrBudget) {
+		t.Fatal("five-key batch exceeded series budget", err)
+	}
+	for _, keys := range [][]string{nil, {"node.cpu.busy_percent", "node.cpu.busy_percent"}, {"node.load.average_1m"}, {"node.disk.io_busy_percent"}, {"node.tcp.current_connections"}, {"arbitrary"}} {
+		if _, err := NewSummaryPlan(1, keys, testTime, b); !errors.Is(err, ErrInvalid) {
+			t.Fatal(keys, err)
+		}
+	}
+	b.MaxMetrics = 4
+	if _, err := NewSummaryPlan(1, HostListMetrics(), testTime, b); !errors.Is(err, ErrBudget) {
+		t.Fatal("metric budget ignored", err)
 	}
 }

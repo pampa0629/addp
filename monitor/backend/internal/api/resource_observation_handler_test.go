@@ -123,6 +123,16 @@ func TestResourceQueryParsingStrictAndPolicyCAS(t *testing.T) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
+	id := "11111111-1111-4111-8111-111111111111"
+	for _, metrics := range []string{"", "node.cpu.busy_percent,node.cpu.busy_percent", "node.load.average_1m", "node.disk.io_busy_percent", "node.tcp.current_connections"} {
+		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_summaries?node_ids="+id+"&metrics="+metrics, nil)
+		req.Header.Set("Authorization", "Bearer addp_at_user")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != 400 {
+			t.Fatal("summary projection accepted", metrics, w.Code, w.Body.String())
+		}
+	}
 	for _, query := range []string{"node_id=x&metrics=y&query=up", "node_id=x&metrics=y&node_id=z", "node_id=x&metrics=y&step=1", "node_id=x&metrics=y&start=bad", "node_id=x;metrics=y", "node_id=x&metrics=y&device=a", "node_id=x&metrics=y&device=a&mountpoint=relative&fstype=x", "node_id=x&metrics=y&device=a&device=b&mountpoint=%2F&fstype=x"} {
 		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_observations?"+query, nil)
 		req.Header.Set("Authorization", "Bearer addp_at_user")

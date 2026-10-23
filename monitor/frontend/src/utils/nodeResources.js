@@ -42,7 +42,8 @@ export const networkMetrics = [
 ]
 export const memoryMetrics = resourceMetrics.filter(metric => metric.key.startsWith('node.memory.'))
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
-export const summaryMetrics = resourceMetrics.filter(metric => ['node.cpu.busy_percent', 'node.memory.used_percent'].includes(metric.key))
+export const hostListMetrics = resourceMetrics.filter(metric => ['node.cpu.logical_cores', 'node.cpu.busy_percent', 'node.memory.total_bytes', 'node.memory.used_percent', 'node.uptime_seconds'].includes(metric.key))
+export const pressureMetrics = resourceMetrics.filter(metric => ['node.cpu.busy_percent', 'node.memory.used_percent'].includes(metric.key))
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
 export function validResourceDimensions(value, allowEmpty = true) {
   return value && typeof value === 'object' && !Array.isArray(value) && ((allowEmpty && Object.keys(value).length === 0) ||
@@ -66,7 +67,7 @@ export function resourceDimensionRows(...values) {
 export const resourceRanges = { '5m': 300, '1h': 3600, '24h': 86400, '7d': 604800 }
 const defaultMetric = 'node.memory.used_percent'
 export function supportsResourceComparison(metric, range) {
-  return summaryMetrics.some(item => item.key === metric) && ['5m', '1h', '24h'].includes(range)
+  return pressureMetrics.some(item => item.key === metric) && ['5m', '1h', '24h'].includes(range)
 }
 export function resolveResourceRoute(query = {}, detail = false) {
   const pagination = resolveTargetRoute({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.page_size === undefined ? {} : { page_size: query.page_size }) })
@@ -198,7 +199,7 @@ export function resourceErrorKey(error) {
   return `monitor.resources.errors.${names[code] || (status === 404 ? 'notFound' : status === 401 || status === 403 ? 'denied' : error.message === 'invalid_resource_response' ? 'invalidResponse' : 'unavailable')}`
 }
 
-export function validateResourceSummaries(value, nodes) {
+export function validateResourceSummaries(value, nodes, metrics) {
   if (!Array.isArray(value?.data) || !nodes.length || value.data.length !== nodes.length) throw new Error('invalid_resource_response')
   const expected = new Map(nodes.map(node => [node.node_id, node.version])), result = new Map()
   if (expected.size !== nodes.length) throw new Error('invalid_resource_response')
@@ -206,7 +207,7 @@ export function validateResourceSummaries(value, nodes) {
   for (const row of value.data) {
     const id = row?.subject?.node_id
     if (!expected.has(id) || result.has(id) || !Number.isSafeInteger(row.node_version) || row.node_version < 1 || row.node_version !== expected.get(id) || !Number.isSafeInteger(row.policy_version) || row.policy_version < 0 || row.end !== anchor.end || row.queried_at !== anchor.queried_at || row.policy_version !== anchor.policy_version) throw new Error('invalid_resource_response')
-    validateResourceResponse(row, id, summaryMetrics.map(metric => metric.key))
+    validateResourceResponse(row, id, metrics.map(metric => metric.key))
     validateCollection(row.collection, row.queried_at)
     const completed = Date.parse(row.queried_at)
     if (Date.parse(row.end) > completed) throw new Error('invalid_resource_response')

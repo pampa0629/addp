@@ -22,7 +22,7 @@ func TestResourceSummaryAuthorizesWholeBatchAndExcludesStoppedHistory(t *testing
 	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget(), Version: 1}}
 	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
 	query := func() (ResourceSummaryResponse, error) {
-		return svc.Summaries(context.Background(), "user", "addp_at_current_user", ids)
+		return svc.Summaries(context.Background(), "user", "addp_at_current_user", ids, resourcequery.HostListMetrics())
 	}
 	nodes.denyID = ids[1]
 	if _, err := query(); err == nil || backend.summaryCalls != 0 {
@@ -30,7 +30,7 @@ func TestResourceSummaryAuthorizesWholeBatchAndExcludesStoppedHistory(t *testing
 	}
 	nodes.denyID = ""
 	value, err := query()
-	if err != nil || len(value.Data) != 2 || backend.summaryCalls != 1 || len(backend.summaryScopes) != 1 || backend.summaryScopes[0].NodeID != ids[0] || value.Data[1].Collection.State != "not_connected" || value.Data[1].Series[0].Points[0].DataState != "not_connected" || value.Data[0].NodeVersion != 3 || value.Data[0].TargetSavedVersion != 2 {
+	if err != nil || len(value.Data) != 2 || len(value.Data[0].Series) != 5 || backend.summaryCalls != 1 || len(backend.summaryScopes) != 1 || backend.summaryScopes[0].NodeID != ids[0] || value.Data[1].Collection.State != "not_connected" || value.Data[1].Series[0].Points[0].DataState != "not_connected" || value.Data[0].NodeVersion != 3 || value.Data[0].TargetSavedVersion != 2 {
 		t.Fatalf("summary=%+v error=%v", value, err)
 	}
 	for _, token := range nodes.tokens {
@@ -49,7 +49,7 @@ func TestResourceSummaryAuthorizesWholeBatchAndExcludesStoppedHistory(t *testing
 		t.Fatal("batch total budget bypass", err)
 	}
 	policies.row.MaxSeries = 100
-	if _, err := svc.Summaries(context.Background(), "user", "token", []string{ids[0], ids[0]}); !errors.Is(err, resourcequery.ErrInvalid) {
+	if _, err := svc.Summaries(context.Background(), "user", "token", []string{ids[0], ids[0]}, resourcequery.PressureMetrics()); !errors.Is(err, resourcequery.ErrInvalid) {
 		t.Fatal("duplicate node accepted", err)
 	}
 	lease, err := svc.limiter.Acquire("user", resourcequery.DefaultBudget())
@@ -72,5 +72,28 @@ func TestResourceSummaryAuthorizesWholeBatchAndExcludesStoppedHistory(t *testing
 	value, err = query()
 	if err != nil || value.Data[0].Series[0].Points[0].DataState != "stale" || value.Data[0].Collection.State != "stale" || value.Data[0].Collection.Network != "unknown" {
 		t.Fatal("completion freshness ignored", value, err)
+	}
+}
+
+func TestHostListSummaryBudgetRejectsBeforeAnyOwnerRead(t *testing.T) {
+	nodes := &resourceNodes{enabled: true}
+	backend := &resourceBackend{}
+	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget(), Version: 1}}
+	svc := NewResourceObservationService(policies, &targetTestStore{}, nodes, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
+	ids := make([]string, 21)
+	for i := range ids {
+		ids[i] = uuid.NewString()
+	}
+	if _, err := svc.Summaries(context.Background(), "user", "current-user", ids, resourcequery.HostListMetrics()); !errors.Is(err, resourcequery.ErrBudget) || len(nodes.tokens) != 0 || backend.summaryCalls != 0 {
+		t.Fatal("over-budget batch reached owner/source", err, nodes.tokens)
+	}
+	value, err := svc.Summaries(context.Background(), "user", "current-user", ids[:20], resourcequery.HostListMetrics())
+	if err != nil || len(value.Data) != 20 || len(nodes.tokens) != 20 || backend.summaryCalls != 0 {
+		t.Fatal(value, err)
+	}
+	for _, row := range value.Data {
+		if len(row.Series) != 5 || row.Collection.State != "not_connected" {
+			t.Fatal(row)
+		}
 	}
 }

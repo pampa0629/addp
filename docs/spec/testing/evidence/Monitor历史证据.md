@@ -795,3 +795,22 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 最终 `make test-infra-runtime-log-lifecycle` 退出0：55项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go，以及既有60项生命周期通过。标准实际入口最后一次仍为失败；最终配置修复后的完整部署未重跑，正式密码/MFA、Tenant成功／受控失败执行、Trace与日志及Console闭环均未运行、未计通过。当前源码不是第6次完整实际运行的输入，不能把确定性回归记成正式运行验收。剩余窗口不足以重建并完成闭环，没有启动注定超时的完整重跑，也没有续开新窗口。
 
 六次成功测量的总体峰值3,421,573,120字节（约3.19 GiB）、6.25 CPU／10.0625 GiB，均未触及原上限；这只覆盖准备构建，不能证明业务部署的资源表现。六次自动清理全部通过，独立复核当次容器、网络、卷、构建器、镜像标签和私有目录均为零，原MinIO镜像保留。安全报告、绝对窗口、输入提交、红绿回归及最终门禁日志见 `/tmp/addp-p19-formal-local-20261023-window3/` 中的 `attempt-1-report.json` 至 `attempt-6-report.json`、`receipt.json`、`cleanup-audit.json`、`deployment-contract-red.log`、`preflight-final-test.log`、`lifecycle-final.log`。清单实际第19行（B18）及第45行（B44）仍为部分实现，正式身份缺口保留；不将本次结果计为Linux Runner T4、Hosted、T5或真实72小时证明。
+
+
+## 主机列表五项核心摘要（本地）
+
+2026-10-23，按用户确认范围，主机列表展示 CPU 逻辑核数／一分钟忙碌率、内存总量／使用率与运行时长，默认每页 20 台。复用原单位、当前节点身份／版本、采样新鲜度、采集状态和列表生命周期；容量用 IEC 单位，运行时长用复合时长。固定主机与操作列、标题允许换行，每项保留独立状态。当前页只进行一次摘要 API 请求，不逐台读取详情或补齐失败列；返回乱序仍按节点身份映射，单项陈旧不抹除其他有效值，整批缺项拒绝并清空旧摘要，主机列表仍保留。
+
+`/platform/resource_summaries` 唯一契约现在显式携带 `node_ids` 和 `metrics`，只接受上述五项的非空无重复子集，不保留省略参数的旧请求。唯一批量内核复用原公式、两次固定 Prometheus 请求、整批期限／并发和逐节点 User 授权；在 Owner 读取与指标查询前按节点数乘指标数预检预算。默认 20 × 5 = 100，21 台五项请求整批拒绝，不拆批或提高预算；TOP5 与采集配置页显式保持 CPU／内存百分比两项，原 50 台 TOP5 上限、比较和热力指标范围不变。API、调用方、Swagger 及既有 Hosted 收据／拒绝测试同步，仍只在原已确认十项节点指标的读取范围内选五项，不新增权限、角色或身份用途。
+
+冻结基线 `d798875a0732cb18e42d1772799d7c91b007542e`，仅叠加本批文件。证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-list-core-v8j8u6ci`，`inputs.json` 记录最终本批文件，`frontend-inputs-sha256.json` 记录 437 项前端／共享／浏览器入口输入。其他会话的 engineApprovalInitialization 两项共享未提交 WIP 未混入冻结副本；本任务源码及其余前端输入与工作区核对一致，不外推整个共享工作区的 WIP。实际验证：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 通过（`go-t1.log`）。五项／两项显式投影共用内核；20 台五项、50 台两项边界通过，21 台五项在任何 Owner／来源读取前拒绝；空／重复／未知／分组／不在摘要范围的指标拒绝，停用、跨节点、当前用户 Token 与完成时新鲜度沿原规则核验。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 上五项摘要的完整来源及受限 Desktop VM 读取、外来节点缺样隔离通过；原 TOP5 的受控多源覆盖／预算及来源故障恢复回归通过。退出核验当次容器／网络／卷和临时文件零残留；该结果是本地隔离 T2，不是多真实主机、正式身份页面 T4 或生产 T5。
+- Node v24.19.0 下，`npm --prefix monitor/frontend run test:e2e -- host-list-core.spec.js`：20 台主机的 2 项中英文专项通过（`core-list-browser.log`），验证一次精确五项批量读取、默认每页20台、CPU 核数／百分比、IEC 容量、复合时长、乱序身份匹配、单项陈旧、整批缺项后的清除／恢复及无逐行详情查询。后续完整门禁另覆盖最终表头换行。
+- 最终 `make test-monitor-frontend`：112 项 T1、411/411 浏览器 T3 及构建全部通过，命令退出0（`frontend-full.log`，浏览器约15分钟，构建4.46秒）；本次输入下无失败或跳过。覆盖主机／采集列表的投影隔离、TOP5、详情、热力、趋势与服务／告警回归；不把前面的专项与整批交叠用例重复累计。`screenshots/` 保留最终五项列表中英文实图，已人工核对中文布局、单位与可读表头。
+- 首轮 `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js monitoring-target-list.spec.js resource-overview.spec.js`：89 通过、3 失败（`focused-browser.log`）；失败是旧列表用例仍断言两列数值或不带 metrics 的请求，已按精确五项和必填选择修订，不放宽采集配置页两项断言或产品校验。
+- `make test-node-metrics-online-runner`：139 项本地入口／身份／收据守卫及 System Metrics Go 夹具通过（`online-runner.log`）；新增拒绝省略指标选择、旧两项列表请求及缺失核心列的反例。仅为准备好的正式入口本地检查，没有运行 Hosted。
+- `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。现有 Monitor 前端／Go／指标 T2、Console／Online 路径自动发现覆盖本批，没有新增 workflow 或标准入口。
+
+本会话不触发／轮询 CI 或 Hosted，不设置定时任务，不修改 IAM 或重启个人服务。因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。

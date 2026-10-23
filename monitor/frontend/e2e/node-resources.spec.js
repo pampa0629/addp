@@ -1,3 +1,4 @@
+import { hostListMetrics } from '../src/utils/nodeResources'
 import { expect, test } from '@playwright/test'
 import { tmpdir } from 'node:os'
 import { mkdtempSync } from 'node:fs'
@@ -42,7 +43,7 @@ test('lists owner nodes without fanout and opens ten metrics with server-anchore
   await page.goto('/node-resources?page=2&search=节点')
   await expect(page.getByRole('button', { name: '查看资源' })).toHaveCount(2)
   await expect(page.getByTestId('resource-node-list')).toContainText('正在采集')
-  expect(state.reads.filter(item => item.path.includes('resource_'))).toEqual([{ path: '/api/v1/monitor/platform/resource_summaries', query: { node_ids: `${node},${secondNode}` }, method: 'GET' }])
+  expect(state.reads.filter(item => item.path.includes('resource_'))).toEqual([{ path: '/api/v1/monitor/platform/resource_summaries', query: { node_ids: `${node},${secondNode}`, metrics: hostListMetrics.map(metric => metric.key).join(',') }, method: 'GET' }])
   await page.getByRole('button', { name: '查看资源' }).first().click()
   await expect(page).toHaveURL(new RegExp(`/node-resources/${node}\\?page=2&search=`))
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
@@ -66,8 +67,10 @@ for (const locale of ['zh-cn', 'en']) test(`list summaries show valid zero and r
   await page.goto('/node-resources')
   const list = page.getByTestId('resource-node-list')
   await expect(list).toContainText(locale === 'en' ? 'Collecting' : '正在采集')
-  await expect(list.locator('strong')).toHaveCount(4)
-  for (const value of await list.locator('strong').allTextContents()) expect(value).toMatch(/^0\.00 %$/)
+  await expect(list.locator('strong')).toHaveCount(10)
+  for (const metric of ['cpuBusy', 'memoryUsed']) for (const value of await list.getByTestId(`resource-summary-${metric}`).allTextContents()) expect(value).toBe('0.00 %')
+  for (const value of await list.getByTestId('resource-summary-memoryTotal').allTextContents()) expect(value).toBe('16.00 GiB')
+  for (const value of await list.getByTestId('resource-summary-uptime').allTextContents()) expect(value).toBe(locale === 'en' ? '1 hour' : '1小时')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   state.summaryMode = 'unavailable'
   await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
@@ -84,14 +87,14 @@ for (const [mode, label] of [['disconnected', '未启用采集'], ['collection-f
   await resourceBackend(page, { summaryMode: mode })
   await page.goto('/node-resources')
   await expect(page.getByTestId('resource-node-list')).toContainText(label)
-  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(['—', '—', '—', '—'])
+  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(Array(10).fill('—'))
 })
 
 test('list summary denial clears hosts; malformed identity is rejected; empty lists make no resource reads', async ({ page }) => {
   const state = await resourceBackend(page, { summaryMode: 'invalid' })
   await page.goto('/node-resources')
   await expect(page.getByTestId('resource-summary-error')).toBeVisible()
-  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(['—', '—', '—', '—'])
+  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(Array(10).fill('—'))
   state.summaryMode = 'denied'
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('resource-error')).toBeVisible()
@@ -142,9 +145,9 @@ test('list search discards a late invalid old batch and keeps CPU warmup distinc
   state.releaseSummary()
   await expect(page.getByTestId('resource-node-list')).toContainText('正在采集')
   await expect(page.getByTestId('resource-node-list')).toContainText('筛选后节点')
-  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(['—', '0.00 %'])
+  expect(await page.getByTestId('resource-node-list').locator('strong').allTextContents()).toEqual(['0 核', '—', '16.00 GiB', '0.00 %', '1小时'])
   await expect(page.getByTestId('resource-summary-error')).toHaveCount(0)
-  expect(state.reads.filter(row => row.path.endsWith('/resource_summaries')).at(-1).query).toEqual({ node_ids: secondNode })
+  expect(state.reads.filter(row => row.path.endsWith('/resource_summaries')).at(-1).query).toEqual({ node_ids: secondNode, metrics: hostListMetrics.map(metric => metric.key).join(',') })
 })
 test('canonical detail restores metric and range on reload; no endpoint or token enters URL', async ({ page }) => {
   const state = await resourceBackend(page)
@@ -884,10 +887,10 @@ for (const locale of ['zh-cn', 'en']) test(`host list automatic refresh preserve
   await page.clock.fastForward(15001)
   await expect(page.getByTestId('resource-summary-error')).toBeVisible()
   expect(summaryReads(state)).toHaveLength(2)
-  expect(await list.locator('strong').allTextContents()).toEqual(['—', '—', '—', '—'])
+  expect(await list.locator('strong').allTextContents()).toEqual(Array(10).fill('—'))
   await expect(page.getByTestId('resource-search')).toHaveValue('未提交')
   expect(state.reads.filter(item => item.path.endsWith('/host_nodes')).at(-1).query).toEqual({ page: '2', page_size: '20', search: '节点' })
-  expect(summaryReads(state).at(-1).query).toEqual({ node_ids: `${node},${secondNode}` })
+  expect(summaryReads(state).at(-1).query).toEqual({ node_ids: `${node},${secondNode}`, metrics: hostListMetrics.map(metric => metric.key).join(',') })
   state.summaryMode = ''
   await page.clock.fastForward(15001)
   await expect(page.getByTestId('resource-summary-error')).toHaveCount(0)

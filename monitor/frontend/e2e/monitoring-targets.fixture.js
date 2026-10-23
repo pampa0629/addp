@@ -1,4 +1,4 @@
-import { summaryMetrics } from '../src/utils/nodeResources'
+import { pressureMetrics } from '../src/utils/nodeResources'
 import { observations } from './resource-observations.fixture'
 
 export const id = '1621bb62-cb0e-40e1-b988-0d4d36683e51'
@@ -37,7 +37,7 @@ export async function backend(page, options = {}) {
       const targets = [target, ...(options.additionalTargets || [])].filter(Boolean)
       body = { data: url.searchParams.get('node_ids').split(',').map(node_id => {
         const saved = targets.find(row => row.subject.node_id === node_id && row.monitor_kind === 'host_resources' && row.enabled)
-        const value = observations(node_id, summaryMetrics.map(row => row.key), false, mode === 'failed' ? 'collection-failed' : mode === 'not_connected' ? 'disconnected' : '', queried_at)
+        const value = observations(node_id, pressureMetrics.map(row => row.key), false, mode === 'failed' ? 'collection-failed' : mode === 'not_connected' ? 'disconnected' : '', queried_at)
         if (saved && mode !== 'not_connected') { value.target_id = mode === 'wrong-target' ? node : saved.id; value.target_saved_version = saved.version + (mode === 'wrong-version' ? 1 : 0) }
         if (mode === 'no_sample') {
           value.collection = { state: 'no_sample', sampled_at: null, filesystem: 'unknown', network: 'unknown' }

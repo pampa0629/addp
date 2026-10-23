@@ -94,7 +94,7 @@ func (s *ResourceObservationService) Overview(ctx context.Context, principal, to
 		ids[i] = node.NodeID
 	}
 	now := s.now().UTC()
-	plan, err := resourcequery.NewSummaryPlan(max(len(ids), 1), now.Truncate(time.Second), cfg.Budget)
+	plan, err := resourcequery.NewSummaryPlan(max(len(ids), 1), resourcequery.PressureMetrics(), now.Truncate(time.Second), cfg.Budget)
 	if err != nil {
 		return result, err
 	}
@@ -127,7 +127,7 @@ func aggregateResourceOverview(nodes []client.UserHostNode, observations Resourc
 	if len(observations.Data) != len(nodes) {
 		return fail()
 	}
-	for _, key := range resourcequery.SummaryMetrics() {
+	for _, key := range resourcequery.PressureMetrics() {
 		for _, metric := range resourcequery.Catalog() {
 			if metric.Key == key {
 				result.Rankings = append(result.Rankings, ResourceRanking{MetricKey: key, Unit: metric.Unit, WindowSeconds: metric.WindowSeconds, Coverage: ResourceCoverage{Expected: len(nodes)}, Top: []ResourceRank{}})

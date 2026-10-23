@@ -62,10 +62,10 @@ type resourceBackend struct {
 	summaryScopes []resourcequery.Scope
 }
 
-func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.Scope, at time.Time, budget resourcequery.Budget) (map[string]resourcequery.Summary, error) {
+func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.Scope, keys []string, at time.Time, budget resourcequery.Budget) (map[string]resourcequery.Summary, error) {
 	b.summaryCalls++
 	b.summaryScopes = append([]resourcequery.Scope(nil), scopes...)
-	p, err := resourcequery.NewSummaryPlan(len(scopes), at, budget)
+	p, err := resourcequery.NewSummaryPlan(len(scopes), keys, at, budget)
 	if err != nil {
 		return nil, err
 	}

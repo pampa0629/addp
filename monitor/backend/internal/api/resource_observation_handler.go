@@ -123,11 +123,12 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 
 // Summaries godoc
 // @Summary 读取当前页主机资源概览 | Read current-page host resource summaries
-// @Description 固定 CPU 一分钟忙碌率、内存使用率及采集证据；共享整批预算、超时与并发租约，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Fixed one-minute CPU busy and memory used percentages with collection evidence; shared batch budget, timeout and concurrency lease, with current-user System authorization for every node. Disabled nodes or targets do not reuse history.
+// @Description 显式选择 CPU 核数、一分钟忙碌率、内存总量、内存使用率、运行时长五项标量的非空无重复子集；节点数乘指标数计入整批预算，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Explicit non-empty distinct subset of five scalars: logical CPU cores, one-minute CPU busy percentage, total memory, memory used percentage and uptime. Node count times metric count shares one batch budget; current-user System authorization for every node. Disabled nodes or targets do not reuse history.
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
-// @Param node_ids query string true "逗号分隔的 1–100 个不重复节点 UUID；两项指标乘节点数计入预算 | 1–100 distinct comma-separated node UUIDs; two metrics times node count count against budget"
+// @Param node_ids query string true "逗号分隔的 1–100 个不重复节点 UUID；所选指标乘节点数计入预算 | 1–100 distinct comma-separated node UUIDs; selected metrics times node count count against budget"
+// @Param metrics query string true "逗号分隔的固定五项摘要指标的非空无重复子集 | Non-empty distinct comma-separated subset of the fixed five summary metrics"
 // @Success 200 {object} service.ResourceSummaryResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -143,7 +144,7 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 // @Router /platform/resource_summaries [get]
 func (h *ResourceObservationHandler) Summaries(c *gin.Context) {
 	q, err := url.ParseQuery(c.Request.URL.RawQuery)
-	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 1 || len(q["node_ids"]) != 1 || q.Get("node_ids") == "" {
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 2 || len(q["node_ids"]) != 1 || q.Get("node_ids") == "" || len(q["metrics"]) != 1 || q.Get("metrics") == "" {
 		resourceError(c, resourcequery.ErrInvalid)
 		return
 	}
@@ -153,7 +154,7 @@ func (h *ResourceObservationHandler) Summaries(c *gin.Context) {
 		return
 	}
 	ids := strings.Split(q.Get("node_ids"), ",")
-	value, err := h.service.Summaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids)
+	value, err := h.service.Summaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids, strings.Split(q.Get("metrics"), ","))
 	if err != nil {
 		resourceError(c, err)
 		return

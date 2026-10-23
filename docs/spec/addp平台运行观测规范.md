@@ -255,7 +255,7 @@ TCP 当前连接数为 `node.tcp.current_connections`（unit=`connections`，瞬
 | 接口（Monitor `/api/v1/monitor` 下） | 约束 |
 | --- | --- |
 | `/platform/resource_observations`、`/platform/resource_trends` | 显式 node_id、固定 metrics 白名单；趋势使用整秒 RFC3339 start/end，维度严格匹配 |
-| `/platform/resource_summaries` | 当前授权节点的批量摘要，同一评估锚点，不逐行查询 |
+| `/platform/resource_summaries` | 显式 `node_ids` 和 `metrics`，当前授权节点的批量摘要；指标仅允许 CPU 核数／一分钟忙碌率、内存总量／使用率、运行时长五项的非空无重复子集，同一评估锚点，不逐行查询 |
 | `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/resource_overview` | 不接受 query/body，完整授权主机范围及 CPU/内存 TOP5 |
@@ -279,6 +279,8 @@ TCP 当前连接数为 `node.tcp.current_connections`（unit=`connections`，瞬
 标签仅保存必要身份及有限维度，不加入 TraceId、请求/执行/用户 ID、完整 URL、SQL 或 Token。服务质量后续采用规范化 route 和有界直方图；无请求不虚构错误率和延迟。
 
 ### 6.3 趋势、时段比较与总览
+
+主机列表核心资源列采用 2026-10-23 用户确认的五项：CPU 逻辑核数、CPU 一分钟忙碌率、内存总量、内存使用率和运行时长。默认每页 20 台，复用当前页一次批量摘要与原单位／新鲜度，不逐台补查详情。每次显式请求所需指标，按“本批节点数 × 所选指标数”在逐节点 Owner 裁决与 Prometheus 读取前校验同一预算；默认五项 × 20 台正好 100 序列。实际返回页超预算或策略收紧时整批拒绝，保留主机列表并提示减少每页数量，不拆批绕过、不部分返回、不自动提高预算。内存使用 IEC 容量，时长使用复合时长；有效零、缺样和陈旧沿原口径。总览 TOP5 仍只规划 CPU／内存百分比两项，默认最多 50 台；采集配置页亦显式请求原两项，二者不随列表展示扩大读取。仅保留这一条带明确指标选择的摘要契约，不接受省略 metrics 的旧请求。
 
 主机详情的资源热力面板复用当前已授权的即时 CPU 忙碌率、内存使用率及每个完整挂载身份的文件系统使用率，不另发查询或重算百分比。CPU 保留原一分钟窗口，文件系统继续使用 `used/(used+available)`；不同指标的采样时间分别保留。有效值以主题色从低使用率到高使用率连续着色，并同步显示精确百分比和 0～100% 进度条；颜色不设告警阈值、不计算健康分、不替代资源规则或推导泄漏。合法零值为有效零；陈旧、缺样或未接入只显示中性占位与原数据状态，不着色、不补零。文件系统来源不可用时明确显示原因，不用 inode 或其他挂载补造使用率。每个分区保留设备、挂载点和文件系统类型，可沿既有可恢复路由查看同一指标与挂载的趋势；刷新、错误、撤权及迟到响应沿原页面生命周期，不新增权限或持久化状态。
 

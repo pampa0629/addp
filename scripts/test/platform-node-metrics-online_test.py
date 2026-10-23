@@ -1031,7 +1031,7 @@ for(const failBody of [false,true]){
         rows.append({"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.NETWORK_METRICS)}, "value": self.resource_reply(ONLINE.NETWORK_METRICS)})
         report = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "unique-run",
                   "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
-                  "summaries": [{"path": ONLINE.SUMMARIES, "query": {"node_ids": "node-id"}, "value": {"data": [self.resource_reply(["node.cpu.busy_percent", "node.memory.used_percent"])]}}],
+                  "summaries": [{"path": ONLINE.SUMMARIES, "query": {"node_ids": "node-id", "metrics": ",".join(ONLINE.HOST_LIST_METRICS)}, "value": {"data": [self.resource_reply(ONLINE.HOST_LIST_METRICS)]}}],
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
                   "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
@@ -1051,6 +1051,13 @@ for(const failBody of [false,true]){
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
+            for mutate in (lambda row: row["query"].pop("metrics"),
+                           lambda row: row["query"].update(metrics="node.cpu.busy_percent,node.memory.used_percent"),
+                           lambda row: row["value"]["data"][0]["series"].pop()):
+                malformed = copy.deepcopy(report)
+                mutate(malformed["summaries"][0])
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_resource_browser(malformed, expected, artifacts)
+
             for family in ONLINE.DEVICE_RATE_FAMILIES:
                 with self.subTest(counter_family=list(family)):
                     gap = copy.deepcopy(next(row for row in rows if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(family)))

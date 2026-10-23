@@ -27,14 +27,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
-import { summaryMetrics, currentResourceValue, resourceDimensionRows } from '../utils/nodeResources'
+import { pressureMetrics, currentResourceValue, resourceDimensionRows } from '../utils/nodeResources'
 
 const props = defineProps({ instant: { type: Object, required: true }, filesystems: { type: Object, default: null }, filesystemErrorKey: { type: String, default: '' }, filesystemMessage: { type: String, default: '' }, loading: Boolean })
 defineEmits(['select'])
 const { t, locale } = useI18n()
 const partitions = computed(() => resourceDimensionRows(props.filesystems))
 const entries = computed(() => [
-  ...summaryMetrics.map(metric => ({ id: metric.key, name: metric.name, metric: metric.key, point: props.instant.series.find(series => series.metric_key === metric.key)?.points[0] })),
+  ...pressureMetrics.map(metric => ({ id: metric.key, name: metric.name, metric: metric.key, point: props.instant.series.find(series => series.metric_key === metric.key)?.points[0] })),
   ...partitions.value.map(row => ({ id: row.key, name: 'partition', metric: 'node.filesystem.used_percent', dimensions: row.dimensions, point: row.metrics['node.filesystem.used_percent'] }))
 ].map(entry => {
   const value = currentResourceValue(entry.point)

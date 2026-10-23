@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { allResourceMetrics, summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
+import { allResourceMetrics, hostListMetrics, pressureMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
 import { resourceTrendMetrics, resourceTrendChartRows } from '../src/utils/nodeResources.js'
 
@@ -48,21 +48,23 @@ test('node resource trends delegate chart rendering and formatting to the shared
   assert.doesNotMatch(source, /echarts|setOption|Intl\.NumberFormat|localStorage/)
 })
 
-test('summary responses exactly match the authorized page, saved versions and shared fresh anchor', () => {
+for (const metrics of [pressureMetrics, hostListMetrics]) test(`summary ${metrics.length}-key projection exactly matches the authorized page, saved versions and shared fresh anchor`, () => {
   const at = '2026-10-07T00:00:00Z', nodes = [{ node_id: 'a', version: 1 }, { node_id: 'b', version: 2 }]
   const reply = { data: nodes.map(node => ({ subject: { kind: 'node', node_id: node.node_id }, node_version: node.version, policy_version: 1, end: at, queried_at: at,
     collection: { state: 'collecting', sampled_at: at, filesystem: 'available', network: 'available' },
-    series: summaryMetrics.map(metric => ({ metric_key: metric.key, dimensions: {}, unit: metric.unit, window_seconds: metric.windowSeconds || 0,
+    series: metrics.map(metric => ({ metric_key: metric.key, dimensions: {}, unit: metric.unit, window_seconds: metric.windowSeconds || 0,
       points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })) })) }
-  assert.equal(validateResourceSummaries(reply, nodes).get('a').series[0].points[0].value, 0)
+  assert.equal(validateResourceSummaries(reply, nodes, metrics).get('a').series[0].points[0].value, 0)
   for (const mutate of [value => value.data.pop(), value => value.data.push(value.data[0]), value => value.data[1].subject.node_id = 'a',
     value => value.data[0].subject.node_id = 'foreign', value => value.data[0].node_version++, value => value.data[1].policy_version++,
     value => value.data[1].end = '2026-10-07T00:00:01Z', value => value.data[1].queried_at = '2026-10-07T00:00:01Z',
     value => value.data[0].series[0].points[0].sampled_at = '2026-10-06T23:58:00Z']) {
     const changed = structuredClone(reply); mutate(changed)
-    assert.throws(() => validateResourceSummaries(changed, nodes))
+    assert.throws(() => validateResourceSummaries(changed, nodes, metrics))
   }
-  assert.throws(() => validateResourceSummaries({ data: [] }, []))
+  assert.throws(() => validateResourceSummaries({ data: [] }, [], metrics))
+  const other = metrics === pressureMetrics ? hostListMetrics : pressureMetrics
+  assert.throws(() => validateResourceSummaries(reply, nodes, other))
 })
 
 test('restores only canonical list context and fixed catalog trend options', () => {

@@ -3,20 +3,30 @@ package resourcequery
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func SummaryMetrics() []string {
+func PressureMetrics() []string {
 	return []string{"node.cpu.busy_percent", "node.memory.used_percent"}
 }
 
-func NewSummaryPlan(count int, at time.Time, b Budget) (Plan, error) {
+func HostListMetrics() []string {
+	return []string{"node.cpu.logical_cores", "node.cpu.busy_percent", "node.memory.total_bytes", "node.memory.used_percent", "node.uptime_seconds"}
+}
+
+func NewSummaryPlan(count int, keys []string, at time.Time, b Budget) (Plan, error) {
 	if count < 1 || count > 100 {
 		return Plan{}, ErrInvalid
 	}
-	p, err := NewPlan(SummaryMetrics(), at, at, at, false, nil, b)
+	for _, key := range keys {
+		if !slices.Contains(HostListMetrics(), key) {
+			return Plan{}, ErrInvalid
+		}
+	}
+	p, err := NewPlan(keys, at, at, at, false, nil, b)
 	if err == nil && (count*len(p.Metrics) > b.MaxSeries || count*len(p.Metrics) > b.MaxTotalPoints) {
 		err = ErrBudget
 	}
@@ -30,8 +40,8 @@ type Summary struct {
 
 // Summaries shares the scalar and collection formulas and their normalization.
 // Two fixed requests cover all authorized active scopes, never one per host.
-func (c *Client) Summaries(ctx context.Context, scopes []Scope, at time.Time, b Budget) (map[string]Summary, error) {
-	p, err := NewSummaryPlan(len(scopes), at, b)
+func (c *Client) Summaries(ctx context.Context, scopes []Scope, keys []string, at time.Time, b Budget) (map[string]Summary, error) {
+	p, err := NewSummaryPlan(len(scopes), keys, at, b)
 	if err != nil {
 		return nil, err
 	}

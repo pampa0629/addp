@@ -46,6 +46,7 @@ METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent"
            "node.memory.available_bytes": "bytes", "node.memory.used_percent": "percent",
            "node.load.average_1m": "load", "node.load.average_5m": "load",
            "node.load.average_15m": "load", "node.uptime_seconds": "seconds", "node.tcp.current_connections": "connections"}
+HOST_LIST_METRICS = ["node.cpu.logical_cores", "node.cpu.busy_percent", "node.memory.total_bytes", "node.memory.used_percent", "node.uptime_seconds"]
 FILESYSTEM_METRICS = {"node.filesystem."+key: unit for key, unit in (("total_bytes", "bytes"), ("free_bytes", "bytes"), ("available_bytes", "bytes"), ("used_bytes", "bytes"), ("used_percent", "percent"))}
 INODE_METRICS = {"node.filesystem."+key: unit for key, unit in (("inodes_total", "inodes"), ("inodes_free", "inodes"), ("inodes_used", "inodes"), ("inodes_used_percent", "percent"))}
 DISK_METRICS = {"node.disk."+key: unit for key, unit in (("read_bytes_per_second", "bytes_per_second"), ("write_bytes_per_second", "bytes_per_second"), ("io_busy_percent", "percent"), ("read_mean_duration_milliseconds", "milliseconds"), ("write_mean_duration_milliseconds", "milliseconds"))}
@@ -864,10 +865,10 @@ def validate_resource_browser(value, expected, artifacts):
     summaries = value.get("summaries")
     require(isinstance(summaries, list) and 2 <= len(summaries) <= 8, "browser list summary missing or unbounded")
     for row in summaries:
-        require(row.get("path") == SUMMARIES and row.get("query") == {"node_ids": expected["node"]["node_id"]}, "browser summary scope mismatch")
+        require(row.get("path") == SUMMARIES and row.get("query") == {"node_ids": expected["node"]["node_id"], "metrics": ",".join(HOST_LIST_METRICS)}, "browser summary scope mismatch")
         data = row.get("value", {}).get("data")
         require(isinstance(data, list) and len(data) == 1, "browser summary batch incomplete")
-        assert_resources(data[0], expected["node"], expected["target"], keys=["node.cpu.busy_percent", "node.memory.used_percent"])
+        assert_resources(data[0], expected["node"], expected["target"], keys=HOST_LIST_METRICS)
         require(data[0]["policy_version"] == expected["policy_version"], "browser summary ignored current budget")
     automatic = value.get("host_list_auto_refresh", {})
     require(all(automatic.get(key) is True for key in ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests")), "host list auto refresh lifecycle evidence missing")

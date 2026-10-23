@@ -35,7 +35,7 @@ func overviewFixture(count int) ([]client.UserHostNode, ResourceSummaryResponse,
 	now := time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC)
 	nodes := []client.UserHostNode{}
 	rows := ResourceSummaryResponse{Data: []ResourceObservationResponse{}}
-	plan, _ := resourcequery.NewSummaryPlan(max(count, 1), now, resourcequery.DefaultBudget())
+	plan, _ := resourcequery.NewSummaryPlan(max(count, 1), resourcequery.PressureMetrics(), now, resourcequery.DefaultBudget())
 	for i := 0; i < count; i++ {
 		node := client.UserHostNode{NodeID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1), DisplayName: fmt.Sprintf("节点%d", i), NodeKind: "virtual", Version: 3, Enabled: true}
 		nodes = append(nodes, node)

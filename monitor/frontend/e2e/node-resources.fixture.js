@@ -1,4 +1,4 @@
-import { allResourceMetrics, summaryMetrics } from '../src/utils/nodeResources'
+import { allResourceMetrics } from '../src/utils/nodeResources'
 import { identity, node, setIdentity } from './monitoring-targets.fixture'
 export { identity, node, setIdentity }
 export const secondNode = '15daeb87-b7bf-434b-a8ea-598c82e266d4'
@@ -33,7 +33,7 @@ export async function resourceBackend(page, options = {}) {
     } else if (path.endsWith('/resource_summaries')) {
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const mode = state.summaryMode || state.mode
-      body = { data: url.searchParams.get('node_ids').split(',').map(id => observations(id, summaryMetrics.map(metric => metric.key), false, mode, state.serverEnd)) }
+      body = { data: url.searchParams.get('node_ids').split(',').map(id => observations(id, url.searchParams.get('metrics').split(','), false, mode, state.serverEnd)) }
       if (mode === 'invalid') body.data[0].subject.node_id = secondNode
       if (mode === 'stale') for (const row of body.data) {
         const old = new Date(Date.parse(row.end) - 61000).toISOString()
@@ -45,6 +45,7 @@ export async function resourceBackend(page, options = {}) {
         for (const series of row.series) Object.assign(series.points[0], { sampled_at: null, value: null, data_state: 'no_data' })
       }
       if (mode === 'unavailable' || mode === 'denied' || mode === 'budget') { status = mode === 'denied' ? 403 : mode === 'budget' ? 422 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : mode === 'budget' ? 'observability_query_budget_exceeded' : 'observability_backend_unavailable', error: mode } }
+      if (status === 200) options.summaryResponse?.(body, url.searchParams)
       if (heldSummary) await heldSummary
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
       const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.network.') ? state.networkMode || state.mode : url.searchParams.get('metrics').startsWith('node.disk.') ? state.diskMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.inodes_') ? state.inodeMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode

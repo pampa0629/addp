@@ -12,7 +12,7 @@ type ResourceSummaryResponse struct {
 	Data []ResourceObservationResponse `json:"data"`
 }
 
-func (s *ResourceObservationService) Summaries(ctx context.Context, principal, token string, ids []string) (ResourceSummaryResponse, error) {
+func (s *ResourceObservationService) Summaries(ctx context.Context, principal, token string, ids, keys []string) (ResourceSummaryResponse, error) {
 	result := ResourceSummaryResponse{}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -42,7 +42,7 @@ func (s *ResourceObservationService) Summaries(ctx context.Context, principal, t
 	ctx, budgetCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer budgetCancel()
 	now := s.now().UTC()
-	plan, err := resourcequery.NewSummaryPlan(len(ids), now.Truncate(time.Second), cfg.Budget)
+	plan, err := resourcequery.NewSummaryPlan(len(ids), keys, now.Truncate(time.Second), cfg.Budget)
 	if err != nil {
 		return result, err
 	}
@@ -122,7 +122,11 @@ func (s *ResourceObservationService) observeNodeSummaries(ctx context.Context, c
 		}
 	}
 	if len(scopes) > 0 {
-		observed, err := s.backend.Summaries(ctx, scopes, plan.End, cfg.Budget)
+		keys := make([]string, len(plan.Metrics))
+		for i, metric := range plan.Metrics {
+			keys[i] = metric.Key
+		}
+		observed, err := s.backend.Summaries(ctx, scopes, keys, plan.End, cfg.Budget)
 		if err != nil {
 			return result, err
 		}

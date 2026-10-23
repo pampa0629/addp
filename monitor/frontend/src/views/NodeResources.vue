@@ -13,15 +13,15 @@
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
       </el-form>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
-      <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" data-testid="resource-node-list">
-        <el-table-column :label="t('monitor.resources.node')" min-width="180" show-overflow-tooltip><template #default="{ row }"><span :title="row.node_id">{{ row.display_name }}</span></template></el-table-column>
+      <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
+        <el-table-column :label="t('monitor.resources.node')" min-width="180" fixed="left" show-overflow-tooltip><template #default="{ row }"><span :title="row.node_id">{{ row.display_name }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.addresses')" min-width="180"><template #default="{ row }">{{ row.addresses.join(', ') }}</template></el-table-column>
-        <el-table-column v-for="metric in summaryMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
-          <template #default="{ row }"><strong>{{ formatValue(summaryPoint(row, metric), metric) }}</strong><p v-if="summaryPoint(row, metric) && summaryPoint(row, metric).data_state !== 'valid'" class="resource-hint">{{ t(`monitor.resources.states.${summaryPoint(row, metric).data_state}`) }}</p></template>
+        <el-table-column v-for="metric in hostListMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
+          <template #default="{ row }"><strong :data-testid="`resource-summary-${metric.name}`">{{ formatValue(summaryPoint(row, metric), metric) }}</strong><p v-if="summaryPoint(row, metric) && summaryPoint(row, metric).data_state !== 'valid'" class="resource-hint">{{ t(`monitor.resources.states.${summaryPoint(row, metric).data_state}`) }}</p></template>
         </el-table-column>
         <el-table-column :label="t('monitor.resources.overview.collectionTitle')" min-width="150"><template #default="{ row }"><span :title="summaries.get(row.node_id) ? t('monitor.resources.sampledAt') + ': ' + date(summaries.get(row.node_id).collection.sampled_at) : ''">{{ t(!row.enabled ? 'monitor.resources.overview.disabled' : summaries.get(row.node_id) ? `monitor.resources.overview.collection.${summaries.get(row.node_id).collection.state}` : loading ? 'common.loading' : 'monitor.resources.overview.unavailable') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.nodeState')" width="120"><template #default="{ row }">{{ t(row.enabled ? 'common.enabled' : 'common.disabled') }}</template></el-table-column>
-        <el-table-column width="150"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
+        <el-table-column width="150" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
       </el-table>
       <div class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
     </template>
@@ -125,7 +125,7 @@
             <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
           </el-select>
         </div>
-        <div v-if="summaryMetrics.some(metric => metric.key === state.metric)" class="resource-compare-control">
+        <div v-if="pressureMetrics.some(metric => metric.key === state.metric)" class="resource-compare-control">
           <el-checkbox :model-value="state.compare" :disabled="!supportsResourceComparison(state.metric, state.range)" data-testid="resource-compare" @change="value => selectTrend('compare', value ? 'previous' : undefined)">{{ t('monitor.resources.comparison.enable') }}</el-checkbox>
           <p v-if="state.range === '7d'" class="resource-hint" data-testid="resource-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
         </div>
@@ -182,7 +182,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { summaryMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { hostListMetrics, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -311,9 +311,9 @@ async function reload({ automatic = false } = {}) {
       let nextSummaries = new Map(), nextSummaryError = ''
       if (value.data.length) {
         try {
-          const overview = await request(config => api.summaries(value.data.map(row => row.node_id), config))
+          const overview = await request(config => api.summaries(value.data.map(row => row.node_id), hostListMetrics.map(metric => metric.key), config))
           if (!requestScope.current(ticket)) return
-          nextSummaries = validateResourceSummaries(overview, value.data)
+          nextSummaries = validateResourceSummaries(overview, value.data, hostListMetrics)
         } catch (error) {
           if (!requestScope.current(ticket)) return
           if ([401, 403, 404].includes(error.response?.status)) throw error
@@ -416,6 +416,7 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-toolbar .el-select { width: 220px; max-width: 100%; }
 .resource-search { display: flex; gap: 8px; margin: 16px 0; max-width: 520px; }
 .resource-pagination { margin-top: 16px; overflow-x: auto; }
+.resource-node-list :deep(.el-table__header .cell) { white-space: normal; text-overflow: clip; }
 .node-header { margin: 16px 0; overflow-wrap: anywhere; }
 .node-header p, .resource-card p, .resource-hint { color: var(--addp-text-secondary); margin-top: 8px; font-size: 13px; }
 .resource-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }

@@ -16,7 +16,7 @@ type ResourceQueryPolicyStore interface {
 type ResourceBackend interface {
 	Collection(context.Context, resourcequery.Scope, time.Time, resourcequery.Budget) (resourcequery.Collection, error)
 	Query(context.Context, resourcequery.Plan, resourcequery.Scope, resourcequery.Budget) ([]resourcequery.Series, error)
-	Summaries(context.Context, []resourcequery.Scope, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
+	Summaries(context.Context, []resourcequery.Scope, []string, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
 }
 type ResourceQueryPolicyInput struct {
 	Version uint64 `json:"version"`

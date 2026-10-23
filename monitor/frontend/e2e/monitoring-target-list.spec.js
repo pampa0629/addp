@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { backend, identity, permissions, id, node, setIdentity } from './monitoring-targets.fixture'
 import { observations } from './resource-observations.fixture'
-import { summaryMetrics } from '../src/utils/nodeResources'
+import { pressureMetrics } from '../src/utils/nodeResources'
 
 const observing = () => identity([...permissions, 'monitor.resource_observation.read'])
 const cell = page => page.getByTestId(`target-list-collection-${id}`)
@@ -23,7 +23,7 @@ for (const locale of ['zh-cn','en']) test(`mixed list has one bounded observatio
   await expect(page.getByTestId(`target-list-collection-${disabledTarget}`)).toContainText(locale === 'en' ? 'Collection disabled' : '已停用采集')
   await expect(page.getByTestId(`target-list-collection-${containerTarget}`)).toContainText(locale === 'en' ? 'Container results unsupported' : '暂不支持容器采集结果')
   await expect(cell(page)).toContainText('2026')
-  expect(state.summaryReads).toEqual([{ node_ids: `${node},${secondNode}` }])
+  expect(state.summaryReads).toEqual([{ node_ids: `${node},${secondNode}`, metrics: pressureMetrics.map(metric => metric.key).join(',') }])
   expect(state.collectionReads).toHaveLength(0)
   expect(state.writes).toHaveLength(0)
   await page.setViewportSize({ width: 620, height: 900 })
@@ -124,7 +124,7 @@ test('a prior page response cannot overwrite a newer failed observation', async 
     if (!first) return route.fallback()
     first = false
     await barrier
-    const value = observations(node, summaryMetrics.map(row => row.key), false, '', '2026-10-09T00:00:00Z')
+    const value = observations(node, pressureMetrics.map(row => row.key), false, '', '2026-10-09T00:00:00Z')
     value.target_id = id; value.target_saved_version = 1
     await route.fulfill({ json: { data: [value] } })
   })
