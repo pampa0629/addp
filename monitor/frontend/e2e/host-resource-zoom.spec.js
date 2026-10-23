@@ -51,7 +51,10 @@ for (const locale of ['zh-cn', 'en']) for (const [family, key, names, keys, alte
   expect(props.rows).toHaveLength(984)
   expect(props.config.measures).toEqual(names)
   if (family === 'load') expect(props.rows.at(-1).load1m).toBe(2.5)
-  if (family === 'uptime') expect(props.rows.at(-1).uptime).toBe(3600 + 983 * 615)
+  if (family === 'uptime') {
+    expect(props.rows.at(-1).uptime).toBe((3600 + 983 * 615) / 86400)
+    expect(props.config.field_presentations.at(-1).unit).toBe(locale === 'en' ? 'days' : '天')
+  }
   if (family === 'filesystem-capacity') {
     expect(props.rows.at(-1).filesystemTotal).toBe(8)
     expect(props.config.field_presentations.at(-1).unit).toBe('GiB')

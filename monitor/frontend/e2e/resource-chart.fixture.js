@@ -1,3 +1,5 @@
+import { expect } from '@playwright/test'
+
 const chartModules = new WeakMap()
 
 export function trackResourceChart(page) {
@@ -37,7 +39,7 @@ export const resourceChartState = (page, pointIndex = null) => {
     const grid = model.getComponent('grid', 0).coordinateSystem.getRect()
     const point = pointIndex === null ? null : { x: chart.convertToPixel({ xAxisIndex: 0 }, pointIndex), y: grid.y + grid.height / 2 }
     return { finished: chart.getZr().animation.isFinished(), handles, start: zoom?.start ?? null, end: zoom?.end ?? null,
-      borderColor: zoom?.borderColor, lengths: option.series.map(series => series.data.length), legend, point,
+      borderColor: zoom?.borderColor, handleRange: view ? [...view._range] : null, lengths: option.series.map(series => series.data.length), legend, point,
       active: model.getSeries().filter(series => !model.isSeriesFiltered(series)).map(series => series.name) }
   }, { moduleURL: source, pointIndex })
 }
@@ -51,6 +53,12 @@ export async function dragResourceChartZoom(page, fraction = 0.95) {
   await page.mouse.down()
   await page.mouse.move(box.x + left.x + (right.x - left.x) * fraction, y, { steps: 12 })
   await page.mouse.up()
+  // Slider input is applied through ECharts' throttled dataZoom dispatch.
+  // Wait for the actual model to reach the painted handle range before capture.
+  await expect.poll(async () => {
+    const { start, end, handleRange } = await resourceChartState(page)
+    return Math.abs(start - handleRange[0]) < 1e-6 && Math.abs(end - handleRange[1]) < 1e-6
+  }).toBe(true)
 }
 
 

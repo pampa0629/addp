@@ -725,6 +725,12 @@
         "24h": "近 24 小时",
         "7d": "近 7 天"
       },
+      "durationUnits": {
+        "second": "秒",
+        "minute": "分钟",
+        "hour": "小时",
+        "day": "天"
+      },
       "units": {
         "cores": "核",
         "bytes": "B",

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { formatBytes, scaleByteValue, formatDurationSeconds } from '../src/utils/formatters.js'
+import { formatBytes, scaleByteValue, scaleDurationValue, formatDurationSeconds } from '../src/utils/formatters.js'
 
 test('byte quantities use IEC units, preserve zero, and reject invalid evidence', () => {
   assert.equal(formatBytes(67304611840, 2, 'zh-CN'), '62.68 GiB')
@@ -30,4 +30,12 @@ test('map and file size entry points use the sole shared byte formatter', () => 
   const utils = readFileSync(new URL('../src/utils/index.js', import.meta.url), 'utf8')
   assert.match(utils, /return formatBytes\(bytes, 2\)/)
   assert.doesNotMatch(utils, /Math.log\(bytes\)/)
+})
+
+
+test('duration quantities choose a single scale without rounding or changing seconds', () => {
+  for (const [seconds, unit, divisor] of [[0, 'second', 1], [0.25, 'second', 1], [59.999, 'second', 1], [60, 'minute', 60], [3599.999, 'minute', 60], [3600, 'hour', 3600], [86399.999, 'hour', 3600], [86400, 'day', 86400], [286435, 'day', 86400]]) {
+    assert.deepEqual(scaleDurationValue(seconds), { value: seconds / divisor, unit, divisor })
+  }
+  for (const value of [null, undefined, NaN, Infinity, -Infinity, -1, '60']) assert.equal(scaleDurationValue(value), null)
 })

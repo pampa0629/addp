@@ -25,12 +25,20 @@ export function formatBytes(value, precision = null, locale = 'zh-CN') {
   return `${formatted} ${scaled.unit}`
 }
 
+const DURATION_UNITS = [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]]
+
+export function scaleDurationValue(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+  const [unit, divisor] = DURATION_UNITS.find(([, size]) => value >= size) || DURATION_UNITS.at(-1)
+  return { value: value / divisor, unit, divisor }
+}
+
 // Elapsed time, independent of time zones; does not represent a date or clock.
 export function formatDurationSeconds(value, locale = 'zh-CN') {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) return '-'
   let remaining = Math.floor(value)
   const parts = []
-  for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]]) {
+  for (const [unit, size] of DURATION_UNITS) {
     const count = Math.floor(remaining / size)
     remaining %= size
     if (count || (unit === 'second' && !parts.length)) parts.push(new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(count))

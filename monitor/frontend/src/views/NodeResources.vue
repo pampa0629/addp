@@ -184,7 +184,7 @@ import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { useConsolePageDescriptor } from '@common-ui'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
-import { formatBytes, scaleByteValue, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import { formatBytes, scaleByteValue, scaleDurationValue, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
@@ -225,13 +225,17 @@ const byteMetrics = computed(() => chartMetrics.value.filter(metric => ['bytes',
 const memoryTrend = computed(() => state.value.metric.startsWith('node.memory.'))
 const networkTrend = computed(() => state.value.metric.startsWith('node.network.'))
 const chartScale = computed(() => byteMetrics.value.length ? scaleByteValue(Math.max(0, ...rawChartRows.value.flatMap(row => byteMetrics.value.map(metric => row[metric.name] ?? 0)))) : null)
-const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (byteMetrics.value.includes(metric) ? chartScale.value.divisor : 1)])) })))
+const durationScale = computed(() => {
+  const metrics = chartMetrics.value.filter(metric => metric.unit === 'seconds')
+  return metrics.length ? scaleDurationValue(Math.max(0, ...rawChartRows.value.flatMap(row => metrics.map(metric => row[metric.name] ?? 0)))) : null
+})
+const chartRows = computed(() => rawChartRows.value.map(row => ({ evaluated_at: row.evaluated_at, ...Object.fromEntries(chartMetrics.value.map(metric => [metric.name, row[metric.name] === null ? null : row[metric.name] / (byteMetrics.value.includes(metric) ? chartScale.value.divisor : metric.unit === 'seconds' ? durationScale.value.divisor : 1)])) })))
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
 const chartAxes = computed(() => memoryTrend.value ? [
   { measures: byteMetrics.value.map(metric => metric.name), label: t('monitor.resources.memoryCapacity'), min: 0 },
   { measures: ['memoryUsed'], min: 0, max: 100 },
 ] : networkTrend.value ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.networkAxis'), min: 0 }] : [])
-const chartConfig = computed(() => ({ chart_type: networkTrend.value ? 'bar' : 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }))] }))
+const chartConfig = computed(() => ({ chart_type: networkTrend.value ? 'bar' : 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}), ...(metric.unit === 'seconds' ? { unit: t(`monitor.resources.durationUnits.${durationScale.value.unit}`), precision: 2 } : {}) }))] }))
 const evidenceRows = computed(() => trendPoints.value.slice((evidencePage.value - 1) * 20, evidencePage.value * 20))
 const comparisonChange = computed(() => {
   const delta = comparison.value?.delta

@@ -645,3 +645,20 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 失败诊断保留 `layout-diagnostic.log`、`resize-event-diagnostic.log`、`resize-observer-diagnostic.log`。首次观察未重现瞬态，不据单次通过宣称已定位；随后在宽屏实际绘制完成再缩回窄屏的事件采样中，记录 viewport=620、容器=572、Canvas=852、页面 scrollWidth=876，绘制完成后 Canvas=572、页面=620。共享 ResizeObserver 按既有异步路径正常恢复；旧测试在两次视口设置后立即检查页面宽度，未等待实际绘制。最终用同一默认断言预算等待两次 Canvas／容器宽度一致且页面无溢出，不加重试、延长超时、放宽宽度限制或修改产品布局。三个诊断场景不是交付通过计数；本批最初负载／挂载专项 3/3 另存 `zoom-focused.log`。
 
 以上为本地 T1/T3、构建及登记证据，浏览器为受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或未涉及 owner 的门禁，未把缩放接入外推为专业图表或全部原始功能完成。未查询／触发／重跑 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补主机负载／时长／文件系统共享缩放的本地结果；真实页面与来源验收仍等专门会话回传。
+
+
+### 主机运行时长趋势的自适应显示单位（2026-10-23）
+
+主机运行时长曲线按完整已加载时窗内有效点的最大秒数选择秒／分钟／小时／天，纵轴与 tooltip 使用同一单位、两位小数；缩放不重选量级，刷新跨量级可以更新。共享 `scaleDurationValue` 与原复合时长格式化共用唯一 day／hour／minute／second 换算表，不读取时区或舍弃原始精度；Monitor 只换算图表 rows 与字段呈现。API 秒值、采样证据、重启判断、当前卡片及采样明细的原复合时长格式均不变。零值有效，陈旧／缺样不选级且保持 null，全缺样默认秒；不新增配置、依赖、API 或权限。
+
+冻结根 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-uptime-units-k46w9uio`，基线 `d01c5772f84d19c74010d1bd048433c8000d85be`；最终 `inputs-final.json` 记录十一项产品／测试／规范输入，交付前与工作区逐项一致，快照排除其他 owner WIP。各命令通过 `fnm exec --using v24.11.1` 使用根工具链，沿已有独立端口及清理入口：
+
+- `make test-common-frontend`：267/267，通过，无失败／跳过（`common.log`）。包含时长量级阈值、小数／零／非法值及原复合时长格式回归；其他共享单位与图表约束保持。Monitor `npm test` 101/101、`npm run build` 及 `make test-frontend-ci-registration` 的 20 项／21 个前端登记均通过（`unit.log`、`build.log`、`registration.log`），构建仅有既有 chunk 大小提示。现有共享依赖发现、Monitor owner 与 Playwright 自动发现覆盖新增 spec，无需修改 workflow。
+- 新增 `npm run test:e2e -- uptime-units.spec.js` 首次 2/2，通过（`uptime-browser.log`）；覆盖中英文秒→分钟→小时→天、真实悬停、跨量级刷新保留缩放、图例显隐、原采样明细与当前卡片不变、陈旧极值排除、独立缺样／全缺样、真实零、错误清除与恢复，查询仍只含原 uptime 指标。267 项共享 T1 与真实 Monitor 消费页面共同验证新格式化入口，不外推其他消费模块的完整页面验收。
+- 组合 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js host-resource-zoom.spec.js host-trend-interactions.spec.js resource-comparison.spec.js uptime-units.spec.js` 首轮 115/122，不能记成功（`browser-final.log`，失败报告 `addp-monitor-playwright-results-g8XJhD`）。失败包括拖动未改变视口、动画／加载等待、创建 page 阶段超时、明细点击、错误切换及缩放值捕获；创建 page 的一项尚未运行产品。未延长 5 秒断言／30 秒场景预算，不加重试或跳过。
+- 确认滑块实时事件经过 ECharts 节流：最初新英文场景捕获 54.770992366412216，后续实际视口为 59.732824427480914。共享测试 helper 改为在 mouseup 后等待已应用 start／end 与实际滑块 `_range` 一致，再保存或比较；只等真实事件完成，不调用 dispatchAction 或强制 flush，不改变产品行为。最终 `npm run test:e2e -- host-resource-zoom.spec.js host-trend-interactions.spec.js network-bars.spec.js uptime-units.spec.js` 37/37，通过（`affected-browser-final.log`）。
+- 其余三个失败场景保留原产品和断言，沿 `npm run test:e2e -- node-resources.spec.js resource-comparison.spec.js --grep 'network throughput restores|memory capacity and usage.*zh-cn|expired-valid clears' --trace on` 诊断复验，3/3，通过（`remaining-browser-diagnostic.log`）。未受 helper 调整影响的其余 82 项沿本轮有效通过证据复用，合计 122 个唯一相关场景具有通过结果；不宣称初始聚合通过或完整 Monitor 浏览器全集通过。
+
+诊断 `interaction-diagnostic.log` 的三个场景通过，记录了实际鼠标命中、绘制帧、页面可见性与请求错误，未复现最初的加载／动画失败；临时诊断 hooks 已从最终快照和工作区移除。新的通过结果不证明这些历史偶发失败的根因已经确定或修复；只有上述滑块中间状态的同步条件得到针对性补齐，其余历史加载／动画超时仍待定位，不据 CPU 使用率快照推定原因。原 34.6 分钟聚合执行失败保留，不通过重试计成功。
+
+最终中英文窄屏悬停图已逐一核对：`addp-uptime-units-VtugVb/zh-cn.png`、`addp-uptime-units-Fq3pIK/en.png`（与冻结根位于同一 macOS 临时目录父级）。286,435 秒的图轴及悬停显示 3.32 天／days，明细仍为 3 天 7 小时 33 分钟／对应英文；图例和缩放保留。以上为本地 T1/T3、构建／登记，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5，未新跑 T2。未查询／触发／重跑云端 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库；云端验收继续等专门会话回传。清单第 38 行仅补时长趋势显示量级与当前本地验证，历史偶发失败和其他原行缺口不能据此关闭。

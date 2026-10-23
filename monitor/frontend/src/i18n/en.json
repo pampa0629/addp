@@ -725,6 +725,12 @@
         "24h": "Last 24 hours",
         "7d": "Last 7 days"
       },
+      "durationUnits": {
+        "second": "seconds",
+        "minute": "minutes",
+        "hour": "hours",
+        "day": "days"
+      },
       "units": {
         "cores": "cores",
         "bytes": "B",
