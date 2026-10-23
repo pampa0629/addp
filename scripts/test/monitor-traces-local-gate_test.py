@@ -238,6 +238,38 @@ class LocalTraceAdmissionTests(unittest.TestCase):
 
 
 class LocalTraceIsolationTests(unittest.TestCase):
+    def test_deployment_configuration_failure_prevents_builder_and_compilation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.command=mock.Mock(return_value='frozen-commit')
+            life.docker=mock.Mock()
+            with mock.patch.object(m,'committed_inputs',return_value={}),mock.patch.object(m,'defaults',return_value={}),\
+                 mock.patch.object(m,'verify_minio_product'),mock.patch.object(m,'prepare_deployment_documents',side_effect=m.GateError('configuration_rejected')):
+                with self.assertRaisesRegex(m.GateError,'configuration_rejected'):m.build(life)
+            life.docker.assert_not_called()
+
+    def test_setup_deployment_input_is_accepted_by_actual_product_renderer(self):
+        renderer_spec=importlib.util.spec_from_file_location('trace_platform_renderer',m.ROOT/'scripts/prod/generate-trace-platform.py')
+        renderer=importlib.util.module_from_spec(renderer_spec);renderer_spec.loader.exec_module(renderer)
+        class RenderComplete(Exception):pass
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);env={'ADDP_TRACE_DEPLOYMENT_DIR':str(life.work/'deployment')}
+            def command(args,**kwargs):
+                if args[1]=='scripts/test/trace-deployment-fixture.py':
+                    (life.work/'deployment').mkdir(mode=0o700)
+                    for name in ('source-tls','query-tls'):
+                        tls=life.work/name;tls.mkdir(mode=0o700)
+                        for filename in ('ca.crt','client.crt','client.key'):
+                            p=tls/filename;p.write_text('public-contract-test');p.chmod(0o600)
+                elif args[1]=='scripts/prod/generate-trace-platform.py':
+                    with mock.patch.dict(os.environ,kwargs['env'],clear=True):renderer.render()
+                    config=json.loads((life.work/'deployment/platform-traces.json').read_text())
+                    self.assertEqual(set(config['services']),set(m.BACKENDS))
+                    self.assertEqual(len(config['services']['monitor-backend']['volumes']),2)
+                    raise RenderComplete()
+                else:raise AssertionError(args)
+            life.command=command
+            with self.assertRaises(RenderComplete):m.prepare_deployment_documents(life,env)
+
     def document(self):
         return {'system-backend': {
             'image': 'old-product-tag', 'build': '.', 'restart': 'always', 'ports': ['8180:8180'],

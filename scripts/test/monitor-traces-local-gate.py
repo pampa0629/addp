@@ -522,6 +522,8 @@ def build(life):
     life.source_commit = commit
     life.phase = 'prebuilt_minio_verification'
     verify_minio_product(life)
+    # Reject product configuration errors before the expensive compilation.
+    life.deployment_documents=prepare_deployment_documents(life,env)
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -607,19 +609,21 @@ def start_deployment(compose):
         compose('up','-d','--wait','--no-build',*group)
 
 
-def setup(life, env, images):
-    life.phase='isolated_deployment'
+def prepare_deployment_documents(life, env):
+    life.phase='isolated_deployment_credentials'
     (life.work/'unused-logs').mkdir(mode=0o700)
     life.command([sys.executable,'scripts/test/trace-deployment-fixture.py',str(life.work)])
     env.update(ADDP_OBSERVABILITY_TRACES_ENABLED='true', MONITOR_TEMPO_URL='https://trace-query:8443',
                MONITOR_TRACE_TLS_DIR=str(life.work/'query-tls'),
-               ADDP_TRACE_DEPLOYMENTS=json.dumps([{'module':m,'role':'ingress' if m=='gateway' else 'backend',
+               ADDP_TRACE_DEPLOYMENTS=json.dumps([{'module_name':m,'role':'ingress' if m=='gateway' else 'backend',
                   'endpoint':'https://alloy:4318/v1/traces','tls_dir':str(life.work/'source-tls')} for m in
                   ('system','gateway','security','develop','orchestrator','monitor')]))
+    life.phase='isolated_deployment_trace_configuration'
     life.command([sys.executable,'scripts/prod/generate-trace-platform.py'],env=env)
     documents={}
     for filename,names in [('docker-compose.infra.yml',('postgres','redis')),('docker-compose.yml',BACKENDS+FRONTENDS),
                            ('scripts/test/docker-compose.monitor-traces-t2.yml',TRACE)]:
+        life.phase='isolated_deployment_compose_'+('infra' if filename=='docker-compose.infra.yml' else 'product' if filename=='docker-compose.yml' else 'traces')
         doc=json.loads(life.command(['docker','compose','--env-file','/dev/null','-f',filename,'config','--format','json'],env=env))
         documents.update({name:doc['services'][name] for name in names})
     # The same product PostgreSQL image owns the synthetic read-only query source.
@@ -636,13 +640,20 @@ def setup(life, env, images):
         documents[name]['volumes']=[m for m in documents[name].get('volumes',[]) if not m['target'].startswith('/capacity')]
     documents['alloy']['volumes']=[m for m in documents['alloy']['volumes'] if m['target']!='/var/log/addp']+[
         {'type':'volume','source':'runtime-logs','target':'/var/log/addp','read_only':True}]
+    return documents
+
+
+def setup(life, env, images):
+    documents=life.deployment_documents
     for name in ('minio','runtime-log-store-init','trace-store-init'):
         images[name]=life.minio_image
+    life.phase='isolated_deployment_projection'
     config=isolate(documents,life.run_id,images)
     # System log reads use the standard product runtime source path, not host logs.
     config['services']['system-backend']['environment'].update(LOKI_URL='http://runtime-log-api:3100',LOKI_READ_TOKEN=env['LOKI_READ_TOKEN'])
     path=life.private_json('compose.json',config)
     life.compose=lambda *args:life.command(['docker','compose','--env-file','/dev/null','-f',str(path),*args],env=env,timeout=300)
+    life.phase='isolated_deployment_start'
     start_deployment(life.compose)
     rows=json.loads(life.docker('inspect',*[life.run_id+'-'+name for name in BACKENDS]))
     require(all(row['Image']==images[name] for row,name in zip(rows,BACKENDS)), 'module_image_identity_changed')
