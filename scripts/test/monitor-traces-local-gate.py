@@ -88,7 +88,7 @@ def verify_minio_product(life):
             metadata.get('os')=='linux','minio_product_image_identity_invalid')
     proof={'image_id':image_id,'platform':'linux/arm64','components':{}}
     for name in ('minio','mc'):
-        output=life.docker('run','--rm','--pull','never','--name',life.run_id+'-verify-'+name,
+        output=life.docker('run','--pull','never','--name',life.run_id+'-verify-'+name,
             '--label',f'{LABEL}={life.run_id}','--label',LABEL+'.role=oneshot',
             '--cpus','.25','--memory','256m','--network','none','--read-only',
             '--tmpfs','/data:rw,noexec,nosuid,size=1m','--tmpfs','/tmp:rw,noexec,nosuid,size=16m',
@@ -298,6 +298,8 @@ class Lifecycle:
         return raw.decode(errors='replace')
 
     def docker(self, *args, **kw):
+        if args and args[0]=='run' and LABEL+'.role=oneshot' in args:
+            require('--rm' not in args,'oneshot_exit_state_must_be_retained')
         return self.command(['docker', *args], **kw)
 
     def private_json(self, name, value):
@@ -553,7 +555,7 @@ def build(life):
        'if a and a[0]=="build":\n'
        ' p=[v for k in ("HTTP_PROXY","HTTPS_PROXY") if os.environ.get("TRACE_LOCAL_"+k) for key in (k,k.lower()) for v in ("--build-arg",key+"="+os.environ["TRACE_LOCAL_"+k])]\n'
        ' a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*p,*a[1:]]\n'
-       'elif a and a[0]=="run": a=["run","--cpus","3","--memory","5g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*a[1:]]\n'
+       'elif a and a[0]=="run": a=["run","--cpus","3","--memory","5g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*[v for v in a[1:] if v!="--rm"]]\n'
        'if a and a[0]=="run":\n'
        ' a=[v+":ro" if v.endswith(":/go/pkg/mod") else v for v in a]\n'
        'os.execv(os.environ["TRACE_LOCAL_DOCKER"],[os.environ["TRACE_LOCAL_DOCKER"],*a])\n')
@@ -567,7 +569,7 @@ def build(life):
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_compile'
-    life.docker('run', '--rm', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
+    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
                 '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
                 '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
@@ -592,7 +594,7 @@ def build(life):
     life.phase='browser_dependencies'
     version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']
     life.browser_image='mcr.microsoft.com/playwright:v'+version+'-noble'
-    life.docker('run','--rm','--name',life.run_id+'-browser-prepare','--label',f'{LABEL}={life.run_id}',
+    life.docker('run','--name',life.run_id+'-browser-prepare','--label',f'{LABEL}={life.run_id}',
                 '--label',LABEL+'.role=oneshot','--cpus','1','--memory','2g',
                 '--mount',f'type=bind,source={life.checkout},target=/workspace','-w','/workspace/console/frontend',
                 *[part for k,v in proxies.items() for key in (k,k.lower()) for part in ('-e',key+'='+v)],
@@ -604,7 +606,7 @@ def build(life):
 def start_deployment(compose):
     compose('up','-d','--wait','--no-build','postgres','business-postgres','redis','minio')
     for name in ('runtime-log-store-init','trace-store-init'):
-        compose('run','--rm','--no-deps',name)
+        compose('run','--no-deps',name)
     for group in [('loki','runtime-log-api','tempo','trace-query','alloy'),('system-backend',),
                   ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
         compose('up','-d','--wait','--no-build',*group)
@@ -667,7 +669,7 @@ def setup(life, env, images):
     probe='\n'.join('curl -fsS http://'+name+':'+str(port)+'/health/live; echo' for name,port in
                        [('system-backend',8180),('gateway',8000),('security-backend',8194),
                         ('develop-backend',8185),('orchestrator-backend',8084),('monitor-backend',8100)])
-    output=life.docker('run','--rm','--name',life.run_id+'-build-probe','--label',f'{LABEL}={life.run_id}',
+    output=life.docker('run','--name',life.run_id+'-build-probe','--label',f'{LABEL}={life.run_id}',
                       '--label',LABEL+'.role=oneshot','--cpus','.05','--memory','64m',
                       '--network',life.run_id+'_data','--entrypoint','/bin/sh',life.minio_image,'-ec',probe)
     facts=[json.loads(line) for line in output.splitlines() if line.strip()]
@@ -685,7 +687,7 @@ def identity(life, env):
     helper_env.update(GOWORK='off',GOMAXPROCS='1',GOFLAGS='-p=1',POSTGRES_HOST='127.0.0.1',POSTGRES_PORT='5432',
                       GOCACHE='/private/helper-go-cache',GOPATH='/private/helper-go-path',GOMODCACHE='/dependencies')
     private=life.work/'helper.env';private.write_text('\n'.join(k+'='+v for k,v in helper_env.items())+'\n');private.chmod(0o600)
-    life.docker('run','--rm','--name',life.run_id+'-identity','--label',f'{LABEL}={life.run_id}',
+    life.docker('run','--name',life.run_id+'-identity','--label',f'{LABEL}={life.run_id}',
         '--label',LABEL+'.role=oneshot','--user',str(os.getuid())+':'+str(os.getgid()),'--cpus','.5','--memory','1g','--network','container:'+life.run_id+'-postgres',
         '--env-file',str(private),'--mount',f'type=bind,source={life.checkout},target=/workspace',
         '--mount',f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
@@ -742,7 +744,7 @@ def main():
         secret_env.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret_env.chmod(0o600)
         version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']
         browser_image='mcr.microsoft.com/playwright:v'+version+'-noble'
-        life.docker('run','--rm','--name',life.run_id+'-browser','--label',f'{LABEL}={life.run_id}',
+        life.docker('run','--name',life.run_id+'-browser','--label',f'{LABEL}={life.run_id}',
             '--label',LABEL+'.role=oneshot','--cpus','.5','--memory','1g','--network',life.run_id+'_data','--env-file',str(secret_env),
             '--mount',f'type=bind,source={life.checkout},target=/workspace',
             '--mount',f'type=bind,source={life.work},target=/private','-w','/workspace/console/frontend',browser_image,

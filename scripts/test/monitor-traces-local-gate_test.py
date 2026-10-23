@@ -215,6 +215,14 @@ class LocalTraceAdmissionTests(unittest.TestCase):
         with self.assertRaises(m.GateError):
             m.validate_resources([helper])
 
+    def test_owned_oneoff_cannot_remove_exit_state_before_guard_inspection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.command=mock.Mock(return_value='completed')
+            with self.assertRaisesRegex(m.GateError,'oneshot_exit_state_must_be_retained'):
+                life.docker('run','--rm','--label',m.LABEL+'.role=oneshot','owned-image')
+            life.command.assert_not_called()
+            self.assertEqual(life.docker('run','--label',m.LABEL+'.role=oneshot','owned-image'),'completed')
+
     def test_builder_stop_captures_exact_fixed_state_before_validating(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.builder_ids={'owned-id'}
@@ -679,7 +687,7 @@ class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
                 self.assertFalse({'runtime-log-store-init','trace-store-init'}.intersection(args))
             calls.append(args)
         m.start_deployment(compose)
-        self.assertEqual(calls[1:3],[('run','--rm','--no-deps','runtime-log-store-init'),('run','--rm','--no-deps','trace-store-init')])
+        self.assertEqual(calls[1:3],[('run','--no-deps','runtime-log-store-init'),('run','--no-deps','trace-store-init')])
         self.assertTrue(all(name in calls[0] for name in ('postgres','business-postgres','redis','minio')))
         self.assertIn('alloy',calls[3])
         self.assertIn('system-backend',calls[4])
