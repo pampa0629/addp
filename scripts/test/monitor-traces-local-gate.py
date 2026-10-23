@@ -139,6 +139,7 @@ def isolate(document, run_id, images):
         service.update(container_name=run_id + '-' + name, image=images.get(name, service.get('image')),
                        restart='no', labels={**service.get('labels', {}), LABEL: run_id},
                        networks={'data': {'aliases': [name]}}, cpus=LIMITS[name][0], mem_limit=f'{LIMITS[name][1]}m')
+        require(isinstance(service.get('image'),str) and service['image'], 'every_service_requires_built_image')
         for key in ('build', 'depends_on', 'ports', 'profiles', 'extends'):
             service.pop(key, None)
         mounts = []
@@ -243,6 +244,10 @@ class Lifecycle:
         return self.docker(kind, 'ls', *(['-a'] if kind == 'container' else []), '-q', '--filter',
                            f'label={LABEL}={self.run_id}', guarded=False, **kw).split()
 
+    def owned_bind_bytes(self, *, timeout):
+        output=self.command(['du','-sk',str(self.work)],guarded=False,timeout=timeout)
+        return int(output.split()[0])*1024
+
     def sample(self):
         deadline = time.monotonic()+4
         def remaining():
@@ -268,6 +273,7 @@ class Lifecycle:
                 args += ['--mount', f'type=volume,source={name},target=/space/{i},readonly']
             args += [self.minio_image, '-ec', 'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'']
             total = int(float(self.docker(*args, guarded=False, timeout=remaining()).strip()))
+        total += self.owned_bind_bytes(timeout=remaining())
         require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
         now = time.monotonic()
         self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'cpu_hard_limit': cpu,
@@ -396,14 +402,23 @@ def build(life):
     wrapper.write_text('#!/usr/bin/env python3\nimport os,sys\na=sys.argv[1:]\n'
        'if a and a[0]=="build": a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*a[1:]]\n'
        'elif a and a[0]=="run": a=["run","--cpus","3","--memory","5g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*a[1:]]\n'
+       'if a and a[0]=="run":\n'
+       ' a=[v+":ro" if v.endswith(":/go/pkg/mod") else v for v in a]\n'
        'os.execv(os.environ["TRACE_LOCAL_DOCKER"],[os.environ["TRACE_LOCAL_DOCKER"],*a])\n')
     wrapper.chmod(0o700)
-    build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id}
+    life.public_modcache=Path(life.command(['go','env','GOMODCACHE']).strip()).resolve()
+    require(life.public_modcache.is_dir() and (life.public_modcache/'cache/download').is_dir(), 'public_readonly_go_cache_required')
+    build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache)}
     life.phase='product_compile'
     life.docker('run', '--rm', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
-                '--mount', f'type=bind,source={life.checkout},target=/workspace', '-w', '/workspace',
+                '--mount', f'type=bind,source={life.checkout},target=/workspace',
+                '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
+                '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
                 '-e', 'GOMAXPROCS=3', '-e', 'GOFLAGS=-p=3', 'golang:1.24',
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
+    # Product binaries are complete; reclaim only this run's disposable Go
+    # object cache before the next bounded build consumes the same disk budget.
+    shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
     life.phase='product_minio'
     minio_tag=life.run_id+'-minio:local'
     life.tags.append(minio_tag)
@@ -435,6 +450,15 @@ def build(life):
     return commit,env,images
 
 
+def start_deployment(compose):
+    compose('up','-d','--wait','--no-build','postgres','business-postgres','redis','minio')
+    for name in ('runtime-log-store-init','trace-store-init'):
+        compose('run','--rm','--no-deps',name)
+    for group in [('loki','runtime-log-api','tempo','trace-query','alloy'),('system-backend',),
+                  ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
+        compose('up','-d','--wait','--no-build',*group)
+
+
 def setup(life, env, images):
     life.phase='isolated_deployment'
     (life.work/'unused-logs').mkdir(mode=0o700)
@@ -464,16 +488,14 @@ def setup(life, env, images):
         documents[name]['volumes']=[m for m in documents[name].get('volumes',[]) if not m['target'].startswith('/capacity')]
     documents['alloy']['volumes']=[m for m in documents['alloy']['volumes'] if m['target']!='/var/log/addp']+[
         {'type':'volume','source':'runtime-logs','target':'/var/log/addp','read_only':True}]
-    images['minio']=life.minio_image
+    for name in ('minio','runtime-log-store-init','trace-store-init'):
+        images[name]=life.minio_image
     config=isolate(documents,life.run_id,images)
     # System log reads use the standard product runtime source path, not host logs.
     config['services']['system-backend']['environment'].update(LOKI_URL='http://runtime-log-api:3100',LOKI_READ_TOKEN=env['LOKI_READ_TOKEN'])
     path=life.private_json('compose.json',config)
     life.compose=lambda *args:life.command(['docker','compose','--env-file','/dev/null','-f',str(path),*args],env=env,timeout=300)
-    for group in [('postgres','business-postgres','redis','minio'),('runtime-log-store-init','trace-store-init'),
-                  ('loki','runtime-log-api','tempo','trace-query','alloy'),('system-backend',),
-                  ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
-        life.compose('up','-d','--wait','--no-build',*group)
+    start_deployment(life.compose)
     rows=json.loads(life.docker('inspect',*[life.run_id+'-'+name for name in BACKENDS]))
     require(all(row['Image']==images[name] for row,name in zip(rows,BACKENDS)), 'module_image_identity_changed')
     published={}
@@ -501,11 +523,12 @@ def identity(life, env):
     identity_env=life.work/'identity.env'
     helper_env={k:v for k,v in env.items() if k not in ('PATH','HOME','TMPDIR','DOCKER_HOST','DOCKER_CONTEXT')}
     helper_env.update(GOWORK='off',GOMAXPROCS='1',GOFLAGS='-p=1',POSTGRES_HOST='127.0.0.1',POSTGRES_PORT='5432',
-                      GOCACHE='/private/helper-go-cache',GOPATH='/private/helper-go-path',GOMODCACHE='/workspace/.gomodcache')
+                      GOCACHE='/private/helper-go-cache',GOPATH='/private/helper-go-path',GOMODCACHE='/dependencies')
     private=life.work/'helper.env';private.write_text('\n'.join(k+'='+v for k,v in helper_env.items())+'\n');private.chmod(0o600)
     life.docker('run','--rm','--name',life.run_id+'-identity','--label',f'{LABEL}={life.run_id}',
         '--label',LABEL+'.role=oneshot','--user',str(os.getuid())+':'+str(os.getgid()),'--cpus','.5','--memory','1g','--network','container:'+life.run_id+'-postgres',
         '--env-file',str(private),'--mount',f'type=bind,source={life.checkout},target=/workspace',
+        '--mount',f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
         '--mount',f'type=bind,source={life.work},target=/private','-w','/workspace/system/backend','golang:1.24',
         'go','run','./cmd/online-test-fixture','--suite','execution-trace-local','--output','/private/identity.env',timeout=300)
     # The helper emits shell-quoted values; source only that private owned file.

@@ -548,3 +548,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 末版专项首次为64／65，一次点击写入方向后 URL 未变化，截图显示选择弹层仍打开；带 trace 的四组合12次检查、加入输入事件记录的单场景10次诊断及最终标准65项均未复现，不能据此确认该次失败根因或宣称修复了间歇点击／Safari 故障。临时诊断代码已删除，不增加重试、超时或移除 URL／明细断言；新截图使用每次浏览器测试的独立 outputPath。保留首次失败证据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-lf2gXA/`。
 
 日志、两版冻结输入及诊断记录位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-paired-throughput-ge5httgy/`：`frontend.log`、`inputs.json`、`inputs-final.json` 与 `snapshot-final/monitor/` 下的 `unit-final.log`、`node-verified.log`、`build-final.log`、`node-final.log`、`paired-trace.log`、`selection-probe.log`。最终六项输入与工作区哈希一致。仅为隔离夹具 T1／T3，未运行真实 Safari、Hosted T4、CI 或后台重启，等待专门会话回传，未设置定时任务。当前仍为折线，不将本批计为原图的分钟柱形、内存双Y轴、资源热力或完整监控交付。
+
+
+构建器独立客户端修正后已实际启动；第二次仍在业务部署前主动停止，用于修正启动清单中一次性 init 的前台成功语义及显式 MinIO 镜像绑定，未发业务请求。自动报告 `local-report-final.json` 记录失败／中断及零残留，实际最高硬配额 6 CPU／10 GiB、未发生 OOM。进一步将全部私有可写目录计入原 4 GiB 停止线，只读复用公共 Go 依赖缓存，及时删除当次已完成 Go 对象缓存，未借用个人凭据或写共享缓存；标准 runner 的初始化序列、目录预算及私有文件回归共 35 项通过。全部重试继续使用首次窗口截止时间，不重新取得一小时。

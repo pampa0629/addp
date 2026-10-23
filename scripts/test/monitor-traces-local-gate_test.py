@@ -41,6 +41,7 @@ def bare_lifecycle(directory):
     life.samples = []
     life.thread = None
     life.minio_image = 'sha256:synthetic-pinned-minio'
+    life.owned_bind_bytes = lambda **kwargs: 0
     return life
 
 
@@ -413,3 +414,27 @@ class LocalTracePrivateFilesTests(unittest.TestCase):
             self.assertEqual(life.env['DOCKER_HOST'],'unix:///local/socket')
             self.assertEqual(life.env['DOCKER_CONFIG'],str(path))
             self.assertNotIn('DOCKER_CONTEXT',life.env)
+
+
+class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
+    def test_init_commands_finish_successfully_before_long_running_consumers(self):
+        calls=[]
+        def compose(*args):
+            if args[0]=='up':
+                self.assertIn('--wait',args)
+                self.assertFalse({'runtime-log-store-init','trace-store-init'}.intersection(args))
+            calls.append(args)
+        m.start_deployment(compose)
+        self.assertEqual(calls[1:3],[('run','--rm','--no-deps','runtime-log-store-init'),('run','--rm','--no-deps','trace-store-init')])
+        self.assertTrue(all(name in calls[0] for name in ('postgres','business-postgres','redis','minio')))
+        self.assertIn('alloy',calls[3])
+        self.assertIn('system-backend',calls[4])
+    def test_private_writable_directories_are_part_of_the_same_stop_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            life.owned=lambda kind,**kw: []
+            life.owned_bind_bytes=lambda **kw: m.VOLUME_STOP
+            with self.assertRaisesRegex(m.GateError,'owned_volume_stop_line_reached'):life.sample()
+            life.command=mock.Mock(return_value='2048 /private/work\n')
+            self.assertEqual(m.Lifecycle.owned_bind_bytes(life,timeout=1),2*1024**2)
+            self.assertEqual(life.command.call_args.args[0],['du','-sk',str(life.work)])
