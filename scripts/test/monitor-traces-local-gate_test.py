@@ -54,6 +54,16 @@ class LocalTraceAdmissionTests(unittest.TestCase):
         self.assertEqual(m.public_build_failure(b'password=private secret=private SQL=private'),
                          ['public_build_failure_unclassified'])
 
+    def test_build_proxy_uses_only_credential_free_local_daemon_transport(self):
+        self.assertEqual(m.daemon_build_proxies({}), {})
+        proxy = 'http://http.docker.internal:3128'
+        self.assertEqual(m.daemon_build_proxies({'HTTPProxy': proxy, 'HTTPSProxy': proxy}),
+                         {'HTTP_PROXY': proxy, 'HTTPS_PROXY': proxy})
+        for value in ('http://user:secret@http.docker.internal:3128', 'http://foreign.invalid:3128',
+                      'http://http.docker.internal:3128/?secret=value', 'file:///private/proxy'):
+            with self.subTest(value=value), self.assertRaises(m.GateError):
+                m.daemon_build_proxies({'HTTPSProxy': value})
+
     def test_only_native_local_profile_is_admitted(self):
         m.validate_profile({}, 'arm64', 'aarch64')
         for key in ('GITHUB_ACTIONS', 'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_OWNER_MANAGED', 'ADDP_ONLINE_HOST', 'ADDP_ONLINE_LOCAL_SGM'):

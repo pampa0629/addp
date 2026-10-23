@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 import uuid
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[2]
 LABEL = 'com.addp.execution-trace-local'
@@ -112,6 +113,22 @@ def effective_docker_endpoint(environment, context_reader):
         endpoint=context_reader(None)
     require(isinstance(endpoint,str) and endpoint.startswith('unix://') and endpoint[7:].startswith('/'), 'local_unix_docker_required')
     return endpoint
+
+
+def daemon_build_proxies(info):
+    """Reuse only the local daemon's credential-free public build transport."""
+    result = {}
+    for field, key in (('HTTPProxy', 'HTTP_PROXY'), ('HTTPSProxy', 'HTTPS_PROXY')):
+        value = info.get(field)
+        if not value:
+            continue
+        parsed = urllib.parse.urlsplit(value)
+        require(parsed.scheme in ('http', 'https') and parsed.hostname in
+                ('http.docker.internal', 'localhost', '127.0.0.1', '::1') and
+                not parsed.username and not parsed.password and parsed.path in ('', '/') and
+                not parsed.query and not parsed.fragment, 'credential_free_local_daemon_proxy_required')
+        result[key] = value
+    return result
 
 
 def private_docker_client(life, endpoint):
@@ -404,8 +421,11 @@ def build(life):
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
     config.write_text('[registry."localhost:5001"]\n  http = true\n  insecure = true\n')
+    proxies=daemon_build_proxies(json.loads(life.docker('info','--format',
+        '{"HTTPProxy":{{json .HTTPProxy}},"HTTPSProxy":{{json .HTTPSProxy}}}')))
+    proxy_options=[part for key,value in proxies.items() for part in ('--driver-opt','env.'+key+'='+value)]
     life.docker('buildx', 'create', '--name', life.builder, '--driver', 'docker-container', '--driver-opt',
-                'network=host,cpu-period=100000,cpu-quota=300000,memory=5g', '--buildkitd-config', str(config))
+                'network=host,cpu-period=100000,cpu-quota=300000,memory=5g', *proxy_options, '--buildkitd-config', str(config))
     life.builder_created = True
     life.docker('buildx', 'inspect', life.builder, '--bootstrap')
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
@@ -420,7 +440,9 @@ def build(life):
     shim = life.work/'tools';shim.mkdir()
     wrapper = shim/'docker'
     wrapper.write_text('#!/usr/bin/env python3\nimport os,sys\na=sys.argv[1:]\n'
-       'if a and a[0]=="build": a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*a[1:]]\n'
+       'if a and a[0]=="build":\n'
+       ' p=[v for k in ("HTTP_PROXY","HTTPS_PROXY") if os.environ.get("TRACE_LOCAL_"+k) for key in (k,k.lower()) for v in ("--build-arg",key+"="+os.environ["TRACE_LOCAL_"+k])]\n'
+       ' a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*p,*a[1:]]\n'
        'elif a and a[0]=="run": a=["run","--cpus","3","--memory","5g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*a[1:]]\n'
        'if a and a[0]=="run":\n'
        ' a=[v+":ro" if v.endswith(":/go/pkg/mod") else v for v in a]\n'
@@ -428,7 +450,7 @@ def build(life):
     wrapper.chmod(0o700)
     life.public_modcache=Path(life.command(['go','env','GOMODCACHE']).strip()).resolve()
     require(life.public_modcache.is_dir() and (life.public_modcache/'cache/download').is_dir(), 'public_readonly_go_cache_required')
-    build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache)}
+    build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_minio'
     minio_tag=life.run_id+'-minio:local'
     life.tags.append(minio_tag)
@@ -465,6 +487,7 @@ def build(life):
     life.docker('run','--rm','--name',life.run_id+'-browser-prepare','--label',f'{LABEL}={life.run_id}',
                 '--label',LABEL+'.role=oneshot','--cpus','1','--memory','2g',
                 '--mount',f'type=bind,source={life.checkout},target=/workspace','-w','/workspace/console/frontend',
+                *[part for k,v in proxies.items() for key in (k,k.lower()) for part in ('-e',key+'='+v)],
                 life.browser_image,'npm','ci','--no-audit','--no-fund',timeout=300)
     # Builder's state remains under the same disk stop line until final cleanup.
     return commit,env,images
