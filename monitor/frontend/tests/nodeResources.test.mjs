@@ -3,6 +3,43 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
+import { resourceTrendMetrics, resourceTrendChartRows } from '../src/utils/nodeResources.js'
+
+test('device throughput requests both directions in one fixed scope without changing other metrics', () => {
+  const end = '2026-10-07T00:00:00Z'
+  for (const pair of [diskMetrics.slice(0, 2), networkMetrics]) for (const selected of pair) {
+    const params = trendParameters('host', selected.key, '7d', end, { device: 'exact-device' })
+    assert.equal(params.metrics, pair.map(metric => metric.key).join(','))
+    assert.equal(params.device, 'exact-device')
+    assert.equal(Date.parse(params.end) - Date.parse(params.start), 604800000)
+  }
+  for (const key of ['node.memory.used_percent', 'node.disk.io_busy_percent', 'node.filesystem.used_percent']) {
+    assert.deepEqual(resourceTrendMetrics(key).map(metric => metric.key), [key])
+  }
+  assert.throws(() => resourceTrendMetrics('arbitrary.metric'))
+})
+
+test('paired throughput aligns by metric identity and retains independent zero, missing and stale points', () => {
+  const at = '2026-10-07T00:00:00Z'
+  for (const pair of [diskMetrics.slice(0, 2), networkMetrics]) {
+    const lines = pair.map((metric, i) => ({ metric_key: metric.key, points: [
+      { evaluated_at: at, value: i === 0 ? 0 : 2048, data_state: 'valid' },
+      { evaluated_at: '2026-10-07T00:00:15Z', value: i === 0 ? 1e12 : 4096, data_state: i === 0 ? 'stale' : 'valid' },
+      { evaluated_at: '2026-10-07T00:00:30Z', value: i === 0 ? 1024 : null, data_state: i === 0 ? 'valid' : 'no_data' }
+    ] }))
+    const rows = resourceTrendChartRows({ series: lines.toReversed() }, pair[1].key)
+    assert.deepEqual(rows.map(row => [row[pair[0].name], row[pair[1].name]]), [[0, 2048], [null, 4096], [1024, null]])
+    assert.deepEqual(rows.map(row => row.evaluated_at), lines[0].points.map(point => point.evaluated_at))
+    for (const change of [
+      value => value.series.pop(),
+      value => value.series[1].points.pop(),
+      value => value.series[1].points[1].evaluated_at = '2026-10-07T00:00:16Z'
+    ]) {
+      const invalid = structuredClone({ series: lines }); change(invalid)
+      assert.throws(() => resourceTrendChartRows(invalid, pair[0].key))
+    }
+  }
+})
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')

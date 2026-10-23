@@ -537,3 +537,14 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 
 首次本地窗口在构建器准备阶段等待 Docker Desktop 个人凭据助手，尚未下载基础镜像、创建业务部署或发送业务请求。主动中断自有 gate 后，进程组、Builder 容器／卷和私有目录经精确过滤复查均为空；最终报告写入还暴露 Path.open 不支持 opener 的接口错误，原自动报告未生成，不伪造为通过。已修为内置 open 的 O_EXCL／0600 路径，并补真实文件权限与拒绝覆写测试；Docker 客户端改为当次 0700 目录、空 auths、无凭据助手，只读公共工具插件并固定已核对 Unix endpoint，不借个人凭据。标准 local runner 复验结果另记。后续操作继续扣减首次窗口已耗时间，未放宽原 60 分钟、8 CPU／12 GiB 或 4 GiB 停止线。首次失败及清理复查见 local-first-interrupted-receipt.json 与 local-acceptance.log。
+
+
+### 同设备双向吞吐同图（2026-10-23）
+
+主机资源页对同一磁盘的读／写、同一网卡的收／发使用一次现有趋势查询，同图显示两条独立折线；按全部有效点共同选择图表单位，并在图旁明确单位及末次评估值。所选方向仍决定采样明细，响应数组乱序不改变方向；真实零值保留，陈旧／缺样各自断开，缺序列、错误设备或评估网格错位拒绝整幅趋势。复用共享 ChartRenderer、格式化和请求隔离，没有新增采集、接口、权限、插值或设备汇总；其他标量、文件系统、磁盘 IO 耗时及 CPU／内存比较保持原单指标路径。规范见平台运行观测 6.3。
+
+冻结基线 `c71bd5cfaddd4607c2d0907691f2d2a06a57d432` 加本批六项前端输入执行 `make test-monitor-frontend`：退出 0，100 项确定性测试、299 项浏览器测试与构建通过。随后仅补图旁明确的容量单位及独立测试截图路径；最终六项输入再次冻结，执行 `npm test`（100／100，无 Skip）、标准 `npm run test:e2e -- e2e/node-resources.spec.js`（65／65）及 `npm run build`，全部退出 0。最终主机页覆盖中英文、620px、双向单位／零值、响应乱序、方向明细、重载恢复、错位拒绝／恢复与独立缺样；其余未受最后单位文本影响的页面复用完整门禁证据，不宣称最终输入又完整重跑299项。现有 Monitor 前端路径及标准门禁自动发现，无新增依赖或 CI 编排。
+
+末版专项首次为64／65，一次点击写入方向后 URL 未变化，截图显示选择弹层仍打开；带 trace 的四组合12次检查、加入输入事件记录的单场景10次诊断及最终标准65项均未复现，不能据此确认该次失败根因或宣称修复了间歇点击／Safari 故障。临时诊断代码已删除，不增加重试、超时或移除 URL／明细断言；新截图使用每次浏览器测试的独立 outputPath。保留首次失败证据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-lf2gXA/`。
+
+日志、两版冻结输入及诊断记录位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-paired-throughput-ge5httgy/`：`frontend.log`、`inputs.json`、`inputs-final.json` 与 `snapshot-final/monitor/` 下的 `unit-final.log`、`node-verified.log`、`build-final.log`、`node-final.log`、`paired-trace.log`、`selection-probe.log`。最终六项输入与工作区哈希一致。仅为隔离夹具 T1／T3，未运行真实 Safari、Hosted T4、CI 或后台重启，等待专门会话回传，未设置定时任务。当前仍为折线，不将本批计为原图的分钟柱形、内存双Y轴、资源热力或完整监控交付。

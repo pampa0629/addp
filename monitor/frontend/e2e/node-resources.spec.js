@@ -573,6 +573,60 @@ for (const locale of ['zh-cn', 'en']) test(`local collection entry opens only th
 })
 
 
+for (const locale of ['zh-cn', 'en']) for (const [family, device, keys, names, labels] of [
+  ['disk', 'sda', ['node.disk.read_bytes_per_second', 'node.disk.write_bytes_per_second'], ['diskRead', 'diskWrite'], { 'zh-cn': ['磁盘读取吞吐', '磁盘写入吞吐'], en: ['Disk read throughput', 'Disk write throughput'] }],
+  ['network', 'eth0', ['node.network.receive_bytes_per_second', 'node.network.transmit_bytes_per_second'], ['networkReceive', 'networkTransmit'], { 'zh-cn': ['网络接收吞吐', '网络发送吞吐'], en: ['Network receive throughput', 'Network transmit throughput'] }]
+]) test(`paired ${family} throughput preserves metric identity, gaps and recovery (${locale})`, async ({ page }, testInfo) => {
+  const response = body => {
+    for (const line of body.series) for (const point of line.points) {
+      Object.assign(point, { value: line.metric_key === keys[0] ? 0 : 2 ** 21, data_state: 'valid', sampled_at: point.evaluated_at })
+    }
+    body.series.reverse()
+  }
+  const state = await resourceBackend(page, { locale, trendResponse: response })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.goto(`/node-resources/${node}?metric=${keys[0]}&device=${device}&refresh=off`)
+  const values = page.getByTestId('resource-paired-values')
+  await expect(values).toContainText(labels[locale][0])
+  await expect(values).toContainText(labels[locale][1])
+  await expect(page.getByTestId(`resource-trend-${names[0]}`).locator('strong')).toHaveText('0.00 B/s')
+  await expect(page.getByTestId(`resource-trend-${names[1]}`).locator('strong')).toHaveText('2.00 MiB/s')
+  await expect(page.getByTestId('resource-paired-hint')).toContainText(locale === 'en' ? 'not cumulative traffic' : '不是累计流量')
+  await expect(page.getByTestId('resource-paired-hint')).toContainText('MiB/s')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  expect(state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1).query).toMatchObject({ metrics: keys.join(','), device })
+  const sampling = page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true })
+  await sampling.click()
+  await expect(page.getByTestId('resource-evidence')).toContainText('0.00 B/s')
+  await expect(page.getByTestId('resource-evidence')).not.toContainText('2.00 MiB/s')
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: labels[locale][1], exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('metric') === keys[1] && url.searchParams.get('device') === device)
+  await page.reload()
+  await expect(values).toContainText('2.00 MiB/s')
+  await sampling.click()
+  await expect(page.getByTestId('resource-evidence')).toContainText('2.00 MiB/s')
+  await expect(page.getByTestId('resource-evidence')).not.toContainText('0.00 B/s')
+  await page.getByTestId('resource-chart').scrollIntoViewIfNeeded()
+  await page.getByTestId('resource-chart').screenshot({ path: testInfo.outputPath('paired-throughput.png'), animations: 'disabled' })
+  expect((await values.boundingBox()).width).toBeLessThanOrEqual(620)
+  state.trendResponse = body => { response(body); body.series[0].points[1].evaluated_at = '2026-10-06T23:59:46Z' }
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-trend-error')).toBeVisible()
+  await expect(values).toHaveCount(0)
+  await expect(page.getByTestId('resource-chart')).toHaveCount(0)
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  state.trendResponse = body => {
+    response(body)
+    Object.assign(body.series.find(line => line.metric_key === keys[1]).points.at(-1), { value: null, sampled_at: null, data_state: 'no_data' })
+  }
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-trend-error')).toHaveCount(0)
+  await expect(page.getByTestId(`resource-trend-${names[0]}`).locator('strong')).toHaveText('0.00 B/s')
+  await expect(page.getByTestId(`resource-trend-${names[1]}`).locator('strong')).toHaveText('—')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+})
+
 for (const [family, device, firstMetric, secondMetric, secondLabel, emptyLabel] of [
   ['disk', 'sda', 'node.disk.read_bytes_per_second', 'node.disk.write_bytes_per_second', '磁盘写入吞吐', '暂无磁盘吞吐数据'],
   ['network', 'eth0', 'node.network.receive_bytes_per_second', 'node.network.transmit_bytes_per_second', '网络发送吞吐', '暂无网络吞吐数据']
@@ -587,13 +641,13 @@ for (const [family, device, firstMetric, secondMetric, secondLabel, emptyLabel] 
     await expect(page.getByTestId('resource-selected-device')).toHaveText(device)
     await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     const reads = state.reads.filter(item => item.path.endsWith('resource_trends'))
-    expect(reads.at(-1).query).toMatchObject({ metrics: firstMetric, device: device })
+    expect(reads.at(-1).query).toMatchObject({ metrics: `${firstMetric},${secondMetric}`, device: device })
     expect(reads.at(-1).query.mountpoint).toBeUndefined()
     await page.reload()
     await expect(page.getByTestId('resource-selected-device')).toHaveText(device)
     await page.getByTestId('resource-metric').click()
     await page.getByRole('option', { name: secondLabel, exact: true }).click()
-    await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: secondMetric, device })
+    await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: `${firstMetric},${secondMetric}`, device })
     state[`${family}Mode`] = `${family}-missing`
     await page.getByRole('button', { name: '刷新', exact: true }).click()
     await expect(table).toHaveCount(0)

@@ -98,7 +98,23 @@ export function resolveResourceRoute(query = {}, detail = false) {
 export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {}, compare = false) {
   const end = Date.parse(serverEnd)
   if (!Number.isFinite(end) || end % 1000 !== 0 || !Object.hasOwn(resourceRanges, range) || (compare && !supportsResourceComparison(metric, range))) throw new Error('invalid_resource_response')
-  return { node_id: nodeID, metrics: metric, ...dimensions, start: new Date(end - resourceRanges[range] * 1000 * (compare ? 2 : 1)).toISOString(), end: new Date(end).toISOString() }
+  return { node_id: nodeID, metrics: resourceTrendMetrics(metric).map(item => item.key).join(','), ...dimensions, start: new Date(end - resourceRanges[range] * 1000 * (compare ? 2 : 1)).toISOString(), end: new Date(end).toISOString() }
+}
+
+export function resourceTrendMetrics(key) {
+  for (const pair of [diskMetrics.slice(0, 2), networkMetrics]) if (pair.some(metric => metric.key === key)) return pair
+  const metric = allResourceMetrics.find(item => item.key === key)
+  if (!metric) throw new Error('invalid_resource_response')
+  return [metric]
+}
+export function resourceTrendChartRows(value, key) {
+  const metrics = resourceTrendMetrics(key)
+  const lines = metrics.map(metric => value.series.find(line => line.metric_key === metric.key))
+  if (lines.some(line => !line) || lines.some(line => line.points.length !== lines[0].points.length)) throw new Error('invalid_resource_response')
+  return lines[0].points.map((point, index) => {
+    if (lines.some(line => Date.parse(line.points[index].evaluated_at) !== Date.parse(point.evaluated_at))) throw new Error('invalid_resource_response')
+    return { evaluated_at: point.evaluated_at, ...Object.fromEntries(metrics.map((metric, i) => [metric.name, currentResourceValue(lines[i].points[index])])) }
+  })
 }
 
 export function resourceTrendComparison(value, range) {
