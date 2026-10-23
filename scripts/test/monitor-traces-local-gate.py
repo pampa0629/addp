@@ -122,6 +122,7 @@ def daemon_build_proxies(info):
         value = info.get(field)
         if not value:
             continue
+        value = value if '://' in value else 'http://' + value
         parsed = urllib.parse.urlsplit(value)
         require(parsed.scheme in ('http', 'https') and parsed.hostname in
                 ('http.docker.internal', 'localhost', '127.0.0.1', '::1') and
