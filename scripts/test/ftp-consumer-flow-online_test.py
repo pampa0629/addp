@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import subprocess
@@ -599,6 +600,19 @@ class FTPConsumerTest(unittest.TestCase):
         client.items[0]['attributes']['type_info']['table']['fields'].pop()
         with self.assertRaises(M.SuiteError):
             M.validate_item(client.items[0], client.samples[0])
+
+    def test_catalog_scan_button_matches_initial_and_completed_scope_labels(self):
+        repository = Path(__file__).resolve().parents[2]
+        browser = (repository / 'console/frontend/e2e/online/ftp-consumer-flow.spec.js').read_text()
+        selector = re.search(r"examples\.getByRole\('button', \{ name: /(.+?)/([a-z]*) \}\)", browser)
+        self.assertIsNotNone(selector, 'the catalog row must expose its real UI scan action')
+        action = re.compile(selector[1], re.IGNORECASE if 'i' in selector[2] else 0)
+        for language in ('zh-cn', 'en'):
+            messages = json.loads((repository / f'meta/frontend/src/i18n/{language}.json').read_text())['meta']['scan']
+            for state, key in (('pending', 'scan'), ('completed', 'rescan')):
+                with self.subTest(language=language, state=state):
+                    self.assertIsNotNone(action.fullmatch(messages[key]), messages[key])
+            self.assertIsNone(action.fullmatch(messages['batchScan']))
 
     def test_browser_must_prove_identity_ui_scan_all_previews_and_download_hashes(self):
         expected = {'run_id': 'owned', 'engine_id': 17, 'tenant_id': 2, 'principal_id': '8', 'samples': [{'format': 'csv', 'item_id': 1, 'size': 3, 'sha256': 'a' * 64}]}

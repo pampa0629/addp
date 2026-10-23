@@ -256,11 +256,11 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     const scanScope = expected.source_engine_type === 'minio' ? 'model-source' : 'examples'
     const examples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: scanScope })
     await expect(examples).toHaveCount(1)
-    const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
-    await examples.getByRole('button', { name: /^(重新扫描|Rescan)$/i }).click()
+    await examples.getByRole('button', { name: /^(扫描|Scan|重新扫描|Rescan)$/i }).click()
     const dialog = meta.getByRole('dialog', { name: /^(确认扫描范围与深度|Confirm scan scope and depth)$/i })
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText(scanScope)
+    const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
     await dialog.getByRole('button', { name: /^(确认并开始扫描|Confirm and start scan)$/i }).click()
     const response = await submitted
     expect(response.request().postDataJSON().catalog_paths).toEqual([scanScope])
