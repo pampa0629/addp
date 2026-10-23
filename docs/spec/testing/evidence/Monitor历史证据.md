@@ -830,3 +830,23 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 固定版本的 `monitor/frontend/e2e/process-comparison.spec.js` 与 `d7ec3e9ffac1761c60fd0a5f76dc0063a6354398` 字节一致，SHA-256 为 `4e6560c91f6a1ab2e8c72294776296a2918391f6f1817b987eca8c5f2b378954`。复核关闭环比时先挂起实际 `process_resource_summaries` 响应，断言旧四次趋势请求与 `23:50:15` 起点仍保留，释放后等待第五次请求再断言 `23:55:15`；这项同步修正已在后继完整 Linux 门禁通过。原 `35f` 失败记录保留，原 `d7ec` Platform 39952965397 已取消，不计通过，亦不重复派发已修正事项。
 
 原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿；个人 Safari 右侧两列截图与前台自动刷新复验仍未完成。
+
+
+### 正式身份本地第四窗口：依赖核验通过，完整闭环未验收（2026-10-24）
+
+用户“继续”后沿原上限新开窗口：2026-10-23 23:54:17至2026-10-24 00:54:17（Asia/Shanghai），8 CPU／12 GiB、4 GiB停止线；所有重试沿同一绝对截止，无Hosted、容量模型或定时。实际运行在截止前受控结束，清理完成。
+
+本窗口定位并修正四项入口问题：
+
+- Compose仍会插值未启用capacity profile中的挂载，缺少TRACE_T2_WORK使配置拒绝；仅声明当次私有工作目录，trace-load仍不选中。
+- 一次性容器成功退出后自动删除，与资源守卫“列举后inspect”竞态；现在保留当次oneoff及初始化容器的退出状态至统一清理，非零退出和OOM仍拒绝，未用忽略检查或重试丢失状态的方法计成功。
+- trace-query以UID 0且移除全部capability运行时，Nginx创建临时目录的chown被拒绝。真实前置nginx -t复现operation not permitted／chown；改为现有Trace T2同样的宿主私有证书所有者身份，保留cap_drop、只读和网络边界，实际校验及健康检查通过。
+- Loki配置校验通过但实际启动permission denied。第8次实测进程UID10001，而可写/loki卷已变成root:root、755；初始化脚本此前成功chown10001并chmod750。空卷在创建消费者时的镜像copy-up覆盖了初始化权限。当前当次新建数据卷统一nocopy，由原初始化路径负责权限；第9次只读测量Loki /loki和Tempo /var/tempo均保持10001:10001、750，修正后实际服务不再退出。
+
+为避免依赖启动错误在整轮产品构建后才暴露，先修规范，再将同一组独占依赖的实际启动移到编译前；同一私有Compose、网络、卷和凭据继续使用，不创建第二组或新增验收选项。依赖运行期间构建器与源码编译各1 CPU／2 GiB；业务构建后仅更新同一Compose内的实际业务镜像ID。原总上限、停止线、采样与业务断言不变。失败诊断只保留固定错误类别、输出哈希及Unix卷权限，不导出登录、SQL或运行日志正文。
+
+当前最终代码`f07a5a6cc201a0ed676f0ad013ca5ddfcf3b23a8`。第9次标准入口`make test-monitor-traces-local`实际通过产品配置、MinIO/mc、Loki完整启动参数校验、Nginx校验、独占PostgreSQL／业务PostgreSQL／Redis／MinIO、两个存储初始化及遥测依赖检查；两代理healthy，Loki／Tempo／Alloy持续运行，报告dependencies_ready=true，并越过构建器前置检查进入编译。24项成功资源测量，峰值7.45 CPU、9.375 GiB、1,085,509,632字节，最长测量0.880秒。此为依赖准备通过，不是正式身份或全业务验收。
+
+本窗口共九次实际尝试：1为模板配置拒绝；2为oneoff删除竞态；3为依赖启动失败；4、5为Nginx前置校验失败；6因余量不足受控中断旧顺序构建；7、8在新顺序中复现Loki权限失败；9完成依赖核验后因余量不足受控中断编译。完整入口报告均保留failed，其中两次为local_acceptance_interrupted，不改写成通过。第2、3次完成的16个产品镜像分别属于其各自固定提交，不能当作最终修复源码已完成重建。正式密码/MFA、普通Tenant执行、Trace查询、日志和Console闭环仍未运行、未计通过；没有续开新窗口。
+
+最终`make test-infra-runtime-log-lifecycle`退出0：58项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；未更改业务API或采样策略，现有Platform／owner路径继续覆盖。九次自动清理及独立审计均零当次容器、网络、卷、构建器、镜像标签和私有目录，原MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261023-window4/`，包括`window.json`、九份`attempt-*-report.json`、`attempt-9-mount-audit.json`、`attempt-9-planned-stop.json`、`receipt.json`、`cleanup-audit.json`、`lifecycle-final.log`；未手工调度或跟踪无关CI。原清单实际第19行（B18）、第45行（B44）继续部分实现，正式身份缺口保留，不计Linux Runner T4、Hosted、T5、72小时或生产容量通过。
