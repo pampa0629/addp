@@ -365,7 +365,10 @@ class ContinuousRunnerTest(unittest.TestCase):
     def test_drains_cursor_pages_without_offset_payloads(self):
         items = [fact(4, 'started'), fact(9), fact(12, 'cancelled')]
         client = Client([page(items[:2], True), page(items[2:])])
-        self.assertEqual(M.events(client, M.MONITOR, UUID), items)
+        evidence = {}
+        self.assertEqual(M.events(client, M.MONITOR, UUID, evidence=evidence), items)
+        self.assertEqual(evidence, {'page_size': 2, 'page_count': 2, 'event_count': 3,
+                                    'first_cursor': 9, 'last_cursor': 12})
         self.assertIn('after=9&limit=2', client.calls[1][1])
         M.lifecycle_events(items, 'cancelled')
 
@@ -381,6 +384,9 @@ class ContinuousRunnerTest(unittest.TestCase):
                      lambda p: p.update(next_cursor=0),
                      lambda p: p.update(has_more=1),
                      lambda p: p.update(retained_after='yesterday'),
+                     lambda p: p['items'][0].update(occurred_at='yesterday'),
+                     lambda p: p['items'][0].update(occurred_at='2026-10-12T01:00:00'),
+                     lambda p: p['items'][0].update(occurred_at='2026-09-01T01:00:00Z'),
                      lambda p: p['items'].append(deepcopy(p['items'][0]))]
         for mutate in mutations:
             p = deepcopy(base)
@@ -457,12 +463,23 @@ class ContinuousRunnerTest(unittest.TestCase):
 
     def test_denial_covers_owner_detail_progress_events_monitor_detail_events_tree(self):
         client = Client([{'error': 'denied'}] * 6)
-        M.invisible(client, UUID, 403, 404)
+        M.invisible(client, UUID, 403, 404, cursor=9)
         self.assertEqual(len(client.calls), 6)
         self.assertEqual([call[2] for call in client.calls], [(403,)] * 3 + [(404,)] * 3)
+        event_paths = [call[1] for call in client.calls if '/events?' in call[1]]
+        self.assertEqual(len(event_paths), 2)
+        self.assertTrue(all('after=9&limit=2' in path for path in event_paths))
         client = Client([{'execution_id': UUID}])
         with self.assertRaises(M.SuiteError):
             M.invisible(client, UUID, 403, 404)
+
+    def test_hidden_monitor_total_requires_a_closed_empty_page_and_integer_zero(self):
+        empty = {'executions': [], 'total': 0, 'page': 1, 'page_size': 1}
+        self.assertEqual(M.hidden_monitor_total(Client([empty])), 0)
+        for changed in [{'total': 1}, {'total': False}, {'total': 0.0}, {'executions': [{'execution_id': UUID}]},
+                        {'page': True}, {'page_size': 20}, {'execution_config': {}}]:
+            with self.subTest(changed=changed), self.assertRaises(M.SuiteError):
+                M.hidden_monitor_total(Client([{**empty, **changed}]))
 
     def test_owner_revocation_uses_formal_iam_and_fresh_monitor_only_session(self):
         context = {'principal': {'type': 'user', 'id': '17'},
@@ -476,8 +493,11 @@ class ContinuousRunnerTest(unittest.TestCase):
                              'permissions': ['iam.tenant_role_assignment.read', 'iam.tenant_role_assignment.revoke']}]}}
         fresh_context = {**context, 'authorization': {'role_assignments': [
             {'role_key': 'online.execution_monitor_reader', 'permissions': ['monitor.execution.read']}]}}
-        reader, admin = Client([context] + [{'error': 'denied'}] * 6), Client([admin_context, assignment])
-        fresh = Client([fresh_context, fresh_context] + [{'error': 'denied'}] * 6)
+        items = [fact(4, 'started'), fact(9), fact(12, 'failed')]
+        pages = [page(items[:2], True), page(items[2:])]
+        reader, admin = Client([context] + pages * 2 + [{'error': 'denied'}] * 6), Client([admin_context, assignment])
+        fresh = Client([fresh_context, fresh_context] + [{'error': 'denied'}] * 6 +
+                       [{'executions': [], 'total': 0, 'page': 1, 'page_size': 1}])
         reader.base_url, reader.timeout, reader.token = 'http://localhost:8000', 10, 'old-token'
         mutations = []
         def mutate(actor, path, body=None, expected=(200,)):
@@ -489,10 +509,26 @@ class ContinuousRunnerTest(unittest.TestCase):
                 'ADDP_ONLINE_PARENT_USER_USERNAME': 'external-online-transfer-reader',
                 'ADDP_ONLINE_PARENT_USER_PASSWORD': 'private'}), patch.object(M.API, 'validate_user_identity', return_value={}), \
                 patch.object(M.API, 'GatewayClient', return_value=fresh):
-            M.revoke(reader, admin, object(), 2, UUID, mutate)
+            receipt = M.revoke(reader, admin, object(), 2, UUID, mutate)
         self.assertEqual(mutations, ['/api/v1/system/tenant/role_assignments/37/revoke', '/api/v1/system/login'])
-        self.assertEqual([call[2] for call in reader.calls[1:]], [(401,)] * 6)
-        self.assertEqual([call[2] for call in fresh.calls[2:]], [(403,)] * 3 + [(404,)] * 3)
+        self.assertEqual([call[2] for call in reader.calls[5:]], [(401,)] * 6)
+        self.assertEqual([call[2] for call in fresh.calls[2:8]], [(403,)] * 3 + [(404,)] * 3)
+        self.assertTrue(all('after=9&limit=2' in call[1] for call in reader.calls[5:] if '/events?' in call[1]))
+        self.assertTrue(all('after=9&limit=2' in call[1] for call in fresh.calls[2:8] if '/events?' in call[1]))
+        self.assertEqual(receipt['principal_id'], '17')
+        self.assertEqual(receipt['execution_id'], UUID)
+        self.assertEqual(receipt['owner_pages'], receipt['monitor_pages'])
+        self.assertEqual(receipt['monitor_pages']['page_count'], 2)
+        self.assertEqual(receipt['fresh_monitor_only_total'], 0)
+        self.assertTrue(receipt['saved_cursor_denied_with_old_token'] and receipt['saved_cursor_denied_with_fresh_token'])
+
+    def test_revocation_requires_real_multiple_pages_before_mutating_iam(self):
+        context = {'principal': {'id': '17'}, 'context': {'tenant_membership_id': '27'}}
+        one_page = page([fact(4, 'started'), fact(9, 'failed')])
+        reader = Client([context, one_page, one_page])
+        with patch.object(M.API, 'validate_user_identity', return_value={}), \
+                self.assertRaisesRegex(M.SuiteError, 'real multi-page'):
+            M.revoke(reader, None, None, 2, UUID, lambda *args: self.fail('must not mutate IAM'))
 
     def test_manual_only_registry_and_workflow_use_owned_hosted_lifecycle(self):
         gate = import_module('scripts.test.online-gate')

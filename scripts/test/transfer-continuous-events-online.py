@@ -107,10 +107,10 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
             'execution exposed private failure details')
 
 
-def events(client, prefix, execution_id):
+def events(client, prefix, execution_id, *, evidence=None):
     """Drain cursor pages and reject duplicates, unknown fields, samples and offset payloads."""
-    cursor, result = 0, []
-    for _ in range(600):
+    cursor, first_cursor, result = 0, 0, []
+    for page_index in range(600):
         page = client.request('GET', f'{prefix}/{execution_id}/events?after={cursor}&limit=2', (200,)).payload
         require(set(page) == {'items', 'next_cursor', 'has_more', 'retained_after'}, 'event page contract changed')
         require(isinstance(page['items'], list) and len(page['items']) <= 2 and isinstance(page['has_more'], bool),
@@ -128,7 +128,12 @@ def events(client, prefix, execution_id):
                     'event cursor, identity or continuous attempt changed')
             require(item.get('kind') in {'started', 'progress', 'completed', 'failed', 'cancelled', 'timeout', 'truncated'},
                     'event kind is invalid')
-            require(isinstance(item.get('occurred_at'), str) and bool(item['occurred_at']), 'event timestamp missing')
+            try:
+                occurred = datetime.fromisoformat(item['occurred_at'].replace('Z', '+00:00'))
+                require(occurred.tzinfo is not None and occurred >= retained,
+                        'event timestamp is outside its retention window')
+            except (KeyError, ValueError, TypeError, AttributeError):
+                raise SuiteError('event timestamp is invalid') from None
             counters = item.get('counters')
             require(isinstance(counters, dict) and set(counters) <= {'records_read', 'records_written'},
                     'continuous event exposed undeclared counters')
@@ -138,7 +143,12 @@ def events(client, prefix, execution_id):
             result.append(item)
         require(isinstance(page['next_cursor'], int) and not isinstance(page['next_cursor'], bool)
                 and page['next_cursor'] == cursor, 'event next_cursor does not match the last fact')
+        if page_index == 0:
+            first_cursor = cursor
         if not page['has_more']:
+            if evidence is not None:
+                evidence.update(page_size=2, page_count=page_index + 1, event_count=len(result),
+                                first_cursor=first_cursor, last_cursor=cursor)
             return result
         require(bool(page['items']), 'event page did not advance')
     raise SuiteError('event page count exceeded the execution budget')
@@ -302,15 +312,26 @@ def history(client, task_id):
     return page['data']
 
 
-def invisible(client, execution_id, owner_status, monitor_status):
-    for suffix in ('', '/progress', '/events?after=0&limit=2'):
+def invisible(client, execution_id, owner_status, monitor_status, *, cursor=0):
+    for suffix in ('', '/progress', f'/events?after={cursor}&limit=2'):
         response = client.request('GET', f'{OWNER}/executions/{execution_id}{suffix}', (owner_status,))
         assert_safe(response.payload)
         require('execution_id' not in response.payload and 'items' not in response.payload, 'Owner denial leaked execution facts')
-    for suffix in ('', '/events?after=0&limit=2', '/tree'):
+    for suffix in ('', f'/events?after={cursor}&limit=2', '/tree'):
         response = client.request('GET', f'{MONITOR}/{execution_id}{suffix}', (monitor_status,))
         assert_safe(response.payload)
         require('execution_id' not in response.payload and 'items' not in response.payload, 'Monitor denial leaked execution facts')
+
+
+def hidden_monitor_total(client):
+    page = client.request('GET', '/api/v1/monitor/executions?module=transfer&task_type=sync&page=1&page_size=1', (200,)).payload
+    require(isinstance(page, dict) and set(page) == {'executions', 'total', 'page', 'page_size'}
+            and page['executions'] == [] and type(page['total']) is int and page['total'] == 0
+            and type(page['page']) is int and page['page'] == 1
+            and type(page['page_size']) is int and page['page_size'] == 1,
+            'Monitor list or total exposed inaccessible executions')
+    assert_safe(page)
+    return page['total']
 
 
 def identity(client, tenant, permissions):
@@ -324,6 +345,13 @@ def identity(client, tenant, permissions):
 
 def revoke(reader, admin, login, tenant, execution_id, mutate):
     _, binding = identity(reader, tenant, {'monitor.execution.read', 'transfer.task.read'})
+    owner_pages, monitor_pages = {}, {}
+    owner_facts = events(reader, f'{OWNER}/executions', execution_id, evidence=owner_pages)
+    monitor_facts = events(reader, MONITOR, execution_id, evidence=monitor_pages)
+    require(owner_facts == monitor_facts and owner_pages == monitor_pages
+            and monitor_pages['page_count'] >= 2 and monitor_pages['event_count'] > 2,
+            'revocation must follow real multi-page Owner and Monitor event reads')
+    cursor = monitor_pages['first_cursor']
     target_id = os.environ['ADDP_ONLINE_PARENT_ASSIGNMENT_ID']
     username = os.environ['ADDP_ONLINE_PARENT_USER_USERNAME']
     require(re.fullmatch(r'[1-9][0-9]*', target_id) and username == 'external-online-transfer-reader', 'dedicated Owner reader required')
@@ -346,7 +374,7 @@ def revoke(reader, admin, login, tenant, execution_id, mutate):
                 item.get('scope_type') == 'tenant' and item.get('status') == status, 'Owner assignment binding changed')
     assignment(admin.request('GET', path, (200,)).payload, 'active')
     assignment(mutate(admin, path + '/revoke', {'reason': 'Disposable continuous execution Owner read revocation'}, (200,)), 'revoked')
-    invisible(reader, execution_id, 401, 401)
+    invisible(reader, execution_id, 401, 401, cursor=cursor)
     issued = mutate(login, '/api/v1/system/login', {'username': username,
                      'password': os.environ['ADDP_ONLINE_PARENT_USER_PASSWORD']}, (200,))
     token = (issued.get('session') or {}).get('access_token')
@@ -358,7 +386,12 @@ def revoke(reader, admin, login, tenant, execution_id, mutate):
     fresh_context = fresh.request('GET', AUTH, (200,)).payload
     require(not any('transfer.task.read' in item['permissions'] for item in fresh_context['authorization']['role_assignments']),
             'fresh reader retained revoked Owner permission')
-    invisible(fresh, execution_id, 403, 404)
+    invisible(fresh, execution_id, 403, 404, cursor=cursor)
+    total = hidden_monitor_total(fresh)
+    return {'execution_id': execution_id, 'tenant_id': str(tenant), 'principal_id': binding[0],
+            'owner_pages': owner_pages, 'monitor_pages': monitor_pages,
+            'saved_cursor_denied_with_old_token': True, 'saved_cursor_denied_with_fresh_token': True,
+            'fresh_monitor_only_total': total}
 
 
 def wait_browser_marker(control, name, marker, process):
@@ -570,6 +603,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('kafka_physical_initial_commit_and_events')
         invisible(denied, initial, 403, 404)
         invisible(foreign, initial, 404, 404)
+        report['hidden_monitor_totals'] = {'monitor_only': hidden_monitor_total(denied),
+                                           'foreign_tenant': hidden_monitor_total(foreign)}
+        report['checks'].append('monitor_list_and_total_hide_inaccessible_executions')
         denied.request('GET', f'{OWNER}/task-definitions/{kafka_task}/executions', (403,))
         hidden = foreign.request('GET', f'{OWNER}/executions?task_id={kafka_task}', (200,)).payload
         require(hidden.get('total') == 0 and hidden.get('data') == [], 'foreign history total leaked')
@@ -633,9 +669,13 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         faults.stop_owner_during(owner_unavailable)
         compare(initial, 'failed')
         report['checks'].append('owner_unavailable_fail_closed')
+        def revoke_reader():
+            report['cursor_revocation'] = revoke(reader, admin, login, tenant, initial, mutate)
+            checkpoint()
         report['browser_revocation'] = run_browser('revocation', [initial], report['reader_identity'],
-            run_id, faults.secret, lambda: revoke(reader, admin, login, tenant, initial, mutate))
+            run_id, faults.secret, revoke_reader)
         report['checks'].append('revoked_token_and_fresh_monitor_only_reader_denied')
+        report['checks'].append('real_event_pages_saved_cursor_and_revoked_list_total')
         cdc_task = create('cdc')
         cdc = launch(cdc_task)
         until(lambda: physical('verify-cdc-initial'))
