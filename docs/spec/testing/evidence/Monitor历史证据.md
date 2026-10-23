@@ -822,3 +822,11 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 - `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。现有 Monitor 前端／Go／指标 T2、Console／Online 路径自动发现覆盖本批，没有新增 workflow 或标准入口。
 
 本会话不触发／轮询 CI 或 Hosted，不设置定时任务，不修改 IAM 或重启个人服务。因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。
+
+### 五项列表、热力面板与服务环比的 Linux 前端复核（2026-10-24）
+
+专门 CI 会话回传 [Platform 39960204230 / Monitor job 120436001184](https://github.com/pampa0629/addp/actions/runs/39960204230/job/120436001184)，固定检出 `9bf8dddcbe8a589b0c7a85af6ded4bb44485a87e`，push、attempt 1。独立核对原始日志的实际 `make test-monitor-frontend`、检出 SHA、完整 411 条浏览器执行序号和最终汇总：112 项单元测试通过、失败／取消／跳过均为 0；411 项浏览器全部通过（17.9 分钟）；构建通过（7.06 秒），Monitor frontend gate 为 selected／success。包含中英文 20 台主机精确五项批量摘要、默认每页 20 台及独立状态、四项热力面板用例和十五项服务进程比较用例。
+
+固定版本的 `monitor/frontend/e2e/process-comparison.spec.js` 与 `d7ec3e9ffac1761c60fd0a5f76dc0063a6354398` 字节一致，SHA-256 为 `4e6560c91f6a1ab2e8c72294776296a2918391f6f1817b987eca8c5f2b378954`。复核关闭环比时先挂起实际 `process_resource_summaries` 响应，断言旧四次趋势请求与 `23:50:15` 起点仍保留，释放后等待第五次请求再断言 `23:55:15`；这项同步修正已在后继完整 Linux 门禁通过。原 `35f` 失败记录保留，原 `d7ec` Platform 39952965397 已取消，不计通过，亦不重复派发已修正事项。
+
+原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿；个人 Safari 右侧两列截图与前台自动刷新复验仍未完成。
