@@ -2818,6 +2818,87 @@ def raster_drainage_basins_d8(input_raster, band):
     return _d8_output(source, _d8_drainage_basins(directions))
 
 
+_D8_STREAM_ORDER_MESSAGES = {
+    key: (zh.replace('D8 汇流累积', 'D8 Strahler 河流分级'),
+          en.replace('D8 flow accumulation', 'D8 Strahler stream order'))
+    for key, (zh, en) in _D8_ACC_MESSAGES.items() if key != 'overflow'
+}
+_D8_STREAM_ORDER_MESSAGES.update({
+    'alignment': ('D8 Strahler 河流分级的流向与河网掩膜必须具有相同尺寸、完整仿射网格和等价CRS，请先显式对齐',
+                  'D8 Strahler stream order requires direction and stream mask to have the same dimensions, full affine grid and equivalent CRS; align explicitly'),
+    'mask_band': ('D8 Strahler 河流分级必须显式选择有效的一基0／1河网掩膜数据波段',
+                  'D8 Strahler stream order requires an explicit valid one-based 0/1 stream-mask data band'),
+    'mask_complex': ('D8 Strahler 河流分级不支持复数河网掩膜或复数alpha波段',
+                     'D8 Strahler stream order does not support complex stream masks or complex alpha bands'),
+    'mask_alpha': ('D8 Strahler 河流分级不能选择alpha波段作为河网掩膜',
+                   'D8 Strahler stream order cannot use an alpha band as the stream mask'),
+    'mask_scale': ('D8 Strahler 河流分级前必须显式应用河网掩膜scale/offset',
+                   'D8 Strahler stream order requires stream-mask scale/offset to be applied first'),
+    'coverage': ('D8 Strahler 河流分级的流向与河网掩膜必须具有完全相同的有效覆盖，不能取交集或将缺失视为零',
+                 'D8 Strahler stream order requires exactly the same effective coverage for direction and stream mask; do not intersect coverage or treat missing cells as zero'),
+    'mask_values': ('D8 Strahler 河流分级的有效河网掩膜只允许0和1',
+                    'D8 Strahler stream order permits only 0 and 1 in the effective stream mask'),
+    'break': ('D8 Strahler 河流分级发现河网断流：非终点河网像元必须继续指向河网，不自动补线',
+              'D8 Strahler stream order found a stream break: every nonterminal stream cell must continue to a stream cell; gaps are not filled automatically'),
+    'overflow': ('D8 Strahler 河流分级的级别超过Float64精确整数上限2^53−1',
+                 'D8 Strahler stream order exceeds the Float64 exact integer limit 2^53-1'),
+})
+
+
+def _d8_stream_order_error(code):
+    return ValueError(_D8_STREAM_ORDER_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_strahler_order(directions, streams):
+    """Rank an explicit stream subgraph; validate the complete D8 graph first."""
+    valid, downstream, indegree = _d8_graph(directions, _d8_stream_order_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_stream_order_error)
+    river = streams.ravel()
+    edges = np.flatnonzero(river & (downstream >= 0))
+    if np.any(~river[downstream[edges]]):
+        raise _d8_stream_order_error('break')
+    levels = np.zeros(directions.size, dtype=np.int64)
+    highest_count = np.zeros(directions.size, dtype=np.uint8)
+    for cell in order:
+        if not river[cell]:
+            continue
+        level = max(1, int(levels[cell]) + int(highest_count[cell] >= 2))
+        if level > _D8_MAX_EXACT_COUNT:
+            raise _d8_stream_order_error('overflow')
+        levels[cell] = level
+        target = int(downstream[cell])
+        if target >= 0:
+            if level > levels[target]:
+                levels[target] = level
+                highest_count[target] = 1
+            elif level == levels[target]:
+                highest_count[target] += 1
+    result = levels.reshape(directions.shape).astype(np.float64)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_stream_order_d8(input_raster, stream_raster, band, stream_band):
+    """Fixed Strahler ranks on aligned, coverage-identical 0/1 stream masks."""
+    source, directions, _ = _d8_direction_source(input_raster, band, _d8_stream_order_error)
+    stream_source = _open(stream_raster)
+    try:
+        _require_same_grid(source, stream_source)
+    except ValueError as cause:
+        raise _d8_stream_order_error('alignment') from cause
+    stream_source = None
+    # Reuse the same native-NoData, mask, alpha, scale and band reader. This
+    # reader does not interpret direction codes; the full graph is checked below.
+    _, values, _ = _d8_direction_source(stream_raster, stream_band,
+        lambda code: _d8_stream_order_error('alignment' if code == 'grid' else 'mask_' + code))
+    valid = np.isfinite(directions)
+    if not np.array_equal(np.isfinite(values), valid):
+        raise _d8_stream_order_error('coverage')
+    if np.any(valid & ~np.isin(values, (0, 1))):
+        raise _d8_stream_order_error('mask_values')
+    return _d8_output(source, _d8_strahler_order(directions, values == 1))
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
     source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3)
     raw = gdal.DEMProcessing(str(_path()), source, processing,
@@ -2958,6 +3039,7 @@ _SPECS = [
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
+    (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 Strahler 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段；固定Strahler，最高同级至少两条才升级')], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -2986,6 +3068,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'foreground_value': 1})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
+    if name == 'raster_stream_order_d8':
+        examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})
     if name == 'raster_focal_statistics':

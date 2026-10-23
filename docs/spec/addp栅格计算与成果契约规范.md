@@ -103,6 +103,7 @@
 | DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
 | D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；沿给定方向、不计自身，非法方向／循环失败 |
 | D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
+| D8 Strahler 河流分级 | 显式D8流向＋同网格0／1河网掩膜 → raster_stream_order_d8 → raster_save；最高同级入流至少两条才升级，断流失败不补线 |
 | D8 上游最长流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_upstream_d8 → raster_save；汇合取最长中心间路径，统一米制，无入流0，非法方向／循环失败 |
 | D8 汇水分区 | raster_load → 可选显式填洼／D8流向 → raster_drainage_basins_d8 → raster_save；每个开放终点独立分区，按出口行列顺序从1编号，非法方向／循环失败 |
 | DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
@@ -200,6 +201,8 @@
 ### 6.2 DEM 验收边界
 
 DEM 填洼首期已实现并经本地 Native 验证，范围和证据见[后续专题](../next/栅格算子体系后续专题.md)。独立 Hosted 已在固定 `8599f94ed` 通过严格归档审计，Linux 全量仍等 CI 会话回传，不沿用下述原 DEM 基础四项的 T4 作为填洼验收。D8流向首期已在固定3944846c9通过独立Hosted API持久化及领域归档终审；D8无权汇流累积首期已在固定4fba03313通过独立Hosted及精确同源码Linux GeoPython全量2360项。各自严格范围、原始证据与未保留TIFF的离线复核边界见专题；不沿用其他算子证据，不外推UI、容量、后续源码或整个平台。 D8下游流长已在固定dd04fb063通过独立Hosted API持久化及领域归档终审，六条COG链与十四条中英文准确失败、米制中心间路径及开放终点零规则见专题；Linux待CI回传，不沿用其他算子证据，不外推离线重算、UI或容量。 D8汇水分区首期已实现并通过本地标准Native全量，按开放终点行列顺序从1编号，完整图校验及独立逐源路径归属证据见专题；Linux继续等CI会话回传，独立Hosted已获授权并完成入口及本地验证，实际运行／归档终审仍待验，不沿用其他算子证据。 D8上游最长流长首期已实现并通过本地标准Native全量，汇合取最长、无入流0及米制中心间步长证据见专题；Linux等CI回传，独立Hosted入口、夹具及本地48项真实GDAL专项／62项脚本验证已具备，实际运行及归档终审仍待验，不沿用其他流长证据。
+
+D8 Strahler 河流分级首期已实现并通过本地标准Native全量3076项，双输入0／1掩膜、完整图校验、同最高级汇合升级及断流失败规则见算子契约，固定候选源码、专项与完整证据见[后续专题](../next/栅格算子体系后续专题.md#d8-strahler-河流分级首期)。Linux全量等专门CI会话回传，独立Hosted未授权／未运行，不沿用其他D8算子证据，不计平台扫描／血缘、UI或容量。
 
 DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与归档见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。坡度、坡向和晕渲在 Hosted 中覆盖 COG 保存、自动扫描、资源血缘与页面参数；等值线在原 Hosted 中覆盖计算及 JSON 预览，另由独立 `raster-contour-persistence` 在 `54acffb1c` 完成两种高程模式的 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人归属、严格物理／Meta 大小、Monitor、当前执行血缘和零残留清理。Runtime 沿现有挂载路径写入，Meta 经真实 NFS 读取；GeoPackage 内部图层遵守容器边界。该 API 闭环不替代 Manager 绘制、HTTP Range、业务删除、覆盖冲突或容量验收；原 Raster T4 保留原版本和 1740 秒预算。
 

@@ -7148,3 +7148,391 @@ def test_d8_upstream_length_long_irrational_diagonal_path():
     directions[rows,cols]=np.where(rows==0,2.,128.);directions[rows[-1],-1]=0
     expected=np.full(directions.shape,np.nan);expected[rows,cols]=cols*math.sqrt(13.)
     np.testing.assert_allclose(compute._d8_upstream_flow_length(directions,2.,3.),expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+
+
+_STRAHLER_STEPS = {1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+
+
+def _strahler_recursive_oracle(directions, streams):
+    """Independent backward recursion on small trees; no production graph/queue."""
+    from functools import lru_cache
+    river = streams == 1
+    @lru_cache(None)
+    def level(row, col):
+        donors=[]
+        for code,(dy,dx) in _STRAHLER_STEPS.items():
+            y,x=row-dy,col-dx
+            if 0<=y<river.shape[0] and 0<=x<river.shape[1] and river[y,x] and directions[y,x]==code:
+                donors.append(level(y,x))
+        if not donors:return 1
+        highest=max(donors)
+        return highest+int(donors.count(highest)>=2)
+    result=np.where(np.isfinite(directions),0.,np.nan)
+    for row,col in np.argwhere(river):result[row,col]=level(int(row),int(col))
+    return result
+
+
+def _strahler_tree():
+    directions=np.full((7,9),np.nan)
+    for cell,code in { (1,1):2,(1,3):8,(2,2):2,(5,1):128,(5,3):32,(4,2):128,(2,4):8,
+                       (3,3):1,(3,4):1,(3,5):1,(3,6):1,(3,7):1,(3,8):0,(2,6):4}.items():
+        directions[cell]=code
+    return directions,np.where(np.isfinite(directions),1.,np.nan)
+
+
+def _strahler_files(tmp_path,directions,streams):
+    transform=(500000,2,0,3000000,0,-3)
+    return (create_raster(tmp_path/'directions.tif',directions,transform,'EPSG:3857'),
+            create_raster(tmp_path/'streams.tif',streams,transform,'EPSG:3857'))
+
+
+@pytest.mark.parametrize('prune_lower',[False,True])
+def test_d8_strahler_nested_confluences_maximum_ties_and_background(tmp_path,prune_lower):
+    import operators.raster_compute as compute
+    directions,streams=_strahler_tree()
+    if prune_lower:
+        for cell in ((5,1),(5,3),(4,2)):streams[cell]=0
+    paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths]
+    expected=_strahler_recursive_oracle(directions,streams)
+    assert expected[2,2]==2 and expected[3,3]==(2 if prune_lower else 3)
+    assert np.all(expected[3,3:]==(2 if prune_lower else 3)) # Lower-order side tributaries do not upgrade.
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        result=compute.raster_stream_order_d8(source,mask,1,1);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetUnitType()=='' and band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.) and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert set(source.workspace.iterdir())==prior|{result.path};band=ds=None
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('seed',range(12))
+def test_d8_strahler_random_forest_matches_independent_recursive_oracle(seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);rows,cols=np.indices((9,11));ranks=np.minimum.reduce((rows,cols,8-rows,10-cols))
+    directions=np.zeros((9,11))
+    for row,col in np.argwhere(ranks>0):
+        choices=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if ranks[row+dy,col+dx]<ranks[row,col]]
+        directions[row,col]=rng.choice(choices)
+    directions[4,5]=np.nan
+    for row,col in np.argwhere(np.isfinite(directions)&(directions!=0)):
+        dy,dx=_STRAHLER_STEPS[directions[row,col]]
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    # Independent threshold from per-origin counts produces downstream-closed streams.
+    counts=_accumulation_walk_oracle(directions);streams=np.where(np.isfinite(directions),(counts>=seed%4).astype(float),np.nan)
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,streams==1),_strahler_recursive_oracle(directions,streams))
+
+
+@pytest.mark.parametrize('dy,dx,code',[(dy,dx,code) for code,(dy,dx) in _STRAHLER_STEPS.items()])
+def test_d8_strahler_all_eight_routes_source_and_outlet_grade_one(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    expected=np.where(np.isfinite(directions),1.,np.nan)
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.isfinite(directions)),expected)
+
+
+def test_d8_strahler_diagonal_crossings_and_neighbours_are_not_confluences():
+    import operators.raster_compute as compute
+    directions=np.array([[2.,8.],[0.,0.]])
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.ones((2,2),bool)),np.ones((2,2)))
+    np.testing.assert_array_equal(compute._d8_strahler_order(np.zeros((1,3)),np.ones((1,3),bool)),np.ones((1,3)))
+
+
+@pytest.mark.parametrize('directions,streams',[(np.array([[1.,1.,0.]]),np.array([[0.,1.,1.]])),
+    (np.array([[4.],[4.],[0.]]),np.ones((3,1))), (np.array([[0.]]),np.array([[1.]])),
+    (np.array([[0.]]),np.array([[0.]])),(np.full((4,5),np.nan),np.full((4,5),np.nan))])
+def test_d8_strahler_axes_empty_streams_and_all_invalid(tmp_path,directions,streams):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,directions,streams)
+    with raster_workspace():
+        result=compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_strahler_recursive_oracle(directions,streams));ds=None
+
+
+@pytest.mark.parametrize('role',['direction','mask'])
+@pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_both_bands_explicit_valid_and_bilingual(tmp_path,role,band,language):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='波段' if language=='zh-cn' else 'band'):
+            compute.raster_stream_order_d8(source,mask,band if role=='direction' else 1,band if role=='mask' else 1)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['code','terminal','outside','invalid','cycle','cycle-with-outlet','break'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_full_graph_and_stream_break_fail_even_off_network(tmp_path,case,language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]])
+    if case=='code':directions[0,0]=3
+    if case=='terminal':directions=np.zeros((3,3))
+    if case=='outside':directions[0,-1]=1
+    if case=='invalid':directions[0,1]=np.nan
+    if case=='cycle':directions=np.array([[1.,16.]])
+    if case=='cycle-with-outlet':directions=np.array([[1.,16.,0.],[64.,64.,0.]])
+    streams=np.where(np.isfinite(directions),0.,np.nan)
+    if case=='break':streams=np.array([[1.,0.,1.]])
+    paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths]
+    key={'invalid':'target','outside':'target','cycle-with-outlet':'cycle'}.get(case,case)
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_stream_order_d8(source,mask,1,1)
+        assert str(error.value)==compute._D8_STREAM_ORDER_MESSAGES[key][language=='en']
+        assert set(source.workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('bad',[-1,2,255,.25,2**53,np.nan,np.inf])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_nonbinary_mask_and_coverage_mismatch_fail_closed(tmp_path,bad,language):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.array([[bad,1.]]));key='mask_values' if math.isfinite(bad) else 'coverage'
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_stream_order_d8(source,mask,1,1)
+        assert str(error.value)==compute._D8_STREAM_ORDER_MESSAGES[key][language=='en']
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('role',['direction','mask'])
+@pytest.mark.parametrize('case',['scale','offset','alpha','complex','rotated','geographic','no-crs','south-up'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_band_encoding_and_projected_grid_admission(tmp_path,role,case,language):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
+    path=paths[role=='mask'];ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,gdal.GDT_CFloat64 if case=='complex' else gdal.GDT_Float64)
+    ds.SetGeoTransform((500000,2,.1 if case=='rotated' else 0,3000000,0,3 if case=='south-up' else -3))
+    if case!='no-crs':
+        crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if case=='geographic' else 3857);ds.SetProjection(crs.ExportToWkt())
+    ds.GetRasterBand(1).WriteArray(np.array([[1,0]]) if role=='direction' else np.ones((1,2)))
+    if case=='scale':ds.GetRasterBand(1).SetScale(2)
+    if case=='offset':ds.GetRasterBand(1).SetOffset(1)
+    if case=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    key={'scale':'scale','offset':'scale','alpha':'alpha','complex':'complex'}.get(case,'grid')
+    if role=='mask':key='alignment' if key=='grid' else 'mask_'+key
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_stream_order_d8(source,mask,1,1)
+        assert str(error.value)==compute._D8_STREAM_ORDER_MESSAGES[key][language=='en']
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['dimensions','origin','resolution','crs','mask_missing','direction_missing'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_requires_exact_grid_and_effective_coverage(tmp_path,case,language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]]);streams=np.ones((1,3))
+    if case=='mask_missing':streams[0,1]=np.nan
+    if case=='direction_missing':directions[0,0]=np.nan
+    paths=_strahler_files(tmp_path,directions,streams)
+    if case=='dimensions':create_raster(paths[1],np.ones((1,4)),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    elif case in ('origin','resolution','crs'):
+        ds=gdal.Open(str(paths[1]),gdal.GA_Update)
+        if case=='origin':ds.SetGeoTransform((500001,2,0,3000000,0,-3))
+        if case=='resolution':ds.SetGeoTransform((500000,3,0,3000000,0,-3))
+        if case=='crs':crs=osr.SpatialReference();crs.ImportFromEPSG(32650);ds.SetProjection(crs.ExportToWkt())
+        ds=None
+    key='coverage' if case.endswith('missing') else 'alignment'
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as error:
+        compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+    assert str(error.value)==compute._D8_STREAM_ORDER_MESSAGES[key][language=='en']
+
+
+@pytest.mark.parametrize('role',['direction','mask'])
+@pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_native_nodata_does_not_hide_adjacent_large_invalid_code(tmp_path,role,dtype,language):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[np.nan,1.,0.]]),np.array([[np.nan,1.,1.]]));path=paths[role=='mask']
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype);ds.SetGeoTransform((500000,2,0,3000000,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+    band=ds.GetRasterBand(1);array=np.array([[2**53,2**53+1,0 if role=='direction' else 1]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64);band.WriteArray(array)
+    (band.SetNoDataValueAsInt64 if dtype==gdal.GDT_Int64 else band.SetNoDataValueAsUInt64)(2**53);band=ds=None
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as error:
+        compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+    assert str(error.value)==compute._D8_STREAM_ORDER_MESSAGES['code' if role=='direction' else 'mask_values'][language=='en']
+
+
+def test_d8_strahler_effective_mask_alpha_nodata_valid_zero_and_selected_bands(tmp_path):
+    import operators.raster_compute as compute
+    values=np.zeros((3,7));values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
+    alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
+    mask=np.full(values.shape,255,np.uint8);mask[1,5]=0
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    paths=[]
+    for label,data in (('direction',values),('mask',np.where(valid,0.,values))):
+        path=create_raster(tmp_path/(label+'.tif'),np.stack([np.full(values.shape,3.),data,alpha]),(500000,2,0,3000000,0,-3),'EPSG:3857');ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;paths.append(path)
+    with raster_workspace():
+        result=compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],2,2);ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.where(valid,0.,np.nan));ds=None
+
+
+@pytest.mark.parametrize('stage',['read','graph','write','metadata'])
+def test_d8_strahler_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)));before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        def fail(*args,**kwargs):raise RuntimeError('injected stream-order failure')
+        if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
+        if stage=='graph':monkeypatch.setattr(compute,'_d8_strahler_order',fail)
+        if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
+        if stage=='metadata':monkeypatch.setattr(compute,'_raster',fail)
+        with pytest.raises(RuntimeError,match='injected stream-order failure'):compute.raster_stream_order_d8(source,mask,1,1)
+        assert set(source.workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+def test_d8_strahler_cross_block_cog_full_grades_mask_and_nearest_overviews(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    height,width=517,519;directions=np.ones((height,width));directions[:,-1]=0
+    streams=np.zeros(directions.shape);streams[255,:513]=streams[257,:513]=1;streams[256,512:]=1
+    directions[255,512]=4;directions[257,512]=64;directions[510,510]=np.nan;directions[510,509]=0;streams[510,510]=np.nan
+    expected=streams.copy();expected[256,512:]=2
+    paths=_strahler_files(tmp_path,directions,streams);before=[p.read_bytes() for p in paths];target=tmp_path/'ordered.cog.tif'
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths]
+        calls=[];original=gdal.Band.ReadAsArray
+        # The source reader must stay within its established 512x512 blocks.
+        def read(self,*args,**kwargs):
+            if len(args)>=4:calls.append(args[2:4])
+            return original(self,*args,**kwargs)
+        monkeypatch.setattr(gdal.Band,'ReadAsArray',read)
+        result=compute.raster_stream_order_d8(source,mask,1,1)
+        assert calls and all(w<=512 and h<=512 for w,h in calls)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert band.GetUnitType()=='' and band.GetOverviewCount()>0
+        for index in range(band.GetOverviewCount()):
+            values=read_band_values(band.GetOverview(index));assert set(np.unique(values[np.isfinite(values)]))<={0.,1.,2.}
+        _,errors,_=validate(ds,full_check=True);assert not errors;band=ds=None
+        snapshot=target.read_bytes()
+        # A second successful result must preserve already published output bytes.
+        compute.raster_stream_order_d8(source,mask,1,1)
+        assert target.read_bytes()==snapshot
+    assert [p.read_bytes() for p in paths]==before
+
+
+def test_d8_strahler_duplicate_lower_orders_do_not_upgrade_unique_highest():
+    import operators.raster_compute as compute
+    directions,streams=_strahler_tree()
+    for cell in ((5,1),(5,3),(4,2)):streams[cell]=0
+    directions[4,3]=64;streams[4,3]=1
+    expected=_strahler_recursive_oracle(directions,streams)
+    assert expected[2,2]==2 and expected[2,4]==expected[4,3]==1 and expected[3,3]==2
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,streams==1),expected)
+
+
+def test_d8_strahler_multiple_equal_highest_inflows_increment_once():
+    import operators.raster_compute as compute
+    directions=np.full((5,6),np.nan)
+    for code,(dy,dx) in _STRAHLER_STEPS.items():directions[2-dy,2-dx]=code
+    directions[2,2]=1;directions[2,3:5]=1;directions[2,5]=0
+    expected=_strahler_recursive_oracle(directions,np.where(np.isfinite(directions),1.,np.nan))
+    assert expected[2,2]==2 and expected[2,5]==2
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.isfinite(directions)),expected)
+
+
+def test_d8_strahler_long_route_avoids_recursion():
+    import operators.raster_compute as compute
+    directions=np.ones((2,4097));directions[0,-1]=4;directions[1,:]=16;directions[1,0]=0
+    np.testing.assert_array_equal(compute._d8_strahler_order(directions,np.ones(directions.shape,bool)),np.ones(directions.shape))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_exact_output_limit_fails_before_publication(tmp_path,monkeypatch,language):
+    import operators.raster_compute as compute
+    directions=np.array([[2.,8.],[np.nan,0.]]) # Both sources must target the same outlet.
+    directions[0,1]=4
+    paths=_strahler_files(tmp_path,directions,np.where(np.isfinite(directions),1.,np.nan))
+    monkeypatch.setattr(compute,'_D8_MAX_EXACT_COUNT',1)
+    with raster_workspace(),raster_error_language(language):
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='精确整数上限' if language=='zh-cn' else 'exact integer limit'):
+            compute.raster_stream_order_d8(source,mask,1,1)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+def test_d8_strahler_linear_unit_independence_preserves_source_crs(tmp_path,epsg):
+    import operators.raster_compute as compute
+    directions,streams=_strahler_tree();paths=_strahler_files(tmp_path,directions,streams)
+    for path in paths:
+        ds=gdal.Open(str(path),gdal.GA_Update);crs=osr.SpatialReference();crs.ImportFromEPSG(epsg);ds.SetProjection(crs.ExportToWkt());ds.GetRasterBand(1).SetUnitType('classification');ds=None
+    with raster_workspace():
+        result=compute.raster_stream_order_d8(*[raster_load(source_plan(p)) for p in paths],1,1);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),_strahler_recursive_oracle(directions,streams))
+        assert ds.GetSpatialRef().GetAuthorityCode(None)==str(epsg) and band.GetUnitType()=='';band=ds=None
+
+
+@pytest.mark.parametrize('case',['saved','threshold','dem','filled','empty','break','cycle','coverage'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    directions=np.ones((9,11));directions[:,-1]=0;streams=np.ones(directions.shape)
+    if case=='cycle':directions[0,1]=16;streams[:]=0
+    if case=='empty':directions[:]=np.nan;streams[:]=np.nan
+    if case=='break':streams[2,5]=0
+    if case=='coverage':streams[2,5]=np.nan
+    values=np.tile(np.arange(11,0,-1,dtype=float),(9,1))
+    if case=='filled':values[:]=10;values[1:-1,1:-1]=-2
+    input_values=values if case in ('dem','filled') else directions
+    paths=_strahler_files(tmp_path,input_values,streams);before=[p.read_bytes() for p in paths];target=tmp_path/'strahler.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[0])}}];prior='source'
+    if case=='filled':
+        tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='fill'
+    if case in ('dem','filled'):
+        tasks.append({'id':'direction','operator':'raster_flow_direction_d8','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='direction'
+        directions=_d8_bellman_ford_oracle(_fill_level_reachability_oracle(values) if case=='filled' else values)
+    if case=='threshold':
+        tasks.extend([{'id':'accumulate','operator':'raster_flow_accumulation_d8','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1}},
+            {'id':'streams','operator':'raster_reclassify','depends_on':['accumulate'],'params':{'input_raster':{'$ref':'accumulate'},'band':1,'rules':[{'min':None,'max':2,'class':0},{'min':2,'max':None,'class':1}]}}])
+        streams=np.where(_accumulation_walk_oracle(directions)>=2,1.,0.)
+    else:tasks.append({'id':'streams','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}})
+    tasks.extend([{'id':'grade','operator':'raster_stream_order_d8','depends_on':[prior,'streams'],'params':{'input_raster':{'$ref':prior},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}},
+        {'id':'save','operator':'raster_save','depends_on':['grade'],'params':{'input_raster':{'$ref':'grade'},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_stream_order_d8':workspaces.extend([params['input_raster'].workspace,params['stream_raster'].workspace])
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('break','cycle','coverage');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists()
+        import operators.raster_compute as compute
+        assert '任务 grade 执行失败: '+compute._D8_STREAM_ORDER_MESSAGES[case][language=='en'] in status['error']
+    else:
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_strahler_recursive_oracle(directions,streams))
+        assert ds.GetRasterBand(1).GetUnitType()=='';ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_stream_order_d8/invoke',json={'params':{}}).status_code==403
+
+
+def test_d8_strahler_discovery_single_route_and_two_required_raster_inputs():
+    spec=next(item for item in list_operators() if item['id']=='raster_stream_order_d8')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','stream_raster','band','stream_band'} and all(p['required'] for p in params.values())
+    assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','stream_raster'))
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}
