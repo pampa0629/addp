@@ -911,7 +911,7 @@ def prepare_models(items, engine_id, samples):
                 'dae_png': ('models/dae/texture.png', 'addp_online_exchange_texture.png'),
                 'png': ('models/3ds/texture.png', 'addp_online_exchange_texture.png')}
     if model_source_type() == 'minio':
-        expected = {key:(model_scope(value[0]), value[1]) for key,value in expected.items() if key in {'ifc','3ds','png'}}
+        expected = {key:(model_scope(value[0]), value[1]) for key,value in expected.items()}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
             'FTP model manifest requires exactly IFC, 3DS, DAE and their two PNG files')
@@ -925,7 +925,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in (('ifc', '3ds') if model_source_type() == 'minio' else ('ifc', '3ds', 'dae')):
+    for kind in ('ifc', '3ds', 'dae'):
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')

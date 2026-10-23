@@ -838,9 +838,7 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 		if formatType != format.FormatDAE && formatType != format.Format3DS {
 			continue
 		}
-		target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
-		objectDAE := formatType == format.FormatDAE && len(target.Segments) > 0 && target.Segments[len(target.Segments)-1].Term == plugin.EngineCatalogTermObject
-		if input.StructureReader != nil && !objectDAE {
+		if input.StructureReader != nil {
 			items = append(items, resolveStructuredExchangeModelItem(ctx, input, file, byPath, formatType))
 			continue
 		}

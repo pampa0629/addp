@@ -1,5 +1,6 @@
 from importlib import import_module
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -36,26 +37,61 @@ class MinIOModelFixtureTest(unittest.TestCase):
                  patch.object(M,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(M,'read',side_effect=lambda key:store[key]), \
                  patch.object(M.urllib.request,'urlopen',return_value=Response()):
                 M.start()
-            self.assertEqual(len(store),6)
-            self.assertNotIn('models/dae/model.dae',store)
+            self.assertEqual(len(store),8)
+            self.assertIn('models/dae/model.dae',store)
+            self.assertIn('models/dae/texture.png',store)
             descriptor=root/'ftp-minio-engine.json'
             self.assertEqual(descriptor.stat().st_mode & 0o777,0o600)
             self.assertEqual(json.loads(descriptor.read_text())['engine_origin'],'general')
             self.assertTrue(all(row['full_name'].startswith('model-source/') for row in json.loads((root/'minio-model-samples.json').read_text())))
             self.assertIn('127.0.0.1::9000',calls[0])
+            manifests=json.loads((root/'minio-model-samples.json').read_text())
+            items=[]
+            for index,sample in enumerate(manifests):
+                kind=sample['format']
+                if kind not in {'ifc','3ds','dae'}: continue
+                name=sample['full_name']
+                refs=[{'path':name,'role':'model','required':True,'primary':True}]
+                if kind!='ifc': refs.append({'path':name.rsplit('/',1)[0]+'/texture.png','role':'texture','required':True,'primary':False})
+                items.append({'id':index+1,'engine_id':17,'item_type':'object','full_name':name,
+                    'fingerprint':hashlib.sha256(f'17:{name}'.encode()).hexdigest(),
+                    'attributes':{'schema_version':1,'item':{'data_type':'model_3d','layout':'single','format':kind,'refs':refs},
+                        'storage':{'physical_path':name},'format_info':{kind:{'scan_complete':True,'texture_refs':['texture.png']}}}})
+            with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'minio'}):
+                models=FLOW.prepare_models(items,17,manifests)
+                self.assertEqual([model['format'] for model in models],['ifc','3ds','dae'])
+                dae=models[-1]
+                self.assertEqual([ref['path'] for ref in dae['composition']],
+                    ['model-source/models/dae/model.dae','model-source/models/dae/texture.png'])
+                dae_item=items[-1]
+                dae_item['attributes']['format_info']['dae']['scan_complete']=False
+                with self.assertRaises(FLOW.SuiteError): FLOW.prepare_models(items,17,manifests)
+
 
     def test_changed_composition_restores_original_and_removes_only_its_object(self):
         fixture=Path(__file__).resolve().parents[2]/'business/fixtures/manager'
-        main=(fixture/'addp_online_model_fixture.3ds').read_bytes()
-        texture=(fixture/'addp_online_exchange_texture.png').read_bytes()
-        store={'models/3ds/model.3ds':main,'models/3ds/texture.png':texture}
-        model={'full_name':'model-source/models/3ds/model.3ds','composition':[{'role':'texture','path':'model-source/models/3ds/texture.png'}]}
-        def mc(action,*args):
-            if action=='ls':return b''
-            self.assertEqual(action,'rm'); del store[args[0].removeprefix('fixture/model-source/')]
-        with patch.object(M,'guard',return_value=(Path('/tmp'),'ftp-1-1')),patch.object(M,'read',side_effect=lambda key:store[key]), \
-             patch.object(M,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(M,'mc',side_effect=mc):
-            with M.changed_texture(model) as changed:
-                self.assertEqual(changed['composition'][0]['path'],'model-source/models/3ds/ tex.png   ')
-                self.assertNotEqual(store['models/3ds/model.3ds'],main)
-            self.assertEqual(store,{'models/3ds/model.3ds':main,'models/3ds/texture.png':texture})
+        for kind in ('3ds', 'dae'):
+            for fail in (False, True):
+                with self.subTest(kind=kind, fail=fail):
+                    main=(fixture/f'addp_online_model_fixture.{kind}').read_bytes()
+                    texture=(fixture/'addp_online_exchange_texture.png').read_bytes()
+                    primary=f'models/{kind}/model.{kind}'
+                    original={primary:main,f'models/{kind}/texture.png':texture}
+                    store=dict(original)
+                    replacement='changed.png' if kind=='dae' else ' tex.png   '
+                    model={'format':kind,'full_name':'model-source/'+primary,
+                           'composition':[{'role':'texture','path':f'model-source/models/{kind}/texture.png'}]}
+                    def mc(action,*args):
+                        if action=='ls':return b''
+                        self.assertEqual(action,'rm'); del store[args[0].removeprefix('fixture/model-source/')]
+                    with patch.object(M,'guard',return_value=(Path('/tmp'),'ftp-1-1')),patch.object(M,'read',side_effect=lambda key:store[key]), \
+                         patch.object(M,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(M,'mc',side_effect=mc):
+                        try:
+                            with M.changed_texture(model) as changed:
+                                self.assertEqual(changed['composition'][0]['path'],f'model-source/models/{kind}/{replacement}')
+                                self.assertNotEqual(store[primary],main)
+                                if fail: raise RuntimeError('consumer failed')
+                        except RuntimeError as error:
+                            self.assertTrue(fail)
+                            self.assertEqual(str(error),'consumer failed')
+                    self.assertEqual(store,original)

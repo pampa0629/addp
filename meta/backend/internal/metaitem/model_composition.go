@@ -68,7 +68,7 @@ func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveIn
 	}
 	target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
 	exact := reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path))
-	if formatType == format.Format3DS && len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
+	if len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
 		exact = reflect.DeepEqual(target, plugin.ObjectItemPath(input.EngineID, target.Segments[1].Name, file.Path))
 	}
 	if !exact {

@@ -38,9 +38,6 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 		}
 		return plugin.FileItemPath(item.EngineID, name)
 	}
-	if item.ItemType == "object" && source.Format == "dae" {
-		return nil, reject
-	}
 	primary := targetFor(item.FullName)
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
 		commonJSON.String(item.Attributes, "item", "layout") != "single" ||

@@ -27,7 +27,11 @@ func glbPublishedReadFixture(t *testing.T) (*models.Model3DGLB, *commonModels.En
 }
 func glbPublishedReadFixtureForEngine(t *testing.T, engineType string) (*models.Model3DGLB, *commonModels.Engine, *commonModels.MetaItem) {
 	t.Helper()
-	source, item := model3DGLBCandidateFixture("3ds")
+	return glbPublishedReadFixtureForFormat(t, engineType, "3ds")
+}
+func glbPublishedReadFixtureForFormat(t *testing.T, engineType, format string) (*models.Model3DGLB, *commonModels.Engine, *commonModels.MetaItem) {
+	t.Helper()
+	source, item := model3DGLBCandidateFixture(format)
 	if engineType == "minio" {
 		item.ItemType = "object"
 		source.ItemLocator = resourcetree.LocatorFromFullName(item.EngineID, engineType, item.ItemType, item.FullName, &item.ID).ToURI()
@@ -38,7 +42,7 @@ func glbPublishedReadFixtureForEngine(t *testing.T, engineType string) (*models.
 	if err != nil {
 		t.Fatal(err)
 	}
-	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": "3ds"}, "result": map[string]any{"storage_ref": "old", "file_name": "model.glb"}, "options": map[string]any{}})
+	core, _ := json.Marshal(map[string]any{"source": map[string]any{"item_locator": source.ItemLocator, "source_engine_id": 33, "item_id": 41, "item_fingerprint": source.ItemFingerprint, "format": format}, "result": map[string]any{"storage_ref": "old", "file_name": "model.glb"}, "options": map[string]any{}})
 	id := uuid.NewString()
 	frozen, err := freezeFileModel3DGLBConfig(&repository.Model3DGLBTaskSnapshot{TaskID: 17, TenantID: 7, Version: 3, Config: core}, engine, candidate, id, "manager")
 	if err != nil {
@@ -50,21 +54,22 @@ func glbPublishedReadFixtureForEngine(t *testing.T, engineType string) (*models.
 		t.Fatal(err)
 	}
 	config, _ := decodeFileModel3DGLBConversion(raw)
-	return &models.Model3DGLB{ID: 19, TenantID: 7, ItemID: &source.ItemID, ItemFingerprint: source.ItemFingerprint, Locator: source.ItemLocator, SourceEngineID: 33, SourceFormat: "3ds", Status: "ready", StorageRef: config.Result.StorageRef, Metadata: commonModels.JSONMap{"model3d_output_owner": "manager_execution", "model3d_source_scope": scope}}, engine, item
+	return &models.Model3DGLB{ID: 19, TenantID: 7, ItemID: &source.ItemID, ItemFingerprint: source.ItemFingerprint, Locator: source.ItemLocator, SourceEngineID: 33, SourceFormat: format, Status: "ready", StorageRef: config.Result.StorageRef, Metadata: commonModels.JSONMap{"model3d_output_owner": "manager_execution", "model3d_source_scope": scope}}, engine, item
 }
 
 // Meta changes after Manager's local comparison. A primary-only System Allow
 // for the new boundary must never authorize the previously generated boundary.
 func TestGLBResultReadBindsSystemDecisionToGeneratedComposition(t *testing.T) {
-	testGLBResultReadForEngine(t, "ftp")
+	testGLBResultReadForEngine(t, "ftp", "3ds")
 }
 func TestMinIOGLBResultReadBindsSystemDecisionToGeneratedComposition(t *testing.T) {
-	testGLBResultReadForEngine(t, "minio")
+	testGLBResultReadForEngine(t, "minio", "3ds")
+	testGLBResultReadForEngine(t, "minio", "dae")
 }
-func testGLBResultReadForEngine(t *testing.T, engineType string) {
+func testGLBResultReadForEngine(t *testing.T, engineType, format string) {
 	for _, outcome := range []string{"same source", "composition A to B", "engine version changed", "grant revoked", "old strict server"} {
-		t.Run(outcome, func(t *testing.T) {
-			result, engine, item := glbPublishedReadFixtureForEngine(t, engineType)
+		t.Run(format+"/"+outcome, func(t *testing.T) {
+			result, engine, item := glbPublishedReadFixtureForFormat(t, engineType, format)
 			generated, _ := model3DGLBPublishedScope(result)
 			primary, _ := generated.FileComposition.PrimaryTarget()
 			calls := 0
@@ -99,7 +104,7 @@ func testGLBResultReadForEngine(t *testing.T, engineType string) {
 				if outcome == "composition A to B" {
 					refs := item.Attributes["item"].(map[string]any)["refs"].([]map[string]any)
 					refs[1]["path"] = "models/new-composition.PNG"
-					item.Attributes["format_info"].(map[string]any)["3ds"].(map[string]any)["texture_refs"] = []string{"new-composition.PNG"}
+					item.Attributes["format_info"].(map[string]any)[format].(map[string]any)["texture_refs"] = []string{"new-composition.PNG"}
 				}
 				if outcome == "engine version changed" {
 					engine.Version++
@@ -180,12 +185,16 @@ func TestGLBReadRejectsTicketsChangedCompositionAndEngineBeforePermissionCall(t 
 }
 
 func TestOldMinIOGLBRequiresRegeneration(t *testing.T) {
-	result, engine, item := glbPublishedReadFixtureForEngine(t, "minio")
-	delete(result.Metadata, "model3d_source_scope")
-	svc := NewModel3DGLBTaskService(nil)
-	svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: engine})
-	svc.sourceMeta = glbMetaDetailFixture{item}
-	if err := svc.CheckResultRead(t.Context(), result, "addp_at_current_human", true); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
-		t.Fatal("old MinIO artifact acquired fabricated scope", err)
+	for _, format := range []string{"3ds", "dae"} {
+		t.Run(format, func(t *testing.T) {
+			result, engine, item := glbPublishedReadFixtureForFormat(t, "minio", format)
+			delete(result.Metadata, "model3d_source_scope")
+			svc := NewModel3DGLBTaskService(nil)
+			svc.SetSourceEngineClient(&glbSourceEngineFixture{engine: engine})
+			svc.sourceMeta = glbMetaDetailFixture{item}
+			if err := svc.CheckResultRead(t.Context(), result, "addp_at_current_human", true); !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+				t.Fatal("old MinIO artifact acquired fabricated scope", err)
+			}
+		})
 	}
 }

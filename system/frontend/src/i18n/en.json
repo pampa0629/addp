@@ -1189,7 +1189,7 @@
           "pending": "Not checked"
         },
         "addSelection": "Add to this authorization",
-        "snapshotOnly": "Select ordinary tables individually or expand a schema, up to 200 items, excluding views and future tables. FTP/NFS supports IFC/3DS/DAE primary model files; MinIO supports IFC/3DS primary model objects. Review the complete composition as one DataItem. Directories, buckets and prefixes are for navigation; textures are not granted separately.",
+        "snapshotOnly": "Select ordinary tables individually or expand a schema, up to 200 items, excluding views and future tables. FTP/NFS supports IFC/3DS/DAE primary model files; MinIO supports IFC/3DS/DAE primary model objects. Review the complete composition as one DataItem. Directories, buckets and prefixes are for navigation; textures are not granted separately.",
         "remove": "Remove",
         "newTarget": "Approval mode not selected",
         "catalogUnavailable": "Business approval requires an available Catalog and entry-read permission. New business approval cannot currently be configured; existing business approval is never downgraded.",

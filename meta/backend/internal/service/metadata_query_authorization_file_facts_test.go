@@ -46,7 +46,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)

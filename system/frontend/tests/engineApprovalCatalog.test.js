@@ -24,13 +24,13 @@ describe('System live-catalog protocol adapter', () => {
     expect(() => approvalTargetFromSelection({ raw: { node: nfs } }, '33')).toThrow()
     expect((await adapter.search('33', 'model.3ds')).map(node => node.label)).toEqual(['Model.3DS'])
   })
-  it('selects MinIO IFC/3DS objects only, never a bucket, prefix or DAE', () => {
+  it('selects MinIO IFC/3DS/DAE objects only, never a bucket, prefix or texture', () => {
     const segments = [{ term: 'service', kind: 'service', name: '' }, { term: 'bucket', kind: 'bucket', name: 'models' }]
     const node = (term, name, role = 'leaf') => ({ metadata: { approval_engine_type: 'minio', catalog_entry: {
       role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
     } } })
-    for (const name of ['part.ifc', 'model.3DS']) expect(isApprovalSelection(node('object', name))).toBe(true)
-    for (const name of ['scene.dae', 'TEST.PNG', 'other.obj']) expect(isApprovalSelection(node('object', name))).toBe(false)
+    for (const name of ['part.ifc', 'model.3DS', 'scene.dae']) expect(isApprovalSelection(node('object', name))).toBe(true)
+    for (const name of ['TEST.PNG', 'other.obj']) expect(isApprovalSelection(node('object', name))).toBe(false)
     expect(isApprovalSelection(node('prefix', 'prefix', 'branch'))).toBe(false)
     expect(isApprovalSelection(node('bucket', 'bucket', 'branch'))).toBe(false)
     expect(isApprovalSelection(node('file', 'model.3ds'))).toBe(false)

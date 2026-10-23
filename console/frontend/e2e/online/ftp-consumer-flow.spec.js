@@ -306,7 +306,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       downloads.push(Object.fromEntries(['format', 'item_id', 'size', 'sha256'].map(key => [key, sample[key]])))
     }
     const models = []
-    expect(expected.models.map(model => model.format)).toEqual(expected.source_engine_type === 'minio' ? ['ifc', '3ds'] : ['ifc', '3ds', 'dae'])
+    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,

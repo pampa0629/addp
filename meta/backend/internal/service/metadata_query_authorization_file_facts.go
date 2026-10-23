@@ -41,9 +41,6 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae") {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	if item.ItemType == plugin.EngineCatalogTermObject && format == "dae" {
-		return finish(authorizationfacts.AuthorizationBasisUnsupported)
-	}
 	targetFor := func(name string) plugin.EngineCatalogPath {
 		if item.ItemType == plugin.EngineCatalogTermObject {
 			target, _ := plugin.ObjectItemPathFromRefPath(item.EngineID, name)

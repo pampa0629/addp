@@ -102,7 +102,7 @@ def start():
     SEED.write_samples(directory)
     samples = [{'format':file.suffix[1:],'full_name':'examples/'+file.name,'size':file.stat().st_size,
                 'sha256':hashlib.sha256(file.read_bytes()).hexdigest()} for file in sorted((directory/'examples').iterdir())]
-    models = [x for x in SEED.write_model_samples(directory) if x['format'] in {'ifc','3ds','png'}]
+    models = SEED.write_model_samples(directory)
     for manifest in (samples, models):
         for sample in manifest:
             key = sample['full_name']
@@ -129,17 +129,21 @@ def changed_texture(model):
     import copy
     root, _ = guard()
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    key = 'models/3ds/model.3ds'
-    texture = 'models/3ds/texture.png'
-    replacement = 'models/3ds/ tex.png   '
-    original = (fixture / 'addp_online_model_fixture.3ds').read_bytes()
+    kind = model['format']
+    if kind not in {'3ds', 'dae'}:
+        raise RuntimeError('composition mutation requires a fixed declared texture model')
+    key = f'models/{kind}/model.{kind}'
+    texture = f'models/{kind}/texture.png'
+    replacement_name = 'changed.png' if kind == 'dae' else ' tex.png   '
+    replacement = f'models/{kind}/{replacement_name}'
+    original = (fixture / f'addp_online_model_fixture.{kind}').read_bytes()
     png = (fixture / 'addp_online_exchange_texture.png').read_bytes()
     if model['full_name'] != BUCKET+'/'+key or read(key)!=original or read(texture)!=png:
         raise RuntimeError('MinIO mutation requires the fixed unchanged fixture')
-    listing = mc('ls', '--json', f'fixture/{BUCKET}/models/3ds/').decode().splitlines()
-    if any(json.loads(line).get('key') == ' tex.png   ' for line in listing):
+    listing = mc('ls', '--json', f'fixture/{BUCKET}/models/{kind}/').decode().splitlines()
+    if any(json.loads(line).get('key') == replacement_name for line in listing):
         raise RuntimeError('replacement object already exists')
-    changed = original.replace(b'texture.png', b' tex.png   ')
+    changed = original.replace(b'texture.png', replacement_name.encode())
     try:
         put(replacement, png)
         put(key, changed)

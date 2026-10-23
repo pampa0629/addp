@@ -35,7 +35,7 @@ func NewModel3DGLBHandler(repo *repository.Model3DGLBRepository, minioClient *mi
 // GetModel3DGLBContent 返回 Manager 三维模型 GLB 快显内容。
 // @Summary 读取三维模型 GLB 快显 | Read model 3D GLB GLB result
 // @Description 按 model 3D GLB id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 GLB 快显结果。 | Return GLB content from Manager infra MinIO by result id with HTTP Range support. Only ready Manager-owned results are readable.
-// @Description FTP IFC／3DS 结果仅接受当前普通用户 Bearer；System 同一次读取裁决必须核验生成时 Engine 版本与完整文件组成，资源票据与终态执行授权不能代替。NFS／MinIO 维持既有入口。 | FTP IFC/3DS results require the current ordinary User Bearer and one System read decision bound to the generated Engine version and complete file composition; resource tickets and terminal execution authorizations cannot replace it. Existing NFS/MinIO entry behavior is unchanged.
+// @Description FTP／NFS／MinIO 的 IFC／3DS／DAE 结果仅接受当前普通用户 Bearer；System 同一次读取裁决必须核验生成时 Engine 版本与完整组成，资源票据与终态执行授权不能代替。 | FTP/NFS/MinIO IFC/3DS/DAE results require the current ordinary User Bearer and one System read decision bound to the generated Engine version and complete composition; resource tickets and terminal execution authorizations cannot replace it.
 // @Tags Manager
 // @Produce octet-stream
 // @Param id path int true "model 3D GLB ID"

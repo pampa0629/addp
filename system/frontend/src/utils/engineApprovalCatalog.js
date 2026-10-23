@@ -29,7 +29,7 @@ export function isApprovalModel(node) {
   const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
   const engineType = node?.metadata?.approval_engine_type
   const term = engineType === 'minio' ? 'object' : 'file'
-  const suffix = engineType === 'minio' ? /\.(ifc|3ds)$/i : /\.(ifc|3ds|dae)$/i
+  const suffix = /\.(ifc|3ds|dae)$/i
   return isFileModelEngine(engineType) && entry?.role === 'leaf' && entry.term === term && entry.kind === term &&
     entry.path?.version === 'catalog.path/v1' && leaf?.term === term && leaf.kind === term && suffix.test(leaf.name)
 }

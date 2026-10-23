@@ -201,9 +201,6 @@ func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactMod
 func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
 func testExactModelSource(t *testing.T, engineType string) {
 	for _, format := range []string{"ifc", "3ds", "dae"} {
-		if engineType == "minio" && format == "dae" {
-			continue
-		}
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })

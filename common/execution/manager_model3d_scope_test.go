@@ -154,12 +154,12 @@ func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := ((kind == "ftp" || kind == "nfs") && term == "file") || (kind == "minio" && term == "object" && format != "dae")
+				want := ((kind == "ftp" || kind == "nfs") && term == "file") || (kind == "minio" && term == "object")
 				if ManagerModel3DSourceComposition(kind, composition) != want {
 					t.Fatalf("wrong admission %s/%s/%s", kind, term, format)
 				}
 				scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
-				if (scope.Validate() == nil) != (term == "file" || format != "dae") {
+				if scope.Validate() != nil {
 					t.Fatalf("wrong scope shape %s/%s", term, format)
 				}
 			}

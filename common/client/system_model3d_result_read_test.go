@@ -134,10 +134,10 @@ func TestManagerModel3DExpectedObjectSource(t *testing.T) {
 				t.Fatal(err)
 			}
 			source := ManagerModel3DExpectedSource{EngineVersion: "5", FileComposition: *composition}
-			if (source.Validate() == nil) != (format != "dae") {
+			if source.Validate() != nil {
 				t.Fatalf("unexpected object format admission: %s", format)
 			}
-			if format == "3ds" {
+			if format == "3ds" || format == "dae" {
 				for i := range source.FileComposition.Refs {
 					if !source.FileComposition.Refs[i].Primary {
 						source.FileComposition.Refs[i].Target = plugin.ObjectItemPath(33, "other", "scene/ Original.PNG ")

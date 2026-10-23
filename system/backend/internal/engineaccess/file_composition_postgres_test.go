@@ -25,7 +25,7 @@ import (
 func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)

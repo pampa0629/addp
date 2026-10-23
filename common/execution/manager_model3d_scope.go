@@ -21,10 +21,8 @@ func ManagerModel3DSourceEngineType(engineType string) bool {
 // ManagerModel3DSourceFormat is the single admission rule for conversion routes.
 func ManagerModel3DSourceFormat(engineType, format string) bool {
 	switch engineType {
-	case "ftp", "nfs":
+	case "ftp", "nfs", "minio":
 		return format == "ifc" || format == "3ds" || format == "dae"
-	case "minio":
-		return format == "ifc" || format == "3ds"
 	default:
 		return false
 	}
@@ -98,7 +96,7 @@ func (s *ManagerModel3DReadScope) Validate() error {
 	}
 	primary, err := s.FileComposition.PrimaryTarget()
 	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile &&
-		(primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject || s.FileComposition.Format == "dae")) ||
+		primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject) ||
 		(s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
 		return errManagerModel3DScope
 	}
