@@ -1,6 +1,35 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func TestCatalogDomainEnvironmentExportsAllThreeUserTokensToChild(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.env")
+	values := consumerEnvironment("catalog-domain-overview", 2, "synthetic-consumer", "unused")
+	values["ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN"] = "synthetic-reader"
+	values["ADDP_ONLINE_CATALOG_PREPARER_ACCESS_TOKEN"] = "synthetic-preparer"
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("identity file must remain owner-only")
+	}
+	// Exercise the real writer, source and subprocess boundary without logging credentials.
+	command := exec.Command("bash", "-c", `source "$1"; exec bash -c '
+test "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = synthetic-consumer &&
+test "$ADDP_ONLINE_CATALOG_READER_ACCESS_TOKEN" = synthetic-reader &&
+test "$ADDP_ONLINE_CATALOG_PREPARER_ACCESS_TOKEN" = synthetic-preparer
+'`, "catalog-environment-test", path)
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if err := command.Run(); err != nil {
+		t.Fatal("three distinct fixture credentials were not exported to the child process")
+	}
+}
 
 func TestCatalogDomainFixtureUsesThreeMinimalUsers(t *testing.T) {
 	permissions, err := suitePermissions("catalog-domain-overview")
