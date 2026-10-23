@@ -611,7 +611,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_nine_saves_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_ten_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -665,11 +665,16 @@ def test_hosted_topology_physical_oracle_accepts_real_nine_saves_and_rejects_cor
         {'id':'line_self_overlap','operator':'check_line_self_overlap','params':{'input_gdf':{'$ref':'line_self_overlap_input'},'id_field':'route_key'},'depends_on':['line_self_overlap_input']},
         {'id':'save_line_self_overlaps','operator':'save','params':{'input_df':{'$ref':'line_self_overlap'},'connection_info':connection,'path':'outputs/line-self-overlaps.gpkg','mode':'fail'},'depends_on':['line_self_overlap']},
     ])
+    tasks.extend([
+        {'id':'line_intersection_input','operator':'load','params':{'connection_info':connection,'path':'line-intersection-input.gpkg'},'depends_on':[]},
+        {'id':'line_intersection','operator':'check_line_intersection','params':{'input_gdf':{'$ref':'line_intersection_input'},'id_field':'route_key'},'depends_on':['line_intersection_input']},
+        {'id':'save_line_intersections','operator':'save','params':{'input_df':{'$ref':'line_intersection'},'connection_info':connection,'path':'outputs/line-intersections.gpkg','mode':'fail'},'depends_on':['line_intersection']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -839,6 +844,34 @@ def test_hosted_topology_physical_oracle_accepts_real_nine_saves_and_rejects_cor
         with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
         path.write_bytes(original)
     path=tmp_path/'line-self-overlap-input.gpkg';original=path.read_bytes()
+    dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0);feature=layer.GetFeature(1)
+    feature.SetField('route_key','foreign-source');assert layer.SetFeature(feature)==0;dataset=None
+    with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+    path.write_bytes(original)
+    path=tmp_path/'outputs/line-intersections.gpkg';original=path.read_bytes()
+    for problem in ('source_a','source_b','fid_as_id','coordinate','tiny','count','duplicate','order','crs'):
+        dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0)
+        if problem=='crs':dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='count':layer.DeleteFeature(10)
+        elif problem in ('duplicate','order'):
+            first,second=layer.GetFeature(1),layer.GetFeature(2)
+            props={key:first.GetField(key) for key in ('source_id_a','source_id_b')};shape=first.GetGeometryRef().Clone()
+            if problem=='order':
+                for key in props:first.SetField(key,second.GetField(key))
+                first.SetGeometry(second.GetGeometryRef());assert layer.SetFeature(first)==0
+            for key,value in props.items():second.SetField(key,value)
+            second.SetGeometry(shape);assert layer.SetFeature(second)==0
+        else:
+            feature=layer.GetFeature(10 if problem=='tiny' else 1)
+            if problem in ('source_a','source_b','fid_as_id'):
+                feature.SetField('source_id_b' if problem=='source_b' else 'source_id_a','1' if problem=='fid_as_id' else '叠甲')
+            else:
+                shape=feature.GetGeometryRef().Clone();shape.SetPoint_2D(0,0 if problem=='tiny' else 603,120 if problem=='tiny' else 100);feature.SetGeometry(shape)
+            assert layer.SetFeature(feature)==0
+        dataset=None
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)
+        path.write_bytes(original)
+    path=tmp_path/'line-intersection-input.gpkg';original=path.read_bytes()
     dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0);feature=layer.GetFeature(1)
     feature.SetField('route_key','foreign-source');assert layer.SetFeature(feature)==0;dataset=None
     with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path)

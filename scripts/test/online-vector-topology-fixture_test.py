@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'line-intersections.gpkg':
+        return m.line_intersection_expected_features()
     if name == 'line-self-overlaps.gpkg':
         return m.line_self_overlap_expected_features()
     if name == 'line-overlaps.gpkg':
@@ -240,3 +242,25 @@ class TopologyFixtureTest(unittest.TestCase):
         rows=copy.deepcopy(m.line_self_overlap_source_features())
         rows[0]['geometry']['coordinates'].pop()
         with self.assertRaises(m.FixtureError):m.validate_line_self_overlap_features(rows,source=True)
+
+
+    def test_line_intersection_oracle_binds_both_original_ids_exact_points_and_order(self):
+        original=m.line_intersection_expected_features()
+        self.assertEqual(len(m.line_intersection_source_features()),18);self.assertEqual(len(original),10)
+        m.validate_line_intersection_features(original)
+        m.validate_line_intersection_features(m.line_intersection_source_features(),source=True)
+        self.assertEqual([row['geometry']['coordinates'] for row in original[:3]],[[602,100]]*3)
+        for kind in ('missing','extra','duplicate','order','source-a','source-b','fid','coordinate','tiny','dimension','nonfinite'):
+            rows=copy.deepcopy(original)
+            if kind=='missing':rows.pop()
+            elif kind=='extra':rows.append(copy.deepcopy(rows[0]))
+            elif kind=='duplicate':rows[1]=copy.deepcopy(rows[0])
+            elif kind=='order':rows.reverse()
+            elif kind=='source-a':rows[0]['properties']['source_id_a']='叠甲'
+            elif kind=='source-b':rows[0]['properties']['source_id_b']='接乙'
+            elif kind=='fid':rows[0]['properties']['source_id_a']='1'
+            elif kind=='coordinate':rows[0]['geometry']['coordinates'][0]+=1
+            elif kind=='tiny':rows[-1]['geometry']['coordinates'][0]=0
+            elif kind=='dimension':rows[0]['geometry']['coordinates'].append(1)
+            elif kind=='nonfinite':rows[0]['geometry']['coordinates'][0]=float('nan')
+            with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_line_intersection_features(rows)

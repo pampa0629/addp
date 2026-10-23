@@ -14,7 +14,7 @@ base = importlib.import_module('scripts.test.raster-contour-persistence-online_t
 def execution():
     outputs = {key: f'addp://engine/3/path/outputs/{name}?type=file' for key, name in zip(m.fixture.PORTS, m.fixture.TARGETS)}
     inputs = [{'port': 'input.'+node, 'locator': f'addp://engine/3/path/{name}?type=file&item_id={identifier}'}
-              for identifier, (node, name) in enumerate(zip(('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input'), m.fixture.SOURCES), 10)]
+              for identifier, (node, name) in enumerate(zip(('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input'), m.fixture.SOURCES), 10)]
     facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': sorted(inputs, key=lambda entry: entry['port']), 'outputs': [{'locator': uri, 'write_mode': 'create'} for uri in outputs.values()]}
     return {'status': 'success', 'outputs': {'save_'+key: {'resource': {'locator': uri, 'type': 'file', 'write_mode': 'create'}} for key, uri in outputs.items()},
         'metadata': {'lineage_facts': facts, 'result': {'meta_scan_runs': [{'status': 'submitted', 'target_locator': uri, 'execution_id': 'scan-'+key} for key, uri in outputs.items()]}}}
@@ -24,12 +24,12 @@ class Client(base.Client):
     def __init__(self):
         super().__init__()
         self.source.update(full_name='source.geojson', size_bytes=500)
-        for identifier, name in enumerate(m.fixture.TARGETS, 20):
+        for identifier, name in enumerate(m.fixture.TARGETS, 30):
             self.targets[identifier] = {'id': identifier, 'fingerprint': name, 'item_type': 'file', 'full_name': 'outputs/'+name,
                 'size_bytes': 1000, 'scanned_at': '2026-10-18T00:00:00Z', 'attributes': {'item': {'format': 'geojson'}}}
         self.invalid_source = {**self.source, 'id': 11, 'full_name': 'invalid.geojson', 'fingerprint': 'invalid'}
         self.snap_sources = {identifier: {**self.source, 'id': identifier, 'full_name': name, 'fingerprint': name} for identifier, name in enumerate(m.fixture.SOURCES[2:],12)}
-        for identifier,name in ((23,'snapped.gpkg'),(24,'overlaps.gpkg'),(25,'gaps.gpkg'),(26,'dangling.gpkg'),(27,'line-overlaps.gpkg'),(28,'line-self-overlaps.gpkg')):
+        for identifier,name in ((33,'snapped.gpkg'),(34,'overlaps.gpkg'),(35,'gaps.gpkg'),(36,'dangling.gpkg'),(37,'line-overlaps.gpkg'),(38,'line-self-overlaps.gpkg'),(39,'line-intersections.gpkg')):
             self.targets[identifier] = base.item(name,identifier); self.targets[identifier]['size_bytes'] = 1000
         self.permissions = sorted(m.PERMISSIONS)
         self.executions['execution'] = execution()
@@ -55,13 +55,13 @@ class Client(base.Client):
         elif path.startswith('/api/v1/meta/scan/runs?'):
             identifiers = ['source-scan-'+name for name in m.fixture.SOURCES]+['scan-'+port for port in m.fixture.PORTS]
             data = {'total': len(identifiers), 'items': [{'execution_id': value} for value in identifiers]}
-        elif path in ('/api/v1/meta/items/12','/api/v1/meta/items/13','/api/v1/meta/items/14','/api/v1/meta/items/15','/api/v1/meta/items/16','/api/v1/meta/items/17','/api/v1/meta/items/18','/api/v1/meta/items/19'):
+        elif path.startswith('/api/v1/meta/items/') and int(path.rsplit('/',1)[1]) in self.snap_sources:
             data = self.snap_sources[int(path.rsplit('/',1)[1])]
         elif path == '/api/v1/meta/items/11':
             data = self.invalid_source
         elif '/meta/lineage/graph?' in path:
             identifier = int(path.split('item_id=')[1].split('&')[0])
-            data = {'truncated': False, 'edges': [{'source': {'item_id': source}, 'target': {'item_id': identifier}, 'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'execution'}} for source in ([19] if identifier == 28 else [18] if identifier == 27 else [17] if identifier == 26 else [15,16] if identifier == 25 else [14] if identifier == 24 else [12,13] if identifier == 23 else [11] if identifier == 22 else [10])]}
+            data = {'truncated': False, 'edges': [{'source': {'item_id': source}, 'target': {'item_id': identifier}, 'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'execution'}} for source in ([20] if identifier == 39 else [19] if identifier == 38 else [18] if identifier == 37 else [17] if identifier == 36 else [15,16] if identifier == 35 else [14] if identifier == 34 else [12,13] if identifier == 33 else [11] if identifier == 32 else [10])]}
         else:
             return super().request(method, path, expected, body)
         return SimpleNamespace(payload=copy.deepcopy(data))
@@ -82,18 +82,18 @@ class TopologyOnlineTest(unittest.TestCase):
         self.env = {**ENV, "ADDP_ONLINE_ARTIFACT_DIR": directory.name}
 
     def test_public_dag_keeps_default_faces_diagnostics_and_checked_repair_branch(self):
-        tasks = m.definition('source','parent','invalid','snap-source','snap-ref','overlap-source','gap-source','coverage-source','dangling-source','line-overlap-source','self-source')['tasks']
-        self.assertEqual([node['operator'] for node in tasks], ['load','polygonize','save','save','load','check_geometry','repair_geometry','check_geometry','save','load','load','snap_geometry','save','load','check_polygon_overlap','save','load','load','check_polygon_gap','save','load','check_dangling_points','save','load','check_line_overlap','save','load','check_line_self_overlap','save'])
+        tasks = m.definition('source','parent','invalid','snap-source','snap-ref','overlap-source','gap-source','coverage-source','dangling-source','line-overlap-source','self-source','intersection-source')['tasks']
+        self.assertEqual([node['operator'] for node in tasks], ['load','polygonize','save','save','load','check_geometry','repair_geometry','check_geometry','save','load','load','snap_geometry','save','load','check_polygon_overlap','save','load','load','check_polygon_gap','save','load','check_dangling_points','save','load','check_line_overlap','save','load','check_line_self_overlap','save','load','check_line_intersection','save'])
         self.assertEqual(tasks[2]['params']['input_df'], {'$ref': 'build'})
         self.assertEqual(tasks[3]['params']['input_df'], {'$ref': 'build', 'port': 'diagnostics'})
         self.assertTrue(all(node['params']['mode'] == 'fail' for node in tasks if node['operator'] == 'save'))
 
-    def test_exact_nine_outputs_and_scans_are_mandatory(self):
+    def test_exact_ten_outputs_and_scans_are_mandatory(self):
         value = execution()
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
         sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
         m.validate_success(value, sources, targets)
-        for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['outputs'].pop('save_repaired'), lambda v: v['outputs'].pop('save_overlaps'), lambda v: v['outputs'].pop('save_gaps'), lambda v: v['outputs'].pop('save_dangling'), lambda v: v['outputs'].pop('save_line_overlaps'), lambda v: v['outputs'].pop('save_line_self_overlaps'),
+        for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['outputs'].pop('save_repaired'), lambda v: v['outputs'].pop('save_overlaps'), lambda v: v['outputs'].pop('save_gaps'), lambda v: v['outputs'].pop('save_dangling'), lambda v: v['outputs'].pop('save_line_overlaps'), lambda v: v['outputs'].pop('save_line_self_overlaps'), lambda v: v['outputs'].pop('save_line_intersections'),
             lambda v: v['metadata']['lineage_facts']['inputs'].pop(),
             lambda v: v['metadata']['lineage_facts']['inputs'][1].update(locator=v['metadata']['lineage_facts']['inputs'][0]['locator']), lambda v: v['metadata']['result']['meta_scan_runs'].pop(),
             lambda v: v['outputs']['save_faces']['resource'].pop('write_mode'),
@@ -110,7 +110,7 @@ class TopologyOnlineTest(unittest.TestCase):
         sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
         self.assertEqual([entry['port'] for entry in value['metadata']['lineage_facts']['inputs']],
-                         ['input.dangling_input', 'input.gap_coverage', 'input.gap_input', 'input.line_overlap_input', 'input.line_self_overlap_input', 'input.load', 'input.load_invalid', 'input.overlap_input', 'input.snap_input', 'input.snap_reference'])
+                         ['input.dangling_input', 'input.gap_coverage', 'input.gap_input', 'input.line_intersection_input', 'input.line_overlap_input', 'input.line_self_overlap_input', 'input.load', 'input.load_invalid', 'input.overlap_input', 'input.snap_input', 'input.snap_reference'])
         m.validate_success(value, sources, targets)
         value['metadata']['lineage_facts']['inputs'].reverse()
         m.validate_success(value, sources, targets)
@@ -132,20 +132,20 @@ class TopologyOnlineTest(unittest.TestCase):
     def test_complete_chain_preserves_same_user_and_does_not_manually_scan_outputs(self):
         client = Client()
         report = m.run_scenario(Path('.'), self.env, client, physical, lambda repo, env, evidence: evidence, diagnostic_runner=lambda *args: {'cause':'invalid_snapped_geometry'})
-        self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 9)
+        self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 10)
         self.assertEqual(len(report['identity']['permissions_verified']), 11)
-        self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 10)
-        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v8')
+        self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 11)
+        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v9')
         self.assertEqual(report['physical'],report['post_browser_physical'])
         self.assertEqual(report['stable_outputs'],execution()['outputs'])
         self.assertEqual(report['browser']['overlap_expected'],m.fixture.overlap_expected_features())
         self.assertEqual(report['browser']['gap_expected'],m.fixture.gap_expected_features())
         self.assertEqual(report['browser']['dangling_expected'],m.fixture.dangling_expected_features())
 
-    def test_browser_requires_current_v8_and_exact_ninth_output_evidence(self):
+    def test_browser_requires_current_v9_and_exact_tenth_output_evidence(self):
         evidence={'execution_id':'current','outputs':[{'port':'gaps'}],'overlap_expected':m.fixture.overlap_expected_features(),'gap_expected':m.fixture.gap_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
-        for schema,changed,valid in [('addp.topology-browser/v7',False,False),('addp.topology-browser/v8',True,False),('addp.topology-browser/v8',False,True)]:
+        for schema,changed,valid in [('addp.topology-browser/v8',False,False),('addp.topology-browser/v9',True,False),('addp.topology-browser/v9',False,True)]:
             def run(*args,**kwargs):
                 report={**evidence,'schema_version':schema,'result':'passed'}
                 if changed:report['outputs']=[]
@@ -161,12 +161,12 @@ class TopologyOnlineTest(unittest.TestCase):
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v8','result':'passed'}))
+                'schema_version':'addp.topology-browser/v9','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):
             m.browser(Path('.'),self.env,evidence)
 
-    def test_lineage_failure_retains_all_nine_strict_sizes_and_incomplete_physical_checkpoint(self):
+    def test_lineage_failure_retains_all_ten_strict_sizes_and_incomplete_physical_checkpoint(self):
         self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'] = 'must-not-archive'
         with patch.object(m.raster, 'wait_lineage', side_effect=m.SuiteError('lineage unavailable')):
             with self.assertRaisesRegex(m.SuiteError, 'lineage unavailable'):
@@ -176,7 +176,7 @@ class TopologyOnlineTest(unittest.TestCase):
         self.assertEqual((checkpoint['stage'], checkpoint['result']), ('before_lineage', 'incomplete'))
         self.assertEqual(checkpoint['physical'], physical())
         self.assertEqual([entry['size_evidence'] for entry in checkpoint['outputs']],
-                         [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000}]*3 + [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000, 'layer_name': name} for name in ('snapped','overlaps','gaps','dangling','line-overlaps','line-self-overlaps')])
+                         [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000}]*3 + [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000, 'layer_name': name} for name in ('snapped','overlaps','gaps','dangling','line-overlaps','line-self-overlaps','line-intersections')])
         self.assertTrue(all(entry['triggered_by'] == 33 and entry['tenant_id'] == 2 for entry in checkpoint['automatic_scans']))
         self.assertEqual(checkpoint['lineage_facts'], execution()['metadata']['lineage_facts'])
         self.assertNotIn('must-not-archive', saved.read_text())
@@ -212,13 +212,13 @@ class TopologyOnlineTest(unittest.TestCase):
         self.assertEqual((saved['result'],saved['stage']),('incomplete','collapsed_snap_validated'))
         self.assertEqual(saved['failed_snap']['execution_id'],'failed-snap')
         self.assertEqual(saved['failed_snap']['observation'],{'status':'failed','outputs':None,'lineage_facts':None,'meta_scan_runs':None})
-        self.assertEqual(len(saved['scan_inventory']),19)
+        self.assertEqual(len(saved['scan_inventory']),21)
         self.assertEqual(saved['identity']['principal_id'],'33')
         self.assertNotIn('must-not-archive',path.read_text())
         self.assertFalse((path.parent/'topology-persistence.json').exists())
 
     def test_geo_package_container_boundary_and_both_snap_lineage_sources_are_required(self):
-        item = Client().targets[23]
+        item = Client().targets[33]
         m.validate_item(item,physical()['targets']['snapped.gpkg'],'snapped.gpkg')
         for mutate in (
             lambda value:value['attributes']['type_info']['container']['children'].clear(),
@@ -234,11 +234,11 @@ class TopologyOnlineTest(unittest.TestCase):
         with patch.object(m.raster,'wait_lineage',side_effect=lineage):
             m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,
                            diagnostic_runner=lambda *args:{})
-        self.assertEqual(seen,[(10,20,'execution'),(10,21,'execution'),(11,22,'execution'),
-                               (12,23,'execution'),(13,23,'execution'),(14,24,'execution'),(15,25,'execution'),(16,25,'execution'),(17,26,'execution'),(18,27,'execution'),(19,28,'execution')])
+        self.assertEqual(seen,[(10,30,'execution'),(10,31,'execution'),(11,32,'execution'),
+                               (12,33,'execution'),(13,33,'execution'),(14,34,'execution'),(15,35,'execution'),(16,35,'execution'),(17,36,'execution'),(18,37,'execution'),(19,38,'execution'),(20,39,'execution')])
 
     def test_gap_dag_binds_both_read_roles_and_rejects_missing_or_swapped_facts(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap-source','coverage','dangling','line-overlap-source','self-source')['tasks'][:-9]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap-source','coverage','dangling','line-overlap-source','self-source','intersection-source')['tasks'][:-12]
         self.assertEqual(tasks[-4]['params'], {'locator':'gap-source'})
         self.assertEqual(tasks[-3]['params'], {'locator':'coverage'})
         self.assertEqual(tasks[-2]['params'], {'input_gdf':{'$ref':'gap_input'},'coverage_gdf':{'$ref':'gap_coverage'}})
@@ -256,7 +256,7 @@ class TopologyOnlineTest(unittest.TestCase):
     def test_gap_missing_lineage_on_either_source_blocks_browser_acceptance(self):
         for missing_source in (15,16):
             def lineage(client,source_id,target_id,execution_id,timeout):
-                if target_id==25 and source_id==missing_source:raise m.SuiteError('gap lineage missing')
+                if target_id==35 and source_id==missing_source:raise m.SuiteError('gap lineage missing')
                 return {}
             with self.subTest(source=missing_source),patch.object(m.raster,'wait_lineage',side_effect=lineage):
                 with self.assertRaisesRegex(m.SuiteError,'gap lineage missing'):
@@ -302,7 +302,7 @@ class TopologyOnlineTest(unittest.TestCase):
 
     def test_invalid_size_or_browser_modification_cannot_pass(self):
         for size in (True, 0, 1000., '1000', 999):
-            item = Client().targets[20]; item['size_bytes'] = size
+            item = Client().targets[30]; item['size_bytes'] = size
             with self.subTest(size=size), self.assertRaises(m.SuiteError): m.validate_item(item, physical()['targets']['faces.geojson'], 'faces.geojson')
         calls = []
         def changed(*args):
@@ -340,7 +340,7 @@ class TopologyOnlineTest(unittest.TestCase):
 
 
     def test_dangling_dag_and_current_report_require_original_source_evidence(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangle-source','line-overlap-source','self-source')['tasks'][:-6]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangle-source','line-overlap-source','self-source','intersection-source')['tasks'][:-9]
         self.assertEqual(tasks[-3]['params'],{'locator':'dangle-source'})
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'dangling_input'},'id_field':'route_key'})
         self.assertEqual(tasks[-1]['params']['target_name'],'dangling.gpkg')
@@ -349,13 +349,13 @@ class TopologyOnlineTest(unittest.TestCase):
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v8','result':'passed'}))
+                'schema_version':'addp.topology-browser/v9','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
     def test_dangling_missing_lineage_blocks_browser_acceptance(self):
         def lineage(client,source_id,target_id,execution_id,timeout):
-            if source_id==17 and target_id==26:raise m.SuiteError('dangling lineage missing')
+            if source_id==17 and target_id==36:raise m.SuiteError('dangling lineage missing')
             return {}
         with patch.object(m.raster,'wait_lineage',side_effect=lineage),self.assertRaisesRegex(m.SuiteError,'dangling lineage missing'):
             m.run_scenario(Path('.'),self.env,Client(),physical,
@@ -370,18 +370,19 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { webMercatorPreviewCoordinate } from './manager/frontend/e2e/geometry-preview-coordinate.js'
 const source = fs.readFileSync('console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
-const start = source.indexOf("    if (output.port === 'dangling') {", source.indexOf('const table = frame.locator'))
+const start = source.indexOf("    if (['dangling','line_intersections'].includes(output.port)) {", source.indexOf('const table = frame.locator'))
 const end = source.indexOf("    if (output.port === 'gaps') {",start)
 assert(start > 0 && end > start)
 const check = new (Object.getPrototypeOf(async function(){}).constructor)('evidence','renderer','expect','table','webMercatorPreviewCoordinate','output',source.slice(start,end))
-const expected = JSON.parse(fs.readFileSync(0,'utf8'))
-assert.equal(expected.length,17)
+const {expected,intersection} = JSON.parse(fs.readFileSync(0,'utf8'))
+assert.equal(expected.length,intersection?10:17)
+const identities=intersection?['source_id_a','source_id_b']:['source_id']
 const originalCompare = String.prototype.localeCompare
 String.prototype.localeCompare = function(other){ return originalCompare.call(this,other,'en-US') }
 const nodeOrder = ['孤线','干线'].sort((a,b) => a.localeCompare(b))
 const browserOrder = ['孤线','干线'].sort(new Intl.Collator('zh-CN').compare)
 assert.notDeepEqual(nodeOrder,browserOrder,'the regression must exercise different collations')
-const expectedPoints = expected.map(row => ({source_id:row.properties.source_id,coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)}))
+const expectedPoints = expected.map(row => ({...row.properties,coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)}))
 async function run(points) {
   const features = points.map(point => ({get:name => point[name],getGeometry:() => ({getCoordinates:() => point.coordinates})}))
   const layer = { getSource: () => ({ getFeatures: () => features }) }
@@ -392,36 +393,37 @@ async function run(points) {
   const element = {__vueParentComponent:{setupState:{mapInstance:map}}}
   const context = vm.createContext({element})
   vm.runInContext("const compare=String.prototype.localeCompare;String.prototype.localeCompare=function(other){return compare.call(this,other,'zh-CN')}",context)
-  const renderer = {evaluate:async fn => JSON.parse(JSON.stringify(vm.runInContext('('+fn.toString()+')(element)',context)))}
+  const renderer = {evaluate:async (fn,arg) => JSON.parse(JSON.stringify(vm.runInContext('('+fn.toString()+')(element,'+JSON.stringify(arg)+')',context)))}
   const expect = {poll:fn => ({toEqual:async value => assert.deepEqual(await fn(),value)})}
   const table = {locator:() => ({})}; const assertion = expect
   const callable = Object.assign(() => ({toContainText:async() => {}}),assertion)
-  await check({dangling_expected:expected},renderer,callable,table,webMercatorPreviewCoordinate,{port:'dangling'})
+  await check({dangling_expected:expected,line_intersection_expected:expected},renderer,callable,table,webMercatorPreviewCoordinate,{port:intersection?'line_intersections':'dangling'})
 }
 await run([...expectedPoints].reverse())
 for (const kind of ['missing','duplicate','wrong-source','wrong-coordinate','micro-gap-rounded','source-coordinate-mismatch']) {
   const points = structuredClone(expectedPoints)
   if(kind==='missing') points.pop()
   if(kind==='duplicate') points.push(structuredClone(points[0]))
-  if(kind==='wrong-source') points[0].source_id='闭环'
+  if(kind==='wrong-source') points[0][identities[0]]='闭环'
   if(kind==='wrong-coordinate') points[0].coordinates[0]+=1
-  if(kind==='micro-gap-rounded') points.find(p => p.source_id==='微乙').coordinates=webMercatorPreviewCoordinate([251,0])
-  if(kind==='source-coordinate-mismatch') [points[0].source_id,points[2].source_id]=[points[2].source_id,points[0].source_id]
+  if(kind==='micro-gap-rounded') (intersection?points.at(-1):points.find(p => p.source_id==='微乙')).coordinates=webMercatorPreviewCoordinate(intersection?[0,120]:[251,0])
+  if(kind==='source-coordinate-mismatch') [points[0][identities[0]],points[2][identities[0]]]=[points[2][identities[0]],points[0][identities[0]]]
   await assert.rejects(run(points),{code:'ERR_ASSERTION'},kind)
 }
 console.log('cross-realm Chinese/English Point identity and six corruptions verified')
 '''
-        result = m.subprocess.run(['node','--input-type=module','-e',script],
-            input=json.dumps(m.fixture.dangling_expected_features(),ensure_ascii=False),
-            text=True,capture_output=True,timeout=30)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        for intersection,expected in [(False,m.fixture.dangling_expected_features()),(True,m.fixture.line_intersection_expected_features())]:
+            result = m.subprocess.run(['node','--input-type=module','-e',script],
+                input=json.dumps({'expected':expected,'intersection':intersection},ensure_ascii=False),
+                text=True,capture_output=True,timeout=30)
+            with self.subTest(intersection=intersection):self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_point_map_pixels_reject_empty_water_and_keep_line_polygon_checks(self):
         script = r'''
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 const source = fs.readFileSync('console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
-const start = source.indexOf('    let ',source.indexOf("    if (output.port === 'dangling') {",source.indexOf('const table = frame.locator')))
+const start = source.indexOf('    let ',source.indexOf("    if (['dangling','line_intersections'].includes(output.port)) {",source.indexOf('const table = frame.locator')))
 const end = source.indexOf('    const rendered =',start)
 assert(start > 0 && end > start)
 const check = new (Object.getPrototypeOf(async function(){}).constructor)('renderer','expect','output',source.slice(start,end))
@@ -433,6 +435,8 @@ async function run(port,rgba) {
   await check(renderer,expect,{port})
 }
 await run('dangling',[64,158,255,255])
+await run('line_intersections',[64,158,255,255])
+await assert.rejects(run('line_intersections',[173,216,230,255]),{code:'ERR_ASSERTION'},'basemap water cannot substitute intersection Points')
 await assert.rejects(run('dangling',[173,216,230,255]),{code:'ERR_ASSERTION'},'basemap water cannot count as Points')
 await assert.rejects(run('dangling',[103,194,58,255]),{code:'ERR_ASSERTION'},'green line/polygon pixels cannot substitute Points')
 await assert.rejects(run('dangling',[64,158,255,0]),{code:'ERR_ASSERTION'},'transparent Points are not visible')
@@ -446,14 +450,14 @@ console.log('Point foreground pixels and preserved polygon assertions verified')
 
 
     def test_line_overlap_dag_and_lineage_bind_original_source(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source')['tasks'][:-3]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source')['tasks'][:-6]
         self.assertEqual(tasks[-3]['params'],{'locator':'line-overlap-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_overlap')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_overlap_input'},'id_field':'route_key'})
         self.assertEqual(tasks[-1]['params']['target_name'],'line-overlaps.gpkg')
         self.assertEqual(m.output_sources('line_overlaps'),(8,))
         def lineage(client,source_id,target_id,execution_id,timeout):
-            if source_id==18 and target_id==27:raise m.SuiteError('line overlap lineage missing')
+            if source_id==18 and target_id==37:raise m.SuiteError('line overlap lineage missing')
             return {}
         with patch.object(m.raster,'wait_lineage',side_effect=lineage),self.assertRaisesRegex(m.SuiteError,'line overlap lineage missing'):
             m.run_scenario(Path('.'),self.env,Client(),physical,lambda *args:self.fail('must stop before browser'))
@@ -463,7 +467,7 @@ console.log('Point foreground pixels and preserved polygon assertions verified')
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v8','result':'passed'}))
+                'schema_version':'addp.topology-browser/v9','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -513,14 +517,14 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
 
 
     def test_line_self_overlap_dag_and_lineage_bind_only_original_source(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source')['tasks']
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source')['tasks'][:-3]
         self.assertEqual(tasks[-3]['params'],{'locator':'self-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_self_overlap')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_self_overlap_input'},'id_field':'route_key'})
         self.assertEqual(tasks[-1]['params']['target_name'],'line-self-overlaps.gpkg')
         self.assertEqual(m.output_sources('line_self_overlaps'),(9,))
         def lineage(client,source_id,target_id,execution_id,timeout):
-            if source_id==19 and target_id==28:raise m.SuiteError('self overlap lineage missing')
+            if source_id==19 and target_id==38:raise m.SuiteError('self overlap lineage missing')
             return {}
         with patch.object(m.raster,'wait_lineage',side_effect=lineage),self.assertRaisesRegex(m.SuiteError,'self overlap lineage missing'):
             m.run_scenario(Path('.'),self.env,Client(),physical,lambda *args:self.fail('must stop before browser'))
@@ -530,6 +534,37 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v8','result':'passed'}))
+                'schema_version':'addp.topology-browser/v9','result':'passed'}))
+            return SimpleNamespace(returncode=0)
+        with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+
+
+    def test_line_intersection_dag_scan_and_lineage_bind_the_original_file(self):
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source')['tasks']
+        self.assertEqual(tasks[-3]['params'],{'locator':'intersection-source'})
+        self.assertEqual(tasks[-2]['operator'],'check_line_intersection')
+        self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_intersection_input'},'id_field':'route_key'})
+        self.assertEqual(tasks[-1]['params']['target_name'],'line-intersections.gpkg')
+        self.assertEqual(m.output_sources('line_intersections'),(10,))
+        def lineage(client,source_id,target_id,execution_id,timeout):
+            if source_id==20 and target_id==39:raise m.SuiteError('point pair lineage missing')
+            return {}
+        with patch.object(m.raster,'wait_lineage',side_effect=lineage),self.assertRaisesRegex(m.SuiteError,'point pair lineage missing'):
+            m.run_scenario(Path('.'),self.env,Client(),physical,lambda *args:self.fail('must stop before browser'))
+        class WrongScan(Client):
+            def request(self,method,path,expected,body=None):
+                response=super().request(method,path,expected,body)
+                if '/meta/executions/scan-line_intersections' in path:response.payload['triggered_by']=44
+                return response
+        with self.assertRaisesRegex(m.SuiteError,'User or Tenant'):
+            m.run_scenario(Path('.'),self.env,WrongScan(),lambda *args:self.fail('wrong scan actor'))
+        report=m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,diagnostic_runner=lambda *args:{})
+        self.assertEqual(report['browser']['line_intersection_expected'],m.fixture.line_intersection_expected_features())
+
+    def test_line_intersection_current_report_cannot_omit_the_pair_oracle(self):
+        evidence={'execution_id':'current','outputs':[{'port':'line_intersections'}],'line_intersection_expected':m.fixture.line_intersection_expected_features()}
+        path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
+        def run(*args,**kwargs):
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v9','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)

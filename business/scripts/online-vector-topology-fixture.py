@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,41 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def line_intersection_source_features():
+    tiny=2**-40
+    rows=[('交横',[[600,100],[604,100]]),('交纵',[[602,98],[602,102]]),('交斜',[[600,98],[604,102]]),
+          ('T干',[[620,100],[624,100]]),('T支',[[622,100],[622,102]]),
+          ('接甲',[[640,100],[642,100]]),('接乙',[[642,100],[643,101]]),
+          ('叠甲',[[660,100],[664,100]]),('叠乙',[[664,100],[662,100],[660,100]]),
+          ('混甲',[[[680,100],[684,100]],[[686,99],[686,101]]]),
+          ('混乙',[[[681,100],[683,100]],[[685,100],[687,100]]]),
+          ('多甲',[[[700,100],[704,100]],[[704,100],[700,100]]]),
+          ('多乙',[[[703,99],[703,101]],[[701,99],[701,101]],[[701,101],[701,99]]]),
+          ('微横',[[0,120],[1,120]]),('微纵',[[[0,119],[0,121]],[[tiny,119],[tiny,121]]]),
+          ('近甲',[[740,100],[742,100]]),('近乙',[[742+tiny,100],[744,100]]),
+          ('自交',[[760,100],[762,102],[760,102],[762,100]])]
+    return [{'properties':{'route_key':identity,'note':f'intersection-original-{index}'},
+             'geometry':{'type':'MultiLineString' if identity in ('混甲','混乙','多甲','多乙','微纵') else 'LineString','coordinates':points}}
+            for index,(identity,points) in enumerate(rows)]
+
+
+def line_intersection_expected_features():
+    # Handwritten original XY and original business IDs, independent of GEOS.
+    rows=[('交横','交纵',(602,100)),('交横','交斜',(602,100)),('交纵','交斜',(602,100)),
+          ('T干','T支',(622,100)),('接甲','接乙',(642,100)),('混甲','混乙',(686,100)),
+          ('多甲','多乙',(701,100)),('多甲','多乙',(703,100)),
+          ('微横','微纵',(0,120)),('微横','微纵',(2**-40,120))]
+    return [{'properties':{'source_id_a':a,'source_id_b':b},'geometry':{'type':'Point','coordinates':list(point)}} for a,b,point in rows]
+
+
+def validate_line_intersection_features(features, source=False):
+    return _validate_point_features(features,line_intersection_source_features() if source else line_intersection_expected_features())
+
+
+def verify_line_intersection(path, source=False):
+    return _verify_point_features(path,line_intersection_source_features() if source else line_intersection_expected_features(),source)
 
 
 def line_self_overlap_source_features():
@@ -188,16 +223,19 @@ def dangling_expected_features():
 
 
 def validate_dangling_features(features, source=False):
-    expected=dangling_source_features() if source else dangling_expected_features()
-    if len(features)!=len(expected):raise FixtureError('dangling source/result count differs')
+    return _validate_point_features(features,dangling_source_features() if source else dangling_expected_features())
+
+
+def _validate_point_features(features, expected):
+    if len(features)!=len(expected):raise FixtureError('point source/result count differs')
     for actual,wanted in zip(features,expected):
-        if actual!=wanted:raise FixtureError('dangling original source IDs, order, attributes or exact XY differ')
+        if actual!=wanted:raise FixtureError('point source IDs, pairing, order, attributes or exact XY differ')
         geometry=actual['geometry'];kind=geometry.get('type');coordinates=geometry.get('coordinates')
         if kind=='Point':canonical([coordinates])
         elif kind=='LineString':canonical(coordinates)
         elif kind=='MultiLineString':
             for part in coordinates:canonical(part)
-        else:raise FixtureError('dangling geometry type differs')
+        else:raise FixtureError('point source/result geometry type differs')
 
 
 def seed_dangling(path):
@@ -214,27 +252,31 @@ def seed_dangling(path):
 
 
 def verify_dangling(path, source=False):
+    return _verify_point_features(path,dangling_source_features() if source else dangling_expected_features(),source)
+
+
+def _verify_point_features(path, expected, source=False):
     from osgeo import ogr,osr
     dataset=ogr.Open(str(path),0)
-    if dataset is None or dataset.GetLayerCount()!=1:raise FixtureError('expected one dangling GeoPackage layer')
+    if dataset is None or dataset.GetLayerCount()!=1:raise FixtureError('expected one point GeoPackage layer')
     layer=dataset.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
-    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('dangling CRS differs')
-    fields=['route_key','note'] if source else ['source_id'];schema=layer.GetLayerDefn()
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('point CRS differs')
+    fields=list(expected[0]['properties']);schema=layer.GetLayerDefn()
     if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields
         or any(schema.GetFieldDefn(i).GetType()!=ogr.OFTString for i in range(schema.GetFieldCount()))):
-        raise FixtureError('dangling source ID/attribute schema differs')
+        raise FixtureError('point source ID/attribute schema differs')
     features=[]
     for feature in layer:
         geometry=feature.GetGeometryRef()
-        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():raise FixtureError('dangling geometry invalid or non-XY')
+        if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():raise FixtureError('point geometry invalid or non-XY')
         kind=geometry.GetGeometryName()
         if kind=='POINT':shape={'type':'Point','coordinates':[geometry.GetX(),geometry.GetY()]}
         elif kind=='LINESTRING':shape={'type':'LineString','coordinates':[list(point[:2]) for point in geometry.GetPoints()]}
         elif kind=='MULTILINESTRING':shape={'type':'MultiLineString','coordinates':[
             [list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
-        else:raise FixtureError('dangling source/result geometry type differs')
+        else:raise FixtureError('point source/result geometry type differs')
         features.append({'properties':{name:feature.GetField(name) for name in fields},'geometry':shape})
-    validate_dangling_features(features,source)
+    _validate_point_features(features,expected)
     result={**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
             'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
     dataset=None
@@ -549,6 +591,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'line-intersections.gpkg':
+        return validate_line_intersection_features(features)
     if name == 'line-self-overlaps.gpkg':
         return validate_line_self_overlap_features(features)
     if name == 'line-overlaps.gpkg':
@@ -592,6 +636,7 @@ def worker(action, root):
         seed_dangling(root / 'dangling-input.gpkg')
         seed_line_overlap(root / 'line-overlap-input.gpkg')
         _seed_linear(root / 'line-self-overlap-input.gpkg', line_self_overlap_source_features())
+        _seed_linear(root / 'line-intersection-input.gpkg', line_intersection_source_features())
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -611,8 +656,12 @@ def worker(action, root):
     verify_dangling(root / 'dangling-input.gpkg', source=True)
     verify_line_overlap(root / 'line-overlap-input.gpkg', source=True)
     verify_line_self_overlap(root / 'line-self-overlap-input.gpkg', source=True)
+    verify_line_intersection(root / 'line-intersection-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'line-intersections.gpkg':
+            results[name] = verify_line_intersection(path)
+            continue
         if name == 'line-self-overlaps.gpkg':
             results[name] = verify_line_self_overlap(path)
             continue

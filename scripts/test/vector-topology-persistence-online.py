@@ -18,7 +18,7 @@ vector = importlib.import_module('scripts.utils.online_vector_persistence')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
-def definition(source, parent, invalid_source, snap_source, snap_reference, overlap_source, gap_source, gap_coverage, dangling_source, line_overlap_source, line_self_overlap_source):
+def definition(source, parent, invalid_source, snap_source, snap_reference, overlap_source, gap_source, gap_coverage, dangling_source, line_overlap_source, line_self_overlap_source, line_intersection_source):
     return {'tasks': [
         {'id': 'load', 'operator': 'load', 'params': {'locator': source}, 'depends_on': []},
         {'id': 'build', 'operator': 'polygonize', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
@@ -48,6 +48,9 @@ def definition(source, parent, invalid_source, snap_source, snap_reference, over
         {'id': 'line_self_overlap_input', 'operator': 'load', 'params': {'locator': line_self_overlap_source}, 'depends_on': []},
         {'id': 'line_self_overlap', 'operator': 'check_line_self_overlap', 'params': {'input_gdf': {'$ref': 'line_self_overlap_input'}, 'id_field': 'route_key'}, 'depends_on': ['line_self_overlap_input']},
         {'id': 'save_line_self_overlaps', 'operator': 'save', 'params': {'input_df': {'$ref': 'line_self_overlap'}, 'target_parent_locator': parent, 'target_name': 'line-self-overlaps.gpkg', 'mode': 'fail'}, 'depends_on': ['line_self_overlap']},
+        {'id': 'line_intersection_input', 'operator': 'load', 'params': {'locator': line_intersection_source}, 'depends_on': []},
+        {'id': 'line_intersection', 'operator': 'check_line_intersection', 'params': {'input_gdf': {'$ref': 'line_intersection_input'}, 'id_field': 'route_key'}, 'depends_on': ['line_intersection_input']},
+        {'id': 'save_line_intersections', 'operator': 'save', 'params': {'input_df': {'$ref': 'line_intersection'}, 'target_parent_locator': parent, 'target_name': 'line-intersections.gpkg', 'mode': 'fail'}, 'depends_on': ['line_intersection']},
     ]}
 
 
@@ -65,7 +68,7 @@ def snap_definition(source, reference, parent, *, failed=False):
 
 
 def output_sources(port):
-    return {'faces':(0,), 'diagnostics':(0,), 'repaired':(1,), 'snapped':(2,3), 'overlaps':(4,), 'gaps':(5,6), 'dangling':(7,), 'line_overlaps':(8,), 'line_self_overlaps':(9,)}[port]
+    return {'faces':(0,), 'diagnostics':(0,), 'repaired':(1,), 'snapped':(2,3), 'overlaps':(4,), 'gaps':(5,6), 'dangling':(7,), 'line_overlaps':(8,), 'line_self_overlaps':(9,), 'line_intersections':(10,)}[port]
 
 
 def validate_failed_snap(execution):
@@ -104,22 +107,22 @@ def validate_success(execution, sources, targets):
     outputs = obj(execution.get('outputs'), 'stable outputs')
     expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file', 'write_mode': 'create'}} for key, target in targets.items()}
     if outputs != expected:
-        raise SuiteError('expected nine exact named file outputs')
+        raise SuiteError('expected ten exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     expected_inputs = [('input.'+node, source) for node, source in zip(
-        ('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input'), sources)]
+        ('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input'), sources)]
     actual_inputs = [(entry.get('port'), entry.get('locator')) for entry in array(facts.get('inputs'), 'inputs')]
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
         or len(sources) != len(fixture.SOURCES) or len(actual_inputs) != len(expected_inputs)
         or any(actual_inputs.count(binding) != 1 for binding in expected_inputs)
         or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())
         or any(entry.get('write_mode') != 'create' for entry in facts['outputs'])):
-        raise SuiteError('topology, repair, snap, overlap, gap, endpoint line overlap and self overlap resource lineage differs')
+        raise SuiteError('topology, repair, snap, overlap, gap, endpoint line overlap self overlap and point intersection resource lineage differs')
     scans = array(obj(metadata.get('result'), 'result').get('meta_scan_runs'), 'automatic scans')
     if (len(scans) != len(fixture.TARGETS) or {scan.get('target_locator') for scan in scans} != set(targets.values())
         or any(scan.get('status') != 'submitted' or not isinstance(scan.get('execution_id'), str) or not scan['execution_id'] for scan in scans)
         or len({scan['execution_id'] for scan in scans}) != len(fixture.TARGETS)):
-        raise SuiteError('expected exactly nine distinct automatic precise file scans')
+        raise SuiteError('expected exactly ten distinct automatic precise file scans')
     return facts, scans
 
 
@@ -151,7 +154,7 @@ def browser(repository, env, evidence):
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    if report != {**evidence, 'schema_version': 'addp.topology-browser/v8', 'result': 'passed'}:
+    if report != {**evidence, 'schema_version': 'addp.topology-browser/v9', 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
@@ -201,11 +204,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         item = obj(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload, 'output item')
         sizes = validate_item(item, native['targets'][name], name)
         outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes,
-                        **({'fid_column': native['targets'][name]['fid_column']} if key in ('overlaps','gaps','dangling','line_overlaps','line_self_overlaps') else {}),
+                        **({'fid_column': native['targets'][name]['fid_column']} if key in ('overlaps','gaps','dangling','line_overlaps','line_self_overlaps','line_intersections') else {}),
                         **({'layer_name': native['targets'][name]['layer_name'], 'geometry_column': native['targets'][name]['geometry_column']} if name.endswith('.gpkg') else {})})
     # Persist the verified physical facts before any potentially long convergence
     # wait. This checkpoint cannot stand in for the final successful suite report.
-    checkpoint = {'schema_version': 'addp.topology-checkpoint/v8', 'suite': SUITE, 'result': 'incomplete',
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v9', 'suite': SUITE, 'result': 'incomplete',
         'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
         'execution_id': identifier, 'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'lineage_facts': facts,
         'automatic_scans': scan_observations, 'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
@@ -252,12 +255,13 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 'dangling_expected': fixture.dangling_expected_features(),
                 'line_overlap_expected': fixture.line_overlap_expected_features(),
                 'line_self_overlap_expected': fixture.line_self_overlap_expected_features(),
+                'line_intersection_expected': fixture.line_intersection_expected_features(),
                 'sources': [{'id': source['id'], 'before': source['before']} for source in sources]}
     report = browser_runner(repository, env, evidence)
     final_native = physical_runner(repository, env)
     if final_native != native:
         raise SuiteError('browser reads changed source or saved outputs')
-    return {'schema_version': 'addp.vector-topology-persistence/v8', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.vector-topology-persistence/v9', 'suite': SUITE, 'result': 'passed',
         'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'execution_id': identifier,
         'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'source_unchanged': True, 'automatic_scans': scans, 'automatic_scan_observations': scan_observations, 'monitor': monitor,
         'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'post_browser_physical': final_native, 'browser': report, 'failed_snap': failure,
