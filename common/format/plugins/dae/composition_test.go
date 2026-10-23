@@ -3,6 +3,7 @@ package dae
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -13,6 +14,33 @@ type observedDAEReader struct {
 	data  []byte
 	calls int
 	bytes int
+}
+
+func TestDAECompositionReadsDeclarationsBeyondFirstRange(t *testing.T) {
+	raw := []byte(strings.Replace(daeCompositionXML("first.PNG"), "</library_images>",
+		"<!--"+strings.Repeat("x", 128<<10)+"--><image><init_from>last%20name.JPG</init_from></image></library_images>", 1))
+	r := &observedDAEReader{data: raw}
+	refs, err := NewPlugin().ReadModel3DComposition(t.Context(), r, int64(len(raw)))
+	if err != nil || len(refs) != 2 || refs[0] != "first.PNG" || refs[1] != "last%20name.JPG" || r.bytes != len(raw) || r.calls < 3 {
+		t.Fatalf("incomplete multi-range observation: refs=%v bytes=%d calls=%d err=%v", refs, r.bytes, r.calls, err)
+	}
+}
+
+type interruptedDAEReader struct{ data []byte }
+
+func (r interruptedDAEReader) ReadAt(p []byte, offset int64) (int, error) {
+	if offset >= 64<<10 {
+		return 0, io.ErrClosedPipe
+	}
+	return bytes.NewReader(r.data[:64<<10]).ReadAt(p, offset)
+}
+
+func TestDAECompositionDoesNotPublishDeclarationsAfterRangeFailure(t *testing.T) {
+	raw := []byte(strings.Replace(daeCompositionXML("first.PNG"), "</COLLADA>", "<!--"+strings.Repeat("x", 128<<10)+"--></COLLADA>", 1))
+	refs, err := NewPlugin().ReadModel3DComposition(t.Context(), interruptedDAEReader{raw}, int64(len(raw)))
+	if err == nil || refs != nil {
+		t.Fatalf("partial declarations survived a failed primary range: refs=%v err=%v", refs, err)
+	}
 }
 
 func (r *observedDAEReader) ReadAt(p []byte, offset int64) (int, error) {
