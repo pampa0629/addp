@@ -724,3 +724,10 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 - `make test-frontend-ci-registration`：20 项检查通过，21 个前端登记检查通过；共享／Monitor 现有自动发现和 Platform 前端编排覆盖本批，不新增 Makefile 或 workflow 路径。受影响的是新增共享纯计算的直接消费者 Monitor，未改动其他模块的导出或消费行为。
 
 最终 T3 使用 HTTP 协议夹具与真实共享图表，覆盖两种语言／窄屏、原单位升降及零值、两期缺样、启动裁剪、48 小时查询的自适应步长、7 天拒绝比较、URL／刷新／关闭、身份及错误清除、缩放不重算比较；复制保存并人工检查了 `screenshots/` 下中英文卡片截图。未连接个人库或重启个人服务，未运行本批正式身份真实数据／长窗 T4 或 Hosted，CI／Hosted 等专门会话回传；此结果不覆盖尚未通过的 CPU／RSS 告警实源触发恢复 T2，不证明同比或长期留存已实现。原表第 18 行（B 列 17）仍为部分实现。
+
+
+MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）：用户确认复用已有固定版本 MinIO 产品镜像，先核验 MinIO／mc 源提交与镜像 ID，本专项代码继续标准源码构建。收到确认时北京时间18:45，原18:11:14截止时间已过，因此没有启动新容器，也没有执行真实镜像二进制核验、业务部署或正式身份闭环。先修运行观测规范，再将唯一入口改为从当前提交的 scripts/infra/Dockerfile.minio 提取两组件固定发布版本／40位源码提交；已有镜像必须有不可变sha256 ID和Linux ARM64身份，两个只读／无网络／0.25CPU／256MiB检查逐一以该ID运行--version，核对发布版本及嵌入提交。通过的同一ID用于卷测量、真实MinIO及两个存储初始化步骤；缺失、不匹配、命令失败直接拒绝，不拉取替代品或回退冷构建。旧MinIO冷构建及其专用故障分类分支已删除。镜像版本与嵌入提交校验不等同于重新源码编译／字节级可复现证明。
+
+代码及规范提交5681227a0，已推送main。标准 make test-infra-runtime-log-lifecycle 退出0：46项当时的入口契约、两份JS语法、完整CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；随后仅加强mc不匹配／缺失镜像用例，最终 make test-monitor-traces-local-runner 退出0，47项入口契约及其余定向检查通过，60项未改输入复用当次有效结果。没有新增测试入口或依赖，现有Platform生命周期及路径登记仍覆盖；未查询或手工调度CI。安全输入摘要与日志见 /tmp/addp-p19-minio-reuse-preparation-20261023/{receipt.json,minio-reuse-lifecycle.log,minio-reuse-final-tests.log}，明确标注为窗口外的确定性准备，actual_minio_binary_verification与formal_identity_closure均为not_run。
+
+当前已具备核验后复用的单一路径；真实MinIO／mc核验及正式密码/MFA、执行、Trace／日志／页面闭环均未运行、未计通过。需新的同上限本地窗口方可继续实际运行；不自动续开、不运行Hosted、容量或定时，不接管个人服务。
