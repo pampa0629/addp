@@ -2687,6 +2687,76 @@ def raster_flow_accumulation_d8(input_raster, band):
     return _d8_output(source, _d8_accumulation(directions))
 
 
+_D8_WEIGHTED_MESSAGES = {
+    key: (zh.replace('D8 汇流累积', 'D8 加权汇流累积'),
+          en.replace('D8 flow accumulation', 'D8 weighted flow accumulation'))
+    for key, (zh, en) in _D8_ACC_MESSAGES.items() if key != 'overflow'
+}
+_D8_WEIGHTED_MESSAGES.update({
+    'alignment': ('D8 加权汇流累积的方向与权重必须具有相同尺寸、完整仿射网格和等价CRS，请先显式对齐',
+                  'D8 weighted flow accumulation requires direction and weights to have the same dimensions, full affine grid and equivalent CRS; align explicitly'),
+    'weights_band': ('D8 加权汇流累积必须显式选择有效的一基权重数据波段',
+                     'D8 weighted flow accumulation requires an explicit valid one-based weights data band'),
+    'weights_complex': ('D8 加权汇流累积不支持复数权重或复数alpha波段',
+                        'D8 weighted flow accumulation does not support complex weights or complex alpha bands'),
+    'weights_alpha': ('D8 加权汇流累积不能选择alpha波段作为权重',
+                      'D8 weighted flow accumulation cannot use an alpha band as weights'),
+    'weights_scale': ('D8 加权汇流累积前必须显式应用权重scale/offset',
+                      'D8 weighted flow accumulation requires weights scale/offset to be applied first'),
+    'coverage': ('D8 加权汇流累积的方向与权重必须具有完全相同的有效覆盖；缺失或非有限权重不能补零或取交集',
+                 'D8 weighted flow accumulation requires exactly the same effective coverage for direction and weights; missing or nonfinite weights cannot be filled with zero or intersected'),
+    'negative': ('D8 加权汇流累积的有效权重必须为有限非负数，允许合法零',
+                 'D8 weighted flow accumulation requires finite nonnegative effective weights; valid zero is allowed'),
+    'overflow': ('D8 加权汇流累积的权重和超过Float64有限范围',
+                 'D8 weighted flow accumulation sum exceeds the finite Float64 range'),
+})
+
+
+def _d8_weighted_error(code):
+    return ValueError(_D8_WEIGHTED_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_weighted_accumulation(directions, weights):
+    """Propagate upstream sums plus donor weights, never subtract a cell's own weight."""
+    valid, downstream, indegree = _d8_graph(directions, _d8_weighted_error)
+    order = _d8_topological_order(valid, downstream, indegree, _d8_weighted_error)
+    if not np.array_equal(np.isfinite(weights), valid):
+        raise _d8_weighted_error('coverage')
+    if np.any(weights[valid] < 0):
+        raise _d8_weighted_error('negative')
+    sums = np.zeros(directions.size, dtype=np.float64)
+    original = weights.ravel()
+    for cell in order:
+        target = int(downstream[cell])
+        if target < 0:
+            continue
+        value = float(sums[target]) + float(sums[cell]) + float(original[cell])
+        if not math.isfinite(value):
+            raise _d8_weighted_error('overflow')
+        sums[target] = value
+    result = sums.reshape(directions.shape)
+    result[~valid] = np.nan
+    return result
+
+
+def raster_flow_accumulation_weighted_d8(input_raster, weights_raster, band, weights_band):
+    """Sum aligned nonnegative upstream weights, excluding self on the supplied D8 graph."""
+    source, directions, _ = _d8_direction_source(input_raster, band, _d8_weighted_error)
+    weights_source = _open(weights_raster)
+    try:
+        _require_same_grid(source, weights_source)
+    except ValueError as cause:
+        raise _d8_weighted_error('alignment') from cause
+    weights_source = None
+    # This shared reader classifies native NoData/mask/alpha before Float64
+    # conversion; direction-code interpretation belongs to the graph validator.
+    weights_source, weights, _ = _d8_direction_source(weights_raster, weights_band,
+        lambda code: _d8_weighted_error('alignment' if code == 'grid' else 'weights_' + code))
+    unit = weights_source.GetRasterBand(weights_band).GetUnitType()
+    weights_source = None
+    return _d8_output(source, _d8_weighted_accumulation(directions, weights), unit)
+
+
 _D8_LENGTH_MESSAGES = {
     key: (zh.replace('D8 汇流累积', 'D8 下游流长'),
           en.replace('D8 flow accumulation', 'D8 downstream flow length'))
@@ -3036,6 +3106,7 @@ _SPECS = [
     (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
+    (raster_flow_accumulation_weighted_d8, OperatorCategory.RASTER_CELL, 'D8 加权汇流累积', [_INPUT(), _param('weights_raster', 'raster', '同网格、同有效覆盖的有限非负权重输入，不补零或自动对齐', role='input'), _param('band', 'int', '显式方向数据波段'), _param('weights_band', 'int', '显式权重数据波段；上游权重和、不计自身，沿用权重单位')], 'raster', ['read']),
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
@@ -3070,6 +3141,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1})
     if name == 'raster_stream_order_d8':
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
+    if name == 'raster_flow_accumulation_weighted_d8':
+        examples.update({'weights_raster': {'$ref': 'weights'}, 'band': 1, 'weights_band': 1})
     if name == 'raster_nibble':
         examples.update({'band': 1, 'target_values': [7]})
     if name == 'raster_focal_statistics':

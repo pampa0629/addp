@@ -102,6 +102,7 @@
 | DEM 填洼 | raster_load → raster_fill_depressions → raster_save；八邻接、图边／无效区边界开放，输出米制 |
 | DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
 | D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；沿给定方向、不计自身，非法方向／循环失败 |
+| D8 加权汇流累积 | 显式D8方向＋同网格同覆盖权重 → raster_flow_accumulation_weighted_d8 → raster_save；不计自身，权重有限非负，缺失权重／非法路线失败 |
 | D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
 | D8 Strahler 河流分级 | 显式D8流向＋同网格0／1河网掩膜 → raster_stream_order_d8 → raster_save；最高同级入流至少两条才升级，断流失败不补线 |
 | D8 上游最长流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_upstream_d8 → raster_save；汇合取最长中心间路径，统一米制，无入流0，非法方向／循环失败 |
@@ -250,3 +251,5 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 独立 `raster-boundary-clean-persistence` 的 [Hosted 39625363775](https://github.com/pampa0629/addp/actions/runs/39625363775/job/119309061524) 在固定源码 `1b5a26bc1a0a18d0e9133a8b4c4544f7faf277dd` 已通过直接清理、重分类接清理和全无效输入三条 COG 保存链。519×515、旋转 EPSG:4326 六波段样本覆盖零、负类别、安全整数边界及相邻大类别、全图计数并列和无效覆盖；现场独立两阶段全幅 oracle 精确校验完整像元／mask、原网格／CRS、COG／金字塔及未继承 scale／offset／色表。三份 artifact／物理／Meta 大小严格相等且为正整数，分别为 31270／13788／10787 字节，有效像元数为 267227／267227／0；精确自动扫描、普通用户与当前父执行、租户／引擎、资源血缘和 Monitor 一致，源及先前成果不变。非法波段、小数和越界类别三次失败均核对真实 Runtime 诊断，零发布、零新增扫描／派生血缘；工作目录、NFS、Runtime、镜像、部署及 Infra 清理通过。预检与业务 194662 毫秒，保持原 12 权限及独立 600 秒预算。
 
 归档回执、固定版本校验源码和原始日志已独立复核；归档未保留 TIFF 原字节，未作离线成果重读。本结论仅认证 API 保存闭环，不计页面／截图、容量、业务 DELETE、覆盖冲突、双向多轮或细化。同版本 Linux 全量／Platform 尚待已审计终态证据，不以本地 Native 或 Hosted 代替。最终链接和报告哈希见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。
+
+D8加权汇流累积首期已实现，显式双输入、不计自身、非负有限权重、覆盖完全一致及完整D8路线校验见[算子契约](workflow/栅格算子契约.md)。本地标准 `make test-geopython-workflow` 全量 **3296 passed／21 warnings／710.94秒**，0失败／跳过／筛除，进度计数一致且验证输入无漂移；独立逐源路径核完整像元／mask、全1权重与无权累积一致、出口总量守恒，以及真实COG、双语异步失败和清理。Linux全量继续等CI会话回传，独立Hosted尚未授权／运行，不计平台扫描血缘、UI或容量。

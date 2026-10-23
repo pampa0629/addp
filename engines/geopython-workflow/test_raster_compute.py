@@ -7536,3 +7536,291 @@ def test_d8_strahler_discovery_single_route_and_two_required_raster_inputs():
     assert set(params)=={'input_raster','stream_raster','band','stream_band'} and all(p['required'] for p in params.values())
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','stream_raster'))
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}
+
+
+# D8 weighted accumulation: independent per-origin walks, separate from the
+# production indegree/topological propagation and its intermediate sums.
+def _weighted_walk_oracle(directions, weights):
+    offsets = {1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    valid = np.isfinite(directions)
+    result = np.where(valid, 0., np.nan)
+    for start_row, start_col in np.argwhere(valid):
+        row, col = int(start_row), int(start_col)
+        visited = {(row, col)}
+        weight = float(weights[row, col])
+        while directions[row, col] != 0:
+            dy, dx = offsets[directions[row, col]]
+            row, col = row+dy, col+dx
+            assert 0 <= row < directions.shape[0] and 0 <= col < directions.shape[1]
+            assert valid[row,col] and (row,col) not in visited
+            visited.add((row,col)); result[row,col] += weight
+    outlets = directions == 0
+    assert math.fsum(map(float,result[outlets])) + math.fsum(map(float,weights[outlets])) == pytest.approx(math.fsum(map(float,weights[valid])),rel=1e-12,abs=1e-12)
+    return result
+
+
+def _weighted_files(tmp_path, directions, weights, unit='kg'):
+    transform = (500000,2,0,3000000,0,-3)
+    paths = (create_raster(tmp_path/'directions.tif',directions,transform,'EPSG:3857'),
+             create_raster(tmp_path/'weights.tif',weights,transform,'EPSG:3857'))
+    ds=gdal.Open(str(paths[1]),gdal.GA_Update);ds.GetRasterBand(1).SetUnitType(unit);ds=None
+    return paths
+
+
+@pytest.mark.parametrize('seed',range(12))
+@pytest.mark.parametrize('unit',['','kg','foot'])
+def test_d8_weighted_random_forest_complete_oracle_units_and_ones(tmp_path,seed,unit):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);directions=np.zeros((9,11));rows,cols=np.indices(directions.shape)
+    ranks=np.minimum.reduce((rows,cols,8-rows,10-cols))
+    for row,col in np.argwhere(ranks>0):
+        choices=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if ranks[row+dy,col+dx]<ranks[row,col]]
+        directions[row,col]=rng.choice(choices)
+    directions[4,5]=np.nan
+    for row,col in np.argwhere(np.isfinite(directions)&(directions!=0)):
+        dy,dx=_STRAHLER_STEPS[directions[row,col]]
+        if not np.isfinite(directions[row+dy,col+dx]):directions[row,col]=0
+    weights=rng.integers(0,20,size=directions.shape).astype(float)/10;weights[~np.isfinite(directions)]=np.nan
+    paths=_weighted_files(tmp_path,directions,weights,unit);before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        source,values=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        result=compute.raster_flow_accumulation_weighted_d8(source,values,1,1)
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band),_weighted_walk_oracle(directions,weights),rtol=1e-13,atol=1e-13,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetUnitType()==unit and band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.) and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert set(source.workspace.iterdir())==prior|{result.path};band=ds=None
+    ones=np.where(np.isfinite(directions),1.,np.nan)
+    np.testing.assert_array_equal(compute._d8_weighted_accumulation(directions,ones),compute._d8_accumulation(directions))
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('dy,dx,code',[(dy,dx,code) for code,(dy,dx) in _STRAHLER_STEPS.items()])
+def test_d8_weighted_eight_routes_excludes_own_and_counts_zero(dy,dx,code):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    weights=np.where(np.isfinite(directions),5.,np.nan);weights[1,1]=0
+    np.testing.assert_array_equal(compute._d8_weighted_accumulation(directions,weights),_weighted_walk_oracle(directions,weights))
+    weights[1,1]=2.5;actual=compute._d8_weighted_accumulation(directions,weights)
+    assert actual[1,1]==0 and actual[1+dy,1+dx]==2.5
+
+
+@pytest.mark.parametrize('weights',[[2.,3.,5.],[0.,0.,0.],[1.,1e308,0.],[0.,0.,1.7e308]])
+def test_d8_weighted_chain_no_total_minus_self_cancellation(weights):
+    import operators.raster_compute as compute
+    actual=compute._d8_weighted_accumulation(np.array([[1.,1.,0.]]),np.array([weights]))
+    np.testing.assert_array_equal(actual,np.array([[0.,weights[0],weights[0]+weights[1]]]))
+
+
+def test_d8_weighted_cross_blocks_holes_all_invalid_and_real_cog(tmp_path):
+    import operators.raster_compute as compute
+    directions=np.full((515,519),np.nan);directions[508:]=1;directions[508:,-1]=0
+    directions[510,510]=np.nan;directions[510,509]=0
+    rows,cols=np.indices(directions.shape);weights=np.where(np.isfinite(directions),(rows+cols)%13/8,np.nan)
+    paths=_weighted_files(tmp_path,directions,weights);before=[p.read_bytes() for p in paths];target=tmp_path/'weighted.cog.tif'
+    expected=_weighted_walk_oracle(directions,weights)
+    with raster_workspace():
+        result=compute.raster_flow_accumulation_weighted_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+    ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected)
+    np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+    assert ds.GetRasterBand(1).GetUnitType()=='kg';ds=None
+    assert [p.read_bytes() for p in paths]==before
+    empty=np.full((3,4),np.nan)
+    paths=_weighted_files(tmp_path,empty,empty)
+    with raster_workspace():
+        result=compute.raster_flow_accumulation_weighted_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        ds=gdal.Open(str(result.path));assert np.isnan(read_band_values(ds.GetRasterBand(1))).all();assert not ds.GetRasterBand(1).GetMaskBand().ReadAsArray().any();ds=None
+
+
+@pytest.mark.parametrize('role',['direction','weights'])
+@pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_weighted_explicit_both_bands_bilingual(tmp_path,role,band,language):
+    import operators.raster_compute as compute
+    paths=_weighted_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
+    with raster_workspace(),raster_error_language(language):
+        source,weights=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='波段' if language=='zh-cn' else 'band'):
+            compute.raster_flow_accumulation_weighted_d8(source,weights,band if role=='direction' else 1,band if role=='weights' else 1)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('change',['size','origin','pixel','rotation','crs'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_weighted_complete_grid_mismatch_rejected(tmp_path,change,language):
+    import operators.raster_compute as compute
+    paths=_weighted_files(tmp_path,np.array([[1.,0.]]),np.ones((1,3) if change=='size' else (1,2)))
+    ds=gdal.Open(str(paths[1]),gdal.GA_Update);transform=list(ds.GetGeoTransform())
+    if change in ('origin','pixel','rotation'):
+        index={'origin':0,'pixel':1,'rotation':2}[change];transform[index]+=.001;ds.SetGeoTransform(transform)
+    if change=='crs':srs=osr.SpatialReference();srs.ImportFromEPSG(32650);ds.SetProjection(srs.ExportToWkt())
+    ds=None
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError,match='显式对齐' if language=='zh-cn' else 'align explicitly'):
+        compute.raster_flow_accumulation_weighted_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+
+
+@pytest.mark.parametrize('invalid',['nan','inf','negative_inf','nodata','mask','alpha','extra_weight','missing_weight'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_weighted_exact_coverage_no_missing_weight_as_zero(tmp_path,invalid,language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,0.]]);weights=np.ones((1,2))
+    if invalid in ('extra_weight','missing_weight'):directions[0,0]=np.nan
+    if invalid=='missing_weight':weights[:]=np.nan
+    if invalid in ('nan','inf','negative_inf'):weights[0,0]={'nan':np.nan,'inf':np.inf,'negative_inf':-np.inf}[invalid]
+    if invalid=='nodata':weights[0,0]=-99
+    paths=_weighted_files(tmp_path,directions,weights)
+    if invalid in ('nodata','mask','alpha'):
+        ds=gdal.Open(str(paths[1]),gdal.GA_Update);band=ds.GetRasterBand(1)
+        if invalid=='nodata':band.SetNoDataValue(-99)
+        if invalid=='mask':band.CreateMaskBand(gdal.GMF_PER_DATASET);band.GetMaskBand().WriteArray(np.array([[0,255]],dtype=np.uint8))
+        band=ds=None
+        if invalid=='alpha':
+            path=paths[1];ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,2,gdal.GDT_Float64)
+            ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
+            ds.GetRasterBand(1).WriteArray(weights);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).WriteArray(np.array([[0.,255.]]));ds=None
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError,match='有效覆盖' if language=='zh-cn' else 'effective coverage'):compute.raster_flow_accumulation_weighted_d8(*inputs,1,1)
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('role',['direction','weights'])
+@pytest.mark.parametrize('change',['alpha','complex','complex_alpha','scale','offset'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_weighted_data_admission_rejects_implicit_transforms(tmp_path,role,change,language):
+    import operators.raster_compute as compute
+    paths=_weighted_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)));path=paths[role=='weights']
+    ds=gdal.Open(str(path),gdal.GA_Update);band=ds.GetRasterBand(1)
+    if change=='alpha':band.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if change=='scale':band.SetScale(2)
+    if change=='offset':band.SetOffset(1)
+    band=ds=None
+    if change in ('complex','complex_alpha'):
+        ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,2 if change=='complex_alpha' else 1,gdal.GDT_CFloat64)
+        ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt());ds.GetRasterBand(1).WriteArray(np.array([[1+0j,0+0j]]))
+        if change=='complex_alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).Fill(255)
+        ds=None
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths]
+        with pytest.raises(ValueError,match={'alpha':'alpha','complex':'复数' if language=='zh-cn' else 'complex','complex_alpha':'复数' if language=='zh-cn' else 'complex','scale':'scale/offset','offset':'scale/offset'}[change]):compute.raster_flow_accumulation_weighted_d8(*inputs,1,1)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['code','terminal','outside','invalid_target','cycle','negative','overflow'])
+def test_d8_weighted_graph_and_weights_fail_before_output(tmp_path,language,case):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]]);weights=np.ones((1,3))
+    if case=='code':directions[0,0]=3
+    if case=='terminal':directions=np.ones((3,3));directions[:,-1]=0;directions[1,1]=0;weights=np.ones((3,3))
+    if case=='outside':directions[0,-1]=1
+    if case=='invalid_target':directions[0,1]=np.nan;weights[0,1]=np.nan
+    if case=='cycle':directions[0,1]=16
+    if case=='negative':weights[0,1]=-1
+    if case=='overflow':weights[0,:2]=1.7e308
+    paths=_weighted_files(tmp_path,directions,weights)
+    key='target' if case in ('outside','invalid_target') else case
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as caught:compute.raster_flow_accumulation_weighted_d8(*inputs,1,1)
+        assert str(caught.value)==compute._D8_WEIGHTED_MESSAGES[key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('dtype,nodata,valid',[('UInt64',2**53,2**53+1),('Int64',-(2**53),-(2**53)-1)])
+@pytest.mark.parametrize('role',['direction','weights'])
+def test_d8_weighted_native_64bit_nodata_adjacent_value_not_erased(tmp_path,dtype,nodata,valid,role):
+    import operators.raster_compute as compute
+    directions=np.array([[0.,np.nan]]);weights=np.array([[1.,np.nan]])
+    if role=='direction':directions=np.array([[1.,0.]]) ;weights=np.ones((1,2))
+    paths=_weighted_files(tmp_path,directions,weights);path=paths[role=='weights']
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,getattr(gdal,'GDT_'+dtype))
+    ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
+    band=ds.GetRasterBand(1);band.SetNoDataValue(nodata);band.WriteArray(np.array([[valid,nodata]],dtype=np.uint64 if dtype=='UInt64' else np.int64));band=ds=None
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths]
+        if role=='direction' or dtype=='Int64':
+            with pytest.raises(ValueError,match='非法方向码' if role=='direction' else '非负'):compute.raster_flow_accumulation_weighted_d8(*inputs,1,1)
+        else:
+            result=compute.raster_flow_accumulation_weighted_d8(*inputs,1,1);ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.array([[0.,np.nan]]));ds=None
+
+
+def test_d8_weighted_explicit_multiband_same_file_partial_alpha_and_cleanup(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    path=tmp_path/'multi.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,4,gdal.GDT_Float64)
+    ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
+    for i,values in enumerate(([99.,99.,99.],[1.,1.,0.],[2.,3.,5.],[128.,128.,128.]),1):ds.GetRasterBand(i).WriteArray(np.array([values]))
+    ds.GetRasterBand(3).SetUnitType('m3');ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand);ds=None;before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_flow_accumulation_weighted_d8(source,source,2,3)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),[[0.,2.,5.]]);assert ds.GetRasterBand(1).GetUnitType()=='m3';ds=None
+        prior=set(source.workspace.iterdir());real=compute._raster
+        def fail(path):raise RuntimeError('injected weighted wrap failure')
+        monkeypatch.setattr(compute,'_raster',fail)
+        with pytest.raises(RuntimeError,match='injected weighted wrap failure'):compute.raster_flow_accumulation_weighted_d8(source,source,2,3)
+        assert set(source.workspace.iterdir())==prior;monkeypatch.setattr(compute,'_raster',real)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('case',['direct','dem','filled','reclass','empty','negative','coverage','cycle','overflow'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_weighted_async_two_input_cog_composition_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    import operators.raster_compute as compute
+    directions=np.ones((9,11));directions[:,-1]=0;weights=np.tile(np.arange(11,dtype=float)/4,(9,1))
+    if case=='cycle':directions[0,1]=16
+    if case=='empty':directions[:]=np.nan;weights[:]=np.nan
+    if case=='negative':weights[0,0]=-1
+    if case=='coverage':weights[0,0]=np.nan
+    if case=='overflow':weights[:]=1.7e308
+    values=np.tile(np.arange(11,0,-1,dtype=float),(9,1))
+    if case=='filled':values[:]=10;values[1:-1,1:-1]=-2
+    input_values=values if case in ('dem','filled') else directions
+    paths=_weighted_files(tmp_path,input_values,weights,'kg');before=[p.read_bytes() for p in paths];target=tmp_path/'weighted.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[0])}},
+           {'id':'weights','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}}];prior='source';weight_node='weights'
+    if case=='filled':tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='fill'
+    if case in ('dem','filled'):
+        tasks.append({'id':'direction','operator':'raster_flow_direction_d8','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='direction'
+        directions=_d8_bellman_ford_oracle(_fill_level_reachability_oracle(values) if case=='filled' else values)
+    if case=='reclass':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['weights'],'params':{'input_raster':{'$ref':'weights'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':2}]}});weight_node='classes';weights=np.where(weights<1,0.,2.)
+    tasks.extend([{'id':'weighted','operator':'raster_flow_accumulation_weighted_d8','depends_on':[prior,weight_node],'params':{'input_raster':{'$ref':prior},'weights_raster':{'$ref':weight_node},'band':1,'weights_band':1}},
+        {'id':'save','operator':'raster_save','depends_on':['weighted'],'params':{'input_raster':{'$ref':'weighted'},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_flow_accumulation_weighted_d8':workspaces.extend([params['input_raster'].workspace,params['weights_raster'].workspace])
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('negative','coverage','cycle','overflow');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists();assert '任务 weighted 执行失败: '+compute._D8_WEIGHTED_MESSAGES[case][language=='en'] in status['error']
+    else:
+        ds=gdal.Open(str(target));np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),_weighted_walk_oracle(directions,weights),rtol=1e-13,atol=1e-13,equal_nan=True)
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(directions))
+        assert ds.GetRasterBand(1).GetUnitType()==('' if case=='reclass' else 'kg');ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_flow_accumulation_weighted_d8/invoke',json={'params':{}}).status_code==403
+
+
+def test_d8_weighted_discovery_two_inputs_required_and_single_route():
+    spec=next(item for item in list_operators() if item['id']=='raster_flow_accumulation_weighted_d8')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','weights_raster','band','weights_band'} and all(p['required'] for p in params.values())
+    assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','weights_raster'))
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'weights_raster':{'$ref':'weights'},'band':1,'weights_band':1}
