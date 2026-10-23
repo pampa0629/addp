@@ -679,6 +679,8 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 最终中英文窄屏悬停图已逐一核对：`addp-uptime-units-VtugVb/zh-cn.png`、`addp-uptime-units-Fq3pIK/en.png`（与冻结根位于同一 macOS 临时目录父级）。286,435 秒的图轴及悬停显示 3.32 天／days，明细仍为 3 天 7 小时 33 分钟／对应英文；图例和缩放保留。以上为本地 T1/T3、构建／登记，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5，未新跑 T2。未查询／触发／重跑云端 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库；云端验收继续等专门会话回传。清单第 38 行仅补时长趋势显示量级与当前本地验证，历史偶发失败和其他原行缺口不能据此关闭。
 
 
+CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3508f45253d31e9eef9f8` 的 [Platform Monitor frontend Job 120242877828](https://github.com/pampa0629/addp/actions/runs/39901181026/job/120242877828) 已实际执行 `Run Monitor frontend gate` 并成功。Owner 已核对 Job 的提交身份／实际步骤及原始日志：101 项单测、339 项浏览器均通过，失败／跳过为零，构建 10.36 秒；包含 memory／disk／network 中英文六项图例／悬停／缩放及新增两项时长单位场景。原始材料为 `/tmp/addp-ci-20261023-070013/critical-120242877828.json`、`job-120242877828.log`、`Monitor-2cd3-frontend-actual-pass-audit.json`。这是该固定输入的前端 CI 证据，不表示父 Platform workflow 全部通过，不覆盖后续服务独立缩放／进程环比提交、实源告警 T2 或 Hosted；旧输入失败及尚未复现的加载／动画偶发根因继续保留，未重跑任何门禁。
+
 ### 服务实例 CPU/RSS 趋势的独立时间缩放（2026-10-23）
 
 服务趋势弹窗的 CPU、RSS 图分别接入既有共享 ChartRenderer 时间滑块，图旁提供中英文操作提示；两个临时视口独立，不裁剪完整响应、不新增请求或 URL 参数。相同已提交范围的手动／自动刷新保留相对视口；关闭弹窗、切换实例／时段／筛选或身份变化时重置，错误及撤权清除旧图与视口。指标、当前运行实例历史边界、权限及生产采集均未改变。
