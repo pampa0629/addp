@@ -30,6 +30,26 @@ const menus = {
 }
 
 describe('Console navigation access filtering', () => {
+  it('provides both languages for every sidebar and recent-visit menu label', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      const check = entry => {
+        for (const key of [entry.label, entry.recentLabel].filter(Boolean)) {
+          for (const [locale, messages] of [['zh-cn', zhCn], ['en', en]]) {
+            const value = key.split('.').reduce((node, part) => node?.[part], messages)
+            expect(typeof value, `${locale}: ${key}`).toBe('string')
+            expect(value.trim(), `${locale}: ${key}`).not.toBe('')
+          }
+        }
+        for (const child of [...(entry.items || []), ...(entry.children || [])]) check(child)
+      }
+      Object.values(SIDEBAR_MENUS).forEach(check)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('labels the Catalog responsibility queue precisely in both languages', () => {
     expect(zhCn.console.menus.catalog.tasks).toBe('责任治理队列')
     expect(en.console.menus.catalog.tasks).toBe('Responsibility Governance Queue')

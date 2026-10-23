@@ -590,6 +590,7 @@
         "typeDefinitions": "Asset Types",
         "categories": "Categories",
         "assets": "Assets",
+        "applications": "Approval Management",
         "dashboard": "Dashboard",
         "recentCategories": "Asset Directory Management",
         "recentApplications": "Asset Approval Management",
