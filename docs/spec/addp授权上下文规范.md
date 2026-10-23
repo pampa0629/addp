@@ -111,9 +111,9 @@ System 核对已封存且未撤销、未过期的 user 来源授权，排除 Not
 
 ### 5.2.3 精确组成模型快显执行授权
 
-已验收接入范围为真实 FTP／NFS 引擎的 IFC／3DS／DAE 及 MinIO 的 IFC／3DS 单体 GLB 生成，共用精确组成、执行授权与受控暂存链；固定样例与真实运行边界见[验收证据索引](testing/验收证据索引.md)。NFS 仅通过 Provider 读取已核验的普通文件，上述三个格式不再通过宿主挂载路径直传；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 基础扫描完整 XML 上限为 64 MiB，仅认领明确 PNG/JPEG，组成变化须重新批准。其余格式不在本轮迁移范围。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
+已验收接入范围为真实 FTP／NFS 引擎的 IFC／3DS／DAE 及 MinIO 的 IFC／3DS／DAE 单体 GLB 生成，共用精确组成、执行授权与受控暂存链；固定样例与真实运行边界见[验收证据索引](testing/验收证据索引.md)。NFS 仅通过 Provider 读取已核验的普通文件，上述三个格式不再通过宿主挂载路径直传；旧 NFS 产物无正式来源范围时拒绝读取并要求重新生成，不补造组成或授权。DAE 基础扫描完整 XML 上限为 64 MiB，仅认领明确 PNG/JPEG，组成变化须重新批准。其余格式不在本轮迁移范围。普通 User 的当前身份、`manager.derived_artifact.create`、`manager.data_item.read` 和完整 DataItem 组成规则均须成立；不接收客户端自报的 Actor、引擎类型或 Allow。历史人类 ActorOrigin 先由 Manager 保存，不因绑定 EA 覆盖为机器身份；本期不从 Orchestrator 父执行、Service 定义或任务创建人补造来源。
 
-MinIO DAE 本轮按同一精确组成契约接入，运行验收状态另列证据，不沿用此前 IFC／3DS 的通过结论。MinIO 保留 `service → bucket → prefix → object` 的真实目录类型，组成绑定主对象与 Meta 基础扫描确认的精确依赖对象，不把对象伪装成 file。IFC 仅含主对象；3DS／DAE 通过同一格式 Provider 读取主对象结构声明，既不列举授权范围外的前缀，也不读取贴图内容来发现组成。桶根模型、完整 refs 采集与前缀采集沿用同一规则；不完整、变化或无法精确表示的组成拒绝授权。System 准入 MinIO IFC／3DS／DAE 主对象，桶与前缀不能作为模型批准目标。
+MinIO DAE 已按同一精确组成契约通过固定静态样例的本机验收及独立 Hosted 三来源验收，范围见[验收证据索引](testing/验收证据索引.md)；不外推任意模型，授权页面后续共享前端修复的 T3／本机证据与固定 Hosted 源码分开记录。MinIO 保留 `service → bucket → prefix → object` 的真实目录类型，组成绑定主对象与 Meta 基础扫描确认的精确依赖对象，不把对象伪装成 file。IFC 仅含主对象；3DS／DAE 通过同一格式 Provider 读取主对象结构声明，既不列举授权范围外的前缀，也不读取贴图内容来发现组成。桶根模型、完整 refs 采集与前缀采集沿用同一规则；不完整、变化或无法精确表示的组成拒绝授权。System 准入 MinIO IFC／3DS／DAE 主对象，桶与前缀不能作为模型批准目标。
 
 Manager 在每次源读取前以当前执行授权取得精确对象连接并通过 Provider 读取，暂存到本 execution 独占的 Infra 输入后调用 Model3D；Business MinIO 凭据不得传给 Runtime。MinIO IFC／3DS 删除旧来源直传／整前缀复制路径；缺少正式冻结来源的旧产物拒绝读取并要求重新生成，不补造历史授权。临时输入沿用成功、失败、取消和租约失效的清理规则。该契约绑定当前组成及读取资格，不提供对象历史版本授权或多对象一致性快照。
 
