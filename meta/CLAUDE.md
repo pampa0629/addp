@@ -6,7 +6,7 @@ Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execut
 
 ## 模块定位
 
-PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；完整产出授权 T4 另验。
+PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权已通过 Hosted T4，限定范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)，不外推其他产出入口或引擎。
 
 Meta 模块负责从 Engine Catalog 扫描并持久化 DataItem 技术事实，以及元数据查询、对象元数据提取、扫描任务调度和扫描运行记录。Meta 不拥有企业 `CatalogEntry`、业务语义关联、责任或治理状态，也不再向 Asset 提供自动发现接口。企业 Catalog 接入时，Meta 只提供 DataItem fingerprint 为身份的可恢复游标变化源和精确批量读取契约，不同步调用 Catalog，也不保存 `catalog_entry_id` 反向投影。Security 对显式纳管 DataItem 使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts` 精确读取无原值字段事实；无字段的文档则继续使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-sample` 临时读取有界正文样本。两个端点都固定 `addp-security` Client Guard 和 `meta.security_facts.read`，不提供列表或变化订阅；样本不写入 Meta attributes。PostgreSQL table 的 Catalog 变化摘要由 Meta 直接带出结构化 `schema_name + table_name`，供 Catalog 向 Quality 动态解析当前摘要；消费方不得拆分 `full_name` 猜测定位。
 
@@ -42,7 +42,7 @@ meta/
 
 ## 前端执行监控边界
 
-普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；Worker 的 System 采集资格签发与消费另行接入。
+普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；集中治理 PG 整引擎 basic `ScanTask` 已接入 System 采集资格批准与 Worker 当次核验，其他入口不能借用该资格，具体边界见下文“Meta 扫描分层约定”。
 
 冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item、已冻结类型的 whole 根及严格私有 PG 首次产出目标可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
 
@@ -60,7 +60,7 @@ Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使
 
 ## Meta 扫描分层约定
 
-集中治理 `ScanTask` 首期只允许已由 System 明确批准的 PG entire-engine basic：Worker 绑定原始计划摘要与当前 lease，经统一 `SystemServiceClient.CheckMetaCollection` 在首次执行、根目录及每个 schema 枚举前重核。无资格、撤销、到期、任务／引擎配置变化或依赖不可用不得打开下一次源 I/O；首次拒绝写失败终态。定义在排队或运行中删除时仍须结束原 execution，不重建任务摘要，不使缺失定义阻塞队列。深度与其他 selector 未支持时拒绝，不降级。独立交互和可信成果补扫不借用此资格。任务事实只从真实配置投影给固定 System Runtime，不连接源或把事实 200 当 Allow。标准 Meta Go 与 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 覆盖本期事实和失败路径；完整真实拓扑另需 T4，不从既有数据授权验收外推。
+集中治理 `ScanTask` 首期只允许已由 System 明确批准的 PG entire-engine basic：Worker 绑定原始计划摘要与当前 lease，经统一 `SystemServiceClient.CheckMetaCollection` 在首次执行、根目录及每个 schema 枚举前重核。无资格、撤销、到期、任务／引擎配置变化或依赖不可用不得打开下一次源 I/O；首次拒绝写失败终态。定义在排队或运行中删除时仍须结束原 execution，不重建任务摘要，不使缺失定义阻塞队列。深度与其他 selector 未支持时拒绝，不降级。独立交互和可信成果补扫不借用此资格。任务事实只从真实配置投影给固定 System Runtime，不连接源或把事实 200 当 Allow。标准 Meta Go 与 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 覆盖本期事实和失败路径；跨服务 T4 已验证未批准拒绝、批准后两次手动运行、复制任务／功能配置变化／撤销后拒绝及失败清理，见[验收证据索引](../docs/spec/testing/验收证据索引.md)。本轮不证明资格审批页面实操、Cron 触发、资格自然到期或排队／运行中变更竞态，也不外推 deep、其他 selector 或引擎。
 
 Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
@@ -98,7 +98,7 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 `common/datatype` 只处理自身结构和 JSON payload 的相互转换，不承载 attributes 路径语义。Meta 或其他 MetaClient 消费方需要先取出 `type_info.*`、`capabilities.*` 等标准分区，再调用 `datatype.*FromPayload`；写入 attributes 时也由 `metaattr` 决定分区路径。
 
-已知 item 刷新深度必须从统一扫描范围传到运行时和唯一 processor。普通单项刷新 API 显式申请 deep；item selector 的 basic 对原生项只精确 ResolvePath 读取 catalog 低成本摘要，不 Describe、不采样、不列兄弟。已知文件的 basic 保留已登记组成与深度事实，不进行内容格式重探测、容器解析、正文或 hash；需要改变组成时仍须显式扫描必要目录或完整 refs。graph 的 branch-leaf 与 direct-leaf basic 同样只消费 catalog 身份与低成本摘要，不 Describe、不伪造 GraphInfo 或零计数，并保留已有 deep 结构；当前 Describe 均为 deep。本修复不签发读取资格，Worker 的 System Issue/Consume 与源 I/O 守卫另行闭合。现有 Meta Go 自动发现覆盖深度与零内容读取反例，无新增门禁或 CI 路线。
+已知 item 刷新深度必须从统一扫描范围传到运行时和唯一 processor。普通单项刷新 API 显式申请 deep；item selector 的 basic 对原生项只精确 ResolvePath 读取 catalog 低成本摘要，不 Describe、不采样、不列兄弟。已知文件的 basic 保留已登记组成与深度事实，不进行内容格式重探测、容器解析、正文或 hash；需要改变组成时仍须显式扫描必要目录或完整 refs。graph 的 branch-leaf 与 direct-leaf basic 同样只消费 catalog 身份与低成本摘要，不 Describe、不伪造 GraphInfo 或零计数，并保留已有 deep 结构；当前 Describe 均为 deep。上述深度规则不签发读取资格，item／graph 等入口也不在本期 PG 整引擎 basic 集中采集资格范围内，不能由该 T4 外推其源 I/O 授权已闭环。现有 Meta Go 自动发现覆盖深度与零内容读取反例，无新增门禁或 CI 路线。
 
 ### metaattr 输入边界
 
