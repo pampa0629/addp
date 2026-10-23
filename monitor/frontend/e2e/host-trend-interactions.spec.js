@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { identity, node, resourceBackend, setIdentity } from './node-resources.fixture'
+import { identity, node, resourceBackend, setIdentity, mount } from './node-resources.fixture'
 import { trackResourceChart, resourceChartProps, resourceChartState, dragResourceChartZoom,
   clickResourceChartLegend, hoverResourceChartPoint, resourceChartTooltip } from './resource-chart.fixture'
 
@@ -17,9 +17,13 @@ function interactionTrend(body, params, comparison = false) {
     const at = start + index * step * 1000, stamp = new Date(at).toISOString(), key = line.metric_key
     const percent = comparison ? at <= start + width / 2 ? 30 : 40 : index === 0 ? 0 : index + 0.25
     const value = key === 'node.memory.total_bytes' ? 64 * 1024 ** 3 : key === 'node.memory.available_bytes' ? (32 + index / 4) * 1024 ** 3
+      : line.unit === 'load' || line.unit === 'milliseconds' ? index === 0 ? 0 : index / 4 + 0.25
+      : line.unit === 'cores' ? index === 0 ? 0 : 18
+      : line.unit === 'seconds' ? index === 0 ? 0 : 3600 + index * step
+      : line.unit === 'inodes' ? index === 0 ? 0 : 1000 + index
       : line.unit === 'percent' ? percent : (key.includes('write_') || key.includes('transmit_') ? 2 + index / 4 : index / 4) * 1024 ** 2
     const data_state = !comparison && index === 1 && (key.includes('available_') || !key.startsWith('node.memory.')) ? 'no_data'
-      : !comparison && index === 2 && (key.endsWith('used_percent') || key.includes('write_') || key.includes('transmit_') || key.startsWith('node.cpu.')) ? 'stale' : 'valid'
+      : !comparison && index === 2 && (key === 'node.disk.io_busy_percent' || line.unit === 'milliseconds' || key === 'node.cpu.logical_cores' || key.startsWith('node.load.') || key.startsWith('node.filesystem.') || key === 'node.uptime_seconds' || key.endsWith('used_percent') || key.includes('write_') || key.includes('transmit_') || key.startsWith('node.cpu.')) ? 'stale' : 'valid'
     return { evaluated_at: stamp, sampled_at: data_state === 'no_data' ? null : data_state === 'stale' ? new Date(at - 61000).toISOString() : stamp,
       value: data_state === 'no_data' ? null : data_state === 'stale' ? line.unit === 'percent' ? 99.99 : 999999 : value, data_state }
   })
@@ -27,7 +31,7 @@ function interactionTrend(body, params, comparison = false) {
 }
 const reads = state => state.reads.filter(read => read.path.endsWith('/resource_trends'))
 const timestamp = (value, locale) => new Intl.DateTimeFormat(locale, { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value))
-const valueText = (value, unit, locale) => value === null ? '—' : `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} ${unit}`
+const valueText = (value, field, locale) => value === null ? '—' : `${new Intl.NumberFormat(locale, { minimumFractionDigits: field.precision, maximumFractionDigits: field.precision }).format(value)} ${field.unit}`
 async function assertTooltip(page, props, index, locale, hidden = []) {
   await page.mouse.move(0, 0)
   await hoverResourceChartPoint(page, index)
@@ -37,26 +41,45 @@ async function assertTooltip(page, props, index, locale, hidden = []) {
   for (const field of props.config.field_presentations.slice(1)) {
     if (hidden.includes(field.label)) { await expect(tooltip).not.toContainText(field.label); continue }
     await expect(tooltip).toContainText(field.label)
-    await expect(tooltip).toContainText(valueText(props.rows[index][field.field], field.unit, locale))
+    await expect(tooltip).toContainText(valueText(props.rows[index][field.field], field, locale))
   }
 }
 
-for (const locale of ['zh-cn', 'en']) for (const [family, key, device, units, sample] of [
-  ['cpu', 'node.cpu.busy_percent', '', ['%'], [8.25]],
-  ['memory', 'node.memory.used_percent', '', ['GiB', 'GiB', '%'], [64, 34, 8.25]],
-  ['disk', 'node.disk.read_bytes_per_second', 'sda', ['MiB/s', 'MiB/s'], [2, 4]],
-  ['network', 'node.network.receive_bytes_per_second', 'eth0', ['MiB/s', 'MiB/s'], [2, 4]],
-]) test(`${family} legend and hover retain exact values, gaps and scope (${locale})`, async ({ page }) => {
+const interactionCases = [
+  ['cpu', 'node.cpu.busy_percent', {}, ['%'], [8.25]],
+  ['cores', 'node.cpu.logical_cores', {}, ['cores'], [18]],
+  ['disk-busy', 'node.disk.io_busy_percent', { device: 'sda' }, ['%'], [8.25]],
+  ['disk-read-duration', 'node.disk.read_mean_duration_milliseconds', { device: 'sda' }, ['ms'], [2.25]],
+  ['disk-write-duration', 'node.disk.write_mean_duration_milliseconds', { device: 'sda' }, ['ms'], [2.25]],
+  ['memory', 'node.memory.used_percent', {}, ['GiB', 'GiB', '%'], [64, 34, 8.25]],
+  ['disk', 'node.disk.read_bytes_per_second', { device: 'sda' }, ['MiB/s', 'MiB/s'], [2, 4]],
+  ['network', 'node.network.receive_bytes_per_second', { device: 'eth0' }, ['MiB/s', 'MiB/s'], [2, 4]],
+  ...['1m', '5m', '15m'].map(period => [`load-${period}`, `node.load.average_${period}`, {}, ['load'], [2.25]]),
+  ['uptime', 'node.uptime_seconds', {}, ['duration'], [3720 / 3600]],
+  ...['total', 'used', 'available', 'free'].map(kind => [`filesystem-${kind}`, `node.filesystem.${kind}_bytes`, mount, ['MiB'], [2]]),
+  ['filesystem-percent', 'node.filesystem.used_percent', mount, ['%'], [8.25]],
+  ...['total', 'free', 'used'].map(kind => [`inode-${kind}`, `node.filesystem.inodes_${kind}`, mount, ['inodes'], [1008]]),
+  ['inode-percent', 'node.filesystem.inodes_used_percent', mount, ['%'], [8.25]],
+]
+for (const locale of ['zh-cn', 'en']) for (const [family, key, dimensions, units, sample] of interactionCases) test(`${family} legend and hover retain exact values, gaps and scope (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale, trendResponse: interactionTrend })
   await page.setViewportSize({ width: 620, height: 900 })
-  await page.goto(`/node-resources/${node}?metric=${key}&range=5m&refresh=off${device ? `&device=${device}` : ''}`)
+  await page.goto(`/node-resources/${node}?metric=${key}&range=5m&refresh=off&${new URLSearchParams(dimensions)}`)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   await expect.poll(async () => (await resourceChartState(page)).finished).toBe(true)
   const props = await resourceChartProps(page), url = page.url(), requestCount = reads(state).length
   expect(props.rows).toHaveLength(21)
   expect(props.rows[8].evaluated_at).toBe('2026-10-06T23:57:00.000Z')
   expect(props.config.measures.map(measure => props.rows[8][measure])).toEqual(sample)
-  expect(props.config.field_presentations.slice(1).map(field => field.unit)).toEqual(units)
+  expect(props.config.field_presentations.slice(1).map(field => field.unit)).toEqual(units.map(unit => unit === 'load' ? locale === 'en' ? 'tasks' : '个任务' : unit === 'duration' ? locale === 'en' ? 'hours' : '小时' : unit === 'inodes' ? locale === 'en' ? 'inodes' : '个' : unit === 'cores' ? locale === 'en' ? 'cores' : '核' : unit))
+  expect(reads(state).at(-1).query).toMatchObject(dimensions)
+  if (props.config.measures.length === 1) expect(reads(state).at(-1).query.metrics).toBe(key)
+  const measure = props.config.measures[0]
+  if (!['memory', 'disk', 'network'].includes(family)) {
+    expect(props.rows[0][measure]).toBe(0)
+    expect(props.rows[1][measure]).toBeNull()
+    expect(props.rows[2][measure]).toBeNull()
+  }
   const names = props.config.field_presentations.slice(1).map(field => field.label), hidden = names.at(-1)
   await page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true }).click()
   const evidence = await page.getByTestId('resource-evidence').innerText()
@@ -120,9 +143,9 @@ for (const key of ['node.cpu.busy_percent', 'node.memory.used_percent']) test(`l
   expect(reads(state)).toHaveLength(count)
 })
 
-test('query failure and identity revocation remove visible tooltip and old series', async ({ page }) => {
+for (const [key, dimensions] of [['node.memory.used_percent', {}], ['node.load.average_5m', {}], ['node.filesystem.available_bytes', mount], ['node.filesystem.inodes_used_percent', mount]]) test(`query failure and identity revocation remove visible tooltip and old series (${key})`, async ({ page }) => {
   const state = await resourceBackend(page, { trendResponse: interactionTrend })
-  await page.goto(`/node-resources/${node}?metric=node.memory.used_percent&range=5m&refresh=off`)
+  await page.goto(`/node-resources/${node}?metric=${key}&range=5m&refresh=off&${new URLSearchParams(dimensions)}`)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   const props = await resourceChartProps(page)
   await assertTooltip(page, props, 8, 'zh-cn')

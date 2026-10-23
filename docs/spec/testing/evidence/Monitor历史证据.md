@@ -731,3 +731,12 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 代码及规范提交5681227a0，已推送main。标准 make test-infra-runtime-log-lifecycle 退出0：46项当时的入口契约、两份JS语法、完整CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；随后仅加强mc不匹配／缺失镜像用例，最终 make test-monitor-traces-local-runner 退出0，47项入口契约及其余定向检查通过，60项未改输入复用当次有效结果。没有新增测试入口或依赖，现有Platform生命周期及路径登记仍覆盖；未查询或手工调度CI。安全输入摘要与日志见 /tmp/addp-p19-minio-reuse-preparation-20261023/{receipt.json,minio-reuse-lifecycle.log,minio-reuse-final-tests.log}，明确标注为窗口外的确定性准备，actual_minio_binary_verification与formal_identity_closure均为not_run。
 
 当前已具备核验后复用的单一路径；真实MinIO／mc核验及正式密码/MFA、执行、Trace／日志／页面闭环均未运行、未计通过。需新的同上限本地窗口方可继续实际运行；不自动续开、不运行Hosted、容量或定时，不接管个人服务。
+
+
+### 主机固定目录全部图例与悬停交互（2026-10-23）
+
+本批只补齐既有主机资源交互的本地验收，不新增产品指标、算法、权限、接口或部署变更。`host-trend-interactions.spec.js` 沿同一鼠标／图例／缩放 helper，覆盖当前全部 25 项固定指标：CPU 核数／忙碌率、内存三项、1／5／15 分钟负载、运行时长、五项文件系统容量、四项 inode、五项磁盘及两项网卡指标。每种组合实际读取对应采样时间／数值／单位，验证零与缺样／陈旧值、图例隐藏至全隐藏及恢复、缩放后精确悬停、原始图表点／URL／采样明细不变且无额外查询；负载按任务数、inode 与核数按整数，容量／速率和时长沿现有单位。错误／撤权清除补到负载与字节／inode 挂载分支。
+
+冻结基线 `d23233e15e61eb77d5bef576043eef11ec210a99`，证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-interactions-rest-5ixp4m82`；`inputs.json` 记录本批文件，`frontend-inputs-sha256.json` 记录 432 项前端输入，提交前与共享工作区一致。Node v24.19.0 下，最终标准入口 `npm --prefix monitor/frontend run test:e2e -- host-trend-interactions.spec.js` 48/48 通过（`interaction-final-browser.log`，4.2 分钟，42 个中英文指标组合、2 个原比较回归和 4 个错误／撤权场景；不将此前 40 项聚合重复累计）。`npm --prefix monitor/frontend test` 110/110 通过，`make test-frontend-ci-registration` 的 20 项及 21 个前端登记检查通过（`unit.log`、`registration.log`）；原有 Playwright glob 和 Monitor CI 自动覆盖本文件，无需另加编排。42 张窄屏实图保存在 `screenshots/`，负载和 inode 截图已人工核对。
+
+本批仅为受控 HTTP 夹具加真实图表的本地 T3 与 T1／登记证据；产品源码未变，未重建或重跑输入未变的其余模块／前端全集。未运行 T2、真实身份／来源 T4、Hosted 或生产 T5，未追查／重跑 CI、设置定时任务或重启个人服务。历史加载／动画偶发失败仍不能由本次通过推定根因已修复。原表第 38 行图例／悬停本地专项缺口可关闭，真实运行、留存与原行其他缺口保留。
