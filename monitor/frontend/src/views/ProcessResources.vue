@@ -82,7 +82,8 @@
             <section v-for="chart in trendCharts" :key="chart.metric.key">
               <h3>{{ t(`monitor.process.metrics.${chart.metric.name}`) }}</h3>
               <p class="process-hint">{{ t(`monitor.process.hints.${chart.metric.name}`) }}</p>
-              <div class="process-trend-chart" role="img" :aria-label="t(`monitor.process.metrics.${chart.metric.name}`)" :data-testid="`process-trend-${chart.metric.name}`"><ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidTrend" /></div>
+              <p class="process-hint" data-testid="process-zoom-hint">{{ t('monitor.process.trend.zoomHint') }}</p>
+              <div class="process-trend-chart" role="img" :aria-label="t(`monitor.process.metrics.${chart.metric.name}`)" :data-testid="`process-trend-${chart.metric.name}`"><ChartRenderer :rows="chart.rows" :config="chart.config" zoomable :initial-zoom="trendZoom[chart.metric.key] || null" @zoom-change="trendZoom[chart.metric.key] = $event" @invalid="invalidTrend" /></div>
             </section>
           </template>
         </div>
@@ -126,6 +127,7 @@ const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
 const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
 const trend = ref(null), trendErrorKey = ref('')
+const trendZoom = ref({})
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
 let disposed = false
@@ -252,6 +254,8 @@ async function reload({ automatic = false } = {}) {
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
+watch([() => JSON.stringify({ ...state.value.query, refresh: undefined }), identity], () => { trendZoom.value = {} }, { flush: 'sync' })
+watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = {} }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispose() })
 </script>

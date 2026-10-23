@@ -10,15 +10,15 @@ export function trackResourceChart(page) {
   })
 }
 
-export const resourceChartProps = page => page.locator('.chart-renderer').evaluate(element => {
+export const resourceChartProps = (page, chart = page.locator('.chart-renderer')) => chart.evaluate(element => {
   const { rows, config, maxRows, showValueLabels, valueAxes, zoomable } = element.__vueParentComponent.props
   return { rows, config, maxRows, showValueLabels, valueAxes, zoomable }
 })
 
-export const resourceChartState = (page, pointIndex = null) => {
+export const resourceChartState = (page, pointIndex = null, locator = page.locator('.chart-renderer')) => {
   const source = chartModules.get(page)
   if (!source) throw new Error('ECharts core request was not observed')
-  return page.locator('.chart-renderer').evaluate(async (element, { moduleURL, pointIndex }) => {
+  return locator.evaluate(async (element, { moduleURL, pointIndex }) => {
     const { getInstanceByDom } = await import(moduleURL)
     const chart = getInstanceByDom(element), option = chart.getOption()
     const zoom = option.dataZoom?.[0]
@@ -44,10 +44,10 @@ export const resourceChartState = (page, pointIndex = null) => {
   }, { moduleURL: source, pointIndex })
 }
 
-export async function dragResourceChartZoom(page, fraction = 0.95) {
-  await page.locator('.chart-renderer').scrollIntoViewIfNeeded()
-  const box = await page.locator('.chart-renderer').boundingBox()
-  const [left, right] = (await resourceChartState(page)).handles
+export async function dragResourceChartZoom(page, fraction = 0.95, chart = page.locator('.chart-renderer')) {
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  const [left, right] = (await resourceChartState(page, null, chart)).handles
   const y = box.y + left.y
   await page.mouse.move(box.x + left.x, y)
   await page.mouse.down()
@@ -56,25 +56,25 @@ export async function dragResourceChartZoom(page, fraction = 0.95) {
   // Slider input is applied through ECharts' throttled dataZoom dispatch.
   // Wait for the actual model to reach the painted handle range before capture.
   await expect.poll(async () => {
-    const { start, end, handleRange } = await resourceChartState(page)
+    const { start, end, handleRange } = await resourceChartState(page, null, chart)
     return Math.abs(start - handleRange[0]) < 1e-6 && Math.abs(end - handleRange[1]) < 1e-6
   }).toBe(true)
 }
 
 
-export async function clickResourceChartLegend(page, name) {
-  await page.locator('.chart-renderer').scrollIntoViewIfNeeded()
-  const box = await page.locator('.chart-renderer').boundingBox()
-  const item = (await resourceChartState(page)).legend.find(entry => entry.name === name)
+export async function clickResourceChartLegend(page, name, chart = page.locator('.chart-renderer')) {
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  const item = (await resourceChartState(page, null, chart)).legend.find(entry => entry.name === name)
   if (!item) throw new Error(`Legend item not found: ${name}`)
   await page.mouse.click(box.x + item.x, box.y + item.y)
 }
 
-export async function hoverResourceChartPoint(page, pointIndex) {
-  await page.locator('.chart-renderer').scrollIntoViewIfNeeded()
-  const box = await page.locator('.chart-renderer').boundingBox()
-  const { point } = await resourceChartState(page, pointIndex)
+export async function hoverResourceChartPoint(page, pointIndex, chart = page.locator('.chart-renderer')) {
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  const { point } = await resourceChartState(page, pointIndex, chart)
   await page.mouse.move(box.x + point.x, box.y + point.y)
 }
 
-export const resourceChartTooltip = page => page.locator('.chart-renderer > div:not(:has(canvas))')
+export const resourceChartTooltip = (page, chart = page.locator('.chart-renderer')) => chart.locator(':scope > div:not(:has(canvas))')

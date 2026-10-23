@@ -77,6 +77,7 @@ export async function backend(page, options = {}) {
       body = { subject: { kind: 'module_instance', id: row.id, module_name: row.module_name, instance_id: row.instance_id, role: row.role }, node_id: row.node_id, policy_version: 1, lookback_seconds: 300, queried_at: stamp, start: new Date(start).toISOString(), end: params.end, step_seconds: step, series: [
         ['process.cpu.core_equivalents', 'cores', 60, 1.5], ['process.memory.resident_bytes', 'bytes', 0, 1024 ** 3]
       ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: Array.from({ length: Math.floor((end - start) / (step * 1000)) + 1 }, (_, index) => ({ evaluated_at: new Date(start + index * step * 1000).toISOString(), sampled_at: index === 2 ? null : new Date(start + index * step * 1000).toISOString(), value: index === 2 ? null : value, data_state: index === 2 ? 'no_data' : 'valid' })) })) }
+      options.trendResponse?.(body, params)
       if (trendMode === 'wrong-owner') body.subject.instance_id = 'previous-start'
       if (trendMode === 'unavailable' || trendMode === 'denied') { status = trendMode === 'denied' ? 403 : 503; body = { error_code: trendMode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
       if (trendHeld && row.id === 1) await trendHeld
