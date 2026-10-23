@@ -3,6 +3,9 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { node, resourceBackend } from './node-resources.fixture'
+import { trackResourceChart, resourceChartProps, resourceChartZoom, dragResourceChartZoom } from './resource-chart.fixture'
+
+test.beforeEach(({ page }) => trackResourceChart(page))
 
 for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full rate grid and independent missing values (${locale})`, async ({ page }) => {
   const keys = ['node.network.receive_bytes_per_second', 'node.network.transmit_bytes_per_second']
@@ -21,25 +24,8 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
     body.series.reverse()
     if (mode === 'foreign') body.series[0].dimensions.device = 'another-interface'
   } })
-  const chartProps = () => page.locator('.chart-renderer').evaluate(element => {
-    const { rows, config, maxRows, showValueLabels, valueAxes } = element.__vueParentComponent.props
-    return { rows, config, maxRows, showValueLabels, valueAxes }
-  })
-  const zoomState = () => page.locator('.chart-renderer').evaluate(async element => {
-    const source = performance.getEntriesByType('resource').find(entry => /\/echarts_core\.js(?:\?|$)/u.test(entry.name))
-    if (!source) throw new Error('ECharts core module was not loaded')
-    const { getInstanceByDom } = await import(source.name)
-    const chart = getInstanceByDom(element)
-    const option = chart.getOption()
-    // Use painted handle bounds: ECharts includes the move handle in slider layout.
-    const view = chart.getViewOfComponentModel(chart.getModel().getComponent('dataZoom', 0))
-    const handles = view._displayables.handles.map(handle => {
-      const box = handle.getBoundingRect().clone()
-      box.applyTransform(handle.getComputedTransform())
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-    })
-    return { finished: chart.getZr().animation.isFinished(), handles, start: option.dataZoom[0].start, borderColor: option.dataZoom[0].borderColor, lengths: option.series.map(series => series.data.length) }
-  })
+  const chartProps = () => resourceChartProps(page)
+  const zoomState = () => resourceChartZoom(page)
   let savedZoom
   const refresh = () => page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
   await page.setViewportSize({ width: 620, height: 900 })
@@ -72,13 +58,7 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
       console.log(`Network bars screenshot: ${screenshot}`)
     }
     if (range === '7d') {
-      const box = await page.locator('.chart-renderer').boundingBox()
-      const [left, right] = (await zoomState()).handles
-      const y = box.y + left.y
-      await page.mouse.move(box.x + left.x, y)
-      await page.mouse.down()
-      await page.mouse.move(box.x + left.x + (right.x - left.x) * 0.95, y, { steps: 12 })
-      await page.mouse.up()
+      await dragResourceChartZoom(page)
       await expect.poll(async () => (await zoomState()).start).toBeGreaterThan(90)
       savedZoom = (await zoomState()).start
       expect((await zoomState()).lengths).toEqual([984, 984])

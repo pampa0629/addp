@@ -685,10 +685,11 @@
       "evidence": "View sample details",
       "window": "{start} to {end}, evaluation interval {step} seconds",
       "gaps": "Stale, missing and disconnected points appear as gaps.",
+      "zoomHint": "Drag the slider below the chart to zoom into a period; refresh keeps the current view. Zoom only changes the visible chart. Sample details and period comparisons keep their original scope.",
       "memoryCapacity": "Memory capacity",
       "memoryAxes": "Left axis: memory capacity ({unit}); right axis: memory usage (%). Total, available memory and usage have separate series; line heights on different scales are not directly comparable. Values below show the last evaluation in the period.",
       "networkAxis": "Network receive / transmit rate",
-      "networkBars": "Receive and transmit rates of the same interface use grouped bars. Unit: {unit}. Each bar is the average rate over the complete minute before its evaluation, not cumulative traffic. The horizontal axis shows evaluation time. Drag the slider below the chart to zoom into a period, then hover for values. Values below show the last evaluation in the period.",
+      "networkBars": "Receive and transmit rates of the same interface use grouped bars. Unit: {unit}. Each bar is the average rate over the complete minute before its evaluation, not cumulative traffic. The horizontal axis shows evaluation time. Hover for values; values below show the last evaluation in the period.",
       "pairedThroughput": "Compare both directions of the same device. Chart unit: {unit}. Each point is the average rate over the last complete minute, not cumulative traffic. Values below show the last evaluation in the period.",
       "cpuBusyHint": "Average non-idle time across cores over the last minute, including I/O wait and steal time; incomplete windows show no data.",
       "metrics": {

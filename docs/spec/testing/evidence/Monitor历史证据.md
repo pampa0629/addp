@@ -598,3 +598,19 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 初始失败不计通过：新增七天用例曾误写 630 秒／961 点，核对后端既有 plan 后修正为 615 秒／984 点，未改变产品步长、上限或查询；初始滑块测试使用配置坐标偏移，真实渲染手柄中心受图引擎布局影响，点击未命中。运行时绘制边界诊断保留在 `zoom-hit-test.log`；最终从实际绘制手柄取点并执行真实拖动，未增加等待预算、重试或减弱缩放断言。初始失败日志与报告分别保留在 `monitor-browser.log`、`network-zoom-browser.log` 及对应 `addp-monitor-playwright-results-*`；最终等待动画完成避免将过渡帧当稳定实图，未据此修改产品数据或过滤模式。
 
 以上为本地 T1/T3，不计真实来源与身份的 Hosted T4 或生产 T5；未运行完整 Monitor 其他领域浏览器全集，不外推其结果。本轮未查询、触发或重跑云端 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库。CI 和 Hosted 结果等专门会话回传。清单第 38 行仅补网络柱图的局部缩放，第 39 行补网卡速率柱图；不能将全部图表拖拽缩放、图例筛选、资源热力面板及原行其他缺口同时标为完成。
+
+
+### CPU、内存与磁盘趋势复用共享时间缩放（2026-10-23）
+
+主机 CPU、内存和磁盘折线趋势接入既有共享 ChartRenderer 滑块，与网卡柱图沿同一路径保存临时视口。缩放只改变图中可见范围，完整 rows／series、查询窗口／步长、采样明细及相邻时段比较保持不变；说明紧邻图表展示。视口绑定主机、指标组、设备维度、时段、固定锚点、比较模式和当前身份，刷新及主题重绘保留；同组内存指标、同设备读写方向切换保留，不同组或上述范围变化以及查询失败时清空。不新增指标、API、权限、依赖或持久化配置；负载、运行时长、文件系统、服务及引擎图表不在本批接入范围。
+
+本地冻结输入根为 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-time-zoom-io4lexon`，基线 `a53690c9f933e7ca0a6a32f18bfee0a9a6f043e3`，`snapshot` 只叠加本批路径，`inputs-final.json` 记录七项实现／测试／规范的 SHA-256。交付前工作区逐文件一致；期间 main 上其他提交未改变 Monitor 前端、common-frontend 或本批标准测试执行脚本。现有 Make 前端 owner 登记、共享依赖扩散与 Playwright 自动发现覆盖新增场景，无需新增 workflow。
+
+- `make test-common-frontend`：264/264，通过，无失败／跳过（`common.log`）；Monitor `npm test`：101/101，通过（`unit.log`）。共享 renderer 产品代码未再修改。
+- Monitor 标准 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js host-resource-zoom.spec.js resource-comparison.spec.js`：最终 96/96，通过（`browser-final.log`）。新增九项覆盖 CPU／内存／磁盘中英文窄屏、真实鼠标拖动、七天完整 984 点不裁剪、主题及容器尺寸变化、手动／自动刷新后恢复、内存双轴和同设备双方向切换、独立缺样、时段／比较模式／不同指标组切换及查询失败／身份撤销清除；CPU 和内存时段对比仍使用原完整范围，采样明细行数和比较结果不受局部缩放影响。既有主机资源、网卡柱图和时段比较回归同时通过，未把此结果外推整个 Monitor 浏览器全集。
+- Monitor `npm run build` 通过（`build.log`），仅有既有产物 chunk 大小提示；`make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）。
+- 等待图引擎实际绘制动画完成后，逐一核对六张稳定图：中文 CPU／内存／磁盘分别为 `addp-host-zoom-wyeyJO/cpu-zh-cn.png`、`addp-host-zoom-DgobXJ/memory-zh-cn.png`、`addp-host-zoom-dVqTTx/disk-zh-cn.png`，英文分别为 `addp-host-zoom-ZNYrtD/cpu-en.png`、`addp-host-zoom-SsDgoL/memory-en.png`、`addp-host-zoom-xn49JR/disk-en.png`（均在上述冻结输入根的同一 macOS 临时目录父级）。轴、单位、内存双轴、图例、局部时段与滑块均可见，窄屏无横向溢出。
+
+初始新增场景为 8/9，自动刷新场景失败于测试夹具读取不到图引擎模块；日志 `zoom-browser.log` 与报告 `addp-monitor-playwright-results-ymYElk` 保留。查明 Playwright 虚拟时钟同时替换 Performance 的资源读取接口并返回空数组；共享测试 helper 改为从页面实际资源请求记录模块 URL，再查询真实图实例，不保留性能表 fallback，也不改变产品逻辑、等待预算、重试或业务断言。修正后自动刷新专项 1/1（`automatic-zoom.log`），随后上述最终 96 项整组通过；最初失败不计通过。测试时钟只在隔离浏览器验证刷新，不是定时任务。
+
+以上为本地 T1/T3 与构建／登记证据，浏览器使用受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；本批未新跑 T2，原指标口径和来源未变。未查询、触发或重跑 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库；云端结果等专门会话回传。清单第 38 行仅补 CPU／内存／磁盘共享时间缩放子项，不能将所有图表缩放、完整图例交互验收或原行其他缺口一并记为完成。
