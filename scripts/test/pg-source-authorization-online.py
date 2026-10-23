@@ -56,6 +56,8 @@ COLLECTION_CHECKS = ['meta_collection_unapproved_denied', 'meta_collection_appro
 COLLECTION_BROWSER_CHECKS = ['collection_workspace_read_only_navigation', 'collection_browser_exact_task_facts',
     'collection_browser_same_command_recovery', 'collection_browser_record_reload',
     'collection_browser_revoke_and_history', 'collection_browser_worker_boundary']
+COLLECTION_EXPIRY_CHECKS = ['meta_collection_before_expiry_readable', 'meta_collection_natural_expiry_denied',
+                          'meta_collection_expired_replay_preserves_history']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -1042,6 +1044,66 @@ class MetaCollectionScenario:
         require(self.source_snapshot() == before, 'collection browser modified source Grant/Deny rules')
         evidence['source_rules_unchanged'] = True
         report['checks'].extend(COLLECTION_BROWSER_CHECKS)
+
+    def run_expiry(self, report):
+        report['phase'] = 'meta_collection_natural_expiry'
+        evidence = report['meta_collection']['natural_expiry'] = {'executions': {}}
+        before, credential = self.source_snapshot(), self.life.reader.token
+        task = self.create_task('_expiry')
+        facts = self.facts(task['id'])
+        command = str(uuid.uuid4())
+        body = {'command_id': command, 'task_id': str(task['id']),
+                'expected_task_definition_digest': facts['task_definition_digest'],
+                'purpose': 'Disposable PG basic natural qualification expiry',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=45)).isoformat()}
+        self.commands[command] = body  # Unknown POST outcome must still be cleanable.
+        report['meta_collection']['qualification_commands'].append(command)
+        evidence.update(task_id=str(task['id']), command_id=command, task_definition_digest=facts['task_definition_digest'],
+                        expires_at=body['expires_at'])
+        issued = self.life.operator.request('POST', self.route, (201,), body).payload
+        original = self.row(command)
+        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
+                'expiry fixture did not approve one exact qualification')
+        expiry = collection_instant(original['expires_at'])
+
+        def observe_times(outcome, *, before_expiry):
+            run = self.life.reader.request('GET', f'/api/v1/meta/executions/{outcome["execution_id"]}', (200,)).payload
+            require(run.get('execution_id') == outcome['execution_id'] and run.get('source_task_id') == str(task['id'])
+                    and run.get('module') == 'meta' and run.get('task_type') == 'scan'
+                    and run.get('tenant_id') == self.life.tenant and run.get('triggered_by') == int(self.life.recipient)
+                    and run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}
+                    and run.get('status') == outcome['status'], 'expiry execution time observation changed binding')
+            started, completed = collection_instant(run.get('started_at')), collection_instant(run.get('completed_at'))
+            require(started <= completed and (completed < expiry if before_expiry else started >= expiry),
+                    'execution did not occur on the required side of qualification expiry')
+            return dict(outcome, started_at=run['started_at'], completed_at=run['completed_at'])
+
+        evidence['executions']['before'] = observe_times(self.trigger(task['id'], True), before_expiry=True)
+        require(same_collection_row(self.row(command), original), 'pre-expiry run changed qualification history')
+        report['checks'].append(COLLECTION_EXPIRY_CHECKS[0])
+        started_wait = time.monotonic()
+        deadline = started_wait + 75
+        while collection_instant(datetime.now(timezone.utc).isoformat()) < expiry:
+            require(time.monotonic() < deadline, 'qualification natural expiry wait exceeded deadline')
+            time.sleep(1)
+        evidence['waited_ms'] = round((time.monotonic() - started_wait) * 1000, 3)
+        require(self.life.reader.token == credential and self.facts(task['id']) == facts,
+                'natural qualification expiry changed credential or task facts')
+        require(same_collection_row(self.row(command), original), 'manual revocation or renewal replaced natural expiry')
+        replay = self.life.operator.request('POST', self.route, (201,), body).payload
+        rows = [row for row in self.qualification_rows() if row.get('task_id') == str(task['id'])]
+        require(same_collection_row(replay, original) and len(rows) == 1 and same_collection_row(rows[0], original)
+                and same_collection_row(self.row(command), original),
+                'expired approval replay renewed or altered history')
+        # Run only after historical replay, so an accidental revival cannot hide
+        # behind a denial observed before the replay.
+        evidence['executions']['after'] = observe_times(self.trigger(task['id'], False), before_expiry=False)
+        require(self.life.reader.token == credential, 'expiry denial used another credential')
+        report['checks'].append(COLLECTION_EXPIRY_CHECKS[1])
+        require(self.source_snapshot() == before, 'qualification expiry changed source Grant/Deny rules')
+        evidence.update(same_credential=True, history_unchanged=True, source_rules_unchanged=True,
+                        stored_status=original['status'], version=original['version'], no_revocation=True)
+        report['checks'].append(COLLECTION_EXPIRY_CHECKS[2])
 
     def cleanup(self):
         errors = []
@@ -2329,6 +2391,7 @@ def main():
         lifecycle.collection = MetaCollectionScenario(lifecycle, issuer, run_id)
         lifecycle.collection.run(report)
         lifecycle.collection.run_browser(report)
+        lifecycle.collection.run_expiry(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

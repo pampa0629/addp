@@ -1848,6 +1848,7 @@ class MetaCollectionOnlineTest(unittest.TestCase):
     def setUp(self):
         self.tasks, self.qualifications, self.runs, self.calls = {}, {}, {}, []
         self.fault, self.lost = None, None
+        self.expiry_clock = None
         self.reader, self.operator = Mock(), Mock()
         self.life = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
                                      'external-online-consumer', 'private-password')
@@ -1890,6 +1891,9 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 approvals = [row for row in self.qualifications.values() if row['task_id'] == str(task)]
                 state = 'unapproved' if not approvals else 'revoked' if approvals[-1]['status'] == 'revoked' else (
                     'changed' if current['parameters']['force'] else 'allowed')
+                if state == 'allowed' and self.expiry_clock is not None and datetime.fromisoformat(
+                        approvals[-1]['expires_at'].replace('Z', '+00:00')) <= self.expiry_clock.now(timezone.utc):
+                    state = 'expired'
                 if current['name'].endswith('_copy'):
                     state = 'copied'
                 allowed = state == 'allowed' or self.fault == state + '_allowed'
@@ -1900,6 +1904,9 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                     'status': 'success' if allowed else 'failed', 'completed_at': '2026-10-23T00:00:00Z',
                     'metadata': {'items_scanned': 3, 'catalog_nodes_scanned': 2} if allowed else {},
                     'error_details': {} if allowed else {'category': 'connection_failed' if self.fault == 'general_failure' else 'permission_denied'}}
+                if self.expiry_clock is not None:
+                    self.runs[execution].update(started_at=self.expiry_clock.now(timezone.utc).isoformat(),
+                                               completed_at=self.expiry_clock.now(timezone.utc).isoformat())
                 if self.fault == 'wrong_task':
                     self.runs[execution]['source_task_id'] = '999'
                 if self.fault == 'read_before_deny' and not allowed:
@@ -1933,6 +1940,8 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                             granted_at='2026-10-23T00:00:00Z', expires_at=body['expires_at'], granted_by_principal_id='35')
                     elif self.fault == 'replay_revives':
                         self.qualifications[command]['status'] = 'active'
+                    elif self.fault == 'expired_replay_renews':
+                        self.qualifications[command]['expires_at'] = '2099-01-01T00:00:00Z'
                     status, result, operation = 201, self.qualifications[command], 'approve'
                     if self.fault == 'different_timestamp_zone':
                         # The POST's UTC time and a database read's local time
@@ -1971,6 +1980,116 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.assertFalse(self.tasks)
         self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
         self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def collection_expiry_fixture(self, failure=None):
+        self.report['meta_collection'] = {'qualification_commands': []}
+        origin = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        clock = SimpleNamespace(seconds=0.)
+        clock.now = lambda *_: origin + timedelta(seconds=clock.seconds if failure != 'clock_stalled' else 0)
+        def sleep(seconds):
+            clock.seconds += seconds
+            if failure == 'credential_changed': self.reader.token = 'changed-token'
+        self.expiry_clock = clock
+        fake_datetime = Mock(wraps=datetime)
+        fake_datetime.now.side_effect = clock.now
+        patch.object(ONLINE, 'datetime', fake_datetime).start()
+        patch.object(ONLINE.time, 'monotonic', side_effect=lambda: clock.seconds).start()
+        patch.object(ONLINE.time, 'sleep', side_effect=sleep).start()
+        self.reader.token = 'same-reader-token'
+        return clock
+
+    def test_collection_natural_expiry_uses_same_credential_without_revocation_or_renewal(self):
+        self.collection_expiry_fixture()
+        self.scenario.run_expiry(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_EXPIRY_CHECKS)
+        self.assertEqual([x['status'] for x in self.runs.values()], ['success', 'failed'])
+        self.assertTrue(self.report['meta_collection']['natural_expiry']['same_credential'])
+        self.assertTrue(self.report['meta_collection']['natural_expiry']['history_unchanged'])
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+        self.assertEqual(len(self.qualifications), 1)
+        self.assertTrue(all(x['status'] == 'active' and x['version'] == '1' and 'revoked_at' not in x
+                            for x in self.qualifications.values()))
+        self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
+                             for _, method, path, _ in self.calls))
+
+    def test_collection_expiry_rejects_ignored_expiry_general_errors_and_changed_credentials(self):
+        for fault in ('expired_allowed', 'general_failure', 'credential_changed', 'clock_stalled', 'source_changed'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.collection_expiry_fixture(fault)
+                self.fault = fault
+                if fault == 'source_changed': self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_expiry(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_EXPIRY_CHECKS)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_collection_expiry_requires_server_times_on_correct_side_and_exact_execution(self):
+        for fault in ('before_late', 'after_early', 'missing_time', 'wrong_execution', 'wrong_module'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                clock = self.collection_expiry_fixture()
+                original = self.reader.request.side_effect
+                def response(method, url, *args, **kwargs):
+                    result = original(method, url, *args, **kwargs)
+                    # The extra observation used for time proof follows the
+                    # terminal/task-summary verification in trigger().
+                    if method == 'GET' and '/meta/executions/' in url:
+                        count = sum(1 for _, m, p, _ in self.calls if m == 'GET' and p == url)
+                        if count == 2:
+                            run = result.payload
+                            if fault == 'before_late' and clock.seconds == 0:
+                                run['completed_at'] = (clock.now(timezone.utc) + timedelta(seconds=45)).isoformat()
+                            if fault == 'after_early' and clock.seconds >= 45:
+                                run['started_at'] = (clock.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+                            if fault == 'missing_time': run.pop('started_at')
+                            if fault == 'wrong_execution': run['execution_id'] = str(uuid.uuid4())
+                            if fault == 'wrong_module': run['module'] = 'transfer'
+                    return result
+                self.reader.request.side_effect = response
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_expiry(self.report)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+
+    def test_collection_expiry_keeps_cleanup_ownership_after_unknown_approval_or_trigger(self):
+        for operation in ('approve', 'trigger'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.collection_expiry_fixture()
+                self.lost = operation
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_expiry(self.report)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertEqual(len(self.qualifications), 1)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+
+    def test_expired_qualification_replay_must_not_renew_or_blindly_clean_corrupt_binding(self):
+        self.collection_expiry_fixture()
+        self.fault = 'expired_replay_renews'
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'expired approval replay'):
+            self.scenario.run_expiry(self.report)
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
+            self.scenario.cleanup()
+        self.assertTrue(self.tasks)
+
+    def test_manual_qualification_revocation_cannot_stand_in_for_natural_expiry(self):
+        self.collection_expiry_fixture()
+        original = ONLINE.time.sleep.side_effect
+        def revoke_during_wait(seconds):
+            original(seconds)
+            row = next(iter(self.qualifications.values()))
+            row.update(status='revoked', version='2', revoked_at='2030-01-01T00:00:01Z',
+                       revoked_by_principal_id='35', revoked_reason='not natural expiry')
+        ONLINE.time.sleep.side_effect = revoke_during_wait
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'manual revocation'):
+            self.scenario.run_expiry(self.report)
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
 
     def browser_fixture(self, failure=None):
         self.report['meta_collection'] = {'qualification_commands': []}
