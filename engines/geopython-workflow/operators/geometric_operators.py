@@ -356,6 +356,40 @@ def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDat
     )
 
 
+def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report exact isolated point intersections for distinct original feature pairs."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    left, right, points = [], [], []
+    tree = shapely.STRtree(geometry.array)
+    for a, shape in enumerate(geometry.array):
+        candidates = tree.query(shape)
+        for b in np.sort(candidates[candidates > a]):
+            # Intersect whole features, so shared line vertices never become
+            # artificial point diagnostics through segment-by-segment pairing.
+            pending = [shapely.intersection(shape, geometry.array[b])]
+            coordinates = set()
+            while pending:
+                part = pending.pop()
+                if part.geom_type == "Point" and not part.is_empty:
+                    coordinates.add((part.x, part.y))
+                elif part.geom_type in {"MultiPoint", "GeometryCollection"}:
+                    pending.extend(part.geoms)
+            for coordinate in sorted(coordinates):
+                left.append(a)
+                right.append(b)
+                points.append(shapely.Point(coordinate))
+    result = gpd.GeoDataFrame(
+        {"source_id_a": ids.iloc[left].reset_index(drop=True),
+         "source_id_b": ids.iloc[right].reset_index(drop=True)},
+        geometry=gpd.GeoSeries(points, crs=geometry.crs),
+    )
+    _finite_xy_geometry(result, "result")
+    return result
+
+
 def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report degree-one planar network endpoints with all original source IDs."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -590,6 +624,22 @@ CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
     use_cases=["定位部分重合或完全重复的线及双方来源", "检查反向重复线和共线段后由业务确认"],
     notes=["每对按源行位置只输出一次，多段归入一行，每对同一位置长度只计一次", "三条共同重合的线逐对输出三行，长度总和不是全图层去重长度", "长度采用源投影水平单位，不换算米、不忽略微小重合", "点接触不报；不设容差、不检查单要素内部重复、不自动修复或改写源", "不扩展 Quality 规则，保存另接 save；索引及结果驻内存，不承诺固定容量"],
     workflow_example={"id": "check_line_overlaps", "operator": "check_line_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
+
+CHECK_LINE_INTERSECTION_METADATA = OperatorMetadata(
+    name="check_line_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="线交检查", brief_description="逐对报告不同线要素的精确点交会，保留双方来源，只检查不改线",
+    execution_modes=["workflow"], effects=["read"],
+    overview="提取不同线要素间的十字、T形和端点接触。每个要素对的同一 XY 仅输出一次，"
+             "重合线段两端不另报点，不自动判断业务质量或桥隧层级。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个线图层", notes="有效有限二维 LineString/MultiLineString，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何标量列，值非空且唯一；不推断主键或使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id_a/source_id_b/Point，每对逐点去重，保留来源类型和源 CRS", is_default=True)],
+    use_cases=["定位线路交会及双方来源", "核对十字、T形与端点相接的平面事实"],
+    notes=["按源 A/B 行位置、X、Y 排序；三个要素同点相交可输出三对，不按全图层坐标去重", "线点混合交集只取点部分，不把重合线段端点另报为交点", "无容差、精度网格或舍入；不检查单要素内部自交，不生成交会类型或质量结论", "保留源几何、属性和 CRS，不打断、吸附或自动修复；保存另接 save", "候选及成果驻内存，极端配对可平方增长，不承诺固定容量"],
+    workflow_example={"id": "check_crossings", "operator": "check_line_intersection", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
 )
 
 CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
@@ -1222,4 +1272,5 @@ OPERATORS = dict([
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
     register_operator(CHECK_LINE_OVERLAP_METADATA, check_line_overlap),
     register_operator(CHECK_LINE_SELF_OVERLAP_METADATA, check_line_self_overlap),
+    register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),
 ])
