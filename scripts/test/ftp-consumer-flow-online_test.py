@@ -13,6 +13,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import unittest
+import uuid
 import warnings
 import zipfile
 from unittest.mock import patch
@@ -378,6 +379,115 @@ class FTPConsumerTest(unittest.TestCase):
             else:
                 self.assertEqual(output.getvalue(), '')
                 self.assertNotIn('synthetic transport', errors.getvalue())
+
+    def task_deletion_fixture(self):
+        report = {'models': [], 'browser': {'models': []}, 'tenant_id': 2, 'principal_id': '8',
+                  'engine_id': 17, 'denied_generations': []}
+        tasks, details, history = {}, {}, {}
+        for index, kind in enumerate(('ifc', '3ds')):
+            model, published, detail = self.owned_detail(kind)
+            published['task_id'] += index
+            published['result_id'] += index
+            original_execution = published['execution_id']
+            published['execution_id'] = str(uuid.UUID(int=index + 1))
+            detail['storage_ref'] = detail['storage_ref'].replace(original_execution, published['execution_id'])
+            detail.update(task_id=published['task_id'], id=published['result_id'], last_execution_id=published['execution_id'])
+            details[published['result_id']] = detail
+            report['models'].append(model)
+            report['browser']['models'].append(published)
+            denied_id = str(uuid.UUID(int=index + 10))
+            denied = {'format': kind, 'execution_id': denied_id, 'status': 'failed'}
+            report['denied_generations'].append(denied)
+            tasks[published['task_id']] = {
+                'id': published['task_id'], 'tenant_id': 2, 'task_type': 'model_3d_glb_generation',
+                'created_by': 8, 'last_execution_id': denied_id, 'last_execution_status': 'failed',
+                'source': {'item_id': model['item_id'], 'item_fingerprint': model['fingerprint'],
+                           'source_engine_id': 17, 'format': kind}}
+            for row in (published, denied):
+                history[row['execution_id']] = {
+                    'execution_id': row['execution_id'], 'module': 'manager', 'source': 'manager',
+                    'task_type': 'model_3d_glb_generation', 'source_task_id': str(published['task_id']),
+                    'triggered_by': 8, 'status': row.get('status', 'success'), 'completed_at': '2026-10-23T00:00:00Z'}
+        deleted, calls = set(), []
+        def request(method, path, statuses, body=None):
+            calls.append((method, path, statuses, body))
+            if '/tasks/' in path:
+                task_id = int(path.split('/')[6])
+                if method == 'DELETE':
+                    self.assertEqual(statuses, (204,))
+                    deleted.add(task_id)
+                    return SimpleNamespace(payload={})
+                if task_id in deleted:
+                    self.assertEqual(statuses, (404,))
+                    if method == 'POST':
+                        self.assertEqual(body, {'parameters': {'existing_result_action': 'overwrite'}})
+                    return SimpleNamespace(payload={'error': 'task not found'})
+                self.assertEqual(statuses, (200,))
+                return SimpleNamespace(payload=copy.deepcopy(tasks[task_id]))
+            if '/executions/' in path:
+                return SimpleNamespace(payload=copy.deepcopy(history[path.rsplit('/', 1)[1]]))
+            self.assertEqual(method, 'GET')
+            return SimpleNamespace(payload=copy.deepcopy(details[int(path.rsplit('/', 1)[1])]))
+        return report, SimpleNamespace(request=request), tasks, history, deleted, calls
+
+    def test_task_definition_deletion_keeps_exact_results_history_and_other_tasks(self):
+        report, client, _, _, deleted, calls = self.task_deletion_fixture()
+        with patch.object(M, 'exact_user_principal', return_value='8'), \
+                patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows), \
+                patch.object(M, 'verify_cached_results', return_value=['retained-source-denial']) as cached:
+            receipt = M.delete_owned_task_definitions(client, report)
+        self.assertEqual(deleted, {30, 31})
+        self.assertEqual([row['unchanged_remaining_task_ids'] for row in receipt], [[31], []])
+        self.assertEqual([len(row['preserved_execution_ids']) for row in receipt], [2, 2])
+        self.assertTrue(all(row['objects'][0]['exists'] is True for row in receipt))
+        self.assertTrue(all(row['delete_status'] == 204 and row['execute_status'] == 404 for row in receipt))
+        self.assertEqual(report['task_deletion_cached_content'], ['retained-source-denial'])
+        cached.assert_called_once_with(client, report, {'ifc': 403, '3ds': 403})
+        self.assertFalse(any('/model_3d_glb/' in path and method != 'GET' for method, path, _, _ in calls))
+
+    def test_task_definition_delete_refuses_foreign_task_or_unsettled_execution_before_mutation(self):
+        for field in ('created_by', 'tenant_id', 'source', 'execution_owner', 'execution_status'):
+            report, client, tasks, history, deleted, _ = self.task_deletion_fixture()
+            if field == 'source':
+                tasks[31]['source']['source_engine_id'] = 999
+            elif field == 'execution_owner':
+                history[next(iter(history))]['source_task_id'] = '999'
+            elif field == 'execution_status':
+                history[next(iter(history))]['status'] = 'running'
+            else:
+                tasks[31][field] = 999
+            with self.subTest(field=field), patch.object(M, 'exact_user_principal', return_value='8'), \
+                    self.assertRaises(M.SuiteError):
+                M.delete_owned_task_definitions(client, report)
+            self.assertEqual(deleted, set())
+
+    def test_task_definition_delete_rejects_history_or_other_task_changes(self):
+        for kind in ('history', 'other-task'):
+            report, client, tasks, history, deleted, _ = self.task_deletion_fixture()
+            original = client.request
+            def request(method, path, statuses, body=None):
+                response = original(method, path, statuses, body)
+                if method == 'DELETE':
+                    if kind == 'history':
+                        history[next(iter(history))]['status'] = 'failed'
+                    else:
+                        tasks[31]['enabled'] = False
+                return response
+            client.request = request
+            with self.subTest(kind=kind), patch.object(M, 'exact_user_principal', return_value='8'), \
+                    self.assertRaisesRegex(M.SuiteError, 'changed'):
+                M.delete_owned_task_definitions(client, report)
+            self.assertEqual(deleted, {30})
+
+    def test_task_definition_delete_refuses_duplicate_task_and_wrong_user(self):
+        for kind in ('duplicate', 'user'):
+            report, client, _, _, deleted, _ = self.task_deletion_fixture()
+            if kind == 'duplicate':
+                report['browser']['models'][1]['task_id'] = 30
+            with self.subTest(kind=kind), patch.object(M, 'exact_user_principal', return_value='9' if kind == 'user' else '8'), \
+                    self.assertRaises(M.SuiteError):
+                M.delete_owned_task_definitions(client, report)
+            self.assertEqual(deleted, set())
 
     def test_product_delete_uses_original_owned_result_after_source_withdrawal(self):
         model, published, detail = self.owned_detail()

@@ -362,6 +362,78 @@ def verify_owned_model_storage(client, report):
     return proofs
 
 
+def delete_owned_task_definitions(client, report):
+    # Task definitions, execution history and published artifacts have separate
+    # lifecycles. Freeze all exact owners before the first destructive request.
+    require(exact_user_principal(client, report['tenant_id'], PERMISSIONS) == report['principal_id'],
+            'FTP task deletion requires the same ordinary consumer User')
+    models, published_models = report['models'], report['browser']['models']
+    require(len(models) == len(published_models) and
+            len({row['task_id'] for row in published_models}) == len(models) and
+            len({row['result_id'] for row in published_models}) == len(models),
+            'FTP task deletion requires distinct observed tasks and results')
+    plans = []
+    for model, published in zip(models, published_models):
+        require(model['format'] == published['format'], 'FTP task deletion model order differs')
+        path = f"/api/v1/manager/tasks/model_3d_glb_generation/{published['task_id']}"
+        task = client.request('GET', path, (200,)).payload
+        latest = latest_owner_execution(report, model['format'])
+        require(isinstance(task, dict) and all(task.get(key) == value for key, value in {
+            'id': published['task_id'], 'tenant_id': report['tenant_id'],
+            'task_type': 'model_3d_glb_generation', 'created_by': int(report['principal_id']),
+            'last_execution_id': latest['execution_id'], 'last_execution_status': latest['status']}.items()) and
+            all(task.get('source', {}).get(key) == value for key, value in {
+                'item_id': model['item_id'], 'item_fingerprint': model['fingerprint'],
+                'source_engine_id': report['engine_id'], 'format': model['format']}.items()),
+            'FTP task deletion refused an unowned or changed task definition')
+        detail = owned_model_details(client, report, model, published)
+        observed = [published, *[row for row in report.get('denied_generations', [])
+                                 if row['format'] == model['format']]]
+        if report.get('failed_generation', {}).get('format') == model['format']:
+            observed.append(report['failed_generation'])
+        history = {}
+        for row in observed:
+            identifier = row['execution_id']
+            execution = client.request('GET', f'/api/v1/manager/executions/{identifier}', (200,)).payload
+            require(isinstance(execution, dict) and all(execution.get(key) == value for key, value in {
+                'execution_id': identifier, 'module': 'manager', 'source': 'manager',
+                'task_type': 'model_3d_glb_generation', 'source_task_id': str(published['task_id']),
+                'triggered_by': int(report['principal_id']), 'status': row.get('status', 'success')}.items()) and
+                execution.get('completed_at') and execution.get('parent_execution_id') is None,
+                'FTP task deletion requires settled owned execution history')
+            history[identifier] = execution
+        plans.append({'path': path, 'task': task, 'model': model, 'published': published,
+                      'detail': detail, 'history': history})
+    deleted = []
+    for index, plan in enumerate(plans):
+        path, published, model = plan['path'], plan['published'], plan['model']
+        client.request('DELETE', path, (204,))
+        client.request('GET', path, (404,))
+        rejection = client.request('POST', path + '/execute', (404,),
+                                   {'parameters': {'existing_result_action': 'overwrite'}}).payload
+        require(isinstance(rejection, dict) and bool(rejection.get('error')) and
+                'execution_id' not in rejection,
+                'FTP deleted task must reject execution without creating an execution response')
+        for remaining in plans[index + 1:]:
+            require(client.request('GET', remaining['path'], (200,)).payload == remaining['task'],
+                    'FTP task deletion changed another owned task')
+        require(owned_model_details(client, report, model, published) == plan['detail'],
+                'FTP task deletion changed the retained result')
+        for identifier, before in plan['history'].items():
+            require(client.request('GET', f'/api/v1/manager/executions/{identifier}', (200,)).payload == before,
+                    'FTP task deletion changed or removed execution history')
+        objects = verify_physical_objects([{**object_ref(plan['detail']['storage_ref']), 'exists': True,
+                                           'size': published['size'], 'sha256': published['sha256']}])
+        deleted.append({'format': model['format'], 'task_id': published['task_id'], 'delete_status': 204,
+                        'detail_status': 404, 'execute_status': 404, 'preserved_result_id': published['result_id'],
+                        'preserved_execution_ids': sorted(plan['history']),
+                        'unchanged_remaining_task_ids': [row['task']['id'] for row in plans[index + 1:]],
+                        'objects': objects})
+    report['task_deletion_cached_content'] = verify_cached_results(
+        client, report, {model['format']: 403 for model in models})
+    return deleted
+
+
 def delete_owned_models(client, report):
     deleted = []
     for model, published in zip(report['models'], report['browser']['models']):
@@ -1178,6 +1250,8 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
     save_completed_phase(report, 'source_withdrawal_denials')
     report['withdrawn_browser'] = run_browser(report, withdrawn=True)
     save_completed_phase(report, 'withdrawn_browser')
+    report['deleted_task_definitions'] = delete_owned_task_definitions(client, report)
+    save_completed_phase(report, 'task_definition_deletion')
     report['deleted_models'] = delete_owned_models(client, report)
     save_completed_phase(report, 'model_deletion')
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
