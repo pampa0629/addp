@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'line-self-intersections.gpkg':
+        return m.line_self_intersection_expected_features()
     if name == 'line-intersections.gpkg':
         return m.line_intersection_expected_features()
     if name == 'line-self-overlaps.gpkg':
@@ -264,3 +266,27 @@ class TopologyFixtureTest(unittest.TestCase):
             elif kind=='dimension':rows[0]['geometry']['coordinates'].append(1)
             elif kind=='nonfinite':rows[0]['geometry']['coordinates'][0]=float('nan')
             with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_line_intersection_features(rows)
+
+    def test_line_self_intersection_oracle_binds_original_id_and_isolated_points_only(self):
+        original=m.line_self_intersection_expected_features()
+        self.assertEqual(len(m.line_self_intersection_source_features()),16);self.assertEqual(len(original),15)
+        m.validate_line_self_intersection_features(original)
+        m.validate_line_self_intersection_features(m.line_self_intersection_source_features(),source=True)
+        self.assertEqual(original[9]['geometry'],original[10]['geometry'])
+        self.assertNotEqual(original[9]['properties'],original[10]['properties'])
+        for kind in ('missing','extra','duplicate','order','source','fid','coordinate','tiny','dimension','nonfinite','overlap-point','seam','global-dedup'):
+            rows=copy.deepcopy(original)
+            if kind=='missing':rows.pop()
+            elif kind=='extra':rows.append(copy.deepcopy(rows[0]))
+            elif kind=='duplicate':rows[1]=copy.deepcopy(rows[0])
+            elif kind=='order':rows.reverse()
+            elif kind=='source':rows[0]['properties']['source_id']='重复'
+            elif kind=='fid':rows[0]['properties']['source_id']='1'
+            elif kind=='coordinate':rows[0]['geometry']['coordinates'][0]+=1
+            elif kind=='tiny':rows[8]['geometry']['coordinates'][0]=0
+            elif kind=='dimension':rows[0]['geometry']['coordinates'].append(1)
+            elif kind=='nonfinite':rows[0]['geometry']['coordinates'][0]=float('nan')
+            elif kind=='overlap-point':rows.append({'properties':{'source_id':'叠支'},'geometry':{'type':'Point','coordinates':[902,140]}})
+            elif kind=='seam':rows.append({'properties':{'source_id':'环缝'},'geometry':{'type':'Point','coordinates':[870,140]}})
+            elif kind=='global-dedup':rows.pop(10)
+            with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_line_self_intersection_features(rows)

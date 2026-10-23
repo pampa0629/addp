@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,51 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def line_self_intersection_source_features():
+    tiny=2**-40
+    rows=[('自蝴',[[800,140],[802,142],[800,142],[802,140]]),
+          ('回访',[[820,140],[821,140],[821,141],[820,141],[821,140],[822,140]]),
+          ('部接',[[[840,140],[844,140]],[[842,139],[842,141]],[[844,140],[845,141]]]),
+          ('常零',[[860,140],[861,140],[861,140],[862,141]]),
+          ('环缝',rectangle(870,140,872,142)),
+          ('重复',[[[880,140],[881,140],[882,140]],[[880,140],[881,140],[882,140]]]),
+          ('叠支',[[[900,140],[904,140]],[[902,140],[906,140]],
+                   [[901,139],[901,141]],[[902,139],[902,141]],[[903,139],[903,141]],
+                   [[904,139],[904,141]],[[905,139],[905,141]]]),
+          ('邻返',[[[920,140],[924,140],[920,140]],[[922,139],[922,141]]]),
+          ('叠独',[[[940,140],[944,140]],[[942,140],[946,140]],[[943,139],[943,141]],
+                   [[950,140],[952,142],[950,142],[952,140]]]),
+          ('微点',[[[0,160],[1,160]],[[0,159],[0,161]],[[tiny,159],[tiny,161]]]),
+          ('同甲',[[980,140],[982,142],[980,142],[982,140]]),
+          ('同乙',[[980,140],[982,142],[980,142],[982,140]]),
+          ('近线',[[[1000,140],[1004,140]],[[1000,140+tiny],[1004,140+tiny]]]),
+          ('外甲',[[1020,140],[1024,140]]),('外乙',[[1022,139],[1022,141]]),
+          ('部环',[[[1040,140],[1042,140]],[[1042,140],[1042,142]],
+                   [[1042,142],[1040,142]],[[1040,142],[1040,140]]])]
+    multipart={'部接','重复','叠支','邻返','叠独','微点','近线','部环'}
+    return [{'properties':{'route_key':identity,'note':f'self-intersection-original-{index}'},
+             'geometry':{'type':'MultiLineString' if identity in multipart else 'LineString','coordinates':points}}
+            for index,(identity,points) in enumerate(rows)]
+
+
+def line_self_intersection_expected_features():
+    # Handwritten isolated original XY: no production intersection/union oracle.
+    rows=[('自蝴',[(801,141)]),('回访',[(821,140)]),('部接',[(842,140),(844,140)]),
+          ('叠支',[(901,140),(905,140)]),('叠独',[(951,141)]),
+          ('微点',[(0,160),(2**-40,160)]),('同甲',[(981,141)]),('同乙',[(981,141)]),
+          ('部环',[(1040,140),(1040,142),(1042,140),(1042,142)])]
+    return [{'properties':{'source_id':identity},'geometry':{'type':'Point','coordinates':list(point)}}
+            for identity,points in rows for point in points]
+
+
+def validate_line_self_intersection_features(features, source=False):
+    return _validate_point_features(features,line_self_intersection_source_features() if source else line_self_intersection_expected_features())
+
+
+def verify_line_self_intersection(path, source=False):
+    return _verify_point_features(path,line_self_intersection_source_features() if source else line_self_intersection_expected_features(),source)
 
 
 def line_intersection_source_features():
@@ -591,6 +636,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'line-self-intersections.gpkg':
+        return validate_line_self_intersection_features(features)
     if name == 'line-intersections.gpkg':
         return validate_line_intersection_features(features)
     if name == 'line-self-overlaps.gpkg':
@@ -637,6 +684,7 @@ def worker(action, root):
         seed_line_overlap(root / 'line-overlap-input.gpkg')
         _seed_linear(root / 'line-self-overlap-input.gpkg', line_self_overlap_source_features())
         _seed_linear(root / 'line-intersection-input.gpkg', line_intersection_source_features())
+        _seed_linear(root / 'line-self-intersection-input.gpkg', line_self_intersection_source_features())
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -657,8 +705,12 @@ def worker(action, root):
     verify_line_overlap(root / 'line-overlap-input.gpkg', source=True)
     verify_line_self_overlap(root / 'line-self-overlap-input.gpkg', source=True)
     verify_line_intersection(root / 'line-intersection-input.gpkg', source=True)
+    verify_line_self_intersection(root / 'line-self-intersection-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'line-self-intersections.gpkg':
+            results[name] = verify_line_self_intersection(path)
+            continue
         if name == 'line-intersections.gpkg':
             results[name] = verify_line_intersection(path)
             continue
