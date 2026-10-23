@@ -289,7 +289,8 @@ class Lifecycle:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
             if args[0] == 'du':
-                self.last_failure['du_missing_file'] = b'No such file or directory' in raw
+                diagnostics=[line for line in raw.decode(errors='replace').splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
+                self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
             raise GateError('command_failed_' + str(p.returncode))
         return raw.decode(errors='replace')
 
@@ -314,18 +315,11 @@ class Lifecycle:
         with self.sample_lock:
             return self._sample()
 
-    def reclaim_cache(self, args):
-        # Reclamation can unlink a file while du is traversing it. Serialize
-        # this run's explicit deletions with measurements; keep the extra wait
-        # below one second so the four-second scan still fits five seconds.
-        with self.sample_lock:
-            self.check()
-            self.command(args, timeout=.75)
-            self._sample()
-
     def _sample(self):
         began = time.monotonic()
         deadline = began+4
+        retries={'volume':0,'private':0}
+        if hasattr(self,'measurement_failure'):del self.measurement_failure
         def remaining():
             value=deadline-time.monotonic()
             require(value>0, 'resource_sample_deadline_exceeded')
@@ -363,19 +357,30 @@ class Lifecycle:
                 self.sampler_started = True
                 self.sampler_volumes = volumes
             self.sample_operation = 'measure_owned_volumes'
-            measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
-                'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
-            try:
-                total = int(float(measured))
-            except (ValueError, OverflowError):
+            while True:
+                measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
+                    'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
+                lines=measured.splitlines()
+                if len(lines)==1 and re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',measured):
+                    total=int(float(measured));break
                 self.measurement_failure = {'output_sha256':hashlib.sha256(measured.encode()).hexdigest(),
-                    'line_count':len(measured.splitlines()),'du_diagnostic':any(line.startswith('du:') for line in measured.splitlines())}
+                    'line_count':len(lines),'du_diagnostic':any(line.startswith('du:') for line in lines)}
+                diagnostics=[line for line in lines if not re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',line)]
+                if diagnostics and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics):
+                    retries['volume']+=1;remaining();continue
                 raise GateError('owned_volume_measurement_invalid') from None
         self.sample_operation = 'measure_private_bindings'
-        total += self.owned_bind_bytes(timeout=remaining())
+        while True:
+            try:
+                total += self.owned_bind_bytes(timeout=remaining());break
+            except GateError:
+                if not getattr(self,'last_failure',{}).get('du_missing_file'):raise
+                retries['private']+=1;remaining()
+        if hasattr(self,'measurement_failure'):del self.measurement_failure
+        if getattr(self,'last_failure',{}).get('du_missing_file'):del self.last_failure
         now = time.monotonic()
         self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'sample_duration_seconds': round(now-began, 3), 'cpu_hard_limit': cpu,
-                             'memory_hard_limit_bytes': memory, 'volume_allocated_bytes': total})
+                             'memory_hard_limit_bytes': memory, 'volume_allocated_bytes': total,'complete_scan_retries':retries})
         require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
 
     def monitor(self):
@@ -545,7 +550,7 @@ def build(life):
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
-    life.reclaim_cache(['rm','-rf',str(life.checkout/'.cache/go-build')])
+    shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
     life.phase='product_images'
     services=BACKENDS+FRONTENDS
     references=[f'localhost:5001/addp-{name}:{life.run_id}' for name in services]
@@ -556,7 +561,7 @@ def build(life):
                       ' --registry localhost:5001 --tag '+life.run_id],env=build_env,timeout=600)
         # Only this run's cache is pruned, keeping the approved disk stop line
         # meaningful without accumulating nine independent npm build trees.
-        life.reclaim_cache(['docker','buildx','prune','--builder',life.builder,'--all','--force'])
+        life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     images={name:life.docker('image','inspect',tag,'--format','{{.Id}}').strip() for name,tag in zip(services,references)}
     life.builder_stopped=True
     life.docker('buildx','stop',life.builder)

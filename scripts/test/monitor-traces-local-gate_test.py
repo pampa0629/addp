@@ -358,23 +358,31 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertNotIn('PRIVATE-SENTINEL',json.dumps(life.resource_failure))
             self.assertEqual(life.samples,[])
 
-    def test_explicit_cache_reclamation_and_measurement_share_lock_and_short_budget(self):
+    def test_disappeared_volume_file_requires_a_complete_rescan(self):
         with tempfile.TemporaryDirectory() as directory:
-            life = bare_lifecycle(directory)
-            observed=[]
-            def command(args, **kwargs):
-                self.assertFalse(life.sample_lock.acquire(blocking=False))
-                self.assertLessEqual(kwargs['timeout'],1)
-                observed.append('delete')
-            def sample():
-                self.assertFalse(life.sample_lock.acquire(blocking=False))
-                observed.append('measure')
-            life.command=command; life._sample=sample
+            life,calls=self.sample_lifecycle(directory,1024)
+            docker=life.docker;values=iter(['du: owned: No such file or directory\n512','1024'])
+            life.docker=lambda *args,**kw: next(values) if args[0]=='exec' else docker(*args,**kw)
             with mock.patch.object(m.time,'monotonic',return_value=1):
-                life.reclaim_cache(['rm','-rf','/owned/cache'])
-            self.assertEqual(observed,['delete','measure'])
-            self.assertTrue(life.sample_lock.acquire(blocking=False))
-            life.sample_lock.release()
+                life.sample()
+            self.assertEqual(life.samples[-1]['volume_allocated_bytes'],1024)
+
+    def test_disappeared_private_file_requires_a_complete_rescan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=self.sample_lifecycle(directory,1024)
+            life.last_failure={'du_missing_file':True}
+            life.owned_bind_bytes=mock.Mock(side_effect=[m.GateError('command_failed_1'),2048])
+            with mock.patch.object(m.time,'monotonic',return_value=1):life.sample()
+            self.assertEqual(life.samples[-1]['volume_allocated_bytes'],3072)
+
+    def test_continuous_file_churn_exhausts_original_sample_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=self.sample_lifecycle(directory,'du: owned: No such file or directory\n512')
+            tick=[0]
+            def now():tick[0]+=.1;return tick[0]
+            with mock.patch.object(m.time,'monotonic',side_effect=now):
+                with self.assertRaisesRegex(m.GateError,'resource_sample_deadline_exceeded'):life.sample()
+            self.assertEqual(life.samples,[])
 
     def test_every_resource_sampling_command_has_a_short_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
