@@ -249,7 +249,7 @@ class LocalTraceIsolationTests(unittest.TestCase):
     def test_telemetry_configuration_probes_use_product_mounts_identity_and_no_network(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.docker=mock.Mock(return_value='verified')
-            life.deployment_documents={name:{'image':'pinned-'+name,'user':'501:20','cap_drop':['ALL'],
+            life.deployment_documents={name:{'image':'pinned-'+name,'user':'501:20','cap_drop':['ALL'],'command':['-config.file=/etc/loki/runtime.yml','-config.expand-env=true'],
                 'environment':{'TEST_KEY':'private-placeholder'},'volumes':[{'type':'bind','source':directory,'target':'/configuration','read_only':True}]} for name in ('loki','trace-query')}
             m.verify_telemetry_configuration(life)
             self.assertEqual(life.docker.call_count,2)
@@ -280,7 +280,6 @@ class LocalTraceIsolationTests(unittest.TestCase):
     def test_setup_deployment_input_is_accepted_by_actual_product_renderer(self):
         renderer_spec=importlib.util.spec_from_file_location('trace_platform_renderer',m.ROOT/'scripts/prod/generate-trace-platform.py')
         renderer=importlib.util.module_from_spec(renderer_spec);renderer_spec.loader.exec_module(renderer)
-        class RenderComplete(Exception):pass
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);env={'ADDP_TRACE_DEPLOYMENT_DIR':str(life.work/'deployment')}
             def command(args,**kwargs):
@@ -295,10 +294,15 @@ class LocalTraceIsolationTests(unittest.TestCase):
                     config=json.loads((life.work/'deployment/platform-traces.json').read_text())
                     self.assertEqual(set(config['services']),set(m.BACKENDS))
                     self.assertEqual(len(config['services']['monitor-backend']['volumes']),2)
-                    raise RenderComplete()
+                elif args[:2]==['docker','compose']:
+                    services={name:{'environment':{},'volumes':[]} for name in m.BACKENDS+m.FRONTENDS+m.TRACE+('postgres','redis')}
+                    services['postgres'].update(command=[],volumes=[{'type':'volume','source':'postgres-data','target':'/data'}])
+                    services['trace-query']['user']='0:0'
+                    return json.dumps({'services':services})
                 else:raise AssertionError(args)
             life.command=command
-            with self.assertRaises(RenderComplete):m.prepare_deployment_documents(life,env)
+            documents=m.prepare_deployment_documents(life,env)
+            self.assertEqual(documents['trace-query']['user'],str(os.getuid())+':'+str(os.getgid()))
 
     def document(self):
         return {'system-backend': {

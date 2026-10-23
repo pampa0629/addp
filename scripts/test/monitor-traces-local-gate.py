@@ -631,7 +631,7 @@ def verify_telemetry_configuration(life):
         for mount in service.get('volumes',[]):
             if mount['type']=='bind':args+=['--mount',f'type=bind,source={mount["source"]},target={mount["target"]},readonly']
         for key,value in service.get('environment',{}).items():args+=['-e',key+'='+str(value)]
-        if name=='loki':args += [service['image'],'-config.file=/etc/loki/runtime.yml','-config.expand-env=true','-verify-config=true']
+        if name=='loki':args += [service['image'],*service['command'],'-verify-config=true']
         else:args += ['--add-host','tempo:127.0.0.1','--entrypoint','nginx',service['image'],'-t']
         life.docker(*args,timeout=30)
 
@@ -653,6 +653,9 @@ def prepare_deployment_documents(life, env):
         life.phase='isolated_deployment_compose_'+('infra' if filename=='docker-compose.infra.yml' else 'product' if filename=='docker-compose.yml' else 'traces')
         doc=json.loads(life.command(['docker','compose','--env-file','/dev/null','-f',filename,'config','--format','json'],env=env))
         documents.update({name:doc['services'][name] for name in names})
+    # The query proxy has no capabilities. Match its private TLS owner like
+    # the standard Trace T2, rather than running a capability-less root master.
+    documents['trace-query']['user']=str(os.getuid())+':'+str(os.getgid())
     # The same product PostgreSQL image owns the synthetic read-only query source.
     documents['business-postgres']=copy.deepcopy(documents['postgres'])
     documents['business-postgres']['environment'].update(POSTGRES_DB='trace_fixture')
