@@ -38,7 +38,7 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
       box.applyTransform(handle.getComputedTransform())
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     })
-    return { handles, start: option.dataZoom[0].start, borderColor: option.dataZoom[0].borderColor, lengths: option.series.map(series => series.data.length) }
+    return { finished: chart.getZr().animation.isFinished(), handles, start: option.dataZoom[0].start, borderColor: option.dataZoom[0].borderColor, lengths: option.series.map(series => series.data.length) }
   })
   let savedZoom
   const refresh = () => page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
@@ -66,6 +66,7 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
     expect(reads.at(-1).query).toMatchObject({ metrics: keys.join(','), device: 'eth0' })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     if (range === '5m' || range === '7d') {
+      await expect.poll(async () => (await zoomState()).finished).toBe(true)
       const screenshot = join(mkdtempSync(join(tmpdir(), 'addp-network-bars-')), `${locale}-${range}.png`)
       await page.getByTestId('resource-chart').screenshot({ path: screenshot, animations: 'disabled' })
       console.log(`Network bars screenshot: ${screenshot}`)
@@ -85,6 +86,7 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
       await page.evaluate(() => document.documentElement.style.setProperty('--addp-border-color', 'rgb(20, 30, 40)'))
       await expect.poll(async () => (await zoomState()).borderColor).toBe('rgb(20, 30, 40)')
       expect((await zoomState()).start).toBeCloseTo(savedZoom, 2)
+      await expect.poll(async () => (await zoomState()).finished).toBe(true)
       const screenshot = join(mkdtempSync(join(tmpdir(), 'addp-network-bars-')), `${locale}-7d-zoom.png`)
       await page.getByTestId('resource-chart').screenshot({ path: screenshot, animations: 'disabled' })
       console.log(`Network bars screenshot: ${screenshot}`)
@@ -99,6 +101,15 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
   await page.getByTestId('resource-metric').click()
   await page.getByRole('option', { name: locale === 'en' ? 'Network transmit throughput' : '网络发送吞吐', exact: true }).click()
   await expect(page).toHaveURL(url => url.searchParams.get('metric') === keys[1] && url.searchParams.get('device') === 'eth0' && url.searchParams.get('range') === '7d')
+  expect((await zoomState()).start).toBeCloseTo(savedZoom, 2)
+  await page.getByTestId('resource-range').click()
+  await page.getByRole('option', { name: locale === 'en' ? 'Last 5 minutes' : '近 5 分钟', exact: true }).click()
+  await expect.poll(async () => (await chartProps()).rows.length).toBe(21)
+  expect((await zoomState()).start).toBe(0)
+  await page.getByTestId('resource-range').click()
+  await page.getByRole('option', { name: locale === 'en' ? 'Last 7 days' : '近 7 天', exact: true }).click()
+  await expect.poll(async () => (await chartProps()).rows.length).toBe(984)
+  expect((await zoomState()).start).toBe(0)
   await page.reload()
   await page.getByText(locale === 'en' ? 'View sample details' : '查看采样明细', { exact: true }).click()
   await expect(page.getByTestId('resource-evidence')).toContainText('2.00 MiB/s')

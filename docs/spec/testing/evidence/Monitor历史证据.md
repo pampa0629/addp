@@ -580,3 +580,21 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 八次实际启动中，首轮报告写入异常使用明确标注的人工复查回执，其余七份自动报告全部为 failed 且清理通过；均未创建业务部署、未准备正式身份、未发送成功／失败查询，也未进行真实 Console／Trace／日志闭环。`local-final-receipt.json` 汇总每次报告哈希、停止阶段、资源记录与独立清理复查；当次容器、网络、卷、构建器和私有目录残留均为零。全部原始安全报告、准备门禁日志及输入摘要位于 `/tmp/addp-p19-formal-local-20261023/`。因此整体仍为部分实现，正式身份验收未执行；不是业务链路失败或通过的证明。后续优先在同样 8 CPU／12 GiB／4 GiB 停止线下确认一个新的最长 60 分钟本地窗口，先核对采样稳定性，再执行正式身份闭环；未经确认不续开窗口，不运行 Hosted、容量或定时，不接管个人服务。
 
 代码提交 `d4b31264dc7308ca7b1b7479e9b697a97580b16b` 推送后单次只读核对：[Platform CI 39881617580](https://github.com/pampa0629/addp/actions/runs/39881617580) 与 [Release/T2 39881617528](https://github.com/pampa0629/addp/actions/runs/39881617528) 均为 queued，不计为通过；安全回执 `ci-receipt.json`。没有手工调度任何 workflow 或设置后续跟踪。
+
+
+### 网卡收发速率柱状展示与局部缩放（2026-10-23）
+
+主机网卡趋势复用共享 ChartRenderer，以并排柱状显示同一网卡的接收／发送速率。保持现有完整一分钟平均字节速率、原时段、原步长和评估点，不换算累计量、分钟分桶流量或带宽利用率；图旁说明口径与末次值，轴显示 IEC 速率单位。真实零值保留，陈旧／缺样独立为 null；错误设备、网格错位、预算错误及撤权继续清除旧趋势。磁盘保持折线，内存保持双轴。共享展示属性 maxRows 显式允许该有界视图最多 1,000 行，其他柱图默认仍为 500，Workbench 持久化契约不变。密集常显数值标签关闭，tooltip 与采样明细保留数值及单位。
+
+近千组柱在窄屏全窗会成为密集概览，因此同一共享 renderer 提供本地缩放滑块。缩放保留全部 rows 与 series 数据，不触发请求或重算指标；临时 start/end 通过共享事件交宿主保存，刷新同一图表恢复，切换主机／网卡／时段／身份或查询失败时清空。组件通过既有主题变量绘制滑块，主题重绘保留当前相对视口，不新增持久化、接口、权限、依赖版本或后端开关。
+
+本地冻结输入：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-network-bars-gate-k95pp9k0`，基线 `79751c6233d7650a50db7ae060ccdc91a43ba624`，最终实现与测试摘要见 `inputs-final.json`／`snapshot-final`。期间共享版本提交 `9e5fa266b`（v0.1.24）已包含产品实现；交付前逐文件核对，当前工作区实现与冻结输入相同，最终测试增强和本节另行提交。
+
+- `make test-common-frontend`：最终 264/264，通过，无失败／跳过；覆盖默认上限不变、显式上限类型／边界／超限拒绝、饼图拒绝覆盖、完整结果约束、隐藏标签仍保留零／null／tooltip、缩放保留全数据及主题颜色（`common-final.log`）。
+- Monitor `npm test`：101/101，通过（`monitor-unit-final.log`）。沿标准浏览器入口 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js`：最终 69/69，通过（`browser-final.log`）；随后仅增强绘图动画完成等待和时段切换重置断言，`npm run test:e2e -- network-bars.spec.js` 最终 2/2，通过（`network-settled-browser.log`），其余 67 项输入未变、沿有效证据复用。覆盖中英文 620 像素窄屏、5 分钟 21 点／1 小时 241 点／24 小时 961 点／7 天 984 点、乱序响应、原步长与单位、各方向独立缺样／陈旧值排除、真实零值、切换方向及采样明细、错误设备／预算失败后恢复；既有磁盘、内存双轴与撤权回归同时通过。
+- 缩放使用实际鼠标拖动绘制出的滑块手柄，确认不新增请求，完整两组 984 点仍保留；主题重绘和刷新恢复视口，切换时段及查询错误清空视口。最终截图等待图引擎动画实际完成，已核对中英文五分钟及七天局部稳定绘图：`addp-network-bars-EXT7Am/zh-cn-5m.png`、`addp-network-bars-MPmUTl/zh-cn-7d-zoom.png`、`addp-network-bars-8UKtyV/en-5m.png`、`addp-network-bars-n2SGks/en-7d-zoom.png`（均位于同一 macOS 临时目录父级）。
+- Monitor `npm run build` 通过（`build-final.log`）；`make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）。现有共享依赖发现、Monitor 前端 Make 入口与 Playwright 自动发现覆盖新增 spec，无需新增 workflow。
+
+初始失败不计通过：新增七天用例曾误写 630 秒／961 点，核对后端既有 plan 后修正为 615 秒／984 点，未改变产品步长、上限或查询；初始滑块测试使用配置坐标偏移，真实渲染手柄中心受图引擎布局影响，点击未命中。运行时绘制边界诊断保留在 `zoom-hit-test.log`；最终从实际绘制手柄取点并执行真实拖动，未增加等待预算、重试或减弱缩放断言。初始失败日志与报告分别保留在 `monitor-browser.log`、`network-zoom-browser.log` 及对应 `addp-monitor-playwright-results-*`；最终等待动画完成避免将过渡帧当稳定实图，未据此修改产品数据或过滤模式。
+
+以上为本地 T1/T3，不计真实来源与身份的 Hosted T4 或生产 T5；未运行完整 Monitor 其他领域浏览器全集，不外推其结果。本轮未查询、触发或重跑云端 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库。CI 和 Hosted 结果等专门会话回传。清单第 38 行仅补网络柱图的局部缩放，第 39 行补网卡速率柱图；不能将全部图表拖拽缩放、图例筛选、资源热力面板及原行其他缺口同时标为完成。
