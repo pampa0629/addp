@@ -315,6 +315,14 @@ class Lifecycle:
         with self.sample_lock:
             return self._sample()
 
+    def stop_builder(self):
+        self.builder_stopped=True
+        self.docker('buildx','stop',self.builder)
+        rows=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
+        self.builder_stop_states=[{'id':r['Id'],'status':r['State'].get('Status'),
+            'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
+        validate_resources(rows,self.builder_ids)
+
     def _sample(self):
         began = time.monotonic()
         deadline = began+4
@@ -328,7 +336,12 @@ class Lifecycle:
         ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
         self.sample_operation = 'inspect_owned_containers'
         rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
-        cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
+        try:
+            cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
+        except GateError:
+            self.failed_container_states=[{'id':r['Id'],'service':(r.get('Config',{}).get('Labels') or {}).get('com.docker.compose.service'),
+                'status':r['State'].get('Status'),'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
+            raise
         self.sample_operation = 'list_owned_volumes'
         volumes = self.owned('volume', timeout=remaining())
         if self.builder_ids:
@@ -518,6 +531,10 @@ def build(life):
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
     require(len(ids) == 1, 'owned_builder_identity_missing')
     life.builder_ids = set(json.loads(life.docker('inspect', *ids))[0]['Id'] for _ in [0])
+    life.phase='builder_stop_guard_preflight'
+    life.stop_builder()
+    life.builder_stopped=False
+    life.docker('buildx','inspect',life.builder,'--bootstrap')
     life.sample()
     life.thread = threading.Thread(target=life.monitor, daemon=True)
     life.thread.start()
@@ -563,8 +580,7 @@ def build(life):
         # meaningful without accumulating nine independent npm build trees.
         life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     images={name:life.docker('image','inspect',tag,'--format','{{.Id}}').strip() for name,tag in zip(services,references)}
-    life.builder_stopped=True
-    life.docker('buildx','stop',life.builder)
+    life.stop_builder()
     life.phase='browser_dependencies'
     version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']
     life.browser_image='mcr.microsoft.com/playwright:v'+version+'-noble'
@@ -728,6 +744,8 @@ def main():
         if hasattr(life,'source_commit'):report['source_commit']=life.source_commit
         if hasattr(life,'minio_provenance'):report['minio_product']=life.minio_provenance
         if hasattr(life,'resource_failure'):report['resource_guard_failure']=life.resource_failure
+        if hasattr(life,'failed_container_states'):report['failed_container_states']=life.failed_container_states
+        if hasattr(life,'builder_stop_states'):report['builder_stop_states']=life.builder_stop_states
         errors=life.cleanup()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'
