@@ -651,6 +651,12 @@
       "createUnknown": "The save outcome is unknown. Close this dialog and refresh the list to verify it before creating another configuration."
     },
     "resources": {
+      "heatmap": {
+        "title": "Resource heatmap",
+        "scale": "Usage: low → high",
+        "viewTrend": "View trend for {resource}",
+        "noPartitions": "No partition usage is available."
+      },
       "associatedHost": "Associated host",
       "unboundHost": "No associated host",
       "collection": {

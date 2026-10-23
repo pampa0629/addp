@@ -56,9 +56,21 @@ test('opt-in, refresh, reload, opt-out and close keep one canonical query withou
   await page.reload()
   await expect(page.getByTestId('process-compare-cpu-change')).toBeVisible()
   expect(state.trendCalls).toHaveLength(4)
+  let releaseOptOut, waitingForSummary = false, blockSummary = true
+  const optOutSummary = new Promise(resolve => { releaseOptOut = resolve })
+  await page.route('**/api/v1/monitor/platform/process_resource_summaries*', async route => {
+    if (blockSummary) { waitingForSummary = true; await optOutSummary }
+    await route.fallback()
+  })
   await page.getByTestId('process-compare').uncheck()
   await expect(page.getByTestId('process-comparison-cpu')).toHaveCount(0)
   await expect(page).not.toHaveURL(/compare=/)
+  // The route clears comparison before fresh summaries can anchor the new query.
+  await expect.poll(() => waitingForSummary).toBe(true)
+  expect(state.trendCalls).toHaveLength(4)
+  expect(state.trendCalls.at(-1).start).toBe('2026-10-09T23:50:15Z')
+  blockSummary = false; releaseOptOut()
+  await expect.poll(() => state.trendCalls.length).toBe(5)
   expect(state.trendCalls.at(-1).start).toBe('2026-10-09T23:55:15Z')
   await page.getByTestId('process-compare').check()
   await expect(page.getByTestId('process-compare-cpu-change')).toBeVisible()

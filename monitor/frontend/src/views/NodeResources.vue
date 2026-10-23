@@ -36,6 +36,7 @@
       <el-button v-if="node && canReadAlerts" @click="openRelatedAlerts" data-testid="host-related-alerts">{{ t('monitor.platformAlerts.related') }}</el-button>
       <p v-if="loading" role="status">{{ t('common.loading') }}</p>
       <h3 v-if="instant && state.end">{{ t('monitor.resources.current') }}</h3>
+      <HostResourceHeatmap v-if="instant" :instant="instant" :filesystems="filesystems" :filesystem-error-key="filesystemErrorKey" :filesystem-message="filesystemMissingMessage" :loading="loading" @select="entry => entry.dimensions ? selectFilesystem(entry) : selectTrend('metric', entry.metric)" />
       <section v-if="instant" class="resource-cards" :aria-label="t('monitor.resources.current')">
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
@@ -169,6 +170,7 @@ import AutoRefreshControl from '../../../../common-frontend/basic/src/components
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
+import HostResourceHeatmap from '../components/HostResourceHeatmap.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'

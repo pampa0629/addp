@@ -758,6 +758,21 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 用户同日确认原一次性 `platform-node-metrics` 临时平台管理员限定用途增加当次主机 TCP 当前值、趋势和同一真实 Console 页面。规范与标准 runner 已同步精确十项标量；仅为多出的 TCP 选中与恢复两轮各六读，将原 174 项收据上限调整为 186，仍严格拒绝未授权指标、重复／缺失、错误节点或 query。总预算、密码／MFA、独立 Prometheus、节点范围、无租户业务及退出清零保持原约束。本会话没有触发或轮询 CI／Hosted，没有设置定时任务或重启个人服务；真实身份／来源 T4 及 CI 等专门会话回传，生产 T5 未运行。原表第 37 行（B36，主机实时资源总览列表）的 TCP 指标能力已落地，但主机列表仍只展示核心摘要，综合健康评分与完整总览列仍未实现；第 38 行（B37，资源趋势曲线图）新增 TCP 本地证据，不由本次结果推导留存、长期比较或其他真实运行范围通过。
 
 
+## 主机资源热力面板（本地）
+
+2026-10-23，主机详情新增 Monitor 领域组合组件 `HostResourceHeatmap.vue`，复用已授权的即时 CPU 忙碌率、内存使用率和每个完整设备／挂载点／文件系统身份的使用率；不新增采集、接口、查询、权限或持久状态。百分比沿原指标与共享格式化，不从容量重新推导；CPU 保留一分钟窗口，每项就近展示原状态与采样时间。有效使用率按 0～100% 连续混合现有主题绿／红色，基础进度条复用 Element Plus；合法零和 100% 有效，陈旧／缺样不着色、不补零。未采集分区和来源失败显示原原因，分区不可用不抹除可读 CPU／内存。完整挂载身份保留于色块及趋势导航，CPU／内存导航清除挂载维度。没有综合健康分、颜色告警阈值或新增资源规则。
+
+冻结基线及本批文件见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-heatmap-s0n4pjbs/final-inputs.json`；最终 436 项前端／共享／浏览器入口输入记录在 `final-frontend-inputs-sha256.json`。初始完整回归的产品输入相同，仅本次新增测试的刷新同步／截图检查和服务环比测试的请求同步随后修订，完整回归输入另记 `full-frontend-inputs-sha256.json`，不把两次输入混为一份。
+
+- `make test-monitor-frontend`：完整批次执行 111 项 T1，通过 407 项浏览器用例、失败 2 项，命令退出 2，未执行其后的构建（`frontend-full.log`）。两项分别为新热力用例在刷新完成前挂起下一轮，以及既有服务环比用例在取消比较后、尚未取得新摘要与趋势请求前断言上一条请求。最后仅修正这两个测试文件，产品及共享输入未变；最终 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js process-comparison.spec.js` 的 19/19 项通过（`final-affected-browser.log`，4 项热力及 15 项服务比较）。其余 390 项未变用例复用上述完整批次有效结果，不将完整入口先前的非零结果写成最终全量重新通过，也不重复累计交叠用例。服务用例用受控挂起唯一 `process_resource_summaries` 响应，证明 UI 已取消比较时旧请求仍在；释放后必须新增且只新增一条正确五分钟趋势请求，再核对起点。受控探针初轮误指向不存在的 observations 端点，失败记录保留在 `final-affected-browser-before-endpoint-fix.log`，已改为 API 客户端实际使用的 summaries，未改产品请求或数据口径。
+- `npm --prefix monitor/frontend test`：111 项 T1 通过（`unit.log`）。
+- 最终标准 `npm --prefix monitor/frontend run test:e2e -- host-resource-heatmap.spec.js`：4/4 浏览器 T3 通过（`heatmap-final-verified.log`），覆盖中英文精确数值／原挂载比例、相同挂载点的不同设备／文件系统、窄屏、主题变量动态变化、合法零／满量程、无额外请求、当前指标／完整挂载导航、陈旧／缺样不着色、分区故障后恢复、未采集、权限拒绝及身份切换后迟到响应清除。初轮失败为测试对 URL 编码和现有缺源文案的错误预期、夹具改写未采集状态，以及在上一轮刷新完成前挂起下一轮所造成的测试自锁；最终使用解析后的 URL、原文案／数据状态并在挂起前等待既有刷新按钮可用，未增加产品重试或改变刷新逻辑。
+- `npm --prefix monitor/frontend run build`：最终构建通过（`build-final.log`）；未修改后端/API/Swagger，无需重建后端或新增 T2。
+- `make test-frontend-ci-registration`：20 项检查及 21 个前端登记通过（`registration.log`）。原 Monitor Playwright glob 和前端 CI 自动覆盖新增组件／用例，无新增标准入口或 workflow；未触发或轮询 CI。
+
+`screenshots/` 保留最终中英文浅色／深色窄屏面板实图，已人工核对中文浅色布局与单位。T3 使用受控 HTTP 夹具与真实组件，未操作个人 Safari 或重启个人服务；未运行真实身份／来源页面 Hosted、T4 或生产 T5，CI 和 Hosted 等专门会话回传，未设置定时任务。原表第 39 行（B38，主机底层资源明细）的热力面板能力已实现；该行的完整硬件汇总／分区健康判定及新增页面真实运行证据仍需分别核对，不能由本批界面色彩推定健康判定或告警通过。
+
+
 ### 正式身份本地第三窗口：镜像核验、守卫修复与部署配置拒绝（2026-10-23）
 
 用户重新授权窗口为北京时间19:18:00–20:18:00，上限仍为8 CPU／12 GiB、全部当次卷及私有可写目录4 GiB停止线。六次尝试共用这一绝对截止时间，没有按重试续时。标准入口均为 `make test-monitor-traces-local`；未运行Hosted、容量模型或定时任务，未接管个人开发服务。

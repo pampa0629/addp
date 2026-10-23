@@ -651,6 +651,12 @@
       "createUnknown": "采集配置保存结果待核实，请关闭窗口并刷新列表，确认后再操作，避免重复创建。"
     },
     "resources": {
+      "heatmap": {
+        "title": "资源热力面板",
+        "scale": "使用率：低 → 高",
+        "viewTrend": "查看{resource}趋势",
+        "noPartitions": "暂无可用的分区使用率。"
+      },
       "associatedHost": "关联主机",
       "unboundHost": "未关联主机",
       "collection": {
