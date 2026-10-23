@@ -1,4 +1,5 @@
 import client from './client'
+import queryExecutionClient from './queryExecutionClient'
 
 export default {
   // 服务管理 CRUD
@@ -25,7 +26,7 @@ export default {
 
   // 图查询执行端点
   executeQuery(serviceName, data) {
-    return client.post(`/gquery/${serviceName}`, data)
+    return queryExecutionClient.post(`/api/gquery/${serviceName}`, data)
   },
 
   // 获取 Neo4j 引擎列表（通过 system 模块）

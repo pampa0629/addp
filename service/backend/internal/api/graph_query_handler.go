@@ -225,8 +225,8 @@ func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 
 // ===== 数据执行 API =====
 
-// ExecuteQuery POST /api/graph/:serviceName
-// 公开端点（认证可选）：从 JWT 中提取 tenantID；若无 token 则 tenantID=0（要求 public_access=true）
+// ExecuteQuery POST /api/gquery/:serviceName
+// 公开端点（认证可选）：Bearer 经 System 解析 AuthContext；匿名访问要求 public_access=true。
 // @Summary 执行图查询服务 | Execute graph query service
 // @Tags GraphQueryExecution
 // @Accept json

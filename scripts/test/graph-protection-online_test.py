@@ -79,6 +79,100 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_service_graph_requires_exact_native_rows_and_no_output_on_protection_failure(self):
+        good = {'rows_count': 3, 'columns': ['id', 'name'], 'rows': [
+            {'id': 'p1', 'name': 'Fixture one'}, {'id': 'p2', 'name': 'Fixture two'}, {'id': 'p3', 'name': 'Fixture three'}]}
+        SUITE.verify_service_graph_result(good)
+        for field, value in [('rows_count', 0), ('rows', good['rows'][:2]), ('columns', ['other'])]:
+            with self.subTest(field=field), self.assertRaises(SUITE.SuiteError):
+                SUITE.verify_service_graph_result(dict(good, **{field: value}))
+        denied = {'error': 'service data protection gate is required: protected resource read set is unresolved'}
+        SUITE.verify_service_graph_denial(denied)
+        for bad in ({'error': 'connection failed'}, dict(denied, rows=[]), dict(denied, graph_data={}), {}):
+            with self.subTest(bad=bad), self.assertRaises(SUITE.SuiteError): SUITE.verify_service_graph_denial(bad)
+
+    def test_service_browser_requires_current_identity_original_address_and_actual_evidence(self):
+        definition = {'id': 31, 'service_name': 'service_graph_run', 'endpoints': {'execute': 'http://127.0.0.1:8000/api/gquery/service_graph_run'}}
+        with tempfile.TemporaryDirectory() as folder:
+            environment = {'ADDP_ONLINE_ARTIFACT_DIR': folder, 'ADDP_ONLINE_TEST_RUN_ID': 'graph-run',
+                           'GATEWAY_URL': 'http://127.0.0.1:8000', 'CONSOLE_URL': 'http://127.0.0.1:18080',
+                           'ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN': 'service-secret', 'ADDP_ONLINE_GRAPH_ENGINE': 'neo4j'}
+            user = {'principal_id': '5', 'permissions': ['service.definition.read'], 'administrator': False}
+            def launch(command, **kwargs):
+                self.assertIn('ordinary Service graph reader', command)
+                self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
+                expected = json.loads(kwargs['env']['ADDP_ONLINE_SERVICE_GRAPH_EXPECTATIONS'])
+                payload = dict(expected, schema_version='addp.service-graph-browser/v1', result='passed',
+                               permissions=['service.definition.read'], page_origin=environment['CONSOLE_URL'],
+                               page_path='/api/gquery/service_graph_run', dto_address_unchanged=True, user_bearer=True,
+                               exact_request=True, result_visible=phase == 'unmanaged', protection_refused=phase == 'protected',
+                               browser_errors=0, unexpected_writes=0, release_assets=True, public_https_verified=False)
+                payload.update(mutation)
+                Path(kwargs['env']['ADDP_ONLINE_SERVICE_GRAPH_REPORT']).write_text(json.dumps(payload))
+                if screenshot: Path(folder, f'service-graph-{phase}-console.png').write_bytes(b'test-image')
+                return type('Process', (), {'returncode': 0})()
+            for phase in ('unmanaged', 'protected'):
+                for mutation, screenshot in [({}, True), ({'principal_id': '4'}, True), ({'dto_address_unchanged': False}, True),
+                                             ({'public_https_verified': True}, True), ({'exact_request': 1}, True),
+                                             ({'protection_refused': phase != 'protected'}, True), ({}, False)]:
+                    report = {'identities': {'reader': {'principal_id': '4'}}}
+                    with self.subTest(phase=phase, mutation=mutation, screenshot=screenshot), patch.dict(SUITE.os.environ, environment), \
+                         patch.object(SUITE, 'identity', return_value=user), patch.object(SUITE.subprocess, 'run', side_effect=launch):
+                        if mutation or not screenshot:
+                            with self.assertRaises(SUITE.SuiteError): SUITE.run_service_graph_browser(report, definition, 2, phase)
+                        else: self.assertTrue(SUITE.run_service_graph_browser(report, definition, 2, phase)['user_bearer'])
+
+    def test_service_graph_phase_checks_auth_state_aliases_and_unmodified_dto_address(self):
+        definition = {'id': 31, 'service_name': 'service_graph_run', 'endpoints': {'execute': 'http://127.0.0.1:8000/api/gquery/service_graph_run'}}
+        rows = {'rows_count': 3, 'columns': ['id', 'name'], 'rows': [
+            {'id': 'p1', 'name': 'Fixture one'}, {'id': 'p2', 'name': 'Fixture two'}, {'id': 'p3', 'name': 'Fixture three'}]}
+        for phase in ('unmanaged', 'protected'):
+            calls = []
+            class Client:
+                def __init__(self, base_url='', token='', timeout=30): self.token = token
+                def request(self, method, path, expected, body=None, **kwargs):
+                    calls.append((method, path, expected, body, kwargs))
+                    value = definition if method == 'GET' else {}
+                    if method == 'POST' and expected in ((200,), (500,)):
+                        value = rows if phase == 'unmanaged' else {'error': 'service data protection gate is required: protected resource read set is unresolved'}
+                    return SUITE.SUPPORT.Response(expected[0], value)
+            environment = {'GATEWAY_URL': 'http://127.0.0.1:8000', 'SERVICE_URL': 'http://127.0.0.1:8086',
+                           'ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN': 'service-secret'}
+            with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'Client', Client), patch.object(SUITE, 'run_service_graph_browser', return_value={}):
+                result = SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
+                self.assertEqual(result['http_status'], 200 if phase == 'unmanaged' else 500)
+                if phase == 'unmanaged':
+                    self.assertEqual([call[2][0] for call in calls if call[0] == 'POST'], [200, 401, 401, 404, 404, 400, 200])
+                    self.assertTrue(all(call[4].get('raw_response') for call in calls if call[2] == (404,)))
+                with patch.dict(definition['endpoints'], execute='http://wrong.test/api/gquery/service_graph_run'), self.assertRaises(SUITE.SuiteError):
+                    SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
+
+    def test_service_browser_failure_still_deletes_the_service_definition(self):
+        deleted = []
+        class Client:
+            next_graph = 0
+            def request(self, method, path, expected, body=None):
+                if method == 'POST' and path.endswith('/graphs'):
+                    self.next_graph += 1
+                    return SUITE.SUPPORT.Response(201, {'id': self.next_graph, 'is_public': False})
+                if method == 'GET' and path.endswith('/entities/Person'):
+                    return SUITE.SUPPORT.Response(200, {'data': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)]})
+                if method == 'POST' and path.endswith('/paths'):
+                    return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)], 'edges': native_edges({'p1':'0','p2':'1','p3':'2'})})
+                if method == 'DELETE': deleted.append(path)
+                return SUITE.SUPPORT.Response(expected[0], {'id': 31} if path == '/api/v1/service/graph' else {})
+        report = {}
+        with patch.dict(SUITE.os.environ, ADDP_ONLINE_GRAPH_ENGINE='neo4j', ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID='14', ADDP_ONLINE_TEST_RUN_ID='service-graph-run'), \
+             patch.object(SUITE, 'identity', side_effect=[{'principal_id': str(i)} for i in range(3)]), \
+             patch.object(SUITE, 'create_ontology', return_value=9), patch.object(SUITE, 'create_schema'), \
+             patch.object(SUITE, 'probe'), patch.object(SUITE, 'set_public'), patch.object(SUITE.SUPPORT, 'wait_for_scan'), \
+             patch.object(SUITE, 'run_browser', return_value={}), patch.object(SUITE, 'run_develop_browser', return_value={}), \
+             patch.object(SUITE, 'run_service_graph_phase', side_effect=SUITE.SuiteError('Service browser failed')):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'Service browser failed'):
+                SUITE.run(*([Client()] * 7), 13, 2, 0, report)
+        self.assertIn('/api/v1/service/graph/31', deleted)
+        self.assertEqual(report['cleanup']['domain_resources_remaining'], 0)
+
     def test_dense_native_contract_rejects_missing_labels_edges_and_direction(self):
         expected, _ = dense_evidence()
         self.assertEqual(len(SUITE.verify_dense_reference(expected['nodes'], expected['edges'])), 12)

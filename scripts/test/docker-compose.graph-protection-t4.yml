@@ -34,6 +34,8 @@ services:
       COPILOT_URL: http://graph-review-extractor:8087
     ports: ["127.0.0.1:8186:8186"]
   service-backend:
+    environment:
+      GATEWAY_URL: http://127.0.0.1:8000
     ports: ["127.0.0.1:8086:8086"]
   transfer-backend:
     ports: ["127.0.0.1:8083:8083"]

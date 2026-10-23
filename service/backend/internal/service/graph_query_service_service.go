@@ -249,7 +249,7 @@ func (s *GraphQueryServiceService) toDTO(service *models.GraphQueryService) *mod
 		CreatedAt:    service.CreatedAt,
 		UpdatedAt:    service.UpdatedAt,
 		Endpoints: map[string]string{
-			"execute": fmt.Sprintf("%s/api/v1/gquery/%s", s.baseURL, service.ServiceName),
+			"execute": fmt.Sprintf("%s/api/gquery/%s", s.baseURL, service.ServiceName),
 		},
 	}
 

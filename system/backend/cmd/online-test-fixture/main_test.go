@@ -360,6 +360,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, graphReviewPermissions...)
 	allPermissions = append(allPermissions, graphProtectionReaderPermissions...)
 	allPermissions = append(allPermissions, graphDevelopReaderPermissions...)
+	allPermissions = append(allPermissions, graphServiceReaderPermissions...)
 	allPermissions = append(allPermissions, graphProtectionPreparerPermissions...)
 	allPermissions = append(allPermissions, graphProtectionOutsiderPermissions...)
 	for _, key := range allPermissions {
@@ -404,9 +405,12 @@ func TestGraphProtectionReviewerCredentialsReachChildEnvironment(t *testing.T) {
 	const username = "external-online-graph-reviewer"
 	const password = "synthetic-review'quoted-password"
 	if err := writeEnvironmentFile(path, map[string]string{
-		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN": token,
-		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME":     username,
-		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD":     password,
+		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN":  token,
+		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME":      username,
+		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD":      password,
+		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN": token,
+		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME":     username,
+		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD":     password,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -425,6 +429,9 @@ source "$1"
 [ "${ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN:?}" = "$2" ]
 [ "${ADDP_ONLINE_GRAPH_REVIEW_USERNAME:?}" = "$3" ]
 [ "${ADDP_ONLINE_GRAPH_REVIEW_PASSWORD:?}" = "$4" ]
+[ "${ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN:?}" = "$2" ]
+[ "${ADDP_ONLINE_GRAPH_SERVICE_USERNAME:?}" = "$3" ]
+[ "${ADDP_ONLINE_GRAPH_SERVICE_PASSWORD:?}" = "$4" ]
 `, "graph-review-environment", path, token, username, password)
 	command.Env = []string{"PATH=" + os.Getenv("PATH")}
 	if err := command.Run(); err != nil {
@@ -448,6 +455,14 @@ func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
 		}
 	}
 	expectedDevelop := []string{"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create", "meta.catalog.read"}
+	if !slices.Equal(graphServiceReaderPermissions, []string{"service.definition.read"}) {
+		t.Fatalf("Service graph reader must only read definitions: %v", graphServiceReaderPermissions)
+	}
+	for _, action := range []string{"create", "read", "update", "delete"} {
+		if !slices.Contains(graphProtectionPreparerPermissions, "service.definition."+action) {
+			t.Fatalf("Service fixture preparer missing %s", action)
+		}
+	}
 	if !slices.Equal(graphDevelopReaderPermissions, expectedDevelop) {
 		t.Fatalf("Develop reader must have exactly the approved five permissions: %v", graphDevelopReaderPermissions)
 	}

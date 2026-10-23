@@ -20,7 +20,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
     falkordb|neo4j) ;;
     *) echo 'Graph acceptance requires ADDP_ONLINE_GRAPH_ENGINE=falkordb|neo4j' >&2; exit 1 ;;
   esac
-  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-review-extractor addp-graph-online-neo4j-review addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
+  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-review-extractor addp-graph-online-neo4j-review addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend service-frontend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
   HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online addp-platform)
 fi
 compose_graph() {
@@ -102,9 +102,9 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   [ "$registry_ready" -eq 1 ] || fail 'Graph image registry readiness timed out'
   backend_images=system-backend,gateway,meta-backend,meta-worker,security-backend,security-worker,manager-backend,develop-backend,service-backend,transfer-backend,graph-backend,monitor-backend
   run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
-  run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,nginx"
+  run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,service-frontend,nginx"
   run_logged compose_graph up -d --no-deps --wait graph-review-extractor
-  for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend; do
+  for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend service-frontend; do
     run_logged compose_graph up -d --no-deps --wait "$service"
   done
   run_logged docker exec graph-frontend sh -ec 'wget -qO- http://127.0.0.1/graphs/1/browse | grep -q "id=\"app\""; if wget -qO- http://127.0.0.1/assets/nonexistent-acceptance-chunk.js >/dev/null 2>&1; then exit 1; fi'
@@ -112,7 +112,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   # existing production-entry suite. Graph and Develop use real frontends.
   run_logged docker run -d --name addp-graph-online-upstreams --network addp-network \
     --network-alias system-frontend --network-alias manager-frontend --network-alias meta-frontend \
-    --network-alias transfer-frontend --network-alias orchestrator-frontend --network-alias service-frontend \
+    --network-alias transfer-frontend --network-alias orchestrator-frontend \
     localhost:5001/nginx:alpine
   run_logged compose_graph up -d --no-deps --wait nginx
   run_logged npm --prefix console/frontend ci

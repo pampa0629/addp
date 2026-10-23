@@ -61,6 +61,7 @@ var graphReviewPermissions = []string{
 	"graph.graph.read", "graph.review.read", "graph.review.approve", "graph.review.reject", "graph.review.update",
 }
 var graphProtectionReaderPermissions = []string{"graph.graph.read"}
+var graphServiceReaderPermissions = []string{"service.definition.read"}
 var graphDevelopReaderPermissions = []string{
 	"develop.task.read", "develop.task.execute", "develop.data_read.execute",
 	"system.execution_authorization.create", "meta.catalog.read",
@@ -72,6 +73,7 @@ var graphProtectionPreparerPermissions = []string{
 	"graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"security.enrollment.create", "security.enrollment.read", "security.enrollment.update",
+	"service.definition.create", "service.definition.read", "service.definition.update", "service.definition.delete",
 }
 var graphProtectionOutsiderPermissions = []string{"meta.catalog.read"}
 
@@ -699,6 +701,14 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN"] = developReader.AccessToken
 		values["ADDP_ONLINE_GRAPH_DEVELOP_USERNAME"] = "external-online-graph-develop-reader"
 		values["ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD"] = developPassword
+		serviceReader, _, servicePassword, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-graph-service-reader", graphServiceReaderPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN"] = serviceReader.AccessToken
+		values["ADDP_ONLINE_GRAPH_SERVICE_USERNAME"] = "external-online-graph-service-reader"
+		values["ADDP_ONLINE_GRAPH_SERVICE_PASSWORD"] = servicePassword
 	}
 	if *suite == "security-plaintext-access" {
 		approver, _, approverPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -1153,6 +1163,9 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_DEVELOP_USERNAME",
 		"ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD",
+		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME",
+		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD",
 		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME",
 		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD",

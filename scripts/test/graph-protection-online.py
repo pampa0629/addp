@@ -24,6 +24,7 @@ READER_PERMISSIONS = {"graph.graph.read"}
 DEVELOP_PERMISSIONS = {"develop.task.read", "develop.task.execute", "develop.data_read.execute",
                        "system.execution_authorization.create", "meta.catalog.read"}
 OUTSIDER_PERMISSIONS = {"meta.catalog.read"}
+SERVICE_READER_PERMISSIONS = {"service.definition.read"}
 PREPARER_PERMISSIONS = {
     "graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
     "graph.build_task.read", "graph.build_task.create", "graph.build_task.update",
@@ -31,7 +32,87 @@ PREPARER_PERMISSIONS = {
     "graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
     "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
     "security.enrollment.create", "security.enrollment.read", "security.enrollment.update",
+    "service.definition.create", "service.definition.read", "service.definition.update", "service.definition.delete",
 }
+
+
+def verify_service_graph_result(payload):
+    require(isinstance(payload, dict) and payload.get("rows_count") == 3 and
+            payload.get("columns") == ["id", "name"] and payload.get("rows") == [
+                {"id": "p1", "name": "Fixture one"}, {"id": "p2", "name": "Fixture two"},
+                {"id": "p3", "name": "Fixture three"}], "Service graph query must return the exact native synthetic rows")
+
+
+def verify_service_graph_denial(payload):
+    require(isinstance(payload, dict) and set(payload) == {"error"} and
+            "service data protection gate is required" in str(payload["error"]) and
+            "protected resource read set is unresolved" in str(payload["error"]),
+            "Service graph protection must refuse the unresolved read without output")
+
+
+def run_service_graph_browser(report, definition, tenant_id, phase):
+    env = SUPPORT.required_environment
+    reader = Client(env("GATEWAY_URL"), env("ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN"), 30)
+    user = identity(reader, tenant_id, SERVICE_READER_PERMISSIONS)
+    others = {entry["principal_id"] for name, entry in report["identities"].items() if name != "service"}
+    require(user["principal_id"] not in others, "Service browser must use its own minimum-permission User")
+    require(report["identities"].get("service", user) == user, "Service User changed between phases")
+    report["identities"]["service"] = user
+    artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
+    output = artifacts / f"service-graph-{phase}-browser.json"
+    screenshot = artifacts / f"service-graph-{phase}-console.png"
+    for path in (output, screenshot):
+        path.unlink(missing_ok=True)
+    expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
+                "principal_id": user["principal_id"], "service_id": definition["id"],
+                "service_name": definition["service_name"], "dto_endpoint": definition["endpoints"]["execute"],
+                "phase": phase, "engine_type": "neo4j"}
+    environment = {key: value for key, value in os.environ.items() if not key.endswith("_ACCESS_TOKEN")}
+    environment.update(ADDP_ONLINE_SERVICE_GRAPH_EXPECTATIONS=json.dumps(expected),
+                       ADDP_ONLINE_SERVICE_GRAPH_REPORT=str(output))
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js",
+                             "--config=playwright.online.config.js", "--grep", "ordinary Service graph reader"],
+                            cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=180)
+    require(result.returncode == 0 and output.is_file() and screenshot.is_file(), "Service graph Console evidence missing or failed")
+    evidence = json.loads(output.read_text())
+    expected.update(schema_version="addp.service-graph-browser/v1", result="passed", permissions=sorted(SERVICE_READER_PERMISSIONS),
+                    page_origin=env("CONSOLE_URL"), page_path="/api/gquery/" + definition["service_name"],
+                    dto_address_unchanged=True, user_bearer=True, exact_request=True, result_visible=phase == "unmanaged",
+                    protection_refused=phase == "protected", browser_errors=0, unexpected_writes=0, release_assets=True,
+                    public_https_verified=False)
+    require(type(evidence) is dict and set(evidence) == set(expected) and
+            all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()),
+            "Service browser evidence differs from the real identity, addresses, result or refusal")
+    return evidence
+
+
+def run_service_graph_phase(preparer, anonymous, report, definition, tenant_id, phase):
+    env = SUPPORT.required_environment
+    reader = Client(env("GATEWAY_URL"), env("ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN"), 30)
+    dto = reader.request("GET", f"/api/v1/service/graph/{definition['id']}", (200,)).payload
+    path = "/api/gquery/" + definition["service_name"]
+    endpoint = dto["endpoints"]["execute"]
+    require(endpoint == env("GATEWAY_URL").rstrip("/") + path, "DTO must preserve the configured Gateway address and canonical path")
+    require(dto["id"] == definition["id"] and dto["service_name"] == definition["service_name"], "Service definition identity changed")
+    body = {"parameters": {}, "page": 1, "page_size": 20}
+    expected_status = 200 if phase == "unmanaged" else 500
+    check = verify_service_graph_result if phase == "unmanaged" else verify_service_graph_denial
+    check(reader.request("POST", path, (expected_status,), body).payload)
+    if phase == "unmanaged":
+        anonymous.request("POST", path, (401,), body)
+        Client(env("GATEWAY_URL"), "invalid-service-graph-token", 30).request("POST", path, (401,), body)
+        for alias in ("/api/v1/gquery/", "/api/v1/service/gquery/"):
+            Client(env("SERVICE_URL"), reader.token, 30).request("POST", alias + dto["service_name"], (404,), body, raw_response=True)
+        preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"status": "inactive"})
+        reader.request("POST", path, (400,), body)
+        preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"status": "active"})
+    preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": True})
+    check(anonymous.request("POST", path, (expected_status,), body).payload)
+    preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": False})
+    browser = run_service_graph_browser(report, dto, tenant_id, phase)
+    return {"http_status": expected_status, "dto_endpoint": endpoint, "private_user": True, "public_anonymous": True,
+            "native_rows_verified": phase == "unmanaged", "protection_refused_without_output": phase == "protected", "browser": browser,
+            "cross_tenant_runtime_verified": False, "public_https_verified": False}
 
 
 def require(condition, message):
@@ -512,6 +593,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
     require(len({x["principal_id"] for x in report["identities"].values()}) == 3, "Fixture identities must be distinct")
     ontology_id = None
     graph_ids = []
+    service_ids = []
     enrollment_id = None
     operation_failed = False
     try:
@@ -543,6 +625,15 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         if targets[1]["engine_id"] != engine_id:
             SUPPORT.wait_for_scan(preparer, targets[1]["engine_id"], deadline)
         report["develop_unmanaged"] = run_develop_browser(report, engine_id, tenant_id, "unmanaged")
+        if engine_type() == "neo4j":
+            definition = preparer.request("POST", "/api/v1/service/graph", (201,), {
+                "service_name": "service_graph_" + SUPPORT.required_environment("ADDP_ONLINE_TEST_RUN_ID").replace("-", "_").replace(".", "_"), "title": "Disposable Service graph acceptance",
+                "engine_id": engine_id, "database_name": "neo4j", "config_type": "cypher",
+                "cypher_query": "MATCH (n:Person) RETURN n.id AS id, n.name AS name ORDER BY id",
+                "data_config": {"result_type": "table"}, "max_records": 20, "public_access": False,
+            }).payload
+            service_ids.append(SUPPORT.positive_int(definition.get("id"), "Service graph id"))
+            report["service_graph_unmanaged"] = run_service_graph_phase(preparer, anonymous, report, definition, tenant_id, "unmanaged")
         set_public(preparer, target, True)
         report["public_unmanaged"] = {"gateway": probe(anonymous, target, ids, 200), "graph": probe(direct_anonymous, target, ids, 200)}
         item = SUPPORT.find_item(preparer, engine_id, targets[0]["full_name"], "graph")
@@ -554,6 +645,8 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         require(enrollment["target_snapshot"]["engine_id"] == engine_id and enrollment["target_snapshot"]["full_name"] == targets[0]["full_name"], "Enrollment must retain the exact graph and Engine binding")
         installed = wait_owners(preparer, enrollment_id, deadline)
         report["owners"] = {p["consumer_owner"]: {k: p[k] for k in ("projection_id", "revision", "published_cursor", "acknowledged")} for p in installed["owner_progress"]}
+        if engine_type() == "neo4j":
+            report["service_graph_protected"] = run_service_graph_phase(preparer, anonymous, report, definition, tenant_id, "protected")
         report["public_protected"] = {"gateway": probe(anonymous, target, ids, 403, "protection"), "graph": probe(direct_anonymous, target, ids, 403, "protection")}
         report["authenticated_protected"] = {"gateway": probe(reader, target, ids, 403, "protection"), "graph": probe(direct_reader, target, ids, 403, "protection")}
         report["public_outsider_protected"] = {"gateway": probe(outsider, target, ids, 403, "protection"), "graph": probe(direct_outsider, target, ids, 403, "protection")}
@@ -573,6 +666,12 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         raise
     finally:
         cleanup_errors = []
+        for service_id in service_ids:
+            try:
+                preparer.request("DELETE", f"/api/v1/service/graph/{service_id}", (200,))
+                preparer.request("GET", f"/api/v1/service/graph/{service_id}", (404,))
+            except Exception:
+                cleanup_errors.append("delete synthetic Service graph definition")
         for gid in graph_ids:
             try:
                 set_public(preparer, gid, False)
@@ -611,7 +710,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v10", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v11", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

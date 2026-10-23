@@ -206,7 +206,9 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertLess(trace.index('chromium'), trace.index('make:test-online'))
         self.assertNotIn('start:', trace)
         self.assertIn('make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend,meta-worker', trace)
-        self.assertIn(',console,graph-frontend,develop-frontend,nginx', trace)
+        self.assertIn(',console,graph-frontend,develop-frontend,service-frontend,nginx', trace)
+        self.assertIn('up -d --no-deps --wait service-frontend', trace)
+        self.assertNotIn('--network-alias service-frontend', trace)
         self.assertIn('npm-ci', trace)
         self.assertIn('up -d --no-deps --wait graph-review-extractor', trace)
         self.assertIn('docker:exec graph-frontend sh -ec', trace)
@@ -244,7 +246,7 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('graph-fixture:stop', trace)
 
     def test_graph_refuses_preexisting_product_containers_before_mutation(self):
-        for name in ('addp-graph-online-review-extractor', 'addp-graph-online-neo4j-review', 'addp-graph-online-neo4j', 'addp-graph-online-neo4j-control', 'registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
+        for name in ('addp-graph-online-review-extractor', 'addp-graph-online-neo4j-review', 'addp-graph-online-neo4j', 'addp-graph-online-neo4j-control', 'registry', 'graph-frontend', 'develop-frontend', 'service-frontend', 'system-backend', 'addp-nginx'):
             with self.subTest(name=name):
                 self.host.trace.unlink(missing_ok=True)
                 result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_TEST_EXISTING_CONTAINER=name)

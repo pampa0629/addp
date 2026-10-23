@@ -10,6 +10,85 @@ function required(name) {
   return process.env[name]
 }
 
+test('ordinary Service graph reader verifies the real page and original DTO address through Gateway', async ({ page }) => {
+  const expected = JSON.parse(required('ADDP_ONLINE_SERVICE_GRAPH_EXPECTATIONS'))
+  expect(['unmanaged', 'protected']).toContain(expected.phase)
+  const protectedPhase = expected.phase === 'protected'
+  const path = `/api/gquery/${expected.service_name}`
+  const body = { parameters: {}, page: 1, page_size: 20 }
+  const errors = [], writes = [], executions = [], scripts = new Set()
+  page.on('pageerror', () => errors.push('pageerror'))
+  page.on('request', request => {
+    const pathname = new URL(request.url()).pathname
+    if (/\/@vite\/|\/@id\/|\/src\//.test(pathname)) errors.push('development asset')
+    if (pathname === path) executions.push({ method: request.method(), body: request.postDataJSON(),
+      bearer: /^Bearer\s+\S+$/.test(request.headers().authorization || ''), apiKey: Boolean(request.headers()['x-api-key']) })
+    if (pathname.startsWith('/api/') && !['GET', 'HEAD'].includes(request.method()) && pathname !== path &&
+        !['/api/v1/system/refresh', '/api/v1/system/login', '/api/v1/system/auth/login',
+          '/api/v1/system/auth/context-selections'].includes(pathname)) writes.push(pathname)
+  })
+  page.on('response', response => {
+    const pathname = new URL(response.url()).pathname
+    if (response.request().resourceType() === 'script' && pathname.startsWith('/module-ui/service/') && response.ok()) scripts.add(pathname)
+    if (response.status() >= 400 && !isAnonymousRefreshResponse(response) &&
+        !(protectedPhase && pathname === path && response.status() === 500)) errors.push('unexpected HTTP failure')
+  })
+  const detailResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/service/graph/${expected.service_id}`)
+  await login(page, required('ADDP_ONLINE_GRAPH_SERVICE_USERNAME'), required('ADDP_ONLINE_GRAPH_SERVICE_PASSWORD'),
+    `/service/graph-services/${expected.service_id}`)
+  const response = await detailResponse
+  const definition = await json(response, 'Service graph definition')
+  expect(definition.endpoints.execute).toBe(expected.dto_endpoint)
+  const api = await browserAPIFromResponse(response, required('GATEWAY_URL'), {
+    principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: ['service.definition.read']
+  })
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.locator('.graph-service-detail .endpoint')).toHaveText(`POST ${expected.dto_endpoint}`)
+  // Follow the unmodified absolute DTO address separately from the page's same-origin request.
+  try {
+    const direct = await api.post(definition.endpoints.execute, { data: body })
+    expect(direct.status()).toBe(protectedPhase ? 500 : 200)
+    const dtoPayload = await direct.json()
+    const pending = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === path)
+    await frame.getByRole('button', { name: '执行查询', exact: true }).click()
+    const executed = await pending
+    expect(new URL(executed.url()).origin).toBe(required('CONSOLE_URL'))
+    expect(executed.status()).toBe(protectedPhase ? 500 : 200)
+    const payload = await executed.json()
+    if (protectedPhase) {
+      for (const refused of [dtoPayload, payload]) {
+        expect(Object.keys(refused)).toEqual(['error'])
+        expect(refused.error).toContain('service data protection gate is required')
+        expect(refused.error).toContain('protected resource read set is unresolved')
+      }
+      await expect(frame.locator('.test-result')).toHaveCount(0)
+      await expect(frame.locator('.el-alert')).toContainText('protected resource read set is unresolved')
+    } else {
+      const rows = [{ id: 'p1', name: 'Fixture one' }, { id: 'p2', name: 'Fixture two' }, { id: 'p3', name: 'Fixture three' }]
+      for (const result of [dtoPayload, payload]) {
+        expect(result.rows_count).toBe(3)
+        expect(result.columns).toEqual(['id', 'name'])
+        expect(result.rows).toEqual(rows)
+      }
+      await expect(frame.locator('.test-result .el-table__body-wrapper tbody tr')).toHaveCount(3)
+      for (const row of rows) await expect(frame.locator('.test-result')).toContainText(row.name)
+    }
+    expect(executions).toEqual([{ method: 'POST', body, bearer: true, apiKey: false }])
+    expect(errors).toEqual([])
+    expect(writes).toEqual([])
+    expect(scripts.size).toBeGreaterThan(0)
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `service-graph-${expected.phase}-console.png`) })
+    writeFileSync(required('ADDP_ONLINE_SERVICE_GRAPH_REPORT'), JSON.stringify({ ...expected,
+      schema_version: 'addp.service-graph-browser/v1', result: 'passed', permissions: ['service.definition.read'],
+      page_origin: required('CONSOLE_URL'), page_path: path, dto_address_unchanged: true,
+      user_bearer: true, exact_request: true, result_visible: !protectedPhase, protection_refused: protectedPhase,
+      browser_errors: 0, unexpected_writes: 0, release_assets: true, public_https_verified: false
+    }, null, 2))
+  } finally {
+    await api.dispose()
+  }
+})
+
 test('ordinary Graph reader browses private native graph data and searches Knowledge Service through Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], developmentRequests = []
