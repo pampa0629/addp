@@ -9,6 +9,8 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -34,6 +36,13 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 		{name: "project_not_tenant", mutateAuth: func(a *authorization.AuthContext) {
 			a.Authorization.RoleAssignments[0].Scope.Type = "project_group"
 		}, want: 503},
+		{name: "role_choice_requires_first_party_user", mutateRequest: func(r *models.CreateTaskRequest) {
+			r.Config["source"].(map[string]interface{})["protection_choices"] = []dataprotection.FieldRoleChoice{{
+				Target:       dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"},
+				ComponentKey: "status",
+				Selection:    dataprotection.RoleOptionSelection{PolicyID: "policy", PolicyRevision: 1, AssessmentRevision: 1, OptionID: "role-option"},
+			}}
+		}, want: 409},
 		{name: "cannot_read_tasks", method: "GET", want: 403},
 		{name: "cannot_start", path: "/1/start", want: 403},
 		{name: "schedule_rejected", mutateRequest: func(r *models.CreateTaskRequest) { r.Schedule = "* * * * *" }, want: 400},
@@ -54,7 +63,13 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 			if tc.mutateAuth != nil {
 				tc.mutateAuth(&a)
 			}
-			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _ = json.NewEncoder(w).Encode(a) }))
+			roleReads := 0
+			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if request.URL.Path == "/api/v1/system/auth/subject-roles" {
+					roleReads++
+				}
+				_ = json.NewEncoder(w).Encode(a)
+			}))
 			defer system.Close()
 			no := false
 			config := validTransferTaskHandlerConfig()
@@ -79,6 +94,7 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 				t.Fatal(err)
 			}
 			svc := service.NewTaskService(db, nil, nil)
+			svc.SetRoleProtection(service.NewRoleProtectionService(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()), nil, nil))
 			svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: "mongodb"}})
 			router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			method := tc.method
@@ -90,6 +106,12 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 			request.Header.Set("Authorization", "Bearer addp_dat_fixture")
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
+			if roleReads != 0 {
+				t.Fatal("delegated creation attempted first-party role lookup")
+			}
+			if tc.name == "role_choice_requires_first_party_user" && !strings.Contains(response.Body.String(), "transfer_protection_roles_unavailable") {
+				t.Fatalf("wrong rejection reason: %s", response.Body)
+			}
 			if response.Code != tc.want {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, tc.want, response.Body)
 			}
