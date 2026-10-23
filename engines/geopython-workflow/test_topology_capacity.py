@@ -1,5 +1,6 @@
 """Small exhaustive Native checks; never execute the manual capacity matrix here."""
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -20,6 +21,12 @@ def test_topology_capacity_native_full_coordinate_oracle_and_source_immutability
     assert report['physical']['all_coordinates_ids_lengths_verified'] is True
     assert set(report['timings']) == {'generate', 'read', 'source_oracle', 'compute', 'save', 'reload_oracle'}
     assert report['worker_peak_rss_bytes'] > 0
+    m.validate_worker(report, case)
+    samples = [json.loads(line) for line in (tmp_path / 'compute-resources.jsonl').read_text().splitlines()]
+    assert len(samples) == report['compute_observation']['samples'] > 0
+    assert all(sample['stage'] in {'prepare', 'collect', 'fuse', 'finalize'} for sample in samples)
+    # Local Native can run outside Linux cgroups; it must not fabricate memory.
+    assert all(sample['memory_current_bytes'] is None or sample['memory_current_bytes'] > 0 for sample in samples)
 
 
 @pytest.mark.parametrize('corruption', ['id', 'fid-as-id', 'length', 'coordinate', 'missing', 'extra', 'order', 'crs'])

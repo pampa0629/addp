@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import hashlib
 import json
@@ -14,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 
@@ -170,6 +172,84 @@ def verify_output(case, path):
     return {'rows': expected_rows(case), 'full_result_sha256': checksum.hexdigest(), 'all_coordinates_ids_lengths_verified': True, 'crs': 'EPSG:3857'}
 
 
+
+@contextmanager
+def observe_compute(root, report, progress):
+    """Observe the unchanged production calls; never replace their geometry work."""
+    from operators import geometric_operators as operators
+    original_collect = operators._self_overlap_intersections
+    original_union = operators.shapely.union_all
+    observation = {'collection_seconds': 0.0, 'fusion_seconds': 0.0,
+                   'collection_calls': 0, 'fusion_calls': 0, 'fusion_input_fragments': 0,
+                   'sampling_interval_seconds': .25, 'samples': 0,
+                   'observed_memory_current_peak_bytes': {},
+                   'memory_method': 'sampled cgroup memory.current by active stage; memory.peak is cumulative, not per-stage'}
+    report['compute_observation'] = observation
+    active = 'prepare'; stopped = threading.Event(); errors = []; started = time.monotonic()
+
+    def collect(segments):
+        nonlocal active
+        active = 'collect'; before = time.monotonic()
+        observation['collection_calls'] += 1
+        try:
+            yield from original_collect(segments)
+        finally:
+            observation['collection_seconds'] += time.monotonic() - before
+            active = 'finalize'
+
+    def merge(parts, *args, **kwargs):
+        nonlocal active
+        active = 'fuse'; before = time.monotonic()
+        observation['fusion_calls'] += 1
+        observation['fusion_input_fragments'] += len(parts)
+        try:
+            return original_union(parts, *args, **kwargs)
+        finally:
+            observation['fusion_seconds'] += time.monotonic() - before
+            active = 'finalize'
+
+    def sample(stream):
+        stage = active
+        sample = {'elapsed_seconds': time.monotonic() - started, 'stage': stage,
+                  'memory_current_bytes': None, 'memory_peak_bytes': None, 'memory_limit_bytes': None}
+        directory = Path('/sys/fs/cgroup')
+        if sys.platform == 'linux' and (directory / 'memory.current').is_file():
+            for field, filename in [('memory_current_bytes', 'memory.current'),
+                                    ('memory_peak_bytes', 'memory.peak'), ('memory_limit_bytes', 'memory.max')]:
+                value = (directory / filename).read_text().strip()
+                sample[field] = None if value == 'max' else int(value)
+            peaks = observation['observed_memory_current_peak_bytes']
+            peaks[stage] = max(peaks.get(stage, 0), sample['memory_current_bytes'])
+        observation['samples'] += 1
+        stream.write(json.dumps(sample) + '\n'); stream.flush()
+        write_json(progress, report)
+
+    def sampling():
+        try:
+            with (root / 'compute-resources.jsonl').open('w') as stream:
+                sample(stream)
+                while not stopped.wait(.25):
+                    sample(stream)
+                sample(stream)
+        except Exception as error:
+            errors.append(error)
+
+    operators._self_overlap_intersections = collect
+    operators.shapely.union_all = merge
+    sampler = threading.Thread(target=sampling, daemon=True)
+    try:
+        sampler.start()
+        yield observation
+    finally:
+        stopped.set()
+        if sampler.ident is not None:
+            sampler.join()
+        operators._self_overlap_intersections = original_collect
+        operators.shapely.union_all = original_union
+        if errors:
+            raise RuntimeError(f'compute observation failed: {errors[0]}') from errors[0]
+
+
 def run_worker(case, root):
     """One process, one full measurement including generation and independent checks."""
     import resource
@@ -190,7 +270,10 @@ def run_worker(case, root):
     frame = phase('read', lambda: load(connection_info=connection, path='source.gpkg'))
     phase('source_oracle', lambda: verify_source(frame, case)); before = frame_digest(frame)
     operator = check_line_self_overlap if case.operator == 'self' else check_line_overlap
-    result = phase('compute', lambda: operator(frame, 'route_key'))
+    def compute():
+        with observe_compute(root, report, progress):
+            return operator(frame, 'route_key')
+    result = phase('compute', compute)
     assert len(result) == expected_rows(case)
     phase('save', lambda: save(result, connection_info=connection, path='result.gpkg', mode='fail'))
     physical = phase('reload_oracle', lambda: verify_output(case, target))
@@ -247,6 +330,14 @@ def validate_worker(report, case):
     assert report['physical']['rows'] == expected_rows(case) and report['physical']['all_coordinates_ids_lengths_verified'] is True
     assert report['physical']['crs'] == 'EPSG:3857' and 0 < report['duration_seconds'] <= SECONDS
     assert report['worker_peak_rss_bytes'] > 0
+    observed = report['compute_observation']
+    rows = expected_rows(case)
+    assert observed['fusion_calls'] == rows
+    assert observed['fusion_input_fragments'] == rows * (8 if case.kind == 'many' else 1)
+    assert observed['collection_calls'] == (source_rows(case) if case.operator == 'self' else 0)
+    assert observed['samples'] > 0
+    assert all(math.isfinite(observed[k]) and observed[k] >= 0 for k in ('collection_seconds', 'fusion_seconds'))
+    assert observed['collection_seconds'] + observed['fusion_seconds'] <= report['timings']['compute']
     assert set(report['timings']) == {'generate', 'read', 'source_oracle', 'compute', 'save', 'reload_oracle'}
     assert all(math.isfinite(v) and v >= 0 for v in report['timings'].values())
     for field in ('source', 'output'):
@@ -313,6 +404,8 @@ def run_case(case, image, run_id, artifact):
         progress = workspace / 'progress.json'
         outcome['worker'] = json.loads(progress.read_text()) if progress.is_file() else None
         if progress.is_file(): shutil.copyfile(progress, root / 'worker-progress.json')
+        if (workspace / 'compute-resources.jsonl').is_file():
+            shutil.copyfile(workspace / 'compute-resources.jsonl', root / 'compute-resources.jsonl')
         if outcome['result'] == 'passed':
             validate_worker(outcome['worker'], case)
             assert elapsed <= SECONDS

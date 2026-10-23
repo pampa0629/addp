@@ -282,6 +282,27 @@ def _normalized_line_overlap(intersections):
     return geometry, length
 
 
+
+def _self_overlap_intersections(segments):
+    """Compare every original occurrence; retain each exact positive piece once."""
+    tree = shapely.STRtree(segments)
+    seen = set()
+    for a, segment in enumerate(segments):
+        candidates = tree.query(segment)
+        for b in np.sort(candidates[candidates > a]):
+            pending = [shapely.intersection(segment, segments[b])]
+            while pending:
+                part = pending.pop()
+                if part.geom_type == "LineString" and not part.is_empty:
+                    coordinates = tuple(part.coords)
+                    key = min(coordinates, coordinates[::-1])
+                    if key not in seen:
+                        seen.add(key)
+                        yield part
+                elif part.geom_type in {"MultiLineString", "GeometryCollection"}:
+                    pending.extend(part.geoms)
+
+
 def check_line_self_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report positions traversed more than once within each original feature."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -295,15 +316,7 @@ def check_line_self_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
         segments = [shapely.LineString([start, end])
                     for part in shapely.get_parts(shape)
                     for start, end in pairwise(part.coords) if start != end]
-        tree = shapely.STRtree(segments)
-
-        def intersections():
-            for a, segment in enumerate(segments):
-                candidates = tree.query(segment)
-                for b in np.sort(candidates[candidates > a]):
-                    yield shapely.intersection(segment, segments[b])
-
-        shared = _normalized_line_overlap(intersections())
+        shared = _normalized_line_overlap(_self_overlap_intersections(segments))
         if shared is not None:
             overlap_geometry, length = shared
             sources.append(row)

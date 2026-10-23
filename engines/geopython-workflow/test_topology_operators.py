@@ -252,6 +252,52 @@ def test_line_self_overlap_ignores_points_closed_seams_zero_segments_and_near_li
     assert self_overlap(line_overlap_frame([geometry])).empty
 
 
+
+@pytest.mark.parametrize("visits", [2, 4, 8])
+def test_line_self_overlap_deduplicates_only_generated_intersections(visits, monkeypatch):
+    from operators import geometric_operators as operators
+    original_intersection = operators.shapely.intersection
+    original_union = operators.shapely.union_all
+    compared, merged = [], []
+
+    def intersect(a, b):
+        compared.append((a.wkb, b.wkb))
+        return original_intersection(a, b)
+
+    def merge(parts, *args, **kwargs):
+        merged.append(len(parts))
+        return original_union(parts, *args, **kwargs)
+
+    monkeypatch.setattr(operators.shapely, "intersection", intersect)
+    monkeypatch.setattr(operators.shapely, "union_all", merge)
+    source = MultiLineString([[(0, 0), (8, 0)] if i % 2 else [(8, 0), (0, 0)] for i in range(visits)])
+    frame = line_overlap_frame([source, source], ["first", "second"])
+    before = frame.copy(deep=True)
+    result = self_overlap(frame)
+    # Every original pair must still be examined, but repeated positive pieces
+    # must not reach GEOS union as a quadratic duplicate geometry collection.
+    assert len(compared) == visits * (visits - 1)
+    assert merged == [1, 1]
+    assert result.source_id.tolist() == ["first", "second"]
+    assert result.overlap_length.tolist() == [8, 8]
+    assert all(list(g.geoms[0].coords) == [(0, 0), (8, 0)] for g in result.geometry)
+    assert_geodataframe_equal(frame, before)
+
+
+def test_line_self_overlap_exact_collection_retains_tiny_differences_and_segmentation():
+    tiny = 2**-40
+    source = MultiLineString([[(0, 0), (4, 0)], [(4, 0), (0, 0)],
+        [(0, 0), (1, 0), (4, 0)], [(0, tiny), (tiny, tiny)], [(tiny, tiny), (0, tiny)]])
+    result = self_overlap(line_overlap_frame([source]))
+    shape = result.geometry.iloc[0]
+    assert result.overlap_length.tolist() == [4 + tiny]
+    assert shape.covers(Point(.5, 0)) and shape.covers(Point(3, 0))
+    assert shape.covers(Point(tiny / 2, tiny))
+    assert not shape.covers(Point(.5, tiny))
+    assert sorted([list(part.coords) for part in shape.geoms]) == [
+        [(0, 0), (1, 0)], [(0, tiny), (tiny, tiny)], [(1, 0), (4, 0)]]
+
+
 def test_line_self_overlap_does_not_compare_different_features():
     frame = line_overlap_frame([LineString([(0, 0), (4, 0)])] * 2)
     assert self_overlap(frame).empty

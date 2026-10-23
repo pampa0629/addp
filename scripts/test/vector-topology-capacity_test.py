@@ -52,13 +52,65 @@ class CapacityTest(unittest.TestCase):
         import copy
         case=m.Case('dense',100,'self')
         report={'case':m.asdict(case),'result':'passed','stage':'complete','duration_seconds':1,
-            'worker_peak_rss_bytes':1,'timings':{k:0 for k in ['generate','read','source_oracle','compute','save','reload_oracle']},
+            'worker_peak_rss_bytes':1,
+            'compute_observation':{'fusion_calls':1,'fusion_input_fragments':1,'collection_calls':1,
+                'samples':2,'collection_seconds':0,'fusion_seconds':0},
+            'timings':{k:0 for k in ['generate','read','source_oracle','compute','save','reload_oracle']},
             'physical':{'rows':1,'all_coordinates_ids_lengths_verified':True,'crs':'EPSG:3857'},
             'source':{'size_bytes':1,'sha256':'a'*64},'output':{'size_bytes':1,'sha256':'b'*64}}
         m.validate_worker(report,case)
         for field,value in [('stage','compute'),('case',m.asdict(m.Case('dense',300,'self'))),('duration_seconds',181)]:
             changed=copy.deepcopy(report);changed[field]=value
             with self.subTest(field=field),self.assertRaises(AssertionError):m.validate_worker(changed,case)
+        for field,value in [('fusion_input_fragments',4950),('collection_calls',0),('samples',0),('fusion_seconds',181)]:
+            changed=copy.deepcopy(report);changed['compute_observation'][field]=value
+            with self.subTest(field=field),self.assertRaises(AssertionError):m.validate_worker(changed,case)
+
+
+    def test_compute_observer_restores_production_functions_on_failure(self):
+        import sys
+        from types import ModuleType
+        operators = ModuleType('operators'); geometry = ModuleType('operators.geometric_operators')
+        def collect(segments): yield from segments
+        def merge(parts): return parts
+        geometry._self_overlap_intersections = collect
+        geometry.shapely = SimpleNamespace(union_all=merge)
+        operators.geometric_operators = geometry
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(sys.modules, {'operators':operators, 'operators.geometric_operators':geometry}):
+            root = Path(temporary); report = {'result':'incomplete'}
+            with self.assertRaisesRegex(RuntimeError, 'original failure'):
+                with m.observe_compute(root, report, root/'progress.json'):
+                    self.assertEqual(list(geometry._self_overlap_intersections([1])), [1])
+                    self.assertEqual(geometry.shapely.union_all([1]), [1])
+                    raise RuntimeError('original failure')
+            self.assertIs(geometry._self_overlap_intersections, collect)
+            self.assertIs(geometry.shapely.union_all, merge)
+            self.assertGreater(report['compute_observation']['samples'], 0)
+            self.assertEqual(report['compute_observation']['fusion_input_fragments'], 1)
+
+
+
+    def test_compute_observer_memory_is_stage_sample_not_cumulative_peak(self):
+        import sys
+        from types import ModuleType
+        operators=ModuleType('operators');geometry=ModuleType('operators.geometric_operators')
+        geometry._self_overlap_intersections=lambda parts:iter(parts)
+        geometry.shapely=SimpleNamespace(union_all=lambda parts:parts)
+        operators.geometric_operators=geometry
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);group=root/'cgroup';group.mkdir()
+            for name,value in [('memory.current','128'),('memory.peak','256'),('memory.max',str(2<<30))]:
+                (group/name).write_text(value)
+            with patch.dict(sys.modules,{'operators':operators,'operators.geometric_operators':geometry}), \
+                 patch.object(m.sys,'platform','linux'),patch.object(m,'Path',return_value=group):
+                report={}
+                with m.observe_compute(root,report,root/'progress.json'):
+                    list(geometry._self_overlap_intersections([1]))
+                    geometry.shapely.union_all([1])
+            samples=[json.loads(line) for line in (root/'compute-resources.jsonl').read_text().splitlines()]
+            self.assertTrue(all(s['memory_current_bytes']==128 and s['memory_peak_bytes']==256 for s in samples))
+            self.assertTrue(all(v==128 for v in report['compute_observation']['observed_memory_current_peak_bytes'].values()))
+
 
     def test_manual_gate_refuses_personal_environment_before_docker(self):
         with patch.dict(m.os.environ,{},clear=True),patch.object(m,'command') as execute:
