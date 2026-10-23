@@ -238,6 +238,14 @@ class LocalTraceAdmissionTests(unittest.TestCase):
 
 
 class LocalTraceIsolationTests(unittest.TestCase):
+    def test_product_trace_template_workspace_is_declared_without_selecting_capacity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.command=mock.Mock(return_value='PATH=/tools\0')
+            env=m.defaults(life)
+            self.assertEqual(env['TRACE_T2_WORK'],str(life.work))
+            self.assertNotIn('trace-load',m.TRACE)
+            self.assertNotIn('trace-load',m.LIMITS)
+
     def test_deployment_configuration_failure_prevents_builder_and_compilation(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.command=mock.Mock(return_value='frozen-commit')

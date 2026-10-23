@@ -490,6 +490,7 @@ def defaults(life):
                MINIO_ROOT_USER='test-admin', MINIO_ROOT_PASSWORD=secret, LOKI_RETENTION_HOURS='168',
                LOKI_URL='http://runtime-log-api:3100', TEMPO_S3_SECRET_KEY=secrets.token_hex(32),
                ADDP_TRACE_DEPLOYMENT_DIR=str(life.work/'deployment'), LOKI_TEST_SOURCE=str(life.work/'unused-logs'),
+               TRACE_T2_WORK=str(life.work),
                ADDP_RUNTIME_LOG_OWNER='0:0', IMAGE_TAG=life.run_id, REGISTRY='localhost:5001',
                NO_PROXY='127.0.0.1,localhost', no_proxy='127.0.0.1,localhost')
     return env
