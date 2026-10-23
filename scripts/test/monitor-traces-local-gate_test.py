@@ -46,6 +46,14 @@ def bare_lifecycle(directory):
 
 
 class LocalTraceAdmissionTests(unittest.TestCase):
+    def test_public_build_diagnostics_keep_only_fixed_failure_categories(self):
+        self.assertEqual(m.public_build_failure(b'ERROR: failed to authorize: unexpected status 429 Too Many Requests'),
+                         ['registry_rate_limited', 'registry_authorization_failed'])
+        self.assertEqual(m.public_build_failure(b'fatal: unable to access https://credential@example.invalid/private'),
+                         ['git_transport_failed'])
+        self.assertEqual(m.public_build_failure(b'password=private secret=private SQL=private'),
+                         ['public_build_failure_unclassified'])
+
     def test_only_native_local_profile_is_admitted(self):
         m.validate_profile({}, 'arm64', 'aarch64')
         for key in ('GITHUB_ACTIONS', 'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_OWNER_MANAGED', 'ADDP_ONLINE_HOST', 'ADDP_ONLINE_LOCAL_SGM'):

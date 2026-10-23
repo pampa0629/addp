@@ -60,6 +60,24 @@ class GateError(RuntimeError):
     """Only fixed, non-secret diagnostics cross the private evidence boundary."""
 
 
+def public_build_failure(raw):
+    """Classify public-image failures without retaining raw command output."""
+    patterns = (
+        ('registry_rate_limited', r'toomanyrequests|too many requests|\b429\b'),
+        ('registry_authorization_failed', r'failed to authorize|unauthorized|authentication required'),
+        ('registry_image_unavailable', r'manifest unknown|not found|no match for platform'),
+        ('network_dns_failed', r'no such host|temporary failure in name resolution|could not resolve'),
+        ('network_tls_failed', r'x509:|certificate verify failed|tls handshake'),
+        ('network_connection_failed', r'connection refused|connection reset|i/o timeout|context deadline exceeded|unexpected eof'),
+        ('git_transport_failed', r'rpc failed|fatal:|unable to access'),
+        ('go_dependency_failed', r'go: .*: (?:reading|verifying)|proxy.golang.org|sum.golang.org'),
+        ('build_driver_failed', r'unknown flag|unknown command|no builder|not a docker command'),
+        ('build_resource_failed', r'no space left|out of memory|cannot allocate memory|killed'),
+    )
+    text = raw.decode(errors='replace').lower()
+    return [code for code, pattern in patterns if re.search(pattern, text)] or ['public_build_failure_unclassified']
+
+
 def require(condition, code):
     if not condition:
         raise GateError(code)
@@ -228,6 +246,8 @@ class Lifecycle:
         if p.returncode:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
+            if self.phase == 'product_minio':
+                self.last_failure['public_build_diagnostic'] = public_build_failure(raw)
             raise GateError('command_failed_' + str(p.returncode))
         return raw.decode(errors='replace')
 
@@ -409,6 +429,12 @@ def build(life):
     life.public_modcache=Path(life.command(['go','env','GOMODCACHE']).strip()).resolve()
     require(life.public_modcache.is_dir() and (life.public_modcache/'cache/download').is_dir(), 'public_readonly_go_cache_required')
     build_env={**env, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache)}
+    life.phase='product_minio'
+    minio_tag=life.run_id+'-minio:local'
+    life.tags.append(minio_tag)
+    life.command(['docker','build','-f','scripts/infra/Dockerfile.minio','-t',minio_tag,'scripts/infra'],env=build_env,timeout=1200)
+    life.minio_image=life.docker('image','inspect',minio_tag,'--format','{{.Id}}').strip()
+    life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     life.phase='product_compile'
     life.docker('run', '--rm', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '3', '--memory', '5g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
@@ -419,12 +445,6 @@ def build(life):
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
     shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
-    life.phase='product_minio'
-    minio_tag=life.run_id+'-minio:local'
-    life.tags.append(minio_tag)
-    life.command(['docker','build','-f','scripts/infra/Dockerfile.minio','-t',minio_tag,'scripts/infra'],env=build_env,timeout=1200)
-    life.minio_image=life.docker('image','inspect',minio_tag,'--format','{{.Id}}').strip()
-    life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     life.phase='product_images'
     services=BACKENDS+FRONTENDS
     references=[f'localhost:5001/addp-{name}:{life.run_id}' for name in services]
