@@ -32,6 +32,98 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def test_professional_initial_authorization_is_closed_status_only(self):
+        for initial in [{'status': 'pending'}, {'status': 'pending', 'code': 'scan_pending'},
+                        {'status': 'issued'}, {'status': 'denied', 'code': 'source_access_denied'}]:
+            item = {'execution_id': UUID, 'metadata': {'initial_authorization': initial}}
+            M.assert_projection(item, UUID)
+        for initial in [None, {'status': []}, {'status': 'unknown'}, {'status': 'pending', 'code': {}},
+                        {'status': 'pending', 'code': None}, {'status': 'pending', 'code': 'business-value-sentinel'},
+                        {'status': 'issued', 'code': 'scan_pending'}, {'status': 'denied'},
+                        {'status': 'pending', 'attempts': 1}, {'status': 'issued', 'grant_request_id': UUID},
+                        {'status': 'pending', 'next_attempt_unix': 1}]:
+            with self.subTest(initial=initial), self.assertRaises(M.SuiteError):
+                M.assert_projection({'execution_id': UUID, 'metadata': {'initial_authorization': initial}}, UUID)
+        monitor = {'execution_id': UUID, 'module': 'transfer', 'task_type': 'sync',
+                   'execution_boundary': 'continuous', 'queue_duration_ms': 0, 'run_duration_ms': 1,
+                   'lease_state': 'none', 'metadata': {'initial_authorization': {'status': 'pending'}}}
+        with self.assertRaisesRegex(M.SuiteError, 'generic diagnostic'):
+            M.assert_projection(monitor, UUID, monitor=True)
+
+    def test_failure_diagnostic_keeps_phase_without_exception_text_or_subprocess_output(self):
+        self.assertEqual(M.failure_diagnostic('scheduled_completion', M.SuiteError('Owner exposed arbitrary metadata')),
+                         {'phase': 'scheduled_completion', 'reason': 'owner_metadata_contract_mismatch'})
+        private = 'Bearer private-token business-value-sentinel raw_response'
+        for error, reason in [(M.SuiteError(private), 'request_or_contract_failed'),
+                              (M.subprocess.CalledProcessError(1, private, output=private), 'subprocess_failed'),
+                              (OSError(private), 'io_failed')]:
+            receipt = M.failure_diagnostic('scheduled_scan', error)
+            self.assertEqual(receipt, {'phase': 'scheduled_scan', 'reason': reason})
+            self.assertNotIn('private-token', json.dumps(receipt))
+        self.assertEqual(M.failure_diagnostic(private, ValueError(private))['phase'], 'preflight')
+
+    def test_cleanup_records_each_owned_task_and_verifies_deletion_after_safe_history(self):
+        for fail_history in [False, True]:
+            calls, report = [], {}
+            class Actor:
+                def request(self, method, path, expected):
+                    calls.append((method, path, expected))
+                    if path.endswith('/executions?page_size=100'):
+                        if fail_history and '/3/' in path:
+                            raise M.SuiteError('Bearer private-token business-value-sentinel')
+                        return SimpleNamespace(payload={'total': 1, 'data': [{'execution_id': UUID, 'status': 'success',
+                            'metadata': {'initial_authorization': {'status': 'pending'}}}]})
+                    if method == 'GET' and expected == (200,):
+                        return SimpleNamespace(payload={'enabled': False, 'desired_state': 'stopped'})
+                    return SimpleNamespace(payload={'error': 'private-token'})
+            complete = M.cleanup_owned_tasks(Actor(), [(2, 'kafka', 'owned-kafka'), (3, 'scheduled', 'owned-scheduled')],
+                                             lambda *args: self.fail('already quiescent'), report, lambda: None)
+            self.assertEqual(complete, not fail_history)
+            self.assertEqual(report['residual_resources'], int(fail_history))
+            self.assertEqual([r['task_id'] for r in report['cleanup_tasks']], [3, 2])
+            self.assertEqual(report['cleanup_tasks'][-1]['step'], 'verified_absent')
+            self.assertIn(('DELETE', M.OWNER + '/task-definitions/2', (200,)), calls)
+            self.assertIn(('GET', M.OWNER + '/task-definitions/2', (404,)), calls)
+            if fail_history:
+                self.assertEqual(report['cleanup_tasks'][0]['step'], 'wait_terminal_history')
+                self.assertEqual(report['cleanup_tasks'][0]['failure']['reason'], 'request_or_contract_failed')
+            else:
+                self.assertEqual(report['cleanup'], 'passed')
+                self.assertIn(('DELETE', M.OWNER + '/task-definitions/3', (200,)), calls)
+                self.assertIn(('GET', M.OWNER + '/task-definitions/3', (404,)), calls)
+            self.assertNotIn('private-token', json.dumps(report))
+
+    def test_scenario_error_survives_a_second_history_failure_during_cleanup(self):
+        calls, report = [], {}
+        class Actor:
+            def request(self, method, path, expected, body=None):
+                calls.append((method, path))
+                if path.endswith('/scan/run/manual') or path.endswith('/start'):
+                    return SimpleNamespace(payload={'execution_id': UUID, 'metadata': {}})
+                if path == '/api/v1/meta/executions/' + UUID:
+                    return SimpleNamespace(payload={'status': 'success'})
+                if path == M.OWNER + '/task-definitions':
+                    return SimpleNamespace(payload={'id': 1, 'tenant_id': 2})
+                if path.endswith('/executions?page_size=100'):
+                    return SimpleNamespace(payload={'total': 1, 'data': [{'execution_id': UUID, 'status': 'success',
+                        'metadata': {'initial_authorization': {'status': 'issued', 'grant_request_id': UUID}}}]})
+                if path == M.OWNER + '/task-definitions/1':
+                    return SimpleNamespace(payload={'desired_state': 'stopped'})
+                raise AssertionError('unexpected fixture operation')
+        with patch.object(M, 'catalog_item', side_effect=[{'id': 9}, None, None]), \
+                patch.object(M.API, 'read_meta_scan_boundary', return_value={'sibling': {}, 'ancestors': [{}, {}]}), \
+                patch.object(M.API, 'wait_meta_scan_tick'), \
+                patch.object(M, 'wait_status', side_effect=M.SuiteError('execution reached an unexpected terminal status')), \
+                self.assertRaisesRegex(M.SuiteError, 'unexpected terminal status'):
+            M.run_suite(Actor(), None, None, None, None, None, None, 2, 'run-1', 10, 11,
+                        report, lambda: None, None)
+        self.assertEqual(report['failure']['phase'], 'kafka_initial')
+        self.assertEqual(report['failure']['reason'], 'unexpected_terminal_status')
+        self.assertEqual(report['cleanup'], 'failed')
+        self.assertEqual(report['cleanup_tasks'][0]['step'], 'wait_terminal_history')
+        self.assertEqual(report['cleanup_tasks'][0]['failure']['reason'], 'owner_authorization_status_contract_mismatch')
+        self.assertFalse(any(method == 'DELETE' for method, _ in calls))
+
     def test_owner_browser_control_requires_bound_observation_and_restored_process_proof(self):
         with tempfile.TemporaryDirectory() as directory:
             control = Path(directory)

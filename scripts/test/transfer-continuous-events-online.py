@@ -42,7 +42,7 @@ MONITOR_FIELDS = set('id execution_id module task_type source source_task_id sou
                      'queue_duration_ms run_duration_ms lease_state recovery_reason'.split())
 OWNER_FIELDS = set('id execution_id task_id status start_time end_time records_read records_written bytes_read '
                    'bytes_written error_details metadata trigger_type trigger_by'.split())
-OWNER_METADATA = set('metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
+OWNER_METADATA = set('initial_authorization metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
                      'recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state'.split())
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
@@ -50,6 +50,10 @@ PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invali
 OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
                        'recovered_authorized_reads', 'no_samples']
+PHASES = {'preflight', 'source_scan', 'kafka_initial', 'kafka_visibility', 'kafka_browser', 'worker_recovery',
+          'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'cdc_initial', 'cdc_owner_outage',
+          'cdc_mutation', 'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
+          'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
 
 
 def require(condition, message):
@@ -98,6 +102,18 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
     else:
         require(isinstance(item.get('metadata'), dict) and set(item['metadata']) <= OWNER_METADATA,
                 'Owner exposed arbitrary metadata')
+        if 'initial_authorization' in item['metadata']:
+            initial = item['metadata']['initial_authorization']
+            require(isinstance(initial, dict) and set(initial) <= {'status', 'code'}
+                    and isinstance(initial.get('status'), str) and initial['status'] in {'pending', 'issued', 'denied'}
+                    and ('code' not in initial or isinstance(initial['code'], str)),
+                    'Owner exposed invalid initial authorization status facts')
+            codes = {'pending': {None, 'system_unavailable', 'authorization_pending', 'scan_pending', 'scan_failed'},
+                     'issued': {None},
+                     'denied': {'production_ineligible', 'source_access_denied', 'execution_permission_denied',
+                                'target_history_exists', 'engine_changed'}}
+            require(initial.get('code') in codes[initial['status']],
+                    'Owner exposed invalid initial authorization status facts')
         scan = item['metadata'].get('metadata_scan')
         if scan is not None:
             require(isinstance(scan, dict) and set(scan) <= {'status', 'attempt', 'execution_id', 'error_code'},
@@ -521,11 +537,61 @@ def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
                {'confirmed': True, 'confirmation_text': name} if kind == 'cdc' else None)
 
 
+def failure_diagnostic(phase, error):
+    # Only fixed classifications enter the public receipt, never exception text,
+    # response bodies, subprocess output, source values or credentials.
+    reasons = {'Owner exposed arbitrary metadata': 'owner_metadata_contract_mismatch',
+               'Owner exposed invalid initial authorization status facts': 'owner_authorization_status_contract_mismatch',
+               'execution reached an unexpected terminal status': 'unexpected_terminal_status',
+               'continuous execution did not converge before the deadline': 'convergence_timeout',
+               'continuous task cleanup failed': 'cleanup_incomplete',
+               'continuous Hosted acceptance interrupted': 'interrupted'}
+    reason = reasons.get(str(error)) if isinstance(error, SuiteError) else None
+    if reason is None:
+        reason = ('request_or_contract_failed' if isinstance(error, SuiteError) else
+                  'subprocess_failed' if isinstance(error, subprocess.SubprocessError) else
+                  'io_failed' if isinstance(error, OSError) else 'unexpected_failure')
+    return {'phase': phase if phase in PHASES else 'preflight', 'reason': reason}
+
+
+def cleanup_owned_tasks(client, tasks, mutate, report, checkpoint):
+    report['cleanup'] = 'started'
+    report['cleanup_tasks'] = []
+    checkpoint()
+    for task_id, kind, name in reversed(tasks):
+        outcome = {'task_id': task_id, 'kind': kind, 'step': 'read_definition', 'result': 'failed'}
+        try:
+            current = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
+            outcome['step'] = 'quiesce'
+            quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate)
+            outcome['step'] = 'wait_terminal_history'
+            until(lambda: all(item['status'] in TERMINAL for item in history(client, task_id)))
+            outcome['step'] = 'delete_definition'
+            client.request('DELETE', f'{OWNER}/task-definitions/{task_id}', (200,))
+            outcome['step'] = 'verify_deleted'
+            client.request('GET', f'{OWNER}/task-definitions/{task_id}', (404,))
+            outcome.update(step='verified_absent', result='passed')
+        except Exception as error:
+            outcome['failure'] = failure_diagnostic('cleanup', error)
+        report['cleanup_tasks'].append(outcome)
+        checkpoint()
+    count = sum(item['result'] != 'passed' for item in report['cleanup_tasks'])
+    report.update(cleanup='failed' if count else 'passed', residual_resources=count)
+    checkpoint()
+    return count == 0
+
+
 def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults):
     report.update(schema_version='addp.online-suite/v1', suite=SUITE, run_id=run_id, tenant_id=str(tenant),
                   result='failed', checks=[], resources=[], executions=[], cleanup='not_started',
                   history_cleanup='pending_deployment_destruction', uncertain_mutation=False)
     tasks = []
+    scenario_failed = False
+
+    def phase(name):
+        require(name in PHASES, 'invalid continuous acceptance phase')
+        report['phase'] = name
+        checkpoint()
 
     def mutate(actor, path, body=None, expected=(200,)):
         report['uncertain_mutation'] = True
@@ -569,6 +635,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         return owner
 
     try:
+        phase('source_scan')
         # Scan physical PostgreSQL facts through Meta; no fabricated catalog/task/runtime rows.
         scan = mutate(client, '/api/v1/meta/scan/run/manual',
                       {'engine_id': pg, 'scan_depth': 'deep', 'trigger_type': 'manual', 'force': True}, (201,))
@@ -591,6 +658,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             'ancestor_nodes_verified': len(boundary['ancestors']), 'scans': [], 'target_only_verified': False}
         def target_scan(kind, fields={'id', 'label'}):
             return wait_target_scan(client, pg, tenant, f'continuous_{kind}_target', fields, sibling, boundary)
+        phase('kafka_initial')
         kafka_task = create('kafka')
         initial = launch(kafka_task)
         require(physical('produce-initial'), 'business Kafka input failed')
@@ -601,6 +669,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         kafka_scan = target_scan('kafka')
         report['precise_scan_scope']['scans'].append({'phase': 'kafka_initial_prepare', **kafka_scan})
         report['checks'].append('kafka_physical_initial_commit_and_events')
+        phase('kafka_visibility')
         invisible(denied, initial, 403, 404)
         invisible(foreign, initial, 404, 404)
         report['hidden_monitor_totals'] = {'monitor_only': hidden_monitor_total(denied),
@@ -616,8 +685,10 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         def browser_progress():
             require(physical('produce-after-recovery'), 'browser committed progress fixture failed')
             until(lambda: physical('verify-kafka-recovered'))
+        phase('kafka_browser')
         report['browser_live'] = run_browser('live', [initial], report['consumer_identity'],
                                              run_id, faults.secret, browser_progress)
+        phase('worker_recovery')
         report['worker_fault'] = faults.kill_worker_and_replace()
         expired = wait_status(client, initial, 'failed')
         require(expired.get('error_details', {}).get('code') == 'lease_expired' and
@@ -639,6 +710,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         require(events(client, f'{OWNER}/executions', initial) == frozen, 'old execution accepted events after recovery')
         require(target_scan('kafka') == kafka_scan, 'Worker recovery repeated the initial target scan')
         report['checks'].append('real_worker_sigkill_lease_expiry_new_uuid_committed_resume')
+        phase('kafka_record_failure')
         mutate(client, f'{OWNER}/task-definitions/{kafka_task}/pause')
         wait_status(client, recovery_id, 'cancelled')
         compare(recovery_id, 'cancelled')
@@ -666,9 +738,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             response = client.request('GET', f'{MONITOR}/{initial}', (502, 503))
             assert_safe(response.payload)
             require('execution_id' not in response.payload, 'unavailable Owner leaked an execution')
+        phase('owner_unavailable')
         faults.stop_owner_during(owner_unavailable)
         compare(initial, 'failed')
         report['checks'].append('owner_unavailable_fail_closed')
+        phase('reader_revocation')
         def revoke_reader():
             report['cursor_revocation'] = revoke(reader, admin, login, tenant, initial, mutate)
             checkpoint()
@@ -676,17 +750,20 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             run_id, faults.secret, revoke_reader)
         report['checks'].append('revoked_token_and_fresh_monitor_only_reader_denied')
         report['checks'].append('real_event_pages_saved_cursor_and_revoked_list_total')
+        phase('cdc_initial')
         cdc_task = create('cdc')
         cdc = launch(cdc_task)
         until(lambda: physical('verify-cdc-initial'))
         cdc_scan = target_scan('cdc')
         report['precise_scan_scope']['scans'].append({'phase': 'cdc_snapshot_completed', **cdc_scan})
+        phase('cdc_owner_outage')
         report['browser_owner_unavailable'] = run_browser('owner_unavailable', [initial, cdc],
             report['consumer_identity'], run_id, faults.secret, faults=faults)
         compare(initial, 'failed')
         require(detail(client, cdc).get('status') == 'running', 'Owner outage stopped the continuous execution')
         compare(cdc)
         report['checks'].append('real_owner_outage_browser_clears_and_recovers_without_grant_cache')
+        phase('cdc_mutation')
         require(physical('mutate-cdc'), 'CDC mutation fixture failed')
         until(lambda: physical('verify-cdc-mutated'))
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 5
@@ -701,6 +778,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         API.wait_meta_scan_tick([cdc_scan])
         initiating_user = report['consumer_identity']['principal_id']
         approving_user = report['peer_identity']['principal_id']
+        phase('cdc_approval')
         path, approval, scan_id = apply_cdc_schema_approval(peer, cdc_task, cdc, mutate, initiator=client,
             initial_scan_id=formal_source_scan_id, initiator_id=initiating_user, approver_id=approving_user)
         migrated = target_scan('cdc', {'id', 'label', 'scan_extra'})
@@ -719,6 +797,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             'bidirectional_read_isolation_verified': True, 'original_execution_actor_preserved': True,
             'repeat_by_initiator_preserves_approver': True}
         report['checks'].append('cdc_distinct_approver_scan_origin_and_bidirectional_read_isolation')
+        phase('cdc_resume')
         cdc_resumed = launch(cdc_task, 'resume')
         require(cdc_resumed != cdc and detail(client, cdc_resumed).get('trigger_by') == int(initiating_user),
                 'schema approval resume reused execution identity or changed its User')
@@ -732,6 +811,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['precise_scan_scope']['target_only_verified'] = True
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
+        phase('cdc_stop')
         mutate(client, f'{OWNER}/task-definitions/{cdc_task}/stop', {'confirmed': True, 'confirmation_text': name})
         wait_status(client, cdc_resumed, 'cancelled')
         compare(cdc_resumed, 'cancelled')
@@ -741,6 +821,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         # a real owner timer, then pause before the next tick while this run drains.
         require(catalog_item(client, pg, tenant, 'continuous_scheduled_target') is None,
                 'scheduled target must be absent from the baseline catalog')
+        phase('scheduled_create')
         name = f'online-{run_id}-scheduled'
         definition = mutate(client, f'{OWNER}/task-definitions', scheduled_task_body(name, pg), (201,))
         task_id = API.require_positive_int(definition, 'id')
@@ -752,16 +833,21 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             runs = history(client, task_id)
             require(len(runs) <= 1, 'scheduled task created duplicate initial executions')
             return runs[0] if runs else None
+        phase('scheduled_admission')
         pending = until(scheduled_run)
         scheduled_id = canonical_uuid(pending.get('execution_id'))
         report['executions'].append(scheduled_id)
         checkpoint()
+        phase('scheduled_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+        phase('scheduled_completion')
         execution = wait_status(client, scheduled_id, 'success')
         scan_feedback = execution.get('metadata', {}).get('metadata_scan', {})
         require(scan_feedback.get('status') == 'submitted', 'scheduled write did not submit its target scan')
         scheduled_scan_id = canonical_uuid(scan_feedback.get('execution_id'))
+        phase('scheduled_scan')
         until(lambda: assert_scheduled_scan_origin(client, peer, execution, scheduled_scan_id, initiating_user))
+        phase('scheduled_result')
         precise = wait_target_scan(client, pg, tenant, 'continuous_scheduled_target', {'id', 'label'}, sibling, boundary)
         require(physical('verify-scheduled'), 'scheduled transfer did not commit the expected physical rowset')
         paused = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
@@ -776,25 +862,24 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             'parent_read_verified': True, 'peer_read_denied': True, 'physical_rowset_verified': True, 'schedule_paused': True}
         report['checks'].append('bounded_owner_schedule_current_subject_precise_scan_and_read_isolation')
 
+    except Exception as error:
+        scenario_failed = True
+        report['failure'] = {**failure_diagnostic(report['phase'], error),
+                             'uncertain_mutation': report['uncertain_mutation']}
+        checkpoint()
+        raise
+    else:
+        phase('cleanup')
     finally:
-        report['cleanup'] = 'started'
-        checkpoint()
-        failures = []
-        for task_id, kind, name in reversed(tasks):
-            try:
-                current = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
-                quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate)
-                # Stop must converge before delete, including recovery admitted concurrently with failure.
-                until(lambda: all(item['status'] in TERMINAL for item in history(client, task_id)))
-                client.request('DELETE', f'{OWNER}/task-definitions/{task_id}', (200,))
-                client.request('GET', f'{OWNER}/task-definitions/{task_id}', (404,))
-            except (SuiteError, subprocess.SubprocessError):
-                failures.append(task_id)
-        report['cleanup'] = 'failed' if failures else 'passed'
-        report['residual_resources'] = len(failures)
-        checkpoint()
-        require(not failures, 'continuous task cleanup failed')
+        previously_uncertain = report['uncertain_mutation']
+        clean = cleanup_owned_tasks(client, tasks, mutate, report, checkpoint)
+        report['uncertain_mutation'] |= previously_uncertain
+        if not clean and not scenario_failed:
+            report['failure'] = failure_diagnostic('cleanup', SuiteError('continuous task cleanup failed'))
+            checkpoint()
+            raise SuiteError('continuous task cleanup failed')
     # Definition deletion must retain the authorized execution history and event facts.
+    phase('deleted_history')
     compare(initial, 'failed')
     assert_projection(peer.request('GET', f'{MONITOR}/{initial}', (200,)).payload, initial, monitor=True, tenant=tenant)
     invisible(denied, initial, 403, 404)
@@ -853,10 +938,11 @@ def main():
         report['protection_projection_ready'] = True
         run_suite(client, denied, foreign, peer, reader, admin, API.GatewayClient(gateway, '', timeout),
                   tenant, run_id, pg, kafka, report, checkpoint, faults)
-    except (KeyError, ValueError, SuiteError, subprocess.SubprocessError, OSError) as error:
+    except Exception as error:
         report['result'] = 'failed'
-        # Never persist raw API errors, subprocess output, config, source values or credentials.
-        print('Continuous Hosted suite failed: ' + (str(error) if isinstance(error, SuiteError) else 'fixture/lifecycle error'), file=sys.stderr)
+        report.setdefault('failure', failure_diagnostic(report.get('phase', 'preflight'), error))
+        failure = report['failure']
+        print('Continuous Hosted suite failed: ' + failure['phase'] + '/' + failure['reason'], file=sys.stderr)
         return 1
     finally:
         signal.alarm(0)
