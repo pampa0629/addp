@@ -175,7 +175,7 @@ fi
 
 ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
     go test ./execution \
-    -run '^TestExecution(AuthorizationFactsMigration|Events)AgainstPostgres$' \
+    -run '^TestExecution(AuthorizationFactsMigration|Events|EventRetention)AgainstPostgres$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-execution-postgres.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then

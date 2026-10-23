@@ -261,6 +261,7 @@ type EventPruneResult struct {
 }
 
 // PruneEvents is shared-storage maintenance; it never deletes task executions or audit.
+// A failed transaction returns no committed deletion result.
 func PruneEvents(ctx context.Context, db *gorm.DB, now time.Time, limit int) (*EventPruneResult, error) {
 	if db == nil || now.IsZero() || limit < 1 || limit > 1000 {
 		return nil, fmt.Errorf("invalid execution event maintenance request")
@@ -282,5 +283,8 @@ func PruneEvents(ctx context.Context, db *gorm.DB, now time.Time, limit int) (*E
 		result.Deleted = deleted.RowsAffected
 		return deleted.Error
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
