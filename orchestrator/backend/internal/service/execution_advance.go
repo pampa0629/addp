@@ -93,14 +93,14 @@ func (e *Executor) Advance(ctx context.Context, lease execution.Lease) error {
 		var stage *httptrace.ExecutionStage
 		if step.Provider == execution.ModuleDevelop && step.TaskType == execution.TaskTypeQuery {
 			dispatchCtx, stage = startExecutionStage(ctx, item, httptrace.PhaseDispatch)
-			defer stage.End(httptrace.OutcomeRejected)
+			defer stage.EndExecution(item.ExecutionID, httptrace.OutcomeRejected)
 		}
 		if err := e.executionService.updateStepResults(dispatchCtx, lease, results, id, stage.Reference()); err != nil {
 			return err
 		}
 		params, err := e.resolveTemplateReferences(step.Parameters, results)
 		if err != nil {
-			stage.End(httptrace.OutcomeFailed)
+			stage.EndExecution(item.ExecutionID, httptrace.OutcomeFailed)
 			return e.failStep(ctx, lease, id, results, result, "orchestrator.execution.binding_invalid")
 		}
 		timeout := time.Duration(step.Timeout) * time.Second
@@ -111,7 +111,7 @@ func (e *Executor) Advance(ctx context.Context, lease execution.Lease) error {
 		submitted, err := e.submitTaskProviderStep(submissionContext, step, params, result.StartedAt, item.ExecutionID, item.TriggerType, item.TenantID)
 		cancel()
 		if err != nil {
-			stage.End(httptrace.OutcomeFailed)
+			stage.EndExecution(item.ExecutionID, httptrace.OutcomeFailed)
 			code := submitted.ErrorCode
 			if code == "" {
 				code = "orchestrator.execution.dispatch_uncertain"
@@ -121,9 +121,9 @@ func (e *Executor) Advance(ctx context.Context, lease execution.Lease) error {
 		results[id] = submitted
 		err = e.executionService.UpdateStepResults(dispatchCtx, lease, results, id)
 		if err == nil {
-			stage.End(httptrace.OutcomeSuccess)
+			stage.EndExecution(item.ExecutionID, httptrace.OutcomeSuccess)
 		} else {
-			stage.End(httptrace.OutcomeRejected)
+			stage.EndExecution(item.ExecutionID, httptrace.OutcomeRejected)
 		}
 		return err
 	}
@@ -160,7 +160,7 @@ func (e *Executor) failStep(ctx context.Context, lease execution.Lease, id strin
 		}
 		return bound.finishExecution(stageCtx, item, lease, "failed", code, stage.Reference())
 	})
-	endExecutionStage(stage, execution.ExecutionStatusFailed, err)
+	endExecutionStage(stage, lease.ExecutionID, execution.ExecutionStatusFailed, err)
 	return err
 }
 

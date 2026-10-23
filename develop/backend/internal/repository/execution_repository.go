@@ -122,7 +122,9 @@ func (r *ExecutionRepository) ClaimNext(
 		}
 		return updateDevTaskExecutionSummary(tx, execution, commonExecution.ExecutionStatusRunning, now)
 	})
-	endQueryExecutionStage(stage, commonExecution.ExecutionStatusSuccess, err)
+	if execution != nil {
+		endQueryExecutionStage(stage, execution.ExecutionID, commonExecution.ExecutionStatusSuccess, err)
+	}
 	return execution, lease, err
 }
 
@@ -228,7 +230,7 @@ func (r *ExecutionRepository) CompleteWithLease(
 		}
 		return updateDevTaskExecutionSummary(tx, execution, status, completedAt)
 	})
-	endQueryExecutionStage(stage, status, err)
+	endQueryExecutionStage(stage, execution.ExecutionID, status, err)
 	return err
 }
 
@@ -237,7 +239,10 @@ func (r *ExecutionRepository) CompleteWithLease(
 // a fresh target instead of replaying the same execution.
 func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
-	var stages []*httptrace.ExecutionStage
+	var stages []struct {
+		stage       *httptrace.ExecutionStage
+		executionID string
+	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
 			Module: commonExecution.ModuleDevelop, TaskTypes: executionTaskTypes,
@@ -259,7 +264,10 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 				},
 			}
 			stageCtx, stage := queryExecutionStage(ctx, &item, httptrace.PhaseTerminal)
-			stages = append(stages, stage)
+			stages = append(stages, struct {
+				stage       *httptrace.ExecutionStage
+				executionID string
+			}{stage, item.ExecutionID})
 			if stage.Reference() != nil {
 				fields["metadata"] = queryStageMetadata(item.Metadata, stage)
 			}
@@ -276,8 +284,8 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 		}
 		return nil
 	})
-	for _, stage := range stages {
-		endQueryExecutionStage(stage, commonExecution.ExecutionStatusFailed, err)
+	for _, checkpoint := range stages {
+		endQueryExecutionStage(checkpoint.stage, checkpoint.executionID, commonExecution.ExecutionStatusFailed, err)
 	}
 	return count, err
 }

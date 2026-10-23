@@ -70,6 +70,8 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
+正式身份的本机执行 Trace／日志闭环使用人工 `make test-monitor-traces-local`，准入、8 CPU／12 GiB、4 GiB 停止线、60 分钟及全部清理沿观测规范“正式身份的本机隔离闭环”。独立构建、独占身份和容器，不借个人服务或 Hosted；静态／守卫回归 `make test-monitor-traces-local-runner` 已聚合到既有 Infra 日志生命周期和 Platform，公共 workflow 禁止调用真实本地入口。
+
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
 
 ## 仍需独立证据的范围

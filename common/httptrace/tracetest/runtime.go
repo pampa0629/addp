@@ -3,6 +3,7 @@
 package tracetest
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -15,10 +16,51 @@ import (
 	"testing"
 
 	"github.com/addp/common/httptrace"
+	"github.com/addp/common/logger"
 	collector "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+type checkpointWriter struct {
+	sync.Mutex
+	data []byte
+}
+
+func (w *checkpointWriter) Write(data []byte) (int, error) {
+	w.Lock()
+	defer w.Unlock()
+	w.data = append(w.data, data...)
+	return len(data), nil
+}
+
+// CaptureCheckpoints records the real shared JSON logger's output for owner
+// transaction tests. Like Start, it must only be used by serial tests.
+func CaptureCheckpoints(t testing.TB) func() []map[string]interface{} {
+	t.Helper()
+	writer := &checkpointWriter{}
+	logger.Init(logger.Options{Writer: writer})
+	t.Cleanup(func() { logger.Init(logger.Options{}) })
+	return func() []map[string]interface{} {
+		writer.Lock()
+		data := append([]byte(nil), writer.data...)
+		writer.Unlock()
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		var records []map[string]interface{}
+		for {
+			var record map[string]interface{}
+			if err := decoder.Decode(&record); err != nil {
+				if err != io.EOF {
+					t.Fatal(err)
+				}
+				return records
+			}
+			if record["msg"] == "execution.checkpoint" {
+				records = append(records, record)
+			}
+		}
+	}
+}
 
 type Recorder struct {
 	mu       sync.Mutex

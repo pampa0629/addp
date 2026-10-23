@@ -58,6 +58,7 @@ func traceDefinition(t *testing.T, db *gorm.DB) *orchmodels.Orchestration {
 func runOrchestrationTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 	t.Run("reload_dispatch_and_terminal_preserve_business_metadata", func(t *testing.T) {
 		recorder := tracetest.Start(t, "orchestrator")
+		checkpoints := tracetest.CaptureCheckpoints(t)
 		db := database(t)
 		definition := traceDefinition(t, db)
 		service := NewExecutionService(db)
@@ -143,6 +144,19 @@ func runOrchestrationTraceCases(t *testing.T, database func(*testing.T) *gorm.DB
 		}
 		if hex.EncodeToString(phases["execution.terminal"].Links[1].TraceId) != dispatch.TraceID {
 			t.Fatal("terminal did not link the persisted latest dispatch after reload")
+		}
+		logs := checkpoints()
+		if len(logs) != 4 {
+			t.Fatalf("owner checkpoint count=%d, want four real stages", len(logs))
+		}
+		seen := map[string]bool{}
+		for _, log := range logs {
+			phase, _ := log["phase"].(string)
+			span := phases["execution."+phase]
+			if seen[phase] || span == nil || log["execution_id"] != item.ExecutionID || log["outcome"] != "success" || log["trace_id"] != hex.EncodeToString(span.TraceId) || log["span_id"] != hex.EncodeToString(span.SpanId) {
+				t.Fatal("owner checkpoint did not bind its true phase and execution")
+			}
+			seen[phase] = true
 		}
 	})
 	t.Run("accepted_dispatch_checkpoint_rejected_is_not_task_failure", func(t *testing.T) {
@@ -282,6 +296,7 @@ func runOrchestrationTraceCases(t *testing.T, database func(*testing.T) *gorm.DB
 	for _, operation := range []string{"claim", "terminal", "step_failure"} {
 		t.Run("rollback_"+operation, func(t *testing.T) {
 			recorder := tracetest.Start(t, "orchestrator")
+			checkpoints := tracetest.CaptureCheckpoints(t)
 			db := database(t)
 			definition := traceDefinition(t, db)
 			service := NewExecutionService(db)
@@ -339,6 +354,18 @@ func runOrchestrationTraceCases(t *testing.T, database func(*testing.T) *gorm.DB
 			}
 			if !found {
 				t.Fatal("rejected transaction phase missing")
+			}
+			count := 0
+			for _, log := range checkpoints() {
+				if "execution."+log["phase"].(string) == wanted {
+					count++
+					if log["execution_id"] != item.ExecutionID || log["outcome"] != "rejected" {
+						t.Fatal("uncommitted transaction emitted a success checkpoint")
+					}
+				}
+			}
+			if count != 1 {
+				t.Fatal("rejected transaction checkpoint missing or duplicated")
 			}
 		})
 	}

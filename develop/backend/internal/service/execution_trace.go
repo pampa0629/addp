@@ -22,13 +22,13 @@ func createDevelopExecution(ctx context.Context, repo *execution.TaskExecutionRe
 		return repo.Create(ctx, item)
 	}
 	stageCtx, stage := httptrace.StartExecutionStage(ctx, httptrace.PhaseEnqueue, 0, nil, nil)
-	defer stage.End(httptrace.OutcomeRejected)
+	defer stage.EndExecution(item.ExecutionID, httptrace.OutcomeRejected)
 	if ref := stage.Reference(); ref != nil {
 		_ = execution.FreezeEnqueueTrace(item, ref)
 	}
 	if err := repo.Create(stageCtx, item); err != nil {
 		return err
 	}
-	stage.End(httptrace.OutcomeSuccess)
+	stage.EndExecution(item.ExecutionID, httptrace.OutcomeSuccess)
 	return nil
 }

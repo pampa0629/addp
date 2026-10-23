@@ -50,7 +50,9 @@ Python HTTPX 的成功例行请求仅在 DEBUG 输出：范围限于 POST 模块
 | `channel` | stdout 或 stderr；stderr 不自动等于 ERROR |
 | `message`、`stack` | 文本正文及堆栈，不执行 HTML |
 | `request_id` | 可选关联字段，不作为索引标签 |
-| `trace_id`、`span_id` | Go HTTP Context 的规范关联字段，32/16 位小写十六进制且非零；作为结构化元数据，不作索引标签、不派生授权 |
+| `trace_id`、`span_id` | Go HTTP／执行短阶段 Context 的规范关联字段，32/16 位小写十六进制且非零；作为结构化元数据，不作索引标签、不派生授权 |
+
+执行短阶段的固定检查点可在正文属性保存规范 execution UUID、phase、attempt、outcome，复用当前阶段 Context 的 trace/span 关联；UUID 不作索引，不新增 Tenant 投影，不携带 SQL、参数、结果、原始异常或主体身份。仅在阶段真实结束时幂等记录，不用心跳／等待日志替代执行事实。
 
 正文同名字段不能覆盖可信身份；超长事件带明确截断标记。解析和截断由接收器计数，发送重试与丢弃由 Alloy 指标观测。TSDB Schema 支持结构化元数据；实例、事件、请求 ID 及分段路径不得成为 Loki 高基数索引标签。
 

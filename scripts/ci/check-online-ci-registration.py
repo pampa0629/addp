@@ -3146,6 +3146,26 @@ def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
         raise RegistrationError("highgo-consumer-flow must not also run on self-hosted")
 
 
+def validate_local_execution_trace_profile(repository: Path) -> None:
+    """The formal-identity local technical gate is never a GitHub dispatch."""
+    path=repository / "scripts/test/monitor-traces-local-gate.py"
+    make=(repository / "Makefile").read_text() if (repository / "Makefile").is_file() else ""
+    if not path.exists() and "test-monitor-traces-local:" not in make:
+        return
+    required=("test-monitor-traces-local:", "@python3 scripts/test/monitor-traces-local-gate.py",
+              "test-monitor-traces-local-runner:", "@$(MAKE) test-monitor-traces-local-runner",
+              "scripts/test/monitor-traces-local-gate_test.py", "scripts/test/monitor-traces-local-online_test.py")
+    if not path.is_file() or any(value not in make for value in required):
+        raise RegistrationError("local execution Trace requires its manual entry and existing lifecycle runner")
+    for relative in ("scripts/test/monitor-traces-local-online.py", "console/frontend/e2e/online/execution-trace-local.spec.js",
+                     "system/backend/cmd/online-test-fixture/execution_trace_local.go"):
+        if not (repository / relative).is_file():
+            raise RegistrationError("local execution Trace is missing its formal-identity owner inputs")
+    for workflow in (repository / ".github/workflows").glob("*.y*ml"):
+        if re.search(r"(?:make\s+test-monitor-traces-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/monitor-traces-local-gate.py)", workflow.read_text()):
+            raise RegistrationError("local execution Trace must not execute in GitHub Actions")
+
+
 def validate_local_sgm_profile(repository: Path) -> None:
     """The approved technical page gate must never become a public T4 choice."""
     make_path = repository / "Makefile"
@@ -3375,6 +3395,7 @@ def check_registration(repository: Path) -> None:
     validate_workbench_service_consumption_profile(repository, registered)
     validate_manager_internal_artifact_lineage_profile(repository, registered)
     validate_local_sgm_profile(repository)
+    validate_local_execution_trace_profile(repository)
     validate_manager_hybrid_search_profile(repository, registered)
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)

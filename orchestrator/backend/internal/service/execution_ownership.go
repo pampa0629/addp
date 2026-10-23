@@ -36,7 +36,9 @@ func (s *ExecutionService) ClaimNext(ctx context.Context, owner string, duration
 		}
 		return execution.AppendBoundedEvent(ctx, tx, *lease, execution.EventInput{Kind: "started"})
 	})
-	endExecutionStage(stage, execution.ExecutionStatusSuccess, err)
+	if item != nil {
+		endExecutionStage(stage, item.ExecutionID, execution.ExecutionStatusSuccess, err)
+	}
 	return item, lease, err
 }
 
@@ -104,7 +106,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, lease execution.
 		stage = started
 		return bound.finishExecution(stageCtx, item, lease, status, code, stage.Reference())
 	})
-	endExecutionStage(stage, status, err)
+	endExecutionStage(stage, lease.ExecutionID, status, err)
 	return err
 }
 
@@ -131,7 +133,10 @@ func (s *ExecutionService) finishExecution(ctx context.Context, item *execution.
 // RecoverExpired never requeues a dispatched orchestration. Child execution facts remain intact.
 func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
-	var stages []*httptrace.ExecutionStage
+	var stages []struct {
+		stage       *httptrace.ExecutionStage
+		executionID string
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Now: now, Limit: limit})
 		if err != nil {
@@ -151,7 +156,10 @@ func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, li
 			}
 			fields := map[string]interface{}{"error_details": executionFailureDetails(code), "current_step": nil}
 			stageCtx, stage := startExecutionStage(ctx, &item, httptrace.PhaseTerminal)
-			stages = append(stages, stage)
+			stages = append(stages, struct {
+				stage       *httptrace.ExecutionStage
+				executionID string
+			}{stage, item.ExecutionID})
 			if ref := stage.Reference(); ref != nil {
 				fields["metadata"] = stageMetadata(item.Metadata, ref)
 			}
@@ -165,8 +173,8 @@ func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, li
 		}
 		return nil
 	})
-	for _, stage := range stages {
-		endExecutionStage(stage, execution.ExecutionStatusFailed, err)
+	for _, checkpoint := range stages {
+		endExecutionStage(checkpoint.stage, checkpoint.executionID, execution.ExecutionStatusFailed, err)
 	}
 	return count, err
 }
@@ -199,8 +207,8 @@ func (s *ExecutionService) CreateScheduled(ctx context.Context, expected *orchmo
 		}
 		return tx.Model(&orch).Updates(map[string]interface{}{"next_run_at": next}).Error
 	})
-	if err == nil && item != nil {
-		stage.End(httptrace.OutcomeSuccess)
+	if item != nil {
+		endExecutionStage(stage, item.ExecutionID, execution.ExecutionStatusSuccess, err)
 	}
 	return item, err
 }

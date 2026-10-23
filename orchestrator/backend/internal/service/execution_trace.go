@@ -32,21 +32,21 @@ func stageMetadata(metadata models.JSONMap, ref *observability.TraceReference) m
 	return next
 }
 
-func endExecutionStage(stage *httptrace.ExecutionStage, status string, err error) {
+func endExecutionStage(stage *httptrace.ExecutionStage, executionID, status string, err error) {
 	if err != nil {
-		stage.End(httptrace.OutcomeRejected)
+		stage.EndExecution(executionID, httptrace.OutcomeRejected)
 		return
 	}
 	switch status {
 	case execution.ExecutionStatusSuccess:
-		stage.End(httptrace.OutcomeSuccess)
+		stage.EndExecution(executionID, httptrace.OutcomeSuccess)
 	case execution.ExecutionStatusFailed:
-		stage.End(httptrace.OutcomeFailed)
+		stage.EndExecution(executionID, httptrace.OutcomeFailed)
 	case execution.ExecutionStatusTimeout:
-		stage.End(httptrace.OutcomeTimeout)
+		stage.EndExecution(executionID, httptrace.OutcomeTimeout)
 	case execution.ExecutionStatusCancelled:
-		stage.End(httptrace.OutcomeCancelled)
+		stage.EndExecution(executionID, httptrace.OutcomeCancelled)
 	default:
-		stage.End(httptrace.OutcomeRejected)
+		stage.EndExecution(executionID, httptrace.OutcomeRejected)
 	}
 }

@@ -27,6 +27,10 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 各 suite 的部署选择、专用夹具和业务断言见[场景索引](../addp测试与验收规范.md#online-场景索引)；专用条款只适用于其声明的 suite 与 profile。
 
+## 正式身份的本地 Trace 技术验收
+
+2026-10-23 用户确认 `make test-monitor-traces-local`：在本机独占一次性容器部署验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询和精确日志关联。它是人工本地技术证据，不属于上述 GitHub profile，也不允许伪造 Hosted 环境；不会进入工作流、夜间调度或替代正式 Runner T4。身份、资源、停止线和清理的唯一契约见[运行观测规范](../addp平台运行观测规范.md#正式身份的本机隔离闭环)。System 专用夹具仅放行该明确本地标记与 `execution-trace-local`，不推广 SGM 例外，也不扩大生产权限。
+
 ## 开关、身份与拓扑预检
 
 每次 T4 运行至少满足：

@@ -28,22 +28,22 @@ func queryExecutionStage(ctx context.Context, item *execution.TaskExecution, pha
 	return httptrace.StartExecutionStage(ctx, phase, item.Attempt, enqueue, latest)
 }
 
-func endQueryExecutionStage(stage *httptrace.ExecutionStage, status string, err error) {
+func endQueryExecutionStage(stage *httptrace.ExecutionStage, executionID, status string, err error) {
 	if err != nil {
-		stage.End(httptrace.OutcomeRejected)
+		stage.EndExecution(executionID, httptrace.OutcomeRejected)
 		return
 	}
 	switch status {
 	case execution.ExecutionStatusSuccess:
-		stage.End(httptrace.OutcomeSuccess)
+		stage.EndExecution(executionID, httptrace.OutcomeSuccess)
 	case execution.ExecutionStatusFailed:
-		stage.End(httptrace.OutcomeFailed)
+		stage.EndExecution(executionID, httptrace.OutcomeFailed)
 	case execution.ExecutionStatusTimeout:
-		stage.End(httptrace.OutcomeTimeout)
+		stage.EndExecution(executionID, httptrace.OutcomeTimeout)
 	case execution.ExecutionStatusCancelled:
-		stage.End(httptrace.OutcomeCancelled)
+		stage.EndExecution(executionID, httptrace.OutcomeCancelled)
 	default:
-		stage.End(httptrace.OutcomeRejected)
+		stage.EndExecution(executionID, httptrace.OutcomeRejected)
 	}
 }
 
@@ -79,7 +79,7 @@ func (r *ExecutionRepository) RecordQueryDispatch(ctx context.Context, item *exe
 		}
 		return execution.UpdateWithLease(stageCtx, tx, lease, map[string]interface{}{"metadata": queryStageMetadata(item.Metadata, stage)})
 	})
-	endQueryExecutionStage(stage, execution.ExecutionStatusSuccess, err)
+	endQueryExecutionStage(stage, lease.ExecutionID, execution.ExecutionStatusSuccess, err)
 	// Optional checkpoint storage is not execution admission. The original
 	// progress/authorization/heartbeat fences still govern query dispatch.
 	// A positively identified lost lease or business cancellation remains fatal.

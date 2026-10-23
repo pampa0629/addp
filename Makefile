@@ -854,6 +854,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 
 .PHONY: test-infra-runtime-log-lifecycle
 test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
+	@$(MAKE) test-monitor-traces-local-runner
 	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
 .PHONY: test-dev-lifecycle
@@ -1270,6 +1271,17 @@ test-platform-administrator-online-runner: ## 验证三员 Hosted 准入、身�
 	@bash -n scripts/test/online-hosted-administrator-governance-gate.sh
 	@python3 -m unittest scripts/test/platform-administrator-governance-online_test.py scripts/test/online-hosted-administrator-governance-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_administrator_governance_requires_manual_isolated_profile
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'AdministratorGovernanceFixture|MetricsBootstrap' -count=1
+
+.PHONY: test-monitor-traces-local test-monitor-traces-local-runner
+test-monitor-traces-local: ## 人工运行正式身份的本机隔离执行 Trace 与日志闭环（不运行 Hosted）
+	@python3 scripts/test/monitor-traces-local-gate.py
+
+test-monitor-traces-local-runner: ## 验证本地 Trace 准入、资源守卫、身份及清理，不启动服务
+	@python3 -m unittest scripts/test/monitor-traces-local-gate_test.py scripts/test/monitor-traces-local-online_test.py scripts/ci/check-execution-trace-local-registration_test.py
+	@node --check --input-type=module < console/frontend/e2e/online/execution-trace-local.spec.js
+	@node --check console/frontend/e2e/online/execution-trace-local-support.mjs
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace' -count=1
 
 .PHONY: test-monitor-traces
 test-monitor-traces: ## 隔离验证 HTTP Trace 传播、真实尾采样、Tempo 和日志关联

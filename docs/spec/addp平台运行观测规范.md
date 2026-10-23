@@ -280,6 +280,8 @@ Desktop 来源固定启用 cpu、meminfo、loadavg、diskstats、stat、uname、
 
 页面复用共享图表、格式化、自动刷新及请求代数隔离。默认 15 秒刷新、最短 10 秒；刷新、范围、实例和筛选沿唯一 URL 恢复，隐藏页面暂停并取消在途请求。错误、撤权或上下文变化清除旧内容，迟到响应不得覆盖当前对象。
 
+同一磁盘设备的读／写吞吐、同一网卡的收／发吞吐分别同图对比，使用一次现有固定指标查询及同一设备、时窗和评估网格。两条曲线共用按有效样本选择的容量单位，保留各自图例和缺值断点，不累加设备或方向、不插值、不把一分钟平均字节速率改称分钟流量总量。URL 中所选方向仍决定采样明细；刷新或切换方向不借用响应数组顺序。返回其他设备、缺少一条序列或评估网格错位时整幅趋势拒绝；一条序列中的缺样不将另一条有效值改为零。其他指标继续沿原单指标趋势及比较口径，不增加接口、权限或查询参数。
+
 服务列表默认显示在线且已声明采集的实例，采集失败或缺样的行仍保留；可切换“全部实例”，筛选由 System 在计数和分页前完成。服务监控沿既有 `registered_host` 按登记端点的主机名或 IP 精确筛选，不含协议和端口，不把运行环境主机名或承载主机作为匹配地址；未登记监听端点的 Worker 不凭宿主地址补匹配。地址与其他已提交筛选沿唯一 URL 恢复，分页、趋势、刷新及主机跳转返回继续保留；未提交的输入不影响自动刷新。重置清空筛选、页码和趋势选择，恢复在线且已声明采集的默认范围，保留用户的自动刷新选择。在线状态只按 System 租约返回值显示绿色 `UP`、红色 `DOWN` 标签，并保留当前语言的在线/离线文字；采集失败、未接入或缺样不能将在线实例改为离线，配色沿统一主题。Worker 用途只消费既有 `metadata.runtime_name`，未知时仅显示正式角色，不由模块名猜测。
 
 服务与引擎监控列表、引擎监控详情的主机关联只消费 System 返回的有效 `node_id`，不以部署时的 `host_node_name` 作为当前纳管名称。另有主机读取权限时，复用当页去重、最多四并发的主机引用解析，显示当前名称并沿原路由进入主机资源；没有权限或主机读取失败时保留节点 ID 文本，不提供链接，也不影响服务或引擎自身的资源读取。服务未绑定明确显示未关联；引擎无有效 `node_id` 时显示当前关联无效，不回用声明中的旧主机。名称读取与指标读取独立，名称失败不清除合法指标；刷新失败、身份或页面变化后丢弃旧名称和迟到结果。主机名称链接由 Monitor 唯一领域组件渲染，复用既有导航入口并以 push 保留原引擎筛选、详情及趋势地址；浏览器返回恢复原地址，不新增承载声明或推断关系。
@@ -390,7 +392,7 @@ OTLP 使用独立 TLS/认证和部署来源约束，不公开任意写入。查�
 
 阶段各自创建独立新 Trace：enqueue 为 PRODUCER，claim 为 CONSUMER，dispatch 为 PRODUCER，terminal 为 INTERNAL，scope 唯一为 `addp.execution`。enqueue 仅 Link 当前正式 Runtime 的真实本地 HTTP Span；后续阶段 Link 持久 enqueue 和最新阶段，去重后最多两个，不从远端自报 SpanContext 或参数构造引用。新 root 只切断 Span parent，原业务 Context 的取消、截止和安全值继续生效。长任务、SQL 执行、等待轮询、租约心跳与后台整轮扫描均不包在这些 Span 内；任务总耗时仍取 execution。
 
-Span 名称由阶段固定生成，唯一阶段属性为 `addp.execution.phase/attempt/outcome`，阶段值 `enqueue/claim/dispatch/terminal`。outcome 固定 `success/failed/timeout/cancelled/rejected`：非 terminal 表示该阶段动作结果；已提交 terminal 才表达任务终态；`rejected` 表示事务未提交或所有权已失效，不表示任务失败。failed/timeout 使用 Error 状态；cancelled/rejected 不推断 HTTP 服务端失败。不记录原始异常文本、SQL／参数／结果、业务 execution UUID 或用户租户身份，日志仅从当前短阶段 Context 关联 trace/span ID。 Go SDK 自动合并的 OTEL_RESOURCE_ATTRIBUTES／OTEL_SERVICE_NAME 也不构成部署身份或属性来源；导出端仅保留正式模块、角色、启动实例三项资源白名单，不修改进程全局环境。
+Span 名称由阶段固定生成，唯一阶段属性为 `addp.execution.phase/attempt/outcome`，阶段值 `enqueue/claim/dispatch/terminal`。outcome 固定 `success/failed/timeout/cancelled/rejected`：非 terminal 表示该阶段动作结果；已提交 terminal 才表达任务终态；`rejected` 表示事务未提交或所有权已失效，不表示任务失败。failed/timeout 使用 Error 状态；cancelled/rejected 不推断 HTTP 服务端失败。Span 不记录原始异常文本、SQL／参数／结果、业务 execution UUID 或用户租户身份。2026-10-23 用户确认增加真实短阶段检查点日志：仅固定事件、规范 execution UUID、phase、attempt、outcome；trace/span ID 从当前真实短阶段 Context 取得。execution UUID 只作为受平台日志正文权限保护的正文属性，不进入 Span、Loki 索引或 Tenant 新字段；不记录 SQL、参数、结果、原始错误或用户租户身份。检查点与阶段结束共用唯一幂等路径，最外层事务结束后才表达结果；关闭／无效追踪不伪造关联。 Go SDK 自动合并的 OTEL_RESOURCE_ATTRIBUTES／OTEL_SERVICE_NAME 也不构成部署身份或属性来源；导出端仅保留正式模块、角色、启动实例三项资源白名单，不修改进程全局环境。
 
 持久引用沿[执行记录与租约规范](tasks/执行记录与租约.md#执行追踪的私有关联)，不新增表或 Tenant 契约。观测更新保留业务 metadata，业务终态显式替换／清空业务 metadata 时保留私有观测 namespace，不保留原本应清除的旧业务结果。Link 只含 target trace/span ID 与 `addp.link.module_name/role/instance_id/started_at` 四个安全属性；目标角色可为正式 backend/ingress，阶段本身只来自 backend。Link 不生成 Client/Server 调用边，也不跨 Trace 累加 duration 或保证整条任务被采样。
 
@@ -406,6 +408,18 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 - T2：先 `bash scripts/infra/status.sh`；`make test-orchestrator-postgres`、`make test-develop-postgres` 在唯一 addp_test 使用原 owner 事务，验证持久快照重读、真实 attempt／lease、提交拒绝不造成功、重启后续阶段沿入口 Link、metadata 保留与请求伪造剥离；不改变队列或恢复语义。既有 Release/T2 两 owner Job 自动发现，不新增数据库或测试旁路。
 - T2：`make test-monitor-traces` 继续真实 mTLS／Alloy／Tempo／日志功能链，同时加入短阶段独立 Trace、失败优先、真实 Link 安全查询、缺目标拒绝及全退出零残留；保留真实 120 秒采样，不执行 --capacity。Common execution 及 owner 新测试须纳入现有输入／路径登记，不能仅依文件存在推定 CI 选中。
 - T3：`make test-monitor-frontend` 验证阶段显示、跨窗口 Link 跳转及撤权清除；标准 Monitor Swagger 生成、覆盖检查及文档同步。隔离身份／夹具不计正式身份 T4，所有未运行、失败、跳过项分别记证据，不宣称全域追踪完工。
+
+#### 正式身份的本机隔离闭环
+
+2026-10-23 用户确认新增 `make test-monitor-traces-local` 人工入口，仅执行本机一次性隔离技术验收，不登记或运行 Hosted／schedule，也不冒充正式专用 Runner T4。入口使用当前已提交源码的仓库外私有副本、产品构建与正式 Compose 服务，动态回环端口、独占平台 PostgreSQL 的 `addp_online`、独立 Redis／MinIO／Alloy／Tempo／Loki／凭据；禁止连接共享 addp-postgres、复用个人会话或接管开发服务。System-owned `execution-trace-local` 身份夹具只在该本地标记、独占数据库及私有目录准入后创建当次身份；不得复用 Hosted 或 SGM 标记放宽验证。
+
+当次独立 Tenant 初始管理员仅经公开密码登录准备合成 Engine；不作执行或平台读取身份。普通 Tenant User 通过正式密码登录、AuthContext 与原执行授权提交 Orchestrator → Develop bounded query；Platform 系统管理员通过真实密码／TOTP／AuthContext 查询 Trace 和日志，安全管理员为无权限负例。只使用临时最小权限与合成只读查询，单并发一组成功和一组受控失败；正式 API 创建定义、核对父子 execution 和终态。通过 System 日志接口按 execution UUID 找到真实检查点，再以精确 Trace ID 查询 Monitor、核对 Link，并回到同一实例的精确 trace/span 日志；不得直读 execution 私有列、注入日志或手工返回 Trace 引用充当闭环。
+
+采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。
+
+总时间最多 60 分钟（包含准备、构建、业务等待），当次全部受控构建／运行容器与浏览器合计硬配额不超过 8 CPU／12 GiB；所有当次卷合计实际分配达到 4 GiB、OOM、退出或资源采样失败即停止业务并清理。卷阈值是停止线而非文件系统硬配额，最长五秒采样并记录实际间隔及超量；清理必须完成，不能被业务总超时截断。前置条件不满足拒绝运行，不放宽预算补跑。退出核验当次容器、网络、卷、镜像标签、源码副本和秘密零残留；只保留脱敏断言／构建身份／阶段时间／资源峰值／清理摘要。
+
+新增入口及准入、资源守卫、采样、身份与清理确定性测试纳入现有 Platform／owner 登记；公共 workflow 必须拒绝调用真实本地入口。涉及 Common 日志、System 身份、owner 状态、采集或页面的改动分别经标准 Go、IAM／owner PostgreSQL、Trace T2、生命周期及前端门禁核验。所有实际结果追加既有历史证据；未运行、失败、跳过不能计为通过。本轮不包含 Hosted、容量重跑、定时、其他 Runtime、continuous、SQL Span、真实 72 小时或生产 HA。
 
 ## 七、平台告警与通知
 

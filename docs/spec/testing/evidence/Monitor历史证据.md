@@ -516,3 +516,21 @@ Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和
 - `make test-release-runner`：退出 0，62 项发布／登记回归及正式登记检查通过；`make test-workflow-security`：退出 0。新增场景已加入原 Release Metrics 矩阵，仍保持每项 20 分钟及所有分组真实成功才通过的汇总要求；默认全量入口包含原分组及新专项，无第二套执行路线。
 
 原始日志及输入摘要保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-alert-real-r7sgulbj/` 的 `process-alerts-t2.log`、`monitor-go.log`、`release-registration.log`、`workflow-security.log` 与 `inputs.json`；七项工作区输入与冻结副本哈希一致。此结果为真实 SDK／Prometheus／PostgreSQL／签名接收端下的 T2，System 当前用户与身份投影仍是夹具，不替代正式密码／MFA、真实 Console、Hosted T4、生产容量或 T5。本轮未运行其他 Metrics 分组，复用原有证据边界；未查询／调度 CI 或 Hosted，等待专门会话回传，未重启个人服务、未设置定时任务。
+
+
+### 正式身份的本机执行 Trace／日志闭环（2026-10-23）
+
+用户确认仅在本机一次性隔离部署，先修规范与标准入口，再验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询与精确日志关联。新增人工 `make test-monitor-traces-local`；静态／准入／守卫／业务契约标准入口 `make test-monitor-traces-local-runner` 聚合到既有 Infra runtime-log lifecycle / Platform，CI 登记明确拒绝公共 workflow 调用真实入口。所有构建与运行容器、浏览器共享 8 CPU／12 GiB 上限，独占卷达到 4 GiB 即停止，最长 60 分钟后进入不可跳过的清理；不运行 Hosted、容量、定时或个人服务重启。
+
+Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结内核，固定 `execution.checkpoint`，仅规范 execution_id／phase／attempt／outcome，trace/span 取真实阶段 Context；UUID 不进 Span、索引或 Tenant 投影。成功／拒绝沿原 owner 最外层事务结果，不造第二条状态路径；无效 UUID、非法 outcome、关闭追踪不伪造关联。System 本地身份夹具经独占 PostgreSQL `cluster_name` 与 `addp_online` 核验后，调用正式 Bootstrap／IAM 服务创建当次三员、Tenant 准备员及精确十一权限业务 User；仅输出私有登录凭据，不预签会话。准备员只做 Engine 准备，User 实际执行，Platform 系统管理员读取 Trace／日志，安全管理员为无权限负例。
+
+实施前识别的验证范围及当前准备结果：
+
+- 冻结 Common／Orchestrator／Develop 13 个 Go 文件的标准 `make test-module MODULE=<owner> GO_ONLY=1` 全通过，见 `/tmp/addp-p19-checkpoint-20261023-5bqj4s22/manifest.json`、`receipt.json`。System 身份夹具独立冻结后完整 System Go 通过，见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-local-identity-o4eet7fw/plan.json` 与 `system-go.log`。首次新用例的临时目录未显式 0700 被正确拒绝，已修测试准备且最终通过，未降低产品权限。
+- 先执行 `bash scripts/infra/status.sh` 核实共享 PostgreSQL 25432，以标准 `make test-orchestrator-postgres`、`make test-develop-postgres` 在 addp_test 通过（15.59／27.50 秒），源码／连接／并发守卫无冲突。日志位于 `/tmp/addp-p19-formal-local-20261023/`；本轮正式身份部署使用另一独占容器，不能把这两次 Repository T2 记为正式身份验收。
+- `make test-monitor-traces` 退出 0：真实 Pipeline 327.65 秒，120 秒尾采样保留失败／慢链和 9/200 普通链，首三进程分别导出 204／404／404 Span，队列／丢弃／失败为零；独立短阶段、持久 Link 与目标单独撤权、Go → Python → Go、精确 Loki trace/span、mTLS 与故障恢复通过；退出明确当次容器／网络／卷及设施临时文件零残留。child helper 按设计跳过，不计业务通过。这仍是受控 T2，正式 owner 日志由下面本地身份入口另验。
+- `make test-monitor-traces-local-runner` 最终通过：31 项 Python 契约（含源输入冻结、Docker Context 优先级／远端拒绝、有界资源／真实卷停止线／采样超时／进程组回收／清理、精确正式 API DTO、最小日志、失败阶段采样、独立 Cookie Jar 与正式退出）、两份 JS 语法、完整 Online CI 登记检查及 System ExecutionTrace 定向 Go。最初源码快照夹入另会话未提交 Catalog 引用造成不完整编译，已仅在快照恢复本专项集成版本；未修改其工作区或把该次记为通过。
+- `make test-infra-runtime-log-lifecycle` 通过（上述本地 runner 加既有 60 项设施生命周期）。Console 新增四项本地浏览器输入／准入／TOTP／禁止 Token 注入契约通过；`make test-console-frontend` 聚合首轮因隔离副本缺 System Vite 依赖失败，补副本依赖后 192/193 确定性通过，唯一失败是既有 devPorts 的 HMR 缓存准备断言，未进入其后 E2E/build。不修复或外推无关专项，也不计整套 Console 通过；本专项真实浏览器由独立标准本地入口验证。
+- 共享扩散 `make test-go` 首次在 System tidy-diff 检出新增测试把已有 go-sqlite3 直接导入仍声明 indirect；只修声明、不升级版本，最终扩散结果另记。输入、标准日志及分项报告统一保留 `/tmp/addp-p19-formal-local-20261023/`；一次误在共享工作区启动的重复 Go 门禁已仅终止自己的进程组，不作为冻结输入证据。
+
+此提交先落入口与准备证据；正式身份本机隔离验收尚未执行，不记通过。成功、失败、停止线和清理结果将追加本节；本地技术证据不替代专用 Runner T4、实例单独撤权、SQL Span、其他 Runtime、真实 72 小时留存或生产容量。

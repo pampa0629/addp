@@ -223,6 +223,8 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case executionTraceLocalSuite:
+		return append([]string(nil), executionTraceLocalPermissions...), nil
 	case "graph-protection":
 		return graphProtectionReaderPermissions, nil
 	case "pg-source-authorization":
@@ -349,7 +351,7 @@ func run(args []string, environment []string) error {
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
 		return errors.New("usage: online-test-fixture --suite <suite> --output <absolute-path>")
 	}
-	if *waitOwners != "" && *suite == "platform-node-metrics" {
+	if *waitOwners != "" && (*suite == "platform-node-metrics" || *suite == executionTraceLocalSuite) {
 		return errors.New("platform-node-metrics has no Tenant protection initialization")
 	}
 	permissions, err := suitePermissions(*suite)
@@ -360,7 +362,9 @@ func run(args []string, environment []string) error {
 		return err
 	}
 
-	commonconfig.LoadEnv()
+	if *suite != executionTraceLocalSuite {
+		commonconfig.LoadEnv()
+	}
 	cfg := config.Load()
 	if cfg.PostgresDB != onlineDatabase {
 		return fmt.Errorf("POSTGRES_DB must be exactly %s", onlineDatabase)
@@ -378,6 +382,11 @@ func run(args []string, environment []string) error {
 	if database != onlineDatabase {
 		return fmt.Errorf("connected database must be exactly %s", onlineDatabase)
 	}
+	if *suite == executionTraceLocalSuite {
+		if err := requireExecutionTraceLocalDatabase(db, environment); err != nil {
+			return err
+		}
+	}
 	if err := iamcli.RequireCurrentMigration(db); err != nil {
 		return err
 	}
@@ -387,6 +396,9 @@ func run(args []string, environment []string) error {
 	}
 	if users != 0 {
 		return errors.New("disposable External Online database already contains User principals")
+	}
+	if *suite == executionTraceLocalSuite {
+		return prepareExecutionTraceLocalIdentities(db, cfg, *output)
 	}
 	if *suite == "platform-administrator-governance" {
 		return prepareAdministratorGovernanceIdentities(db, cfg, *output)
@@ -790,6 +802,15 @@ func run(args []string, environment []string) error {
 }
 
 func validateExternalEnvironment(environment []string, output, suite string) error {
+	localTrace := suite == executionTraceLocalSuite
+	for _, entry := range environment {
+		if key, value, ok := strings.Cut(entry, "="); ok && key == "ADDP_EXECUTION_TRACE_LOCAL" && value != "" {
+			localTrace = true
+		}
+	}
+	if localTrace {
+		return validateExecutionTraceLocalEnvironment(environment, output, suite)
+	}
 	values := make(map[string]string, len(environment))
 	for _, entry := range environment {
 		key, value, found := strings.Cut(entry, "=")

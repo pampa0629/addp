@@ -1,19 +1,109 @@
 package httptrace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/addp/common/execution/observability"
+	"github.com/addp/common/logger"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestExecutionCheckpointUsesActualContextOnceWithoutExportingBusinessIdentity(t *testing.T) {
+	runtime, exporter := runtimeForTest(t, "backend")
+	var output bytes.Buffer
+	logger.Init(logger.Options{Writer: &output})
+	t.Cleanup(func() { logger.Init(logger.Options{}) })
+	executionID := uuid.NewString()
+	ctx := context.WithValue(t.Context(), struct{}{}, "SQL parameters results token user tenant private sentinel")
+	_, stage := StartExecutionStage(ctx, PhaseTerminal, 3, nil, nil)
+	reference := stage.Reference()
+	if reference == nil {
+		t.Fatal("actual stage missing")
+	}
+	var group sync.WaitGroup
+	for range 8 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			stage.EndExecution(executionID, OutcomeSuccess)
+		}()
+	}
+	group.Wait()
+	stage.End(OutcomeRejected)
+	lines := bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n"))
+	if len(lines) != 1 {
+		t.Fatalf("checkpoint count=%d", len(lines))
+	}
+	var record map[string]interface{}
+	if err := json.Unmarshal(lines[0], &record); err != nil {
+		t.Fatal(err)
+	}
+	if record["msg"] != "execution.checkpoint" || record["execution_id"] != executionID || record["phase"] != "terminal" || record["attempt"] != float64(3) || record["outcome"] != "success" || record["trace_id"] != reference.TraceID || record["span_id"] != reference.SpanID {
+		t.Fatal("checkpoint did not use its real short-stage context")
+	}
+	allowed := map[string]bool{"time": true, "level": true, "msg": true, "execution_id": true, "phase": true, "attempt": true, "outcome": true, "trace_id": true, "span_id": true}
+	for key := range record {
+		if !allowed[key] {
+			t.Fatalf("checkpoint exported unexpected body field %s", key)
+		}
+	}
+	if bytes.Contains(output.Bytes(), []byte("private sentinel")) {
+		t.Fatal("checkpoint serialized business context")
+	}
+	flush(t, runtime)
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	for _, span := range exporter.spans {
+		payload, _ := json.Marshal(spanAttributes(span))
+		if bytes.Contains(payload, []byte(executionID)) || bytes.Contains(payload, []byte("execution_id")) {
+			t.Fatal("execution UUID became a Span attribute")
+		}
+	}
+}
+
+func TestExecutionCheckpointRejectsInvalidIdentityOrOutcomeAndDisabledTracing(t *testing.T) {
+	runtime, exporter := runtimeForTest(t, "backend")
+	var output bytes.Buffer
+	logger.Init(logger.Options{Writer: &output})
+	t.Cleanup(func() { logger.Init(logger.Options{}) })
+	for _, id := range []string{"", uuid.Nil.String(), "SELECT private-value", "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF", "not-a-uuid"} {
+		_, stage := StartExecutionStage(t.Context(), PhaseDispatch, 1, nil, nil)
+		stage.EndExecution(id, OutcomeRejected)
+	}
+	_, invalid := StartExecutionStage(t.Context(), PhaseTerminal, 1, nil, nil)
+	invalid.EndExecution(uuid.NewString(), ExecutionOutcome("private-invalid-outcome"))
+	_, ended := StartExecutionStage(t.Context(), PhaseClaim, 1, nil, nil)
+	ended.End(OutcomeSuccess)
+	ended.EndExecution(uuid.NewString(), OutcomeSuccess)
+	if output.Len() != 0 {
+		t.Fatal("invalid or already ended stage emitted a checkpoint")
+	}
+	flush(t, runtime)
+	exporter.mu.Lock()
+	endedCount := len(exporter.spans)
+	exporter.mu.Unlock()
+	if endedCount != 7 {
+		t.Fatalf("invalid checkpoint prevented normal Span End: ended=%d", endedCount)
+	}
+	current.Store(nil)
+	remote := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, Remote: true})
+	_, disabled := StartExecutionStage(trace.ContextWithRemoteSpanContext(t.Context(), remote), PhaseClaim, 1, nil, nil)
+	disabled.EndExecution(uuid.NewString(), OutcomeSuccess)
+	if output.Len() != 0 {
+		t.Fatal("disabled tracing fabricated a correlated checkpoint")
+	}
+}
 
 func stageRef(traceID, spanID string) *observability.TraceReference {
 	return &observability.TraceReference{TraceID: strings.Repeat(traceID, 32), SpanID: strings.Repeat(spanID, 16), ModuleName: "orchestrator", Role: "backend", InstanceID: "prior-process", StartedAt: time.Now().UTC().Add(-time.Hour)}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -39,6 +40,7 @@ func seedQueryTrace(t *testing.T, db *gorm.DB) (*ExecutionRepository, *execution
 func runQueryTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 	t.Run("query_trace_reload_dispatch_and_metadata", func(t *testing.T) {
 		recorder := tracetest.Start(t, "develop")
+		checkpoints := tracetest.CaptureCheckpoints(t)
 		db := database(t)
 		repo, item := seedQueryTrace(t, db)
 		claimed, lease := claimExecutionEvent(t, repo, "query")
@@ -86,6 +88,21 @@ func runQueryTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 			if span == nil || len(span.Links) != count || querySpanOutcome(span) != "success" {
 				t.Fatalf("query phase %s did not use persisted causal links", phase)
 			}
+		}
+		// This repository fixture synthesizes enqueue before admission; only the
+		// actual owner claim/dispatch/terminal have execution checkpoint logs.
+		logs := checkpoints()
+		if len(logs) != 3 {
+			t.Fatalf("query owner checkpoint count=%d", len(logs))
+		}
+		seen := map[string]bool{}
+		for _, log := range logs {
+			phase, _ := log["phase"].(string)
+			span := phases["execution."+phase]
+			if seen[phase] || span == nil || log["execution_id"] != item.ExecutionID || log["attempt"] != float64(1) || log["outcome"] != "success" || log["trace_id"] != hex.EncodeToString(span.TraceId) || log["span_id"] != hex.EncodeToString(span.SpanId) {
+				t.Fatal("query checkpoint did not bind its real stage context")
+			}
+			seen[phase] = true
 		}
 	})
 	for _, mode := range []string{"omitted", "replace", "nil", "typed_nil", "plain_typed_nil", "empty", "nil_without_tracing", "invalid_string", "invalid_bytes"} {
@@ -185,6 +202,7 @@ func runQueryTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 	for _, action := range []string{"claim", "terminal", "recovery"} {
 		t.Run("query_trace_rollback_"+action, func(t *testing.T) {
 			recorder := tracetest.Start(t, "develop")
+			checkpoints := tracetest.CaptureCheckpoints(t)
 			db := database(t)
 			repo, item := seedQueryTrace(t, db)
 			var claimed *execution.TaskExecution
@@ -251,6 +269,18 @@ func runQueryTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 			}
 			if !found {
 				t.Fatal("rejected query phase missing")
+			}
+			count := 0
+			for _, log := range checkpoints() {
+				if "execution."+log["phase"].(string) == want {
+					count++
+					if log["execution_id"] != item.ExecutionID || log["outcome"] != "rejected" {
+						t.Fatal("rejected query transaction emitted a success checkpoint")
+					}
+				}
+			}
+			if count != 1 {
+				t.Fatal("rejected query checkpoint missing or duplicated")
 			}
 		})
 	}

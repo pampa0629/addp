@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/addp/common/execution/observability"
+	"github.com/addp/common/logger"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdk "go.opentelemetry.io/otel/sdk/trace"
@@ -77,6 +79,9 @@ func CurrentTraceReference(ctx context.Context) *observability.TraceReference {
 type ExecutionStage struct {
 	span      trace.Span
 	reference *observability.TraceReference
+	context   context.Context
+	phase     ExecutionPhase
+	attempt   int
 	once      sync.Once
 }
 
@@ -149,7 +154,7 @@ func StartExecutionStage(ctx context.Context, phase ExecutionPhase, attempt int,
 		span.End()
 		return ctx, noop
 	}
-	return child, &ExecutionStage{span: span, reference: reference}
+	return child, &ExecutionStage{span: span, reference: reference, context: child, phase: phase, attempt: attempt}
 }
 
 func (s *ExecutionStage) Reference() *observability.TraceReference {
@@ -160,6 +165,17 @@ func (s *ExecutionStage) Reference() *observability.TraceReference {
 	return &value
 }
 func (s *ExecutionStage) End(outcome ExecutionOutcome) {
+	s.end("", outcome)
+}
+
+// EndExecution emits one fixed checkpoint through the existing structured
+// logger. The business UUID is never a Span attribute or deployment identity.
+// Disabled/invalid stages and invalid UUIDs cannot create correlated log facts.
+func (s *ExecutionStage) EndExecution(executionID string, outcome ExecutionOutcome) {
+	s.end(executionID, outcome)
+}
+
+func (s *ExecutionStage) end(executionID string, outcome ExecutionOutcome) {
 	if s == nil || s.span == nil {
 		return
 	}
@@ -169,6 +185,9 @@ func (s *ExecutionStage) End(outcome ExecutionOutcome) {
 			s.span.SetAttributes(attribute.String("addp.execution.outcome", string(outcome)))
 			if outcome == OutcomeFailed || outcome == OutcomeTimeout {
 				s.span.SetStatus(codes.Error, "")
+			}
+			if parsed, err := uuid.Parse(executionID); err == nil && parsed != uuid.Nil && parsed.String() == executionID {
+				logger.L().InfoContext(s.context, "execution.checkpoint", "execution_id", executionID, "phase", string(s.phase), "attempt", s.attempt, "outcome", string(outcome))
 			}
 		default:
 			invalidExecutionStage.Add(1)

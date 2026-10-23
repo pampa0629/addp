@@ -37,6 +37,7 @@ func TestQueryTraceAdmissionAgainstPostgres(t *testing.T) {
 func runQueryTraceAdmission(t *testing.T, dsn string) {
 	for _, scenario := range []string{"query_enabled", "query_disabled", "workflow_excluded", "create_rejected"} {
 		t.Run(scenario, func(t *testing.T) {
+			checkpoints := tracetest.CaptureCheckpoints(t)
 			var recorder *tracetest.Recorder
 			if scenario == "query_disabled" {
 				t.Setenv("ADDP_OBSERVABILITY_TRACES_ENABLED", "false")
@@ -104,6 +105,10 @@ func runQueryTraceAdmission(t *testing.T, dsn string) {
 						}
 					}
 				}
+				logs := checkpoints()
+				if len(logs) != 1 || logs[0]["execution_id"] != item.ExecutionID || logs[0]["phase"] != "enqueue" || logs[0]["outcome"] != "rejected" {
+					t.Fatal("rejected enqueue checkpoint did not follow its failed commit")
+				}
 				return
 			}
 			if err != nil {
@@ -121,8 +126,14 @@ func runQueryTraceAdmission(t *testing.T, dsn string) {
 				if ref == nil || ref.TraceID == strings.Repeat("1", 32) || ref.InstanceID == "payload-identity" {
 					t.Fatal("enqueue accepted caller-supplied trace identity")
 				}
+				logs := checkpoints()
+				if len(logs) != 1 || logs[0]["execution_id"] != item.ExecutionID || logs[0]["phase"] != "enqueue" || logs[0]["attempt"] != float64(0) || logs[0]["outcome"] != "success" || logs[0]["trace_id"] != ref.TraceID || logs[0]["span_id"] != ref.SpanID {
+					t.Fatal("successful enqueue checkpoint did not use its real persisted stage")
+				}
 			} else if ref != nil {
 				t.Fatal("disabled or excluded task retained caller trace identity")
+			} else if len(checkpoints()) != 0 {
+				t.Fatal("disabled or excluded task fabricated a phase checkpoint")
 			}
 			if input["observability"] == nil || stored.ExecutionConfig["content"] == nil {
 				t.Fatal("namespace stripping mutated caller config or removed task snapshot")

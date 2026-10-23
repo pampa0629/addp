@@ -59,8 +59,8 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 		execution, err = createOrchestrationExecution(ctx, tx, &orch, triggerType, source, parentExecutionID, actor, stage)
 		return err
 	})
-	if err == nil && execution != nil {
-		stage.End(httptrace.OutcomeSuccess)
+	if execution != nil {
+		endExecutionStage(stage, execution.ExecutionID, commonExecution.ExecutionStatusSuccess, err)
 	}
 	return execution, err
 }
