@@ -216,7 +216,7 @@ def isolate(document, run_id, images):
                 mounts.append(mount)
                 continue
             result['volumes'][source] = {'labels': {LABEL: run_id}}
-            mounts.append({'type': 'volume', 'source': source, 'target': target, 'read_only': mount.get('read_only', False)})
+            mounts.append({'type': 'volume', 'source': source, 'target': target, 'read_only': mount.get('read_only', False), 'volume':{'nocopy':True}})
         service['volumes'] = mounts
         if name in ('postgres', 'system-backend', 'gateway', 'nginx'):
             service['networks']['entry'] = {}

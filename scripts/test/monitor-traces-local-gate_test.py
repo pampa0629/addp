@@ -329,6 +329,7 @@ class LocalTraceIsolationTests(unittest.TestCase):
             self.assertEqual(declaration['labels'][m.LABEL], 'synthetic-owned')
             self.assertFalse(declaration.get('external'))
         self.assertEqual(service['volumes'][0]['source'], 'runtime-logs')
+        self.assertTrue(all(mount['volume']['nocopy'] for mount in service['volumes'] if mount['type']=='volume'))
         for key in ('build', 'depends_on', 'profiles', 'extends'):
             self.assertNotIn(key, service)
         self.assertGreater(service['cpus'], 0)
