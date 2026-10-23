@@ -23,6 +23,9 @@ async function openRecords(page, { fail = false } = {}) {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (/\[intlify\].*catalog\.sharing\./.test(message.text())) errors.push(message.text())
+  })
   await page.route('**/api/v1/**', route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: 'catalog-handling-records-token', expires_in: 900 } })

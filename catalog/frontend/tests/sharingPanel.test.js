@@ -55,7 +55,7 @@ function mount(decisionID = '', requestID = '') {
   } })
   app.component('el-table-column', { inheritAttrs: false, setup(props, { attrs, slots }) {
     const row = inject(rowContext)
-    return () => h('table-column', attrs, row.value ? slots.default?.({ row: row.value }) : [])
+    return () => h('table-column', attrs, row.value ? (attrs.formatter ? attrs.formatter(row.value) : slots.default?.({ row: row.value })) : [])
   } })
   app.directive('loading', {})
   app.mount(root)

@@ -37,7 +37,7 @@
       <el-alert type="info" :closable="false" :title="t('catalog.sharing.reviewScope')" />
       <el-alert v-if="confirmationsError" type="error" :closable="false" :title="confirmationsError" />
       <el-table data-testid="sharing-confirmations" :data="confirmations" v-loading="confirmationsLoading">
-        <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip><template #default="{ row }">{{ recipientLabel(row) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip :formatter="recipientLabel" />
         <el-table-column :label="t('catalog.sharing.confirmedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column prop="reason" :label="t('catalog.sharing.reason')" min-width="160" show-overflow-tooltip />
@@ -193,7 +193,7 @@
       <el-alert v-if="historyError" type="error" :closable="false" :title="historyError" />
       <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
       <el-table data-testid="sharing-request-list" :data="history" v-loading="historyLoading">
-        <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip><template #default="{ row }">{{ recipientLabel(row) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.recipient')" min-width="230" show-overflow-tooltip :formatter="recipientLabel" />
         <el-table-column :label="t('catalog.sharing.handledAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.approvedExpiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column :label="t('catalog.sharing.handlingResult')" min-width="230"><template #default="{ row }"><el-tag :type="recordResultType(row)">{{ recordResultLabel(row) }}</el-tag></template></el-table-column>

@@ -24,11 +24,14 @@ const decisions = cases.map((item, index) => ({
   reason: '接收方名称展示验收', target: { engine_id: '2', version: 'v1', segments: [{ name: 'outdoor' }, { name: 'activities' }] }
 }))
 
-async function openSharing(page, { withoutHistoryCodes = false, results = [] } = {}) {
+async function openSharing(page, { withoutHistoryCodes = false, emptyHistory = false, results = [] } = {}) {
   const unexpected = [], writes = [], errors = [], reads = []
-  const history = withoutHistoryCodes ? decisions.map(({ recipient_code, ...row }) => row) : decisions
+  const history = emptyHistory ? [] : withoutHistoryCodes ? decisions.map(({ recipient_code, ...row }) => row) : decisions
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (/\[intlify\].*catalog\.sharing\./.test(message.text())) errors.push(message.text())
+  })
   await page.route('**/api/v1/**', route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: 'catalog-sharing-owner-token', expires_in: 900 } })
@@ -77,7 +80,7 @@ async function openSharing(page, { withoutHistoryCodes = false, results = [] } =
   await page.goto(entryURL)
   const catalog = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(catalog.getByTestId('catalog-entry-detail')).toHaveAttribute('data-load-state', 'loaded')
-  await expect(catalog.getByTestId('sharing-confirmations').locator('.el-table__body tbody tr')).toHaveCount(cases.length)
+  await expect(catalog.getByTestId('sharing-confirmations').locator('.el-table__body tbody tr')).toHaveCount(history.length)
   return { catalog, reads, verifyNoCommands() {
     expect(writes).toEqual([])
     expect(unexpected).toEqual([])
@@ -86,6 +89,12 @@ async function openSharing(page, { withoutHistoryCodes = false, results = [] } =
     expect(reads.every(read => read.authorization === 'Bearer catalog-sharing-owner-token')).toBe(true)
   } }
 }
+
+test('Catalog empty approval history initializes without missing sharing translations', async ({ page }) => {
+  const fixture = await openSharing(page, { emptyHistory: true })
+  await expect(fixture.catalog.getByText('暂无可查看的业务批准记录', { exact: true })).toBeVisible()
+  fixture.verifyNoCommands()
+})
 
 test('Catalog current account remains readable when historical recipient codes are absent', async ({ page }) => {
   const fixture = await openSharing(page, { withoutHistoryCodes: true }), { catalog } = fixture
