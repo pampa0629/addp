@@ -53,3 +53,18 @@ def test_topology_capacity_native_oracle_rejects_real_saved_corruption(tmp_path,
         assert layer.SetFeature(feature) == 0
     ds = None
     with pytest.raises(AssertionError): m.verify_output(case, path)
+
+
+def test_topology_capacity_native_observer_modes_preserve_exact_result(tmp_path):
+    from operators import geometric_operators as operators
+    original=(operators._self_overlap_intersections,operators.shapely.union_all)
+    reports=[];case=m.Case('many',6,'self')
+    for mode in 'ABC':
+        directory=tmp_path/mode;directory.mkdir()
+        report=m.run_worker(case,directory,mode,f'trial-{mode.lower()}')
+        m.validate_worker(report,case,mode,f'trial-{mode.lower()}')
+        assert (directory/'compute-resources.jsonl').exists() is (mode=='C')
+        assert (operators._self_overlap_intersections,operators.shapely.union_all)==original
+        reports.append(report)
+    assert len({r['source_frame_sha256'] for r in reports})==1
+    assert len({r['physical']['full_result_sha256'] for r in reports})==1

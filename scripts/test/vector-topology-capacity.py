@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,7 @@ import uuid
 CPUS = 4
 MEMORY = 2 << 30
 SECONDS = 180
-SCHEMA = 'addp.vector-topology-capacity/v1'
+SCHEMA = 'addp.vector-topology-capacity/v2'
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,55 @@ def matrix():
                                 ('dense', (100, 300, 1000))]
             for size in sizes for operator in ('overlap', 'self')
             if kind != 'long' or operator == 'self']
+
+
+def measurement_plan(profile):
+    if profile == 'matrix':
+        return [{'id': case.key, 'case': asdict(case), 'observer': 'C', 'repetition': None} for case in matrix()]
+    if profile != 'observation':
+        raise ValueError('unknown capacity profile')
+    case = asdict(Case('many', 100000, 'self'))
+    return [{'id': f'observation-{repetition}-{observer.lower()}', 'case': case.copy(),
+             'observer': observer, 'repetition': repetition}
+            for repetition, order in enumerate(('ABC', 'BCA', 'CAB'), 1) for observer in order]
+
+
+def observation_summary(groups):
+    """Signed small-sample estimates, never a production throughput guarantee."""
+    plan = measurement_plan('observation')
+    assert len(groups) == len(plan)
+    for group, measurement in zip(groups, plan):
+        assert all(group[key] == value for key, value in measurement.items())
+        assert group['result'] == group['cleanup'] == 'passed'
+        assert 0 < group['wall_seconds'] <= SECONDS and group['resource_samples'] > 0
+        assert group['image_id']
+        before, after = group['resource_before'], group['resource_after']
+        assert after['cpu_usage_usec'] >= before['cpu_usage_usec']
+        for metrics in (before, after):
+            assert metrics['memory_limit_bytes'] == MEMORY and metrics['cpu_quota'] == CPUS
+            assert metrics['swap_current_bytes'] == metrics['oom'] == metrics['oom_kill'] == 0
+            assert 0 < metrics['memory_peak_bytes'] <= MEMORY
+        validate_worker(group['worker'], Case(**measurement['case']), measurement['observer'], measurement['id'])
+    assert len({g['image_id'] for g in groups}) == 1
+    for field in ('source_frame_sha256', 'versions'):
+        assert len({json.dumps(g['worker'][field], sort_keys=True) for g in groups}) == 1
+    assert len({g['worker']['physical']['full_result_sha256'] for g in groups}) == 1
+    summary = {}
+    for observer in 'ABC':
+        selected = [g for g in groups if g['observer'] == observer]
+        values = {
+            'wall_seconds': [g['wall_seconds'] for g in selected],
+            'compute_seconds': [g['worker']['timings']['compute'] for g in selected],
+            'memory_peak_bytes': [g['resource_after']['memory_peak_bytes'] for g in selected],
+            'cpu_seconds': [(g['resource_after']['cpu_usage_usec'] - g['resource_before']['cpu_usage_usec']) / 1e6 for g in selected],
+        }
+        summary[observer] = {key: {'median': statistics.median(v), 'min': min(v), 'max': max(v)} for key, v in values.items()}
+    deltas = {label: {metric: summary[right][metric]['median'] - summary[left][metric]['median']
+                      for metric in ('wall_seconds', 'compute_seconds')}
+              for label, left, right in [('wrapping_B_minus_A', 'A', 'B'),
+                                         ('sampling_writes_C_minus_B', 'B', 'C'), ('internal_C_minus_A', 'A', 'C')]}
+    return {'result': 'passed', 'groups': summary, 'median_differences': deltas,
+            'interpretation': 'Signed estimates from three interleaved repeats per mode; Runner drift and noise remain; no SLA or causal certainty.'}
 
 
 def coordinates(case, row):
@@ -174,17 +224,30 @@ def verify_output(case, path):
 
 
 @contextmanager
-def observe_compute(root, report, progress):
+def observe_compute(root, report, progress, observer='C'):
     """Observe the unchanged production calls; never replace their geometry work."""
+    if observer not in 'ABC' or len(observer) != 1:
+        raise ValueError('unknown observer')
     from operators import geometric_operators as operators
     original_collect = operators._self_overlap_intersections
     original_union = operators.shapely.union_all
-    observation = {'collection_seconds': 0.0, 'fusion_seconds': 0.0,
+    observation = {'observer': observer, 'wrapping_enabled': observer != 'A', 'sampling_enabled': observer == 'C',
+                   'collection_seconds': 0.0, 'fusion_seconds': 0.0,
                    'collection_calls': 0, 'fusion_calls': 0, 'fusion_input_fragments': 0,
                    'sampling_interval_seconds': .25, 'samples': 0,
                    'observed_memory_current_peak_bytes': {},
                    'memory_method': 'sampled cgroup memory.current by active stage; memory.peak is cumulative, not per-stage'}
+    if observer != 'C':
+        observation['memory_method'] = 'internal sampling disabled; external cgroup measurements remain enabled'
     report['compute_observation'] = observation
+    if observer == 'A':
+        for key in ('collection_seconds', 'fusion_seconds', 'collection_calls', 'fusion_calls', 'fusion_input_fragments'):
+            observation[key] = None
+        observation['sampling_interval_seconds'] = None
+        yield observation
+        return
+    if observer == 'B':
+        observation['sampling_interval_seconds'] = None
     active = 'prepare'; stopped = threading.Event(); errors = []; started = time.monotonic()
 
     def collect(segments):
@@ -236,13 +299,15 @@ def observe_compute(root, report, progress):
 
     operators._self_overlap_intersections = collect
     operators.shapely.union_all = merge
-    sampler = threading.Thread(target=sampling, daemon=True)
+    sampler = None
     try:
-        sampler.start()
+        if observer == 'C':
+            sampler = threading.Thread(target=sampling, daemon=True)
+            sampler.start()
         yield observation
     finally:
         stopped.set()
-        if sampler.ident is not None:
+        if sampler is not None and sampler.ident is not None:
             sampler.join()
         operators._self_overlap_intersections = original_collect
         operators.shapely.union_all = original_union
@@ -250,13 +315,14 @@ def observe_compute(root, report, progress):
             raise RuntimeError(f'compute observation failed: {errors[0]}') from errors[0]
 
 
-def run_worker(case, root):
+def run_worker(case, root, observer='C', measurement_id=None):
     """One process, one full measurement including generation and independent checks."""
     import resource
     sys.path.insert(0, '/app')
     from operators.io_operators import load, save
     from operators.geometric_operators import check_line_overlap, check_line_self_overlap
-    started = time.monotonic(); report = {'case': asdict(case), 'result': 'incomplete', 'timings': {}}
+    started = time.monotonic(); report = {'case': asdict(case), 'observer': observer,
+        'measurement_id': measurement_id or case.key, 'result': 'incomplete', 'timings': {}}
     progress = root / 'progress.json'
 
     def phase(name, operation):
@@ -271,14 +337,14 @@ def run_worker(case, root):
     phase('source_oracle', lambda: verify_source(frame, case)); before = frame_digest(frame)
     operator = check_line_self_overlap if case.operator == 'self' else check_line_overlap
     def compute():
-        with observe_compute(root, report, progress):
+        with observe_compute(root, report, progress, observer):
             return operator(frame, 'route_key')
     result = phase('compute', compute)
     assert len(result) == expected_rows(case)
     phase('save', lambda: save(result, connection_info=connection, path='result.gpkg', mode='fail'))
     physical = phase('reload_oracle', lambda: verify_output(case, target))
     assert frame_digest(frame) == before and digest(source) == original
-    report.update(result='passed', stage='complete', source=original, output=digest(target), physical=physical,
+    report.update(result='passed', stage='complete', source_frame_sha256=before, source=original, output=digest(target), physical=physical,
                   duration_seconds=time.monotonic() - started,
                   worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024))
     import platform
@@ -325,19 +391,31 @@ def classify(returncode, timed_out, state, metrics):
     return 'passed' if returncode == 0 and state.get('Running') else 'failed'
 
 
-def validate_worker(report, case):
+def validate_worker(report, case, observer='C', measurement_id=None):
+    assert observer in ('A', 'B', 'C')
+    assert report['observer'] == observer and report['measurement_id'] == (measurement_id or case.key)
+    assert len(report['source_frame_sha256']) == 64
     assert report['result'] == 'passed' and report['stage'] == 'complete' and report['case'] == asdict(case)
     assert report['physical']['rows'] == expected_rows(case) and report['physical']['all_coordinates_ids_lengths_verified'] is True
     assert report['physical']['crs'] == 'EPSG:3857' and 0 < report['duration_seconds'] <= SECONDS
     assert report['worker_peak_rss_bytes'] > 0
     observed = report['compute_observation']
-    rows = expected_rows(case)
-    assert observed['fusion_calls'] == rows
-    assert observed['fusion_input_fragments'] == rows * (8 if case.kind == 'many' else 1)
-    assert observed['collection_calls'] == (source_rows(case) if case.operator == 'self' else 0)
-    assert observed['samples'] > 0
-    assert all(math.isfinite(observed[k]) and observed[k] >= 0 for k in ('collection_seconds', 'fusion_seconds'))
-    assert observed['collection_seconds'] + observed['fusion_seconds'] <= report['timings']['compute']
+    assert observed['observer'] == observer
+    assert observed['wrapping_enabled'] is (observer != 'A') and observed['sampling_enabled'] is (observer == 'C')
+    assert observed['sampling_interval_seconds'] == (.25 if observer == 'C' else None)
+    assert (observed['samples'] > 0 if observer == 'C' else observed['samples'] == 0)
+    if observer != 'C':
+        assert observed['observed_memory_current_peak_bytes'] == {}
+    fields = ('collection_seconds', 'fusion_seconds', 'collection_calls', 'fusion_calls', 'fusion_input_fragments')
+    if observer == 'A':
+        assert all(observed[key] is None for key in fields)
+    else:
+        rows = expected_rows(case)
+        assert observed['fusion_calls'] == rows
+        assert observed['fusion_input_fragments'] == rows * (8 if case.kind == 'many' else 1)
+        assert observed['collection_calls'] == (source_rows(case) if case.operator == 'self' else 0)
+        assert all(math.isfinite(observed[k]) and observed[k] >= 0 for k in ('collection_seconds', 'fusion_seconds'))
+        assert observed['collection_seconds'] + observed['fusion_seconds'] <= report['timings']['compute']
     assert set(report['timings']) == {'generate', 'read', 'source_oracle', 'compute', 'save', 'reload_oracle'}
     assert all(math.isfinite(v) and v >= 0 for v in report['timings'].values())
     for field in ('source', 'output'):
@@ -345,12 +423,17 @@ def validate_worker(report, case):
         checksum = report[field]['sha256']; assert len(checksum) == 64 and all(c in '0123456789abcdef' for c in checksum)
 
 
-def run_case(case, image, run_id, artifact):
+def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, repetition=None):
     from scripts.utils.capacity_resources import cgroup_directory, read_metrics
-    name = f'addp-topology-capacity-{run_id}-{case.key}'
-    root = artifact / case.key; root.mkdir(mode=0o700)
+    if observer not in ('A', 'B', 'C'):
+        raise ValueError('unknown observer')
+    measurement_id = measurement_id or case.key
+    if not measurement_id or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in measurement_id):
+        raise ValueError('invalid measurement id')
+    name = f'addp-topology-capacity-{run_id}-{measurement_id}'
+    root = artifact / measurement_id; root.mkdir(mode=0o700)
     workspace = root / 'data'; workspace.mkdir(mode=0o700)
-    driver = Path(__file__).resolve(); outcome = {'case': asdict(case), 'result': 'incomplete'}
+    driver = Path(__file__).resolve(); outcome = {'id': measurement_id, 'case': asdict(case), 'observer': observer, 'repetition': repetition, 'result': 'incomplete'}
     created = False; process = None
     try:
         created = True  # Record the attempt before mutation, including an unknown CLI outcome.
@@ -375,7 +458,7 @@ def run_case(case, image, run_id, artifact):
         timed_out = False; started = time.monotonic(); returncode = None
         metrics = before; peak_rss = before['process_peak_rss_bytes']; samples = 0
         with (root / 'worker.log').open('w') as log, (root / 'resources.jsonl').open('w') as series:
-            process = subprocess.Popen(['docker', 'exec', name, 'python', '/capacity.py', '--worker', case.key], stdout=log, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(['docker', 'exec', name, 'python', '/capacity.py', '--worker', case.key, '--observer', observer, '--measurement', measurement_id], stdout=log, stderr=subprocess.STDOUT)
             while process.poll() is None:
                 try:
                     metrics = read_metrics(directory)
@@ -407,7 +490,7 @@ def run_case(case, image, run_id, artifact):
         if (workspace / 'compute-resources.jsonl').is_file():
             shutil.copyfile(workspace / 'compute-resources.jsonl', root / 'compute-resources.jsonl')
         if outcome['result'] == 'passed':
-            validate_worker(outcome['worker'], case)
+            validate_worker(outcome['worker'], case, observer, measurement_id)
             assert elapsed <= SECONDS
             assert metrics['swap_current_bytes'] == 0
     except Exception as error:
@@ -433,7 +516,8 @@ def run_case(case, image, run_id, artifact):
     return outcome
 
 
-def run_gate():
+def run_gate(profile='matrix'):
+    plan = measurement_plan(profile)
     repository = Path(__file__).resolve().parents[2]
     if (os.getenv('GITHUB_ACTIONS') != 'true' or os.getenv('RUNNER_OS') != 'Linux'
             or os.getenv('GITHUB_EVENT_NAME') != 'workflow_dispatch' or sys.platform != 'linux'):
@@ -450,9 +534,12 @@ def run_gate():
     artifact.mkdir(mode=0o700)
     image = f'localhost:5001/addp-geopython-workflow-engine:topology-capacity-{run_id}'
     registry = f'addp-topology-capacity-registry-{run_id}'
-    cases = matrix()
-    report = {'schema_version': SCHEMA, 'source': source, 'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
-              'planned_cases': [asdict(case) for case in cases], 'groups': [], 'result': 'incomplete'}
+    report = {'schema_version': SCHEMA, 'source': source, 'experiment_profile': profile,
+              'runner': {key: os.getenv(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')},
+              'host': {'hostname': os.uname().nodename, 'available_cpus': sorted(os.sched_getaffinity(0)),
+                       'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
+              'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
+              'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
     registry_created = False; image_attempted = False
     try:
         registry_created = True
@@ -474,13 +561,16 @@ def run_gate():
         build = subprocess.run(['make', 'build-images', f'IMAGE_BUILD_ARGS=--services geopython-workflow-engine --tag topology-capacity-{run_id} --verify --jobs 1'], cwd=repository)
         if build.returncode:
             raise RuntimeError('product image build failed')
-        for index, case in enumerate(cases):
-            report['groups'].append(run_case(case, image, run_id, artifact))
+        for index, item in enumerate(plan):
+            report['groups'].append(run_case(Case(**item['case']), image, run_id, artifact,
+                observer=item['observer'], measurement_id=item['id'], repetition=item['repetition']))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
-                report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'cases': [asdict(c) for c in cases[index + 1:]]}
+                report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
                 break
-        report['result'] = 'passed' if len(report['groups']) == len(cases) and all(group['result'] == 'passed' for group in report['groups']) else 'failed'
+        report['result'] = 'passed' if len(report['groups']) == len(plan) and all(group['result'] == 'passed' for group in report['groups']) else 'failed'
+        if profile == 'observation' and report['result'] == 'passed':
+            report['observation_summary'] = observation_summary(report['groups'])
     except Exception as error:
         report.update(result='failed', error=str(error))
     finally:
@@ -506,8 +596,12 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
     parser.add_argument('--worker', choices=[case.key for case in matrix()])
+    parser.add_argument('--profile', choices=('matrix', 'observation'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
+    parser.add_argument('--measurement')
     args = parser.parse_args()
+    measurement_plan(args.profile)  # Validate environment defaults before any mutation.
     if args.worker:
-        run_worker(next(case for case in matrix() if case.key == args.worker), Path('/capacity-data'))
+        run_worker(next(case for case in matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
-        raise SystemExit(run_gate())
+        raise SystemExit(run_gate(args.profile))

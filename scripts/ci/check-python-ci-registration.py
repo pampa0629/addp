@@ -87,11 +87,14 @@ def validate_topology_capacity(repository: Path) -> list[str]:
                      'test_topology_capacity.py', '@$(MAKE) test-vector-topology-capacity-runner'),
         '.github/workflows/vector-topology-capacity.yml': ('  workflow_dispatch:',
                      'run: make test-vector-topology-capacity\n', 'run: make test-vector-topology-capacity-runner',
-                     'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@'),
+                     'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@',
+                     'default: matrix', '          - observation', 'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}'),
         'scripts/test/vector-topology-capacity.py': ('CPUS = 4', 'MEMORY = 2 << 30', 'SECONDS = 180',
                      "'--memory-swap'", "'--network', 'none'", "'sh', 'container_entrypoint.sh'",
-                     'frame_digest(frame) == before', 'verify_output(case, target)'),
-        'engines/geopython-workflow/test_topology_capacity.py': ('test_topology_capacity_native_oracle_rejects_real_saved_corruption',),
+                     'frame_digest(frame) == before', 'verify_output(case, target)',
+                     "enumerate(('ABC', 'BCA', 'CAB'), 1)", 'def observation_summary(groups):'),
+        'engines/geopython-workflow/test_topology_capacity.py': ('test_topology_capacity_native_oracle_rejects_real_saved_corruption',
+                     'test_topology_capacity_native_observer_modes_preserve_exact_result',),
     }
     errors = []
     for name, fragments in required.items():

@@ -22,6 +22,76 @@ class CapacityTest(unittest.TestCase):
         self.assertEqual((m.CPUS, m.MEMORY, m.SECONDS), (4, 2 << 30, 180))
         self.assertEqual(m.expected_rows(m.Case('dense',1000,'overlap')),499500)
 
+    def test_controlled_plan_is_exact_balanced_and_separate_from_matrix(self):
+        plan=m.measurement_plan('observation')
+        self.assertEqual(''.join(p['observer'] for p in plan),'ABCB CACAB'.replace(' ',''))
+        self.assertEqual(len({p['id'] for p in plan}),9)
+        self.assertTrue(all(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in p['id']) for p in plan))
+        self.assertTrue(all(p['case']==m.asdict(m.Case('many',100000,'self')) for p in plan))
+        self.assertEqual([p['repetition'] for p in plan],[1]*3+[2]*3+[3]*3)
+        self.assertEqual(len(m.measurement_plan('matrix')),15)
+        self.assertTrue(all(p['observer']=='C' for p in m.measurement_plan('matrix')))
+        with self.assertRaises(ValueError):m.measurement_plan('unexpected')
+
+    def test_observer_modes_change_only_wrapping_and_internal_sampling(self):
+        import sys
+        from types import ModuleType
+        operators=ModuleType('operators');geometry=ModuleType('operators.geometric_operators')
+        def collect(parts):yield from parts
+        def merge(parts):return parts
+        geometry._self_overlap_intersections=collect;geometry.shapely=SimpleNamespace(union_all=merge)
+        operators.geometric_operators=geometry
+        for mode in 'ABC':
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as temporary,patch.dict(sys.modules,{'operators':operators,'operators.geometric_operators':geometry}):
+                root=Path(temporary);report={}
+                with self.assertRaisesRegex(RuntimeError,'original'):
+                    with m.observe_compute(root,report,root/'progress.json',mode):
+                        if mode=='A':self.assertIs(geometry._self_overlap_intersections,collect)
+                        self.assertEqual(geometry.shapely.union_all(list(geometry._self_overlap_intersections([1,2]))),[1,2])
+                        raise RuntimeError('original')
+                observed=report['compute_observation']
+                self.assertIs(geometry._self_overlap_intersections,collect);self.assertIs(geometry.shapely.union_all,merge)
+                self.assertEqual((root/'compute-resources.jsonl').exists(),mode=='C')
+                self.assertEqual((root/'progress.json').exists(),mode=='C')
+                self.assertEqual(observed['collection_calls'],None if mode=='A' else 1)
+                self.assertEqual(observed['fusion_input_fragments'],None if mode=='A' else 2)
+                self.assertTrue(observed['samples']>0 if mode=='C' else observed['samples']==0)
+        with self.assertRaises(ValueError):
+            with m.observe_compute(Path('/unused'),{},Path('/unused/progress'),'wrong'):pass
+
+    def test_summary_requires_all_same_source_image_and_oracle_with_signed_deltas(self):
+        import copy
+        groups=[]
+        for item in m.measurement_plan('observation'):
+            mode=item['observer'];seconds={'A':3.,'B':2.,'C':4.}[mode];count=100000
+            observed={'observer':mode,'wrapping_enabled':mode!='A','sampling_enabled':mode=='C',
+                'sampling_interval_seconds':.25 if mode=='C' else None,'samples':2 if mode=='C' else 0,
+                'observed_memory_current_peak_bytes':{},'collection_seconds':None if mode=='A' else .5,
+                'fusion_seconds':None if mode=='A' else .1,'collection_calls':None if mode=='A' else count,
+                'fusion_calls':None if mode=='A' else count,'fusion_input_fragments':None if mode=='A' else 8*count}
+            worker={'case':item['case'],'observer':mode,'measurement_id':item['id'],'source_frame_sha256':'a'*64,
+                'result':'passed','stage':'complete','duration_seconds':seconds,'worker_peak_rss_bytes':10,
+                'compute_observation':observed,'timings':{k:seconds if k=='compute' else 0 for k in ['generate','read','source_oracle','compute','save','reload_oracle']},
+                'versions':{'python':'same'},'physical':{'rows':count,'crs':'EPSG:3857','all_coordinates_ids_lengths_verified':True,'full_result_sha256':'f'*64},
+                'source':{'size_bytes':10,'sha256':'b'*64},'output':{'size_bytes':10,'sha256':'c'*64}}
+            groups.append({**item,'result':'passed','cleanup':'passed','image_id':'same-image','worker':worker,
+                'wall_seconds':seconds+.5,'resource_samples':10,
+                'resource_before':{'cpu_usage_usec':1,'memory_peak_bytes':123,'memory_limit_bytes':m.MEMORY,'cpu_quota':m.CPUS,'swap_current_bytes':0,'oom':0,'oom_kill':0},
+                'resource_after':{'cpu_usage_usec':1000001,'memory_peak_bytes':123,'memory_limit_bytes':m.MEMORY,'cpu_quota':m.CPUS,'swap_current_bytes':0,'oom':0,'oom_kill':0}})
+        summary=m.observation_summary(groups)
+        self.assertEqual(summary['median_differences']['wrapping_B_minus_A']['compute_seconds'],-1)
+        self.assertEqual(summary['median_differences']['sampling_writes_C_minus_B']['compute_seconds'],2)
+        for path,value in [(('image_id',),'different'),(('result',),'time_limit'),(('id',),'other'),
+                           (('worker','source_frame_sha256'),'b'*64),(('worker','observer'),'B'),
+                           (('worker','compute_observation','collection_calls'),0),
+                           (('worker','physical','full_result_sha256'),'e'*64),
+                           (('resource_after','swap_current_bytes'),1), (('resource_after','cpu_quota'),2)]:
+            changed=copy.deepcopy(groups);target=changed[0]
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.observation_summary(changed)
+        with self.assertRaises(AssertionError):m.observation_summary(groups[:-1])
+
     def test_closed_form_oracle_has_exact_order_and_unique_length(self):
         for c in [m.Case('many',6,'overlap'),m.Case('many',6,'self'),m.Case('long',1000,'self'),m.Case('dense',4,'overlap'),m.Case('dense',1000,'self')]:
             rows=list(m.expected(c));self.assertEqual(len(rows),m.expected_rows(c))
@@ -51,9 +121,10 @@ class CapacityTest(unittest.TestCase):
     def test_incomplete_wrong_case_or_over_budget_worker_report_never_passes(self):
         import copy
         case=m.Case('dense',100,'self')
-        report={'case':m.asdict(case),'result':'passed','stage':'complete','duration_seconds':1,
+        report={'case':m.asdict(case),'observer':'C','measurement_id':case.key,'source_frame_sha256':'c'*64,'result':'passed','stage':'complete','duration_seconds':1,
             'worker_peak_rss_bytes':1,
-            'compute_observation':{'fusion_calls':1,'fusion_input_fragments':1,'collection_calls':1,
+            'compute_observation':{'observer':'C','wrapping_enabled':True,'sampling_enabled':True,
+                'sampling_interval_seconds':.25,'observed_memory_current_peak_bytes':{},'fusion_calls':1,'fusion_input_fragments':1,'collection_calls':1,
                 'samples':2,'collection_seconds':0,'fusion_seconds':0},
             'timings':{k:0 for k in ['generate','read','source_oracle','compute','save','reload_oracle']},
             'physical':{'rows':1,'all_coordinates_ids_lengths_verified':True,'crs':'EPSG:3857'},
@@ -188,6 +259,9 @@ class CapacityTest(unittest.TestCase):
                 (files[1],'run: make test-vector-topology-capacity\n','run: true\n'),
                 (files[2],'SECONDS = 180','SECONDS = 181'),
                 (files[2],"'--memory-swap'","'--removed-swap'"),
+                (files[1],'default: matrix','default: observation'),
+                (files[1],'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}','REMOVED: observation'),
+                (files[3],'test_topology_capacity_native_observer_modes_preserve_exact_result','removed_observer_test'),
             ]:
                 p=root/f;original=p.read_text();self.assertIn(old,original);p.write_text(original.replace(old,new))
                 with self.subTest(f=f,old=old):self.assertTrue(check.validate_topology_capacity(root))

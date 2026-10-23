@@ -2,6 +2,14 @@ name: Manual line topology capacity
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Capacity matrix or controlled 100k observation comparison
+        type: choice
+        default: matrix
+        options:
+          - matrix
+          - observation
 
 permissions:
   contents: read
@@ -19,6 +27,8 @@ jobs:
       - name: Validate capacity registration and deterministic runner
         run: make test-vector-topology-capacity-runner
       - name: Run manual line capacity gate
+        env:
+          TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}
         run: make test-vector-topology-capacity
       - name: Upload original capacity observations
         if: always()
