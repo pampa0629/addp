@@ -12,6 +12,7 @@ type ContentCandidateSet struct {
 	StructureReader      plugin.ContentReadableProvider
 	DirPath              string
 	Files                []metaitem.StorageFileRef
+	ModelReferenceFiles  map[string]metaitem.StorageFileRef
 	Subdirs              []metaitem.StorageDirectoryRef
 	RecursiveFiles       []metaitem.StorageFileRef
 	RecursiveSubdirs     []metaitem.StorageDirectoryRef
@@ -34,6 +35,7 @@ func ResolveContentCandidates(
 		EngineCatalogPathFor: candidates.EngineCatalogPathFor,
 		DirPath:              candidates.DirPath,
 		Files:                candidates.Files,
+		ModelReferenceFiles:  candidates.ModelReferenceFiles,
 		Subdirs:              candidates.Subdirs,
 		Options:              candidates.ResolveOptions,
 		RecursiveFiles:       candidates.RecursiveFiles,
@@ -56,6 +58,7 @@ func ResolveNonExclusiveContentCandidates(
 		EngineCatalogPathFor: candidates.EngineCatalogPathFor,
 		DirPath:              candidates.DirPath,
 		Files:                candidates.Files,
+		ModelReferenceFiles:  candidates.ModelReferenceFiles,
 		Subdirs:              candidates.Subdirs,
 		Options:              candidates.ResolveOptions,
 	})

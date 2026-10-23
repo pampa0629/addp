@@ -113,9 +113,14 @@ class FTPAdmissionTests(unittest.TestCase):
             finally:
                 os.umask(previous)
             self.assertEqual({x['full_name'] for x in report}, {
-                'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png'})
+                'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png',
+                'models/obj/model.obj', 'models/obj/paint red.mtl', 'models/obj/paint blue.mtl',
+                'models/obj/red/color.png', 'models/obj/blue/color.png'})
             source_by_kind = {'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
-                              'png': 'addp_online_exchange_texture.png', 'dae': 'addp_online_model_fixture.dae', 'dae_png': 'addp_online_exchange_texture.png'}
+                              'png': 'addp_online_exchange_texture.png', 'dae': 'addp_online_model_fixture.dae', 'dae_png': 'addp_online_exchange_texture.png',
+                              'obj': 'addp_online_multi_material.obj', 'obj_mtl_red': 'addp_online_multi_material_red.mtl',
+                              'obj_mtl_blue': 'addp_online_multi_material_blue.mtl', 'obj_png_red': 'addp_online_obj_red.png',
+                              'obj_png_blue': 'addp_online_obj_blue.png'}
             for item in report:
                 raw = (root / item['full_name']).read_bytes()
                 source = ROOT / 'business/fixtures/manager' / source_by_kind[item['format']]
@@ -125,6 +130,10 @@ class FTPAdmissionTests(unittest.TestCase):
                 self.assertEqual((root / item['full_name']).stat().st_mode & 0o777, 0o644)
                 self.assertEqual((root / item['full_name']).parent.stat().st_mode & 0o777, 0o755)
             self.assertIn(b'texture.png\x00', (root / 'models/3ds/model.3ds').read_bytes())
+            self.assertIn(b'mtllib paint red.mtl\n', (root / 'models/obj/model.obj').read_bytes())
+            self.assertIn(b'mtllib paint blue.mtl\n', (root / 'models/obj/model.obj').read_bytes())
+            for color in ('red', 'blue'):
+                self.assertIn(('map_Kd ' + color + '/color.png\n').encode(), (root / ('models/obj/paint ' + color + '.mtl')).read_bytes())
             self.assertEqual(seed.write_model_samples(root), report)
             (root / 'models/ifc/model.ifc').write_text('host modified')
             with self.assertRaisesRegex(ValueError, 'replace a host file'):
@@ -132,7 +141,8 @@ class FTPAdmissionTests(unittest.TestCase):
             self.assertEqual((root / 'models/ifc/model.ifc').read_text(), 'host modified')
 
     def test_model_seed_rejects_redirected_directories_and_files(self):
-        for component in ('root', 'models', 'models/ifc', 'models/ifc/model.ifc'):
+        for component in ('root', 'models', 'models/ifc', 'models/ifc/model.ifc',
+                          'models/obj', 'models/obj/paint red.mtl', 'models/obj/red', 'models/obj/red/color.png'):
             with self.subTest(component=component), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 outside = base / 'outside'

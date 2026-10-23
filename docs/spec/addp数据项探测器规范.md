@@ -143,6 +143,8 @@ item refresh 只允许刷新该 item 自身的 attributes、字段、format info
 
 递归观察资源只表示 detector 可见的候选集合，不改变 item 身份生成规则。
 
+对象扫描仍按直接父 prefix 组织主候选。OBJ 的同目录 MTL 及其声明的子目录 PNG/JPEG，通过本次扫描已观察的同一 bucket 文件集合精确匹配；依赖匹配集合不得作为额外主候选交给普通格式规则，不新增目录枚举或图片内容读取。缺失、跨 bucket 或未被本次范围观察的依赖保持组成不完整。
+
 ## detector 分类
 
 | 类别 | 典型来源 | 内容布局 | 独占范围 |

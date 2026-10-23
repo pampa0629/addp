@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/scanresource"
 )
 
@@ -31,6 +32,19 @@ func DetectObjectCatalogCompositeItems(
 	}
 
 	groups := scanresource.ObjectResourcesByParentPrefix(resources)
+	// Keep ordinary candidate groups directory-local. OBJ may refer to nested
+	// images; match those only against this scan's observed same-bucket files.
+	modelReferences := map[string]map[string]metaitem.StorageFileRef{}
+	for _, resource := range resources {
+		if resource.NodeType == plugin.EngineCatalogKindObject {
+			entry := resource.StorageFileRef()
+			entry.Path = strings.Trim(resource.Path, "/")
+			if modelReferences[resource.RootName] == nil {
+				modelReferences[resource.RootName] = map[string]metaitem.StorageFileRef{}
+			}
+			modelReferences[resource.RootName][entry.Path] = entry
+		}
+	}
 	for key, group := range scanresource.ObjectResourcesByPartitionRootPrefix(resources) {
 		groups[key] = append(groups[key], group...)
 	}
@@ -64,6 +78,7 @@ func DetectObjectCatalogCompositeItems(
 			DirPath:              prefix,
 			StructureReader:      structureReader,
 			Files:                scanresource.StorageResourcesToFileRefs(scanresource.ObjectResourcesByParentPrefix(group)[groupKey]),
+			ModelReferenceFiles:  modelReferences[bucket],
 			RecursiveFiles:       scanresource.StorageResourcesToFileRefs(group),
 			EngineCatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
 		}

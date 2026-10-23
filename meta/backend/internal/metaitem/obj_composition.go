@@ -16,9 +16,12 @@ import (
 )
 
 func resolveOBJResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []*DetectedItem {
-	byPath := make(map[string]StorageFileRef, len(files))
-	for _, file := range files {
-		byPath[file.Path] = file
+	byPath := input.ModelReferenceFiles
+	if byPath == nil {
+		byPath = make(map[string]StorageFileRef, len(files))
+		for _, file := range files {
+			byPath[file.Path] = file
+		}
 	}
 	var items []*DetectedItem
 	for _, file := range files {

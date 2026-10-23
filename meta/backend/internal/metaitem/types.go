@@ -156,8 +156,11 @@ type DirectoryResolveInput struct {
 	EngineCatalogPathFor func(path string) plugin.EngineCatalogPath
 	DirPath              string
 	Files                []StorageFileRef
-	Subdirs              []StorageDirectoryRef
-	Options              ResolveOptions
+	// ModelReferenceFiles contains already observed files for exact declared
+	// dependencies, not additional primary candidates or permission to enumerate.
+	ModelReferenceFiles map[string]StorageFileRef
+	Subdirs             []StorageDirectoryRef
+	Options             ResolveOptions
 	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 whole scope 时提供。
 	// resolver 只消费观察资源，不自行遍历存储引擎。
 	RecursiveFiles   []StorageFileRef

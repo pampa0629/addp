@@ -67,15 +67,15 @@ func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
 	obj := "mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n"
 	files := map[string]string{
 		"model.obj": obj,
-		"model.mtl": "newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n",
+		"model.mtl": "newmtl paint\nKd 1 1 1\nd 1\nmap_Kd images/texture.png\n",
 		// The resolver only needs the texture's declared path and catalog size.
-		"texture.png": "texture bytes",
+		"images/texture.png": "texture bytes",
 	}
 	reader := &objRangeObjectProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{contentByPath: map[string]string{}}}
 	resources := []scanresource.StorageResource{}
 	var total int64
 	modified := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
-	for _, name := range []string{"model.obj", "model.mtl", "texture.png"} {
+	for _, name := range []string{"model.obj", "model.mtl", "images/texture.png"} {
 		data := files[name]
 		reader.contentByPath["addp/models/"+name] = data
 		source := objectResourceForTest(9, "addp", "models/"+name, int64(len(data)), "")
@@ -135,11 +135,15 @@ func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
 	}
 }
 
-type objRangeObjectProvider struct{ objectCatalogScanTestProvider }
+type objRangeObjectProvider struct {
+	objectCatalogScanTestProvider
+	opened []string
+}
 
 func (*objRangeObjectProvider) Type() string { return "minio" }
 
 func (p *objRangeObjectProvider) OpenRange(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	p.opened = append(p.opened, target.StringPath())
 	raw, exists := p.contentByPath[target.StringPath()]
 	if !exists || opts.Offset < 0 || opts.Length < 0 || opts.Offset > int64(len(raw)) {
 		return nil, io.ErrUnexpectedEOF
@@ -283,9 +287,17 @@ type nestedBasicModelProvider struct {
 	entries []plugin.EngineCatalogEntry
 	listed  []plugin.EngineCatalogPath
 	dae     []byte
+	obj     map[string][]byte
 }
 
 func (p *nestedBasicModelProvider) OpenRange(ctx context.Context, conn plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	if raw, ok := p.obj[target.StringPath()]; ok {
+		if opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(raw)) {
+			return nil, fmt.Errorf("OBJ range escaped observed manifest")
+		}
+		p.ranges++
+		return io.NopCloser(bytes.NewReader(raw[opts.Offset : opts.Offset+opts.Length])), nil
+	}
 	if reflect.DeepEqual(target, plugin.ObjectItemPath(9, "addp", "discover/dae/model.dae")) {
 		if opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(p.dae)) {
 			return nil, fmt.Errorf("DAE range escaped primary")
@@ -327,12 +339,28 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 	data := structure3DS("texture.png")
 	dae := []byte(objectDAEForTest("texture%20A.PNG"))
 	reader := &nestedBasicModelProvider{objectModelStructureSpy: &objectModelStructureSpy{primary: plugin.ObjectItemPath(9, "addp", "discover/3ds/model.3ds"), data: data}, dae: dae}
+	reader.obj = map[string][]byte{
+		"addp/discover/obj/model.obj":      []byte("mtllib paint red.mtl\nmtllib paint blue.mtl\nv 0 0 0\n"),
+		"addp/discover/obj/paint red.mtl":  []byte("newmtl red\nmap_Kd red/color.png\n"),
+		"addp/discover/obj/paint blue.mtl": []byte("newmtl blue\nmap_Kd blue/color.png\n"),
+	}
+
 	for _, row := range []struct {
 		key  string
 		size int64
 	}{{"discover/ifc/model.ifc", 908}, {"discover/3ds/model.3ds", int64(len(data))}, {"discover/3ds/texture.png", 73}, {"discover/dae/model.dae", int64(len(dae))}, {"discover/dae/texture A.PNG", 73}} {
 		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: row.key[len("discover/"):], Path: plugin.ObjectItemPath(9, "addp", row.key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: "addp/" + row.key, SizeBytes: &row.size}})
 		reader.entries[len(reader.entries)-1].Name = reader.entries[len(reader.entries)-1].Path.Segments[len(reader.entries[len(reader.entries)-1].Path.Segments)-1].Name
+	}
+
+	for full, raw := range reader.obj {
+		size := int64(len(raw))
+		key := strings.TrimPrefix(full, "addp/")
+		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: key[strings.LastIndex(key, "/")+1:], Path: plugin.ObjectItemPath(9, "addp", key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: full, SizeBytes: &size}})
+	}
+	for _, key := range []string{"discover/obj/red/color.png", "discover/obj/blue/color.png"} {
+		size := int64(73)
+		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: "color.png", Path: plugin.ObjectItemPath(9, "addp", key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: "addp/" + key, SizeBytes: &size}})
 	}
 	original, err := plugin.Get("minio")
 	if err == nil {
@@ -347,13 +375,13 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 	})
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), metaRepo.NewScanRepository(db), nil)
 	result, err := runtime.ScanPaths(t.Context(), &commonModels.Engine{ID: 9, Name: "MinIO", EngineType: "minio"}, 1, []string{"addp/discover"}, nil, models.ScannedDepthBasic, false, nil)
-	if err != nil || result.Items != 3 {
+	if err != nil || result.Items != 4 {
 		t.Fatalf("basic nested model discovery: items=%d err=%v", result.Items, err)
 	}
-	if len(reader.listed) != 1 || reader.listed[0].StringPath() != "addp/discover" || reader.ranges < 2 || reader.contentCalls != 0 {
+	if len(reader.listed) != 1 || reader.listed[0].StringPath() != "addp/discover" || reader.ranges < 5 || reader.contentCalls != 0 {
 		t.Fatal("discovery scope or structural read missing")
 	}
-	for _, format := range []string{"ifc", "3ds", "dae"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
 		var item models.MetaItem
 		if err := db.Where("engine_id=? AND tenant_id=? AND full_name=?", 9, 1, "addp/discover/"+format+"/model."+format).First(&item).Error; err != nil {
 			t.Fatal(err)
@@ -361,8 +389,71 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 		if item.ScannedDepth != "basic" || commonJSON.String(item.Attributes, "item", "format") != format || commonJSON.String(item.Attributes, "item", "data_type") != "model_3d" {
 			t.Fatalf("wrong basic identity: %+v", item)
 		}
-		if format != "ifc" && (commonJSON.Section(item.Attributes, "format_info."+format)["scan_complete"] != true || len(commonJSON.InterfaceSlice(commonJSON.Section(item.Attributes, "item")["refs"])) != 2) {
+		expectedRefs, completeKey := 2, "scan_complete"
+		if format == "obj" {
+			expectedRefs, completeKey = 5, "composition_complete"
+		}
+		if format != "ifc" && (commonJSON.Section(item.Attributes, "format_info."+format)[completeKey] != true || len(commonJSON.InterfaceSlice(commonJSON.Section(item.Attributes, "item")["refs"])) != expectedRefs) {
 			t.Fatal("basic lost exact object composition")
+		}
+	}
+}
+
+func TestMinIOBasicOBJMatchesOnlyDeclaredNestedImagesInObservedBucket(t *testing.T) {
+	for _, prefix := range []string{"", "models/", "models/models/"} {
+		for _, missing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/missing=%v", prefix, missing), func(t *testing.T) {
+				files := map[string]string{
+					"model.obj":               "mtllib paint red.mtl\nmtllib paint blue.mtl\nv 0 0 0\n",
+					"paint red.mtl":           "newmtl red\nmap_Kd red/color.png\n",
+					"paint blue.mtl":          "newmtl blue\nmap_Kd blue/color.png\n",
+					"red/color.png":           "red image bytes",
+					"blue/color.png":          "blue image bytes",
+					"unused/not-declared.png": "unclaimed image",
+				}
+				reader := &objRangeObjectProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{contentByPath: map[string]string{}}}
+				var resources []scanresource.StorageResource
+				for name, raw := range files {
+					bucket := "addp"
+					if missing && name == "blue/color.png" {
+						bucket = "other"
+					}
+					resources = append(resources, objectResourceForTest(9, bucket, prefix+name, int64(len(raw)), ""))
+					reader.contentByPath[bucket+"/"+prefix+name] = raw
+				}
+				claims, items, warnings := scanflow.DetectObjectCatalogCompositeItems(t.Context(), reader, reader, nil, 9, resources, false)
+				if len(warnings) != 0 || len(items) != 1 {
+					t.Fatalf("items=%v warnings=%v", items, warnings)
+				}
+				plan, ok := scanresource.PlanObjectCompositeItem(9, items[0], "object")
+				if !ok {
+					t.Fatal("missing OBJ plan")
+				}
+				native := commonJSON.Section(plan.Attributes, "format_info.obj")
+				expectedRefs := 5
+				if missing {
+					expectedRefs = 1
+				}
+				if native["composition_complete"] != !missing || len(plan.DataItem.RefList) != expectedRefs {
+					t.Fatalf("native=%v refs=%v", native, plan.DataItem.RefList)
+				}
+				if !claims[prefix+"model.obj"] || claims[prefix+"unused/not-declared.png"] {
+					t.Fatalf("claims=%v", claims)
+				}
+				for _, name := range []string{"paint red.mtl", "paint blue.mtl", "red/color.png", "blue/color.png"} {
+					if claims[prefix+name] != !missing {
+						t.Fatalf("unexpected dependency claim %s: %v", name, claims)
+					}
+				}
+				if len(reader.opened) != 3 {
+					t.Fatalf("expected main and two MTL only: %v", reader.opened)
+				}
+				for _, name := range reader.opened {
+					if strings.HasSuffix(name, ".png") || strings.HasPrefix(name, "other/") {
+						t.Fatalf("unapproved content read: %s", name)
+					}
+				}
+			})
 		}
 	}
 }
