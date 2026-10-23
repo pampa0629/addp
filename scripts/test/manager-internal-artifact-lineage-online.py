@@ -1213,9 +1213,7 @@ def validate_max_conversion(execution: dict) -> dict:
     return expected
 
 
-def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
-    if format_name not in MODEL_FORMATS:
-        raise SuiteError("unexpected model fixture format")
+def parse_model_glb(raw: bytes):
     if not 20 <= len(raw) <= 2 * 1024 * 1024:
         raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
     magic, version, total = struct.unpack_from("<4sII", raw)
@@ -1247,6 +1245,13 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if view.get("buffer") != 0 or start + length > declared_size:
             raise SuiteError("fixture bufferView exceeds embedded bytes")
         return binary[start:start + length], view
+    return doc, view_bytes
+
+
+def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
+    if format_name not in MODEL_FORMATS:
+        raise SuiteError("unexpected model fixture format")
+    doc, view_bytes = parse_model_glb(raw)
     if format_name == "max":
         return validate_max_glb(doc, view_bytes, len(raw))
     images = _array(doc.get("images", []), "fixture GLB images")
@@ -2284,7 +2289,7 @@ def run_scenario(
 
 def prepare_minio_model_grants(client, environment):
     # Reuse the exact-model owner helper, with this suite's independently checked
-    # consumer Permission set. Only the two migrated formats receive Grants.
+    # consumer Permission set. Every migrated format receives its exact full Grant.
     from importlib import import_module
     models = import_module('scripts.test.ftp-consumer-flow-online')
     tenant = positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
@@ -2295,12 +2300,14 @@ def prepare_minio_model_grants(client, environment):
     grants = models.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,
         'principal_id':str(identity['principal']['id'])},source_type='minio',consumer_permissions=REQUIRED_PERMISSIONS)
     try:
-        for kind in ('ifc','3ds'):
+        for kind in ('ifc','3ds','dae','obj'):
             name = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/model3d/'+kind+'/model.'+kind
             item = find_fixture_item(client,engine,name,kind)
             refs = [{'path':name,'role':'model','required':True,'primary':True}]
-            if kind=='3ds':
+            if kind in {'3ds','dae','obj'}:
                 refs.append({'path':name.rsplit('/',1)[0]+'/texture.png','role':'texture','required':True,'primary':False})
+            if kind=='obj':
+                refs.append({'path':name.rsplit('/',1)[0]+'/model.mtl','role':'material_library','required':True,'primary':False})
             grants.grant({'format':kind,'full_name':name,'fingerprint':item['fingerprint'],'composition':refs})
     except BaseException:
         grants.cleanup()

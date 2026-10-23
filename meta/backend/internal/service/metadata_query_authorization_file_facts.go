@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonformat "github.com/addp/common/format"
@@ -38,7 +39,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout == "" || dataType == "" || format == "" {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
-	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae") {
+	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae" && format != "obj") {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	targetFor := func(name string) plugin.EngineCatalogPath {
@@ -100,7 +101,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 			if ref.Path != item.FullName || ref.Role != "model" {
 				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 			}
-		} else if ref.Role != "texture" {
+		} else if ref.Role != "texture" && format != "obj" {
 			suffix := strings.TrimPrefix(ref.Role, "texture_")
 			n, err := strconv.Atoi(suffix)
 			if !strings.HasPrefix(ref.Role, "texture_") || err != nil || n < 2 || strconv.Itoa(n) != suffix {
@@ -115,6 +116,32 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	}
 	if format == "ifc" && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
+	if format == "obj" {
+		native := commonjson.Section(item.Attributes, "format_info.obj")
+		if native["composition_complete"] != true {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+		libraries, err := dataitem.DecodeOBJMaterialLibraries(native["material_libraries"])
+		if err != nil {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		expected, err := dataitem.OBJCompositionRefs(item.FullName, libraries)
+		if err != nil {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		for _, ref := range expected {
+			actual, found := byPath[ref.Path]
+			if !found {
+				return finish(authorizationfacts.AuthorizationBasisIncomplete)
+			}
+			if actual.Role != ref.Role || actual.Primary != ref.Primary {
+				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+			}
+		}
+		if len(expected) != len(byPath) {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
 	}
 	if format == "3ds" || format == "dae" {
 		native := commonjson.Section(item.Attributes, "format_info."+format)

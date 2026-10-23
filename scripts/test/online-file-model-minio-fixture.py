@@ -1,6 +1,7 @@
 """Owned MinIO objects for the existing exact-model Hosted acceptance suite."""
 from contextlib import contextmanager
 from importlib import import_module
+import copy
 import hashlib
 import json
 import os
@@ -126,7 +127,10 @@ def stop():
 
 @contextmanager
 def changed_texture(model):
-    import copy
+    if model['format'] == 'obj':
+        with changed_obj_material(model) as changed:
+            yield changed
+        return
     root, _ = guard()
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     kind = model['format']
@@ -160,6 +164,37 @@ def changed_texture(model):
         mc('rm', f'fixture/{BUCKET}/{replacement}')
         if read(key)!=original:
             raise RuntimeError('MinIO restore bytes differ')
+
+
+@contextmanager
+def changed_obj_material(model):
+    guard()
+    fixture = Path(__file__).resolve().parents[2]/'business/fixtures/manager'
+    key, texture, replacement = 'models/obj/paint red.mtl', 'models/obj/red/color.png', 'models/obj/red/changed.png'
+    original = (fixture/'addp_online_multi_material_red.mtl').read_bytes()
+    png = (fixture/'addp_online_obj_red.png').read_bytes()
+    if model['full_name'] != BUCKET+'/models/obj/model.obj' or read(key) != original or read(texture) != png or read('models/obj/model.obj') != (fixture/'addp_online_multi_material.obj').read_bytes():
+        raise RuntimeError('OBJ MinIO mutation requires its fixed owned source and MTL')
+    listing = mc('ls', '--json', f'fixture/{BUCKET}/models/obj/red/').decode().splitlines()
+    if any(json.loads(line).get('key') == 'changed.png' for line in listing):
+        raise RuntimeError('OBJ replacement texture already exists')
+    changed = original.replace(b'red/color.png', b'red/changed.png')
+    try:
+        put(replacement, png)
+        put(key, changed)
+        projected = copy.deepcopy(model)
+        refs = [ref for ref in projected['composition'] if ref['path'] == BUCKET+'/'+texture]
+        if len(refs) != 1:
+            raise RuntimeError('OBJ mutation requires one red texture composition member')
+        refs[0]['path'] = BUCKET+'/'+replacement
+        yield projected
+    finally:
+        if read(key) not in (original,changed) or read(replacement) != png:
+            raise RuntimeError('OBJ MinIO cleanup refuses unexpected source changes')
+        put(key, original)
+        mc('rm', f'fixture/{BUCKET}/{replacement}')
+        if read(key) != original:
+            raise RuntimeError('OBJ MinIO MTL restore differs')
 
 
 @contextmanager

@@ -129,10 +129,11 @@ const objectPath = (name = 'Model.3DS', bucket = 'models') => ({ engine_id: 33, 
 ] })
 const objectFacts = (candidate, format='3ds') => ({...fileFacts(candidate),item_type:'object',boundary:{layout:'single',file_composition:{format,refs:[
   {target:objectPath('model.'+format),role:'model',required:true,primary:true},
+  ...(format === 'obj' ? [{target:objectPath('model.mtl'),role:'material_library',required:true,primary:false}] : []),
   ...(format === 'ifc' ? [] : [{target:objectPath(' tex.png   '),role:'texture',required:true,primary:false}])
 ]}}})
 test('object model binding preserves bucket, prefix and names and never accepts wider or mixed targets', async () => {
-  for (const format of ['ifc','3ds','dae']) {
+  for (const format of ['ifc','3ds','dae','obj']) {
     const target = objectPath('model.'+format)
     const candidate = Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`33:models/scene/model.${format}`))).toString('hex')
     const binding = await observeNativeApprovalBinding(target, async (_,fp) => {assert.equal(fp,candidate);return objectFacts(fp,format)})

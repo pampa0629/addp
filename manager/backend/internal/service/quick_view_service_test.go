@@ -933,7 +933,7 @@ func TestModel3DGLBCapabilityFTPFormatBoundary(t *testing.T) {
 		{"ftp", "sgm", "model_3d_glb_source_not_supported", false},
 		{"ftp", "glb", "source_format_direct_preview", false},
 		{"ftp", "ply", "source_format_direct_preview", false},
-		{"ftp", "obj", "model_3d_glb_source_not_supported", false},
+		{"ftp", "obj", "requires_glb_generation", true},
 		{"ftp", "fbx", "model_3d_glb_source_not_supported", false},
 		{"nfs", "max", "requires_glb_generation", true},
 		{"nfs", "dae", "requires_glb_generation", true},

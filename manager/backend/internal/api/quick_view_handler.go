@@ -182,7 +182,7 @@ type RebindManagedQuickViewTaskResponse struct {
 // @Summary 获取 locator 快显能力 | Get locator quick view capability
 // @Description 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.
 // @Description 源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.
-// @Description FTP 的 GLB 生成动作仅适用于 IFC／3DS；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS only, using the actual System engine type rather than caller labels or Grant availability.
+// @Description FTP 的 GLB 生成动作适用于 IFC／3DS／DAE／OBJ；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS/DAE/OBJ, using the actual System engine type rather than caller labels or Grant availability.
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -212,7 +212,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
 // @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
-// @Description 真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
+// @Description FTP／NFS／MinIO 的 IFC／3DS／DAE／OBJ 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | FTP/NFS/MinIO IFC/3DS/DAE/OBJ generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
 // @Tags Manager
 // @Accept json
 // @Produce json

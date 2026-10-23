@@ -1647,7 +1647,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Summary 执行任务 | Execute task
 // @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.
 // @Description model_3d_glb_generation 仅接受当前 User 手工根执行，并固化认证主体来源；scheduled 请求返回 403 且不创建执行。| model_3d_glb_generation accepts current User manual roots and freezes verified actor origin; scheduled requests return 403 without creating an execution.
-// @Description 真实 FTP 的 IFC／3DS 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | Actual FTP IFC/3DS generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
+// @Description FTP／NFS／MinIO 的 IFC／3DS／DAE／OBJ 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | FTP/NFS/MinIO IFC/3DS/DAE/OBJ generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
 // @Tags Manager
 // @Accept json
 // @Produce json

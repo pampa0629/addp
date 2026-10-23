@@ -131,6 +131,11 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 		}
 		spy.files["models/TEST.PNG"] = []byte("actual texture")
 	}
+	if format == "obj" {
+		spy.files[item.FullName] = []byte("mtllib model.mtl\nv 0 0 0\n")
+		spy.files["models/model.mtl"] = []byte("newmtl paint\nmap_Kd TEST.PNG\n")
+		spy.files["models/TEST.PNG"] = []byte("actual texture")
+	}
 	original, err := plugin.Get(engineType)
 	if err != nil {
 		t.Fatal(err)
@@ -200,12 +205,14 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactModelSource(t, "nfs") }
 func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
 func testExactModelSource(t *testing.T, engineType string) {
-	for _, format := range []string{"ifc", "3ds", "dae"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
 				if fault == "changed-declaration" && format != "ifc" {
-					if format == "dae" {
+					if format == "obj" {
+						spy.files["models/model.mtl"] = []byte("newmtl paint\nmap_Kd OTHER.PNG\n")
+					} else if format == "dae" {
 						spy.files["models/model.dae"] = []byte(daeStagingInput("OTHER.PNG"))
 					} else {
 						spy.files["models/model.3ds"] = threeDSStagingInput("OTHER.PNG")
@@ -252,7 +259,7 @@ func testExactModelSource(t *testing.T, engineType string) {
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
@@ -285,6 +292,9 @@ func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T
 			expected := []string{"models/model." + format}
 			if format == "3ds" || format == "dae" {
 				expected = append(expected, "models/TEST.PNG")
+			}
+			if format == "obj" {
+				expected = append(expected, "models/model.mtl", "models/TEST.PNG")
 			}
 			if !reflect.DeepEqual(spy.opens, expected) || !reflect.DeepEqual(spy.facts, expected) {
 				t.Fatalf("unexpected exact inputs: facts=%v opens=%v", spy.facts, spy.opens)

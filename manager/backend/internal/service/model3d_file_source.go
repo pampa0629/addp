@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format/plugins/obj"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
@@ -34,7 +35,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	composition := auth.Composition()
-	if composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, composition) || (composition.Format != "ifc" && composition.Format != "3ds" && composition.Format != "dae") || composition.Format != req.Config.Source.Format {
+	if composition == nil || !commonExecution.ManagerModel3DSourceComposition(engine.EngineType, composition) || composition.Format != req.Config.Source.Format {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	primary, err := composition.PrimaryTarget()
@@ -77,7 +78,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		}
 		return plugin.ConnectionInfo(current.ConnectionInfo), nil
 	}
-	stat := func(target plugin.EngineCatalogPath) (int64, error) {
+	stat := func(target plugin.EngineCatalogPath, allowEmpty bool) (int64, error) {
 		info, err := currentInfo(ctx, target)
 		if err != nil {
 			return 0, err
@@ -86,7 +87,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return 0, fmt.Errorf("inspect exact file model input: %w", err)
 		}
-		if facts == nil || facts.Kind != sourceKind || !reflect.DeepEqual(facts.Path, target) || facts.Storage == nil || facts.Storage.SizeBytes == nil || facts.Storage.Path != target.StringPath() || *facts.Storage.SizeBytes <= 0 || *facts.Storage.SizeBytes == math.MaxInt64 {
+		if facts == nil || facts.Kind != sourceKind || !reflect.DeepEqual(facts.Path, target) || facts.Storage == nil || facts.Storage.SizeBytes == nil || facts.Storage.Path != target.StringPath() || *facts.Storage.SizeBytes < 0 || (!allowEmpty && *facts.Storage.SizeBytes == 0) || *facts.Storage.SizeBytes == math.MaxInt64 {
 			return 0, errors.New("file model input facts do not describe a nonempty authorized file")
 		}
 		return *facts.Storage.SizeBytes, nil
@@ -113,11 +114,68 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		}
 		return stream, nil
 	}
-	primarySize, err := stat(primary)
+	primarySize, err := stat(primary, false)
 	if err != nil {
 		return err
 	}
 	var primaryBytes []byte
+	buffered := map[string][]byte{}
+	if composition.Format == "obj" {
+		libraries, err := auth.OBJMaterialLibraries()
+		if err != nil || primarySize > obj.MaxCompositionBytes {
+			return ErrModel3DGLBSourceAuthorizationRequired
+		}
+		readManifest := func(target plugin.EngineCatalogPath, size int64, material bool) ([]byte, []string, error) {
+			stream, err := open(ctx, target)
+			if err != nil {
+				return nil, nil, err
+			}
+			raw, refs, err := bufferOBJStagingManifest(ctx, stream, size, material)
+			return raw, refs, errors.Join(err, stream.Close())
+		}
+		var declared []string
+		primaryBytes, declared, err = readManifest(primary, primarySize, false)
+		if err != nil {
+			return err
+		}
+		expected := make([]string, len(libraries))
+		for i, library := range libraries {
+			expected[i] = library.Reference
+		}
+		if !sameOBJDeclarations(declared, expected) {
+			return errors.New("OBJ material declarations changed from the frozen composition")
+		}
+		var materialBytes int64
+		for _, library := range libraries {
+			var target plugin.EngineCatalogPath
+			for _, ref := range composition.Refs {
+				if ref.Target.Segments[len(ref.Target.Segments)-1].Name == library.Reference &&
+					(ref.Role == "material_library" || strings.HasPrefix(ref.Role, "material_library_")) {
+					target = ref.Target
+					break
+				}
+			}
+			if target.EngineID == 0 {
+				return ErrModel3DGLBSourceAuthorizationRequired
+			}
+			size, err := stat(target, true)
+			if err != nil {
+				return err
+			}
+			if size > obj.MaxCompositionBytes-materialBytes {
+				return errors.New("OBJ material libraries exceed the aggregate read budget")
+			}
+			materialBytes += size
+			raw, textures, err := readManifest(target, size, true)
+			if err != nil {
+				return err
+			}
+			if !sameOBJDeclarations(textures, library.TextureRefs) {
+				return errors.New("OBJ texture declarations changed from the frozen composition")
+			}
+			buffered[target.StringPath()] = raw
+		}
+	}
 	if composition.Format == "3ds" || composition.Format == "dae" {
 		refs, err := auth.DeclaredTextureRefs()
 		if err != nil {
@@ -174,14 +232,23 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return err
 		}
-		size, err := stat(target)
+		if raw, exists := buffered[target.StringPath()]; exists {
+			files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: int64(len(raw)), Open: func(ctx context.Context) (io.ReadCloser, error) {
+				if err := auth.Checkpoint(ctx); err != nil {
+					return nil, err
+				}
+				return io.NopCloser(bytes.NewReader(raw)), nil
+			}})
+			continue
+		}
+		size, err := stat(target, false)
 		if err != nil {
 			return err
 		}
 		files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: size, Open: func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, target) }})
 	}
 	kind := workflowaccess.KindFile
-	if composition.Format == "3ds" || composition.Format == "dae" {
+	if composition.Format == "3ds" || composition.Format == "dae" || composition.Format == "obj" {
 		kind = workflowaccess.KindDirectory
 	}
 	if err := auth.Checkpoint(ctx); err != nil {

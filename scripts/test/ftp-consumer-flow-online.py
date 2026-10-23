@@ -7,10 +7,12 @@ import copy
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
 import subprocess
+import struct
 import sys
 import time
 import tempfile
@@ -362,6 +364,14 @@ def verify_owned_model_storage(client, report):
     return proofs
 
 
+def result_without_housekeeping_clock(detail):
+    observed = copy.deepcopy(detail)
+    # The existing owner cleanup worker refreshes this clock for retained
+    # late-write watches. It does not alter artifact identity or visibility.
+    observed.get('metadata', {}).get('model3d_output_lifecycle', {}).pop('checked_at', None)
+    return observed
+
+
 def delete_owned_task_definitions(client, report):
     # Task definitions, execution history and published artifacts have separate
     # lifecycles. Freeze all exact owners before the first destructive request.
@@ -417,7 +427,8 @@ def delete_owned_task_definitions(client, report):
         for remaining in plans[index + 1:]:
             require(client.request('GET', remaining['path'], (200,)).payload == remaining['task'],
                     'FTP task deletion changed another owned task')
-        require(owned_model_details(client, report, model, published) == plan['detail'],
+        require(result_without_housekeeping_clock(owned_model_details(client, report, model, published)) ==
+                result_without_housekeeping_clock(plan['detail']),
                 'FTP task deletion changed the retained result')
         for identifier, before in plan['history'].items():
             require(client.request('GET', f'/api/v1/manager/executions/{identifier}', (200,)).payload == before,
@@ -683,7 +694,7 @@ def latest_owner_execution(report, kind):
 
 
 def verify_denied_generation(client, report, kind, reason):
-    require(kind in {'ifc', '3ds', 'dae'} and reason in {'composition_changed', 'source_withdrawn'},
+    require(kind in {'ifc', '3ds', 'dae', 'obj'} and reason in {'composition_changed', 'source_withdrawn'},
             'FTP denied generation requires its explicit observed source rule phase')
     model, = [row for row in report['models'] if row['format'] == kind]
     published, = [row for row in report['browser']['models'] if row['format'] == kind]
@@ -768,6 +779,10 @@ def changed_texture_fixture(model):
         with import_module('scripts.test.online-file-model-minio-fixture').changed_texture(model) as changed:
             yield changed
         return
+    if model['format'] == 'obj':
+        with changed_obj_material_fixture(model) as changed:
+            yield changed
+        return
     root = owned_ftp_fixture()
     kind = model['format']
     require(kind in {'3ds', 'dae'}, 'composition fixture requires a declared texture model')
@@ -818,6 +833,47 @@ def changed_texture_fixture(model):
                 require(content == png if published else png.startswith(content),
                         'FTP composition cleanup refuses to remove unexpected texture changes')
                 replacement.unlink()
+
+
+@contextmanager
+def changed_obj_material_fixture(model):
+    root = owned_ftp_fixture() / 'data/models/obj'
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    material, texture, replacement = root/'paint red.mtl', root/'red/color.png', root/'red/changed.png'
+    original = (fixture/'addp_online_multi_material_red.mtl').read_bytes()
+    png = (fixture/'addp_online_obj_red.png').read_bytes()
+    require(model['full_name'] == 'models/obj/model.obj' and
+            all(not leaf.is_symlink() for leaf in [root, root.parent, root.parent.parent, root/'red', root/'model.obj', material, texture]) and
+            material.read_bytes() == original and texture.read_bytes() == png and
+            (root/'model.obj').read_bytes() == (fixture/'addp_online_multi_material.obj').read_bytes(),
+            'OBJ mutation requires the fixed owned model and exact declared MTL')
+    changed = original.replace(b'red/color.png', b'red/changed.png')
+    descriptor = os.open(replacement, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    identity = os.fstat(descriptor)
+    published = False
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(png)
+            os.fchmod(stream.fileno(), 0o644)
+        published = True
+        replace_fixture_file(material, changed)
+        projected = copy.deepcopy(model)
+        matched = [ref for ref in projected['composition'] if ref['path'] == 'models/obj/red/color.png']
+        require(len(matched) == 1, 'OBJ fixture requires one exact red texture member')
+        matched[0]['path'] = 'models/obj/red/changed.png'
+        yield projected
+    finally:
+        try:
+            require(not material.is_symlink() and material.read_bytes() in (original, changed),
+                    'OBJ cleanup refuses an unexpected MTL change')
+            if material.read_bytes() != original:
+                replace_fixture_file(material, original)
+        finally:
+            observed = replacement.lstat()
+            content = replacement.read_bytes()
+            require(not replacement.is_symlink() and replacement.is_file() and (observed.st_dev, observed.st_ino) == (identity.st_dev, identity.st_ino) and
+                    (content == png if published else png.startswith(content)), 'OBJ cleanup refuses an unowned texture')
+            replacement.unlink()
 
 
 def replace_fixture_file(path, content):
@@ -977,16 +1033,10 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
 
 
 def prepare_models(items, engine_id, samples):
-    expected = {'ifc': ('models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
-                '3ds': ('models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
-                'dae': ('models/dae/model.dae', 'addp_online_model_fixture.dae'),
-                'dae_png': ('models/dae/texture.png', 'addp_online_exchange_texture.png'),
-                'png': ('models/3ds/texture.png', 'addp_online_exchange_texture.png')}
-    if model_source_type() == 'minio':
-        expected = {key:(model_scope(value[0]), value[1]) for key,value in expected.items()}
+    expected = {key:(model_scope(relative), source) for key,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
-            'FTP model manifest requires exactly IFC, 3DS, DAE and their two PNG files')
+            'FTP model manifest requires the exact four model profiles and their declared dependencies')
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     by_format = {}
     for sample in samples:
@@ -997,7 +1047,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in ('ifc', '3ds', 'dae'):
+    for kind in ('ifc', '3ds', 'dae', 'obj'):
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')
@@ -1025,6 +1075,14 @@ def prepare_models(items, engine_id, samples):
             require(native.get('texture_refs') == ['texture.png'],
                     'FTP texture model must retain its exact texture declaration')
             expected_refs.append({'path': by_format['dae_png' if kind == 'dae' else 'png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
+        if kind == 'obj':
+            require(native.get('composition_complete') is True and native.get('material_libraries') == [
+                {'reference':'paint blue.mtl','texture_refs':['blue/color.png']},
+                {'reference':'paint red.mtl','texture_refs':['red/color.png']}],
+                'OBJ requires the exact complete two-material declaration graph')
+            for key,role in [('obj_mtl_blue','material_library'),('obj_mtl_red','material_library_2'),
+                             ('obj_png_blue','texture'),('obj_png_red','texture_2')]:
+                expected_refs.append({'path':by_format[key]['full_name'],'role':role,'required':True,'primary':False})
         require(isinstance(refs, list) and len(refs) == len(expected_refs) and
                 all(isinstance(ref, dict) and type(ref.get('required')) is bool and
                     type(ref.get('primary', False)) is bool for ref in refs) and
@@ -1110,15 +1168,11 @@ def validate_source_download(observed, source, artifact_dir):
     require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed['sha256'],
             'FTP logical source response differs from the captured bytes')
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    pinned = {'models/ifc/model.ifc': 'addp_online_model_fixture.ifc',
-              'models/3ds/model.3ds': 'addp_online_model_fixture.3ds',
-              'models/dae/model.dae': 'addp_online_model_fixture.dae',
-              'models/dae/texture.png': 'addp_online_exchange_texture.png',
-              'models/3ds/texture.png': 'addp_online_exchange_texture.png'}
-    pinned = {model_scope(key):value for key,value in pinned.items()}
+    pinned = {model_scope(relative):source for _,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(all(ref['path'] in pinned for ref in source['composition']),
             'FTP source download requires the exact confirmed fixed-fixture composition')
-    expected = {Path(ref['path']).name: (fixture / pinned[ref['path']]).read_bytes()
+    parent = source['full_name'].rsplit('/',1)[0] + '/'
+    expected = {ref['path'][len(parent):]: (fixture / pinned[ref['path']]).read_bytes()
                 for ref in source['composition']}
     require(len(expected) == len(source['composition']) and
             len(expected[Path(source['full_name']).name]) == source['size'] and
@@ -1146,6 +1200,85 @@ def validate_source_download(observed, source, artifact_dir):
         raise SuiteError('FTP logical source ZIP is invalid or corrupt') from error
 
 
+def validate_obj_multi_material_glb(raw):
+    doc, view_bytes = MODEL.parse_model_glb(raw)
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    expected = {}
+    for color, rgb, points in [('red', (220, 30, 60), {(0.,0.,0.),(1.,0.,0.),(0.,1.,0.)}),
+                               ('blue', (30, 70, 220), {(1.,0.,0.),(2.,0.,0.),(2.,1.,0.)})]:
+        png = (fixture / f'addp_online_obj_{color}.png').read_bytes()
+        MODEL.validate_fixture_png(png, expected_size=2, expected_rgb=rgb)
+        expected[hashlib.sha256(png).hexdigest()] = (png, points)
+    images = doc.get('images', [])
+    require(len(images) == 2, 'OBJ must retain both distinct embedded textures')
+    image_hashes = []
+    for image in images:
+        require(image.get('mimeType') == 'image/png' and 'uri' not in image,
+                'OBJ textures must be embedded PNGs')
+        data, _ = view_bytes(image.get('bufferView'))
+        digest = hashlib.sha256(data).hexdigest()
+        require(digest in expected and data == expected[digest][0], 'OBJ embedded texture differs from its exact source')
+        image_hashes.append(digest)
+    require(len(set(image_hashes)) == 2, 'OBJ textures with the same basename were merged')
+    meshes, accessors = doc.get('meshes', []), doc.get('accessors', [])
+    used_images, primitives = set(), 0
+    def values(index, width, component, code):
+        require(type(index) is int and 0 <= index < len(accessors), 'OBJ accessor index invalid')
+        accessor = accessors[index]
+        require(accessor.get('componentType') == component and accessor.get('count') == 3 and
+                accessor.get('type') == ('SCALAR' if width == 1 else f'VEC{width}') and
+                'sparse' not in accessor, 'OBJ triangle or UV accessor differs')
+        data, view = view_bytes(accessor.get('bufferView'))
+        step = struct.calcsize('<' + code * width)
+        stride, start = view.get('byteStride', step), accessor.get('byteOffset', 0)
+        require(type(stride) is int and stride >= step and type(start) is int and start >= 0 and
+                start + stride * 2 + step <= len(data), 'OBJ accessor exceeds its buffer view')
+        return [struct.unpack_from('<' + code * width, data, start + stride * i) for i in range(3)]
+    for mesh in meshes:
+        for primitive in mesh.get('primitives', []):
+            primitives += 1
+            require(primitive.get('mode', 4) == 4, 'OBJ primitive must remain a triangle')
+            attributes = primitive.get('attributes', {})
+            points = set(values(attributes.get('POSITION'), 3, 5126, 'f'))
+            uv = values(attributes.get('TEXCOORD_0'), 2, 5126, 'f')
+            require(len(set(uv)) == 3 and all(math.isfinite(n) and 0 <= n <= 1 for pair in uv for n in pair),
+                    'OBJ UV coordinates must retain a finite triangle')
+            material = doc['materials'][primitive['material']]
+            pbr = material.get('pbrMetallicRoughness', {})
+            texture = doc['textures'][pbr['baseColorTexture']['index']]
+            image = texture['source']
+            require(type(image) is int and 0 <= image < 2 and image not in used_images and
+                    points == expected[image_hashes[image]][1], 'OBJ material bound the wrong colored triangle')
+            used_images.add(image)
+            index = primitive.get('indices')
+            if index is not None:
+                component = accessors[index]['componentType']
+                require(component in {5121,5123,5125}, 'OBJ triangle index type differs')
+                require({value[0] for value in values(index, 1, component, {5121:'B',5123:'H',5125:'I'}[component])} == {0,1,2},
+                        'OBJ triangle indices differ')
+    require(primitives == 2 and len(used_images) == 2, 'OBJ must retain both textured triangles')
+    identity = [1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.]
+    nodes, seen, rendered = doc.get('nodes', []), set(), set()
+    def visit(index):
+        require(type(index) is int and 0 <= index < len(nodes) and index not in seen, 'OBJ scene node invalid or reused')
+        seen.add(index)
+        node = nodes[index]
+        require(not any(key in node for key in ('translation','rotation','scale')) and node.get('matrix', identity) == identity,
+                'OBJ fixture contains unexpected transforms')
+        if 'mesh' in node:
+            require(type(node['mesh']) is int and 0 <= node['mesh'] < len(meshes) and node['mesh'] not in rendered,
+                    'OBJ scene mesh missing or repeated')
+            rendered.add(node['mesh'])
+        for child in node.get('children', []):
+            visit(child)
+    require(len(doc.get('scenes', [])) == 1 and doc.get('scene', 0) == 0, 'OBJ must retain one active scene')
+    for index in doc['scenes'][0].get('nodes', []):
+        visit(index)
+    require(rendered == set(range(len(meshes))), 'OBJ scene omitted a textured mesh')
+    return {'vertex_count': 6, 'primitive_count': 2, 'embedded_images': 2, 'extent': [2.,1.,0.],
+            'image_sha256': sorted(image_hashes)}
+
+
 def validate_browser_report(actual, expected, artifact_dir):
     proof = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
     proof.update(meta_ui_scan=True, previews=3, downloads=[{key: sample[key] for key in ('format', 'item_id', 'size', 'sha256')} for sample in expected['samples']])
@@ -1153,7 +1286,7 @@ def validate_browser_report(actual, expected, artifact_dir):
             'FTP browser identity, scan, preview or physical download proof differs')
     models = actual.get('models')
     require(isinstance(models, list) and len(models) == len(expected['models']),
-            'FTP browser must generate and reopen all three model formats')
+            'FTP browser must generate and reopen every declared model format')
     for observed, source in zip(models, expected['models']):
         require(set(observed) == {'format', 'item_id', 'task_id', 'execution_id', 'result_id',
                                  'size', 'sha256', 'source_download', 'rendered', 'reopened',
@@ -1168,7 +1301,10 @@ def validate_browser_report(actual, expected, artifact_dir):
         require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed.get('sha256'),
                 'FTP model report differs from actual downloaded GLB')
         try:
-            MODEL.validate_model_glb(raw, source['format'])
+            if source['format'] == 'obj':
+                validate_obj_multi_material_glb(raw)
+            else:
+                MODEL.validate_model_glb(raw, source['format'])
         except MODEL.SuiteError as error:
             raise SuiteError(f"FTP {source['format']} GLB physical verification failed: {error}") from error
 

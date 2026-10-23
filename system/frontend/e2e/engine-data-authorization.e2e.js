@@ -92,7 +92,8 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: modelKind,
           full_name: `Models/model.${ftp}`, basis_state: factsState, boundary_hash: factsState === 'complete' ? 'c'.repeat(64) : null,
           boundary: factsState === 'complete' ? { layout: 'single', file_composition: { format: ftp, refs: [
-            ...(['3ds', 'dae'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
+            ...(ftp === 'obj' ? [{ target: modelPath('model.mtl'), role: 'material_library', required: true, primary: false }] : []),
+            ...(['3ds', 'dae', 'obj'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
             { target: primary, role: 'model', required: true, primary: true }
           ] } } : null })
       }
@@ -837,7 +838,7 @@ async function selectFTPModel(page, format) {
   await page.locator('.resource-tree-select__panel').getByRole('button', { name: new RegExp(`model\\.${format}`) }).click()
   await page.getByTestId('approval-add-selection').click()
 }
-for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
+for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })
   const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
@@ -850,7 +851,8 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   const confirmation = page.locator('.el-message-box')
   await expect(confirmation).toContainText('完整文件组成')
   await expect(confirmation).toContainText(`Models / model.${format}`)
-  if (['3ds', 'dae'].includes(format)) await expect(confirmation).toContainText('Models / TEST.PNG')
+  if (format === 'obj') await expect(confirmation).toContainText('Models / model.mtl')
+  if (['3ds', 'dae', 'obj'].includes(format)) await expect(confirmation).toContainText('Models / TEST.PNG')
   await confirmation.getByRole('button', { name: '取消', exact: true }).click()
   expect(writes).toEqual([])
   await confirmGrant(page)

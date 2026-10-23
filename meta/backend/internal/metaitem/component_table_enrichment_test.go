@@ -467,13 +467,17 @@ func TestCommonDataItemResolverRejectsIncompleteGLTFRefs(t *testing.T) {
 func TestCommonDataItemResolverClaimsOBJMaterialLibraryRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{
-		{Name: "rifle.obj", Path: "models/obj/rifle.obj", Size: 100},
-		{Name: "rifle.mtl", Path: "models/obj/rifle.mtl", Size: 20},
+		{Name: "rifle.obj", Path: "models/obj/rifle.obj", Size: int64(len("mtllib rifle.mtl\nv 0 0 0\n"))},
+		{Name: "rifle.mtl", Path: "models/obj/rifle.mtl", Size: int64(len("newmtl default\nmap_Kd textures/albedo.png\n"))},
 		{Name: "albedo.png", Path: "models/obj/textures/albedo.png", Size: 30},
 		{Name: "readme.txt", Path: "models/obj/readme.txt", Size: 10},
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
+		StructureReader: &objStructureFixture{refMapContentReader: refMapContentReader{content: map[string][]byte{
+			"models/obj/rifle.obj": []byte("mtllib rifle.mtl\nv 0 0 0\n"),
+			"models/obj/rifle.mtl": []byte("newmtl default\nmap_Kd textures/albedo.png\n"),
+		}}},
 		ContentReader: refMapContentReader{content: map[string][]byte{
 			"models/obj/rifle.obj":           []byte("mtllib rifle.mtl\nv 0 0 0\n"),
 			"models/obj/rifle.mtl":           []byte("newmtl default\nmap_Kd textures/albedo.png\n"),

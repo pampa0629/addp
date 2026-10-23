@@ -1,0 +1,16 @@
+mtllib paint red.mtl
+mtllib paint blue.mtl
+o ColoredPanels
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 1 0 0
+v 2 0 0
+v 2 1 0
+vt 0 0
+vt 1 0
+vt 0 1
+usemtl paint_red
+f 1/1 2/2 3/3
+usemtl paint_blue
+f 4/1 5/2 6/3

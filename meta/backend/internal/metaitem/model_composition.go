@@ -3,6 +3,7 @@ package metaitem
 import (
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"reflect"
 	"sort"
@@ -63,6 +64,18 @@ func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType
 }
 
 func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveInput, file StorageFileRef, formatType format.FormatType) ([]string, error) {
+	reader, err := modelStructureReaderAt(ctx, input, file)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := format.GetModel3DCompositionProvider(formatType)
+	if err != nil {
+		return nil, err
+	}
+	return provider.ReadModel3DComposition(ctx, reader, file.Size)
+}
+
+func modelStructureReaderAt(ctx context.Context, input DirectoryResolveInput, file StorageFileRef) (io.ReaderAt, error) {
 	if _, ok := input.StructureReader.(plugin.RangeReadableProvider); !ok {
 		return nil, fmt.Errorf("model structure requires native range access")
 	}
@@ -74,10 +87,6 @@ func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveIn
 	if !exact {
 		return nil, fmt.Errorf("model structure requires the exact typed primary file")
 	}
-	provider, err := format.GetModel3DCompositionProvider(formatType)
-	if err != nil {
-		return nil, err
-	}
 	reader := contentadapter.NewMappedReader(input.StructureReader, input.ConnInfo,
 		func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
 			if ref.Path != file.Path {
@@ -85,5 +94,5 @@ func readExchangeModelDeclarations(ctx context.Context, input DirectoryResolveIn
 			}
 			return target, nil
 		}, plugin.ReadOptions{})
-	return provider.ReadModel3DComposition(ctx, contentio.NewReaderAt(ctx, reader.(contentio.RangeReader), contentio.NewRef(file.Path, "model")), file.Size)
+	return contentio.NewReaderAt(ctx, reader.(contentio.RangeReader), contentio.NewRef(file.Path, "model")), nil
 }

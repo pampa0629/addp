@@ -88,7 +88,7 @@ func DetectObjectCatalogCompositeItems(
 			if detected == nil {
 				continue
 			}
-			if prefix == "" && detected.Layout != format.LayoutMulti && !(detected.Layout == format.LayoutSingle && (detected.Format == "3ds" || detected.Format == "dae") && structureReader != nil) {
+			if prefix == "" && detected.Layout != format.LayoutMulti && !(detected.Layout == format.LayoutSingle && (detected.Format == "3ds" || detected.Format == "dae" || detected.Format == "obj") && structureReader != nil) {
 				continue
 			}
 			for _, path := range detected.RefFilePaths() {

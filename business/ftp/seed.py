@@ -63,6 +63,20 @@ def write_samples(directory):
             os.fchmod(stream.fileno(), 0o644)
 
 
+MODEL_SAMPLE_FILES = (
+    ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
+    ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
+    ('dae', 'models/dae/model.dae', 'addp_online_model_fixture.dae'),
+    ('dae_png', 'models/dae/texture.png', 'addp_online_exchange_texture.png'),
+    ('png', 'models/3ds/texture.png', 'addp_online_exchange_texture.png'),
+    ('obj', 'models/obj/model.obj', 'addp_online_multi_material.obj'),
+    ('obj_mtl_red', 'models/obj/paint red.mtl', 'addp_online_multi_material_red.mtl'),
+    ('obj_mtl_blue', 'models/obj/paint blue.mtl', 'addp_online_multi_material_blue.mtl'),
+    ('obj_png_red', 'models/obj/red/color.png', 'addp_online_obj_red.png'),
+    ('obj_png_blue', 'models/obj/blue/color.png', 'addp_online_obj_blue.png'),
+)
+
+
 def write_model_samples(directory):
     """Publish fixed Hosted inputs through the existing FTP account root.
 
@@ -71,15 +85,8 @@ def write_model_samples(directory):
     """
     root = Path(directory)
     fixture = Path(__file__).resolve().parents[1] / 'fixtures/manager'
-    samples = (
-        ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
-        ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
-        ('dae', 'models/dae/model.dae', 'addp_online_model_fixture.dae'),
-        ('dae_png', 'models/dae/texture.png', 'addp_online_exchange_texture.png'),
-        ('png', 'models/3ds/texture.png', 'addp_online_exchange_texture.png'),
-    )
     report = []
-    for kind, relative, source in samples:
+    for kind, relative, source in MODEL_SAMPLE_FILES:
         target = root / relative
         for directory_path in (root, *[root.joinpath(*Path(relative).parts[:i]) for i in range(1, len(Path(relative).parts))]):
             if directory_path.is_symlink():

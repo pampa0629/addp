@@ -17,96 +17,98 @@ import (
 )
 
 func TestGLBIsolatedOutputSwitchesOnlyWithAtomicSuccess(t *testing.T) {
-	for _, outcome := range []string{"success", "failed", "lost lease"} {
-		t.Run(outcome, func(t *testing.T) {
-			db := newTileCacheExecutionRepositoryTestDB(t)
-			repo, item := pendingGLBAuthorizationFixture(t, db, time.Now())
-			taskID, _ := commonExecution.ParseSourceTaskIDUint(item.SourceTaskID)
-			oldExecution := "previous-render-version"
-			old := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "glb-fp", TaskID: &taskID, LastExecutionID: &oldExecution, SourceEngineID: 33, SourceFormat: "3ds", StorageRef: "old.glb", FileName: "old.glb", Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{"old_fact": "retained"}}
-			if err := db.Create(old).Error; err != nil {
-				t.Fatal(err)
-			}
-			ctx := managerExecutionLeaseContextForTest(t, db, item.ExecutionID, 7, time.Now())
-			desired := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "glb-fp", TaskID: &taskID, LastExecutionID: &item.ExecutionID, SourceEngineID: 33, SourceFormat: "3ds", StorageRef: "new.glb", FileName: "new.glb"}
-			prepared, err := repo.PrepareExecutionOutput(ctx, desired, "new.glb")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if prepared.StorageRef != "old.glb" || prepared.Status != models.Model3DGLBStatusReady || *prepared.LastExecutionID != oldExecution {
-				t.Fatalf("prepare changed visible result: %+v", prepared)
-			}
-			var deleted []string
-			clean := func(_ context.Context, tenant uint, ref string) error {
-				if tenant != 7 || ref == "old.glb" {
-					t.Fatal("cleanup touched current result")
-				}
-				deleted = append(deleted, ref)
-				return nil
-			}
-			if n, err := repo.CleanupExecutionOutputs(ctx, 100, nil, clean); err != nil || n != 0 {
-				t.Fatalf("live pending cleaned: %d %v", n, err)
-			}
-			status := commonExecution.ExecutionStatusSuccess
-			if outcome == "failed" {
-				status = commonExecution.ExecutionStatusFailed
-			}
-			if outcome == "lost lease" {
-				if err := db.Model(item).Update("lease_token", "replacement").Error; err != nil {
+	for _, sourceFormat := range []string{"ifc", "3ds", "dae", "obj"} {
+		for _, outcome := range []string{"success", "failed", "lost lease"} {
+			t.Run(sourceFormat+"/"+outcome, func(t *testing.T) {
+				db := newTileCacheExecutionRepositoryTestDB(t)
+				repo, item := pendingGLBAuthorizationFixture(t, db, time.Now())
+				taskID, _ := commonExecution.ParseSourceTaskIDUint(item.SourceTaskID)
+				oldExecution := "previous-render-version"
+				old := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "glb-fp", TaskID: &taskID, LastExecutionID: &oldExecution, SourceEngineID: 33, SourceFormat: sourceFormat, StorageRef: "old.glb", FileName: "old.glb", Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{"old_fact": "retained"}}
+				if err := db.Create(old).Error; err != nil {
 					t.Fatal(err)
 				}
-			}
-			fields := map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": "new.glb", "file_name": "new.glb", "metadata": commonModels.JSONMap{"built": true}, "last_execution_id": item.ExecutionID}
-			err = repo.CompleteExecutionOutput(ctx, taskID, 7, item.ExecutionID, prepared.ID, "new.glb", fields, map[string]interface{}{"status": status, "progress": 100, "completed_at": time.Now()}, time.Now())
-			current, readErr := repo.GetByID(context.Background(), old.ID, 7)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if outcome == "lost lease" {
-				if !errors.Is(err, commonAPI.ErrConflict) || current.StorageRef != "old.glb" {
-					t.Fatalf("unfenced publish err=%v current=%+v", err, current)
+				ctx := managerExecutionLeaseContextForTest(t, db, item.ExecutionID, 7, time.Now())
+				desired := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "glb-fp", TaskID: &taskID, LastExecutionID: &item.ExecutionID, SourceEngineID: 33, SourceFormat: sourceFormat, StorageRef: "new.glb", FileName: "new.glb"}
+				prepared, err := repo.PrepareExecutionOutput(ctx, desired, "new.glb")
+				if err != nil {
+					t.Fatal(err)
 				}
-				state, _ := readModel3DGLBOutputState(current.Metadata)
-				if state.Pending == nil {
-					t.Fatal("failed transaction lost cleanup ownership")
+				if prepared.StorageRef != "old.glb" || prepared.Status != models.Model3DGLBStatusReady || *prepared.LastExecutionID != oldExecution {
+					t.Fatalf("prepare changed visible result: %+v", prepared)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if outcome == "success" {
-				if current.StorageRef != "new.glb" || current.Status != models.Model3DGLBStatusReady || *current.LastExecutionID != item.ExecutionID {
-					t.Fatalf("publish=%+v", current)
-				}
-				clean = func(_ context.Context, tenant uint, ref string) error {
-					if tenant != 7 || ref != "old.glb" {
-						t.Fatal("retired cleanup escaped exact old target")
+				var deleted []string
+				clean := func(_ context.Context, tenant uint, ref string) error {
+					if tenant != 7 || ref == "old.glb" {
+						t.Fatal("cleanup touched current result")
 					}
 					deleted = append(deleted, ref)
 					return nil
 				}
-			} else if current.StorageRef != "old.glb" || current.Status != models.Model3DGLBStatusReady || *current.LastExecutionID != oldExecution || current.Metadata["old_fact"] != "retained" {
-				t.Fatalf("failure changed old result: %+v", current)
-			}
-			if outcome == "failed" {
-				if _, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(context.Context, uint, string) error { return errors.New("storage unavailable") }); err == nil {
-					t.Fatal("cleanup failure was hidden")
+				if n, err := repo.CleanupExecutionOutputs(ctx, 100, nil, clean); err != nil || n != 0 {
+					t.Fatalf("live pending cleaned: %d %v", n, err)
 				}
-			}
-			if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 {
-				t.Fatalf("cleanup=%d %v", n, err)
-			}
-			if outcome == "failed" {
-				// A late upload can recreate a failed attempt's object. Its exact
-				// tombstone must survive the first successful DELETE.
-				if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 || len(deleted) != 2 {
-					t.Fatalf("late-write retry=%d %v refs=%v", n, err, deleted)
+				status := commonExecution.ExecutionStatusSuccess
+				if outcome == "failed" {
+					status = commonExecution.ExecutionStatusFailed
 				}
-			} else if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 0 {
-				t.Fatalf("retired object retained=%d %v", n, err)
-			}
-		})
+				if outcome == "lost lease" {
+					if err := db.Model(item).Update("lease_token", "replacement").Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				fields := map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": "new.glb", "file_name": "new.glb", "metadata": commonModels.JSONMap{"built": true}, "last_execution_id": item.ExecutionID}
+				err = repo.CompleteExecutionOutput(ctx, taskID, 7, item.ExecutionID, prepared.ID, "new.glb", fields, map[string]interface{}{"status": status, "progress": 100, "completed_at": time.Now()}, time.Now())
+				current, readErr := repo.GetByID(context.Background(), old.ID, 7)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if outcome == "lost lease" {
+					if !errors.Is(err, commonAPI.ErrConflict) || current.StorageRef != "old.glb" {
+						t.Fatalf("unfenced publish err=%v current=%+v", err, current)
+					}
+					state, _ := readModel3DGLBOutputState(current.Metadata)
+					if state.Pending == nil {
+						t.Fatal("failed transaction lost cleanup ownership")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if outcome == "success" {
+					if current.StorageRef != "new.glb" || current.Status != models.Model3DGLBStatusReady || *current.LastExecutionID != item.ExecutionID {
+						t.Fatalf("publish=%+v", current)
+					}
+					clean = func(_ context.Context, tenant uint, ref string) error {
+						if tenant != 7 || ref != "old.glb" {
+							t.Fatal("retired cleanup escaped exact old target")
+						}
+						deleted = append(deleted, ref)
+						return nil
+					}
+				} else if current.StorageRef != "old.glb" || current.Status != models.Model3DGLBStatusReady || *current.LastExecutionID != oldExecution || current.Metadata["old_fact"] != "retained" {
+					t.Fatalf("failure changed old result: %+v", current)
+				}
+				if outcome == "failed" {
+					if _, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(context.Context, uint, string) error { return errors.New("storage unavailable") }); err == nil {
+						t.Fatal("cleanup failure was hidden")
+					}
+				}
+				if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 {
+					t.Fatalf("cleanup=%d %v", n, err)
+				}
+				if outcome == "failed" {
+					// A late upload can recreate a failed attempt's object. Its exact
+					// tombstone must survive the first successful DELETE.
+					if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 1 || len(deleted) != 2 {
+						t.Fatalf("late-write retry=%d %v refs=%v", n, err, deleted)
+					}
+				} else if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, clean); err != nil || n != 0 {
+					t.Fatalf("retired object retained=%d %v", n, err)
+				}
+			})
+		}
 	}
 }
 

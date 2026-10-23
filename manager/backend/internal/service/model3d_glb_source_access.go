@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format/plugins/obj"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/engineaccess"
 )
@@ -27,6 +28,7 @@ type Model3DGLBSourceAuthorization struct {
 	authorizationID    string
 	expiresAt          time.Time
 	declarations       []string
+	libraries          []obj.MaterialLibraryDeclaration
 	expectedConversion Model3DGLBExecutionConfig
 }
 
@@ -57,6 +59,12 @@ func newModel3DGLBSourceAuthorization(ctx context.Context, client *commonClient.
 		}
 		result.declarations = append([]string{}, candidate.declarations...)
 	}
+	if scope.FileComposition.Format == "obj" {
+		if candidate.libraries == nil {
+			return nil, ErrModel3DGLBSourceAuthorizationRequired
+		}
+		result.libraries = cloneOBJLibraries(candidate.libraries)
+	}
 	return result, nil
 }
 
@@ -81,6 +89,21 @@ func (a *Model3DGLBSourceAuthorization) DeclaredTextureRefs() ([]string, error) 
 		return nil, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	return append([]string{}, a.declarations...), nil
+}
+
+func (a *Model3DGLBSourceAuthorization) OBJMaterialLibraries() ([]obj.MaterialLibraryDeclaration, error) {
+	if a == nil || a.scope.Validate() != nil || a.scope.FileComposition.Format != "obj" || a.libraries == nil {
+		return nil, ErrModel3DGLBSourceAuthorizationRequired
+	}
+	return cloneOBJLibraries(a.libraries), nil
+}
+
+func cloneOBJLibraries(libraries []obj.MaterialLibraryDeclaration) []obj.MaterialLibraryDeclaration {
+	cloned := make([]obj.MaterialLibraryDeclaration, len(libraries))
+	for i, library := range libraries {
+		cloned[i] = obj.MaterialLibraryDeclaration{Reference: library.Reference, TextureRefs: append([]string{}, library.TextureRefs...)}
+	}
+	return cloned
 }
 
 func (a *Model3DGLBSourceAuthorization) BeforeSourceRead(ctx context.Context, target plugin.EngineCatalogPath) (*commonModels.Engine, error) {

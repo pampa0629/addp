@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 import tempfile
 import subprocess
+import struct
 import sys
 from types import SimpleNamespace
 import unittest
@@ -30,7 +31,9 @@ def source_download_proof(source, artifacts, entries=None):
     bundled = len(source['composition']) > 1
     if bundled:
         if entries is None:
-            entries = [(Path(ref['path']).name, (fixture / files[Path(ref['path']).name]).read_bytes())
+            pinned = {M.model_scope(relative): name for _,relative,name in M.SEED.MODEL_SAMPLE_FILES}
+            parent = source['full_name'].rsplit('/',1)[0] + '/'
+            entries = [(ref['path'][len(parent):], (fixture / pinned[ref['path']]).read_bytes())
                        for ref in source['composition']]
         output = io.BytesIO()
         with warnings.catch_warnings():
@@ -59,13 +62,42 @@ def model_samples():
         return M.SEED.write_model_samples(directory)
 
 
+def multi_material_obj_glb(mutate=None):
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    binary, views, accessors = bytearray(), [], []
+    def view(raw):
+        while len(binary) % 4: binary.append(0)
+        index = len(views)
+        views.append({'buffer':0,'byteOffset':len(binary),'byteLength':len(raw)})
+        binary.extend(raw)
+        return index
+    images = [{'mimeType':'image/png','bufferView':view((fixture/f'addp_online_obj_{color}.png').read_bytes())}
+              for color in ('red','blue')]
+    primitives = []
+    for index,points in enumerate(((0,0,0,1,0,0,0,1,0),(1,0,0,2,0,0,2,1,0))):
+        position, uv, indices = len(accessors), len(accessors)+1, len(accessors)+2
+        accessors.extend([{'bufferView':view(struct.pack('<9f',*points)),'componentType':5126,'count':3,'type':'VEC3'},
+            {'bufferView':view(struct.pack('<6f',0,0,1,0,0,1)),'componentType':5126,'count':3,'type':'VEC2'},
+            {'bufferView':view(struct.pack('<3H',0,1,2)),'componentType':5123,'count':3,'type':'SCALAR'}])
+        primitives.append({'attributes':{'POSITION':position,'TEXCOORD_0':uv},'indices':indices,'material':index})
+    doc={'asset':{'version':'2.0'},'buffers':[{'byteLength':len(binary)}],'bufferViews':views,'accessors':accessors,
+         'images':images,'textures':[{'source':0},{'source':1}],
+         'materials':[{'pbrMetallicRoughness':{'baseColorTexture':{'index':i}}} for i in range(2)],
+         'meshes':[{'primitives':primitives}],'nodes':[{'mesh':0}],'scenes':[{'nodes':[0]}],'scene':0}
+    if mutate: mutate(doc)
+    raw=json.dumps(doc,separators=(',',':')).encode()
+    raw+=b' '*(-len(raw)%4)
+    binary.extend(b'\0'*(-len(binary)%4))
+    return struct.pack('<4sII',b'glTF',2,28+len(raw)+len(binary))+struct.pack('<I4s',len(raw),b'JSON')+raw+struct.pack('<I4s',len(binary),b'BIN\0')+binary
+
+
 class FakeClient:
     def __init__(self):
         self.calls = []
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(self.model_samples[:3]):
+        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj'}):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
@@ -75,6 +107,14 @@ class FakeClient:
                 refs.append({'path': f'models/{kind}/texture.png', 'role': 'texture', 'required': True})
                 attributes['item']['refs'] = refs
                 attributes['format_info'] = {kind: {'scan_complete': True, 'texture_refs': ['texture.png']}}
+            if kind == 'obj':
+                refs.extend({'path':'models/obj/'+name,'role':role,'required':True} for name,role in [
+                    ('paint blue.mtl','material_library'),('paint red.mtl','material_library_2'),
+                    ('blue/color.png','texture'),('red/color.png','texture_2')])
+                attributes['item']['refs']=refs
+                attributes['format_info']={'obj':{'composition_complete':True,'material_libraries':[
+                    {'reference':'paint blue.mtl','texture_refs':['blue/color.png']},
+                    {'reference':'paint red.mtl','texture_refs':['red/color.png']}]}}
             self.items.append({'id': 4 + i, 'engine_id': 17, 'item_type': 'file', 'full_name': path,
                                'fingerprint': hashlib.sha256(f'17:{path}'.encode()).hexdigest(),
                                'attributes': attributes})
@@ -176,6 +216,37 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def test_obj_multi_material_oracle_preserves_both_images_and_exact_material_geometry(self):
+        result=M.validate_obj_multi_material_glb(multi_material_obj_glb())
+        self.assertEqual(result['vertex_count'],6)
+        self.assertEqual(result['embedded_images'],2)
+        for mutate in [lambda doc:doc['textures'][0].update(source=1),
+                       lambda doc:doc['images'][0].update(uri='outside.png'),
+                       lambda doc:doc['meshes'][0]['primitives'][1].update(material=0),
+                       lambda doc:doc['nodes'][0].update(scale=[2,2,2])]:
+            with self.subTest(mutate=mutate),self.assertRaises(M.SuiteError):
+                M.validate_obj_multi_material_glb(multi_material_obj_glb(mutate))
+
+    def test_obj_mutation_changes_only_declared_mtl_and_restores_sources_on_failure(self):
+        for fail in (False,True):
+            with self.subTest(fail=fail),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                M.SEED.write_model_samples(root/'data')
+                source=next(row for row in M.prepare_models(FakeClient().items,17,model_samples()) if row['format']=='obj')
+                originals={leaf:leaf.read_bytes() for leaf in (root/'data/models/obj').rglob('*') if leaf.is_file()}
+                with patch.object(M,'owned_ftp_fixture',return_value=root):
+                    try:
+                        with M.changed_texture_fixture(source) as changed:
+                            self.assertEqual(changed['sha256'],source['sha256'])
+                            self.assertEqual(changed['size'],source['size'])
+                            self.assertIn('models/obj/red/changed.png',[ref['path'] for ref in changed['composition']])
+                            self.assertNotIn('models/obj/red/color.png',[ref['path'] for ref in changed['composition']])
+                            self.assertEqual((root/'data/models/obj/model.obj').read_bytes(),originals[root/'data/models/obj/model.obj'])
+                            if fail: raise RuntimeError('synthetic consumer failure')
+                    except RuntimeError:
+                        if not fail: raise
+                self.assertEqual({leaf:leaf.read_bytes() for leaf in (root/'data/models/obj').rglob('*') if leaf.is_file()},originals)
+
     def test_completed_phase_preserves_observations_without_claiming_suite_success(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ADDP_ONLINE_ARTIFACT_DIR': directory}):
             report = {'run_id': 'ftp-unit', 'physical_model_storage': [{'format': '3ds', 'objects': []}]}
@@ -489,6 +560,24 @@ class FTPConsumerTest(unittest.TestCase):
                 M.delete_owned_task_definitions(client, report)
             self.assertEqual(deleted, set())
 
+    def test_task_delete_allows_only_the_owner_cleanup_observation_clock_to_advance(self):
+        for kind in ('clock','business-metadata'):
+            report,client,_,_,deleted,_=self.task_deletion_fixture()
+            original=client.request
+            def request(method,path,statuses,body=None):
+                response=original(method,path,statuses,body)
+                if '/model_3d_glb/' in path and deleted:
+                    if kind=='clock':response.payload['metadata']['model3d_output_lifecycle']['checked_at']='2026-10-23T12:00:00Z'
+                    else:response.payload['metadata']['unexpected-business-change']=True
+                return response
+            client.request=request
+            with patch.object(M,'exact_user_principal',return_value='8'),patch.object(M,'verify_physical_objects',side_effect=lambda rows:rows),patch.object(M,'verify_cached_results',return_value=[]):
+                if kind=='clock':
+                    self.assertEqual(len(M.delete_owned_task_definitions(client,report)),2)
+                else:
+                    with self.assertRaisesRegex(M.SuiteError,'retained result'):
+                        M.delete_owned_task_definitions(client,report)
+
     def test_product_delete_uses_original_owned_result_after_source_withdrawal(self):
         model, published, detail = self.owned_detail()
         denied = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -668,7 +757,7 @@ class FTPConsumerTest(unittest.TestCase):
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
-        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae'])
+        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
         self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
@@ -734,7 +823,7 @@ class FTPConsumerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             for source in expected['models']:
-                raw = GLB.fixture_glb(source['format'])
+                raw = multi_material_obj_glb() if source['format']=='obj' else GLB.fixture_glb(source['format'])
                 (artifacts / f"ftp-{source['format']}.glb").write_bytes(raw)
                 proof['models'].append({'format': source['format'], 'item_id': source['item_id'],
                                         'task_id': 10, 'execution_id': 'owned-execution', 'result_id': 20,
@@ -894,9 +983,9 @@ class FTPConsumerTest(unittest.TestCase):
         issuer = FakeSourceIssuer(report)
         authorization = M.ModelSourceAuthorization(issuer, consumer, report)
         receipts = [authorization.grant(model) for model in report['models']]
-        self.assertEqual(len(receipts), 3)
+        self.assertEqual(len(receipts), 4)
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
-        self.assertEqual([body['recipient_id'] for body in commands], ['8', '8', '8'])
+        self.assertEqual([body['recipient_id'] for body in commands], ['8'] * 4)
         for body in commands:
             self.assertIs(body['initialize_approval'], True)
             self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
@@ -1232,7 +1321,7 @@ class FTPConsumerTest(unittest.TestCase):
             result = M.verify_composition_rules(client, Authorization(), report, source, 'deny-A', 30)
         self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
                                   'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
-        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200})
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):

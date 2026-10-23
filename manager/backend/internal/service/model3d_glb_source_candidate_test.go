@@ -13,13 +13,19 @@ import (
 func model3DGLBCandidateFixture(format string) (Model3DGLBSourceConfig, *commonModels.MetaItem) {
 	item := &commonModels.MetaItem{ID: 41, TenantID: 7, EngineID: 33, ItemType: "file", Name: "model." + format, FullName: "models/model." + format, Fingerprint: "scanned-model"}
 	refs := []map[string]any{{"path": item.FullName, "role": "model", "required": true, "primary": true}}
-	if format == "3ds" || format == "dae" {
+	if format == "3ds" || format == "dae" || format == "obj" {
 		refs = append(refs, map[string]any{"path": "models/TEST.PNG", "role": "texture", "required": true})
+	}
+	if format == "obj" {
+		refs = append(refs, map[string]any{"path": "models/model.mtl", "role": "material_library", "required": true})
 	}
 	item.Attributes = map[string]any{
 		"item":        map[string]any{"layout": "single", "data_type": "model_3d", "format": format, "refs": refs},
 		"storage":     map[string]any{"physical_path": item.FullName, "total_size": 999999},
 		"format_info": map[string]any{format: map[string]any{"scan_complete": true, "texture_refs": []string{"TEST.PNG"}}},
+	}
+	if format == "obj" {
+		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
 	locator := resourcetree.LocatorFromFullName(item.EngineID, "ftp", item.ItemType, item.FullName, &item.ID)
 	return Model3DGLBSourceConfig{ItemLocator: locator.ToURI(), ItemID: item.ID, SourceEngineID: item.EngineID, ItemFingerprint: item.Fingerprint, Format: format}, item
@@ -46,6 +52,29 @@ func TestModel3DGLBCandidateRetainsExactRefsAndOriginalDeclarations(t *testing.T
 	again, _ := json.Marshal(candidate.composition)
 	if string(encoded) != string(again) {
 		t.Fatal("I/O size changed the candidate boundary")
+	}
+}
+
+func TestOBJModelCandidateRequiresFullMaterialClosureAndCopiesNativeFacts(t *testing.T) {
+	source, item := model3DGLBCandidateFixture("obj")
+	candidate, err := model3DGLBCandidateFromMeta(7, source, item)
+	if err != nil || len(candidate.composition.Refs) != 3 || len(candidate.libraries) != 1 {
+		t.Fatalf("candidate=%+v err=%v", candidate, err)
+	}
+	native := item.Attributes["format_info"].(map[string]any)["obj"].(map[string]any)
+	native["material_libraries"].([]map[string]any)[0]["texture_refs"].([]string)[0] = "changed.png"
+	if candidate.libraries[0].TextureRefs[0] != "TEST.PNG" {
+		t.Fatal("candidate aliases mutable declarations")
+	}
+	if _, err := model3DGLBCandidateFromMeta(7, source, item); err == nil {
+		t.Fatal("changed declaration accepted without new exact refs")
+	}
+	for _, field := range []string{"composition_complete", "material_libraries"} {
+		source, item := model3DGLBCandidateFixture("obj")
+		delete(item.Attributes["format_info"].(map[string]any)["obj"].(map[string]any), field)
+		if _, err := model3DGLBCandidateFromMeta(7, source, item); err == nil {
+			t.Fatalf("incomplete %s accepted", field)
+		}
 	}
 }
 

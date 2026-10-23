@@ -226,6 +226,11 @@ func EnrichSingleModel3DItem(
 		delete(info.FormatInfo, "texture_refs")
 		delete(info.FormatInfo, "scan_complete")
 	}
+	if formatType == format.FormatOBJ {
+		// Geometry summaries never publish or replace basic OBJ/MTL closure.
+		delete(info.FormatInfo, "composition_complete")
+		delete(info.FormatInfo, "material_libraries")
+	}
 	if len(info.FormatInfo) > 0 {
 		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
 	}

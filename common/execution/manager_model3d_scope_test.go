@@ -115,7 +115,7 @@ func TestManagerModel3DScopeStrictWireAndUnsupportedVariants(t *testing.T) {
 		strings.Replace(string(raw), `"owner_task_id":"10"`, `"owner_task_id":"10","allow":true`, 1),
 		strings.Replace(string(raw), `"owner_task_id":"10"`, `"owner_task_id":"10","owner_task_id":"10"`, 1),
 		strings.Replace(string(raw), `"engine_version":"5"`, `"engine_version":"05"`, 1),
-		strings.Replace(string(raw), `"format":"3ds"`, `"format":"obj"`, 1),
+		strings.Replace(string(raw), `"format":"3ds"`, `"format":"fbx"`, 1),
 	} {
 		if json.Unmarshal([]byte(bad), &decoded) == nil {
 			t.Fatal("invalid scope wire accepted")
@@ -143,7 +143,7 @@ func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 }
 
 func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
 		for _, kind := range []string{"ftp", "nfs", "minio", "s3"} {
 			for _, term := range []string{"file", "object"} {
 				target := plugin.FileItemPath(33, "models/model."+format)

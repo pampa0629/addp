@@ -22,7 +22,7 @@ func ManagerModel3DSourceEngineType(engineType string) bool {
 func ManagerModel3DSourceFormat(engineType, format string) bool {
 	switch engineType {
 	case "ftp", "nfs", "minio":
-		return format == "ifc" || format == "3ds" || format == "dae"
+		return format == "ifc" || format == "3ds" || format == "dae" || format == "obj"
 	default:
 		return false
 	}
@@ -91,7 +91,7 @@ func NewManagerModel3DReadScope(raw json.RawMessage, taskID, taskVersion, engine
 func (s *ManagerModel3DReadScope) Validate() error {
 	if s == nil || !authorizationfacts.ValidItemFingerprint(s.ConfigDigest) || !positiveModel3DVersion(s.OwnerTaskID) ||
 		!positiveModel3DVersion(s.OwnerTaskVersion) || !positiveModel3DVersion(s.EngineVersion) ||
-		(s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae") {
+		(s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae" && s.FileComposition.Format != "obj") {
 		return errManagerModel3DScope
 	}
 	primary, err := s.FileComposition.PrimaryTarget()

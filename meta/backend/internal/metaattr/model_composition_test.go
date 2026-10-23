@@ -22,3 +22,13 @@ func TestDAEBasicFailureRemovesOldCompleteRefsWithoutErasingDeepFacts(t *testing
 		t.Fatal("known-empty composition was confused with unknown", native)
 	}
 }
+
+func TestOBJBasicFailureReplacesCompositionWithoutErasingDeepGeometryStatus(t *testing.T) {
+	previous := models.JSONMap{"item": map[string]any{"format": "obj"}, "format_info": map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []any{}, "scan_complete": true, "vertex_count": int64(6)}}}
+	observed := models.JSONMap{"item": map[string]any{"format": "obj"}, "format_info": map[string]any{"obj": map[string]any{"composition_complete": false}}}
+	MergeBasicModelCompositionSnapshot(previous, observed)
+	native := commonJSON.Section(previous, "format_info.obj")
+	if native["composition_complete"] != false || native["material_libraries"] != nil || native["scan_complete"] != true || native["vertex_count"] != int64(6) {
+		t.Fatalf("stale or lost facts: %+v", native)
+	}
+}

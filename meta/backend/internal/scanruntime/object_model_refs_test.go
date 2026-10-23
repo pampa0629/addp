@@ -71,7 +71,7 @@ func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
 		// The resolver only needs the texture's declared path and catalog size.
 		"texture.png": "texture bytes",
 	}
-	reader := objectCatalogScanTestProvider{contentByPath: map[string]string{}}
+	reader := &objRangeObjectProvider{objectCatalogScanTestProvider: objectCatalogScanTestProvider{contentByPath: map[string]string{}}}
 	resources := []scanresource.StorageResource{}
 	var total int64
 	modified := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
@@ -133,6 +133,22 @@ func testObjectModelRelatedRefsPersistSizeAndClaims(t *testing.T, db *gorm.DB) {
 			t.Fatalf("active items=%d err=%v; claimed MTL/texture must be removed", active, err)
 		}
 	}
+}
+
+type objRangeObjectProvider struct{ objectCatalogScanTestProvider }
+
+func (*objRangeObjectProvider) Type() string { return "minio" }
+
+func (p *objRangeObjectProvider) OpenRange(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	raw, exists := p.contentByPath[target.StringPath()]
+	if !exists || opts.Offset < 0 || opts.Length < 0 || opts.Offset > int64(len(raw)) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	end := int64(len(raw))
+	if opts.Length > 0 && opts.Length < end-opts.Offset {
+		end = opts.Offset + opts.Length
+	}
+	return io.NopCloser(strings.NewReader(raw[opts.Offset:end])), nil
 }
 
 type objectModelStructureSpy struct {

@@ -19,7 +19,7 @@ import (
 )
 
 func TestIntegrationPostgresManagerGLBIsolatedOutputPublication(t *testing.T) {
-	for _, sourceFormat := range []string{"ifc", "dae"} {
+	for _, sourceFormat := range []string{"ifc", "3ds", "dae", "obj"} {
 		t.Run(sourceFormat, func(t *testing.T) { exerciseManagerGLBIsolatedOutputPublication(t, sourceFormat) })
 	}
 }

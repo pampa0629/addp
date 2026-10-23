@@ -2036,9 +2036,12 @@ class MinIOExactModelGrantPreparationTest(unittest.TestCase):
                     self.assertIs(factory.call_args.args[1],consumer)
                     self.assertEqual(factory.call_args.kwargs,{'source_type':'minio','consumer_permissions':SUITE.REQUIRED_PERMISSIONS})
                     rows = [call.args[0] for call in grants.grant.call_args_list]
-                    self.assertEqual([row['format'] for row in rows],['ifc','3ds'])
-                    self.assertEqual([row['full_name'] for row in rows],['addp-online/model3d/ifc/model.ifc','addp-online/model3d/3ds/model.3ds'])
+                    expected_formats=['ifc','3ds'] if failed else ['ifc','3ds','dae','obj']
+                    self.assertEqual([row['format'] for row in rows],expected_formats)
+                    self.assertEqual([row['full_name'] for row in rows],[f'addp-online/model3d/{kind}/model.{kind}' for kind in expected_formats])
                     self.assertEqual([ref['path'] for ref in rows[1]['composition']],['addp-online/model3d/3ds/model.3ds','addp-online/model3d/3ds/texture.png'])
+                    if not failed:
+                        self.assertEqual({ref['role'] for ref in rows[-1]['composition']},{'model','material_library','texture'})
 
 
 if __name__ == "__main__":

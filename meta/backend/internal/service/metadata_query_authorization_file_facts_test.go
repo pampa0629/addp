@@ -26,13 +26,19 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	}
 	name := "panel." + format
 	refs := []map[string]any{{"path": "models/" + name, "role": "model", "required": true, "primary": true}}
-	if format == "3ds" || format == "dae" {
+	if format == "3ds" || format == "dae" || format == "obj" {
 		refs = append(refs, map[string]any{"path": "models/TEST.PNG", "role": "texture", "required": true})
+	}
+	if format == "obj" {
+		refs = append(refs, map[string]any{"path": "models/model.mtl", "role": "material_library", "required": true})
 	}
 	item := models.MetaItem{TenantID: 7, EngineID: engineID, NodeID: dir.ID, ItemType: "file", Name: name, FullName: "models/" + name, ScannedDepth: "basic",
 		Attributes: models.JSONMap{"item": map[string]any{"layout": "single", "data_type": "model_3d", "format": format, "refs": refs},
 			"storage":     map[string]any{"physical_path": "models/" + name},
 			"format_info": map[string]any{format: map[string]any{"texture_refs": []string{"TEST.PNG"}, "scan_complete": true}}}}
+	if format == "obj" {
+		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
+	}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, item.FullName)
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
@@ -46,7 +52,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)

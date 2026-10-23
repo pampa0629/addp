@@ -25,7 +25,7 @@ import (
 func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -48,10 +48,14 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				primary := targetFor("scene." + format)
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
-					composition, err := authorizationfacts.NewFileCompositionBoundary(format, []authorizationfacts.FileCompositionRef{
+					refs := []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
 						{Target: targetFor(texture), Role: "texture", Required: true},
-					})
+					}
+					if format == "obj" {
+						refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("model.mtl"), Role: "material_library", Required: true})
+					}
+					composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -155,7 +159,11 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal(err)
 				}
 				var stored authorizationfacts.FileCompositionBoundary
-				if json.Unmarshal(grantA.FileComposition, &stored) != nil || len(stored.Refs) != 2 {
+				expectedRefs := 2
+				if format == "obj" {
+					expectedRefs = 3
+				}
+				if json.Unmarshal(grantA.FileComposition, &stored) != nil || len(stored.Refs) != expectedRefs {
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
