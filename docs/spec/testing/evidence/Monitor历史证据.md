@@ -858,3 +858,17 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 本窗口共九次实际尝试：1为模板配置拒绝；2为oneoff删除竞态；3为依赖启动失败；4、5为Nginx前置校验失败；6因余量不足受控中断旧顺序构建；7、8在新顺序中复现Loki权限失败；9完成依赖核验后因余量不足受控中断编译。完整入口报告均保留failed，其中两次为local_acceptance_interrupted，不改写成通过。第2、3次完成的16个产品镜像分别属于其各自固定提交，不能当作最终修复源码已完成重建。正式密码/MFA、普通Tenant执行、Trace查询、日志和Console闭环仍未运行、未计通过；没有续开新窗口。
 
 最终`make test-infra-runtime-log-lifecycle`退出0：58项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；未更改业务API或采样策略，现有Platform／owner路径继续覆盖。九次自动清理及独立审计均零当次容器、网络、卷、构建器、镜像标签和私有目录，原MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261023-window4/`，包括`window.json`、九份`attempt-*-report.json`、`attempt-9-mount-audit.json`、`attempt-9-planned-stop.json`、`receipt.json`、`cleanup-audit.json`、`lifecycle-final.log`；未手工调度或跟踪无关CI。原清单实际第19行（B18）、第45行（B44）继续部分实现，正式身份缺口保留，不计Linux Runner T4、Hosted、T5、72小时或生产容量通过。
+
+### 正式身份本地第五窗口：标准数据库初始化修正，页面部署依赖仍阻断（2026-10-24）
+
+本窗口由用户明确授权，绝对边界为2026-10-24 08:28:23～09:28:23（Asia/Shanghai），合计8 CPU／12 GiB、卷及私有可写目录4 GiB停止线。三次尝试沿同一截止时间，没有自动续期。第三次在截止前失败退出并完成清理，未运行Hosted、容量模型或定时任务。
+
+第一次固定源码`1cf5be3660172abfc0e57b1fd9e3fb1be65e5f31`，基础依赖及七个二进制编译通过，在System产品镜像步骤返回`command_failed_2`；原输出仅保留哈希，不能据此断言具体原因。补充公共构建固定错误类别诊断后，第二次源码`8a3006670e7f6cfaddf018253515ccb37ab5bc78`的16个正式产品镜像与浏览器依赖通过，但Develop启动退出1、非OOM。其Docker标准输出为空，实际正文由runtime-log保存在当次卷中；入口随后补充只读提取固定错误类别／哈希，不导出正文。
+
+源码核对发现隔离入口漏执行现有`scripts/infra/init-postgresql.sql`，而Develop初始化直接在`develop` schema创建导出会话表。运行观测规范与标准入口同步补齐初始化步骤：在当次独占平台库执行原SQL并使用`ON_ERROR_STOP=1`，失败即停止后续准备；不新建额外数据库、不触碰共享Infra。修正提交`2f9414696911a4701b23ce19081c2cab5f1f7925`。第三次实际通过该初始化，独立只读核对当次集群／平台库归属、Develop schema、PostGIS、pgvector及标准更新时间触发器函数均为true。随后七个二进制、16个产品镜像与浏览器依赖再次通过，System及其余五个后端按标准等待顺序就绪，已越过此前Develop启动失败。
+
+第三次最终仍失败于`isolated_deployment_start`：Meta及Service页面容器退出1，均非OOM，诊断命中`not found`。产品配置核对确认，根Nginx对一批旧模块页面采用静态upstream，本入口为满足该依赖而启动了非本专项页面；这些页面又直接静态代理未部署的对应Backend。现有Monitor等页面已使用按请求解析。未通过假上游、增加未授权业务后端或忽略容器失败来继续；产品Nginx的部分部署行为修正需另行确认，未在本窗口实施。
+
+三份完整入口报告均为failed，正式密码/MFA、普通Tenant执行、Trace／日志读取及真实Console闭环全部未运行、未计通过，实际运行提交核对探针亦尚未到达。标准入口准备门禁`make test-monitor-traces-local-runner`退出0（60项契约、JS语法、CI登记及System身份夹具定向Go）；最终`make test-infra-runtime-log-lifecycle`退出0，另含既有60项生命周期检查。没有改动业务API、权限、采样或保留策略，未跟踪无关CI。
+
+全窗口578项成功资源测量，峰值硬配额7.45 CPU／10,066,329,600字节（9.375 GiB），卷及私有可写目录合计最高3,635,802,112字节，最长单次测量1.597秒，未触及停止线。三次自动清理和独立审计均为当次容器、网络、卷、构建器、镜像标签及私有目录零残留，已核验的原MinIO产品镜像保留。证据目录`/tmp/addp-p19-formal-local-20261024-window5/`含`window.json`、三份`attempt-*-report.json`、`attempt-3-database-init-audit.json`、`receipt.json`、`cleanup-audit.json`及`lifecycle-final.log`。实际清单第19行（B18）、第45行（B44）仍为部分实现；本证据不计正式身份闭环、Linux Runner T4、Hosted、72小时或生产T5通过。
