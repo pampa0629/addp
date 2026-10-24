@@ -187,3 +187,45 @@ other = "未找到调用链或无权读取"
 
 ["monitor.trace.timeout"]
 other = "调用链查询超时"
+
+[monitor.platform_alert.name.observation_missing]
+other = "观测器失联"
+
+[monitor.platform_alert.name.log_api]
+other = "日志查询入口不可用"
+
+[monitor.platform_alert.name.delivery_probe]
+other = "端到端投递失败"
+
+[monitor.platform_alert.name.delivery_delay]
+other = "投递延迟升高"
+
+[monitor.platform_alert.name.collector_metrics]
+other = "采集器指标不可用"
+
+[monitor.platform_alert.name.collector_dropped]
+other = "采集器新增丢弃"
+
+[monitor.platform_alert.name.collector_retries]
+other = "采集器持续重试"
+
+[monitor.platform_alert.name.source_observation]
+other = "日志源观测失败"
+
+[monitor.platform_alert.name.housekeeping]
+other = "源清理观测异常"
+
+[monitor.platform_alert.name.source_quota]
+other = "源容量耗尽或清理失败"
+
+[monitor.platform_alert.name.source_capacity]
+other = "源容量接近额度"
+
+[monitor.platform_alert.name.receiver_missing]
+other = "在线实例的接收器观测缺失"
+
+[monitor.platform_alert.name.receiver_loss]
+other = "接收器新增丢弃或写入失败"
+
+[monitor.platform_alert.name.source_early_cleaning]
+other = "源文件提前清理风险"

@@ -108,3 +108,17 @@ test('opening time routes use shared UTC normalization and preserve invalid filt
  assert.equal(platformAlertTimeDraft(null,new Date(query.time_to)).valid,true)
  for (const [a,b] of [[query.time_to,query.time_from],[query.time_to,query.time_to],[new Date(NaN),null],['bad',null]]) assert.equal(platformAlertTimeDraft(a,b).valid,false)
 })
+
+
+test('alert name query keeps literal Unicode search and never drops invalid URL conditions', () => {
+ for (const search of ['CPU %_\\ 主机', '😀'.repeat(100), "' OR 1=1 --"]) {
+  const query={search,category:'resource',severity:'warning',time_from:'2026-10-01T00:00:00.000Z',page:'2'}
+  assert.deepEqual(platformAlertQuery(platformAlertState(query)),query)
+ }
+ assert.equal(platformAlertState({search:'  CPU  '}).search,'CPU')
+ for (const search of [['CPU','RSS'],'x'.repeat(101),'\nCPU','bad\u0000','\ud800']) {
+  assert.equal(platformAlertQuery(platformAlertState({search})).search,'\u0000')
+ }
+ assert.deepEqual(platformAlertQuery(platformAlertState({search:'   '})),{})
+ assert.deepEqual(platformAlertQuery(platformAlertState({search:null})),{})
+})

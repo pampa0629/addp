@@ -186,3 +186,45 @@ other = "Trace not found or not readable"
 
 ["monitor.trace.timeout"]
 other = "Trace query timed out"
+
+[monitor.platform_alert.name.observation_missing]
+other = "Observer missing"
+
+[monitor.platform_alert.name.log_api]
+other = "Log API unavailable"
+
+[monitor.platform_alert.name.delivery_probe]
+other = "End-to-end delivery failed"
+
+[monitor.platform_alert.name.delivery_delay]
+other = "Delivery delay elevated"
+
+[monitor.platform_alert.name.collector_metrics]
+other = "Collector metrics unavailable"
+
+[monitor.platform_alert.name.collector_dropped]
+other = "Collector dropped entries increased"
+
+[monitor.platform_alert.name.collector_retries]
+other = "Collector retries continuing"
+
+[monitor.platform_alert.name.source_observation]
+other = "Source observation failed"
+
+[monitor.platform_alert.name.housekeeping]
+other = "Housekeeping observation unavailable"
+
+[monitor.platform_alert.name.source_quota]
+other = "Source quota exhausted or cleanup failed"
+
+[monitor.platform_alert.name.source_capacity]
+other = "Source capacity approaching limit"
+
+[monitor.platform_alert.name.receiver_missing]
+other = "Online instance receiver observation missing"
+
+[monitor.platform_alert.name.receiver_loss]
+other = "Receiver dropped entries or write failures increased"
+
+[monitor.platform_alert.name.source_early_cleaning]
+other = "Source files cleaned before retention"

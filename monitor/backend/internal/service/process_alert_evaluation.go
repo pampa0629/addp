@@ -193,6 +193,7 @@ func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old mode
 			}
 			policy := rule.ProcessThresholdPolicy
 			version := rule.Version
+			ruleName := rule.Name
 			hasActive := err == nil
 			if hasActive {
 				if active.ProcessEvidence == nil || active.ProcessEvidence.RuleID != rule.ID || active.ProcessEvidence.MetricKey != rule.MetricKey || active.ProcessEvidence.RuntimeInstanceID != rule.RuntimeInstanceID || active.ProcessEvidence.ProcessStartedAt != rule.ProcessStartedAt || active.ProcessEvidence.AnchorInstanceID != rule.AnchorInstanceID || !active.ProcessEvidence.Policy.Valid(rule.MetricKey) {
@@ -201,6 +202,7 @@ func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old mode
 				}
 				policy = active.ProcessEvidence.Policy
 				version = active.ProcessEvidence.RuleVersion
+				ruleName = active.ProcessEvidence.RuleName
 			}
 			result := evaluateProcessThreshold(series[0], policy, since, at, hasActive)
 			verdict = result.Verdict
@@ -214,7 +216,7 @@ func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old mode
 			}
 			if verdict == PlatformAlertRisk || verdict == PlatformAlertNormal {
 				updates["last_error"], updates["last_value"] = "", result.Latest
-				evidence = &models.ProcessAlertEvidence{RuleID: rule.ID, RuleVersion: version, ModuleName: rule.ModuleName, Role: rule.Role, AnchorInstanceID: rule.AnchorInstanceID, RuntimeInstanceID: rule.RuntimeInstanceID, ProcessStartedAt: rule.ProcessStartedAt, MetricKey: rule.MetricKey, Policy: policy, QueryPolicyVersion: cfg.Version, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
+				evidence = &models.ProcessAlertEvidence{RuleName: ruleName, RuleID: rule.ID, RuleVersion: version, ModuleName: rule.ModuleName, Role: rule.Role, AnchorInstanceID: rule.AnchorInstanceID, RuntimeInstanceID: rule.RuntimeInstanceID, ProcessStartedAt: rule.ProcessStartedAt, MetricKey: rule.MetricKey, Policy: policy, QueryPolicyVersion: cfg.Version, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
 			}
 		}
 		if err := reconcilePlatformAlert(tx, s.alerts, PlatformAlertEvaluation{Category: models.PlatformAlertCategoryProcess, SubjectKind: models.PlatformAlertSubjectInstance, SubjectID: fmt.Sprint(rule.AnchorInstanceID), InstanceID: rule.RuntimeInstanceID, Signal: rule.ID, Severity: "warning", Verdict: verdict, ProcessEvidence: evidence}, at); err != nil {

@@ -215,6 +215,8 @@ definitions:
         type: string
       rule_id:
         type: string
+      rule_name:
+        type: string
       rule_version:
         type: integer
       sampled_from:
@@ -425,6 +427,8 @@ definitions:
         type: string
       rule_id:
         type: string
+      rule_name:
+        type: string
       rule_version:
         type: integer
       runtime_instance_id:
@@ -509,6 +513,8 @@ definitions:
       query_policy_version:
         type: integer
       rule_id:
+        type: string
+      rule_name:
         type: string
       rule_version:
         type: integer
@@ -1242,7 +1248,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident'
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.PlatformAlertView'
         type: array
       page:
         type: integer
@@ -1251,6 +1257,47 @@ definitions:
       total:
         type: integer
       total_pages:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.PlatformAlertView:
+    properties:
+      acknowledged_at:
+        type: string
+      acknowledged_by:
+        type: integer
+      category:
+        type: string
+      http_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.HTTPAlertEvidence'
+      id:
+        type: integer
+      instance_id:
+        type: string
+      last_observed_at:
+        type: string
+      name:
+        type: string
+      opened_at:
+        type: string
+      process_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ProcessAlertEvidence'
+      resolved_at:
+        type: string
+      resource_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ResourceAlertEvidence'
+      severity:
+        type: string
+      signal:
+        type: string
+      status:
+        type: string
+      subject_id:
+        type: string
+      subject_kind:
+        type: string
+      suppressed_until:
+        type: string
+      version:
         type: integer
     type: object
   github_com_addp_monitor_internal_service.ProcessAlertRuleInput:
@@ -3910,6 +3957,11 @@ paths:
         - resolved
         in: query
         name: status
+        type: string
+      - description: 触发时告警名称，字面包含、忽略大小写，最多100字符 | Opening alert name, case-insensitive
+          literal substring, at most 100 characters
+        in: query
+        name: search
         type: string
       - description: 级别（省略为全部） | Severity (omitted for all)
         enum:

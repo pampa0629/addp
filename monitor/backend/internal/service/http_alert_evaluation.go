@@ -291,6 +291,7 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 			}
 			policy := rule.HTTPThresholdPolicy
 			version := rule.Version
+			ruleName := rule.Name
 			hasActive := err == nil
 			if hasActive {
 				if active.HTTPEvidence == nil || active.HTTPEvidence.RuleID != rule.ID || !active.HTTPEvidence.Policy.Valid(rule.MetricKey) {
@@ -299,6 +300,7 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 				}
 				policy = active.HTTPEvidence.Policy
 				version = active.HTTPEvidence.RuleVersion
+				ruleName = active.HTTPEvidence.RuleName
 			}
 			result := evaluateHTTPThreshold(series[0], policy, since, at, hasActive)
 			verdict = result.Verdict
@@ -312,7 +314,7 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 			}
 			if verdict == PlatformAlertRisk || verdict == PlatformAlertNormal {
 				updates["last_error"], updates["last_value"] = "", result.Latest
-				evidence = &models.HTTPAlertEvidence{RuleID: rule.ID, RuleVersion: version, ModuleName: rule.ModuleName, Role: rule.Role, Route: rule.Route, Method: rule.Method, MetricKey: rule.MetricKey, Policy: policy, QueryPolicyVersion: cfg.Version, InstanceIDs: source.instances, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
+				evidence = &models.HTTPAlertEvidence{RuleName: ruleName, RuleID: rule.ID, RuleVersion: version, ModuleName: rule.ModuleName, Role: rule.Role, Route: rule.Route, Method: rule.Method, MetricKey: rule.MetricKey, Policy: policy, QueryPolicyVersion: cfg.Version, InstanceIDs: source.instances, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
 			}
 		}
 		if err := reconcilePlatformAlert(tx, s.alerts, PlatformAlertEvaluation{Category: models.PlatformAlertCategoryHTTP, SubjectKind: models.PlatformAlertSubjectModule, SubjectID: rule.ModuleName, Signal: rule.ID, Severity: "warning", Verdict: verdict, HTTPEvidence: evidence}, at); err != nil {

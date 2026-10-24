@@ -22,6 +22,7 @@
         <el-select :model-value="state.severity" @update:model-value="value => change({ severity: value, page: 1 })" :aria-label="t('monitor.platformAlerts.severity')">
           <el-option :label="t('monitor.platformAlerts.allSeverities')" value="" /><el-option v-for="severity in ['critical','warning']" :key="severity" :label="t(`monitor.platformAlerts.severities.${severity}`)" :value="severity" />
         </el-select>
+        <el-input v-model="draftSearch" @change="value => change({ search: value, page: 1 })" :aria-label="t('monitor.platformAlerts.alertName')" :placeholder="t('monitor.platformAlerts.searchName')" maxlength="100" clearable />
         <el-input :model-value="state.subject_id" @change="value => change({ subject_id: value, page: 1 })" :placeholder="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
       </div>
       <div class="alert-time-filter" data-testid="alert-time-filter" role="group" :aria-label="t('monitor.platformAlerts.openedAt')">
@@ -35,6 +36,7 @@
       </div>
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.alertName')" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.name || t('monitor.platformAlerts.nameMissing') }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'process_resource' ? processSignal(row) : row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ processSubject(row) || hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row) || ['http_quality','process_resource'].includes(row.category)" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
@@ -99,6 +101,7 @@
     </section>
     <el-dialog :model-value="Boolean(selectedIncident)" :title="t('monitor.platformAlerts.evidence.title')" width="min(720px, calc(100vw - 32px))" @close="selectedIncident = null">
       <section v-if="selectedIncident" data-testid="resource-alert-evidence">
+        <h3>{{ selectedIncident.name || t('monitor.platformAlerts.nameMissing') }}</h3>
         <h3 class="alert-subject">{{ processSubject(selectedIncident) || hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
         <p>{{ selectedIncident.category === 'process_resource' ? processSignal(selectedIncident) : selectedIncident.category === 'http_quality' ? httpSignal(selectedIncident) : signalLabel(selectedIncident.signal) }}</p>
         <p v-if="resourceAlertHostID(selectedIncident) && canReadHosts && !hosts[selectedIncident.subject_id]">{{ t('monitor.platformAlerts.evidence.hostUnavailable') }}</p>
@@ -174,6 +177,7 @@ import { processAlertEvidence, processRuleMetrics, processRuleScale } from '../u
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
+const draftSearch = ref('')
 const draftFrom = ref(null), draftTo = ref(null)
 const timeDraft = computed(() => platformAlertTimeDraft(draftFrom.value, draftTo.value))
 function applyTimeFilter() {
@@ -251,8 +255,8 @@ async function load() {
       check(lease); if (own !== request) return
       destinations.value = targets; deliveries.value = attempts
     } else {
-      const { page, category, status, subject_id, severity, time_from, time_to } = state.value
-      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}), ...(time_from ? { time_from } : {}), ...(time_to ? { time_to } : {}) }, controller.signal)
+      const { page, category, status, subject_id, severity, search, time_from, time_to } = state.value
+      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}), ...(search ? { search } : {}), ...(time_from ? { time_from } : {}), ...(time_to ? { time_to } : {}) }, controller.signal)
       check(lease); if (own !== request) return
       incidents.value = result.data; total.value = result.total
       if (canReadHosts.value) {
@@ -329,11 +333,12 @@ async function deleteDestination(row) {
   } catch (value) { if (lease === epoch && ![abandoned, 'cancel', 'close'].includes(value)) ElMessage.error(errorText(value)) }
   finally { if (lease === epoch) busy.value = false }
 }
+watch(() => [state.value.search, ruleIdentity.value], () => { draftSearch.value = state.value.search }, { immediate: true })
 watch(() => [state.value.time_from, state.value.time_to, ruleIdentity.value], () => {
   draftFrom.value = state.value.time_from && state.value.time_from !== 'invalid' ? new Date(state.value.time_from) : null
   draftTo.value = state.value.time_to && state.value.time_to !== 'invalid' ? new Date(state.value.time_to) : null
 }, { immediate: true })
-watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions)], () => {
+watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions), locale.value], () => {
   clear()
   const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'rules' && !canReadRules.value) || (state.value.tab === 'http-rules' && !canReadHTTPRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : canReadHTTPRules.value ? 'http-rules' : 'incidents' } : {}) })
   if (JSON.stringify(route.query) !== JSON.stringify(next)) { navigateMonitorRoute(router, { path: '/platform-alerts', query: next }, { history: 'replace' }); return }

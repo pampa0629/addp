@@ -5,6 +5,11 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	commoni18n "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/monitor/i18n"
 
 	"github.com/addp/monitor/internal/models"
 	"gorm.io/gorm"
@@ -15,22 +20,32 @@ func validPlatformAlertCategory(category string) bool {
 	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource || category == models.PlatformAlertCategoryHTTP || category == models.PlatformAlertCategoryProcess
 }
 
+type PlatformAlertView struct {
+	models.PlatformAlertIncident
+	Name string `json:"name"`
+}
+
 type PlatformAlertList struct {
-	Data       []models.PlatformAlertIncident `json:"data"`
-	Total      int64                          `json:"total"`
-	Page       int                            `json:"page"`
-	PageSize   int                            `json:"page_size"`
-	TotalPages int                            `json:"total_pages"`
+	Data       []PlatformAlertView `json:"data"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	TotalPages int                 `json:"total_pages"`
 }
 
 type PlatformAlertFilter struct {
 	Page, PageSize                        int
 	Category, Status, SubjectID, Severity string
+	Search, Language                      string
 	TimeFrom, TimeTo                      *time.Time
 }
 
 func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAlertFilter) (PlatformAlertList, error) {
-	result := PlatformAlertList{Data: []models.PlatformAlertIncident{}, Page: filter.Page, PageSize: filter.PageSize}
+	if !validAlertSearch(filter.Search) {
+		return PlatformAlertList{}, ErrLogInvalid
+	}
+	filter.Search = strings.TrimSpace(filter.Search)
+	result := PlatformAlertList{Data: []PlatformAlertView{}, Page: filter.Page, PageSize: filter.PageSize}
 	if filter.Page < 1 || filter.Page > 10000 || filter.PageSize < 1 || filter.PageSize > 100 || (filter.Category != "" && !validPlatformAlertCategory(filter.Category)) || (filter.Severity != "" && filter.Severity != "critical" && filter.Severity != "warning") || len(filter.SubjectID) > 100 || strings.ContainsAny(filter.SubjectID, "\r\n\x00") || (filter.TimeFrom != nil && filter.TimeTo != nil && !filter.TimeFrom.Before(*filter.TimeTo)) {
 		return result, ErrLogInvalid
 	}
@@ -68,12 +83,34 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 	if filter.TimeTo != nil {
 		q = q.Where("opened_at < ?", *filter.TimeTo)
 	}
+	if filter.Search != "" {
+		pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(filter.Search) + "%"
+		const ruleNameSQL = `(CASE category WHEN 'resource' THEN resource_evidence->>'rule_name' WHEN 'http_quality' THEN http_evidence->>'rule_name' WHEN 'process_resource' THEN process_evidence->>'rule_name' END) ILIKE ? ESCAPE '\'`
+		logSignals := []string{}
+		for _, signal := range platformLogNameSignals {
+			if strings.Contains(strings.ToLower(platformLogAlertName(signal, filter.Language)), strings.ToLower(filter.Search)) {
+				logSignals = append(logSignals, signal)
+			}
+		}
+		if len(logSignals) == 0 {
+			q = q.Where(ruleNameSQL, pattern)
+		} else {
+			q = q.Where("("+ruleNameSQL+" OR (category=? AND split_part(signal, ':', 1) IN ?))", pattern, models.PlatformAlertCategoryLog, logSignals)
+		}
+	}
 	if err := q.Count(&result.Total).Error; err != nil {
 		return result, err
 	}
 	result.TotalPages = int((result.Total + int64(filter.PageSize) - 1) / int64(filter.PageSize))
-	err := q.Order("opened_at DESC,id DESC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&result.Data).Error
-	return result, err
+	var rows []models.PlatformAlertIncident
+	err := q.Order("opened_at DESC,id DESC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&rows).Error
+	if err != nil {
+		return result, err
+	}
+	for _, row := range rows {
+		result.Data = append(result.Data, PlatformAlertView{PlatformAlertIncident: row, Name: platformAlertName(row, filter.Language)})
+	}
+	return result, nil
 }
 
 func (s *PlatformAlertService) ManageIncident(ctx context.Context, id uint, version uint64, action string, until *time.Time, principal int64, now time.Time) (models.PlatformAlertIncident, error) {
@@ -104,4 +141,48 @@ func (s *PlatformAlertService) ManageIncident(ctx context.Context, id uint, vers
 		return tx.Save(&i).Error
 	})
 	return i, err
+}
+
+func validAlertSearch(value string) bool {
+	if !utf8.ValidString(value) || utf8.RuneCountInString(strings.TrimSpace(value)) > 100 {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+var platformLogNameSignals = []string{"observation_missing", "log_api", "delivery_probe", "delivery_delay", "collector_metrics", "collector_dropped", "collector_retries", "source_observation", "housekeeping", "source_quota", "source_capacity", "receiver_missing", "receiver_loss", "source_early_cleaning"}
+
+func platformLogAlertName(signal, lang string) string {
+	signal = logSignalName(signal)
+	for _, known := range platformLogNameSignals {
+		if signal == known {
+			return commoni18n.ForLanguage(lang, "monitor.platform_alert.name."+signal)
+		}
+	}
+	return ""
+}
+
+func platformAlertName(row models.PlatformAlertIncident, lang string) string {
+	switch row.Category {
+	case models.PlatformAlertCategoryLog:
+		return platformLogAlertName(row.Signal, lang)
+	case models.PlatformAlertCategoryResource:
+		if row.ResourceEvidence != nil {
+			return row.ResourceEvidence.RuleName
+		}
+	case models.PlatformAlertCategoryHTTP:
+		if row.HTTPEvidence != nil {
+			return row.HTTPEvidence.RuleName
+		}
+	case models.PlatformAlertCategoryProcess:
+		if row.ProcessEvidence != nil {
+			return row.ProcessEvidence.RuleName
+		}
+	}
+	return ""
 }

@@ -45,6 +45,7 @@ type ProcessAlertRule struct {
 func (ProcessAlertRule) TableName() string { return "monitor.process_alert_rules" }
 
 type ProcessAlertEvidence struct {
+	RuleName           string                 `json:"rule_name,omitempty"`
 	RuleID             string                 `json:"rule_id"`
 	RuleVersion        uint64                 `json:"rule_version"`
 	ModuleName         string                 `json:"module_name"`

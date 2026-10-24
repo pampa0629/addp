@@ -1885,6 +1885,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "触发时告警名称，字面包含、忽略大小写，最多100字符 | Opening alert name, case-insensitive literal substring, at most 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "critical",
                             "warning"
@@ -6698,6 +6704,9 @@ const docTemplate = `{
                 "rule_id": {
                     "type": "string"
                 },
+                "rule_name": {
+                    "type": "string"
+                },
                 "rule_version": {
                     "type": "integer"
                 },
@@ -7017,6 +7026,9 @@ const docTemplate = `{
                 "rule_id": {
                     "type": "string"
                 },
+                "rule_name": {
+                    "type": "string"
+                },
                 "rule_version": {
                     "type": "integer"
                 },
@@ -7144,6 +7156,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rule_id": {
+                    "type": "string"
+                },
+                "rule_name": {
                     "type": "string"
                 },
                 "rule_version": {
@@ -8249,7 +8264,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertView"
                     }
                 },
                 "page": {
@@ -8262,6 +8277,68 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.PlatformAlertView": {
+            "type": "object",
+            "properties": {
+                "acknowledged_at": {
+                    "type": "string"
+                },
+                "acknowledged_by": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "http_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.HTTPAlertEvidence"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "process_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ProcessAlertEvidence"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "resource_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ResourceAlertEvidence"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "signal": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_kind": {
+                    "type": "string"
+                },
+                "suppressed_until": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "integer"
                 }
             }

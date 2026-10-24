@@ -14,6 +14,7 @@ import (
 	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type resourceRuleIdentity struct {
@@ -145,7 +146,7 @@ func (f *resourceRuleFixture) evaluate(t *testing.T, seconds int) {
 		t.Fatal(e)
 	}
 }
-func (f *resourceRuleFixture) active(t *testing.T) []models.PlatformAlertIncident {
+func (f *resourceRuleFixture) active(t *testing.T) []PlatformAlertView {
 	t.Helper()
 	r, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "resource", Status: "active", SubjectID: f.target.NodeID, Severity: ""})
 	if e != nil {
@@ -187,7 +188,7 @@ func TestIntegrationPostgresResourceRuleCRUDAndDormantCollection(t *testing.T) {
 		f.evaluate(t, v)
 	}
 	active := f.active(t)
-	if len(active) != 1 || active[0].ResourceEvidence == nil || active[0].ResourceEvidence.Samples != 3 || active[0].ResourceEvidence.Minimum != 90 || active[0].ResourceEvidence.RuleVersion != r.Version {
+	if len(active) != 1 || active[0].ResourceEvidence == nil || active[0].ResourceEvidence.Samples != 3 || active[0].ResourceEvidence.Minimum != 90 || active[0].ResourceEvidence.RuleVersion != r.Version || active[0].ResourceEvidence.RuleName != r.Name {
 		t.Fatalf("missing opened evidence: %+v", active)
 	}
 	if e := f.s.Delete(ctx, r.ID, r.Version); !errors.Is(e, ErrLogConflict) {
@@ -273,6 +274,7 @@ func TestIntegrationPostgresResourceRuleRecoveryPinsOpenedPolicyAndHistory(t *te
 	}
 	incident := f.active(t)[0]
 	changed := f.input
+	changed.Name = "renamed resource rule"
 	on := true
 	changed.Enabled = &on
 	changed.Version = r.Version
@@ -302,7 +304,7 @@ func TestIntegrationPostgresResourceRuleRecoveryPinsOpenedPolicyAndHistory(t *te
 	if e = f.db.Where("incident_id=?", incident.ID).Order("occurred_at").Find(&events).Error; e != nil || len(events) != 2 {
 		t.Fatal("lifecycle evidence", events, e)
 	}
-	if events[0].ResourceEvidence.Policy.RecoveryPercent != 75 || events[1].ResourceEvidence.Policy.RecoveryPercent != 75 || events[1].ResourceEvidence.RuleVersion != incident.ResourceEvidence.RuleVersion {
+	if events[0].ResourceEvidence.Policy.RecoveryPercent != 75 || events[1].ResourceEvidence.Policy.RecoveryPercent != 75 || events[1].ResourceEvidence.RuleVersion != incident.ResourceEvidence.RuleVersion || events[0].ResourceEvidence.RuleName != f.input.Name || events[1].ResourceEvidence.RuleName != f.input.Name {
 		t.Fatal("mutable policy evidence")
 	}
 	var deliveries []models.PlatformAlertDelivery
@@ -323,6 +325,15 @@ func TestIntegrationPostgresResourceRuleRecoveryPinsOpenedPolicyAndHistory(t *te
 	if count != 2 {
 		t.Fatal("deleting rule erased history")
 	}
+	list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: f.input.Name})
+	if err != nil || list.Total != 1 || list.Data[0].Name != f.input.Name {
+		t.Fatal("deleted rule erased historical name", list, err)
+	}
+	list, err = f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: changed.Name})
+	if err != nil || list.Total != 0 {
+		t.Fatal("current rule name rewrote history", list, err)
+	}
+
 }
 func (f *resourceRuleFixture) targetURL() string { return f.logRetryFixture.target.URL }
 
@@ -463,5 +474,50 @@ func TestIntegrationPostgresResourceRulesDoNotAdmitProcessEndpoints(t *testing.T
 	}
 	if len(f.active(t)) != 1 || f.backend.calls != 4 {
 		t.Fatal("unrelated process source blocked host alerts")
+	}
+}
+
+func TestIntegrationPostgresResourceRuleMissingHistoricalNameStaysMissing(t *testing.T) {
+	f := newResourceRuleFixture(t)
+	r := f.enable(t, f.create(t))
+	for _, sec := range []int{0, 15, 30, 45} {
+		f.evaluate(t, sec)
+	}
+	row := f.active(t)[0]
+	// This one disposable incident represents a record made before name snapshots.
+	if err := f.db.Model(&models.PlatformAlertIncident{}).Where("id=?", row.ID).UpdateColumn("resource_evidence", gorm.Expr("resource_evidence - 'rule_name'")).Error; err != nil {
+		t.Fatal(err)
+	}
+	in := f.input
+	in.Name = "new current name"
+	in.Version = r.Version
+	on := true
+	in.Enabled = &on
+	var err error
+	r, err = f.s.Save(context.Background(), r.ID, "current_user", in, f.at.Add(60*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sec := range []int{60, 75, 90, 105} {
+		f.evaluate(t, sec)
+	}
+	for _, search := range []string{in.Name, f.input.Name} {
+		list, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: row.SubjectID, Search: search})
+		if e != nil || list.Total != 0 {
+			t.Fatal("live rule substituted for missing history", list, e)
+		}
+	}
+	f.backend.changeAt = f.at.Add(120 * time.Second)
+	f.backend.changeValue = 70
+	for _, sec := range []int{120, 135, 150} {
+		f.evaluate(t, sec)
+	}
+	var events []models.PlatformAlertEvent
+	if err = f.db.Where("incident_id=? AND type=?", row.ID, "resolved").Find(&events).Error; err != nil || len(events) != 1 || events[0].ResourceEvidence.RuleName != "" {
+		t.Fatal("recovery fabricated old name", events, err)
+	}
+	var saved models.PlatformAlertIncident
+	if err = f.db.First(&saved, row.ID).Error; err != nil || platformAlertName(saved, "en") != "" {
+		t.Fatal("history filled", err)
 	}
 }

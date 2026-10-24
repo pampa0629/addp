@@ -49,6 +49,7 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Security BearerAuth
 // @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
+// @Param search query string false "触发时告警名称，字面包含、忽略大小写，最多100字符 | Opening alert name, case-insensitive literal substring, at most 100 characters"
 // @Param severity query string false "级别（省略为全部） | Severity (omitted for all)" Enums(critical,warning)
 // @Param time_from query string false "发现时间下界，RFC3339，含 | Inclusive opening time lower bound, RFC3339"
 // @Param time_to query string false "发现时间上界，RFC3339，不含 | Exclusive opening time upper bound, RFC3339"
@@ -71,7 +72,7 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 	}
 	for key, values := range query {
 		switch key {
-		case "page", "page_size", "category", "status", "subject_id", "severity", "time_from", "time_to":
+		case "page", "page_size", "category", "status", "subject_id", "severity", "time_from", "time_to", "search":
 		default:
 			platformAlertRespond(c, nil, service.ErrLogInvalid)
 			return
@@ -87,7 +88,7 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 		platformAlertRespond(c, nil, service.ErrLogInvalid)
 		return
 	}
-	filter := service.PlatformAlertFilter{Page: page, PageSize: size, Category: query.Get("category"), Status: query.Get("status"), SubjectID: query.Get("subject_id"), Severity: query.Get("severity")}
+	filter := service.PlatformAlertFilter{Page: page, PageSize: size, Category: query.Get("category"), Status: query.Get("status"), SubjectID: query.Get("subject_id"), Severity: query.Get("severity"), Search: query.Get("search"), Language: commoni18n.GetLang(c)}
 	for _, bound := range []struct {
 		raw    string
 		target **time.Time

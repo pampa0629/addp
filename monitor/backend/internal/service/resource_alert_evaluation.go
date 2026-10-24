@@ -244,6 +244,7 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 				}
 				policyToUse := r.ResourcePressurePolicy
 				evidenceVersion := r.Version
+				ruleName := r.Name
 				var active models.PlatformAlertIncident
 				e = tx.Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, r.NodeID, r.MetricKey, []string{"open", "acknowledged"}).Take(&active).Error
 				if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
@@ -257,6 +258,7 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 					} else {
 						policyToUse = active.ResourceEvidence.Policy
 						evidenceVersion = active.ResourceEvidence.RuleVersion
+						ruleName = active.ResourceEvidence.RuleName
 					}
 				}
 				byKey := map[string]resourcequery.Series{}
@@ -280,7 +282,7 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 				}
 				if verdict == PlatformAlertNormal || verdict == PlatformAlertRisk {
 					updates["last_error"], updates["last_sample_at"], updates["last_value"] = "", result.SampledTo, result.Latest
-					evidence = &models.ResourceAlertEvidence{RuleID: r.ID, RuleVersion: evidenceVersion, Policy: policyToUse, NodeVersion: source.nodeVersion, TargetID: target.ID, TargetVersion: target.Version, QueryPolicyVersion: cfg.Version, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
+					evidence = &models.ResourceAlertEvidence{RuleName: ruleName, RuleID: r.ID, RuleVersion: evidenceVersion, Policy: policyToUse, NodeVersion: source.nodeVersion, TargetID: target.ID, TargetVersion: target.Version, QueryPolicyVersion: cfg.Version, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
 				} else if !newestValid {
 					updates["last_error"] = "no_data"
 				}

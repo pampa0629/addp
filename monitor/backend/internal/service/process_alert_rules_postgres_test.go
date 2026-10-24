@@ -112,7 +112,7 @@ func TestIntegrationPostgresProcessRulesLifecycleAndIdentity(t *testing.T) {
 				eval(sec)
 			}
 			rows := active()
-			if len(rows) != 1 || rows[0].ProcessEvidence == nil {
+			if len(rows) != 1 || rows[0].ProcessEvidence == nil || rows[0].ProcessEvidence.RuleName != input.Name {
 				t.Fatal("not opened", rows)
 			}
 			incident := rows[0]
@@ -144,6 +144,7 @@ func TestIntegrationPostgresProcessRulesLifecycleAndIdentity(t *testing.T) {
 			// Updated rules cannot rewrite the opening recovery policy.
 			trigger, recovery = 9, 7
 			input.Version = r.Version
+			input.Name = "renamed process rule"
 			r, e = s.Save(ctx, r.ID, "current_user", input, f.at.Add(150*time.Second))
 			if e != nil {
 				t.Fatal(e)
@@ -165,7 +166,7 @@ func TestIntegrationPostgresProcessRulesLifecycleAndIdentity(t *testing.T) {
 				t.Fatal(events, e)
 			}
 			for _, ev := range events {
-				if ev.ProcessEvidence == nil || ev.ProcessEvidence.Policy.RecoveryValue != 1 {
+				if ev.ProcessEvidence == nil || ev.ProcessEvidence.Policy.RecoveryValue != 1 || ev.ProcessEvidence.RuleName != "process pressure" {
 					t.Fatal("opening evidence mutated", ev)
 				}
 			}

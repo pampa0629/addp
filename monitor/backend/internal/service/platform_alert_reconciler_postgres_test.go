@@ -385,3 +385,82 @@ func TestIntegrationPostgresPlatformAlertOpeningTimeRange(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegrationPostgresPlatformAlertNameSearch(t *testing.T) {
+	f := newLogRetryFixture(t, "webhook")
+	subject := "name-" + uuid.NewString()
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	rows := []models.PlatformAlertIncident{}
+	for n := 0; n < 25; n++ {
+		rows = append(rows, models.PlatformAlertIncident{Category: "resource", SubjectKind: "host_node", SubjectID: subject, Signal: fmt.Sprint(n), Severity: "warning", Status: "open", OpenedAt: at.Add(time.Duration(n) * time.Second), LastObservedAt: at, ResourceEvidence: &models.ResourceAlertEvidence{RuleName: `主机 Cpu 90%_\ test`}})
+	}
+	rows = append(rows,
+		models.PlatformAlertIncident{Category: "http_quality", SubjectKind: "module", SubjectID: subject, Signal: "http", Severity: "warning", Status: "resolved", OpenedAt: at, LastObservedAt: at, HTTPEvidence: &models.HTTPAlertEvidence{RuleName: "HTTP AbC"}},
+		models.PlatformAlertIncident{Category: "process_resource", SubjectKind: "module_instance", SubjectID: subject, Signal: "process", Severity: "warning", Status: "open", OpenedAt: at, LastObservedAt: at, ProcessEvidence: &models.ProcessAlertEvidence{RuleName: "RSS AbC"}},
+		models.PlatformAlertIncident{Category: "resource", SubjectKind: "host_node", SubjectID: subject, Signal: "old", Severity: "warning", Status: "resolved", OpenedAt: at, LastObservedAt: at, ResourceEvidence: &models.ResourceAlertEvidence{}},
+		models.PlatformAlertIncident{Category: "log_pipeline", SubjectKind: "log_observer", SubjectID: subject, Signal: "receiver_loss:runtime-1", Severity: "critical", Status: "open", OpenedAt: at, LastObservedAt: at},
+	)
+	t.Cleanup(func() {
+		if err := f.db.Where("subject_id=?", subject).Delete(&models.PlatformAlertIncident{}).Error; err != nil {
+			t.Error(err)
+		}
+		var n int64
+		if err := f.db.Model(&models.PlatformAlertIncident{}).Where("subject_id=?", subject).Count(&n).Error; err != nil || n != 0 {
+			t.Errorf("name fixture residue=%d err=%v", n, err)
+		}
+	})
+	if err := f.db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	from, to := at.Add(time.Second), at.Add(24*time.Second)
+	for _, tc := range []struct {
+		name, search, lang, category, severity, status string
+		from, to                                       *time.Time
+		want                                           int64
+	}{
+		{name: "literal percent", search: "90%", want: 25},
+		{name: "literal underscore and slash", search: `%_\`, want: 25},
+		{name: "not a wildcard", search: "%nothing", want: 0},
+		{name: "case insensitive and trimmed", search: "  cpu  ", want: 25},
+		{name: "unicode", search: "主机", want: 25},
+		{name: "quote is literal", search: "' OR 1=1 --", want: 0},
+		{name: "HTTP snapshot", search: "abc", category: "http_quality", want: 1},
+		{name: "process snapshot", search: "abc", category: "process_resource", want: 1},
+		{name: "all category snapshots", search: "aBc", want: 2},
+		{name: "localized log prefix", search: "接收器新增", lang: "zh-cn", want: 1},
+		{name: "english log", search: "receiver dropped", lang: "en", want: 1},
+		{name: "current language only", search: "接收器新增", lang: "en", want: 0},
+		{name: "category intersection", search: "cpu", category: "http_quality", want: 0},
+		{name: "severity intersection", search: "cpu", severity: "critical", want: 0},
+		{name: "status intersection", search: "cpu", status: "resolved", want: 0},
+		{name: "time intersection", search: "cpu", from: &from, to: &to, want: 23},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seen := map[uint]bool{}
+			for page := 1; page <= int(tc.want)/7+1; page++ {
+				list, err := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: page, PageSize: 7, SubjectID: subject, Search: tc.search, Language: tc.lang, Category: tc.category, Severity: tc.severity, Status: tc.status, TimeFrom: tc.from, TimeTo: tc.to})
+				if err != nil || list.Total != tc.want {
+					t.Fatalf("total=%d want=%d err=%v", list.Total, tc.want, err)
+				}
+				for _, row := range list.Data {
+					if row.Name == "" || seen[row.ID] {
+						t.Fatal("missing/repeated result", row)
+					}
+					seen[row.ID] = true
+				}
+			}
+			if int64(len(seen)) != tc.want {
+				t.Fatal("pagination omitted matches", len(seen))
+			}
+		})
+	}
+	list, err := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 100, SubjectID: subject})
+	if err != nil || list.Total != 29 {
+		t.Fatal(list, err)
+	}
+	for _, row := range list.Data {
+		if row.Signal == "old" && row.Name != "" {
+			t.Fatal("missing history guessed", row.Name)
+		}
+	}
+}

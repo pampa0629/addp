@@ -46,6 +46,7 @@ func (ResourceAlertRule) TableName() string { return "monitor.resource_alert_rul
 // Immutable evidence belongs to the lifecycle event; it contains no transport
 // endpoint, credential or mutable reference needed to interpret old thresholds.
 type ResourceAlertEvidence struct {
+	RuleName           string                 `json:"rule_name,omitempty"`
 	RuleID             string                 `json:"rule_id"`
 	RuleVersion        uint64                 `json:"rule_version"`
 	Policy             ResourcePressurePolicy `json:"policy"`

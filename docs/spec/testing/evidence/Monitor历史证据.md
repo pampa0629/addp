@@ -1139,3 +1139,22 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 为避免再丢失原因，`20a9efcc6e49743bd3846b3caafa7e8ab87b1b5c`给同一标准本地入口的`product_image_*`失败补封闭诊断：仅固定原因／失败步骤、已知产物输入名、Dockerfile行号、最多8项HTTP状态／进程退出码，未知原因明确未分类；不保存任意正文、URL、内容摘要值、凭据或SQL，不对身份／业务命令开启该分类。规范同步同次完成，原构建路线、资源及验收断言不变。先以缺失函数验证测试失败，再实现；`make test-monitor-traces-local-runner`通过79项、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`），现有路径自动发现命中，未新增Makefile／workflow。成功复现发生在该诊断提交前，准确源码如表；这项纯失败报告变化不改变成功构建路径，也不把单测当成实际失败重现。
 
 证据目录`/tmp/addp-p19-gateway-investigation-20261024/`：`window.json`、`attempt-{1,2}-report.json`／日志、`current-source-admission.json`、`base-blobs.json`／`base-blob-integrity.json`、`idle-daemon-readonly-timing.json`、`structured-diagnostics-runner.log`／`structured-diagnostics-inputs.json`、`receipt.json`及`cleanup-audit.json`。正式60分钟窗口尚未启动：当前构建已通过，但历史原因未定，已向用户确认是否接受这一前提作为新窗口准入。正式身份执行→Trace→日志→真实页面仍待运行，不运行Hosted、不重跑容量、不设置定时；功能清单第19、45行保持部分实现。
+
+
+## 平台告警名称检索与触发时名称证据（2026-10-24—25，本地）
+
+对应已只读核对的 Excel 第51行、B列50“告警信息管理”。只读调查确认平台 incident 原来没有名称，规则有当前 `name`，但旧 JSON 证据只存规则 ID／版本和采样事实；页面“异常原因”是指标／信号译名，Tenant 的 `rule_name` 属于独立领域。用户确认采用首次触发名称、缺失历史不补造后，先修订运行观测规范7.1，再将规则名称保存到已有 resource／HTTP／process JSON 证据的 `rule_name`。后续评估／恢复沿 opening 证据，不用改名后的当前规则补写，旧记录仍缺失；日志名称按固定 signal 目录与当前请求语言派生。无新表、数据库列、DDL、权限、角色或通知协议。
+
+唯一 `GET /platform/alerts` 增加 `search`，列表只读 `name` 与查询使用同一事实源。支持最多100个Unicode字符、去首尾空白、大小写不敏感的字面包含，百分号／下划线／反斜线不作通配符；非法UTF-8、控制字符、超长和重复参数拒绝。名称与类别／状态／主体／级别／发现时间取交集，先过滤再计数／分页，保留原排序。名称列与异常原因分开，旧规则告警显示“未记录名称”；名称草稿提交／清除回首页，刷新／重载／通知往返恢复已提交条件，错误与迟到响应沿原清理机制。
+
+| 标准入口 | 实际结果与覆盖 | 本机证据 |
+| --- | --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1` | 最终7个Go测试包通过，仅计Go T1；API参数及原身份守卫、名称目录与缺失历史处理 | `/tmp/addp-alert-name-go-verified.log` |
+| `make test-monitor-postgres` | 最终38项顶层T2通过，无跳过；其中名称查询16子场景覆盖Unicode／大小写／字面通配符／注入文本／中英日志及接收器后缀／多页计数与时间、级别、状态交集。三个真实评估器的触发／改名／恢复名称保持；删除规则后历史仍可检索；模拟旧证据缺少名称时，当前规则及后续恢复不回填。新查询夹具清理核对零行。仅用已核实25432端口的 `addp_test`，未触及个人业务库 | `/tmp/addp-alert-name-postgres-final.log`，SHA-256 `1f18856d031502aef2aab863a2fc166f273eb3a45c01b6eba406f6e274ea4904` |
+| `make test-monitor-frontend` | 最终117项T1、424项受控浏览器T3和Vite构建通过；含中英文、680px窄屏、逐字键入、字面名称检索、页码重置、多页／重载／通知往返、缺失名称提示、非法URL拒绝和失败清空 | `/tmp/addp-alert-name-frontend-final.log`，SHA-256 `1e3bffb892e98c99befc8d3f1489741dedee269a870205b303778e4b3611e6b7` |
+| `make test-console-frontend`；Console目录下 `node ../../scripts/test/frontend-browser-gate.mjs e2e/platform-alert-navigation.spec.js` | Console195项T1、219项T3及构建先通过；随后名称输入草稿修复不改Console文件，最终源码再通过5项真实iframe导航专项，覆盖名称／级别／时间条件及同一iframe重载恢复。不将先前整套冒充修复后整套重跑 | `/tmp/addp-alert-name-console.log`、`/tmp/addp-alert-name-console-navigation-final.log` |
+| `bash scripts/swagger/gen-swagger.sh monitor`；`bash scripts/swagger/check-route-coverage.sh monitor` | 生成成功、91条公开路由方法覆盖一致，名称query与列表投影、JSON证据同步 | `/tmp/addp-alert-name-swagger.log`、`/tmp/addp-alert-name-swagger-coverage.log` |
+
+首轮Go构建因两处旧测试夹具返回类型未同步而失败，修订为实际列表投影后通过，原失败 `/tmp/addp-alert-name-go.log` 保留。首轮完整前端为422通过／2失败，失败是名称框只绑定已提交路由值、未保留输入草稿，键入被控件还原；逐字键入专项也复现，两份原失败 `/tmp/addp-alert-name-frontend.log`、`/tmp/addp-alert-name-typing-final.log` 不计通过。改为独立 `v-model` 草稿并沿路由／身份同步后，最终上述117／424完整门禁通过，没有加定时查询或自动重载兜底。
+
+30个任务实现／测试／契约文件收据 `/tmp/addp-alert-name-inputs.json` SHA-256 `c6a539735647b78d7716ef188435fe4f7680a7ed559f28072728adf9ea8438b0`，最终内容摘要核对无漂移；本节只追加证据。现有Monitor、Console路径选择、PostgreSQL自动发现和前端标准入口已命中新用例，无新增依赖、测试入口或workflow。以上是本地共享工作区T1/T2及受控API的T3，不代表固定提交CI、个人Safari、正式身份T4／Hosted或生产T5。没有重启个人服务、修改个人配置、创建正式告警或运行CI／Hosted，也没有设置定时任务；正式结果继续等专门会话回传。

@@ -141,7 +141,7 @@ func (f *httpRuleFixture) evaluate(t *testing.T, seconds int) {
 		t.Fatal(e)
 	}
 }
-func (f *httpRuleFixture) active(t *testing.T) []models.PlatformAlertIncident {
+func (f *httpRuleFixture) active(t *testing.T) []PlatformAlertView {
 	t.Helper()
 	page, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "http_quality", Status: "active", SubjectID: f.module, Severity: ""})
 	if e != nil {
@@ -243,7 +243,7 @@ func TestIntegrationPostgresHTTPRuleFrozenRecoveryAndAtomicOutbox(t *testing.T) 
 	}
 	f.evaluate(t, 75)
 	active := f.active(t)
-	if len(active) != 1 || active[0].HTTPEvidence == nil {
+	if len(active) != 1 || active[0].HTTPEvidence == nil || active[0].HTTPEvidence.RuleName != r.Name {
 		t.Fatal("missing HTTP opening evidence", active)
 	}
 	incident := active[0]
@@ -257,6 +257,7 @@ func TestIntegrationPostgresHTTPRuleFrozenRecoveryAndAtomicOutbox(t *testing.T) 
 	}
 	f.backend.state = ""
 	in := f.input
+	in.Name = "renamed HTTP rule"
 	in.Version = r.Version
 	on := true
 	in.Enabled = &on
@@ -288,7 +289,7 @@ func TestIntegrationPostgresHTTPRuleFrozenRecoveryAndAtomicOutbox(t *testing.T) 
 		t.Fatal("atomic HTTP outbox", len(deliveries), e)
 	}
 	for i, event := range events {
-		if event.HTTPEvidence == nil || event.HTTPEvidence.Policy.RecoveryValue != 10 || event.HTTPEvidence.RuleVersion != incident.HTTPEvidence.RuleVersion {
+		if event.HTTPEvidence == nil || event.HTTPEvidence.Policy.RecoveryValue != 10 || event.HTTPEvidence.RuleVersion != incident.HTTPEvidence.RuleVersion || event.HTTPEvidence.RuleName != f.input.Name {
 			t.Fatal("frozen HTTP evidence", i)
 		}
 	}

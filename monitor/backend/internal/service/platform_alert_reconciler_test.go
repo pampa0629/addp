@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/addp/monitor/internal/models"
@@ -38,5 +39,40 @@ func TestPlatformAlertEvaluationRequiresExplicitSourceAndVerdict(t *testing.T) {
 				t.Fatal("source boundary validation did not match contract")
 			}
 		})
+	}
+}
+
+func TestPlatformAlertNameUsesOnlyOpeningEvidenceAndFixedLogCatalog(t *testing.T) {
+	for _, row := range []models.PlatformAlertIncident{
+		{Category: "resource", ResourceEvidence: &models.ResourceAlertEvidence{RuleName: "original CPU"}},
+		{Category: "http_quality", HTTPEvidence: &models.HTTPAlertEvidence{RuleName: "original CPU"}},
+		{Category: "process_resource", ProcessEvidence: &models.ProcessAlertEvidence{RuleName: "original CPU"}},
+	} {
+		if got := platformAlertName(row, "en"); got != "original CPU" {
+			t.Fatal(got)
+		}
+	}
+	if platformAlertName(models.PlatformAlertIncident{Category: "resource", Signal: "node.cpu.busy_percent"}, "en") != "" {
+		t.Fatal("missing history fabricated from metric")
+	}
+	for _, signal := range platformLogNameSignals {
+		for _, lang := range []string{"zh-cn", "en"} {
+			if name := platformLogAlertName(signal+":instance-id", lang); name == "" || strings.HasPrefix(name, "monitor.") {
+				t.Fatal("missing catalog name", signal, lang, name)
+			}
+		}
+	}
+	if platformLogAlertName("unknown", "en") != "" {
+		t.Fatal("unknown signal invented a name")
+	}
+	for _, value := range []string{strings.Repeat("主", 100), "CPU %_\\", "  CPU  "} {
+		if !validAlertSearch(value) {
+			t.Fatal("valid name rejected")
+		}
+	}
+	for _, value := range []string{strings.Repeat("主", 101), "\tCPU", "CPU\x00", string([]byte{0xff})} {
+		if validAlertSearch(value) {
+			t.Fatal("invalid name accepted")
+		}
 	}
 }
