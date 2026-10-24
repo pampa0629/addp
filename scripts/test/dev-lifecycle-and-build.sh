@@ -514,6 +514,24 @@ def ready():
             raise AssertionError(f'{name} unavailable')
 def snapshot():
     return {p.name: p.read_text() for p in (root / '.dev-pids').glob('*.pid')}
+def require_alive(name, state, operation, result):
+    pid = int(state[name + '.pid'])
+    try:
+        os.kill(pid, 0)
+    except OSError as error:
+        # Keep the survival assertion strict, but retain the missing process and
+        # bounded fixture evidence instead of an anonymous ProcessLookupError.
+        known = sorted(pids | {int(value) for value in state.values()})
+        processes = subprocess.run(
+            ['ps', '-p', ','.join(map(str, known)), '-o', 'pid=,ppid=,stat=,etime=,args='],
+            capture_output=True, text=True, timeout=5,
+        )
+        raise AssertionError('unselected fixture process unavailable', {
+            'name': name, 'pid': pid, 'errno': error.errno, 'operation': operation,
+            'snapshot': state, 'processes': processes.stdout[-16384:],
+            'process_stderr': (root / 'process-stderr.log').read_text()[-16384:],
+            'stdout': result.stdout[-16384:], 'stderr': result.stderr[-16384:],
+        }) from error
 try:
     subprocess.run(['bash', str(dev / 'start.sh'), '-system', '-manager', '-asset', '-quality', '-meta', '-transfer'], env=env, check=True)
     ready()
@@ -550,7 +568,7 @@ try:
                 assert before[name + '.pid'] != after[name + '.pid'], f'{name} was not restarted'
             else:
                 assert before[name + '.pid'] == after[name + '.pid'], f'{name} PID changed'
-                os.kill(int(after[name + '.pid']), 0)
+                require_alive(name, after, args, result)
         if 'asset' in selected:
             assert (root / 'stopped-asset-frontend').is_file(), (
                 'frontend shutdown marker missing',
@@ -572,7 +590,7 @@ try:
     for name in names:
         if name in ('asset', 'asset-frontend'): continue
         assert after[name + '.pid'] == before[name + '.pid'], 'start failure stopped unrelated module'
-        os.kill(int(after[name + '.pid']), 0)
+        require_alive(name, after, ['-asset', 'FAIL_START=1'], result)
     assert not unavailable, ('other services were unavailable during restart', unavailable)
 finally:
     monitor_stop.set()
