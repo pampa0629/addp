@@ -532,7 +532,9 @@ func (s *QueryExecutorService) FormatAsCSV(result *models.QueryExecutionResult) 
 	for _, row := range result.Data {
 		record := make([]string, len(columns))
 		for index, column := range columns {
-			record[index] = fmt.Sprintf("%v", row[column])
+			if value := row[column]; value != nil {
+				record[index] = fmt.Sprint(value)
+			}
 		}
 		if err := writer.Write(record); err != nil {
 			return nil, err

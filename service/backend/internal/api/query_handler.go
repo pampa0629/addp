@@ -396,6 +396,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // QueryData 查询服务数据
 // @Summary 执行查询服务 | Execute query service
 // @Description 保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data
+// @Description CSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars
 // @Tags QueryExecution
 // @Accept json
 // @Produce json

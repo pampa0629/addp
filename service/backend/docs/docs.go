@@ -93,7 +93,7 @@ const docTemplate = `{
         },
         "/api/query/{serviceName}/query": {
             "post": {
-                "description": "保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data",
+                "description": "保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data\nCSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars",
                 "consumes": [
                     "application/json"
                 ],
