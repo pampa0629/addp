@@ -75,6 +75,14 @@ on:
           - transfer-relational-sql-etl
           - transfer-continuous-events
           - workbench-service-consumption
+      manager_case:
+        description: Manager acceptance case (full preserves all model assertions)
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - native-raster-media
       graph_engine:
         description: Native engine for graph-protection
         required: true
@@ -1031,7 +1039,7 @@ jobs:
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
   manager-hosted-t4:
-    name: Online T4 (manager-internal-artifact-lineage, Linux x86_64)
+    name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'manager-internal-artifact-lineage'
     concurrency:
       group: online-t4-manager-internal-artifact-lineage
@@ -1042,6 +1050,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: manager-internal-artifact-lineage
+      ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1101,7 +1110,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: online-t4-manager-internal-artifact-lineage-${{ github.run_id }}
+          name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
             ${{ runner.temp }}/addp-minio-cache-attempt.json
@@ -1113,7 +1122,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Online T4 (manager-internal-artifact-lineage, Linux x86_64)
+          gate: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

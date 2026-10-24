@@ -6,6 +6,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
+export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
+case "$ADDP_ONLINE_MANAGER_CASE" in
+  full|native-raster-media) ;;
+  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full or native-raster-media' >&2; exit 1 ;;
+esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
@@ -41,6 +46,14 @@ stop_online_fixture() {
   return "$cleanup_status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+python3 - <<'PYCASE'
+import json, os
+from pathlib import Path
+(Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'manager-case.json').write_text(json.dumps({
+    'schema_version': 'addp.manager-acceptance-case/v1',
+    'suite': 'manager-internal-artifact-lineage', 'case': os.environ['ADDP_ONLINE_MANAGER_CASE'],
+}, indent=2) + '\n')
+PYCASE
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170

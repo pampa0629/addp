@@ -2044,5 +2044,71 @@ class MinIOExactModelGrantPreparationTest(unittest.TestCase):
                         self.assertEqual({ref['role'] for ref in rows[-1]['composition']},{'model','material_library','texture'})
 
 
+class ManagerAcceptanceCaseTest(unittest.TestCase):
+    def test_default_full_and_invalid_values_fail_before_http(self):
+        self.assertEqual(SUITE.manager_case({}), 'full')
+        for case in ('full', 'native-raster-media'):
+            self.assertEqual(SUITE.manager_case({'ADDP_ONLINE_MANAGER_CASE': case}), case)
+        for case in ('', 'unknown', 'FULL'):
+            with self.subTest(case=case), mock.patch.dict(SUITE.os.environ, {'ADDP_ONLINE_MANAGER_CASE': case}, clear=True), \
+                    mock.patch.object(SUITE, 'required_environment') as required, mock.patch.object(SUITE, 'GatewayClient') as gateway:
+                self.assertEqual(SUITE.main(), 1)
+                required.assert_not_called()
+                gateway.assert_not_called()
+
+    def test_main_routes_only_selected_case_and_keeps_identity_validation(self):
+        env = scenario_environment('/tmp')
+        env['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'] = '28'
+        identity = {'principal_type': 'user', 'principal_id': 51}
+        for case in ('full', 'native-raster-media'):
+            with self.subTest(case=case), mock.patch.dict(SUITE.os.environ, {'ADDP_ONLINE_MANAGER_CASE': case}, clear=True), \
+                    mock.patch.object(SUITE, 'required_environment', return_value=env), \
+                    mock.patch.object(SUITE, 'GatewayClient') as gateway, \
+                    mock.patch.object(SUITE, 'validate_user_identity', return_value=identity) as validate, \
+                    mock.patch.object(SUITE, 'run_full_case', return_value={'case': 'full'}) as full, \
+                    mock.patch.object(SUITE, 'run_native_raster_media_case', return_value={'case': case}) as media:
+                self.assertEqual(SUITE.main(), 0)
+                validate.assert_called_once()
+                if case == 'full':
+                    full.assert_called_once()
+                    media.assert_not_called()
+                else:
+                    media.assert_called_once_with(mock.ANY, env, gateway.return_value, identity)
+                    full.assert_not_called()
+
+    def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
+        for failure in (None, 'second', 'unclean'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
+                       'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27'}
+                scene = mock.Mock()
+                def run(repository, environment, owner, *, source_format):
+                    self.assertIs(owner, SUITE)
+                    if failure == 'second' and source_format == 'jpeg2000':
+                        raise SUITE.SuiteError('second subscene failed')
+                    return {'result': 'passed', 'source_format': source_format,
+                            'source_unchanged': failure != 'unclean', 'cleanup': {}}
+                scene.run.side_effect = run
+                with mock.patch.object(importlib.util, 'spec_from_file_location') as spec, \
+                     mock.patch.object(importlib.util, 'module_from_spec', return_value=scene), \
+                     mock.patch.object(SUITE, 'wait_for_meta_scan', return_value='scan-1') as scan:
+                    if failure:
+                        with self.assertRaises(SUITE.SuiteError):
+                            SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), {'principal_type': 'user'})
+                    else:
+                        SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), {'principal_type': 'user'})
+                scan.assert_called_once()
+                report = json.loads(Path(directory, 'manager-native-raster-media.json').read_text())
+                self.assertEqual(report['schema_version'], 'addp.manager-native-raster-media/v1')
+                self.assertEqual(report['case'], 'native-raster-media')
+                self.assertEqual(report['source_formats'], ['img', 'jpeg2000'])
+                self.assertEqual(report['result'], 'failed' if failure else 'passed')
+                calls = [call.kwargs['source_format'] for call in scene.run.call_args_list]
+                self.assertEqual(calls, ['img'] if failure == 'unclean' else ['img', 'jpeg2000'])
+                if failure == 'second':
+                    self.assertEqual(report['img']['result'], 'passed')
+                    self.assertIn('second subscene failed', report['error'])
+
+
 if __name__ == "__main__":
     unittest.main()

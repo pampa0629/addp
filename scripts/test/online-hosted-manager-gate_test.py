@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import shutil
 import subprocess
@@ -61,6 +62,7 @@ class HostedManagerGateTest(unittest.TestCase):
         self.host._executable("make", '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "manager-case:$ADDP_ONLINE_MANAGER_CASE" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
         self.host._executable("docker", '''
@@ -122,6 +124,7 @@ class HostedManagerGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             set -euo pipefail
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "manager-case:$ADDP_ONLINE_MANAGER_CASE" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = build-images ]; then
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
@@ -133,11 +136,31 @@ class HostedManagerGateTest(unittest.TestCase):
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "test fixture"], cwd=self.host.repository, check=True)
 
+    def test_unknown_or_empty_case_is_rejected_before_lifecycle(self):
+        for case in ('', 'other'):
+            with self.subTest(case=case):
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE=case)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('ADDP_ONLINE_MANAGER_CASE', result.stderr)
+                self.assertFalse(self.host.trace.exists())
+                self.assertFalse(self.host.secrets.exists())
+
+    def test_native_media_case_is_explicit_and_uses_same_cleanup(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads((self.host.artifacts / 'manager-case.json').read_text())
+        self.assertEqual(report, {'schema_version': 'addp.manager-acceptance-case/v1',
+                                 'suite': 'manager-internal-artifact-lineage', 'case': 'native-raster-media'})
+        trace = self.host.trace.read_text()
+        for fragment in ('manager-case:native-raster-media', 'make:test-online ONLINE_SUITE=manager-internal-artifact-lineage',
+                         'application-stop', 'source-fixture:stop', 'nfs-fixture:stop', 'infra-down'):
+            self.assertIn(fragment, trace)
+
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",
                    GITHUB_RUN_ID="4242", GITHUB_RUN_ATTEMPT="1",
                    RUNNER_TEMP=str(self.host.root), ADDP_ONLINE_HOST="1", ADDP_ONLINE_HOSTED="1",
-                   ONLINE_SUITE_INPUT="manager-internal-artifact-lineage", ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
+                   ADDP_ONLINE_MANAGER_CASE="full", ONLINE_SUITE_INPUT="manager-internal-artifact-lineage", ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
                    ADDP_ONLINE_SECRET_DIR=str(self.host.secrets), ADDP_TEST_GATE_TRACE=str(self.host.trace),
                    ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids),
                    ADDP_TEST_RUNTIME_SECRET_WITNESS=str(self.host.root / "runtime-secret-witness.env"))

@@ -2341,33 +2341,86 @@ def required_environment() -> dict[str, str]:
     return dict(os.environ)
 
 
+def manager_case(environment):
+    case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
+    if case not in ("full", "native-raster-media"):
+        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full or native-raster-media")
+    return case
+
+
+def run_raster_media_scenes(repository, environment, report):
+    import importlib.util
+    img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
+    img_scene = importlib.util.module_from_spec(img_spec)
+    img_spec.loader.exec_module(img_scene)
+    for source_format in ('img', 'jpeg2000'):
+        try:
+            child = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
+        except BaseException:
+            report[source_format] = {'result': 'failed', 'report_file': f'manager-{source_format}.json'}
+            raise
+        report[source_format] = child
+        if (child.get('result') != 'passed' or child.get('source_format') != source_format
+                or child.get('source_unchanged') is not True or child.get('cleanup_errors')):
+            raise SuiteError(f"{source_format} media subscene did not pass with source and cleanup intact")
+
+
+def run_native_raster_media_case(repository, environment, client, identity):
+    report = {
+        "schema_version": "addp.manager-native-raster-media/v1",
+        "suite": "manager-internal-artifact-lineage", "case": "native-raster-media",
+        "source_formats": ["img", "jpeg2000"],
+        "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "identity": identity,
+        "result": "incomplete", "img": {"result": "not_run"}, "jpeg2000": {"result": "not_run"},
+    }
+    try:
+        report["meta_scan_execution_id"] = wait_for_meta_scan(
+            client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"),
+            time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180")))
+        run_raster_media_scenes(repository, environment, report)
+        report["result"] = "passed"
+        return report
+    except BaseException as failure:
+        report["result"] = "failed"
+        report["error"] = str(failure)
+        raise
+    finally:
+        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "manager-native-raster-media.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def run_full_case(repository, environment, client):
+    deadline = time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
+    boundaries = verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id"), "", deadline)
+    boundaries += verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"), environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"], deadline)
+    (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
+    versions = verify_index_source_versions(client, environment, time.monotonic() + 180)
+    (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
+    grants = prepare_minio_model_grants(client, environment)
+    try:
+        report = run_scenario(repository, environment, run_browser)
+    finally:
+        grants.cleanup()
+    run_raster_media_scenes(repository, environment, report)
+    report["case"] = "full"
+    report["content_boundaries"] = boundaries
+    report["index_source_versions"] = versions
+    return report
+
+
 def main() -> int:
     try:
+        case = manager_case(os.environ)
         environment = required_environment()
         repository = Path(__file__).resolve().parents[2]
         client = GatewayClient(environment["GATEWAY_URL"], environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 30)
-        validate_user_identity(client, positive_int(environment["ADDP_ONLINE_TEST_TENANT_ID"], "Tenant ID"))
+        identity = validate_user_identity(client, positive_int(environment["ADDP_ONLINE_TEST_TENANT_ID"], "Tenant ID"))
         if environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"] == environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"]:
             raise SuiteError("NFS and MinIO require distinct disposable Engines")
-        deadline = time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
-        boundaries = verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id"), "", deadline)
-        boundaries += verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"), environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"], deadline)
-        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
-        versions = verify_index_source_versions(client, environment, time.monotonic() + 180)
-        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
-        grants = prepare_minio_model_grants(client, environment)
-        try:
-            report = run_scenario(repository, environment, run_browser)
-        finally:
-            grants.cleanup()
-        import importlib.util
-        img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
-        img_scene = importlib.util.module_from_spec(img_spec)
-        img_spec.loader.exec_module(img_scene)
-        for source_format in ('img', 'jpeg2000'):
-            report[source_format] = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
-        report["content_boundaries"] = boundaries
-        report["index_source_versions"] = versions
+        if case == "native-raster-media":
+            report = run_native_raster_media_case(repository, environment, client, identity)
+        else:
+            report = run_full_case(repository, environment, client)
     except (OSError, ValueError, SuiteError, subprocess.SubprocessError) as error:
         print(f"Manager internal artifact lineage Online acceptance failed: {error}", file=sys.stderr)
         return 1

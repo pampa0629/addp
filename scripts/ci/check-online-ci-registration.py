@@ -375,6 +375,19 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     job = re.search(r"(?ms)^  manager-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if not job or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
+    manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
+    if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media'))
+            or any(fragment not in job.group('body') for fragment in (
+                'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
+                'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
+                'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
+            or any(fragment not in hosted for fragment in (
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media)',
+                'manager-case.json', 'addp.manager-acceptance-case/v1'))):
+        raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
+    if hosted.index('full|native-raster-media)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+        raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
     if "inputs.suite != 'manager-internal-artifact-lineage'" not in workflow:
@@ -395,6 +408,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     img_owner = (repository / 'scripts/test/manager-img-online.py').read_text(encoding='utf-8')
     img_browser = (repository / 'console/frontend/e2e/online/manager-img.spec.js').read_text(encoding='utf-8')
     manager_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
+    for fragment in ('def manager_case(', 'def run_full_case(', 'def run_raster_media_scenes(',
+                     'def run_native_raster_media_case(', 'manager-native-raster-media.json',
+                     'addp.manager-native-raster-media/v1', 'case = manager_case(os.environ)',
+                     'if case == "native-raster-media":'):
+        if fragment not in manager_owner:
+            raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
     if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner

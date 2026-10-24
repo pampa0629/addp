@@ -8,6 +8,16 @@
 
 ## manager-internal-artifact-lineage
 
+### 明确的验收 case
+
+2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
+
+唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和 `manager_case=native-raster-media`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把媒体栅格 case 的通过标为完整 Manager 场景通过。
+
+`native-raster-media` 只执行下述既有 IMG/JPEG2000 子场景，沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；两个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v1`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000]`、普通身份、两个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
+
+case 路由、默认完整场景保留、未知值只读拒绝、子场景失败与清理、case 归档及 workflow 接线由现有 `make test-manager-online-runner` 及 CI 登记检查覆盖；不新增长期脚本或根 Makefile 入口。
+
 ### IMG 原生扫描与 COG 快显
 
 同一 Manager Hosted suite 增加 IMG 子场景，使用既有普通 User、十项权限、Business MinIO、GeoPython 产品 Runtime 与同一部署生命周期，不新增 suite、服务或权限。Runtime 中生成三份自有 256×256 三波段 Byte HFA：WGS84、UTM50N 和无定位影像；全部自包含、同数据类型且无 NoData。真实 Meta 深度扫描须证明 `img/media/single`、HFA 编码、尺寸、波段及明确的源 CRS/范围；无定位样例不得出现推断的空间能力或 COG 生成动作。

@@ -1886,7 +1886,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         workflow = (SCRIPT.parents[2] / ".github/workflows/online-t4-gates.yml").read_text()
         import re
         job = re.search(r"(?ms)^  manager-hosted-t4:\n.*?(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow).group()
-        self.workflow.write_text(self.workflow.read_text().replace("first-suite", "manager-internal-artifact-lineage").replace(
+        manager_input = re.search(r"(?ms)^      manager_case:\n.*?(?=^      [a-z_]+:\n)", workflow).group()
+        self.workflow.write_text(self.workflow.read_text().replace('jobs:', manager_input + 'jobs:', 1).replace("first-suite", "manager-internal-artifact-lineage").replace(
             "if: github.event_name == 'workflow_dispatch'", "if: github.event_name == 'workflow_dispatch' && inputs.suite != 'manager-internal-artifact-lineage'")
             + job, encoding="utf-8")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
@@ -1931,10 +1932,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py')):
             target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
         owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
+        owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v1\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
         make = self.repository / 'Makefile'
         make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
+            (hosted, 'manager-case.json', 'acceptance case'),
+            (hosted, 'full|native-raster-media)', 'acceptance case'),
+            (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),
+            (owner, 'def run_full_case(', 'acceptance case'),
+            (owner, 'addp.manager-native-raster-media/v1', 'acceptance case'),
             (img_owner, 'cleanup_managed_artifact', 'IMG Hosted subscene'),
             (img_owner, 'JPEG2000_SOURCES', 'IMG Hosted subscene'),
             (img_browser, 'modelPixels', 'IMG Hosted subscene'),
