@@ -1202,3 +1202,31 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 本次只读查询，没有创建、确认、抑制、删除告警／规则或操作通知发送；当前数据仅一条日志告警，不能据此宣称真实多页、规则改名／删除后的名称冻结、旧规则缺名不补造或大小写／通配符专项在Safari通过，这些仍分别引用已有T2和受控T3范围。该证据只计个人Safari页面复验，不代替正式隔离身份T4／Hosted或生产T5；功能清单第51行仍部分实现，设备名称检索、高等级置顶、拓扑／影响范围及根因分析仍有缺口。
 
 本机证据：`/tmp/addp-alert-name-safari-result.json`，匹配／刷新／空结果／清除／通知往返的 `addp-alert-name-safari-{match,refresh,empty,clear,return}.txt`，匹配／空结果／最终页面的 `addp-alert-name-safari-{match,empty,final}.png`，均位于 `/tmp/`。本轮只追加本节，执行 `git diff --check`；不重复仍有效的产品门禁，不查询或触发CI／Hosted，不重启服务、不设置定时任务。清单只读核对Excel第51行、B列50“告警信息管理”，由维护会话统一更新M列。
+
+
+### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
+
+用户接受“当前源码准入和Gateway构建已通过、历史间歇失败唯一根因未定”的前提，另行授权2026-10-25 06:17:43–07:17:43（Asia/Shanghai）最多60分钟本地窗口；8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线、单次完整资源测量4秒预算保持。只运行根`make test-monitor-traces-local`，不运行Hosted、不重跑容量、不设置定时，不接管个人服务或以共享数据库承载测试。两次尝试共用同一绝对截止时间，未重置60分钟，所有产品均从各次准确已提交源码私有副本构建；仅固定MinIO／mc按原规则核验复用。本次未改产品代码、身份权限、采样或验收断言。
+
+| 尝试 | 实际源码 | 结果与实际覆盖 |
+| --- | --- | --- |
+| 1 | `7b3a5d6cac630ac76edbfdebda61e2ee89f674cf` | **失败**。7个源码二进制、10个产品镜像、浏览器依赖及11项Nginx路径／参数、缺席模块502／已部署模块可读通过；`isolated_deployment_start`的容器详情检查耗时4.070秒，触发原资源守卫停止，身份与业务断言未运行。 |
+| 2 | `47b02db01342a049c4fe01ae1f3ee15369b04863` | **通过**。重新完成全部产品构建、Nginx及实际版本检查；六个后端`/health/live`提交均准确匹配该SHA，12项后端断言和6项真实页面断言全部为真。06:55:09报告在完成清理后写入，早于原07:17:43截止；06:55:37独立残留审计通过。 |
+
+第2次通过的范围：
+
+- System-owned夹具导出凭据前，实际只读等待当次Tenant、固定Develop的保护初始化checkpoint；本次运行跨过了第八窗口尚未验的准备前置。正式密码／真实TOTP／AuthContext链路通过；准备User真实MFA后经正式IAM API给自身分配既有`tenant.infrastructure_administrator`，Refresh重读同一主体／Tenant／Membership及准确权限，MFA和角色分配后的旧Token拒绝。普通执行User仍准确持有原11项权限，没有为验收扩大授权或伪造AAL2。
+- 普通User经正式API创建合成Engine上的查询任务与编排，实际完成Orchestrator→Develop的成功和受控失败父子执行；终态与父子关系一致，公开执行树DTO未输出新增私有Trace字段。成功父／子UUID为`257c2e73-ade0-426f-bde3-e90223d5d82d`／`21179a6c-028b-41ff-a6a8-172afbd790e5`，受控失败为`ffbd76ac-fc82-4a1a-9354-3f8e62f25cca`／`3afd46a8-3400-48d1-8993-4d9c411f2e0e`。仅使用已批准的合成常量查询，不将SQL、参数或结果写入证据。
+- Platform系统管理员经System正式日志接口读到两Owner、两组执行的真实enqueue／claim／dispatch／terminal共16条检查点，核对实际attempt／outcome／Context。沿原v2采样自然等待125秒后，两个失败终态独立Trace均实际可查，各为一个`addp.execution`终态Span，并准确关联持久enqueue／dispatch两个Link及当前System实例身份；再以相同trace/span核对精确检查点日志。Orchestrator终态Trace／Span为`8eaca8355f7e95edf240a6a6c1673417`／`191017df7a1d550d`，Develop为`9d5510fc1f897f0a70da060bdd2db770`／`4e005bdc29851e44`。未开全采样、注入日志、直读execution私有列或手工补链。
+- 普通Tenant User与Platform安全管理员读取平台Trace／日志均实际403；原User经正式API删除当次任务定义／编排后重读404；四个API客户端正式退出后旧Access Token均401。准备角色的旧Token拒绝和最终退出拒绝分别验证，不把会话撤销写成单实例撤权。
+- 真实Console Chromium页面通过密码／MFA登录并核对Platform系统管理员AuthContext，Monitor iframe显示同一失败终态Span；点击因果Link前实际重核当前实例，并按目标started_at构造新查询窗口，返回受限结果；随后在System iframe显示相同execution UUID／trace／span的真实检查点日志。六项页面断言全部通过，没有mock API、注入Token或采集密码页面截图／视频／trace。
+
+页面回执`link_result=not_found`：被点击的普通enqueue目标独立采样，本次未保留，实际查询404；它仍通过当前实例授权、精确目标时间窗及有界未保留结果断言，不表示目标Span曾实际读取成功。原普通5%／失败优先、120秒等待、72小时／20 GiB初值及5秒／2 MiB查询、原并发预算全部保持；不能以本次两组查询或未保留目标推定全调用链完整留存、未执行或生产容量。本次仍仅为本机隔离正式身份技术闭环，`formal_runner_t4=false`，不代替Hosted／正式专用Runner T4或生产T5；其他Runtime／continuous／Python异步、SQL Span及真实长期保留等既有边界不变。
+
+两次共有507次成功资源测量；合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3652866048字节（约3.40 GiB），成功测量最长2.766秒；第一次失败的4.070秒另列，不混入成功峰值。两次均未记录OOM或4 GiB停止线触发。按记录的完成时刻减单次耗时重建测量开始间隔，两次峰值约4.018／4.017秒，低于5秒；完成时间戳间隔峰值为5.350／6.330秒，不能与开始间隔混用。第2次共287次测量，均在原4秒及资源范围内；通过不抹去第1次失败，也不宣称解决了Docker状态读取偶发超时或历史Gateway构建故障。
+
+标准清理和独立审计均确认两次当次容器、网络、卷、构建器容器／状态卷、镜像标签和私有目录零残留，既有MinIO镜像保持原不可变ID，两个只读页面回执接收端均已退出。首次独立审计在无筛选全镜像列表读取时20秒超时，未计审计通过；随后仅对标准入口实际创建的当次产品镜像reference精确过滤，完成相同残留核验，未放宽产品资源守卫或清理标准。
+
+证据目录`/tmp/addp-p19-formal-local-20261025-window10/`：`window.json`、`attempt-{1,2}-source.json`／报告／日志、`attempt-2-browser-receipt.json`、`receipt.json`、`cleanup-audit.json`、`evidence-review.json`、`function-row-mapping.json`及初次审计读取未完成记录。第二次run_id为`addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58`，第一次为`addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4`。交叉复核原始脱敏报告、12＋6断言、六模块SHA、原截止时间与全部资源边界，`git diff --check`通过；本次仅更新已有证据，不重复未变代码的T0/T1门禁，不调查／触发其他专项CI或Hosted。
+
+清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
