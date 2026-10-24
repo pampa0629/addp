@@ -694,7 +694,7 @@ def latest_owner_execution(report, kind):
 
 
 def verify_denied_generation(client, report, kind, reason):
-    require(kind in {'ifc', '3ds', 'dae', 'obj'} and reason in {'composition_changed', 'source_withdrawn'},
+    require(kind in {'ifc', '3ds', 'dae', 'obj', 'stl'} and reason in {'composition_changed', 'source_withdrawn'},
             'FTP denied generation requires its explicit observed source rule phase')
     model, = [row for row in report['models'] if row['format'] == kind]
     published, = [row for row in report['browser']['models'] if row['format'] == kind]
@@ -1072,7 +1072,7 @@ def prepare_models(items, engine_id, samples):
     expected = {key:(model_scope(relative), source) for key,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
-            'FTP model manifest requires the exact four model profiles and their declared dependencies')
+            'FTP model manifest requires the exact declared model profiles and their dependencies')
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     by_format = {}
     for sample in samples:

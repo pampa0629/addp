@@ -312,7 +312,7 @@ class FTPConsumerTest(unittest.TestCase):
         return SimpleNamespace(request=request), report, published, identifier, calls
 
     def test_denied_generation_records_unclaimed_failure_and_preserves_physical_output(self):
-        for kind in ('ifc', '3ds', 'dae'):
+        for kind in ('ifc', '3ds', 'dae', 'obj', 'stl'):
             client, report, published, identifier, calls = self.denied_generation_fixture(kind)
             with self.subTest(kind=kind), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows):
                 observed = M.verify_denied_generation(client, report, kind, 'source_withdrawn')
@@ -328,6 +328,12 @@ class FTPConsumerTest(unittest.TestCase):
             self.assertEqual([row for row in calls if row[0] == 'POST'], [
                 ('POST', '/api/v1/manager/tasks/model_3d_glb_generation/30/execute', (403,),
                  {'parameters': {'existing_result_action': 'overwrite'}})])
+
+    def test_denied_generation_requires_a_migrated_format_and_explicit_denial_phase(self):
+        client = SimpleNamespace(request=lambda *args: self.fail('invalid proof must not call a service'))
+        for kind, reason in (('fbx', 'source_withdrawn'), ('stl', 'unknown')):
+            with self.subTest(kind=kind, reason=reason), self.assertRaisesRegex(M.SuiteError, 'explicit observed'):
+                M.verify_denied_generation(client, {}, kind, reason)
 
     def test_denied_generation_rejects_claimed_foreign_or_staged_attempts(self):
         mutations = {
@@ -351,10 +357,11 @@ class FTPConsumerTest(unittest.TestCase):
                 garbage=[{'execution_id': e['execution_id']}]),
             'replaced output': lambda a,e,d,r: d.update(storage_ref=d['storage_ref'].replace('model.glb', 'other.glb')),
         }
-        for label, mutate in mutations.items():
-            client, report, *_ = self.denied_generation_fixture(mutate=mutate)
-            with self.subTest(label=label), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows), self.assertRaises(M.SuiteError):
-                M.verify_denied_generation(client, report, '3ds', 'composition_changed')
+        for kind in ('3ds', 'stl'):
+            for label, mutate in mutations.items():
+                client, report, *_ = self.denied_generation_fixture(kind, mutate=mutate)
+                with self.subTest(kind=kind, label=label), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows), self.assertRaises(M.SuiteError):
+                    M.verify_denied_generation(client, report, kind, 'source_withdrawn')
 
     def owned_detail(self, kind='3ds'):
         model, = [row for row in M.prepare_models(FakeClient().items, 17, model_samples()) if row['format'] == kind]
