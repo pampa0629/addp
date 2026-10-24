@@ -1192,3 +1192,13 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 同SHA的既有GitHub schedule [Run40132268218／Job120986322295](https://github.com/pampa0629/addp/actions/runs/40132268218/job/120986322295) 亦实际117／424／构建通过（浏览器21.9分钟、构建10.53秒）；它是既有workflow的调度，不是本会话创建定时或手工追加运行，只作补充稳定性证据，不替代前述唯一push主验收。
 
 证据目录 `/tmp/addp-ci-20261024-220030/`：两份原始日志 `job-120975073843.log` SHA-256 `04a94d867b231c443c58ab27e32b73038567a6081312f178fe9be68ea5da711a`、`job-120986322295.log` SHA-256 `004918f057e8ce35f6b23e1397e2df8dcd88a72359f76e18a5d7a04aface9388` 均核对一致；两份jobs元数据确认实际步骤与head_sha。协调审计为 `Monitor-a292-actual-full-frontend-CI-audit.json`，本会话核对收据 `Monitor-a292-owner-independent-audit.json`。本轮仅追加文档并执行 `git diff --check`，不重复仍有效的本地测试。CI受控浏览器不替代用户重启后的Safari名称检索、正式身份／Hosted T4或整行其他开发缺口；第51行仍为部分实现。
+
+### 告警名称检索个人 Safari 只读复验（2026-10-25）
+
+用户完成重启后，`curl --silent --show-error --max-time 10 -w '\nHTTP %{http_code}\n' http://localhost:8100/health/ready` 实际返回200、ready／registered；运行源码为 `7b3a5d6cac630ac76edbfdebda61e2ee89f674cf`，Git祖先检查确认包含名称功能 `a6048b9e71b0689893a3cf90db5a0ef4822d8866`。在原生Safari现有平台系统管理员会话，通过Console及Monitor iframe的真实页面复验，不使用内置浏览器、不提取登录凭据。
+
+首次读取仍是重启前保留的页面内容，告警名称显示“未记录名称”；完整重载后，现有日志告警正确显示固定信号名称“源容量接近额度”。名称框先输入“源”、再追加“容量”，草稿分别保留；提交后Console及iframe地址均保留 `severity=warning&search=源容量`，列表返回原有一条告警。替换为“不存在的告警名称”并提交，真实列表显示“暂无数据”；清空名称后 `search` 移除、“警告”级别保留、原有告警重新显示。再输入匹配名称，整页重载及通知管理→告警事件往返均恢复相同名称、级别和一条匹配结果。原生AX状态与实际截图均核对了名称输入框、名称列及查询结果。
+
+本次只读查询，没有创建、确认、抑制、删除告警／规则或操作通知发送；当前数据仅一条日志告警，不能据此宣称真实多页、规则改名／删除后的名称冻结、旧规则缺名不补造或大小写／通配符专项在Safari通过，这些仍分别引用已有T2和受控T3范围。该证据只计个人Safari页面复验，不代替正式隔离身份T4／Hosted或生产T5；功能清单第51行仍部分实现，设备名称检索、高等级置顶、拓扑／影响范围及根因分析仍有缺口。
+
+本机证据：`/tmp/addp-alert-name-safari-result.json`，匹配／刷新／空结果／清除／通知往返的 `addp-alert-name-safari-{match,refresh,empty,clear,return}.txt`，匹配／空结果／最终页面的 `addp-alert-name-safari-{match,empty,final}.png`，均位于 `/tmp/`。本轮只追加本节，执行 `git diff --check`；不重复仍有效的产品门禁，不查询或触发CI／Hosted，不重启服务、不设置定时任务。清单只读核对Excel第51行、B列50“告警信息管理”，由维护会话统一更新M列。
