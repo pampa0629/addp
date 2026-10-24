@@ -882,3 +882,22 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 三份完整入口报告均为failed，正式密码/MFA、普通Tenant执行、Trace／日志读取及真实Console闭环全部未运行、未计通过，实际运行提交核对探针亦尚未到达。标准入口准备门禁`make test-monitor-traces-local-runner`退出0（60项契约、JS语法、CI登记及System身份夹具定向Go）；最终`make test-infra-runtime-log-lifecycle`退出0，另含既有60项生命周期检查。没有改动业务API、权限、采样或保留策略，未跟踪无关CI。
 
 全窗口578项成功资源测量，峰值硬配额7.45 CPU／10,066,329,600字节（9.375 GiB），卷及私有可写目录合计最高3,635,802,112字节，最长单次测量1.597秒，未触及停止线。三次自动清理和独立审计均为当次容器、网络、卷、构建器、镜像标签及私有目录零残留，已核验的原MinIO产品镜像保留。证据目录`/tmp/addp-p19-formal-local-20261024-window5/`含`window.json`、三份`attempt-*-report.json`、`attempt-3-database-init-audit.json`、`receipt.json`、`cleanup-audit.json`及`lifecycle-final.log`。实际清单第19行（B18）、第45行（B44）仍为部分实现；本证据不计正式身份闭环、Linux Runner T4、Hosted、72小时或生产T5通过。
+
+
+### 正式身份本地第六窗口：按需页面及正式登录通过，执行闭环仍未验收（2026-10-24）
+
+用户确认修正产品Nginx部分部署行为并新开60分钟窗口，绝对时间为2026-10-24 09:27:58～10:27:58（Asia/Shanghai），仍限8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线。三次完整尝试沿同一截止时间，未运行Hosted、容量或定时，过期没有自动续开。
+
+提交`e25a09264e39a0c48e01af696b87df15c1b5f103`删除根Nginx七个旧模块页面的静态upstream，统一为请求时Docker DNS解析，保留去除模块前缀后的路径与查询参数；Console／Gateway仍是入口必需依赖。隔离入口只选择Console、System、Monitor页面和根Nginx，六个后端及身份、采样、业务断言保持。新增标准`make test-nginx-routes`与实际完整入口共享同一真实Nginx探针，同时接入既有Trace T2，并将nginx/加入其路径输入。最终实测11项嵌套路径、查询参数、静态资源／plugins／WASM及API路径通过，缺失模块502且已部署页面仍可读，探针清理通过。开发期两次探针失败分别涉及就绪重试stderr污染及回显服务遗漏Gateway 8000端口，均清理后修正，未当作产品或正式身份通过。
+
+共享工作区首次完整准备门禁受另一专项未提交的Online登记组合影响，不计通过；仅保留其本专项63项契约通过事实。已提交源码e25a09264的私有副本随后实际运行标准`make test-infra-runtime-log-lifecycle`退出0（63项入口契约、JS语法、Online登记、System身份夹具Go及既有60项生命周期），构建登记与T2登记检查均退出0；私有准备源码副本已删除，没有纳入或修复并行未提交工作。
+
+第一次实际完整入口源码`6621748b0b1a8497597e4f4ee5bb3274503402ff`：七个二进制、10个产品镜像、产品Nginx同一11项路由探针、六后端及四页面服务就绪通过，六后端实际/health/live提交均匹配该SHA。两个Platform User完成真实密码／TOTP登录、两个Tenant User完成真实密码登录；AuthContext为普通非委托User，Platform MFA身份、负例无平台诊断权限及业务User精确11项权限检查通过。随后在synthetic_engine_registration阶段以SuiteError失败，尚未创建本批成功／失败执行闭环；原报告没有HTTP状态，不把源码推断写成已实测403。
+
+核对角色与API发现租户管理员模板不含引擎操作权限，而夹具遗漏已批准的独立准备能力。提交`6b7704611ff20856cfc03db9f4c3b6cfd1150e3a`通过既有IAM角色服务向当次准备成员显式赋予仅含system.engine.create／system.engine.execute的临时角色，业务User仍为原11项；增加正式AuthContext准备权限检查，以及只保留固定断言码或HTTP状态／稳定错误码的安全诊断。该修正代码和单测通过，但本窗口未到达修正后的运行验证，不宣称引擎登记已通过。第二次实际源码6b7704611在Security产品镜像构建失败，固定诊断命中failed to solve／timed out；未保留原始公共构建输出，不能进一步断言具体外部请求或原因，清理通过。
+
+为在原总上限内减少闲置配额，先修规范，再由提交`1c5a5cc26dd7291f0a142a5a67adea1a908d3d2b`将编译与构建器串行：计划停止原构建器，以2 CPU／3 GiB及两个Go线程编译，完成后恢复1 CPU／2 GiB构建器；确认原ID运行且非OOM，并与采样锁同步后才清除计划停止状态。第三次实际完成七个二进制、构建器恢复及10个产品镜像，在browser_dependencies阶段达到本窗口总期限，以command_deadline_exceeded失败退出并清理。未缩短真实尾采样等待或省略任何业务／页面断言来计通过。
+
+当前源码1c5a5cc26的`make test-infra-runtime-log-lifecycle`退出0：66项入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过。源码未修改产品业务API、内置角色、采样或保留策略，不需生成Swagger；普通Tenant执行、Trace／Link与精确日志、Console闭环及退出后旧令牌拒绝本窗口均未通过。三份完整报告全部failed；正式登录的实际局部证据不能替代完整闭环，也不能外推Linux Runner T4、Hosted、72小时或生产T5。
+
+全窗口516项成功资源测量，峰值7.8 CPU／10,468,982,784字节（9.75 GiB），卷及私有可写目录最高3,619,434,496字节，最长测量1.126秒；无OOM或资源停止线触发。三次自动清理及独立审计均为当次容器、网络、卷、构建器、镜像标签和私有源码／秘密零残留，原核验MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261024-window6/`，含window.json、三份attempt-*-report.json、nginx-route-gate-3.log、prepare-source.json、committed-lifecycle.log、final-lifecycle.log、t2-registration.log、receipt.json及cleanup-audit.json。仅只读查看过源码6621748的既有Release and T2自动运行40050940303，当时queued，未计通过，未手工触发工作流或跟踪无关CI。清单第19行（B18）、第45行（B44）继续部分实现。
