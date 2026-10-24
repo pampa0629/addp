@@ -50,6 +50,15 @@ def bare_lifecycle(directory):
 
 
 class VolumePreparationContractTests(unittest.TestCase):
+    def test_first_sample_failure_reports_the_exact_operation_without_waiting_for_monitor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.sample_operation='measure_private_bindings'
+            life._sample=mock.Mock(side_effect=m.GateError('command_deadline_exceeded'))
+            with self.assertRaisesRegex(m.GateError,'command_deadline_exceeded'):life.sample()
+            self.assertEqual(life.resource_failure['operation'],'measure_private_bindings')
+            self.assertEqual(life.resource_failure['error_code'],'command_deadline_exceeded')
+            self.assertEqual(life.samples,[])
+
     def test_complete_owned_compose_volumes_are_created_before_sampling_and_startup(self):
         for wrong_owner in (False,True):
             with self.subTest(wrong_owner=wrong_owner),tempfile.TemporaryDirectory() as directory:

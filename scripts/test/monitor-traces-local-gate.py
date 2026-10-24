@@ -352,7 +352,15 @@ class Lifecycle:
 
     def sample(self):
         with self.sample_lock:
-            return self._sample()
+            began=time.monotonic()
+            try:
+                return self._sample()
+            except Exception as error:
+                self.resource_failure={'operation':getattr(self,'sample_operation','admission'),
+                    'error_code':str(error) if isinstance(error,GateError) else 'resource_sample_failed',
+                    'elapsed_seconds':round(time.monotonic()-self.started,2),
+                    'sample_duration_seconds':round(time.monotonic()-began,3),'exception_type':type(error).__name__}
+                raise
 
     def stop_builder(self):
         before=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
