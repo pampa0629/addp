@@ -15,6 +15,21 @@ type S3Store struct {
 	Bucket string
 }
 
+// CheckBucket is read-only. A shared platform bucket must already support
+// versioned COMPLIANCE objects; the archive never enables or changes it.
+// This does not prove identity policies, retention deadlines or host isolation.
+func (s *S3Store) CheckBucket(ctx context.Context) error {
+	versioning, err := s.Client.GetBucketVersioning(ctx, s.Bucket)
+	if err != nil || versioning.Status != "Enabled" {
+		return ErrUnknown
+	}
+	lock, _, _, _, err := s.Client.GetObjectLockConfig(ctx, s.Bucket)
+	if err != nil || lock != "Enabled" {
+		return ErrUnknown
+	}
+	return nil
+}
+
 func (s *S3Store) Create(ctx context.Context, key string, data []byte, until time.Time) (string, error) {
 	if len(data) > MaxObjectBytes {
 		return "", ErrBudget

@@ -65,7 +65,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		return &S3Store{Client: client, Bucket: "audit-disposable"}
+		return &S3Store{Client: client, Bucket: "platform-disposable"}
 	}
 	duringSnapshot, e := pgx.Connect(ctx, dsn)
 	if e != nil {
@@ -121,12 +121,49 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	writer := &S3Store{Client: client, Bucket: "audit-disposable"}
+	writer := &S3Store{Client: client, Bucket: "platform-disposable"}
 	reader := newStore("audit-reader", "owned-reader-test")
 	root := newStore("owned-audit-root", "owned-root-test-secret")
 	if e = root.Client.MakeBucket(ctx, root.Bucket, minio.MakeBucketOptions{ObjectLocking: true}); e != nil {
 		t.Fatal(e)
 	}
+	t.Run("shared_platform_bucket_capabilities_do_not_change_other_objects", func(t *testing.T) {
+		if err := writer.CheckBucket(ctx); err != nil {
+			t.Fatal("dedicated writer cannot verify the shared bucket", err)
+		}
+		if err := reader.CheckBucket(ctx); err != nil {
+			t.Fatal("dedicated auditor cannot verify the shared bucket", err)
+		}
+		lock, mode, days, unit, err := root.Client.GetObjectLockConfig(ctx, root.Bucket)
+		if err != nil || lock != "Enabled" || mode != nil || days != nil || unit != nil {
+			t.Fatal("archive installed global retention on the platform bucket", err)
+		}
+		// A versioned bucket lacking Object Lock must be rejected, not upgraded.
+		const ordinaryBucket = "platform-without-object-lock"
+		if err := root.Client.MakeBucket(ctx, ordinaryBucket, minio.MakeBucketOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := root.Client.EnableVersioning(ctx, ordinaryBucket); err != nil {
+			t.Fatal(err)
+		}
+		ordinary := &S3Store{Client: root.Client, Bucket: ordinaryBucket}
+		if err := ordinary.CheckBucket(ctx); err == nil {
+			t.Fatal("accepted a versioned bucket without Object Lock")
+		}
+		if enabled, _, _, _, err := root.Client.GetObjectLockConfig(ctx, ordinaryBucket); err == nil && enabled == "Enabled" {
+			t.Fatal("read-only capability check enabled Object Lock")
+		}
+		// Non-audit content shares the actual bucket, not a second fixture bucket.
+		key := "settings/ordinary-platform-file.json"
+		info, err := root.Client.PutObject(ctx, root.Bucket, key, strings.NewReader("ordinary"), 8, minio.PutObjectOptions{DisableMultipart: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := root.Client.RemoveObject(ctx, root.Bucket, key, minio.RemoveObjectOptions{VersionID: info.VersionID}); err != nil {
+			t.Fatal("audit retention leaked into ordinary platform files", err)
+		}
+		t.Log("shared platform bucket has versioning and Object Lock without a global default; ordinary platform objects remain writable and deletable; capability check did not upgrade an incompatible bucket")
+	})
 	insert := `INSERT INTO system.audit_logs(event_name,result,risk_level,module_name,details) VALUES($1,'succeeded','high','system','{}')`
 	if _, e = admin.Exec(ctx, insert, "iam.archive_baseline"); e != nil {
 		t.Fatal(e)
@@ -366,10 +403,10 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if _, err := Load(ctx, reader, rootRef, true, nil); err != nil {
 		t.Fatal("auditor cannot verify source evidence before query", err)
 	}
-	if err := reader.Walk(ctx, "queries/"+testActor+"/", func(Version) error { return nil }); err != nil {
+	if err := reader.Walk(ctx, "audit/queries/"+testActor+"/", func(Version) error { return nil }); err != nil {
 		t.Fatal("auditor cannot confirm its own query-log versions", err)
 	}
-	if err := reader.Walk(ctx, "queries/948d2bb7-8071-4a85-83b8-873f5c8e1fd7/", func(Version) error { return nil }); err == nil {
+	if err := reader.Walk(ctx, "audit/queries/948d2bb7-8071-4a85-83b8-873f5c8e1fd7/", func(Version) error { return nil }); err == nil {
 		t.Fatal("auditor listed another query-log identity")
 	}
 	if _, rows, e := QueryArchive(ctx, reader, reader, rootRef, testActor, 365, Query{EventName: "iam.archive_baseline"}, false); e != nil || len(rows) != 1 {
@@ -387,13 +424,61 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if _, e = reader.Create(ctx, key, []byte(`{}`), time.Now().Add(366*24*time.Hour)); e == nil {
 		t.Fatal("audit reader wrote original facts")
 	}
-	if _, e = writer.Create(ctx, "queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour)); e == nil {
+	if _, e = writer.Create(ctx, "audit/queries/"+testActor+"/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour)); e == nil {
 		t.Fatal("collector wrote query history")
 	}
 	v, e := exact(ctx, root, key)
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Run("tenant_and_archive_identities_are_isolated_inside_one_bucket", func(t *testing.T) {
+		tenant := newStore("tenant-user", "owned-tenant-test")
+		tenantKey := "tenant_17/ordinary.txt"
+		ordinary, err := tenant.Client.PutObject(ctx, tenant.Bucket, tenantKey, strings.NewReader("tenant"), 6, minio.PutObjectOptions{DisableMultipart: true})
+		if err != nil {
+			t.Fatal("tenant cannot write its own ordinary prefix", err)
+		}
+		obj, err := tenant.Client.GetObject(ctx, tenant.Bucket, tenantKey, minio.GetObjectOptions{VersionID: ordinary.VersionID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(obj)
+		obj.Close()
+		if err != nil || string(body) != "tenant" {
+			t.Fatal("tenant ordinary read was changed", err)
+		}
+		denied := func(err error) {
+			t.Helper()
+			if minio.ToErrorResponse(err).Code != "AccessDenied" {
+				t.Fatal("isolation did not return an authorization denial", err)
+			}
+		}
+		_, err = tenant.Client.StatObject(ctx, tenant.Bucket, key, minio.StatObjectOptions{VersionID: v.ID})
+		denied(err)
+		_, err = tenant.Create(ctx, "audit/sources/"+testSourceID+"/data/tenant-forgery.json", []byte(`{}`), time.Now().Add(366*24*time.Hour))
+		denied(err)
+		denied(tenant.Client.RemoveObject(ctx, tenant.Bucket, key, minio.RemoveObjectOptions{VersionID: v.ID}))
+		for _, prefix := range []string{"", archiveNamespace} {
+			observedDenial := false
+			for object := range tenant.Client.ListObjects(ctx, tenant.Bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true, WithVersions: true}) {
+				denied(object.Err)
+				observedDenial = true
+			}
+			if !observedDenial {
+				t.Fatal("tenant listed the bucket root or archive prefix")
+			}
+		}
+		for _, archiveIdentity := range []*S3Store{writer, reader} {
+			_, err = archiveIdentity.Client.StatObject(ctx, archiveIdentity.Bucket, tenantKey, minio.StatObjectOptions{VersionID: ordinary.VersionID})
+			denied(err)
+			_, err = archiveIdentity.Create(ctx, "settings/forged.json", []byte(`{}`), time.Now().Add(366*24*time.Hour))
+			denied(err)
+		}
+		if err := tenant.Client.RemoveObject(ctx, tenant.Bucket, tenantKey, minio.RemoveObjectOptions{VersionID: ordinary.VersionID}); err != nil {
+			t.Fatal("audit retention changed tenant ordinary deletion", err)
+		}
+		t.Log("real tenant identity was denied archive read/write/delete and root/audit listing; archive identities were denied tenant reads and other platform writes; ordinary tenant CRUD remained available in the same bucket")
+	})
 	if e = root.Client.RemoveObject(ctx, root.Bucket, key, minio.RemoveObjectOptions{VersionID: v.ID, GovernanceBypass: true}); e == nil {
 		t.Fatal("root deleted a COMPLIANCE version")
 	}
@@ -416,7 +501,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	}
 	// Real storage metadata, not a synthetic clock or a successful PUT alone.
 	controls := 0
-	for _, prefix := range []string{rootRef.Key, "sources/" + testSourceID + "/checkpoints/"} {
+	for _, prefix := range []string{rootRef.Key, "audit/sources/" + testSourceID + "/checkpoints/"} {
 		if e = writer.Walk(ctx, prefix, func(cv Version) error {
 			_, pr, err := writer.Read(ctx, cv)
 			if err != nil || !validControl(cv, pr, time.Now().UTC()) || pr.Hold {
@@ -450,18 +535,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 	if e != nil || bodyProtection.Until.Before(v.CreatedAt.Add(365*24*time.Hour)) || bodyProtection.Until.After(v.CreatedAt.AddDate(2, 0, 0)) {
 		t.Fatal("control retention leaked into body retention", e)
 	}
-	for _, bad := range []struct {
-		key   string
-		until time.Time
-	}{
-		{"sources/" + testSourceID + "/checkpoints/too-short.json", time.Now().Add(366 * 24 * time.Hour)},
-		{"sources/" + testSourceID + "/data/too-short.json", time.Now().Add(time.Hour)},
-	} {
-		if _, err := writer.Create(ctx, bad.key, []byte(`{}`), bad.until); minio.ToErrorResponse(err).Code != "AccessDenied" {
-			t.Fatal("policy did not deny short retention", err)
-		}
-	}
-	queryKey := "queries/" + testActor + "/hold-denial-fixture.json"
+	queryKey := "audit/queries/" + testActor + "/hold-denial-fixture.json"
 	queryVersion, e := reader.Create(ctx, queryKey, []byte(`{}`), time.Now().Add(366*24*time.Hour))
 	if e != nil {
 		t.Fatal(e)
@@ -511,7 +585,7 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal("extension changed evidence identity", err)
 	}
 	t.Log("root and all sealed checkpoints have at least 20 calendar years COMPLIANCE protection without Legal Hold; extensions succeeded and root deletion/shortening were denied; body protection remains at least 365 days")
-	t.Log("collector and auditor were denied Legal Hold ON, OFF and signed header-ON/body-OFF requests; short control/body retention was denied; read-only expiry plan selected no protected objects")
+	t.Log("collector and auditor were denied Legal Hold ON, OFF and signed header-ON/body-OFF requests; read-only expiry plan selected no protected objects")
 	t.Log("segmented baseline exceeded 8 MiB in one exported snapshot with a pinned root and immutable sealed checkpoints")
 	// A privileged storage administrator can create a new version; verification
 	// must detect the shadow rather than trusting an unversioned latest object.
@@ -527,4 +601,20 @@ func TestIndependentAuditArchiveAgainstPostgres(t *testing.T) {
 		t.Fatal("shadow version accepted as original evidence")
 	}
 	t.Log("missing replication slot remained unknown without reinitialization; a real shadow object version invalidated the chain")
+	// A trusted writer key can create a short-retained new object; that is not
+	// accepted evidence or an IAM promise of relative calendar-year enforcement.
+	// Do this only after the healthy-chain assertions and intentional shadow.
+	shortKey := "audit/sources/" + testSourceID + "/data/unaccepted-short.json"
+	if ref, err := put(ctx, writer, shortKey, map[string]bool{"fixture": true}, time.Now().Add(time.Hour), false); err == nil || ref != (Ref{}) {
+		t.Fatal("archive acknowledged a short-retained new body under the production policy")
+	}
+	shortVersion, err := exact(ctx, root, shortKey)
+	if err != nil {
+		t.Fatal("fixture did not really store the short-retained object", err)
+	}
+	_, shortProtection, err := root.Read(ctx, shortVersion)
+	if err != nil || !shortProtection.Until.Before(shortVersion.CreatedAt.Add(365*24*time.Hour)) {
+		t.Fatal("fixture did not exercise actual short storage protection", err)
+	}
+	t.Log("production policy uses scoped COMPLIANCE actions without dated retention floors; real short-retained storage was rejected with no archive acknowledgement; existing version protection remains enforced by storage")
 }

@@ -17,6 +17,51 @@ type archiveTransport func(*http.Request) (*http.Response, error)
 
 func (f archiveTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestArchiveBucketCheckIsReadOnlyAndRejectsUnknownCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name, versioning, lock string
+		status                 int
+		wantError              bool
+	}{
+		{"enabled_without_global_default", "Enabled", "Enabled", 200, false},
+		{"unversioned", "", "Enabled", 200, true},
+		{"suspended", "Suspended", "Enabled", 200, true},
+		{"lock_disabled", "Enabled", "", 200, true},
+		{"configuration_access_denied", "Enabled", "Enabled", 403, true},
+		{"store_unavailable", "Enabled", "Enabled", 503, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			client, err := minio.New("archive-fixture.invalid", &minio.Options{Secure: true, Region: "us-east-1", MaxRetries: 1, Creds: credentials.NewStaticV4("fixture", "fixture-secret", ""), Transport: archiveTransport(func(r *http.Request) (*http.Response, error) {
+				requests++
+				if r.Method != http.MethodGet || r.URL.Path != "/system/" {
+					t.Fatal("bucket check tried to write, probe an object or change buckets")
+				}
+				body := ""
+				switch {
+				case r.URL.Query().Has("versioning"):
+					body = "<VersioningConfiguration><Status>" + tc.versioning + "</Status></VersioningConfiguration>"
+				case r.URL.Query().Has("object-lock"):
+					body = "<ObjectLockConfiguration><ObjectLockEnabled>" + tc.lock + "</ObjectLockEnabled></ObjectLockConfiguration>"
+				default:
+					t.Fatal("bucket check exceeded versioning/lock reads")
+				}
+				if tc.status != 200 {
+					body = "<Error><Code>AccessDenied</Code></Error>"
+				}
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {"application/xml"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = (&S3Store{Client: client, Bucket: "system"}).CheckBucket(context.Background())
+			if (err != nil) != tc.wantError || requests == 0 || requests > 2 {
+				t.Fatal("capability result or read budget incorrect", err, requests)
+			}
+		})
+	}
+}
+
 func TestArchiveS3DistinguishesAbsentHoldFromUnknownProtection(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, status  string

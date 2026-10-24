@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
 // Config is private deployment input. It is never loaded from ADDP's root .env
@@ -39,6 +40,51 @@ type Config struct {
 	TLSCert       string `json:"tls_cert,omitempty"`
 	TLSKey        string `json:"tls_key,omitempty"`
 	Checkpoint    Ref    `json:"checkpoint,omitempty"`
+}
+
+type StoragePolicy struct {
+	Version   string            `json:"Version"`
+	Statement []policyStatement `json:"Statement"`
+}
+
+type policyStatement struct {
+	Effect    string                         `json:"Effect"`
+	Action    []string                       `json:"Action"`
+	Resource  []string                       `json:"Resource"`
+	Condition map[string]map[string][]string `json:"Condition,omitempty"`
+}
+
+// Policy emits no credentials and performs no provisioning. Its scopes must be
+// installed on dedicated identities without additional broad grants. Correct
+// new-object deadlines are verified by the archive, not a dated IAM floor.
+func (c Config) Policy() (StoragePolicy, error) {
+	if c.Validate() != nil || (c.Mode != "collector" && c.Mode != "auditor") {
+		return StoragePolicy{}, ErrUnknown
+	}
+	base := "arn:aws:s3:::" + c.Bucket
+	source, _ := sourcePrefix(c.SourceID)
+	readPaths := []string{source + "*"}
+	writePaths := []string{source + "data/*", source + "root.json", source + "checkpoints/*"}
+	if c.Mode == "auditor" {
+		query := archiveNamespace + "queries/" + c.Actor + "/"
+		readPaths = append(readPaths, query+"*")
+		writePaths = []string{query + "*"}
+	}
+	objects := func(paths []string) []string {
+		result := make([]string, len(paths))
+		for i, path := range paths {
+			result[i] = base + "/" + path
+		}
+		return result
+	}
+	return StoragePolicy{Version: "2012-10-17", Statement: []policyStatement{
+		{Effect: "Allow", Action: []string{"s3:GetBucketVersioning", "s3:GetBucketObjectLockConfiguration"}, Resource: []string{base}},
+		{Effect: "Allow", Action: []string{"s3:ListBucketVersions"}, Resource: []string{base}, Condition: map[string]map[string][]string{"StringLike": {"s3:prefix": readPaths}}},
+		{Effect: "Allow", Action: []string{"s3:GetObjectVersion", "s3:GetObjectRetention", "s3:GetObjectLegalHold"}, Resource: objects(readPaths)},
+		{Effect: "Allow", Action: []string{"s3:PutObject", "s3:PutObjectRetention"}, Resource: objects(writePaths), Condition: map[string]map[string][]string{"StringEquals": {"s3:object-lock-mode": {"COMPLIANCE"}}}},
+		{Effect: "Deny", Action: []string{"s3:DeleteObject", "s3:DeleteObjectVersion", "s3:BypassGovernanceRetention", "s3:PutObjectLegalHold"}, Resource: []string{base + "/" + archiveNamespace + "*"}},
+		{Effect: "Deny", Action: []string{"s3:PutBucketVersioning", "s3:PutBucketObjectLockConfiguration", "s3:PutLifecycleConfiguration", "s3:PutBucketPolicy"}, Resource: []string{base}},
+	}}, nil
 }
 
 func ReadConfig(path string) (Config, error) {
@@ -76,7 +122,7 @@ func (c Config) Validate() error {
 		return e
 	}
 	u, e := url.Parse(c.Endpoint)
-	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || c.Region == "" || c.AccessKey == "" || c.SecretKey == "" || c.Bucket == "" || c.RetentionDays < minRetentionDays || c.RetentionDays > 36500 {
+	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || c.Region == "" || c.AccessKey == "" || c.SecretKey == "" || s3utils.CheckValidBucketNameStrict(c.Bucket) != nil || c.RetentionDays < minRetentionDays || c.RetentionDays > 36500 {
 		return ErrUnknown
 	}
 	if c.Root != (Ref{}) && !c.RootValid() {

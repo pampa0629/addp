@@ -1,4 +1,4 @@
-// Package auditarchive preserves committed audit events in independently protected objects.
+// Package auditarchive preserves committed audit events in protected platform objects.
 package auditarchive
 
 import (
@@ -21,6 +21,7 @@ const MaxQueryRows = 1000
 const MaxQueryBytes = 16 << 20
 const minRetentionDays = 365
 const minControlYears = 20
+const archiveNamespace = "audit/"
 const format = "addp.audit-archive/v2"
 const maxParts = 256
 const partTarget = 4 << 20
@@ -139,13 +140,15 @@ func sourcePrefix(id string) (string, error) {
 	if e != nil || u.String() != id {
 		return "", ErrUnknown
 	}
-	return "sources/" + id + "/", nil
+	return archiveNamespace + "sources/" + id + "/", nil
 }
-func rootKey(id string) string { return "sources/" + id + "/root.json" }
+func rootKey(id string) string { return archiveNamespace + "sources/" + id + "/root.json" }
 func checkpointKey(id string, n uint64) string {
-	return fmt.Sprintf("sources/%s/checkpoints/%020d.json", id, n)
+	return fmt.Sprintf(archiveNamespace+"sources/%s/checkpoints/%020d.json", id, n)
 }
-func dataPrefix(id string, n uint64) string { return fmt.Sprintf("sources/%s/data/%020d/", id, n) }
+func dataPrefix(id string, n uint64) string {
+	return fmt.Sprintf(archiveNamespace+"sources/%s/data/%020d/", id, n)
+}
 func partKey(id string, n uint64, i int) string {
 	return fmt.Sprintf("%s%06d.json", dataPrefix(id, n), i)
 }
@@ -284,7 +287,7 @@ func put(ctx context.Context, s Store, key string, value any, until time.Time, c
 	if e != nil || string(got) != string(b) || p.Until.Before(until) {
 		return Ref{}, ErrUnknown
 	}
-	if !v.CreatedAt.IsZero() && until.Before(v.CreatedAt.Add(minRetentionDays*24*time.Hour)) {
+	if v.CreatedAt.IsZero() || until.Before(v.CreatedAt.Add(minRetentionDays*24*time.Hour)) {
 		return Ref{}, ErrUnknown
 	}
 	return r, nil
@@ -357,7 +360,7 @@ func loadAt(ctx context.Context, s Store, rootRef Ref, verify bool, visit func(R
 	c := &Chain{Source: root.Source, Root: rootRef, EndLSN: root.SnapshotLSN}
 	baseDone := false
 	var baselineID int64
-	e = s.Walk(ctx, "sources/"+root.Source.ID+"/checkpoints/", func(v Version) error {
+	e = s.Walk(ctx, archiveNamespace+"sources/"+root.Source.ID+"/checkpoints/", func(v Version) error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
@@ -565,7 +568,7 @@ func QueryArchive(ctx context.Context, s, log Store, root Ref, actor string, day
 		Count                 int
 		At                    time.Time
 	}{format, actor, result, root, q, len(rows), now}
-	if _, e = put(ctx, log, "queries/"+actor+"/"+uuid.NewString()+".json", record, now.Add(time.Duration(days)*24*time.Hour+retentionMargin), false); e != nil {
+	if _, e = put(ctx, log, archiveNamespace+"queries/"+actor+"/"+uuid.NewString()+".json", record, now.Add(time.Duration(days)*24*time.Hour+retentionMargin), false); e != nil {
 		return nil, nil, ErrUnknown
 	}
 	if err != nil {
@@ -601,7 +604,7 @@ func planAt(ctx context.Context, s Store, root Ref, now time.Time) (*Plan, error
 	stop := false
 	index := uint64(0)
 	previous := Ref{}
-	e = s.Walk(ctx, "sources/"+c.Source.ID+"/checkpoints/", func(v Version) error {
+	e = s.Walk(ctx, archiveNamespace+"sources/"+c.Source.ID+"/checkpoints/", func(v Version) error {
 		if stop {
 			return nil
 		}

@@ -38,12 +38,25 @@ func TestArchiveConfigKeepsCollectorAndReaderCredentialsSeparate(t *testing.T) {
 		},
 		func(c *Config) { c.Endpoint = "https://user:secret@audit.example" },
 		func(c *Config) { c.RetentionDays = 0 },
+		func(c *Config) { c.Bucket = "*" },
+		func(c *Config) { c.Bucket = "system/audit" },
+		func(c *Config) { c.Root.Key = "sources/" + testSourceID + "/root.json" },
 	} {
 		bad := c
 		change(&bad)
 		if bad.Validate() == nil {
 			t.Fatal("unsafe deployment input accepted")
 		}
+	}
+}
+
+func TestArchiveNamespaceNeverFallsBackToTenantOrBucketRoot(t *testing.T) {
+	prefix, err := sourcePrefix(testSourceID)
+	if err != nil || prefix != "audit/sources/"+testSourceID+"/" {
+		t.Fatal("archive escaped the platform audit namespace", prefix, err)
+	}
+	if rootKey(testSourceID) != prefix+"root.json" || checkpointKey(testSourceID, 7) != prefix+"checkpoints/00000000000000000007.json" || partKey(testSourceID, 7, 2) != prefix+"data/00000000000000000007/000002.json" {
+		t.Fatal("archive object keys use different namespaces")
 	}
 }
 

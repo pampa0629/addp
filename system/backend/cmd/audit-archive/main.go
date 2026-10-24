@@ -40,7 +40,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return auditarchive.ErrUnknown
 	}
 	action := args[0]
-	if action != "init" && action != "collect" && action != "verify" && action != "query" && action != "plan" && action != "receiver-init" && action != "receive" && action != "receiver-verify" {
+	if action != "init" && action != "collect" && action != "verify" && action != "query" && action != "plan" && action != "check-store" && action != "policy" && action != "receiver-init" && action != "receive" && action != "receiver-verify" {
 		return auditarchive.ErrUnknown
 	}
 	flags := flag.NewFlagSet("audit-archive", flag.ContinueOnError)
@@ -66,15 +66,40 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		expectedMode = "receiver"
 	case "receiver-verify":
 		expectedMode = "receiver-auditor"
+	case "check-store", "policy":
+		if c.Mode != "collector" && c.Mode != "auditor" {
+			return auditarchive.ErrUnknown
+		}
+		expectedMode = c.Mode
 	}
 	if c.Mode != expectedMode {
 		return auditarchive.ErrUnknown
+	}
+	if action == "policy" {
+		policy, err := c.Policy()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(policy)
 	}
 	store, e := c.Store()
 	if e != nil {
 		return e
 	}
+	if expectedMode == "collector" || expectedMode == "auditor" {
+		checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		e = store.CheckBucket(checkCtx)
+		cancel()
+		if e != nil {
+			return e
+		}
+	}
 	switch action {
+	case "check-store":
+		return json.NewEncoder(out).Encode(struct {
+			State string `json:"state"`
+			Scope string `json:"scope"`
+		}{"versioning_and_object_lock_enabled", "bucket_capabilities_only"})
 	case "receiver-init":
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()

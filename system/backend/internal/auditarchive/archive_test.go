@@ -30,6 +30,29 @@ func (s *memoryStore) clock() time.Time {
 	}
 	return time.Now().UTC()
 }
+
+type shortProtectionStore struct{ Store }
+
+func (s shortProtectionStore) Read(ctx context.Context, v Version) ([]byte, Protection, error) {
+	b, p, err := s.Store.Read(ctx, v)
+	p.Until = time.Now().UTC().Add(time.Hour)
+	return b, p, err
+}
+
+func TestArchiveNeverAcknowledgesShortOrUnknownStoredProtection(t *testing.T) {
+	ctx := context.Background()
+	for _, control := range []bool{false, true} {
+		store := shortProtectionStore{&memoryStore{}}
+		ref, err := put(ctx, store, "audit/fixture.json", map[string]bool{"fixture": true}, time.Now().Add(365*24*time.Hour+retentionMargin), control)
+		if err == nil || ref != (Ref{}) {
+			t.Fatal("acknowledged an object whose real readback was shorter than requested")
+		}
+	}
+	unknown := &memoryStore{now: func() time.Time { return time.Time{} }}
+	if ref, err := put(ctx, unknown, "audit/fixture.json", map[string]bool{"fixture": true}, time.Now().Add(365*24*time.Hour+retentionMargin), false); err == nil || ref != (Ref{}) {
+		t.Fatal("acknowledged a body without a verifiable storage creation time")
+	}
+}
 func (s *memoryStore) Create(_ context.Context, key string, b []byte, until time.Time) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
