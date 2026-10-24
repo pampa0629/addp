@@ -50,6 +50,17 @@ def bare_lifecycle(directory):
 
 
 class VolumePreparationContractTests(unittest.TestCase):
+    def test_dependency_failure_names_the_exact_stage_and_only_fixed_public_markers(self):
+        stages=[]
+        def compose(*args,**kwargs):
+            if args[0]=='exec':raise m.GateError('command_failed_2')
+        with self.assertRaisesRegex(m.GateError,'command_failed_2'):
+            m.start_dependencies(compose,'private-sql',stages.append)
+        self.assertEqual(stages,['isolated_databases_start','isolated_platform_database_initialization'])
+        markers=m.diagnostic_markers(b'psql: connection to server: PRIVATE-PASSWORD: server closed the connection unexpectedly')
+        self.assertEqual(markers,['psql:','connection to server','server closed the connection unexpectedly'])
+        self.assertNotIn('PRIVATE',str(markers))
+
     def test_first_sample_failure_reports_the_exact_operation_without_waiting_for_monitor(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.sample_operation='measure_private_bindings'

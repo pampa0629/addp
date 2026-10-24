@@ -74,6 +74,8 @@ def diagnostic_markers(raw):
         'not found','unsupported','traceback','syntaxerror','keyerror','no builder','timeout','timed out',
         'exec format','cannot connect','not accessible','binary not found','error response from daemon',
         'failed to initialize database','failed to ensure export session store','does not exist','sqlstate',
+        'psql:','connection to server','server closed the connection unexpectedly','database system is starting up',
+        'authentication failed','resource temporarily unavailable','too many open files','exec failed',
         '初始化失败','监听绑定失败','配置无效') if marker.encode() in raw.lower()]
 
 
@@ -590,7 +592,8 @@ def build(life):
     life.thread=threading.Thread(target=life.monitor,daemon=True)
     life.thread.start()
     life.phase='isolated_dependencies_start'
-    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
+    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text(),
+                       lambda phase:setattr(life,'phase',phase))
     life.dependencies_ready=True
     life.phase='builder_stop_guard_preflight'
     life.stop_builder()
@@ -726,12 +729,16 @@ def prepare_sampling_volumes(life):
                 'owned_volume_preparation_ownership_mismatch')
 
 
-def start_dependencies(compose, initialization_sql):
+def start_dependencies(compose, initialization_sql, progress=lambda phase:None):
+    progress('isolated_databases_start')
     compose('up','-d','--wait','--no-build','postgres','business-postgres','redis','minio')
+    progress('isolated_platform_database_initialization')
     compose('exec','-T','postgres','sh','-ec',
             'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',data=initialization_sql)
     for name in ('runtime-log-store-init','trace-store-init'):
+        progress('isolated_'+name.replace('-','_'))
         compose('run','--no-deps',name)
+    progress('isolated_telemetry_start')
     compose('up','-d','--wait','--no-build','loki','runtime-log-api','tempo','trace-query','alloy')
 
 
