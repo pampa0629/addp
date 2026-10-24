@@ -111,16 +111,38 @@ func TestExecutionTraceBusinessUserPermissionsStayExact(t *testing.T) {
 	}
 }
 
-func TestExecutionTracePreparationPermissionsStaySeparate(t *testing.T) {
-	want := []string{"system.engine.create", "system.engine.execute"}
-	if !reflect.DeepEqual(executionTracePreparationPermissions, want) {
-		t.Fatal("preparation permission drift")
+func TestExecutionTraceFixtureDoesNotPregrantPreparationAuthority(t *testing.T) {
+	source, err := parser.ParseFile(token.NewFileSet(), "execution_trace_local.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, permission := range executionTraceLocalPermissions {
-		for _, preparation := range want {
-			if permission == preparation {
-				t.Fatal("business User received preparation authority")
-			}
+	roles := []string{}
+	ast.Inspect(source, func(node ast.Node) bool {
+		field, ok := node.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		key, ok := field.Key.(*ast.Ident)
+		if !ok || key.Name != "RoleKey" {
+			return true
+		}
+		value, ok := field.Value.(*ast.BasicLit)
+		if !ok {
+			t.Fatal("fixture role key must be explicit")
+		}
+		roles = append(roles, strings.Trim(value.Value, "\""))
+		return true
+	})
+	if !reflect.DeepEqual(roles, []string{"local.execution_trace"}) {
+		t.Fatal("fixture must only create the original ordinary business role", roles)
+	}
+	raw, err := os.ReadFile("execution_trace_local.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"local.execution_trace_preparation", "tenant.infrastructure_administrator", "AssuranceLevelAAL2", "StepUpExpiresAt:"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatal("preparation role and MFA must use public APIs", forbidden)
 		}
 	}
 }

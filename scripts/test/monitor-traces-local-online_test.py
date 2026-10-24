@@ -25,11 +25,11 @@ EXECUTIONS = {
 
 def identity(who):
     granted = ({'monitor.trace.read', 'platform.module_log.read', 'platform.module.read'} if who == 'ADMIN'
-               else BUSINESS_PERMISSIONS if who == 'USER' else {'system.engine.create','system.engine.execute'} if who == 'PREPARER' else set())
+               else BUSINESS_PERMISSIONS if who == 'USER' else {'iam.tenant_role.read','iam.tenant_role_assignment.create'} if who == 'PREPARER' else set())
     return {'principal': {'id': who, 'type': 'user'}, 'delegation': None,
-            'context': {'type': 'platform' if who in ('ADMIN', 'SECURITY') else 'tenant', 'tenant_id': '7'},
+            'context': {'type': 'platform' if who in ('ADMIN', 'SECURITY') else 'tenant', 'tenant_id': '7', 'tenant_membership_id': '9'},
             'token': {'type': 'first_party_access_token'}, 'authentication': {'assurance_level': 'aal2'},
-            'authorization': {'role_assignments': [{'permissions': sorted(granted)}]}}
+            'authorization': {'role_assignments': [{'role_key': 'tenant.administrator' if who=='PREPARER' else 'local.execution_trace', 'permissions': sorted(granted)}]}}
 
 
 class Clock:
@@ -65,7 +65,9 @@ class FormalAPI:
         path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
         self.calls.append((who, method, path, query, deepcopy(body)))
         status, payload = 200, {}
-        if who != 'ADMIN' and ('/platform/traces/' in path or path.endswith('/logs')):
+        if path=='/api/v1/system/auth/context':
+            payload=identity(who)
+        elif who != 'ADMIN' and ('/platform/traces/' in path or path.endswith('/logs')):
             status = 403
         elif path == '/api/v1/system/engines' and method == 'POST':
             assert who == 'PREPARER' and body['engine_type'] == 'postgresql'
@@ -150,9 +152,101 @@ class FormalAPI:
         env = {'POSTGRES_USER': 'fixture', 'POSTGRES_PASSWORD': 'fixture-private-password'}
         report = {}
         with patch.object(M, 'login', side_effect=lambda env, who, platform=False, life=None: (self.client(who), identity(who))), \
+             patch.object(M,'prepare_engine_authority',side_effect=lambda client,context,env,life,report:context), \
              patch.object(M.time, 'monotonic', new=Clock()), patch.object(M.time, 'sleep'):
             retained = M.run(life, env, report)
         return retained, report
+
+
+class PreparationMFAContractTests(unittest.TestCase):
+    def exercise(self,fault=None):
+        from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+        from threading import Thread
+        from datetime import datetime,timezone,timedelta
+        import time
+        state={'stage':'base','old_denials':0,'assignment':False,'browser_cookie_checks':0}
+        initial=identity('PREPARER')
+        secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def send(self,status,payload,cookie=None):
+                self.send_response(status);self.send_header('Content-Type','application/json')
+                if cookie:self.send_header('Set-Cookie','local_refresh='+cookie+'; HttpOnly; Path=/api/v1/system; SameSite=Strict')
+                self.end_headers();self.wfile.write(json.dumps(payload).encode())
+            def context(self,final=False):
+                value=deepcopy(initial)
+                value['authentication']={'assurance_level':'aal1' if fault=='wrong_aal' else 'aal2',
+                    'step_up_expires_at':(datetime.now(timezone.utc)+timedelta(hours=-1 if fault=='expired_step_up' else 1)).isoformat()}
+                if final:
+                    value['authorization']['role_assignments'].append({'role_key':M.PREPARATION_ROLE,'permissions':sorted(M.PREPARATION_PERMISSIONS)})
+                    if fault=='extra_permission':value['authorization']['role_assignments'][-1]['permissions'].append('system.extra.read')
+                return value
+            def do_GET(self):
+                token=self.headers.get('Authorization','').removeprefix('Bearer ')
+                if self.path=='/api/v1/system/auth/context':
+                    if (token=='addp_at_base' and state['stage']!='base') or (token=='addp_at_mfa' and state['stage']=='assigned'):
+                        state['old_denials']+=1;self.send(401,{})
+                    else:self.send(200,self.context(final=token=='addp_at_refreshed'))
+                elif self.path=='/api/v1/system/tenant/roles':
+                    granted=set(M.PREPARATION_PERMISSIONS)
+                    if fault=='role_drift':granted.add('system.extra.read')
+                    self.send(200,[{'id':'20','role_key':M.PREPARATION_ROLE,'role_type':'tenant_builtin','immutable':True,'permission_keys':sorted(granted)}])
+                else:self.send(404,{})
+            def do_POST(self):
+                body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
+                token=self.headers.get('Authorization','').removeprefix('Bearer ')
+                if self.path=='/api/v1/system/auth/mfa/totp-enrollments':
+                    assert token=='addp_at_base' and body=={'current_password':'fixture-private-password'}
+                    self.send(201,{'enrollment_token':'private-enrollment','secret':secret})
+                elif self.path=='/api/v1/system/auth/mfa/totp-enrollment-verifications':
+                    assert token=='addp_at_base' and self.headers.get('Cookie')=='local_refresh=base-cookie'
+                    assert body=={'enrollment_token':'private-enrollment','code':'287082'}
+                    state['browser_cookie_checks']+=1;state['stage']='mfa'
+                    self.send(200,{'access_token':'addp_at_base' if fault=='unrotated' else 'addp_at_mfa'},'mfa-cookie')
+                elif self.path=='/api/v1/system/tenant/role_assignments':
+                    assert token=='addp_at_mfa' and body['membership_id']=='9' and body['role_ids']==['20'] and 'valid_until' in body
+                    state['assignment']=True;state['stage']='assigned'
+                    self.send(201,[{'role_key':M.PREPARATION_ROLE,'membership_id':'10' if fault=='wrong_membership' else '9'}])
+                elif self.path=='/api/v1/system/refresh':
+                    assert self.headers.get('Cookie')=='local_refresh=mfa-cookie'
+                    state['browser_cookie_checks']+=1
+                    self.send(200,{'access_token':'addp_at_refreshed'},'refreshed-cookie')
+                else:self.send(404,{})
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);thread=Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            import http.cookiejar,urllib.request
+            base='http://127.0.0.1:'+str(server.server_port)
+            client=M.API.GatewayClient(base,'addp_at_base',10)
+            jar=http.cookiejar.CookieJar()
+            client.browser_opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPCookieProcessor(jar))
+            jar.set_cookie(http.cookiejar.Cookie(0,'local_refresh','base-cookie',None,False,'127.0.0.1',False,False,'/api/v1/system',True,False,None,True,None,None,{},False))
+            life=SimpleNamespace(started=time.monotonic(),request_timeout=lambda:10,check=lambda:None,wait=lambda seconds:None)
+            report={'assertions':{}}
+            with patch.object(M.time,'time',return_value=59):
+                final=M.prepare_engine_authority(client,initial,{'ADDP_EXECUTION_TRACE_PREPARER_PASSWORD':'fixture-private-password'},life,report)
+            self.assertEqual(state['old_denials'],2)
+            self.assertEqual(state['browser_cookie_checks'],2)
+            self.assertTrue(state['assignment'])
+            self.assertEqual(M.permissions(final),M.permissions(initial)|M.PREPARATION_PERMISSIONS)
+            self.assertEqual(client.token,'addp_at_refreshed')
+            self.assertTrue(report['assertions']['preparer_real_mfa_and_builtin_role'])
+            for private in (secret,'private-enrollment','fixture-private-password','addp_at_','cookie'):
+                self.assertNotIn(private,json.dumps(report))
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=2)
+
+    def test_real_wire_cookie_rotation_mfa_role_assignment_and_refreshed_context(self):self.exercise()
+
+    def test_failed_mfa_role_boundary_and_session_replacement_are_rejected(self):
+        for fault in ('wrong_aal','expired_step_up','unrotated','role_drift','wrong_membership','extra_permission'):
+            with self.subTest(fault=fault),self.assertRaises(M.API.SuiteError):self.exercise(fault)
+
+    def test_expected_preparation_role_matches_product_manifest(self):
+        from pathlib import Path
+        text=(Path(M.__file__).resolve().parents[2]/'system/authorization/builtin_roles.yaml').read_text()
+        block=text.split('  - key: '+M.PREPARATION_ROLE+'\n',1)[1].split('  - key: ',1)[0]
+        permissions={line.strip().removeprefix('- ') for line in block.split('    permissions:\n',1)[1].splitlines() if line.strip()}
+        self.assertEqual(permissions,M.PREPARATION_PERMISSIONS)
 
 
 class LocalExecutionTraceOwnerTests(unittest.TestCase):

@@ -26,8 +26,6 @@ var executionTraceLocalPermissions = []string{
 	"monitor.execution.read", "system.execution_authorization.create",
 }
 
-var executionTracePreparationPermissions = []string{"system.engine.create", "system.engine.execute"}
-
 var executionTraceLocalEnvironmentKeys = []string{
 	"ADDP_EXECUTION_TRACE_ADMIN_USERNAME", "ADDP_EXECUTION_TRACE_ADMIN_PASSWORD", "ADDP_EXECUTION_TRACE_ADMIN_TOTP",
 	"ADDP_EXECUTION_TRACE_SECURITY_USERNAME", "ADDP_EXECUTION_TRACE_SECURITY_PASSWORD", "ADDP_EXECUTION_TRACE_SECURITY_TOTP",
@@ -169,32 +167,6 @@ func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, outpu
 		return err
 	}
 	roles := iam.NewTenantRoleService(repo, clock)
-	userType := iam.PrincipalTypeUser
-	assignments, _, err := roles.ListAssignments(ctx, tenant.ID, iam.TenantRoleAssignmentFilter{PrincipalType: &userType}, 1, 100)
-	if err != nil {
-		return err
-	}
-	administratorAssignmentID, err := tenantAdministratorAssignmentID(assignments, tenant.ID, preparer.PrincipalID)
-	if err != nil {
-		return err
-	}
-	administratorAssignment, err := roles.GetAssignment(ctx, tenant.ID, administratorAssignmentID)
-	if err != nil {
-		return err
-	}
-	preparationRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenant.ID, RoleKey: "local.execution_trace_preparation", Name: "Local execution trace engine preparation",
-		PermissionKeys: append([]string(nil), executionTracePreparationPermissions...), ActorPrincipalID: preparer.PrincipalID, Audit: audit("local-execution-trace-preparation-role"),
-	})
-	if err != nil {
-		return err
-	}
-	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: administratorAssignment.MembershipID, RoleIDs: []int64{preparationRole.ID},
-		Reason: "Disposable local engine creation and connection test", ActorPrincipalID: preparer.PrincipalID, Audit: audit("local-execution-trace-preparation-assignment"),
-	}); err != nil {
-		return err
-	}
 	values["ADDP_EXECUTION_TRACE_PREPARER_USERNAME"], values["ADDP_EXECUTION_TRACE_PREPARER_PASSWORD"] = "local-execution-trace-preparer", password
 	consumer, password, err := createUserCredentials(ctx, identity, "local-execution-trace-user")
 	if err != nil {

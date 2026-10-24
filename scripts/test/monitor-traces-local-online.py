@@ -12,6 +12,7 @@ import re
 import struct
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -53,6 +54,96 @@ def guard_client(client, life):
     return client
 
 
+PREPARATION_ROLE = 'tenant.infrastructure_administrator'
+PREPARATION_PERMISSIONS = {
+    'monitor.health.read', 'system.cleanup.execute', 'system.cleanup.read',
+    'system.engine.create', 'system.engine.delete', 'system.engine.execute', 'system.engine.read', 'system.engine.update',
+    'system.engine_catalog.read', 'system.engine_raster_policy.read', 'system.engine_raster_policy.update',
+}
+
+
+def totp(secret, life=None):
+    require(isinstance(secret,str) and re.fullmatch('[A-Z2-7]{16,128}',secret),'totp_secret_contract_invalid')
+    remaining=30-time.time()%30
+    if remaining<2:
+        life.wait(remaining+.1) if life else time.sleep(remaining+.1)
+    counter=struct.pack('>Q',int(time.time())//30)
+    digest=hmac.new(base64.b32decode(secret),counter,hashlib.sha1).digest();offset=digest[-1]&15
+    return str((struct.unpack('>I',digest[offset:offset+4])[0]&0x7fffffff)%1000000).zfill(6)
+
+
+def browser_json(client,life,path,body,expected=(200,)):
+    request=urllib.request.Request(client.base_url+path,data=json.dumps(body).encode(),method='POST',
+        headers={'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+client.token})
+    try:
+        response=client.browser_opener.open(request,timeout=life.request_timeout())
+    except urllib.error.HTTPError as error:
+        response=error
+    with response:
+        status=response.status
+        payload=json.load(response)
+    life.check()
+    if status not in expected:
+        code=payload.get('error_code','unknown') if isinstance(payload,dict) else 'unknown'
+        life.api_failure={'http_status':status,'error_code':code if isinstance(code,str) and re.fullmatch('[a-z][a-z0-9_]*',code) else 'unknown'}
+        raise LocalTraceAssertionFailure('formal_browser_session_http_status')
+    require(isinstance(payload,dict),'formal_browser_session_response_invalid')
+    return payload
+
+
+def replace_browser_token(client,reply):
+    token=reply.get('access_token')
+    require(isinstance(token,str) and token.startswith('addp_at_') and token!=client.token,'formal_browser_token_not_rotated')
+    client.token=token
+
+
+def prepare_engine_authority(client,identity,env,life,report):
+    life.phase='preparer_real_totp_enrollment'
+    require({a.get('role_key') for a in identity['authorization']['role_assignments']}=={'tenant.administrator'},
+            'preparer_must_begin_as_initial_administrator')
+    require(not {'system.engine.create','system.engine.execute'}.intersection(permissions(identity)),
+            'preparer_engine_authority_must_not_be_pregranted')
+    membership=identity.get('context',{}).get('tenant_membership_id')
+    require(isinstance(membership,str) and re.fullmatch('[1-9][0-9]*',membership),'preparer_membership_missing')
+    enrolled=browser_json(client,life,'/api/v1/system/auth/mfa/totp-enrollments',
+        {'current_password':env['ADDP_EXECUTION_TRACE_PREPARER_PASSWORD']},(201,))
+    verified=browser_json(client,life,'/api/v1/system/auth/mfa/totp-enrollment-verifications',
+        {'enrollment_token':enrolled['enrollment_token'],'code':totp(enrolled.get('secret'),life)})
+    client.request('GET','/api/v1/system/auth/context',(401,))
+    replace_browser_token(client,verified)
+    current=client.request('GET','/api/v1/system/auth/context',(200,)).payload
+    require(current.get('principal')==identity['principal'] and current.get('context')==identity['context'],
+            'preparer_mfa_changed_identity')
+    facts=current.get('authentication',{})
+    expiry=facts.get('step_up_expires_at')
+    require(facts.get('assurance_level')=='aal2' and isinstance(expiry,str) and
+            datetime.fromisoformat(expiry.replace('Z','+00:00'))>datetime.now(timezone.utc),'preparer_real_step_up_missing')
+    life.phase='preparer_formal_builtin_role_assignment'
+    rows=client.request('GET','/api/v1/system/tenant/roles',(200,),response_type=list).payload
+    selected=[row for row in rows if row.get('role_key')==PREPARATION_ROLE]
+    require(len(selected)==1 and selected[0].get('role_type')=='tenant_builtin' and selected[0].get('immutable') is True and
+            set(selected[0].get('permission_keys',[]))==PREPARATION_PERMISSIONS,'preparer_builtin_role_contract_drift')
+    role_id=selected[0].get('id')
+    require(isinstance(role_id,str) and re.fullmatch('[1-9][0-9]*',role_id),'preparer_builtin_role_id_invalid')
+    deadline=utc(datetime.now(timezone.utc)+timedelta(seconds=max(1,3600-(time.monotonic()-life.started))))
+    assigned=client.request('POST','/api/v1/system/tenant/role_assignments',(201,),
+        {'membership_id':membership,'role_ids':[role_id],'valid_until':deadline,
+         'reason':'Disposable local execution trace engine preparation'},response_type=list).payload
+    require(len(assigned)==1 and assigned[0].get('role_key')==PREPARATION_ROLE and
+            assigned[0].get('membership_id')==membership,'preparer_assignment_not_exact')
+    client.request('GET','/api/v1/system/auth/context',(401,))
+    replace_browser_token(client,browser_json(client,life,'/api/v1/system/refresh',{}))
+    final=client.request('GET','/api/v1/system/auth/context',(200,)).payload
+    require(final.get('principal')==identity['principal'] and final.get('context')==identity['context'] and
+            final.get('delegation') is None and final.get('authentication',{}).get('assurance_level')=='aal2',
+            'preparer_refreshed_identity_changed')
+    require({a.get('role_key') for a in final.get('authorization',{}).get('role_assignments',[])}==
+            {'tenant.administrator',PREPARATION_ROLE} and permissions(final)==permissions(identity)|PREPARATION_PERMISSIONS,
+            'preparer_authority_not_exact')
+    report['assertions'].update(preparer_real_mfa_and_builtin_role=True,preparer_old_tokens_denied=True)
+    return final
+
+
 def login(env, who, platform=False, life=None):
     # Every login has a separate real HttpOnly refresh-cookie jar. Bearer
     # business requests still reuse the shared owner API client.
@@ -72,14 +163,7 @@ def login(env, who, platform=False, life=None):
         require(reply.get('next_action') == 'verify_mfa' and not reply.get('session'), 'platform_password_must_require_mfa')
         challenge = reply['mfa']
         require(challenge.get('method') == 'totp', 'totp_challenge_required')
-        # Formal TOTP anti-replay remains active, including subsequent browser login.
-        remaining=30-time.time()%30
-        if remaining < 2:
-            life.wait(remaining+.1) if life else time.sleep(remaining+.1)
-        counter=struct.pack('>Q', int(time.time())//30)
-        key=base64.b32decode(env[prefix+'_TOTP'], casefold=False)
-        digest=hmac.new(key,counter,hashlib.sha1).digest(); offset=digest[-1]&15
-        code=str((struct.unpack('>I',digest[offset:offset+4])[0]&0x7fffffff)%1000000).zfill(6)
+        code=totp(env[prefix+'_TOTP'],life)
         reply=exchange('/api/v1/system/auth/mfa-verifications',{
             'challenge_token':challenge['challenge_token'],'code':code})
     require(reply.get('next_action') == 'session_issued', 'password_login_did_not_issue_session')
@@ -154,11 +238,13 @@ def run(life, env, report):
         'orchestrator.workflow.create','orchestrator.workflow.read','orchestrator.workflow.delete','orchestrator.workflow.execute',
         'develop.task.create','develop.task.read','develop.task.delete','develop.task.execute','develop.data_read.execute',
         'monitor.execution.read','system.execution_authorization.create'},'business_user_not_minimal')
-    require({'system.engine.create','system.engine.execute'}<=permissions(preparer_identity),'preparer_engine_permissions_missing')
     require(preparer_identity['principal']['id']!=user_identity['principal']['id'],'preparation_and_execution_identity_must_differ')
     report['assertions']={'formal_password_mfa_authcontext':True,'tenant_user_minimal':True}
     life.local_clients=(admin,negative,user,preparer)
     life.local_definitions=[]
+    preparer_identity=prepare_engine_authority(preparer,preparer_identity,env,life,report)
+    unchanged=user.request('GET','/api/v1/system/auth/context',(200,)).payload
+    require(permissions(unchanged)==permissions(user_identity),'business_permissions_changed_during_preparation')
     life.phase='synthetic_engine_registration'
     descriptor={'name':life.run_id+'-source','engine_type':'postgresql','engine_origin':'general',
         'description':'Disposable local constant query source','connection_info':{

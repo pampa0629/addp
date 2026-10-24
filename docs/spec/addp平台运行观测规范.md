@@ -444,11 +444,11 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 2026-10-23 用户确认新增 `make test-monitor-traces-local` 人工入口，仅执行本机一次性隔离技术验收，不登记或运行 Hosted／schedule，也不冒充正式专用 Runner T4。入口使用当前已提交源码的仓库外私有副本、产品构建与正式 Compose 服务，动态回环端口、独占平台 PostgreSQL 的 `addp_online`、独立 Redis／MinIO／Alloy／Tempo／Loki／凭据；禁止连接共享 addp-postgres、复用个人会话或接管开发服务。System-owned `execution-trace-local` 身份夹具只在该本地标记、独占数据库及私有目录准入后创建当次身份；不得复用 Hosted 或 SGM 标记放宽验证。
 
-当次独立 Tenant 初始管理员仅经公开密码登录准备合成 Engine；不作执行或平台读取身份。普通 Tenant User 通过正式密码登录、AuthContext 与原执行授权提交 Orchestrator → Develop bounded query；Platform 系统管理员通过真实密码／TOTP／AuthContext 查询 Trace 和日志，安全管理员为无权限负例。只使用临时最小权限与合成只读查询，单并发一组成功和一组受控失败；正式 API 创建定义、核对父子 execution 和终态。通过 System 日志接口按 execution UUID 找到真实检查点，再以精确 Trace ID 查询 Monitor、核对 Link，并回到同一实例的精确 trace/span 日志；不得直读 execution 私有列、注入日志或手工返回 Trace 引用充当闭环。
+当次独立 Tenant 初始管理员经公开密码登录、真实TOTP登记／验证及正式角色分配准备合成 Engine；不作执行或平台读取身份。普通 Tenant User 通过正式密码登录、AuthContext 与原执行授权提交 Orchestrator → Develop bounded query；Platform 系统管理员通过真实密码／TOTP／AuthContext 查询 Trace 和日志，安全管理员为无权限负例。只使用临时最小权限与合成只读查询，单并发一组成功和一组受控失败；正式 API 创建定义、核对父子 execution 和终态。通过 System 日志接口按 execution UUID 找到真实检查点，再以精确 Trace ID 查询 Monitor、核对 Link，并回到同一实例的精确 trace/span 日志；不得直读 execution 私有列、注入日志或手工返回 Trace 引用充当闭环。
 
-准备身份的Engine创建／测试能力须由当次IAM临时角色显式授予既有`system.engine.create`、`system.engine.execute`，不能从租户管理员角色推定。正式AuthContext核验准备能力；普通执行用户仍精确限定原11项权限。失败诊断仅记录已声明的断言码或HTTP状态／稳定错误码，不保存传输错误正文、连接配置或凭据。
+准备身份不得通过自定义角色获取不可租户定制的Engine权限。2026-10-24用户确认仅在当次隔离Tenant内，准备User通过真实密码登录、当前密码确认的TOTP登记与验证码验证取得AAL2及有效step-up，再经正式IAM API给自身分配既有`tenant.infrastructure_administrator`。该内置角色当前11项权限包括健康、回收、引擎读／创／改／删／测试、目录及栅格策略；不得修改产品权限目录、直接写授权表或伪造认证事实。普通执行User仍精确限定原11项业务权限，不持有该准备角色。
 
-2026-10-24本地第七窗口发现上述准备授权方案与IAM目录冲突：这两项Permission均为`tenant_customizable=false`，不得通过租户自定义角色授予。原夹具的自定义准备角色路径不能视为有效修复；在确认新的准备身份权限边界前暂停依赖此方案的验收，不修改Permission目录或绕过IAM裁决。待讨论方案为仅对当次准备User，经真实TOTP登记／验证及正式角色分配赋予既有`tenant.infrastructure_administrator`；该角色当前11项权限还包含引擎改／删、目录、健康、回收与栅格策略，超出此前仅两项权限的范围，尚未授权或实施。普通执行User的11项权限不变；不得伪造AAL2或增强认证时间。
+夹具只创建初始Tenant管理员和原业务用户，不提前授准备角色、不创建准备自定义角色，也不签发会话。入口从真实AuthContext读取准备Membership，核对既有角色的准确权限集合；MFA完成须替换HttpOnly Cookie与Access Token，并验证旧令牌拒绝。自分配前使用真实AAL2及未过期step-up，分配后沿正式Refresh与AuthContext重读同一User／Tenant／Membership和准确角色／权限；完成准备后再次确认普通执行User权限未变。失败诊断仅保留固定操作码／HTTP状态／稳定错误码，不保存密码、TOTP Secret、验证码、Cookie或响应正文。第七窗口的自定义准备角色方案已被本唯一主路径取代，原失败证据仍保留。
 
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。
 
