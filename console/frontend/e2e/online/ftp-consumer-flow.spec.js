@@ -35,13 +35,14 @@ async function generateModel(page, expectedIdentity, model) {
       generationRequests++
     }
   }
-  const observeContent = async response => {
+  // Keep response events synchronous: cancelled native requests can outlive
+  // a switch to the generated GLB. Await only the selected proof inside the test.
+  const observeContent = response => {
     const sourceURL = new URL(response.url())
-    if (/^\/api\/v1\/manager\/model_3d_glb\/[1-9]\d*\/content$/.test(sourceURL.pathname) && await response.finished() === null) pageContents.push(response)
+    if (/^\/api\/v1\/manager\/model_3d_glb\/[1-9]\d*\/content$/.test(sourceURL.pathname)) pageContents.push(response)
     if (model.format === 'stl' && ((sourceURL.pathname === '/api/v1/manager/storage-stream' &&
       sourceURL.searchParams.get('locator') === model.locator && sourceURL.searchParams.get('storage_ref') === model.full_name) ||
-      sourceURL.pathname === `/api/v1/manager/storage-assets/${sourceEngine}/items/${model.item_id}/${model.full_name}`) &&
-      await response.finished() === null) sourceContents.push(response)
+      sourceURL.pathname === `/api/v1/manager/storage-assets/${sourceEngine}/items/${model.item_id}/${model.full_name}`)) sourceContents.push(response)
   }
   page.on('request', observe)
   page.on('response', observeContent)
@@ -51,6 +52,7 @@ async function generateModel(page, expectedIdentity, model) {
     if (model.format === 'stl') {
       await expect.poll(() => sourceContents.length, { timeout: 60_000 }).toBeGreaterThan(0)
       const native = sourceContents[0]
+      expect(await native.finished()).toBeNull()
       expect(native.status()).toBe(200)
       expect(new URL(native.url()).origin).toBe(new URL(native.request().frame().url()).origin)
       expect(new URL(native.url()).searchParams.has('ticket')).toBe(false)
@@ -109,6 +111,7 @@ async function generateModel(page, expectedIdentity, model) {
     expect(binary.subarray(0, 4).toString()).toBe('glTF')
     const checksum = createHash('sha256').update(binary).digest('hex')
     const verifyPageContent = async loaded => {
+      expect(await loaded.finished()).toBeNull()
       expect(new URL(loaded.url()).pathname).toBe(contentPath)
       expect(new URL(loaded.url()).origin).toBe(new URL(loaded.request().frame().url()).origin)
       expect(new URL(loaded.url()).search.length).toBe(0)

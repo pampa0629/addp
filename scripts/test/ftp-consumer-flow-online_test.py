@@ -1448,6 +1448,37 @@ class FTPConsumerTest(unittest.TestCase):
         with self.assertRaises(M.SuiteError):
             M.validate_withdrawal_browser_report(actual, expected)
 
+    def test_response_observer_does_not_wait_on_cancelled_page_requests(self):
+        # Execute the actual local listener in isolation. A stale native response
+        # can remain unfinished when the page switches to the generated GLB.
+        # Collecting headers must not create an unowned asynchronous task.
+        source = (Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/ftp-consumer-flow.spec.js').read_text()
+        observer = source.split('  const observeContent = ', 1)[1].split("\n  page.on('request'", 1)[0].strip()
+        code = r"""
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { EventEmitter } from 'node:events';
+const model = {format:'stl', locator:'addp://engine/9/path/models/part.stl?type=file&item_id=1', full_name:'models/part.stl', item_id:1};
+const pageContents = [], sourceContents = [];
+const listener = vm.runInNewContext('(' + process.argv[1] + ')', {URL, model, sourceEngine:'9', pageContents, sourceContents});
+let completionReads = 0;
+const response = url => ({url:()=>url, finished:()=>{completionReads++;return new Promise(()=>{});}});
+const native = response('http://localhost/api/v1/manager/storage-stream?' + new URLSearchParams({locator:model.locator, storage_ref:model.full_name}));
+assert.equal(listener(native),undefined,'response listener must finish synchronously');
+assert.equal(sourceContents[0],native);
+const glb = response('http://localhost/api/v1/manager/model_3d_glb/8/content');
+assert.equal(listener(glb),undefined);
+assert.equal(pageContents[0],glb);
+const emitter = new EventEmitter();
+emitter.on('response',listener);
+emitter.emit('response',response('http://localhost/api/v1/manager/storage-assets/9/items/1/models/part.stl'));
+emitter.off('response',listener);
+assert.equal(sourceContents.length,2);
+assert.equal(completionReads,0,'collection must not wait on a request cancelled by the page');
+"""
+        result = subprocess.run(['node','--input-type=module','-e',code,observer],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
