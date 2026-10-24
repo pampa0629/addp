@@ -1,6 +1,6 @@
 # tile_services 表说明
 
-[返回数据库架构](../数据库架构.md)
+[返回数据库架构](../数据库架构.md) · [迁移入口与历史 SQL](../migrations/README.md#历史-sql-与数据库约束)
 
 `service.tile_services` 对应 `TileService`。它以一组[瓦片图层](tile_service_layers表.md)发布二维瓦片；查询要素的输出和筛选契约归[查询服务](query_services表.md)。
 

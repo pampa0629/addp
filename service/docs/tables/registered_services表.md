@@ -1,6 +1,6 @@
 # registered_services 表说明
 
-[返回数据库架构](../数据库架构.md)
+[返回数据库架构](../数据库架构.md) · [迁移入口与历史 SQL](../migrations/README.md#历史-sql-与数据库约束)
 
 `service.registered_services` 对应 `RegisteredService`。它登记第三方端点，与[注册服务图层](registered_service_layers表.md)是一对多关系，不是 ADDP 模块注册表或 System APIConsumer。
 

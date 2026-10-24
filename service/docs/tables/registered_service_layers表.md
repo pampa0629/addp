@@ -1,6 +1,6 @@
 # registered_service_layers 表说明
 
-[返回数据库架构](../数据库架构.md)
+[返回数据库架构](../数据库架构.md) · [迁移入口与历史 SQL](../migrations/README.md#历史-sql-与数据库约束)
 
 `service.registered_service_layers` 对应 `RegisteredServiceLayer`。它保存上游服务能力解析结果，不保存源表连接、SQL 或受管瓦片生成任务。父服务见[registered_services](registered_services表.md)。
 

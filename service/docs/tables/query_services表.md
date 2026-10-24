@@ -1,6 +1,6 @@
 # query_services 表说明
 
-[返回数据库架构](../数据库架构.md)
+[返回数据库架构](../数据库架构.md) · [迁移入口与历史 SQL](../migrations/README.md#历史-sql-与数据库约束)
 
 `service.query_services` 对应 `QueryService`。它保存可发布的查询来源及消费契约，不包含一组可独立增删的要素图层。查询服务与[瓦片服务](tile_services表.md)分别维护自己的定义。
 

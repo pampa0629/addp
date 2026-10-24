@@ -1,6 +1,6 @@
 # tile_service_layers 表说明
 
-[返回数据库架构](../数据库架构.md)
+[返回数据库架构](../数据库架构.md) · [迁移入口与历史 SQL](../migrations/README.md#历史-sql-与数据库约束)
 
 `service.tile_service_layers` 对应 `TileServiceLayer`。每行属于一个 TileService。它不把要素查询、样式模板或 Meta 数据项自动同步规则作为独立列保存。
 
