@@ -35,11 +35,11 @@
 
 ## 索引与约束
 
-模型声明的索引：`idx_registered_services_metadata_gin`、`idx_registered_services_status`、`idx_registered_services_tenant`、`idx_registered_services_type`、`unique_registered_service_name`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
+模型声明的索引：`idx_registered_services_metadata_gin`、`idx_registered_services_status`、`idx_registered_services_tenant`、`idx_registered_services_type`、`unique_registered_service_name`。验证边界见[索引与读取](../数据库架构.md#索引与读取)。
 
 `Layers` 声明 `foreignKey:ServiceID;constraint:OnDelete:CASCADE`；图层通过父服务归属 Tenant。模型没有 `DeletedAt`，Repository 物理删除服务，不提供软删除恢复流程。删除注册配置不删除第三方服务中的原始数据。
 
-名称的应用查重按 `tenant_id + service_name`，模型唯一索引只标在 `service_name`；历史 SQL 的复合唯一约束与当前模型声明存在差异，实际约束范围见[数据库待核对事项](../数据库架构.md#待核对事项)。
+服务名应用查重、当前模型与历史 SQL 的唯一范围差异，统一见[数据库待核对事项](../数据库架构.md#待核对事项)。
 
 ## 类型、元数据与上游认证
 

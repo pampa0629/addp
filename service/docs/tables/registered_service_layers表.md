@@ -25,9 +25,9 @@
 
 ## 索引与约束
 
-模型声明的索引：`idx_registered_layers_enabled`、`idx_registered_layers_metadata_gin`、`idx_registered_layers_service`、`unique_service_layer`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
+模型声明的索引：`idx_registered_layers_enabled`、`idx_registered_layers_metadata_gin`、`idx_registered_layers_service`、`unique_service_layer`。验证边界见[索引与读取](../数据库架构.md#索引与读取)。
 
-`service_id + layer_name` 由当前模型声明复合唯一索引。父服务的 `Layers` 关联声明 `OnDelete:CASCADE`；图层没有独立 Tenant 字段，管理读取先验证父服务的当前 Tenant。删除父注册配置会按该约束清理图层，不影响上游真实数据。
+`service_id + layer_name` 由当前模型声明复合唯一索引；父服务关联及删除边界见[注册服务约束](registered_services表.md#索引与约束)。图层没有独立 Tenant 字段，管理读取先验证父服务的当前 Tenant。
 
 ## 几何、范围与能力
 

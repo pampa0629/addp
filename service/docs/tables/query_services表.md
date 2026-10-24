@@ -38,7 +38,9 @@
 
 ## 索引与约束
 
-模型声明的索引：`idx_query_services_config_type`、`idx_query_services_data_config_gin`、`idx_query_services_engine`、`idx_query_services_protocols_gin`、`idx_query_services_runtime_engine`、`idx_query_services_status`、`idx_query_services_tenant`、`unique_query_service_name`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
+模型声明的索引：`idx_query_services_config_type`、`idx_query_services_data_config_gin`、`idx_query_services_engine`、`idx_query_services_protocols_gin`、`idx_query_services_runtime_engine`、`idx_query_services_status`、`idx_query_services_tenant`、`unique_query_service_name`。验证边界见[索引与读取](../数据库架构.md#索引与读取)。
+
+名称唯一索引当前声明在 `service_name`；应用查重的 Tenant 范围与数据库约束不能混为一谈。
 
 ## 来源与发布快照
 
@@ -49,7 +51,7 @@
 - `data_config.protection_choices` 保存原生单表字段的角色脱敏选项身份与修订，不保存角色事实、算法参数或凭据。省略或空数组均采用默认保护；显式 null、未知字段及重复选择拒绝。保存与调用按当前登录用户复核，已有服务更新权限的用户可仅提交版本与 `status=inactive` 直接停用，保留原选择，不依赖角色方式仍有效；重新启用、携带其他配置的更新及实际调用仍严格核验，不自动清除选择或恢复默认。移除选择须显式保存；选择参与消费版本，空选择不改变原默认契约。其他来源尚不接受非空角色选择。
 - 几何字段由冻结空间契约选定，不固定叫 `geom`；混合几何类型与未知 CRS 继续按已识别事实表达，不能为发布方便猜测坐标系。
 
-`keywords` 保留服务发现所需的关键词。显示标题与描述可以帮助识别服务，但不替代稳定 `id` 或程序标识 `service_name`。名称唯一索引当前声明在 `service_name`；应用查重的 Tenant 范围与数据库约束不能混为一谈。
+`keywords` 保留服务发现所需的关键词。显示标题与描述可以帮助识别服务，但不替代稳定 `id` 或程序标识 `service_name`。
 
 ## 查询、协议与授权
 

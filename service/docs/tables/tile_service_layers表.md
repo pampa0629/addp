@@ -24,11 +24,11 @@
 
 ## 索引与约束
 
-模型声明的索引：`idx_tile_service_layers_service`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
+模型声明的索引：`idx_tile_service_layers_service`。验证边界见[索引与读取](../数据库架构.md#索引与读取)。
 
 父服务通过 `TileService.Layers` 关联图层。[历史建表 SQL](../../backend/migrations/20260207_create_tile_services.sql)声明 `ON DELETE CASCADE`，当前 GORM 关联只声明 `foreignKey:ServiceID`，Repository 删除父服务也没有显式清理图层；实际数据库是否已安装级联约束必须单独核对，不能据旧文档承诺级联已验证。
 
-图层名称由应用按 `service_id + layer_name` 查重，当前模型没有同范围数据库唯一索引声明。并发唯一性不能只用应用预查证明。
+图层名称由应用按 `service_id + layer_name` 查重；上述历史 SQL 声明 `unique_tile_layer_name` 复合唯一约束，当前模型没有同范围数据库唯一索引声明。并发唯一性不能只用应用预查证明。
 
 ## 来源配置
 

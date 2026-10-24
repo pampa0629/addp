@@ -28,7 +28,9 @@
 
 ## 索引与约束
 
-模型声明的索引：`idx_tile_services_tenant`、`unique_tile_service_name`。具体数据库约束与索引创建结果以当前迁移和集成验证为准。
+模型声明的索引：`idx_tile_services_tenant`、`unique_tile_service_name`。验证边界见[索引与读取](../数据库架构.md#索引与读取)。
+
+服务名的应用查重按 Tenant 执行，当前模型唯一索引声明在 `service_name`；[历史建表 SQL](../../backend/migrations/20260207_create_tile_services.sql)按 `tenant_id + service_name` 声明复合唯一约束，实际跨 Tenant 同名范围仍需核对。
 
 ## 服务、图层与协议
 
@@ -38,7 +40,7 @@
 - `protocols` 当前构建默认启用 XYZ，默认关闭 OGC Tiles；可配置项按真实协议处理。存在 `tms` 等配置键不证明对应路由已发布；WMS 样式、要素过滤及 `max_features` 不属于本表字段。
 - 动态瓦片、静态业务 PMTiles 与 Manager infra 快显缓存是不同结果边界。静态发布不引用 Manager 的 `storage_ref`，也不把三维瓦片并入二维服务。
 
-`keywords` 使用 TEXT[]；它与标题、描述一起帮助发现服务，不构成访问许可。服务名的应用查重按 Tenant 执行，而模型唯一索引声明在 `service_name`，实际跨 Tenant 同名约束仍需核对。
+`keywords` 使用 TEXT[]；它与标题、描述一起帮助发现服务，不构成访问许可。
 
 ## 管理、访问与删除
 
@@ -57,7 +59,7 @@
 
 表中管理 API 与协议根路径是不同入口；管理 API 可达不证明瓦片协议已由根 Nginx 转发。直连、统一公开入口及当前转发缺口见[入口专题](../architecture/瓦片发布与缓存.md#元数据链接与公开入口)，分别按[公开入口验证](../testing/瓦片协议.md#元数据链接与公开入口核对)留证。
 
-本模型没有 `DeletedAt`；Repository 使用物理删除，不提供恢复接口。删除仅面向 Service 定义，不删除业务源表或源 PMTiles 文件。图层删除行为及级联约束的声明差异见[图层约束](tile_service_layers表.md#索引与约束)，不能把历史 SQL 自动当作当前库的约束证据。
+本模型没有 `DeletedAt`；Repository 使用物理删除，不提供恢复接口。删除仅面向 Service 定义，不删除业务源表或源 PMTiles 文件。图层删除行为及级联声明差异见[图层约束](tile_service_layers表.md#索引与约束)。
 
 ## 实现依据
 
