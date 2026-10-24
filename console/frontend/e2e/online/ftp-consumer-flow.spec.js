@@ -18,9 +18,12 @@ const managerPageResponse = response => response.request().method() === 'GET' &&
 
 async function generateModel(page, expectedIdentity, model) {
   const route = `/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`
+  const sourceEngine = new URL(model.locator).pathname.split('/')[1]
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   let generationRequests = 0
   const pageContents = []
+  const sourceContents = []
+  let basicPreview
   let api
   const observe = requestEvent => {
     if (requestEvent.method() !== 'POST') return
@@ -33,13 +36,43 @@ async function generateModel(page, expectedIdentity, model) {
     }
   }
   const observeContent = async response => {
-    if (/^\/api\/v1\/manager\/model_3d_glb\/[1-9]\d*\/content$/.test(new URL(response.url()).pathname) && await response.finished() === null) pageContents.push(response)
+    const sourceURL = new URL(response.url())
+    if (/^\/api\/v1\/manager\/model_3d_glb\/[1-9]\d*\/content$/.test(sourceURL.pathname) && await response.finished() === null) pageContents.push(response)
+    if (model.format === 'stl' && ((sourceURL.pathname === '/api/v1/manager/storage-stream' &&
+      sourceURL.searchParams.get('locator') === model.locator && sourceURL.searchParams.get('storage_ref') === model.full_name) ||
+      sourceURL.pathname === `/api/v1/manager/storage-assets/${sourceEngine}/items/${model.item_id}/${model.full_name}`) &&
+      await response.finished() === null) sourceContents.push(response)
   }
   page.on('request', observe)
   page.on('response', observeContent)
   try {
     api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,
       () => page.goto(route), managerPageResponse)
+    if (model.format === 'stl') {
+      await expect.poll(() => sourceContents.length, { timeout: 60_000 }).toBeGreaterThan(0)
+      const native = sourceContents[0]
+      expect(native.status()).toBe(200)
+      expect(new URL(native.url()).origin).toBe(new URL(native.request().frame().url()).origin)
+      expect(new URL(native.url()).searchParams.has('ticket')).toBe(false)
+      const headers = await native.request().allHeaders()
+      expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+      expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+      const bytes = await native.body()
+      expect(bytes.length).toBe(model.size)
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(model.sha256)
+      const basic = frame.locator('.model-preview')
+      await expect(basic.locator('canvas')).toBeVisible()
+      await expect(basic.locator('.three-status')).toHaveCount(0)
+      await expect.poll(async () => {
+        const pixels = await modelPixels(page, basic.locator('canvas'))
+        return pixels.neutralSolid / pixels.total
+      }).toBeGreaterThan(0.01)
+      expect(generationRequests).toBe(0)
+      await basic.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-stl-basic.png') })
+      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-stl-basic-source.stl'), bytes)
+      basicPreview = { status: 200, size: bytes.length, sha256: model.sha256, rendered: true,
+        user_bearer: true, cookie_sent: false, ticket_sent: false, generation_requests: 0 }
+    }
     const generated = page.waitForResponse(response => {
       if (new URL(response.url()).pathname !== '/api/v1/manager/quick-view/actions' || response.request().method() !== 'POST') return false
       const body = response.request().postDataJSON()
@@ -164,7 +197,8 @@ async function generateModel(page, expectedIdentity, model) {
     return { format: model.format, item_id: model.item_id, task_id: started.task_id,
       execution_id: started.execution_id, result_id: result.result_id,
       size: actualPageBytes.length, sha256: checksum,
-      source_download: sourceDownload, rendered: true, reopened: true, cached_without_execution: true }
+      source_download: sourceDownload, rendered: true, reopened: true, cached_without_execution: true,
+      ...(basicPreview ? { basic_preview: basicPreview } : {}) }
   } finally {
     page.off('request', observe)
     page.off('response', observeContent)
@@ -309,7 +343,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       downloads.push(Object.fromEntries(['format', 'item_id', 'size', 'sha256'].map(key => [key, sample[key]])))
     }
     const models = []
-    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj'])
+    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
