@@ -216,7 +216,7 @@ func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing
 	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now) }); err != nil {
 		t.Fatal(err)
 	}
-	list, err := f.n.Incidents(ctx, 1, 20, "resource", "active", subject, "")
+	list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, Category: "resource", Status: "active", SubjectID: subject, Severity: ""})
 	if err != nil || list.Total != 1 {
 		t.Fatal("resource list", list, err)
 	}
@@ -256,7 +256,7 @@ func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing
 	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now.Add(time.Minute)) }); err != nil {
 		t.Fatal(err)
 	}
-	list, err = f.n.Incidents(ctx, 1, 20, "resource", "resolved", subject, "")
+	list, err = f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, Category: "resource", Status: "resolved", SubjectID: subject, Severity: ""})
 	if err != nil || list.Total != 1 {
 		t.Fatal("recovery", err)
 	}
@@ -304,19 +304,84 @@ func TestIntegrationPostgresPlatformAlertSeverityBeforePagination(t *testing.T) 
 		{"resource", "active", "", 4, []uint{rows[3].ID, rows[2].ID, rows[1].ID, rows[0].ID}},
 	} {
 		for page, id := range tc.ids {
-			list, err := f.n.Incidents(ctx, page+1, 1, tc.category, tc.status, subject, tc.severity)
+			list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: page + 1, PageSize: 1, Category: tc.category, Status: tc.status, SubjectID: subject, Severity: tc.severity})
 			if err != nil || list.Total != tc.total || list.TotalPages != int(tc.total) || len(list.Data) != 1 || list.Data[0].ID != id {
 				t.Fatalf("filter=%+v page=%d result=%+v err=%v", tc, page+1, list, err)
 			}
 		}
 	}
-	empty, err := f.n.Incidents(ctx, 1, 20, "process_resource", "active", subject, "critical")
+	empty, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, Category: "process_resource", Status: "active", SubjectID: subject, Severity: "critical"})
 	if err != nil || empty.Total != 0 || len(empty.Data) != 0 {
 		t.Fatalf("empty intersection=%+v err=%v", empty, err)
 	}
 	for _, severity := range []string{"info", "Critical", "warning ", "warning' OR 1=1--"} {
-		if _, err := f.n.Incidents(ctx, 1, 20, "", "", subject, severity); !errors.Is(err, ErrLogInvalid) {
+		if _, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, Category: "", Status: "", SubjectID: subject, Severity: severity}); !errors.Is(err, ErrLogInvalid) {
 			t.Fatalf("unsupported severity accepted: %q err=%v", severity, err)
+		}
+	}
+}
+
+func TestIntegrationPostgresPlatformAlertOpeningTimeRange(t *testing.T) {
+	f := newLogRetryFixture(t, "webhook")
+	subject := "opening-time-" + uuid.NewString()
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(10 * time.Second)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	opened := []time.Time{from.Add(-time.Microsecond), from, from.Add(time.Microsecond), from.Add(5 * time.Second), to, to.Add(time.Microsecond), from.Add(3 * time.Second), from.Add(4 * time.Second)}
+	rows := make([]models.PlatformAlertIncident, len(opened))
+	for i, at := range opened {
+		rows[i] = models.PlatformAlertIncident{Category: "resource", SubjectKind: "host_node", SubjectID: subject, Signal: fmt.Sprintf("time-%d", i), Severity: "warning", Status: "open", OpenedAt: at, LastObservedAt: now}
+	}
+	rows[2].Status = "acknowledged"
+	rows[3].Status = "resolved"
+	rows[3].ResolvedAt = &now
+	rows[6].Severity = "critical"
+	rows[7].Category = "process_resource"
+	rows[7].SubjectKind = "module_instance"
+	t.Cleanup(func() {
+		if err := f.db.Where("subject_id=?", subject).Delete(&models.PlatformAlertIncident{}).Error; err != nil {
+			t.Error(err)
+		}
+		var count int64
+		if err := f.db.Model(&models.PlatformAlertIncident{}).Where("subject_id=?", subject).Count(&count).Error; err != nil || count != 0 {
+			t.Errorf("time fixture residue=%d err=%v", count, err)
+		}
+	})
+	if err := f.db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	offsetFrom := from.In(time.FixedZone("east", 8*60*60))
+	cases := []struct {
+		name, category, status string
+		from, to               *time.Time
+		indices                []int
+	}{
+		{"half-open boundaries", "resource", "active", &from, &to, []int{2, 1}},
+		{"same instant with offset", "resource", "active", &offsetFrom, &to, []int{2, 1}},
+		{"resolved by opening, not recovery", "resource", "resolved", &from, &to, []int{3}},
+		{"no category", "", "active", &from, &to, []int{7, 2, 1}},
+		{"lower only", "resource", "active", &from, nil, []int{5, 4, 2, 1}},
+		{"upper only", "resource", "active", nil, &to, []int{2, 1, 0}},
+		{"all time", "resource", "active", nil, nil, []int{5, 4, 2, 1, 0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for page, index := range tc.indices {
+				list, err := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: page + 1, PageSize: 1, Category: tc.category, Status: tc.status, SubjectID: subject, Severity: "warning", TimeFrom: tc.from, TimeTo: tc.to})
+				if err != nil || list.Total != int64(len(tc.indices)) || list.TotalPages != len(tc.indices) || len(list.Data) != 1 || list.Data[0].ID != rows[index].ID {
+					t.Fatalf("page=%d list=%+v err=%v", page+1, list, err)
+				}
+			}
+		})
+	}
+	zero := time.Time{}
+	empty, err := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: subject, TimeTo: &zero})
+	if err != nil || empty.Total != 0 || len(empty.Data) != 0 {
+		t.Fatalf("explicit year-one upper bound broadened: %+v err=%v", empty, err)
+	}
+	for _, upper := range []time.Time{from, from.Add(-time.Nanosecond)} {
+		if _, err := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, TimeFrom: &from, TimeTo: &upper}); !errors.Is(err, ErrLogInvalid) {
+			t.Fatal("invalid interval accepted", err)
 		}
 	}
 }

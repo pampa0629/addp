@@ -24,6 +24,15 @@
         </el-select>
         <el-input :model-value="state.subject_id" @change="value => change({ subject_id: value, page: 1 })" :placeholder="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
       </div>
+      <div class="alert-time-filter" data-testid="alert-time-filter" role="group" :aria-label="t('monitor.platformAlerts.openedAt')">
+        <span>{{ t('monitor.platformAlerts.openedAt') }}</span>
+        <el-date-picker v-model="draftFrom" type="datetime" :placeholder="t('common.runtimeInstanceTime.from')" />
+        <el-date-picker v-model="draftTo" type="datetime" :placeholder="t('common.runtimeInstanceTime.to')" />
+        <el-button :disabled="!timeDraft.valid" @click="applyTimeFilter">{{ t('common.search') }}</el-button>
+        <el-button @click="clearTimeFilter">{{ t('monitor.platformAlerts.clearTime') }}</el-button>
+        <p class="alert-time-hint">{{ t('monitor.platformAlerts.timeHint') }}</p>
+        <p v-if="!timeDraft.valid" class="alert-time-hint" role="status">{{ t('monitor.platformAlerts.invalidTime') }}</p>
+      </div>
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'process_resource' ? processSignal(row) : row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
@@ -154,7 +163,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
-import { platformAlertState, platformAlertQuery, resourceAlertHostID, resourceAlertEvidence, resourceAlertTrendRoute } from '../utils/platformAlerts'
+import { platformAlertState, platformAlertQuery, platformAlertTimeDraft, resourceAlertHostID, resourceAlertEvidence, resourceAlertTrendRoute } from '../utils/platformAlerts'
 import { loadHostReferences } from '../utils/hostReferences'
 import { nodeResourcesAPI } from '../api/nodeResources'
 import { formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
@@ -165,6 +174,13 @@ import { processAlertEvidence, processRuleMetrics, processRuleScale } from '../u
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
+const draftFrom = ref(null), draftTo = ref(null)
+const timeDraft = computed(() => platformAlertTimeDraft(draftFrom.value, draftTo.value))
+function applyTimeFilter() {
+  if (timeDraft.value.valid) change({ time_from: timeDraft.value.time_from, time_to: timeDraft.value.time_to, page: 1 })
+}
+function clearTimeFilter() { draftFrom.value = null; draftTo.value = null; change({ time_from: '', time_to: '', page: 1 }) }
+
 const platformUser = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation)
 const canRead = computed(() => platformUser.value && auth.hasPermission('monitor.platform_alert.read'))
 const canUpdate = computed(() => canRead.value && auth.hasPermission('monitor.platform_alert.update'))
@@ -235,8 +251,8 @@ async function load() {
       check(lease); if (own !== request) return
       destinations.value = targets; deliveries.value = attempts
     } else {
-      const { page, category, status, subject_id, severity } = state.value
-      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}) }, controller.signal)
+      const { page, category, status, subject_id, severity, time_from, time_to } = state.value
+      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}), ...(time_from ? { time_from } : {}), ...(time_to ? { time_to } : {}) }, controller.signal)
       check(lease); if (own !== request) return
       incidents.value = result.data; total.value = result.total
       if (canReadHosts.value) {
@@ -313,6 +329,10 @@ async function deleteDestination(row) {
   } catch (value) { if (lease === epoch && ![abandoned, 'cancel', 'close'].includes(value)) ElMessage.error(errorText(value)) }
   finally { if (lease === epoch) busy.value = false }
 }
+watch(() => [state.value.time_from, state.value.time_to, ruleIdentity.value], () => {
+  draftFrom.value = state.value.time_from && state.value.time_from !== 'invalid' ? new Date(state.value.time_from) : null
+  draftTo.value = state.value.time_to && state.value.time_to !== 'invalid' ? new Date(state.value.time_to) : null
+}, { immediate: true })
 watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions)], () => {
   clear()
   const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'rules' && !canReadRules.value) || (state.value.tab === 'http-rules' && !canReadHTTPRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : canReadHTTPRules.value ? 'http-rules' : 'incidents' } : {}) })
@@ -326,6 +346,9 @@ watch(destinationOpen, value => { if (!value) secret.value = '' })
 .alert-subject { overflow-wrap: anywhere; }
 .platform-alerts { padding: 20px; color: var(--addp-text-primary); }
 .alert-toolbar { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.alert-time-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; }
+.alert-time-filter :deep(.el-date-editor) { max-width: 100%; }
+.alert-time-hint { flex-basis: 100%; margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
 .alert-toolbar .el-select { width: 180px; }
 .alert-toolbar .el-input { width: 280px; }
 .delivery-diagnostics { margin: 12px; }

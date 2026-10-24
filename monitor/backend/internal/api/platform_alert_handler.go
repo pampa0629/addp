@@ -50,6 +50,8 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
 // @Param severity query string false "级别（省略为全部） | Severity (omitted for all)" Enums(critical,warning)
+// @Param time_from query string false "发现时间下界，RFC3339，含 | Inclusive opening time lower bound, RFC3339"
+// @Param time_to query string false "发现时间上界，RFC3339，不含 | Exclusive opening time upper bound, RFC3339"
 // @Param subject_id query string false "主体 ID | Subject ID"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页条数 | Page size" default(20)
@@ -69,7 +71,7 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 	}
 	for key, values := range query {
 		switch key {
-		case "page", "page_size", "category", "status", "subject_id", "severity":
+		case "page", "page_size", "category", "status", "subject_id", "severity", "time_from", "time_to":
 		default:
 			platformAlertRespond(c, nil, service.ErrLogInvalid)
 			return
@@ -85,7 +87,22 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 		platformAlertRespond(c, nil, service.ErrLogInvalid)
 		return
 	}
-	result, err := h.service.Incidents(c.Request.Context(), page, size, c.Query("category"), c.Query("status"), c.Query("subject_id"), query.Get("severity"))
+	filter := service.PlatformAlertFilter{Page: page, PageSize: size, Category: query.Get("category"), Status: query.Get("status"), SubjectID: query.Get("subject_id"), Severity: query.Get("severity")}
+	for _, bound := range []struct {
+		raw    string
+		target **time.Time
+	}{{query.Get("time_from"), &filter.TimeFrom}, {query.Get("time_to"), &filter.TimeTo}} {
+		if bound.raw == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, bound.raw)
+		if err != nil {
+			platformAlertRespond(c, nil, service.ErrLogInvalid)
+			return
+		}
+		*bound.target = &parsed
+	}
+	result, err := h.service.Incidents(c.Request.Context(), filter)
 	platformAlertRespond(c, result, err)
 }
 

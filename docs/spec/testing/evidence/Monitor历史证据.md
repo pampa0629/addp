@@ -1037,3 +1037,24 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 最初浏览器专项因测试使用错误中文标签、随后点击 Element Plus 内部输入被选中标签遮挡而失败；修订测试定位到既有可操作下拉框外层，3 项专项和最终整套 417 项均通过，原失败日志仍保留为 `/tmp/addp-monitor-severity-browser.log`、`/tmp/addp-monitor-severity-new-interactions.log`，不计通过。不改变共享组件或以强制点击绕过交互。
 
 本批 T3 使用受控 API 返回，不代表正式身份、个人 Safari 或 Hosted 验收；没有重启个人服务、修改 IAM／个人业务库、设置定时任务或主动跟踪 CI。CI／Hosted 结果继续等专门会话回传。
+
+
+## 平台告警发现时间范围查询（2026-10-24，本地）
+
+对应原表 Excel 第 51 行、B 列 50“告警信息管理”。沿已有 `opened_at` 发现时间和 System 时间边界口径新增 `time_from/time_to` RFC3339 查询：起始含、结束不含，支持单边界，空边界不限，双边界须开始早于结束；UTC 公元 1—9999 年。与类别／状态／主体／严重级别取交集，在计数和分页前完成，排序不变；不按恢复或最近观测时间改判。服务使用唯一 `PlatformAlertFilter`，删除原位置参数调用，不保留第二条查询路径。无新权限、迁移、依赖、配置或后台任务。
+
+页面复用 Element Plus 日期时间控件及共享时间规范化，本地时间输入、UTC 参数提交。查询才应用草稿并回首页；刷新不读取未提交草稿，清除时间保留其他筛选；单边界分页、重载／返回及 Console 同一 iframe／通知页恢复已提交时间。错误、撤权和迟到响应沿原清理链。非法／重复时间、非法年份、相等／反向区间拒绝，不删条件扩大查询。未增加预设时段、恢复时间查询、名称搜索、高等级置顶或根因分析。
+
+任务输入基线 `25c5aab9165f582556ead36f8d5f4bb75118dfb5`，20 项任务文件收据 `/tmp/addp-alert-time-inputs.json` SHA-256 `393c3e979cf80567a63372d642bb283c6b097ba5ee06bc6d344e6df7bc34e891`。验证后任务产品／测试输入未漂移；最后只修订规范中年份范围的文字。验证期间已核对 Common、Common Frontend、Monitor、Console、System Frontend、根 Makefile 和相关 runner 无额外 HEAD 变化；其他会话改动不纳入本批结论。
+
+| 标准入口 | 实际结果与范围 | 本机原始证据 |
+| --- | --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1` | 7 个 Go 测试包通过，仅计 Go T1；含时间参数及沿用权限守卫，合法单边界／时区／小数秒，非法日期／年份／无时区／相等／反向／重复参数拒绝 | `/tmp/addp-alert-time-go-final.log` |
+| `make test-monitor-postgres` | 36 项顶层 PostgreSQL T2 用例通过，无跳过；新时间用例含 7 项子场景，覆盖微秒边界、带偏移的同一时刻、已恢复告警按打开时间、单边界／不限、交集与多页计数、显式公元一年上界不误作不限及无效范围拒绝。当次独有主体清理核对零行；先经 Infra status 确认实际映射 25432，仅用 `addp_test` | `/tmp/addp-alert-time-postgres.log`，SHA-256 `a7d76fd7062b30d53184f06c8b6a56d232dcff5c9f3962e27d9a526e783e651c` |
+| `make test-monitor-frontend` | 116 项 T1、421 项隔离浏览器 T3 及构建通过；4 项新增时间交互纳入整套，含中英文／680px 窄屏、草稿刷新隔离、边界、单边界翻页、重载／返回／清除、错误与迟到响应 | `/tmp/addp-alert-time-monitor-frontend.log`，SHA-256 `2762557de9d29540fb2848432b4f5f7507f7f32631df31759083f587e50ae313` |
+| `make test-console-frontend` | 195 项 T1、219 项 T3 及构建通过；真实 Monitor 模块页在同一 iframe 内同步／重载时间与级别，通知页往返恢复参数 | `/tmp/addp-alert-time-console-frontend.log`，SHA-256 `85507dd3414396562339f1bba0a722ea143e05e90da844470ccf92d24baca482` |
+| `bash scripts/swagger/gen-swagger.sh monitor`；`bash scripts/swagger/check-route-coverage.sh monitor` | 生成成功、91 个公开路由方法覆盖一致，两个时间参数双语文档同步 | `/tmp/addp-alert-time-swagger.log`、`/tmp/addp-alert-time-swagger-coverage.log` |
+
+首次浏览器专项有两项因测试将共享中文占位“起始时间”误写为“开始时间”而失败；按实际共享译名修订后，四项专项及上述整套最终通过。原失败 `/tmp/addp-alert-time-browser.log` 保留，不计通过；后续专项 `/tmp/addp-alert-time-browser-green.log` 只作为中间证据，最终草稿／翻页增强以整套 421 项结果为准。
+
+现有 owner／路径自动发现、PostgreSQL `TestIntegrationPostgres` 与前端标准入口已实际命中新用例，不新增 Makefile／workflow。T3 使用受控 API，不代替正式身份、个人 Safari 或 Hosted；没有重启个人服务、修改个人业务库或 IAM，没有查询／重跑 CI／Hosted或设置定时任务，相关结果继续等专门会话回传。

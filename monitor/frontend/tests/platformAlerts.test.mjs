@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { platformAlertState, platformAlertQuery } from '../src/utils/platformAlerts.js'
+import { platformAlertState, platformAlertQuery, platformAlertTimeDraft } from '../src/utils/platformAlerts.js'
 test('platform alert state retains only bounded canonical management filters', () => {
  const query = { tab: 'notifications', category: 'resource', status: 'resolved', subject_id: 'host-id', page: '2', delivery_page: '3' }
  assert.deepEqual(platformAlertQuery(platformAlertState(query)), query)
@@ -90,4 +90,21 @@ test('incident severity survives routing and invalid conditions never broaden to
   assert.equal(platformAlertState({ severity }).severity, 'invalid')
   assert.equal(platformAlertQuery(platformAlertState({ severity })).severity, 'invalid')
  }
+})
+
+
+test('opening time routes use shared UTC normalization and preserve invalid filters for rejection', () => {
+ const query = { category: 'resource', severity: 'warning', time_from: '2026-10-01T08:00:00+08:00', time_to: '2026-10-02T00:00:00Z', page: '2' }
+ const canonical = { ...query, time_from: '2026-10-01T00:00:00.000Z', time_to: '2026-10-02T00:00:00.000Z' }
+ assert.deepEqual(platformAlertQuery(platformAlertState(query)), canonical)
+ assert.deepEqual(platformAlertQuery(platformAlertState({ time_to: query.time_to })), { time_to: canonical.time_to })
+ for (const value of ['not-a-time', ['2026-10-01T00:00:00Z'], '2026-02-30T00:00:00Z', '0000-01-01T00:00:00Z']) {
+  assert.equal(platformAlertQuery(platformAlertState({time_from:value})).time_from, 'invalid')
+ }
+ const reversed = platformAlertQuery(platformAlertState({ time_from: query.time_to, time_to: query.time_from }))
+ assert.ok(Date.parse(reversed.time_from) > Date.parse(reversed.time_to))
+ assert.deepEqual(platformAlertTimeDraft(null, null), { time_from:'', time_to:'', valid:true })
+ assert.equal(platformAlertTimeDraft(new Date(query.time_from),null).valid,true)
+ assert.equal(platformAlertTimeDraft(null,new Date(query.time_to)).valid,true)
+ for (const [a,b] of [[query.time_to,query.time_from],[query.time_to,query.time_to],[new Date(NaN),null],['bad',null]]) assert.equal(platformAlertTimeDraft(a,b).valid,false)
 })

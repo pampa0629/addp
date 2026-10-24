@@ -1896,6 +1896,18 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "发现时间下界，RFC3339，含 | Inclusive opening time lower bound, RFC3339",
+                        "name": "time_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "发现时间上界，RFC3339，不含 | Exclusive opening time upper bound, RFC3339",
+                        "name": "time_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "主体 ID | Subject ID",
                         "name": "subject_id",
                         "in": "query"

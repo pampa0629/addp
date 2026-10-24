@@ -23,12 +23,23 @@ type PlatformAlertList struct {
 	TotalPages int                            `json:"total_pages"`
 }
 
-func (s *PlatformAlertService) Incidents(ctx context.Context, page, size int, category, status, subject, severity string) (PlatformAlertList, error) {
-	result := PlatformAlertList{Data: []models.PlatformAlertIncident{}, Page: page, PageSize: size}
-	if page < 1 || page > 10000 || size < 1 || size > 100 || (category != "" && !validPlatformAlertCategory(category)) || (severity != "" && severity != "critical" && severity != "warning") || len(subject) > 100 || strings.ContainsAny(subject, "\r\n\x00") {
+type PlatformAlertFilter struct {
+	Page, PageSize                        int
+	Category, Status, SubjectID, Severity string
+	TimeFrom, TimeTo                      *time.Time
+}
+
+func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAlertFilter) (PlatformAlertList, error) {
+	result := PlatformAlertList{Data: []models.PlatformAlertIncident{}, Page: filter.Page, PageSize: filter.PageSize}
+	if filter.Page < 1 || filter.Page > 10000 || filter.PageSize < 1 || filter.PageSize > 100 || (filter.Category != "" && !validPlatformAlertCategory(filter.Category)) || (filter.Severity != "" && filter.Severity != "critical" && filter.Severity != "warning") || len(filter.SubjectID) > 100 || strings.ContainsAny(filter.SubjectID, "\r\n\x00") || (filter.TimeFrom != nil && filter.TimeTo != nil && !filter.TimeFrom.Before(*filter.TimeTo)) {
 		return result, ErrLogInvalid
 	}
-	switch status {
+	for _, bound := range []*time.Time{filter.TimeFrom, filter.TimeTo} {
+		if bound != nil && (bound.UTC().Year() < 1 || bound.UTC().Year() > 9999) {
+			return result, ErrLogInvalid
+		}
+	}
+	switch filter.Status {
 	case "", "active", "open", "acknowledged", "resolved":
 	default:
 		return result, ErrLogInvalid
@@ -37,27 +48,34 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, page, size int, ca
 		return result, ErrLogUnconfigured
 	}
 	q := s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{})
-	if category != "" {
-		q = q.Where("category=?", category)
+	if filter.Category != "" {
+		q = q.Where("category=?", filter.Category)
 	}
-	if severity != "" {
-		q = q.Where("severity=?", severity)
+	if filter.Severity != "" {
+		q = q.Where("severity=?", filter.Severity)
 	}
-	if subject != "" {
-		q = q.Where("subject_id=?", subject)
+	if filter.SubjectID != "" {
+		q = q.Where("subject_id=?", filter.SubjectID)
 	}
-	if status == "active" {
+	if filter.Status == "active" {
 		q = q.Where("status IN ?", []string{"open", "acknowledged"})
-	} else if status != "" {
-		q = q.Where("status=?", status)
+	} else if filter.Status != "" {
+		q = q.Where("status=?", filter.Status)
+	}
+	if filter.TimeFrom != nil {
+		q = q.Where("opened_at >= ?", *filter.TimeFrom)
+	}
+	if filter.TimeTo != nil {
+		q = q.Where("opened_at < ?", *filter.TimeTo)
 	}
 	if err := q.Count(&result.Total).Error; err != nil {
 		return result, err
 	}
-	result.TotalPages = int((result.Total + int64(size) - 1) / int64(size))
-	err := q.Order("opened_at DESC,id DESC").Offset((page - 1) * size).Limit(size).Find(&result.Data).Error
+	result.TotalPages = int((result.Total + int64(filter.PageSize) - 1) / int64(filter.PageSize))
+	err := q.Order("opened_at DESC,id DESC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&result.Data).Error
 	return result, err
 }
+
 func (s *PlatformAlertService) ManageIncident(ctx context.Context, id uint, version uint64, action string, until *time.Time, principal int64, now time.Time) (models.PlatformAlertIncident, error) {
 	var i models.PlatformAlertIncident
 	if version == 0 || principal <= 0 || (action != "acknowledge" && action != "suppress") || (action == "suppress" && (until == nil || !until.After(now) || until.After(now.Add(24*time.Hour)))) {

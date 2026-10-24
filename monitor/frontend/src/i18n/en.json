@@ -1038,6 +1038,9 @@
         "yes": "Yes",
         "no": "No"
       },
+      "clearTime": "Clear time",
+      "timeHint": "Filter by first opening time: start included, end excluded. Leave a bound empty for no limit.",
+      "invalidTime": "Enter valid times. When both are set, the start must precede the end.",
       "allSeverities": "All severities",
       "severities": {
         "critical": "Critical",

@@ -1038,6 +1038,9 @@
         "yes": "是",
         "no": "否"
       },
+      "clearTime": "清除时间",
+      "timeHint": "按首次发现时间查询：起始时间包含，结束时间不包含；留空表示不限。",
+      "invalidTime": "请输入有效时间；同时填写时，起始时间须早于结束时间。",
       "allSeverities": "全部级别",
       "severities": {
         "critical": "严重",

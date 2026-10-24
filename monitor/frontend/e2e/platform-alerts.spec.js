@@ -357,3 +357,95 @@ test('invalid severity is rejected without broadening and failed refresh clears 
  await expect(page.getByText('观测不可用', { exact: true })).toBeVisible()
  expect(state.requests.filter(r => r.path.endsWith('/alerts')).at(-1).query.severity).toBe('critical')
 })
+
+
+async function localTimeInput(page, iso) {
+ return page.evaluate(value => {
+  const d = new Date(value), pad = n => String(n).padStart(2,'0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+ }, iso)
+}
+
+for (const locale of ['zh-cn','en']) {
+ test(`opening time range submits drafts, resets pagination and restores through navigation ${locale}`, async ({page}) => {
+  if (locale === 'en') await page.setViewportSize({width:680,height:900})
+  const start = '2026-10-01T00:00:10.000Z', end = '2026-10-01T00:00:20.000Z'
+  const entries = Array.from({length:26},(_,i)=>({id:i+1,version:1,category:'log_pipeline',subject_kind:'log_observer',subject_id:`time-host-${i}`,signal:'collector_dropped',severity:i<25?'critical':'warning',status:'open',opened_at:new Date(Date.parse('2026-10-01T00:00:00Z')+i*1000).toISOString()}))
+  const state = await fixture(page,{locale,entries,path:'/platform-alerts?severity=critical&page=2'})
+  const table = page.getByTestId('pipeline-incidents'), form = page.getByTestId('alert-time-filter')
+  const from = form.getByPlaceholder(locale==='en'?'Start time':'起始时间'), to = form.getByPlaceholder(locale==='en'?'End time':'结束时间')
+  const search = form.getByRole('button',{name:locale==='en'?'Search':'搜索',exact:true})
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  const previousReads = state.requests.filter(r=>r.path.endsWith('/alerts')).length
+  const localStart = await localTimeInput(page,start), localEnd = await localTimeInput(page,end)
+  await from.fill(localStart); await from.press('Tab')
+  await to.fill(localEnd); await to.press('Tab'); await page.keyboard.press('Escape')
+  await expect(from).toHaveValue(localStart); await expect(to).toHaveValue(localEnd)
+  for (const input of [from,to]) {const b=await input.boundingBox();expect(b.x+b.width).toBeLessThanOrEqual(page.viewportSize().width)}
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts'))).toHaveLength(previousReads)
+  await page.locator('.platform-alerts').getByRole('button',{name:locale==='en'?'Refresh':'刷新',exact:true}).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.time_from).toBeUndefined()
+  await expect(from).toHaveValue(localStart);await expect(to).toHaveValue(localEnd)
+  await search.click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(10)
+  const rows = await table.locator('tbody > tr.el-table__row').allTextContents()
+  expect(rows.some(row=>row.includes('time-host-10'))).toBe(true)
+  expect(rows.some(row=>row.includes('time-host-20'))).toBe(false)
+  expect(new URL(page.url()).searchParams.has('page')).toBe(false)
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query).toMatchObject({severity:'critical',time_from:start,time_to:end,page:'1'})
+  await page.locator('.platform-alerts').getByRole('button',{name:locale==='en'?'Refresh':'刷新',exact:true}).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(10)
+  await page.reload(); await expect(from).toHaveValue(localStart); await expect(to).toHaveValue(localEnd)
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(10)
+  await page.goto('/platform-alerts?severity=critical'); await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  await page.goBack(); await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(10)
+  await expect(from).toHaveValue(localStart)
+  await form.getByRole('button',{name:locale==='en'?'Clear time':'清除时间',exact:true}).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  const params = new URL(page.url()).searchParams
+  expect(params.has('time_from')).toBe(false);expect(params.has('time_to')).toBe(false);expect(params.get('severity')).toBe('critical')
+  const lowerOnly='2026-10-01T00:00:01.000Z'
+  await from.fill(await localTimeInput(page,lowerOnly));await from.press('Tab');await page.keyboard.press('Escape');await search.click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  await page.locator('.platform-alerts .el-pagination .btn-next').click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(4)
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query).toMatchObject({page:'2',time_from:lowerOnly,severity:'critical'})
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.time_to).toBeUndefined()
+ })
+}
+
+test('opening time rejects invalid routes and reverse drafts without widening queries',async({page})=>{
+ const state = await fixture(page,{path:'/platform-alerts?time_from=not-a-time'})
+ const table=page.getByTestId('pipeline-incidents'),form=page.getByTestId('alert-time-filter')
+ await expect(page.getByText('Invalid opening time range',{exact:true})).toBeVisible()
+ await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+ expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.time_from).toBe('invalid')
+ await page.goto('/platform-alerts?severity=critical')
+ await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(1)
+ const count=state.requests.filter(r=>r.path.endsWith('/alerts')).length
+ await form.getByPlaceholder('起始时间').fill(await localTimeInput(page,'2026-10-02T00:00:00Z'));await form.getByPlaceholder('起始时间').press('Tab')
+ await form.getByPlaceholder('结束时间').fill(await localTimeInput(page,'2026-10-01T00:00:00Z'));await form.getByPlaceholder('结束时间').press('Tab');await page.keyboard.press('Escape')
+ await expect(form.getByRole('button',{name:'搜索',exact:true})).toBeDisabled()
+ await expect(form.getByRole('status')).toContainText('起始时间须早于结束时间')
+ expect(state.requests.filter(r=>r.path.endsWith('/alerts'))).toHaveLength(count)
+})
+
+test('opening time changes cancel old results and filtered failures clear rows',async({page})=>{
+ const entries=[{id:1,version:1,category:'log_pipeline',subject_kind:'log_observer',subject_id:'older-opening',signal:'collector_dropped',severity:'critical',status:'open',opened_at:'2026-10-01T00:00:00Z'}]
+ const state=await fixture(page,{entries,path:'/platform-alerts?time_to=2026-10-02T00:00:00Z'})
+ const table=page.getByTestId('pipeline-incidents')
+ await expect(table).toContainText('older-opening')
+ state.hold()
+ await page.locator('.platform-alerts').getByRole('button',{name:'刷新',exact:true}).click()
+ await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+ await page.goto('/platform-alerts?time_from=2026-10-02T00:00:00Z',{waitUntil:'domcontentloaded'})
+ state.release()
+ await expect.poll(()=>state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1)?.query.time_from).toBe('2026-10-02T00:00:00.000Z')
+ await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+ await page.goto('/platform-alerts?time_from=2026-10-01T00:00:00Z')
+ await expect(table).toContainText('older-opening')
+ state.fail();await page.locator('.platform-alerts').getByRole('button',{name:'刷新',exact:true}).click()
+ await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+ await expect(page.getByText('观测不可用',{exact:true})).toBeVisible()
+})

@@ -3918,6 +3918,14 @@ paths:
         in: query
         name: severity
         type: string
+      - description: 发现时间下界，RFC3339，含 | Inclusive opening time lower bound, RFC3339
+        in: query
+        name: time_from
+        type: string
+      - description: 发现时间上界，RFC3339，不含 | Exclusive opening time upper bound, RFC3339
+        in: query
+        name: time_to
+        type: string
       - description: 主体 ID | Subject ID
         in: query
         name: subject_id
