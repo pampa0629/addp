@@ -45,6 +45,10 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "execution-retention-readonly": Suite(
+        command=(sys.executable, "-m", "scripts.test.execution-retention-readonly-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+    ),
     "workflow-runtime-health-recovery": Suite(
         command=("bash", "-c", 'exec "$ADDP_ONLINE_SECRET_DIR/observer/bin/python" scripts/test/workflow-runtime-health-recovery-online.py'),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL")),

@@ -227,6 +227,8 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case executionTraceLocalSuite:
 		return append([]string(nil), executionTraceLocalPermissions...), nil
+	case "execution-retention-readonly":
+		return []string{"monitor.execution.read"}, nil
 	case "graph-protection":
 		return graphProtectionReaderPermissions, nil
 	case "pg-source-authorization":
@@ -617,6 +619,13 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"] = creatorSession.AccessToken
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignmentID)
+	}
+	if *suite == "execution-retention-readonly" {
+		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID"] = fmt.Sprintf("%d", foreignTenant.ID)
 	}
 	if *suite == "orchestrator-execution" || *suite == "transfer-continuous-events" {
 		ownerPermission := "orchestrator.workflow.read"
@@ -1200,6 +1209,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_READ_USER_USERNAME",
 		"ADDP_ONLINE_READ_USER_PASSWORD",
 		"ADDP_ONLINE_TEST_TENANT_ID",
+		"ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_APPROVER_USERNAME",
 		"ADDP_ONLINE_TEST_APPROVER_PASSWORD",

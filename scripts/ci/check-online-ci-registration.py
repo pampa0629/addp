@@ -3705,6 +3705,30 @@ def validate_catalog_domain_overview_profile(repository: Path, registered: set[s
             raise RegistrationError("Catalog domain overview profile is incomplete: " + relative)
 
 
+def validate_execution_retention_profile(repository: Path, registered: set[str]) -> None:
+    if "execution-retention-readonly" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  execution-retention-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+            or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'execution-retention-readonly'" not in job.group("body")
+            or "inputs.suite != 'execution-retention-readonly'" not in workflow):
+        raise RegistrationError("Execution retention requires one manual Hosted Linux job")
+    gate = (repository / "scripts/test/online-hosted-execution-retention-gate.sh").read_text()
+    for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'scripts/dev/stop-exact-process.sh -system',
+                     'scripts/dev/start.sh --exact-process -system', 'execution-retention-readonly-online prepare',
+                     'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
+        if fragment not in gate:
+            raise RegistrationError("Execution retention lifecycle missing " + fragment)
+    makefile = (repository / "Makefile").read_text()
+    if "$(MAKE) test-execution-retention-online-runner" not in make_target_commands(makefile, "test-online-runner"):
+        raise RegistrationError("Execution retention regressions must belong to test-online-runner")
+    commands = make_target_commands(makefile, "test-execution-retention-online-runner")
+    for name in ("execution-retention-readonly-online_test.py", "online-hosted-execution-retention-gate_test.py"):
+        if name not in commands or not (repository / "scripts/test" / name).is_file():
+            raise RegistrationError("Execution retention regression missing " + name)
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -3719,6 +3743,7 @@ def check_registration(repository: Path) -> None:
         raise RegistrationError(
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
+    validate_execution_retention_profile(repository, registered)
     validate_catalog_domain_overview_profile(repository, registered)
     validate_highgo_profile(repository, registered)
     validate_metric_engine_variant(repository, registered)

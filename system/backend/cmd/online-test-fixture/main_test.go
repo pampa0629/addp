@@ -1397,3 +1397,10 @@ func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisione
 		t.Fatalf("health fixture must only create isolated tenant identities: %v, %v", permissions, err)
 	}
 }
+
+func TestExecutionRetentionFixtureHasOnlyMonitorReadPermission(t *testing.T) {
+	permissions, err := suitePermissions("execution-retention-readonly")
+	if err != nil || len(permissions) != 1 || permissions[0] != "monitor.execution.read" || needsEngineProvisioner("execution-retention-readonly") {
+		t.Fatalf("retention fixture must not grant Owner, IAM, engine or platform capabilities: %v %v", permissions, err)
+	}
+}

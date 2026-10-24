@@ -855,6 +855,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-execution-retention-online-runner
 	@$(MAKE) test-catalog-domain-online-runner
 	@$(MAKE) test-workflow-runtime-health-online-runner
 	@$(MAKE) test-starrocks-online-runner
@@ -1358,3 +1359,9 @@ test-catalog-domain-online-runner: ## 验证业务域总览 Online 契约、隔�
 	@python3 -m unittest scripts/test/catalog-domain-overview-online_test.py scripts/test/online-hosted-catalog-domain-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_catalog_overview_requires_cleanup_permissions_and_browser_contract
 	@node --check console/frontend/e2e/catalog-domain-overview.spec.js
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+.PHONY: test-execution-retention-online-runner
+test-execution-retention-online-runner: ## 验证租户执行概览只读维护的 Hosted 准入、断言与清理
+	@bash -n scripts/test/online-hosted-execution-retention-gate.sh
+	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py scripts/test/online-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
