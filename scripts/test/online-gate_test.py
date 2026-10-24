@@ -107,7 +107,7 @@ class OnlineGateTest(unittest.TestCase):
                 "vector-rasterize-persistence",
                 "vector-zonal-statistics-persistence",
                 "raster-proximity-persistence",
-                "raster-focal-mode-persistence", "raster-boundary-clean-persistence", "raster-thin-persistence", "raster-fill-depressions-persistence", "raster-flow-direction-d8-persistence", "raster-flow-accumulation-d8-persistence", "raster-drainage-basins-d8-persistence", "raster-flow-length-d8-persistence", "raster-flow-length-upstream-d8-persistence", "raster-stream-order-d8-persistence", "raster-stream-shreve-d8-persistence", "raster-stream-link-d8-persistence", "raster-flow-accumulation-weighted-d8-persistence", "raster-watershed-d8-persistence", "raster-band-recommendation-workflow", "raster-nibble-persistence", "raster-nibble-capacity", "raster-disk-pressure",
+                "raster-focal-mode-persistence", "raster-boundary-clean-persistence", "raster-thin-persistence", "raster-fill-depressions-persistence", "raster-flow-direction-d8-persistence", "raster-flow-accumulation-d8-persistence", "raster-drainage-basins-d8-persistence", "raster-flow-length-d8-persistence", "raster-flow-length-upstream-d8-persistence", "raster-stream-order-d8-persistence", "raster-stream-shreve-d8-persistence", "raster-stream-to-vector-d8-persistence", "raster-stream-link-d8-persistence", "raster-flow-accumulation-weighted-d8-persistence", "raster-watershed-d8-persistence", "raster-band-recommendation-workflow", "raster-nibble-persistence", "raster-nibble-capacity", "raster-disk-pressure",
                 "raster-focal-statistics-persistence",
                 "raster-zonal-statistics-persistence",
                 "vector-pmtiles-workflow",

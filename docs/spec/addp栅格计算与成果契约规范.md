@@ -278,4 +278,12 @@ D8河流分级扩展复用 `raster_stream_order_d8`，新增 `method=strahler/sh
 
 ### D8 河网转矢量线首期验收边界
 
-`raster_stream_to_vector_d8` 已实现；唯一河段编号路径生成源CRS二维线，保留每个中心、既有ID、零基起止行列和米制长度。每条实际河网边恰好一次，汇合边归上游；孤立单像元整次失败，单像元汇合终点仅为端点、无零长度线，ID允许间隔。复用既有矢量save／GeoPackage，无新增权限或跨模块逻辑。本地标准Native全量4387项／21 warnings／843.23秒通过，0失败／跳过／筛除，输入无漂移；候选树 `9784d97b2abcac1ba61dba757236988c457d913e`，原始日志SHA-256 `5fab071ed826ad4181ecdb941d7fc1eccbaa74cddce268ef0af330c9b62e37f0`。含独立完整逐边／几何／字段／单位及真实GeoPackage、异步DAG双语失败和清理，CI登记检查通过；不计Linux正式全量或真实平台扫描／血缘／Monitor、UI、容量。未新增独立Hosted入口；现有Hosted继续等专门CI会话回传。完整规则见[工作流栅格契约](workflow/栅格算子契约.md#栅格计算契约)。
+`raster_stream_to_vector_d8` 已实现；唯一河段编号路径生成源CRS二维线，保留每个中心、既有ID、零基起止行列和米制长度。每条实际河网边恰好一次，汇合边归上游；孤立单像元整次失败，单像元汇合终点仅为端点、无零长度线，ID允许间隔。复用既有矢量save／GeoPackage，无新增权限或跨模块逻辑。环境采集修正提交5419a73ad的本地标准Native全量4392项／21 warnings／798.08秒通过，0失败／跳过／筛除，输入无漂移；候选树 `9502d54c6f6b360e74ad4992cd79b6bce82e25aa`，原始日志SHA-256 `6a1ee21d37cf3508e08e3b790ff88b2406e4d1ac2703166df6afbf7f85245503`。含独立完整逐边／几何／字段／单位及真实GeoPackage、异步DAG双语失败和清理，CI登记检查通过；不计Linux正式全量或真实平台扫描／血缘／Monitor、UI、容量。全量期间未新增Python崩溃报告；独立Hosted入口与夹具已准备，新增夹具不计入该4392全量，实际运行继续等专门CI会话回传。完整规则见[工作流栅格契约](workflow/栅格算子契约.md#栅格计算契约)。
+
+### D8 河网转矢量线独立 Hosted 验收
+
+已批准独立手工 `raster-stream-to-vector-d8-persistence`，复用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。按通用矢量save契约核GeoPackage的完整几何／字段类型／CRS、物理与Meta相等正整数大小、精确扫描与当前执行所有实际输入血缘／Monitor、源与先前成果不变及全部清理；空成果核Schema与CRS。失败零发布／新增扫描血缘，反向查询不改提交语言，不新增RasterArtifact。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。夹具、标准入口和手工CI登记已实现并通过本地准备门禁；实际Hosted尚未运行，仍由专门CI会话协调，本会话不触发、轮询或设置定时。
+
+独立Hosted准备的标准Native专项 `make test-geopython-workflow`（`-k stream_to_vector_d8`）**158 passed／4280 deselected／5.52秒**，0失败／跳过，输入无漂移；其中新增夹具46项，涵盖八份真实GDAL GeoPackage、20条双语准确失败、23类物理篡改拒绝及源／先前成果不变。基于修正提交5419a73ad，候选树 `2290b776308c6e0c86940a4a6f0557a48f598906`，原始日志SHA-256 `89cf9b3e1ae6efbe5dbb9c3cc8c0faeb1d4afc409da51eb8ce7f48b6f6f9157e`；筛除不计通过，不把专项与旧全量相加。三种单位直接样本各21条线／444条边／465个顶点，跳过终点ID2；阈值样本34条线／3542条边，DEM为7条／3612条，填洼链为5条／2582条，空河网与全无效均零要素且保留Schema／CRS。
+
+Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20.403秒**及完整Online登记通过，原始日志SHA-256 `a5a53ce92de30f6d24e240ea662b64d2e84b181b958ff72c832be4d700c4e6fc`。完整 `make test-raster-online-runner` 退出0、输入无漂移，耗时744.59秒，25组Python子门禁及原215项生命周期、隔离身份夹具Go T1通过（共享回归重复，不求和作唯一测试数）；原始日志SHA-256 `b52e1fa5f190351d166207ca1186873a9322c9a1f1184a243412926ae6c2c496`。这些是本地准备与Native证据，不计正式Linux全量、真实Hosted用户／扫描／当前执行血缘／Monitor及清理通过；数值极限继续单列Native，不模拟Hosted越界。实际Hosted仍等专门CI会话协调和完整原始归档领域审计，无自行触发／轮询／定时。

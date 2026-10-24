@@ -204,7 +204,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_online_boundary_clean_fixture.py test_online_thin_fixture.py test_online_fill_depressions_fixture.py test_online_flow_direction_d8_fixture.py test_online_flow_accumulation_d8_fixture.py test_online_drainage_basins_d8_fixture.py test_online_flow_length_d8_fixture.py test_online_flow_length_upstream_d8_fixture.py test_online_stream_order_d8_fixture.py test_online_stream_shreve_d8_fixture.py test_online_stream_link_d8_fixture.py test_online_flow_accumulation_weighted_d8_fixture.py test_online_watershed_d8_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_disk_pressure_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py test_topology_capacity.py ../docs'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_focal_mode_fixture.py test_online_boundary_clean_fixture.py test_online_thin_fixture.py test_online_fill_depressions_fixture.py test_online_flow_direction_d8_fixture.py test_online_flow_accumulation_d8_fixture.py test_online_drainage_basins_d8_fixture.py test_online_flow_length_d8_fixture.py test_online_flow_length_upstream_d8_fixture.py test_online_stream_order_d8_fixture.py test_online_stream_shreve_d8_fixture.py test_online_stream_to_vector_d8_fixture.py test_online_stream_link_d8_fixture.py test_online_flow_accumulation_weighted_d8_fixture.py test_online_watershed_d8_fixture.py test_raster_band_recommendation.py test_raster_nibble.py test_online_band_recommendation_fixture.py test_online_nibble_fixture.py test_online_nibble_capacity_fixture.py test_online_disk_pressure_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py test_topology_capacity.py ../docs'
 
 .PHONY: test-vector-topology-capacity test-vector-topology-capacity-runner
 test-vector-topology-capacity: ## 手工 Linux 容量基线，4 CPU/2 GiB/无 swap/每档180秒，不计业务T4
@@ -703,6 +703,12 @@ test-raster-stream-shreve-d8-online-runner: ## 验证D8 Shreve 河流量级独�
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-shreve-d8-persistence-online_test.py scripts/test/online-raster-stream-shreve-d8-fixture_test.py scripts/test/online-hosted-raster-stream-shreve-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_shreve_d8_requires_manual_nfs_full_pixels_and_regressions
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-raster-stream-to-vector-d8-online-runner
+test-raster-stream-to-vector-d8-online-runner: ## 验证D8 河网转矢量线独立 T4、完整 GeoPackage 与隔离生命周期
+	@bash -n scripts/test/online-hosted-raster-stream-to-vector-d8-gate.sh
+	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-stream-to-vector-d8-persistence-online_test.py scripts/test/online-raster-stream-to-vector-d8-fixture_test.py scripts/test/online-hosted-raster-stream-to-vector-d8-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_stream_to_vector_d8_requires_manual_nfs_complete_edges_and_regressions
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
 .PHONY: test-raster-stream-link-d8-online-runner
 test-raster-stream-link-d8-online-runner: ## 验证D8 河段编号独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-stream-link-d8-gate.sh
@@ -770,6 +776,7 @@ test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生�
 	@$(MAKE) test-raster-flow-length-upstream-d8-online-runner
 	@$(MAKE) test-raster-stream-order-d8-online-runner
 	@$(MAKE) test-raster-stream-shreve-d8-online-runner
+	@$(MAKE) test-raster-stream-to-vector-d8-online-runner
 	@$(MAKE) test-raster-stream-link-d8-online-runner
 	@$(MAKE) test-raster-flow-accumulation-weighted-d8-online-runner
 	@$(MAKE) test-raster-watershed-d8-online-runner
