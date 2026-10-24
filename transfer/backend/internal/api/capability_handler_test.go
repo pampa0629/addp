@@ -97,6 +97,11 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 		t.Fatal("shapefile spatial = false, want true")
 	}
 
+	kml := byValue["kml"]
+	if !kml.Write || kml.ProviderKind != "table" || kml.Extension != "kml" || !kml.Spatial || kml.MultiFile {
+		t.Fatalf("KML single-file export capability: %#v", kml)
+	}
+
 	for value, expected := range map[string][2]bool{
 		"pgeo":    {true, false},
 		"filegdb": {true, true},

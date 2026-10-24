@@ -309,9 +309,6 @@ func tableImportFormats() []string {
 func tableExportFormats() []string {
 	formats := make([]string, 0)
 	for _, snapshot := range format.ListFormatCapabilitySnapshots() {
-		if snapshot.Descriptor.DataType != datatype.Table {
-			continue
-		}
 		impl := snapshot.Implementations
 		if impl.TableWriterProvider || impl.MultiTableWriter {
 			formats = append(formats, string(snapshot.Descriptor.Format))

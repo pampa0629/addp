@@ -12,7 +12,7 @@
 | 优先范围 | 当前缺口与推进边界 |
 | --- | --- |
 | 通用表格读取 | Avro 已从 descriptor 补为单文件 OCF 读取，复杂 schema、writer 与正式运行验收仍缺；ORC 仍只有 descriptor，后续补实际表格接口 |
-| 清单 Excel 206 / B205 二维矢量导出 | KML 已有图层读取，尚无 writer；优先评估现有 GDAL KML 的简单要素写出、坐标与字段保真，不将读取成功登记为导出完成 |
+| 清单 Excel 206 / B205 二维矢量导出 | KML 已补单文件二维简单要素 writer 和标准导出能力发现，复用固定 CRS 约束及既有空间转换；本地 writer／Transfer／Manager 与 PostGIS、LIBKML 独立验证见内置规范。尚无该出口的正式页面／Hosted 证据；复杂字段、Z/M、样式／KMZ不在首期范围，现有 KML 读侧对扩展属性和空几何的限制仍保留。其余 DWG/VCT/UDB 等目标不由 KML 覆盖 |
 | 清单 Excel 207 / B206 栅格导出 | IMG 的 HFA 读取和 COG 快显已有限定验收，IMG、PNG/JPG 的目标编码／保存链仍缺；需先明确原生波段、NoData、mask、定位及旁文件交付契约，再扩展既有持久化路径 |
 | 清单 GRD / VCT / UDB | 未形成统一导出能力；GRD 后缀对应多种编码，须先明确要求的变体。VCT/UDB 先核官方格式和现有引擎能力，不据后缀宣称可用开源路线 |
 | 其他扩展 | KMZ 尚无内置格式插件；SVG/AVIF/HEIC 的 descriptor 不代表完整媒体解析。当前不以这些扩展代替上述清单内缺口 |

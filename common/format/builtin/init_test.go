@@ -168,7 +168,7 @@ func TestWholeScopePointCloudFormatsExposeScopeProviders(t *testing.T) {
 	}
 }
 
-func TestVectorExchangeFormatsUseReadonlyRuntimeContainers(t *testing.T) {
+func TestVectorExchangeFormatsUseRuntimeContainerReaders(t *testing.T) {
 	for _, candidate := range []struct {
 		formatType format.FormatType
 		filename   string
@@ -191,6 +191,10 @@ func TestVectorExchangeFormatsUseReadonlyRuntimeContainers(t *testing.T) {
 			}
 			if _, err := format.GetRuntimeScopeTableWriterFactory(candidate.formatType); err == nil {
 				t.Fatal("unexpected writer")
+			}
+			_, writerErr := format.GetTableWriterProvider(candidate.formatType)
+			if (writerErr == nil) != (candidate.formatType == format.FormatKML) {
+				t.Fatalf("single writer for %s: %v", candidate.formatType, writerErr)
 			}
 			if format.IsDocumentFormat(candidate.formatType) || !format.IsGeospatialFormat(candidate.formatType) {
 				t.Fatal("wrong format classification")

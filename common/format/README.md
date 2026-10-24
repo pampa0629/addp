@@ -330,6 +330,8 @@ type MultiTableWriterProvider interface {
 
 空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认 geometry 行值编码由各 format 的 `SpatialEncodingCapabilities.DefaultReadEncoding` 声明，主要用于 Manager sample、日志和调试；Transfer 等连续批处理链路必须显式协商 source read encoding 与 target write encoding，跨 format / engine 优先使用 `ewkb`。`wkb` / `ewkb` 行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代空间参考事实。具体格式的 native 几何类型只能通过显式声明的 `GeometryEncoding` 暴露，例如 Shapefile 的 `shapefile_shape`；不得绕过编码协议隐式泄漏到 format 根接口或 engine 层。
 
+`SpatialEncodingCapability.RequiredWriteCRS` 是格式固定的写出 CRS 约束（空表示不固定），与行值编码相互独立。GeoJSON 和 KML 声明 EPSG:4326，Transfer 统一消费声明并沿唯一空间重投影路径转换，不按格式名复制坐标处理；源 CRS 未知时拒绝导出。KML 的 container 身份不阻止它实现单文件 TableWriterProvider，能力发现依据实际接口，不能仅按默认 data type 排除可写格式。
+
 格式写出 CRS 定义时，只能使用定义文本，不能使用 CRS ID 充当定义。Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 表示 `.prj` 定义文本，例如 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>` 或 `URN:OGC:DEF:CRS:EPSG::<code>`。CRS ID 应由 `datatype.SpatialInfo` 的 `crs_ref` 表达，定义文本应由 `crs_definitions[].definition` 表达。
 
 格式对 CRS 定义编码有额外要求时，通过 `CRSDefinitionWriteRequirementProvider` 根据本次 `SpatialInfo` 动态声明，不在 Transfer 中硬编码目标格式。Transfer 必须在 writer 创建前完成定义表达转换，并把结果放入 execution-local `SpatialInfo` 副本；format writer 只消费满足声明的定义，不负责调用 PROJ、猜测 EPSG 或修改几何坐标。

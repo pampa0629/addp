@@ -61,6 +61,8 @@ type AccessIndexProvider interface {
 // Format 只声明自身能读写哪些编码以及本格式的原生编码；Transfer planner
 // 负责结合 source、target、transform 和 CRS 约束选择实际使用的编码。
 type SpatialEncodingCapability struct {
+	// RequiredWriteCRS fixes the writer's output CRS; empty means unconstrained.
+	RequiredWriteCRS       string
 	GeometryReadEncodings  []GeometryEncoding
 	GeometryWriteEncodings []GeometryEncoding
 	DefaultReadEncoding    GeometryEncoding

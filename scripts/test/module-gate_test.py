@@ -23,6 +23,7 @@ SPEC.loader.exec_module(MODULE)
 COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n"
     "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n"
+    "--- PASS: TestIntegrationPostgresKMLWriter (0.01s)\n"
     "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
     "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
@@ -244,6 +245,8 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)", calls[0])
         self.assertIn("TestIntegrationPostgresQueryReadSession", calls[0])
         self.assertIn("./engine/plugins/highgo", calls[0])
+        self.assertIn("./format/plugins/kml", calls[0])
+        self.assertIn("TestIntegrationPostgresKMLWriter", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
         self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment)AgainstPostgres$ -count=1 -v", calls[1])
@@ -451,6 +454,17 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
         result, _ = self._run_common_postgres_group(["--test", "graph"], "testing: warning: no tests to run\nPASS")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("requires the real target contract", result.stderr)
+
+    def test_common_postgres_kml_export_requires_real_writer_and_cleanup(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "kml-export"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("./format/plugins/kml -run ^TestIntegrationPostgresKMLWriter$", calls[0])
+        self.assertNotIn("./engine/plugins", calls[0])
+        self.assertIn("not the full gate", result.stdout)
+        for output in ("--- SKIP: fixture", "testing: warning: no tests to run\nPASS"):
+            result, _ = self._run_common_postgres_group(["--test", "kml-export"], output)
+            self.assertNotEqual(0, result.returncode)
 
     def test_common_postgres_highgo_scope_requires_explicit_native_target(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "highgo-write"])

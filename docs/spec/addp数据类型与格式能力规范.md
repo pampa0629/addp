@@ -29,6 +29,8 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 其中 `xxx info` 是对应 data type 的通用元数据，例如 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`、`datatype.Model3DInfo`、`datatype.PointCloudInfo`、`datatype.GaussianSplatInfo`。这些结构的事实源属于 `common/datatype`，不属于 `common/format`。`xxx info provider` 只负责从具体格式中提取并返回这类元数据；样本、文本片段、缩略图、raw content、range content、三维模型流、点云抽样、高斯泼溅渲染数据等内容数据必须通过独立 content reader 表达。
 
+空间 writer 的固定 CRS 由 `SpatialEncodingCapability.RequiredWriteCRS` 声明；该约束与几何行值编码独立，空表示目标不强制固定 CRS。Transfer 对已知来源统一规划实际重投影，不按格式复制处理，不以更改声明代替坐标转换。容器格式也可实现单文件 `TableWriterProvider` 来写出一张表／图层；能力发现应依据实际 writer 接口，不以 descriptor 默认 data type 排除它，也不因此把输出容器身份改为 table。
+
 ## `common/datatype` 与 `common/format` 分工
 
 `common/datatype` 是 ADDP 通用数据类型语义的事实源：

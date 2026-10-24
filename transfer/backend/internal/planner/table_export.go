@@ -408,9 +408,9 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	}
 	transforms := buildTableTransforms(spec.Transforms)
 	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded && engineSupportsSpatialTransform(sourceEngine) {
-		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions, sourcePlan.SpatialInfo))
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForFixedCRSTarget(targetPlan.Format, targetPlan.FormatOptions, sourcePlan.SpatialInfo))
 	}
-	spatialTransform, err := buildSpatialGeoJSONTransform(&sourcePlan, targetPlan, sourceEngine)
+	spatialTransform, err := buildSpatialFixedCRSTransform(&sourcePlan, targetPlan, sourceEngine)
 	if err != nil {
 		return nil, err
 	}
@@ -2266,13 +2266,14 @@ func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType)
 	return opts
 }
 
-func readOptionsForGeoJSONTarget(formatType format.FormatType, writeOptions *format.WriteOptions, spatialInfo *datatype.SpatialInfo) map[string]interface{} {
-	if formatType != format.FormatGeoJSON {
+func readOptionsForFixedCRSTarget(formatType format.FormatType, writeOptions *format.WriteOptions, spatialInfo *datatype.SpatialInfo) map[string]interface{} {
+	capability, err := format.GetSpatialEncodingCapability(formatType)
+	if err != nil || capability.RequiredWriteCRS == "" {
 		return nil
 	}
 	options := map[string]interface{}{
-		engineplugin.TableReadHintGeometryEncoding:        string(format.GeometryEncodingGeoJSON),
-		engineplugin.TableReadHintGeometryTargetSRID:      4326,
+		engineplugin.TableReadHintGeometryEncoding:        string(capability.DefaultWriteEncoding),
+		engineplugin.TableReadHintGeometryTargetSRID:      commonSpatial.ParseSRID(capability.RequiredWriteCRS),
 		engineplugin.TableReadHintGeometryTransformPolicy: "required",
 	}
 	if writeOptions != nil && writeOptions.ExtraParams != nil {
@@ -2288,8 +2289,12 @@ func readOptionsForGeoJSONTarget(formatType format.FormatType, writeOptions *for
 	return options
 }
 
-func buildSpatialGeoJSONTransform(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding) (*executor.TableTransformPlan, error) {
-	if sourcePlan == nil || targetPlan.Kind != executor.TableEndpointEncoded || targetPlan.Format != format.FormatGeoJSON {
+func buildSpatialFixedCRSTransform(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding) (*executor.TableTransformPlan, error) {
+	if sourcePlan == nil || targetPlan.Kind != executor.TableEndpointEncoded {
+		return nil, nil
+	}
+	capability, err := format.GetSpatialEncodingCapability(targetPlan.Format)
+	if err != nil || capability.RequiredWriteCRS == "" {
 		return nil, nil
 	}
 	spatialInfo := sourcePlan.SpatialInfo
@@ -2305,12 +2310,12 @@ func buildSpatialGeoJSONTransform(sourcePlan *executor.TableSourcePlan, targetPl
 		}
 	}
 	if sourceCRS == "" {
-		return nil, fmt.Errorf("source CRS is required for GeoJSON export")
+		return nil, fmt.Errorf("source CRS is required for %s export", targetPlan.Format)
 	}
-	targetCRS := "EPSG:4326"
+	targetCRS := capability.RequiredWriteCRS
 
 	if sourcePlan.Kind == executor.TableEndpointNative && engineSupportsSpatialTransform(sourceEngine) {
-		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions, spatialInfo))
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForFixedCRSTarget(targetPlan.Format, targetPlan.FormatOptions, spatialInfo))
 		sourcePlan.SpatialInfo = spatialInfoForTargetCRS(spatialInfo, geometryColumn, targetCRS)
 		return nil, nil
 	}
@@ -2330,7 +2335,7 @@ func buildSpatialGeoJSONTransform(sourcePlan *executor.TableSourcePlan, targetPl
 	}
 
 	if sourcePlan.Kind == executor.TableEndpointNative {
-		return nil, fmt.Errorf("source engine does not support spatial transform for GeoJSON export")
+		return nil, fmt.Errorf("source engine does not support spatial transform for %s export", targetPlan.Format)
 	}
 
 	if sourcePlan.ParseOptions == nil {
@@ -2401,6 +2406,14 @@ func spatialCRSEquivalent(left, right string) bool {
 	}
 	if strings.EqualFold(left, right) {
 		return true
+	}
+	// Geometry rows use traditional GIS XY order. CRS84 therefore shares
+	// the WGS84 horizontal coordinates used by the fixed-CRS writers.
+	if strings.EqualFold(left, "OGC:CRS84") {
+		left = "EPSG:4326"
+	}
+	if strings.EqualFold(right, "OGC:CRS84") {
+		right = "EPSG:4326"
 	}
 	leftSRID := commonSpatial.ParseSRID(left)
 	rightSRID := commonSpatial.ParseSRID(right)

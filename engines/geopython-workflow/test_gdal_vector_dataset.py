@@ -642,3 +642,38 @@ def test_gml_schema_annotation_does_not_fetch_external_schema(tmp_path, monkeypa
     result = inspect(_exchange_plan(source, "gml"))
     assert result["container"]["default_child"] == "sites"
     assert calls and list(tmp_path.iterdir()) == [source]
+
+
+def test_kml_common_writer_golden_is_readable_by_native_driver():
+    """Go T1 checks exact writer bytes against this same independently read file."""
+    fixture = Path(__file__).resolve().parents[2] / "common/format/plugins/kml/testdata/simple-features.kml"
+    dataset = gdal.OpenEx(str(fixture), gdal.OF_VECTOR, allowed_drivers=["LIBKML"])
+    assert dataset is not None
+    assert dataset.GetLayerCount() == 1
+    layer = dataset.GetLayerByIndex(0)
+    assert layer.GetFeatureCount(force=1) == 8
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "4326"
+    expected = [
+        "POINT (120 30)", "LINESTRING (120 30,121 31)",
+        "POLYGON ((0 0,4 0,4 4,0 4,0 0),(1 1,1 2,2 2,2 1,1 1))",
+        "MULTIPOINT ((1 2),(3 4))", "MULTILINESTRING ((1 2,3 4),(5 6,7 8))",
+        "MULTIPOLYGON (((0 0,1 0,1 1,0 0)))",
+        "GEOMETRYCOLLECTION (POINT (1 2),LINESTRING (3 4,5 6))", None,
+    ]
+    for index, wkt in enumerate(expected):
+        feature = layer.GetNextFeature()
+        assert feature is not None
+        assert feature.GetField("seq") == index
+        assert feature.GetField("measure") == 1.25
+        assert feature.GetField("flag") == int(index % 2 == 0)
+        if index == 2:
+            assert not feature.IsFieldSetAndNotNull(feature.GetFieldIndex("标题"))
+        else:
+            assert feature.GetField("标题") == ("" if index == 1 else '中文 <&> "quote"')
+        geometry = feature.GetGeometryRef()
+        if wkt is None:
+            assert geometry is None
+        else:
+            assert geometry is not None
+            assert geometry.Equals(ogr.CreateGeometryFromWkt(wkt)), geometry.ExportToWkt()
+    assert layer.GetNextFeature() is None

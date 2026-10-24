@@ -48,6 +48,7 @@ func (p *Plugin) SupportsAccessIndex(options *format.ParseOptions) bool {
 
 func (p *Plugin) SpatialEncodingCapability() format.SpatialEncodingCapability {
 	return format.SpatialEncodingCapability{
+		RequiredWriteCRS:       "EPSG:4326",
 		GeometryReadEncodings:  []format.GeometryEncoding{format.GeometryEncodingGeoJSON, format.GeometryEncodingEWKB},
 		GeometryWriteEncodings: []format.GeometryEncoding{format.GeometryEncodingGeoJSON, format.GeometryEncodingEWKB},
 		DefaultReadEncoding:    format.GeometryEncodingGeoJSON,

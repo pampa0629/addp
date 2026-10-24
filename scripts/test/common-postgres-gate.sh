@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -171,6 +171,14 @@ if [ "$test_group" = highgo-write ]; then
     test_packages=(./engine/plugins/highgo)
     test_pattern='^TestIntegrationHighGoTableWrite$'
 fi
+if [ "$test_group" = all ] || [ "$test_group" = kml-export ]; then
+    test_packages+=(./format/plugins/kml)
+    test_pattern="$test_pattern|^TestIntegrationPostgresKMLWriter$"
+fi
+if [ "$test_group" = kml-export ]; then
+    test_packages=(./format/plugins/kml)
+    test_pattern='^TestIntegrationPostgresKMLWriter$'
+fi
 ADDP_POSTGRES_INTEGRATION=1 \
 ADDP_HIGHGO_INTEGRATION=0 \
     go test "${test_packages[@]}" \
@@ -180,6 +188,12 @@ ADDP_HIGHGO_INTEGRATION=0 \
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then
     echo "Common PostgreSQL gate refuses skipped tests" >&2
     exit 1
+fi
+if [ "$test_group" = all ] || [ "$test_group" = kml-export ]; then
+    grep -q -- '--- PASS: TestIntegrationPostgresKMLWriter ' "$WORK_DIR/common-postgres.log" || {
+        echo 'KML export gate requires real transformed PostGIS rows, writer and fixture cleanup' >&2
+        exit 1
+    }
 fi
 if [ "$test_group" = all ] || [ "$test_group" = query-read-set ]; then
     grep -q -- '--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite ' "$WORK_DIR/common-postgres.log" || {

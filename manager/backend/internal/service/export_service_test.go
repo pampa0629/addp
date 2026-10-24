@@ -65,3 +65,25 @@ func TestSupportedExportFormatIncludesSingleAndMultiRefWriters(t *testing.T) {
 		t.Fatal("shapefile multi-ref export should be supported")
 	}
 }
+
+func TestKMLContainerWriterIsExposedForTableExport(t *testing.T) {
+	if !supportedExportFormat(format.FormatKML) {
+		t.Fatal("KML single-file writer missing")
+	}
+	found := false
+	for _, f := range tableExportFormats() {
+		if f == "kml" {
+			found = true
+		}
+		if f == "gml" || f == "topojson" {
+			t.Fatalf("read-only format advertised: %s", f)
+		}
+	}
+	if !found {
+		t.Fatal("container descriptor hid the KML writer")
+	}
+	config := buildTableExportExecutionConfig("addp://engine/1/path/public/roads?type=table", "", "roads.kml", format.FormatKML)
+	if config.Target.Format != "kml" || config.Target.Representation != "encoded" {
+		t.Fatal(config.Target)
+	}
+}
