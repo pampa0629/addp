@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'split-lines.gpkg':
+        return m.split_line_expected_features()
     if name == 'line-self-intersections.gpkg':
         return m.line_self_intersection_expected_features()
     if name == 'line-intersections.gpkg':
@@ -43,6 +45,31 @@ def records(name):
 
 
 class TopologyFixtureTest(unittest.TestCase):
+    def test_split_line_oracle_requires_all_attributes_direction_vertices_and_ordinals(self):
+        original = m.split_line_expected_features()
+        self.assertEqual(len(m.split_line_source_features()),11)
+        self.assertEqual(len(original),20)
+        m.validate_split_line_features(original)
+        m.validate_split_line_features(m.split_line_source_features(),source=True)
+        self.assertIsNone(original[3]['properties']['note'])
+        for mutate in (
+            lambda rows: rows.pop(), lambda rows: rows.reverse(),
+            lambda rows: rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows: rows[0]['properties'].update(source_id='1'),
+            lambda rows: rows[0]['properties'].update(route_key='other'),
+            lambda rows: rows[0]['properties'].update(grade=999),
+            lambda rows: rows[3]['properties'].update(note=''),
+            lambda rows: rows[0]['properties'].update(part_no=True),
+            lambda rows: rows[0]['properties'].update(segment_no=1.0),
+            lambda rows: rows[0]['properties'].pop('note'),
+            lambda rows: rows[0]['geometry']['coordinates'].reverse(),
+            lambda rows: rows[15]['geometry']['coordinates'][1].__setitem__(0,1e-12),
+            lambda rows: rows[-1]['geometry']['coordinates'].pop(),
+        ):
+            value=copy.deepcopy(original); mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):
+                m.validate_split_line_features(value)
+
     def test_oracle_accepts_ring_rotation_direction_and_line_direction(self):
         faces = records('faces.geojson')
         for feature in faces:

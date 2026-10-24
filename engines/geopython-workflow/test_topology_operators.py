@@ -968,7 +968,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_eleven_saves_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_twelve_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -1032,11 +1032,16 @@ def test_hosted_topology_physical_oracle_accepts_real_eleven_saves_and_rejects_c
         {'id':'line_self_intersection','operator':'check_line_self_intersection','params':{'input_gdf':{'$ref':'line_self_intersection_input'},'id_field':'route_key'},'depends_on':['line_self_intersection_input']},
         {'id':'save_line_self_intersections','operator':'save','params':{'input_df':{'$ref':'line_self_intersection'},'connection_info':connection,'path':'outputs/line-self-intersections.gpkg','mode':'fail'},'depends_on':['line_self_intersection']},
     ])
+    tasks.extend([
+        {'id':'split_line_input','operator':'load','params':{'connection_info':connection,'path':'split-line-input.gpkg'},'depends_on':[]},
+        {'id':'split_line','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key'},'depends_on':['split_line_input']},
+        {'id':'save_split_lines','operator':'save','params':{'input_df':{'$ref':'split_line'},'connection_info':connection,'path':'outputs/split-lines.gpkg','mode':'fail'},'depends_on':['split_line']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15,20]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -1275,6 +1280,46 @@ def test_hosted_topology_physical_oracle_accepts_real_eleven_saves_and_rejects_c
     assert 'snapping produced invalid geometries' in str(failed)
     assert not (tmp_path/'outputs/failed-snap.gpkg').exists()
     assert fixture.worker('verify', tmp_path) == baseline
+
+
+@pytest.mark.parametrize("problem", ["source_id", "route_key", "null", "grade", "part_no", "segment_no", "direction", "tiny", "count", "crs", "field_type"])
+def test_hosted_split_line_fixture_rejects_real_physical_corruption(tmp_path, problem):
+    import importlib
+    from osgeo import ogr
+    fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
+    fixture.seed_split_line(tmp_path/'source.gpkg')
+    before = (tmp_path/'source.gpkg').read_bytes()
+    connection = {'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks = [
+        {'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'split','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']},
+        {'id':'save','operator':'save','params':{'input_df':{'$ref':'split'},'connection_info':connection,'path':'pieces.gpkg','mode':'fail'},'depends_on':['split']},
+    ]
+    execution = execute_workflow({'tasks':tasks})
+    assert execution['status']=='success', execution
+    assert fixture.verify_split_line(tmp_path/'pieces.gpkg')['feature_count']==20
+    assert fixture.verify_split_line(tmp_path/'source.gpkg',source=True)['feature_count']==11
+    assert (tmp_path/'source.gpkg').read_bytes()==before
+    dataset = ogr.Open(str(tmp_path/'pieces.gpkg'),1); layer=dataset.GetLayer(0)
+    if problem=='count': layer.DeleteFeature(20)
+    elif problem=='crs': dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+    elif problem=='field_type':
+        assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('grade'),ogr.FieldDefn('grade',ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+    else:
+        feature=layer.GetFeature(4 if problem=='null' else 16 if problem=='tiny' else 1)
+        if problem in ('source_id','route_key'): feature.SetField(problem,'1')
+        elif problem=='null': feature.SetField('note','')
+        elif problem in ('grade','part_no','segment_no'): feature.SetField(problem,999)
+        else:
+            geometry=feature.GetGeometryRef()
+            points=[list(point[:2]) for point in geometry.GetPoints()]
+            if problem=='direction': points.reverse()
+            else: points[-1][0]=1e-12
+            feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':points})))
+        assert layer.SetFeature(feature)==0
+    dataset=None
+    with pytest.raises(fixture.FixtureError): fixture.verify_split_line(tmp_path/'pieces.gpkg')
+    assert (tmp_path/'source.gpkg').read_bytes()==before
 
 
 # Single-feature validity is distinct from polygonize's whole-network face building.
