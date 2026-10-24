@@ -1068,6 +1068,14 @@ def _raster_profile_task(source, target, profile_case, epoch, barrier=None):
             'finished_seconds': finished - epoch, 'elapsed_seconds': finished - started}
 
 
+def _profile_environment():
+    """Collect report facts in-process; platform.platform() can fork after PROJ use."""
+    system, release, machine = platform.system(), platform.release(), platform.machine()
+    return {'platform': '-'.join((system, release, machine)), 'machine': machine,
+            'cpu_count': os.cpu_count(), 'python': platform.python_version(),
+            'gdal': gdal.VersionInfo('RELEASE_NAME'), 'gdal_cache_max_bytes': gdal.GetCacheMax()}
+
+
 def _raster_profile_worker(source, targets, scratch, connection, profile_case, execution_mode):
     """Measure one process independently of the parent's pixel oracle."""
     import traceback
@@ -1087,10 +1095,7 @@ def _raster_profile_worker(source, targets, scratch, connection, profile_case, e
                          'elapsed_seconds': time.perf_counter() - started, **_profile_process_usage(),
                          'mosaic_vrts_removed': not any(name.startswith('addp-raster-mosaic-')
                                                        for name in gdal.ReadDir('/vsimem') or []),
-                         'environment': {'platform': platform.platform(), 'machine': platform.machine(),
-                                         'cpu_count': os.cpu_count(), 'python': platform.python_version(),
-                                         'gdal': gdal.VersionInfo('RELEASE_NAME'),
-                                         'gdal_cache_max_bytes': gdal.GetCacheMax()}})
+                         'environment': _profile_environment()})
     except BaseException:
         connection.send({'error': traceback.format_exc()})
     finally:
@@ -8848,3 +8853,21 @@ def test_d8_stream_vector_rejects_partial_coordinate_precision_collapse(language
     with raster_error_language(language),pytest.raises(ValueError) as error:
         compute._d8_stream_lines(directions,np.isfinite(directions),(1e308,2,0,0,0,-3),1.,'EPSG:3857')
     assert str(error.value)==compute._D8_STREAM_VECTOR_MESSAGES['coordinates'][language=='en']
+
+
+@pytest.mark.parametrize('warm_cache',[False,True])
+def test_profile_environment_never_starts_implicit_subprocess(monkeypatch,warm_cache):
+    import subprocess
+    monkeypatch.setattr(platform,'_uname_cache',None)
+    monkeypatch.setattr(platform,'_platform_cache',{})
+    if warm_cache:platform.system();platform.release();platform.machine()
+    attempts=[]
+    def forbidden(*args,**kwargs):
+        attempts.append((args,kwargs))
+        raise AssertionError('Raster environment reporting must not create a subprocess')
+    monkeypatch.setattr(subprocess,'Popen',forbidden)
+    result=_profile_environment()
+    assert attempts==[]
+    assert result=={'platform':'-'.join((platform.system(),platform.release(),platform.machine())),
+        'machine':platform.machine(),'cpu_count':os.cpu_count(),'python':platform.python_version(),
+        'gdal':gdal.VersionInfo('RELEASE_NAME'),'gdal_cache_max_bytes':gdal.GetCacheMax()}
