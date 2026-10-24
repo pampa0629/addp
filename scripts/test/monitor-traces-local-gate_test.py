@@ -8,6 +8,7 @@ import signal
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('monitor_traces_local_gate', Path(__file__).with_name('monitor-traces-local-gate.py'))
@@ -46,6 +47,54 @@ def bare_lifecycle(directory):
     life.minio_image = 'sha256:synthetic-pinned-minio'
     life.owned_bind_bytes = lambda **kwargs: 0
     return life
+
+
+class NginxRouteContractTests(unittest.TestCase):
+    def probe(self,directory,strip_query=False):
+        life=bare_lifecycle(directory);calls=[];life.sample=mock.Mock()
+        def docker(*args,**kwargs):
+            calls.append(args)
+            if args[0] in ('network','run','kill'):return 'owned'
+            if args[0]=='wait':return '0\n0\n'
+            if args[0]=='exec':
+                if args[2]=='sh':return '/route-ready' if 'n=0;' in args[-1] else 'HTTP/1.1 502 Bad Gateway\n'
+                url=urllib.parse.urlsplit(args[-1]);path=url.path
+                if path.startswith('/module-ui/'):path='/'+path.split('/',3)[3]
+                return path+('?' + url.query if url.query and not strip_query else '')
+            raise AssertionError(args)
+        life.docker=docker
+        return life,calls
+
+    def test_real_probe_is_bounded_isolated_and_rejects_missing_modules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,calls=self.probe(directory);m.verify_nginx_routes(life,'sha256:product-nginx')
+            self.assertEqual(life.nginx_route_assertions,{'uri_and_query_cases':11,'missing_module_502':True,'selected_module_remains_readable':True})
+            self.assertEqual(life.sample.call_count,2)
+            self.assertIn('--internal',calls[0])
+            for args in (call for call in calls if call[0]=='run'):
+                self.assertEqual(args[args.index('--cpus')+1],'.1');self.assertEqual(args[args.index('--memory')+1],'64m')
+                self.assertNotIn('--publish',args);self.assertIn(m.LABEL+'.role=oneshot',args)
+            aliases=calls[1];self.assertIn('gateway',aliases);self.assertNotIn('service-frontend',aliases)
+            self.assertIn('listen 8000',(life.work/'route-echo.conf').read_text())
+
+    def test_query_loss_cannot_be_counted_as_route_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=self.probe(directory,strip_query=True)
+            with self.assertRaisesRegex(m.GateError,'nginx_proxy_uri_or_query_changed'):
+                m.verify_nginx_routes(life,'sha256:product-nginx')
+            self.assertFalse(hasattr(life,'nginx_route_assertions'))
+
+    def test_local_scope_and_existing_ci_entry_cover_product_routes(self):
+        self.assertEqual(m.FRONTENDS,('console','system-frontend','monitor-frontend','nginx'))
+        self.assertEqual(len(m.BACKENDS),6)
+        configuration=(m.ROOT/'nginx/nginx.conf').read_text()
+        for name in ('system','manager','meta','transfer','orchestrator','develop','service'):
+            self.assertNotRegex(configuration,r'(?m)^\s*upstream '+name+r'-frontend\s*\{')
+            self.assertIn('rewrite ^/module-ui/'+name+'/(.*)$ /$1 break;',configuration)
+            self.assertIn('proxy_pass http://$'+name+'_frontend_upstream;',configuration)
+        make=(m.ROOT/'Makefile').read_text()
+        self.assertIn('@$(MAKE) test-nginx-routes',make)
+        self.assertIn('nginx/',(m.ROOT/'scripts/test/monitor-traces-gate.sh').read_text().splitlines()[3])
 
 
 class MinioProductContractTests(unittest.TestCase):

@@ -30,8 +30,7 @@ import urllib.parse
 ROOT = Path(__file__).resolve().parents[2]
 LABEL = 'com.addp.execution-trace-local'
 BACKENDS = ('system-backend', 'gateway', 'security-backend', 'develop-backend', 'orchestrator-backend', 'monitor-backend')
-FRONTENDS = ('console', 'system-frontend', 'manager-frontend', 'meta-frontend', 'transfer-frontend',
-             'orchestrator-frontend', 'develop-frontend', 'service-frontend', 'monitor-frontend', 'nginx')
+FRONTENDS = ('console', 'system-frontend', 'monitor-frontend', 'nginx')
 TRACE = ('minio', 'runtime-log-store-init', 'loki', 'runtime-log-api', 'trace-store-init', 'tempo', 'trace-query', 'alloy')
 # All concurrently running services, browser and the sampling helper fit 8 CPU/12 GiB.
 LIMITS = {name: (.25, 512) for name in BACKENDS} | {name: (.025, 32) for name in FRONTENDS} | {
@@ -39,7 +38,7 @@ LIMITS = {name: (.25, 512) for name in BACKENDS} | {name: (.025, 32) for name in
     'minio': (.5, 512), 'runtime-log-store-init': (.1, 128), 'loki': (.5, 512), 'runtime-log-api': (.1, 64),
     'trace-store-init': (.1, 128), 'tempo': (2, 2048), 'trace-query': (.25, 128), 'alloy': (1, 1024)}
 OWN_INPUTS = (
-    'Makefile', 'scripts/ci/check-online-ci-registration.py', 'scripts/ci/check-execution-trace-local-registration_test.py',
+    'Makefile', 'nginx/nginx.conf', 'scripts/ci/check-online-ci-registration.py', 'scripts/ci/check-execution-trace-local-registration_test.py',
     'scripts/test/monitor-traces-local-gate.py', 'scripts/test/monitor-traces-local-gate_test.py',
     'scripts/test/monitor-traces-local-online.py', 'scripts/test/monitor-traces-local-online_test.py',
     'scripts/test/monitor-traces-gate.sh', 'scripts/infra/init-postgresql.sql', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
@@ -620,8 +619,71 @@ def build(life):
                 '--mount',f'type=bind,source={life.checkout},target=/workspace','-w','/workspace/console/frontend',
                 *[part for k,v in proxies.items() for key in (k,k.lower()) for part in ('-e',key+'='+v)],
                 life.browser_image,'npm','ci','--no-audit','--no-fund',timeout=300)
+    life.phase='product_nginx_route_contract'
+    verify_nginx_routes(life,images['nginx'])
     # Builder's state remains under the same disk stop line until final cleanup.
     return commit,env,images
+
+
+def verify_nginx_routes(life, image):
+    """Exercise the product config with private URI echoes, never user APIs."""
+    network=life.run_id+'-route-contract'
+    echo=life.run_id+'-route-echo'
+    entry=life.run_id+'-route-entry'
+    root=life.checkout if life.checkout.exists() else ROOT
+    configuration=life.work/'route-echo.conf'
+    configuration.write_text('events {}\nhttp { server { listen 80; listen 8000; return 200 "$request_uri"; } }\n')
+    life.docker('network','create','--internal','--label',LABEL+'='+life.run_id,network)
+    aliases=('console','gateway','system-frontend','manager-frontend','meta-frontend',
+             'transfer-frontend','orchestrator-frontend','develop-frontend','monitor-frontend')
+    common=['--label',LABEL+'='+life.run_id,'--label',LABEL+'.role=oneshot',
+            '--cpus','.1','--memory','64m','--network',network]
+    life.docker('run','-d','--name',echo,*common,
+        *[part for alias in aliases for part in ('--network-alias',alias)],
+        '--mount','type=bind,source='+str(configuration)+',target=/etc/nginx/nginx.conf,readonly',image)
+    life.docker('run','-d','--name',entry,*common,
+        '--mount','type=bind,source='+str(root/'nginx/nginx.conf')+',target=/etc/nginx/nginx.conf,readonly',image)
+    ready=life.docker('exec',entry,'sh','-ec',
+        'n=0; while [ "$n" -lt 40 ]; do if wget -qO /tmp/route-ready http://127.0.0.1/route-ready 2>/dev/null; then cat /tmp/route-ready; exit 0; fi; n=$((n+1)); sleep .1; done; exit 1',timeout=15)
+    require(ready.strip()=='/route-ready','nginx_console_route_invalid')
+    cases=[('/module-ui/'+name+'/nested/page?first=a%20b&second=2','/nested/page?first=a%20b&second=2')
+           for name in ('system','manager','meta','transfer','orchestrator','develop')]
+    cases += [('/module-ui/system/assets/app.js?version=1','/assets/app.js?version=1'),
+              ('/module-ui/manager/plugins/viewer/file.js?version=2','/plugins/viewer/file.js?version=2'),
+              ('/module-ui/manager/wasm/reader.wasm?version=3','/wasm/reader.wasm?version=3'),
+              ('/module-ui/monitor/assets/app.js?version=4','/assets/app.js?version=4'),
+              ('/api/v1/route-contract?version=5','/api/v1/route-contract?version=5')]
+    for index,(path,expected) in enumerate(cases):
+        life.phase='nginx_route_contract_case_'+str(index)
+        actual=life.docker('exec',entry,'wget','-qO-','http://127.0.0.1'+path,timeout=10)
+        require(actual.strip()==expected,'nginx_proxy_uri_or_query_changed')
+    missing=life.docker('exec',entry,'sh','-ec',
+        'wget -S -O /dev/null http://127.0.0.1/module-ui/service/missing 2>&1 || true',timeout=15)
+    require(re.search(r'HTTP/1\.[01] 502(?: |\r|\n)',missing) is not None,'nginx_missing_module_must_return_502')
+    require(life.docker('exec',entry,'wget','-qO-','http://127.0.0.1/module-ui/system/still-ready',timeout=10).strip()=='/still-ready',
+            'nginx_missing_module_disrupted_selected_module')
+    life.sample()
+    life.docker('kill','--signal=QUIT',entry,echo)
+    require(life.docker('wait',entry,echo,timeout=15).split()==['0','0'],'nginx_route_probe_exit_failed')
+    life.sample()
+    life.nginx_route_assertions={'uri_and_query_cases':len(cases),'missing_module_502':True,'selected_module_remains_readable':True}
+
+
+def nginx_route_contract():
+    """Generic bounded T2 check; does not invoke formal local admission or login."""
+    life=Lifecycle();life.started-=MAX_SECONDS-120
+    try:
+        endpoint=effective_docker_endpoint(os.environ,lambda name: json.loads(life.docker('context','inspect',*([name] if name else [])))[0]['Endpoints']['docker']['Host'])
+        private_docker_client(life,endpoint)
+        source=(ROOT/'scripts/infra/traces.yml').read_text()
+        match=re.search(r'^    image: (nginx:[^\s]+)$',source,re.M)
+        require(match is not None,'pinned_nginx_contract_image_missing')
+        verify_nginx_routes(life,match.group(1))
+        print('Nginx route contract passed: '+json.dumps(life.nginx_route_assertions),flush=True)
+    finally:
+        errors=life.cleanup()
+        require(not errors,'nginx_route_contract_cleanup_failed')
+        print('Nginx route contract: zero owned resources',flush=True)
 
 
 def start_dependencies(compose, initialization_sql):
@@ -847,6 +909,7 @@ def main():
         if hasattr(life,'failed_container_states'):report['failed_container_states']=life.failed_container_states
         if hasattr(life,'builder_stop_states'):report['builder_stop_states']=life.builder_stop_states
         report['dependencies_ready']=getattr(life,'dependencies_ready',False)
+        if hasattr(life,'nginx_route_assertions'):report['nginx_routes']=life.nginx_route_assertions
         errors=life.cleanup()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'

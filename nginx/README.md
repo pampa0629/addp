@@ -19,6 +19,8 @@ Nginx 是根 [docker-compose.yml](../docker-compose.yml) 中 `addp-platform` 的
 
 Console 公开路由由根入口处理；各模块 iframe 与静态资源通过 `/module-ui/<frontend>/` 转发。`/portal/` 和 `/data-apps/` 保持独立入口。生产镜像与部署包均使用 `nginx/nginx.conf`。
 
+Console与Gateway是入口必需依赖；模块页面在请求时通过Docker DNS解析，未部署的模块页面返回明确的代理失败，不阻止入口及已部署页面启动。转发必须保留去除`/module-ui/<frontend>/`前缀后的路径和原查询参数，不能把子路径统一改成`/`。`make test-nginx-routes`用独占网络和真实Nginx核验路径、参数、静态资源及缺失模块502；该检查同时纳入现有`make test-monitor-traces`，不执行正式身份或Hosted验收。
+
 `nginx.conf` 是完整的 Nginx 主配置，依赖 ADDP 容器网络中的服务名，不能作为本地 Nginx 的 `servers/` 片段直接复制。
 
 ## 配置说明
@@ -30,7 +32,8 @@ location / {
     proxy_pass http://console;
 }
 location /module-ui/system/ {
-    proxy_pass http://system-frontend/;
+    rewrite ^/module-ui/system/(.*)$ /$1 break;
+    proxy_pass http://$system_frontend_upstream;
 }
 ```
 

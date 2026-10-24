@@ -1318,8 +1318,13 @@ test-monitor-traces-local-runner: ## 验证本地 Trace 准入、资源守卫、
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace' -count=1
 
+.PHONY: test-nginx-routes
+test-nginx-routes: ## 隔离验证产品Nginx按需页面解析与路径参数转发
+	@python3 -c "import importlib; importlib.import_module('scripts.test.monitor-traces-local-gate').nginx_route_contract()"
+
 .PHONY: test-monitor-traces
 test-monitor-traces: ## 隔离验证 HTTP Trace 传播、真实尾采样、Tempo 和日志关联
+	@$(MAKE) test-nginx-routes
 	@bash scripts/test/monitor-traces-gate.sh $(MONITOR_TRACES_TEST_ARGS)
 
 .PHONY: build-audit-archive test-system-audit-archive
