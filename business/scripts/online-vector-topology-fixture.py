@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg', 'split-lines.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg', 'split-line-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg', 'split-lines.gpkg', 'line-components.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg', 'split-line-input.gpkg', 'line-component-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,56 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def line_component_source_features():
+    tiny = 2**-40
+    rows = [('多源', [[[14,260],[12,260],[10,260]], [[30,260],[32,260]], rectangle(50,260,52,262)]),
+            ('T支', [[12,258],[12,260]]), ('桥甲', [[34,260],[35,260]]),
+            ('桥接', [[32,260],[34,260]]), ('反重', [[14,260],[10,260]]),
+            ('自交', [[70,260],[72,262],[70,262],[72,260]]),
+            ('自叠', [[80,260],[82,260],[80,260]]),
+            ('微断', [[[0,280],[1,280]], [[1+tiny,280],[2,280]]]),
+            ('同接', [[[10,266],[12,266]], [[12,266],[14,266]]]),
+            ('十交', [[11,259],[11,261]]),
+            ('原重', [[90,260],[90,260],[92,260],[92,260]])]
+    return [{'properties': {'route_key': identity, 'note': None if index == 1 else f'component-original-{index}', 'grade': 200+index},
+             'geometry': {'type': 'MultiLineString' if identity in ('多源','微断','同接') else 'LineString', 'coordinates': points}}
+            for index, (identity, points) in enumerate(rows)]
+
+
+def line_component_expected_features():
+    # Hand-specified memberships and original paths, never a grouping algorithm.
+    rows = [(0,1,1,[[14,260],[12,260],[10,260]]), (0,2,2,[[30,260],[32,260]]),
+            (0,3,3,rectangle(50,260,52,262)), (1,1,1,[[12,258],[12,260]]),
+            (2,1,2,[[34,260],[35,260]]), (3,1,2,[[32,260],[34,260]]),
+            (4,1,1,[[14,260],[10,260]]), (5,1,4,[[70,260],[72,262],[70,262],[72,260]]),
+            (6,1,5,[[80,260],[82,260],[80,260]]), (7,1,6,[[0,280],[1,280]]),
+            (7,2,7,[[1+2**-40,280],[2,280]]), (8,1,8,[[10,266],[12,266]]),
+            (8,2,8,[[12,266],[14,266]]), (9,1,1,[[11,259],[11,261]]),
+            (10,1,9,[[90,260],[90,260],[92,260],[92,260]])]
+    sources = line_component_source_features()
+    return [{'properties': {**sources[index]['properties'], 'source_id': sources[index]['properties']['route_key'],
+                            'part_no': part, 'component_id': component},
+             'geometry': {'type': 'LineString', 'coordinates': points}} for index,part,component,points in rows]
+
+
+def validate_line_component_features(features, source=False):
+    expected = line_component_source_features() if source else line_component_expected_features()
+    _validate_point_features(features, expected)
+    for feature in features:
+        for name in ('grade',) if source else ('grade','part_no','component_id'):
+            if type(feature['properties'][name]) is not int:
+                raise FixtureError('line component attributes and group numbers must remain integers')
+
+
+def seed_line_component(path):
+    _seed_attributed_line_source(path, line_component_source_features())
+
+
+def verify_line_component(path, source=False):
+    return _verify_attributed_lines(path, line_component_source_features() if source else line_component_expected_features(),
+                                    validate_line_component_features, source)
 
 
 def split_line_source_features():
@@ -65,45 +115,53 @@ def validate_split_line_features(features, source=False):
 
 
 def seed_split_line(path):
+    _seed_attributed_line_source(path, split_line_source_features())
+
+
+def verify_split_line(path, source=False):
+    return _verify_attributed_lines(path, split_line_source_features() if source else split_line_expected_features(),
+                                    validate_split_line_features, source)
+
+
+def _seed_attributed_line_source(path, features):
     from osgeo import ogr, osr
     crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
     dataset = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
     layer = dataset.CreateLayer(path.stem, crs, ogr.wkbUnknown)
     for name, kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64)]:
         layer.CreateField(ogr.FieldDefn(name,kind))
-    for row in split_line_source_features():
+    for row in features:
         feature = ogr.Feature(layer.GetLayerDefn())
         for name, value in row['properties'].items():
             if value is not None: feature.SetField(name,value)
         feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
-        if layer.CreateFeature(feature) != 0: raise FixtureError('cannot seed split line source')
+        if layer.CreateFeature(feature) != 0: raise FixtureError('cannot seed attributed line source')
     dataset = None
 
 
-def verify_split_line(path, source=False):
+def _verify_attributed_lines(path, expected, validate, source):
     from osgeo import ogr, osr
-    expected = split_line_source_features() if source else split_line_expected_features()
     dataset = ogr.Open(str(path),0)
-    if dataset is None or dataset.GetLayerCount()!=1: raise FixtureError('expected one split line GeoPackage layer')
+    if dataset is None or dataset.GetLayerCount()!=1: raise FixtureError('expected one attributed line GeoPackage layer')
     layer = dataset.GetLayer(0); crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
-    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs): raise FixtureError('split line CRS differs')
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs): raise FixtureError('attributed line CRS differs')
     fields = list(expected[0]['properties']); schema = layer.GetLayerDefn()
     if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())] != fields or
-        any(schema.GetFieldDefn(i).GetType() != (ogr.OFTInteger64 if name in ('grade','part_no','segment_no') else ogr.OFTString) for i,name in enumerate(fields))):
-        raise FixtureError('split line attribute/ordinal field types differ')
+        any(schema.GetFieldDefn(i).GetType() != (ogr.OFTInteger64 if name in ('grade','part_no','segment_no','component_id') else ogr.OFTString) for i,name in enumerate(fields))):
+        raise FixtureError('attributed line attribute/ordinal field types differ')
     features = []
     for feature in layer:
         geometry = feature.GetGeometryRef()
         if geometry is None or geometry.GetCoordinateDimension()!=2 or not geometry.IsValid():
-            raise FixtureError('split line geometry invalid or non-XY')
+            raise FixtureError('attributed line geometry invalid or non-XY')
         kind = geometry.GetGeometryName()
         if kind == 'LINESTRING':
             shape = {'type':'LineString','coordinates':[list(point[:2]) for point in geometry.GetPoints()]}
         elif kind == 'MULTILINESTRING' and source:
             shape = {'type':'MultiLineString','coordinates':[[list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
-        else: raise FixtureError('split line geometry type differs')
+        else: raise FixtureError('attributed line geometry type differs')
         features.append({'properties':{name:feature.GetField(name) for name in fields},'geometry':shape})
-    validate_split_line_features(features,source)
+    validate(features,source)
     result = {**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
               'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
     dataset = None
@@ -723,6 +781,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'line-components.gpkg':
+        return validate_line_component_features(features)
     if name == 'split-lines.gpkg':
         return validate_split_line_features(features)
     if name == 'line-self-intersections.gpkg':
@@ -775,6 +835,7 @@ def worker(action, root):
         _seed_linear(root / 'line-intersection-input.gpkg', line_intersection_source_features())
         _seed_linear(root / 'line-self-intersection-input.gpkg', line_self_intersection_source_features())
         seed_split_line(root / 'split-line-input.gpkg')
+        seed_line_component(root / 'line-component-input.gpkg')
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -797,8 +858,12 @@ def worker(action, root):
     verify_line_intersection(root / 'line-intersection-input.gpkg', source=True)
     verify_line_self_intersection(root / 'line-self-intersection-input.gpkg', source=True)
     verify_split_line(root / 'split-line-input.gpkg', source=True)
+    verify_line_component(root / 'line-component-input.gpkg', source=True)
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name == 'line-components.gpkg':
+            results[name] = verify_line_component(path)
+            continue
         if name == 'split-lines.gpkg':
             results[name] = verify_split_line(path)
             continue

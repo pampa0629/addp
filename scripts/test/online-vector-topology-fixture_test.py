@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'line-components.gpkg':
+        return m.line_component_expected_features()
     if name == 'split-lines.gpkg':
         return m.split_line_expected_features()
     if name == 'line-self-intersections.gpkg':
@@ -45,6 +47,31 @@ def records(name):
 
 
 class TopologyFixtureTest(unittest.TestCase):
+    def test_line_component_oracle_requires_exact_membership_attributes_and_original_parts(self):
+        original = m.line_component_expected_features()
+        self.assertEqual(len(m.line_component_source_features()),11)
+        self.assertEqual(len(original),15)
+        self.assertEqual([row['properties']['component_id'] for row in original],[1,2,3,1,2,2,1,4,5,6,7,8,8,1,9])
+        m.validate_line_component_features(original)
+        m.validate_line_component_features(m.line_component_source_features(),source=True)
+        for mutate in (
+            lambda rows:rows.pop(), lambda rows:rows.reverse(),
+            lambda rows:rows.__setitem__(1,copy.deepcopy(rows[0])),
+            lambda rows:rows[0]['properties'].update(source_id='1'),
+            lambda rows:rows[0]['properties'].update(route_key='foreign'),
+            lambda rows:rows[0]['properties'].update(grade=999),
+            lambda rows:rows[3]['properties'].update(note=''),
+            lambda rows:rows[0]['properties'].update(part_no=True),
+            lambda rows:rows[0]['properties'].update(component_id=1.0),
+            lambda rows:rows[1]['properties'].update(component_id=1),
+            lambda rows:rows[12]['properties'].update(component_id=9),
+            lambda rows:rows[0]['geometry']['coordinates'].reverse(),
+            lambda rows:rows[10]['geometry']['coordinates'][0].__setitem__(0,1),
+            lambda rows:rows[-1]['geometry']['coordinates'].pop(),
+        ):
+            value=copy.deepcopy(original);mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_line_component_features(value)
+
     def test_split_line_oracle_requires_all_attributes_direction_vertices_and_ordinals(self):
         original = m.split_line_expected_features()
         self.assertEqual(len(m.split_line_source_features()),11)
