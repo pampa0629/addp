@@ -54,10 +54,12 @@ esac
 # existing fixture tables read-only; CREATE only lets this disposable account
 # own its new outputs. Other consumers of this shared fixture remain read-only.
 allow_output_create=0
+source_command=(postgres)
 if [ "${ONLINE_SUITE:-}" = pg-source-authorization ]; then
   [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "${POSTGRES_DB:-}" = addp_online ] ||
     fail "PG output creation requires its isolated suite"
   allow_output_create=1
+  source_command+=(-c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all)
 fi
 ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
 [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
@@ -66,7 +68,7 @@ POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 # Infra has just built this repository-owned image on the clean Hosted VM.
 docker run -d --name "$container" --label com.addp.online-fixture=metric \
   -p 127.0.0.1:55433:5432 -e POSTGRES_PASSWORD -e POSTGRES_DB=metric_fixture \
-  addp-postgres-pgvector:latest >/dev/null
+  addp-postgres-pgvector:latest "${source_command[@]}" >/dev/null
 ready=0
 for _ in $(seq 1 60); do
   # The entrypoint first starts a socket-only bootstrap server before creating
@@ -95,6 +97,8 @@ GRANT USAGE ON SCHEMA public TO metric_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO metric_reader;
 \if :allow_output_create
 GRANT CREATE ON SCHEMA public TO metric_reader;
+CREATE SCHEMA addp_observer AUTHORIZATION postgres;
+CREATE EXTENSION pg_stat_statements WITH SCHEMA addp_observer;
 \endif
 SQL
 python3 - <<'PY'

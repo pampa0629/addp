@@ -57,6 +57,7 @@
 | collection revision | 集合修订版本 | 对一次跨多个独立聚合的集合级替换提供并发边界的单调递增正整数。 | 仅在操作没有单一聚合根时使用；API 字段统一为 `revision`。它不是集合成员数量，也不能用任一成员的资源并发版本替代。 |
 | Engine Catalog | 引擎目录 | Engine Plugin 对真实引擎原生命名空间、可枚举层级、路径和对象事实的统一只读抽象。 | 回答“引擎当前有什么、结构上如何定位、引擎直接知道哪些事实”；不是企业资源目录，也不拥有业务语义和治理状态。跨模块代码词族统一使用 `EngineCatalog*`。 |
 | EngineCatalogPath | 引擎目录路径 | Engine Catalog 内的路径坐标。 | 不等同于 ResourceLocator，也不等同于 Meta `full_name`。线上版本值 `catalog.path/v1` 由 Engine 上下文限定，第一阶段保留。 |
+| Catalog enumeration read unit | Catalog 枚举读取单元 | Meta 集中治理采集中的一次 `EngineCatalogProvider.ListChildren` 调用，是本期 PG basic 资格重核的读取边界。 | 已放行的在途枚举允许结束，包括该调用内部的后续 SQL；撤销后下一次枚举必须重核并拒绝。不等于逐 SQL、逐行中断或原子撤销源端正在运行的请求。 |
 | EngineCatalogEntry | 引擎目录条目 | `EngineCatalogProvider.ListChildren` 返回的 Engine Catalog 列表项，不是“入口”。 | 回答“当前位置下面有什么、结构上怎么走”；通过 `role=branch/leaf` 表达结构角色；列表摘要使用 `Table`、`Storage`、`LeafCount` 等显式字段，不保留兜底 attributes / stats。 |
 | EngineCatalogRoot | 引擎目录根 | 每个 Engine Catalog 的显性结构根。 | 通常投影为 root `meta_node`；`full_name=""`，ResourceLocator path 为空，但仍可通过 `node_id` 定位。面向用户展示时使用引擎实例名称，不显示内部术语。 |
 | EngineCatalogBranch | 引擎目录分支 | 可继续列举子条目的 Engine Catalog entry。 | 例如 schema、database、bucket、prefix、directory；通常由 Meta 投影为 `meta_node`。 |

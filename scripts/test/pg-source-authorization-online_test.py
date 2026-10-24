@@ -1976,6 +1976,8 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 if self.fault != 'revoke_noop':
                     row.update(status='revoked', version=str(int(row['version']) + 1), revoked_at='2026-10-23T00:01:00Z',
                                revoked_by_principal_id='35', revoked_reason=body['reason'])
+                    if self.expiry_clock is not None:
+                        row['revoked_at'] = self.expiry_clock.now(timezone.utc).isoformat()
                 result, operation = row, 'revoke'
         elif path.startswith('/api/v1/meta/executions/'):
             result = self.runs[path.split('/')[-1]]
@@ -2118,6 +2120,98 @@ class MetaCollectionOnlineTest(unittest.TestCase):
             self.scenario.run_expiry(self.report)
         self.scenario.cleanup()
         self.assertFalse(self.tasks)
+
+    def inflight_fixture(self, fault=None):
+        clock = self.collection_expiry_fixture()
+        self.report['meta_collection'] = {'qualification_commands': [], 'scheduled': {
+            'executions': {'approved_repeat': {'items_scanned': 3}}}}
+        barrier = SimpleNamespace(baseline={'reset_at': 'stable', 'calls': {}}, closed=False, released=False)
+        selected = []
+        def open_source():
+            if fault == 'source_open': raise ONLINE.SuiteError('source preparation failed')
+            return {'pid': 123, 'locked': True, 'at': clock.now(timezone.utc).isoformat()}
+        def blocked():
+            if fault == 'barrier_missing': raise ONLINE.SuiteError('source did not reach lock')
+            execution = list(self.runs)[-1]
+            selected.append(execution)
+            self.runs[execution]['status'] = 'success' if fault == 'not_running' else 'running'
+            self.runs[execution].pop('completed_at')
+            return {'pid': 124, 'blocker_pid': 123, 'started_at': clock.now(timezone.utc).isoformat(),
+                    'observed_at': clock.now(timezone.utc).isoformat()}
+        def release():
+            # Must revoke before opening the source gate, even on failures.
+            self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+            if selected and self.runs[selected[0]]['status'] == 'running':
+                row = self.runs[selected[0]]
+                row.update(status='failed', completed_at=clock.now(timezone.utc).isoformat(),
+                    metadata={'items_scanned': 3, 'catalog_nodes_scanned': 1, 'fields_scanned': 0},
+                    error_details={'category': 'connection_failed' if fault == 'general_failure' else 'permission_denied'})
+                if fault == 'missing_partial': row['metadata'] = {}
+                if fault == 'too_many_items': row['metadata']['items_scanned'] = 4
+                self.tasks[int(row['source_task_id'])].update(last_execution_status='failed')
+            barrier.released = True
+        values = {'reset_at': 'changed' if fault == 'statistics_reset' else 'stable',
+                  'calls': {'namespaces': 1, 'tables': 2 if fault == 'another_catalog' else 1,
+                            'workspace_detection': 2, 'other': 1 if fault == 'other_sql' else 0}}
+        calls = []
+        def counts():
+            calls.append(True)
+            result = deepcopy(values)
+            if fault == 'repeat_source_io' and len(calls) > 1: result['calls']['tables'] += 1
+            return result
+        def close():
+            release()
+            self.assertFalse(any(row['status'] == 'running' for row in self.runs.values()))
+            if fault == 'source_residual': raise ONLINE.SuiteError('source schema remains')
+            barrier.closed = True
+        barrier.open, barrier.wait_blocked, barrier.release = open_source, blocked, release
+        barrier.counts, barrier.close = counts, close
+        return barrier
+
+    def test_inflight_revocation_retains_admitted_results_denies_next_catalog_and_cleans_source(self):
+        barrier = self.inflight_fixture()
+        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
+            self.scenario.run_inflight(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_CHECKS)
+        self.assertTrue(barrier.closed and barrier.released)
+        self.assertEqual([x['status'] for x in self.runs.values()], ['failed', 'failed'])
+        self.assertEqual(self.report['meta_collection']['inflight']['source_call_delta']['tables'], 1)
+        self.assertEqual(self.scenario.attempts[0]['denial_boundary'], 'after_admitted_catalog')
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+
+    def test_inflight_revocation_cannot_accept_ordinary_errors_additional_reads_or_statistics_reset(self):
+        for fault in ('barrier_missing', 'source_open', 'not_running', 'general_failure', 'missing_partial',
+                      'too_many_items', 'statistics_reset', 'another_catalog', 'other_sql', 'repeat_source_io'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                barrier = self.inflight_fixture(fault)
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_inflight(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_CHECKS)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(barrier.closed)
+                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_inflight_unknown_approval_and_trigger_preserve_cleanup_and_source_residual_is_failure(self):
+        for operation in ('approve', 'trigger', 'revoke', 'source_residual'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                barrier = self.inflight_fixture(operation if operation == 'source_residual' else None)
+                self.lost = operation
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
+                    if operation == 'revoke':
+                        self.scenario.run_inflight(self.report)
+                    else:
+                        with self.assertRaises(ONLINE.SuiteError): self.scenario.run_inflight(self.report)
+                if operation == 'source_residual':
+                    with self.assertRaisesRegex(ONLINE.SuiteError, 'source fixture cleanup'):
+                        self.scenario.cleanup()
+                else:
+                    self.scenario.cleanup()
+                    self.assertFalse(self.tasks)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
 
     def browser_fixture(self, failure=None):
         self.report['meta_collection'] = {'qualification_commands': []}
@@ -2644,6 +2738,98 @@ class InitialProductionOnlineTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             self.lifecycle.cleanup()
         self.assertFalse(self.output_revoked)
+
+
+class PGCollectionBarrierTest(unittest.TestCase):
+    def setUp(self):
+        self.barrier = ONLINE.PGCollectionReadBarrier()
+
+    def test_refuses_personal_context_before_any_docker_operation(self):
+        with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.subprocess, 'run') as run:
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.open()
+            run.assert_not_called()
+
+    def test_source_query_is_container_bound_read_only_bounded_and_never_leaks_transport_text(self):
+        self.barrier.container = 'a' * 64
+        with patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='{"value":1}')) as run:
+            self.assertEqual(self.barrier.query('SELECT 1;'), {'value': 1})
+            args, options = run.call_args
+            self.assertIn(self.barrier.container, args[0])
+            self.assertIn('metric_fixture', args[0])
+            self.assertIn('default_transaction_read_only=on', options['env']['PGOPTIONS'])
+            self.assertEqual(options['timeout'], 6)
+            self.assertEqual(options['stderr'], ONLINE.subprocess.DEVNULL)
+        with patch.object(ONLINE.subprocess, 'run', side_effect=ONLINE.subprocess.TimeoutExpired('private details', 6)):
+            with self.assertRaisesRegex(ONLINE.SuiteError, '^source barrier query transport failed$'):
+                self.barrier.query('SELECT 1;')
+
+    def test_foreign_container_never_creates_schema_or_opens_lock(self):
+        env = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1',
+               'ADDP_ONLINE_HOSTED': '1', 'POSTGRES_DB': 'addp_online', 'ONLINE_SUITE': ONLINE.SUITE}
+        owner = {'Id': 'a' * 64, 'Config': {'Labels': {'com.addp.online-fixture': 'personal'},
+                 'Env': ['POSTGRES_DB=metric_fixture']}, 'State': {'Running': True}, 'NetworkSettings': {'Ports': {}}}
+        with patch.dict(ONLINE.os.environ, env, clear=True), patch.object(ONLINE.sys, 'platform', 'linux'), \
+             patch.object(ONLINE.Path, 'exists', return_value=False), \
+             patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(owner))), \
+             patch.object(self.barrier, 'query') as query, patch.object(ONLINE.subprocess, 'Popen') as popen:
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.open()
+            query.assert_not_called()
+            popen.assert_not_called()
+
+    def test_partial_source_creation_is_owned_before_failure_and_cleanup_is_precise(self):
+        env = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1',
+               'ADDP_ONLINE_HOSTED': '1', 'POSTGRES_DB': 'addp_online', 'ONLINE_SUITE': ONLINE.SUITE}
+        owner = {'Id': 'a' * 64, 'Config': {'Labels': {'com.addp.online-fixture': 'metric'},
+                 'Env': ['POSTGRES_DB=metric_fixture']}, 'State': {'Running': True}, 'NetworkSettings': {
+                 'Ports': {'5432/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '55433'}]}}}
+        created, statements = [], []
+        def query(sql, **kwargs):
+            statements.append(sql)
+            if 'CREATE SCHEMA' in sql:
+                self.assertTrue(self.barrier.schema_owned)
+                created.append(True)
+                raise ONLINE.SuiteError('unknown committed creation')
+            if 'DROP TABLE' in sql:
+                self.assertIn(self.barrier.schema + '.canary', sql)
+                self.assertNotIn('CASCADE', sql)
+                created.clear()
+                return {'dropped': True}
+            if 'to_regnamespace' in sql: return {'exists': bool(created)}
+            if 'pg_stat_activity' in sql: return {'sessions': 0}
+            self.fail('unexpected source cleanup query')
+        with patch.dict(ONLINE.os.environ, env, clear=True), patch.object(ONLINE.sys, 'platform', 'linux'), \
+             patch.object(ONLINE.Path, 'exists', return_value=False), \
+             patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(owner))), \
+             patch.object(self.barrier, 'query', side_effect=query):
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.open()
+            self.barrier.close()
+            self.assertTrue(self.barrier.closed and self.barrier.released)
+            self.assertFalse(created)
+            self.barrier.close()
+            self.assertEqual(sum('DROP TABLE' in s for s in statements), 1)
+
+    def test_ambiguous_blocked_reader_and_lock_residual_are_never_passing_observations(self):
+        self.barrier.pid = 123
+        self.barrier.process = Mock()
+        self.barrier.process.poll.return_value = None
+        with patch.object(self.barrier, 'query', return_value={'at': 'time', 'blocked': [{'pid': 1}, {'pid': 2}]}):
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.wait_blocked()
+        self.barrier.container, self.barrier.process = 'a' * 64, None
+        with patch.object(self.barrier, 'query', return_value={'sessions': 1}):
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.release()
+        self.assertFalse(self.barrier.released)
+
+    def test_statistics_cannot_hide_invalid_counts_and_release_has_bounded_process_cleanup(self):
+        with patch.object(self.barrier, 'query', return_value={'reset_at': 'same', 'calls': {'tables': -1}}):
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.counts()
+        process = self.barrier.process = Mock()
+        process.poll.side_effect = [None, None]
+        process.wait.side_effect = [ONLINE.subprocess.TimeoutExpired('owned lock', 5), 0]
+        with self.assertRaises(ONLINE.subprocess.TimeoutExpired): self.barrier.release()
+        process.kill.assert_called_once_with()
+        process.stdin.close.assert_called_once_with()
+        process.stdout.close.assert_called_once_with()
+        self.assertIsNone(self.barrier.process)
 
 
 if __name__ == '__main__':

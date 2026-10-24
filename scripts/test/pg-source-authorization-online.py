@@ -60,6 +60,8 @@ COLLECTION_EXPIRY_CHECKS = ['meta_collection_before_expiry_readable', 'meta_coll
                           'meta_collection_expired_replay_preserves_history']
 COLLECTION_SCHEDULED_CHECKS = ['meta_collection_scheduled_unapproved_denied', 'meta_collection_scheduled_approved_repeat',
                              'meta_collection_scheduled_revoked_denied', 'meta_collection_scheduled_source_rules_unchanged']
+COLLECTION_INFLIGHT_CHECKS = ['meta_collection_inflight_revoke_stops_next_catalog',
+                             'meta_collection_inflight_retry_has_no_source_io', 'meta_collection_inflight_fixture_cleanup']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -741,6 +743,147 @@ def same_collection_row(left, right):
     return left == right
 
 
+class PGCollectionReadBarrier:
+    """Bounded source-owned lock + aggregate observations, only on disposable PG."""
+    def __init__(self):
+        self.schema = 'zz_pg_collection_' + uuid.uuid4().hex[:16]
+        self.application = 'pg_collection_barrier_' + uuid.uuid4().hex[:16]
+        self.container = self.process = self.pid = None
+        self.schema_owned = self.released = self.closed = False
+
+    def command(self):
+        require(isinstance(self.container, str) and re.fullmatch('[a-f0-9]{64}', self.container),
+                'source barrier has no admitted container')
+        return ['docker', 'exec', '-i', '-e', 'PGOPTIONS', self.container, 'psql', '-XqAt', '-P', 'pager=off',
+                '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'metric_fixture']
+
+    def query(self, sql, *, write=False):
+        environment = dict(os.environ, PGOPTIONS='-c statement_timeout=3000 -c lock_timeout=1000'
+                           + ('' if write else ' -c default_transaction_read_only=on'))
+        try:
+            result = subprocess.run(self.command(), input=sql, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    text=True, timeout=6, env=environment, check=False)
+        except (OSError, subprocess.SubprocessError):
+            raise SuiteError('source barrier query transport failed') from None
+        require(result.returncode == 0 and len(result.stdout) <= 65536, 'source barrier query failed')
+        return json.loads(result.stdout)
+
+    def open(self):
+        require(all(os.environ.get(k) == v for k, v in {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
+            'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
+            'POSTGRES_DB': 'addp_online', 'ONLINE_SUITE': SUITE}.items()) and sys.platform == 'linux'
+            and not (Path(__file__).resolve().parents[2] / '.env').exists(), 'source barrier requires its Hosted suite')
+        inspected = subprocess.run(['docker', 'inspect', '--format', '{{json .}}', 'addp-metric-online-disposable'],
+            capture_output=True, text=True, timeout=5, check=True)
+        owner = json.loads(inspected.stdout)
+        require(owner['Config']['Labels'].get('com.addp.online-fixture') == 'metric' and owner['State']['Running']
+                and 'POSTGRES_DB=metric_fixture' in owner['Config']['Env']
+                and owner['NetworkSettings']['Ports'].get('5432/tcp') == [{'HostIp': '127.0.0.1', 'HostPort': '55433'}],
+                'refusing a foreign source barrier container')
+        self.container = owner['Id']
+        prior = self.query(f"SELECT json_build_object('exists',to_regnamespace('{self.schema}') IS NOT NULL);")
+        require(prior == {'exists': False}, 'source barrier schema already exists')
+        self.schema_owned = True  # Own the unique target before an unknown CREATE outcome.
+        self.query(f'''BEGIN; CREATE SCHEMA {self.schema}; CREATE TABLE {self.schema}.canary(id integer);
+            GRANT USAGE ON SCHEMA {self.schema} TO metric_reader;
+            GRANT SELECT ON {self.schema}.canary TO metric_reader; COMMIT;
+            SELECT json_build_object('created',true);''', write=True)
+        self.baseline = self.counts()
+        environment = dict(os.environ, PGOPTIONS='-c statement_timeout=3000 -c lock_timeout=1000'
+            ' -c idle_in_transaction_session_timeout=30000 -c application_name=' + self.application)
+        self.process = subprocess.Popen(self.command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.DEVNULL, env=environment)
+        self.process.stdin.write(b'''BEGIN; LOCK TABLE public.metric_people IN ACCESS EXCLUSIVE MODE;
+            SELECT json_build_object('pid',pg_backend_pid(),'locked',true,'at',clock_timestamp());
+''')
+        self.process.stdin.flush()
+        locked = self.read_lock_reply()
+        require(locked.get('locked') is True and type(locked.get('pid')) is int and locked['pid'] > 0,
+                'source barrier did not acquire the exact lock')
+        self.pid = locked['pid']
+        return locked
+
+    def read_lock_reply(self):
+        deadline, buffer = time.monotonic() + 5, b''
+        while b'\n' not in buffer:
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, 'source lock handshake timed out')
+            ready, _, _ = select.select([self.process.stdout], [], [], remaining)
+            require(bool(ready), 'source lock handshake timed out')
+            chunk = os.read(self.process.stdout.fileno(), 4096)
+            require(chunk and len(buffer) + len(chunk) <= 8192, 'source lock connection failed')
+            buffer += chunk
+        require(not buffer.split(b'\n', 1)[1].strip(), 'unexpected source lock output')
+        return json.loads(buffer)
+
+    def counts(self):
+        result = self.query('''SELECT json_build_object('reset_at',i.stats_reset,'calls',
+          COALESCE((SELECT json_object_agg(category,calls) FROM (
+            SELECT CASE WHEN query LIKE '%FROM information_schema.tables t%' AND query LIKE '%pg_total_relation_size%'
+              THEN 'tables' WHEN query LIKE '%pg_catalog.pg_namespace) s%' THEN 'namespaces'
+              WHEN query LIKE '%SELECT COUNT(*)%' AND query LIKE '%lower(table_name) IN%' THEN 'workspace_detection'
+              ELSE 'other' END AS category, sum(calls) AS calls
+            FROM addp_observer.pg_stat_statements WHERE userid=(SELECT oid FROM pg_roles WHERE rolname='metric_reader')
+              AND dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) GROUP BY 1) s),'{}'::json))
+          FROM addp_observer.pg_stat_statements_info i;''')
+        require(isinstance(result.get('calls'), dict) and result.get('reset_at')
+                and all(k in {'tables', 'namespaces', 'workspace_detection', 'other'} and type(v) is int and v >= 0
+                        for k, v in result['calls'].items()), 'invalid source statement counters')
+        return result
+
+    def wait_blocked(self):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            require(self.process.poll() is None, 'source lock session exited before revocation')
+            result = self.query(f'''SELECT json_build_object('at',clock_timestamp(),'blocked',COALESCE((SELECT
+                json_agg(json_build_object('pid',pid,'started_at',query_start)) FROM pg_stat_activity
+                WHERE usename='metric_reader' AND datname='metric_fixture' AND state='active'
+                  AND wait_event_type='Lock' AND {self.pid}=ANY(pg_blocking_pids(pid))
+                  AND query LIKE '%pg_total_relation_size%' AND query LIKE '%FROM information_schema.tables t%'),
+                '[]'::json));''')
+            require(isinstance(result.get('blocked'), list) and len(result['blocked']) <= 1,
+                    'ambiguous source enumeration barrier')
+            if result['blocked']:
+                blocked = result['blocked'][0]
+                require(type(blocked.get('pid')) is int and blocked['pid'] > 0 and blocked.get('started_at'),
+                        'source enumeration has no exact backend identity')
+                return dict(blocked, observed_at=result['at'], blocker_pid=self.pid)
+            time.sleep(.1)
+        raise SuiteError('source enumeration did not reach its bounded in-flight barrier')
+
+    def release(self):
+        if self.process is not None:
+            try:
+                if self.process.poll() is None:
+                    self.process.stdin.write(b'ROLLBACK; \\q\n')
+                    self.process.stdin.flush()
+                self.process.wait(timeout=5)
+            finally:
+                if self.process.poll() is None:
+                    self.process.kill()
+                    self.process.wait(timeout=5)
+                self.process.stdin.close()
+                self.process.stdout.close()
+                self.process = None
+        if self.container is not None:
+            result = self.query(f"SELECT json_build_object('sessions',count(*)) FROM pg_stat_activity WHERE application_name='{self.application}';")
+            require(result == {'sessions': 0}, 'source lock backend remains after release')
+        self.released = True
+
+    def close(self):
+        if self.closed:
+            return
+        self.release()
+        if self.schema_owned:
+            exists = self.query(f"SELECT json_build_object('exists',to_regnamespace('{self.schema}') IS NOT NULL);")
+            if exists.get('exists') is True:
+                self.query(f'''BEGIN; DROP TABLE {self.schema}.canary; DROP SCHEMA {self.schema}; COMMIT;
+                    SELECT json_build_object('dropped',true);''', write=True)
+            require(self.query(f"SELECT json_build_object('exists',to_regnamespace('{self.schema}') IS NOT NULL);")
+                    == {'exists': False}, 'source barrier schema remains')
+        self.closed = True
+
+
 class MetaCollectionScenario:
     """Task-bound governance approval through real Users and the Meta Worker."""
     def __init__(self, lifecycle, issuer, run_id):
@@ -749,6 +892,7 @@ class MetaCollectionScenario:
         self.prefix = 'pg_collection_' + run_id + '_' + uuid.uuid4().hex[:12]
         self.tasks, self.commands, self.executions = {}, {}, {}
         self.attempts = []
+        self.source_barriers = []
 
     def task_rows(self):
         return self.life.reader.request('GET', '/api/v1/meta/scan/tasks', (200,), response_type=list).payload
@@ -850,6 +994,10 @@ class MetaCollectionScenario:
         return result.payload
 
     def trigger(self, task, allowed):
+        execution, attempt = self.start_execution(task, allowed)
+        return self.observe_execution(task, execution, allowed, attempt)
+
+    def start_execution(self, task, allowed):
         attempt = {'task_id': str(task), 'expected_terminal': 'success' if allowed else 'failed', 'stage': 'trigger'}
         self.attempts.append(attempt)  # Keep the failing attempt, not only successful return values.
         created = self.observed_request(attempt, 'POST', f'/api/v1/meta/scan/tasks/{task}/trigger')
@@ -858,9 +1006,9 @@ class MetaCollectionScenario:
         require(str(uuid.UUID(execution)) == execution and execution not in self.executions, 'scan execution is not unique')
         self.executions[execution] = task
         attempt['execution_id'] = execution
-        return self.observe_execution(task, execution, allowed, attempt)
+        return execution, attempt
 
-    def observe_execution(self, task, execution, allowed, attempt, *, scheduled_due=None):
+    def observe_execution(self, task, execution, allowed, attempt, *, scheduled_due=None, admitted_items=None):
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             attempt['stage'] = 'execution_read'
@@ -901,9 +1049,10 @@ class MetaCollectionScenario:
                             'approved basic task did not enumerate the actual engine')
                 else:
                     require(run.get('error_details', {}).get('category') == 'permission_denied'
-                            and all(metadata.get(key) in (None, 0) for key in
-                                    ('items_scanned', 'catalog_nodes_scanned', 'fields_scanned')),
-                            'failed scan is not a before-source authorization denial')
+                            and (all(metadata.get(key) in (None, 0) for key in
+                                     ('items_scanned', 'catalog_nodes_scanned', 'fields_scanned')) if admitted_items is None else
+                                 metadata.get('items_scanned') == admitted_items and metadata.get('catalog_nodes_scanned') == 1
+                                 and metadata.get('fields_scanned') == 0), 'failed scan has an invalid authorization boundary')
                 attempt['stage'] = 'task_summary'
                 tasks = [row for row in self.task_rows() if row.get('id') == task]
                 attempt['summary_matches'] = (len(tasks) == 1 and tasks[0].get('last_execution_id') == execution
@@ -1220,6 +1369,68 @@ class MetaCollectionScenario:
         evidence.update(same_credential=True, history_unchanged=True, source_rules_unchanged=True, schedule_disabled=True)
         report['checks'].append(COLLECTION_SCHEDULED_CHECKS[3])
 
+    def run_inflight(self, report):
+        report['phase'] = 'meta_collection_inflight_revocation'
+        evidence = report['meta_collection']['inflight'] = {'executions': {}}
+        before, credential = self.source_snapshot(), self.life.reader.token
+        task = self.create_task('_inflight')
+        facts = self.facts(task['id'])
+        command = str(uuid.uuid4())
+        body = {'command_id': command, 'task_id': str(task['id']),
+                'expected_task_definition_digest': facts['task_definition_digest'],
+                'purpose': 'Disposable PG basic in-flight qualification withdrawal',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()}
+        self.commands[command] = body
+        report['meta_collection']['qualification_commands'].append(command)
+        evidence.update(task_id=str(task['id']), command_id=command, task_definition_digest=facts['task_definition_digest'])
+        issued = self.life.operator.request('POST', self.route, (201,), body).payload
+        original = self.row(command)
+        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
+                'in-flight fixture did not approve exact qualification')
+        barrier = PGCollectionReadBarrier()
+        self.source_barriers.append(barrier)  # Own native resources before any creation or lock request.
+        evidence['lock'] = barrier.open()
+        execution, attempt = self.start_execution(task['id'], False)
+        attempt['denial_boundary'] = 'after_admitted_catalog'
+        evidence['blocked'] = barrier.wait_blocked()
+        running = self.life.reader.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+        require(running.get('execution_id') == execution and running.get('source_task_id') == str(task['id'])
+                and running.get('tenant_id') == self.life.tenant and running.get('module') == 'meta'
+                and running.get('task_type') == 'scan' and running.get('triggered_by') == int(self.life.recipient)
+                and running.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}
+                and running.get('status') == 'running' and running.get('started_at') and not running.get('completed_at'),
+                'source barrier has no exact running Worker execution')
+        evidence['running_verified'] = True
+        revoked = self.revoke(command)
+        require(revoked['status'] == 'revoked' and revoked['version'] == '2'
+                and collection_instant(running['started_at']) <= collection_instant(evidence['blocked']['started_at'])
+                <= collection_instant(evidence['blocked']['observed_at']) <= collection_instant(revoked['revoked_at'])
+                and collection_instant(revoked['revoked_at']) < collection_instant(original['expires_at']),
+                'in-flight revocation did not precede release or expired instead')
+        evidence['revoked_at'] = revoked['revoked_at']
+        barrier.release()
+        admitted = report['meta_collection']['scheduled']['executions']['approved_repeat']['items_scanned']
+        require(type(admitted) is int and admitted > 0, 'missing prior successful source enumeration count')
+        evidence['executions']['inflight'] = self.observe_execution(task['id'], execution, False, attempt, admitted_items=admitted)
+        counts = barrier.counts()
+        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during revocation')
+        delta = {key: counts['calls'].get(key, 0) - barrier.baseline['calls'].get(key, 0)
+                 for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
+        require(delta == {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 0},
+                'source opened another Catalog read beyond the admitted enumeration')
+        evidence.update(source_call_delta=delta, next_catalog_denied=True, admitted_enumeration_finished=True)
+        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[0])
+        evidence['executions']['revoked_repeat'] = self.trigger(task['id'], False)
+        require(barrier.counts() == counts, 'revoked repeat touched source or altered statistics')
+        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[1])
+        barrier.close()
+        require(barrier.closed and barrier.released and self.facts(task['id']) == facts
+                and same_collection_row(self.row(command), revoked) and self.life.reader.token == credential
+                and self.source_snapshot() == before, 'in-flight cleanup changed source rules, facts or credential')
+        evidence.update(source_fixture_cleanup='zero_source_locks_and_schema', source_rules_unchanged=True,
+                        same_credential=True, history_unchanged=True)
+        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[2])
+
     def cleanup(self):
         errors = []
         try:
@@ -1237,11 +1448,17 @@ class MetaCollectionScenario:
                     self.revoke(command)
             except Exception:
                 errors.append('collection qualification cleanup failed')
+        for barrier in self.source_barriers:
+            try:
+                barrier.release()
+            except Exception:
+                errors.append('collection source lock release failed')
         try:
             rows = self.recover_tasks()
         except Exception:
             rows = []
             errors.append('collection task recovery failed')
+        settled = True
         for owned in self.tasks.values():
             try:
                 task = owned['id']
@@ -1271,7 +1488,14 @@ class MetaCollectionScenario:
                         require(not any(row.get('id') == task for row in self.task_rows()), 'unknown task deletion did not commit')
                 require(not any(row.get('id') == task for row in self.task_rows()), 'collection task remains after cleanup')
             except Exception:
+                settled = False
                 errors.append('collection task cleanup or residual verification failed')
+        if settled:
+            for barrier in self.source_barriers:
+                try:
+                    barrier.close()
+                except Exception:
+                    errors.append('collection source fixture cleanup failed')
         require(not errors, '; '.join(errors))
 
 
@@ -2519,6 +2743,7 @@ def main():
         lifecycle.collection.run_browser(report)
         lifecycle.collection.run_expiry(report)
         lifecycle.collection.run_scheduled(report)
+        lifecycle.collection.run_inflight(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

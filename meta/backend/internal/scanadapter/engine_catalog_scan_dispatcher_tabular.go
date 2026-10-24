@@ -2,9 +2,11 @@ package scanadapter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -91,6 +93,7 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 	completed := 0
 
 	for _, namespaceName := range namespaces {
+		var denied error
 		func(namespace string) {
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", namespace))
@@ -136,6 +139,11 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 				totalNamespaces += schemas
 				totalTables += tables
 				totalFields += fields
+				if errors.Is(err, commonapi.ErrForbidden) {
+					// A current qualification denial ends the execution, not just
+					// this namespace. Preserve its type for the safe terminal DTO.
+					denied = err
+				}
 				return
 			}
 			totalNamespaces += schemas
@@ -150,6 +158,9 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 				})
 			}
 		}(namespaceName)
+		if denied != nil {
+			return totalNamespaces, totalTables, totalFields, errors.Join(failures.Err(), denied)
+		}
 	}
 
 	d.log.Info("指定命名空间扫描完成", append(startFields,

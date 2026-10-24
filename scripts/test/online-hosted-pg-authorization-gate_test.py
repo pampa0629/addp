@@ -208,6 +208,9 @@ class HostedPGAuthorizationTest(unittest.TestCase):
             if args[:2] == ['container', 'inspect']:
                 sys.exit(1)
             if args[0] == 'run':
+                observing = os.environ['ADDP_TEST_CREATE_EXPECTED'] == '1'
+                assert ('shared_preload_libraries=pg_stat_statements' in args) == observing
+                assert ('pg_stat_statements.track=all' in args) == observing
                 pathlib.Path(os.environ['ADDP_TEST_CREATED']).write_text('owned-container')
                 sys.exit(0)
             if args[0] == 'exec' and 'SELECT current_database()' in args:
@@ -220,7 +223,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 expected = os.environ['ADDP_TEST_CREATE_EXPECTED']
                 assert 'allow_output_create=' + expected in flags, 'missing bounded CREATE preparation'
                 sql = sys.stdin.read()
-                assert '\\n\\\\if :allow_output_create\\nGRANT CREATE ON SCHEMA public TO metric_reader;\\n\\\\endif\\n' in sql
+                assert '\\n\\\\if :allow_output_create\\nGRANT CREATE ON SCHEMA public TO metric_reader;\\nCREATE SCHEMA addp_observer AUTHORIZATION postgres;\\nCREATE EXTENSION pg_stat_statements WITH SCHEMA addp_observer;\\n\\\\endif\\n' in sql
                 grants = [line.strip() for line in sql.splitlines() if line.startswith('GRANT ')]
                 assert grants == [
                     'GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;',
