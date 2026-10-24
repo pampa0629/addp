@@ -830,7 +830,7 @@ jobs:
   frontend-deterministic:
     name: ${{ matrix.name }} frontend (test, build)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -870,6 +870,7 @@ jobs:
             name: Monitor
             target: test-monitor-frontend
             playwright: true
+            timeout_minutes: 30
           # 同时覆盖编排编辑器交互和关联编排路由（根 Makefile 标准入口）。
           - module: ontology
             name: Ontology

@@ -1168,3 +1168,16 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - [Platform Run 40110942794／Monitor frontend Job 120922337484](https://github.com/pampa0629/addp/actions/runs/40110942794/job/120922337484)：117项单测实际通过，424项浏览器只出现至363项进度即 `The operation was canceled`；真实测试步骤及Job为cancelled，没有整套浏览器通过或Vite构建记录。后续summary步骤的success只表示摘要写入成功，不能作为产品门禁通过。不能将“363项进度”当作363项已通过，也不能把本地424项或旧时间筛选的421项结果替代本次CI全套。
 
 证据目录 `/tmp/addp-ci-20261024-180033/`，原始日志 `job-120933711310.log` SHA-256 `8754ba1551e3fc6738e372ef2dc60b14c583bad53eb2ee5123d457ea0d4973f8`、`job-120922337484.log` SHA-256 `d2f1dc03e6a0b1c54afc6df56f383db885822659e1d2146b94af555060cfdeb0` 均独立核对一致；同时读取 `jobs-40110942812.json`、`jobs-40110942794.json` 的实际步骤终态及协调审计 `Monitor-a604-actual-CI-audit.json`。后继Platform仍由专门CI会话跟进，复用前须证明名称功能及共享输入等价。本会话不接管其他owner的失败，不另派验收、不设置定时任务；本地、个人Safari、正式身份／Hosted和CI范围继续分别记录，功能清单第51行仍为部分实现。
+
+
+### 名称检索前端 CI 取消原因更正与限定预算修复（2026-10-25）
+
+专门CI会话补回check-run原始annotations后，独立核对 `/tmp/addp-ci-20261024-200030/Monitor-a604-check-annotations.json` 与 `Monitor-f2ca-check-annotations.json`：两轮均明确 `The job has exceeded the maximum execution time of 20m0s`。取消应归因于前端Job的20分钟上限；此前协调按其他门禁失败时间关联取消的推断不成立，不能说由Common／Redis失败联动取消，也不据此接管这些owner。
+
+[Platform Run 40119830116／Monitor frontend Job 120948753235](https://github.com/pampa0629/addp/actions/runs/40119830116/job/120948753235) 为push attempt1、源码 `f2ca8c25e3a69bba0e50d9ad6412cfd51bb02fce`；Job实际18:15:04Z开始、18:35:22Z结束，测试步骤18:16:02Z开始、18:35:19Z取消。117项单测通过，浏览器到423/424进度后中止，无完整通过报告或build。与 `a6048b9e71b0689893a3cf90db5a0ef4822d8866` 比较，Monitor前端、Common Frontend、Node版本、Makefile及唯一browser launcher均无源码差异，不能用旧ea320的421项结果覆盖新424项。该轮与a604原轮仍计取消，不计T3全套／构建通过；原38项PG和本地完整门禁的既有证据范围保留。
+
+核对现行启动与安装链：`prepare-frontend-gate`沿固定Node／锁文件安装，Job随后安装Chromium，再执行唯一 `make test-monitor-frontend`。Monitor配置显式单Worker；共享隔离按整轮门禁分配端口、缓存与输出，不能仅凭此推断提升Worker并发安全。本批保留117单测、424浏览器、所有断言、单Worker与构建，不加skip／重试，不更改产品或单用例超时。只将Monitor矩阵项登记 `timeout_minutes: 30`，Job沿该项／缺省20分钟读取；其他前端仍20。30分钟覆盖已测接近20分钟的完整串行规模，并为安装、剩余用例、构建及退出留有受限余量，不能把增加预算本身记成远端通过。
+
+同步CI规范与现有前端登记检查：拒绝丢失Monitor的30分钟例外、越界／非数字／重复预算、改变全局20分钟默认或给其他owner扩预算。先增加测试，标准 `make test-frontend-ci-registration`因缺失新校验函数失败（22项中9个错误含子场景），补齐唯一校验和矩阵声明后，同一入口22项及当前21个前端实际登记通过；`python3 scripts/test/changed-gate_test.py`标准脚本25项通过，独立调用同一影响矩阵确认workflow改动自动选择Monitor。`git diff --check`通过。本批仅改CI编排／登记／文档，产品、用例和依赖未变，不重复本地15分钟整套或重跑旧超时运行。推送只沿main正常触发，后继实际117＋424＋build是否全过继续等专门CI会话回传，不自行轮询、重试、派发Hosted、重启用户服务或设置定时任务。
+
+原始后继日志 `/tmp/addp-ci-20261024-200030/job-120948753235.log` SHA-256 `580d23329fc832e57792bd5f66e330627eed281e0d14ba5ebb057546c9e0e15d`；两份annotation文件SHA-256分别为 `a240f2e0643b2676aca613f5f7335a1f9a9a7f8105aee8c4860b40542a193e6a`（a604）、`1cf37185d974dd0961e1bc2c152580aeada267ea50ddb7ddea56550c40343e3d`（f2ca）。本地红／绿与选择回归日志 `/tmp/addp-monitor-ci-budget-{red,green,selection}.log`。名称检索个人Safari、正式身份／Hosted缺口仍独立，功能清单第51行保持部分实现。
