@@ -100,6 +100,10 @@ OBJ 逻辑下载修正将 Owner／浏览器报告统一升至 v15，拒绝 v14�
 
 唯一报告版本为 addp.vector-topology-persistence/v11、addp.topology-browser/v11、addp.topology-checkpoint/v11，旧 v10 不接受。等待血缘前归档 topology-before-lineage.json，保留十二份严格大小/公开扫描身份/物理哈希/稳定outputs与facts及原始 Monitor，标记 incomplete。topology-source-lineage-raw.json/v10 保留十三源原 Meta、十二原图和实际预览响应；topology-physical/ 保留全部十三源十二成果合成原文件，逐个核 SHA/大小并拒绝覆盖不同证据，支持下载后独立 GDAL 复核。浏览器前后源及成果均不变；最终 Owner/browser 完整成功、十二图及退出清理均实际通过才认本轮 T4。
 
+2026-10-24，固定源码 `d9a3cec22e12db098182e25bc96a62e0916f5f32`（包含交点打断接入 `90a9eab843ecf38538a601f15dd0add5e9af24a9`）的[普通 User Hosted 40080467804](https://github.com/pampa0629/addp/actions/runs/40080467804/job/120832764807) 已实际通过并完成归档独立复核：User33／Tenant2／精确11权限，十三源十二成果、十二次自动扫描、十四条当前执行 active derive；交点打断十一条源线生成二十条 LineString，来源与全部属性、null、Int64 编号、原方向和顶点、精确 2^-40 片段均保留。成果 GPKG 为 98304 字节，SHA-256 `11939282c30049db0b76856de9ca802334be7f8863a4356a07564eade441c3e9`；二十五份归档原文件及浏览器前后大小／哈希一致。十二份实际 API 和原生 OGR 几何逐行一致，十二幅原始 OL 坐标用独立数学公式复核，交点打断完整属性与方向精确保留；十二幅地图及成功／失败执行页共十四截图已复核。Owner／browser v11 完整成功，checkpoint 的 incomplete 不替代最终报告；预检与业务共 115726 毫秒，塌缩失败无发布／扫描，归属 NFS／部署及 Infra 清理零残留。官方 artifact `12555218473` 的 ZIP SHA-256 为 `53be33fcdc5aa180bf9ebac02b1cebcf4412f0b1051b2e57c1c31e156e43aa90`。
+
+同次发布后继源码 `5a5614564b38115b38f4091fc1742a46da5cae0e` 的[GeoPython CI](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242674) 实际 4797 passed／21 warnings，[Console CI](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242861) 实际 195 单测／219 浏览器及 build 通过，[Platform consistency](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242706) 实际通过。此前固定本地 Console 未修改的公共 HMR 缓存夹具 194 passed／1 failed 保留历史，不倒推为本地通过；不外推当前 main、其他 Job、容量或业务 DELETE，也不宣称亚像素几何可单独目视。
+
 NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零残留；失败清理仍使门禁失败。归档合成字节不是业务目录残留；部署销毁不认证 Manager 业务 DELETE。旧构面/修复/吸附/面叠/面缝/悬点/线叠/线内自叠 T4 不外推线交／线内自交检查，代码与确定性回归不记为新真实 T4，不新增 schedule。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费
