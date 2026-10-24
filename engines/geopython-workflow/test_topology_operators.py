@@ -32,6 +32,266 @@ def line_overlap(frame, id_field="route_key"):
     return get_operator("check_line_overlap")(input_gdf=frame, id_field=id_field)
 
 
+def split_at_intersections(frame, id_field="route_key"):
+    return get_operator("split_line_intersections")(input_gdf=frame, id_field=id_field)
+
+
+def test_split_line_intersections_crossings_t_junctions_vertices_contacts_and_attributes():
+    frame = line_overlap_frame([
+        LineString([(0, 0), (1, 0), (3, 0)]), LineString([(1, -1), (1, 1)]),
+        LineString([(2, -1), (2, 0)]), LineString([(3, 0), (4, 1)]),
+    ], pd.Series([2**60 + i for i in range(4)], dtype="Int64"))
+    frame["grade"] = pd.Series([None, 3, 4, 5], dtype="Int64")
+    frame["label"] = pd.Series(["甲", None, "丙", "丁"], dtype="string")
+    frame.index = [9, 9, 2, 1]
+    before = frame.copy(deep=True)
+    result = split_at_intersections(frame)
+    assert result.columns.tolist() == frame.columns.tolist() + ["source_id", "part_no", "segment_no"]
+    expected_rows = [0, 0, 0, 1, 1, 2, 3]
+    assert result.source_id.tolist() == [frame.route_key.iloc[i] for i in expected_rows]
+    assert result.source_id.dtype == frame.route_key.dtype
+    assert result.part_no.tolist() == [1] * 7
+    assert result.segment_no.tolist() == [1, 2, 3, 1, 2, 1, 1]
+    expected = [[(0, 0), (1, 0)], [(1, 0), (2, 0)], [(2, 0), (3, 0)],
+                [(1, -1), (1, 0)], [(1, 0), (1, 1)], [(2, -1), (2, 0)], [(3, 0), (4, 1)]]
+    assert [list(g.coords) for g in result.geometry] == expected
+    attributes = frame.iloc[expected_rows].reset_index(drop=True).drop(columns="boundary")
+    pd.testing.assert_frame_equal(result[attributes.columns], attributes)
+    assert result.geometry.name == "boundary" and result.crs == frame.crs
+    assert result.index.equals(pd.RangeIndex(7))
+    assert result.part_no.dtype == result.segment_no.dtype == "int64"
+    assert_geodataframe_equal(frame, before)
+
+
+def test_split_line_intersections_multipart_direction_and_duplicate_cut_deduplication():
+    frame = line_overlap_frame([
+        MultiLineString([[(4, 0), (2, 0), (0, 0)], [(4, 3), (0, 3)]]),
+        LineString([(1, -1), (1, 0)]), LineString([(1, 0), (1, 1)]),
+    ])
+    result = split_at_intersections(frame)
+    assert [list(g.coords) for g in result.geometry] == [
+        [(4, 0), (2, 0), (1, 0)], [(1, 0), (0, 0)], [(4, 3), (0, 3)],
+        [(1, -1), (1, 0)], [(1, 0), (1, 1)],
+    ]
+    assert result.part_no.tolist() == [1, 1, 2, 1, 1]
+    assert result.segment_no.tolist() == [1, 2, 1, 1, 1]
+
+
+def test_split_line_intersections_closed_seam_and_repeated_original_coordinates():
+    frame = line_overlap_frame([
+        LineString([(0, 0), (0, 0), (2, 0), (2, 2), (0, 2), (0, 0)]),
+        LineString([(1, -1), (1, 0)]),
+    ])
+    result = split_at_intersections(frame)
+    assert [list(g.coords) for g in result.geometry] == [
+        [(0, 0), (0, 0), (1, 0)], [(1, 0), (2, 0), (2, 2), (0, 2), (0, 0)],
+        [(1, -1), (1, 0)],
+    ]
+    assert all(g.is_valid and not g.is_empty for g in result.geometry)
+    assert list(split_at_intersections(frame.iloc[:1]).geometry.iloc[0].coords) == list(frame.geometry.iloc[0].coords)
+
+
+def test_split_line_intersections_endpoint_contact_preserves_trailing_repeated_vertices():
+    vertices = [(0, 0), (0, 0), (1, 0), (1, 0), (1, 0)]
+    result = split_at_intersections(line_overlap_frame([
+        LineString(vertices), LineString([(1, 0), (2, 1)]),
+    ]))
+    assert len(result) == 2
+    assert list(result.geometry.iloc[0].coords) == vertices
+
+
+@pytest.mark.parametrize("crs", ["EPSG:3857", "EPSG:2263"])
+def test_split_line_intersections_binary_tiny_pieces_without_cumulative_distance_rounding(crs):
+    tiny = 2**-40
+    frame = line_overlap_frame([
+        LineString([(-2**50, 0), (0, 0), (1, 0)]),
+        LineString([(tiny, -1), (tiny, 1)]), LineString([(2*tiny, -1), (2*tiny, 1)]),
+    ], crs=crs)
+    result = split_at_intersections(frame)
+    assert [list(g.coords) for g in result.geometry[:3]] == [
+        [(-2**50, 0), (0, 0), (tiny, 0)], [(tiny, 0), (2*tiny, 0)], [(2*tiny, 0), (1, 0)],
+    ]
+    assert result.crs == frame.crs
+
+
+def test_split_line_intersections_nonbinary_diagonal_crossing_uses_one_shared_cut_coordinate():
+    result = split_at_intersections(line_overlap_frame([
+        LineString([(0, 0), (7, 3)]), LineString([(1, 2), (5, 0)]),
+    ]))
+    point = result.geometry.iloc[0].coords[-1]
+    assert len(result) == 4
+    assert point == result.geometry.iloc[1].coords[0] == result.geometry.iloc[2].coords[-1] == result.geometry.iloc[3].coords[0]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_split_line_intersections_steep_path_orders_cuts_when_minor_axis_rounds_equal(reverse):
+    x = 2**50
+    vertices = [(x, 0), (x + 1, 64)]
+    if reverse:
+        vertices.reverse()
+    frame = line_overlap_frame([LineString(vertices)] + [LineString([(x - 1, y), (x + 2, y)]) for y in range(1, 5)])
+    result = split_at_intersections(frame)
+    pieces = result.loc[result.source_id == 0].geometry
+    expected_y = [0, 1, 2, 3, 4, 64]
+    if reverse:
+        expected_y.reverse()
+    assert [(g.coords[0][1], g.coords[-1][1]) for g in pieces] == list(zip(expected_y, expected_y[1:]))
+
+
+def test_split_line_intersections_matches_independent_integer_grid_path_oracle():
+    horizontal = [LineString([(0, y), (6, y)]) for y in range(5)]
+    vertical = [LineString([(x, 5), (x, -1)]) for x in range(1, 6)]
+    frame = line_overlap_frame(horizontal + vertical)
+    result = split_at_intersections(frame)
+    expected = []
+    for row in range(10):
+        vertices = ([(x, row) for x in range(7)] if row < 5
+                    else [(row - 4, y) for y in range(5, -2, -1)])
+        for number, (start, end) in enumerate(zip(vertices, vertices[1:]), 1):
+            expected.append((row, 1, number, [start, end]))
+    actual = [(row.source_id, row.part_no, row.segment_no, list(row.boundary.coords)) for row in result.itertuples()]
+    assert actual == expected
+
+
+@pytest.mark.parametrize("field", [None, "missing", "boundary"])
+def test_split_line_intersections_rejects_missing_or_geometry_identity(field):
+    with pytest.raises(ValueError, match="id_field"):
+        split_at_intersections(line_overlap_frame([LineString([(0, 0), (1, 0)])]), field)
+
+
+def test_split_line_intersections_requires_active_geodataframe_and_unique_columns():
+    with pytest.raises(ValueError, match="GeoDataFrame"):
+        split_at_intersections(pd.DataFrame({"route_key": [1]}))
+    frame = line_overlap_frame([LineString([(0, 0), (1, 0)])])
+    with pytest.raises(ValueError, match="active geometry"):
+        split_at_intersections(gpd.GeoDataFrame({"route_key": [1]}))
+    frame.columns = ["route_key", "boundary", "route_key"]
+    with pytest.raises(ValueError, match="id_field"):
+        split_at_intersections(frame)
+
+
+@pytest.mark.parametrize("geometries", [
+    [LineString([(0, 0), (2, 2), (0, 2), (2, 0)])],
+    [LineString([(0, 0), (2, 0), (1, 0)])],
+    [MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 1)]])],
+    [MultiLineString([[(0, 0), (2, 0)], [(1, -1), (1, 1)]])],
+    [LineString([(0, 0), (2, 0)]), LineString([(1, 0), (3, 0)])],
+    [LineString([(0, 0), (2, 0)]), LineString([(2, 0), (0, 0)])],
+])
+def test_split_line_intersections_rejects_all_internal_contacts_and_positive_overlap(geometries):
+    frame = line_overlap_frame(geometries)
+    before = frame.copy(deep=True)
+    with pytest.raises(ValueError, match="internal|overlap"):
+        split_at_intersections(frame)
+    assert_geodataframe_equal(frame, before)
+
+
+@pytest.mark.parametrize("field", ["source_id", "part_no", "segment_no"])
+def test_split_line_intersections_rejects_reserved_column_conflicts(field):
+    frame = line_overlap_frame([LineString([(0, 0), (1, 0)])])
+    frame[field] = 1
+    with pytest.raises(ValueError, match="field|column"):
+        split_at_intersections(frame)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_split_line_intersections_empty_and_no_crossing_keep_schema_and_identifier_types(empty):
+    frame = line_overlap_frame([LineString([(0, 0), (1, 0)])], pd.Series(["甲"], dtype="string"))
+    if empty:
+        frame = frame.iloc[:0]
+    result = split_at_intersections(frame)
+    assert len(result) == len(frame)
+    assert result.source_id.dtype == frame.route_key.dtype and result.crs == frame.crs
+    assert result.geometry.name == frame.geometry.name
+    assert result.part_no.dtype == result.segment_no.dtype == "int64"
+
+
+@pytest.mark.parametrize("shape", [None, LineString(), Point(0, 0),
+    LineString([(0, 0, 0), (1, 1, 1)]), LineString([(0, 0), (float("inf"), 1)])])
+def test_split_line_intersections_rejects_unsupported_geometries(shape):
+    with pytest.raises(ValueError):
+        split_at_intersections(line_overlap_frame([shape]))
+
+
+@pytest.mark.parametrize("crs", [None, "EPSG:4326"])
+def test_split_line_intersections_rejects_unknown_or_geographic_crs(crs):
+    with pytest.raises(ValueError, match="projected"):
+        split_at_intersections(line_overlap_frame([LineString([(0, 0), (1, 0)])], crs=crs))
+
+
+@pytest.mark.parametrize("ids", [[None, 2], [1, 1], ["", "b"], ["  ", "b"], [[1], [2]]])
+def test_split_line_intersections_requires_unique_explicit_scalar_ids(ids):
+    with pytest.raises(ValueError, match="id_field"):
+        split_at_intersections(line_overlap_frame([LineString([(0, 0), (1, 0)]), LineString([(2, 0), (3, 0)])], ids))
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_split_line_intersections_workflow_native_save_reload_and_failure_no_publish(tmp_path, empty):
+    from osgeo import ogr
+    frame = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString([(1, -1), (1, 1)])], ["甲", "乙"])
+    if empty:
+        frame = frame.iloc[:0]
+    frame.to_file(tmp_path / "source.gpkg", layer="routes", driver="GPKG")
+    original = (tmp_path / "source.gpkg").read_bytes()
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
+        {"id": "split", "operator": "split_line_intersections", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "split"}, "connection_info": connection, "path": "pieces.gpkg", "mode": "fail"}, "depends_on": ["split"]},
+    ]
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "success", execution
+    dataset = ogr.Open(str(tmp_path / "pieces.gpkg")); layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == (0 if empty else 4)
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    assert [field.name for field in layer.schema] == ["source_name", "route_key", "source_id", "part_no", "segment_no"]
+    expected = [[(0, 0), (1, 0)], [(1, 0), (2, 0)], [(1, -1), (1, 0)], [(1, 0), (1, 1)]]
+    for index, feature in enumerate(layer):
+        assert feature.GetGeometryRef().GetGeometryName() == "LINESTRING"
+        assert feature.GetGeometryRef().GetCoordinateDimension() == 2
+        assert feature.GetGeometryRef().GetPoints() == expected[index]
+        assert feature.GetField("source_id") == feature.GetField("route_key") == ("甲" if index < 2 else "乙")
+        assert feature.GetField("source_name") == f"line-{index // 2}"
+        assert feature.GetField("part_no") == 1 and feature.GetField("segment_no") == index % 2 + 1
+    dataset = None
+    assert (tmp_path / "source.gpkg").read_bytes() == original
+    bad = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString([(1, 0), (3, 0)])])
+    bad.to_file(tmp_path / "bad.gpkg", driver="GPKG")
+    tasks[0]["params"]["path"] = "bad.gpkg"; tasks[2]["params"]["path"] = "rejected.gpkg"
+    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    assert not (tmp_path / "rejected.gpkg").exists()
+
+
+def test_split_line_intersections_async_discovery_workflow_only_and_required_identity(tmp_path, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString([(1, -1), (1, 1)])], [17, 23])
+    frame.to_file(tmp_path / "source.gpkg", driver="GPKG")
+    tasks = [
+        {"id": "load", "operator": "load", "params": {"connection_info": {"engine_type": "nfs", "mount_path": str(tmp_path)}, "path": "source.gpkg"}, "depends_on": []},
+        {"id": "split", "operator": "split_line_intersections", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
+    ]
+    monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "split_line_intersections")
+        assert op["display_name"] == "交点打断" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+        assert [(p["name"], p["required"]) for p in op["parameters"]] == [("input_gdf", True), ("id_field", True)]
+        assert client.post("/api/operators/split_line_intersections/invoke", json={"params": {}}).status_code == 403
+        response = client.post("/api/workflow", json={"workflow_def": {"tasks": tasks}, "runtime": {"tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}})
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
+            if state["status"] in ("success", "failed"):
+                break
+            time.sleep(.01)
+        assert state["status"] == "success", state
+        assert len(json.loads(state["result"])["features"]) == 4
+    tasks[1]["params"].pop("id_field")
+    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+
+
 def test_line_overlap_reports_partial_contained_reversed_and_resampled_pairs_without_source_changes():
     frame = line_overlap_frame([
         LineString([(0, 0), (4, 0)]), LineString([(2, 0), (6, 0)]),

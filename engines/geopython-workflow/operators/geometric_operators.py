@@ -434,6 +434,95 @@ def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> 
     return result
 
 
+def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Split original paths at cross-feature point meetings, preserving provenance."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    if any(field in input_gdf.columns for field in ("source_id", "part_no", "segment_no")):
+        raise ValueError("output columns source_id, part_no and segment_no must not overwrite source fields")
+
+    parts, segments, references = [], [], []
+    for row, shape in enumerate(geometry.array):
+        for part_no, part in enumerate(shapely.get_parts(shape), 1):
+            vertices = list(part.coords)
+            part_index = len(parts)
+            count = 0
+            for edge, (start, end) in enumerate(pairwise(vertices)):
+                if start != end:
+                    segments.append(shapely.LineString([start, end]))
+                    references.append((part_index, edge, count))
+                    count += 1
+            parts.append((row, part_no, vertices, count, {}))
+
+    tree = shapely.STRtree(segments)
+    for a, segment in enumerate(segments):
+        part_a, edge_a, ordinal_a = references[a]
+        row_a, _, vertices_a, count_a, cuts_a = parts[part_a]
+        candidates = tree.query(segment)
+        for b in np.sort(candidates[candidates > a]):
+            intersection = shapely.intersection(segment, segments[b])
+            if intersection.is_empty:
+                continue
+            part_b, edge_b, ordinal_b = references[b]
+            row_b, _, vertices_b, _, cuts_b = parts[part_b]
+            pieces = list(_line_intersection_parts(intersection))
+            if any(piece.geom_type != "Point" for piece in pieces):
+                raise ValueError("positive-length overlap is not supported; resolve overlap explicitly before splitting")
+            points = {(point.x, point.y) for point in pieces}
+            if row_a == row_b:
+                adjacent = part_a == part_b and (
+                    ordinal_b == ordinal_a + 1 or
+                    (ordinal_a == 0 and ordinal_b == count_a - 1 and vertices_a[0] == vertices_a[-1])
+                )
+                shared = set(vertices_a[edge_a:edge_a + 2]) & set(vertices_b[edge_b:edge_b + 2])
+                if not adjacent or not points.issubset(shared):
+                    raise ValueError("internal point intersection is not supported; resolve it explicitly before splitting")
+                continue
+            cuts_a.setdefault(edge_a, set()).update(points)
+            cuts_b.setdefault(edge_b, set()).update(points)
+
+    sources, part_numbers, segment_numbers, output = [], [], [], []
+    for row, part_no, vertices, _, cuts in parts:
+        current = [vertices[0]]
+        segment_no = 0
+        last_edge = max(edge for edge, (start, end) in enumerate(pairwise(vertices)) if start != end)
+        for edge, (start, end) in enumerate(pairwise(vertices)):
+            edge_cuts = cuts.get(edge, set())
+            # The dominant axis retains ordering even when the minor axis of
+            # a steep segment rounds several distinct intersections equally.
+            # No cumulative distance, division, or on-line lookup is required.
+            axis = 0 if abs(end[0] - start[0]) >= abs(end[1] - start[1]) else 1
+            interior = sorted(edge_cuts - {start, end}, key=lambda point: point[axis], reverse=start[axis] > end[axis])
+            for point in [*interior, end]:
+                current.append(point)
+                # Retain trailing repeated source coordinates in the last
+                # positive piece instead of flushing it at its first endpoint.
+                at_final_end = edge == last_edge and point == end
+                if point in edge_cuts and not at_final_end and any(vertex != current[0] for vertex in current[1:]):
+                    segment_no += 1
+                    sources.append(row)
+                    part_numbers.append(part_no)
+                    segment_numbers.append(segment_no)
+                    output.append(shapely.LineString(current))
+                    current = [point]
+        if any(vertex != current[0] for vertex in current[1:]):
+            sources.append(row)
+            part_numbers.append(part_no)
+            segment_numbers.append(segment_no + 1)
+            output.append(shapely.LineString(current))
+
+    result = input_gdf.iloc[sources].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(output, crs=geometry.crs)
+    result["source_id"] = ids.iloc[sources].reset_index(drop=True)
+    result["part_no"] = pd.Series(part_numbers, dtype="int64")
+    result["segment_no"] = pd.Series(segment_numbers, dtype="int64")
+    _finite_xy_geometry(result, "result")
+    _require_nonempty_valid_lines(result.geometry)
+    return result
+
+
 def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report exact isolated point intersections for distinct original feature pairs."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -666,6 +755,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
+    name="split_line_intersections", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="交点打断", brief_description="按不同要素的精确点交会切分线，保留来源、属性和原路径顺序",
+    execution_modes=["workflow"], effects=["read"],
+    overview="十字交叉切分双方，T形切分被接入的线，端点接触不生成零长度段。"
+             "内部自交、自叠及跨要素正长度重合整批拒绝，不去重或自动修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待切分的单个线图层", notes="有效有限二维线，已知投影 CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何唯一非空标量列；不推断主键或使用索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="每行一个LineString，保留原列并追加source_id/part_no/segment_no", is_default=True)],
+    use_cases=["将真实十字或T形交会切分为可独立加工的线段", "保留原属性和来源生成线网片段"],
+    notes=["部件号和片段号从1开始，片段号在部件内递增；保留方向、顶点和闭环原始接缝", "source_id/part_no/segment_no与源列冲突时失败，不覆盖或自动改名", "内部自交包括不同部件的点接触，正常相邻折点和闭环首尾除外", "无容差、精度网格、吸附、延伸或业务质量判定；源不变，保存另接save", "索引、交点和成果驻内存，不承诺固定内存或容量"],
+    workflow_example={"id": "split_crossings", "operator": "split_line_intersections", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
 
 CHECK_LINE_SELF_OVERLAP_METADATA = OperatorMetadata(
     name="check_line_self_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1363,4 +1468,5 @@ OPERATORS = dict([
     register_operator(CHECK_LINE_SELF_OVERLAP_METADATA, check_line_self_overlap),
     register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),
     register_operator(CHECK_LINE_SELF_INTERSECTION_METADATA, check_line_self_intersection),
+    register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
 ])
