@@ -26,7 +26,7 @@ GLB = import_module('scripts.test.manager-internal-artifact-lineage-online_test'
 
 def source_download_proof(source, artifacts, entries=None):
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    files = {'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
+    files = {'model.stl': 'addp_online_model_fixture.stl', 'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
              'texture.png': 'addp_online_exchange_texture.png'}
     bundled = len(source['composition']) > 1
     if bundled:
@@ -91,13 +91,28 @@ def multi_material_obj_glb(mutate=None):
     return struct.pack('<4sII',b'glTF',2,28+len(raw)+len(binary))+struct.pack('<I4s',len(raw),b'JSON')+raw+struct.pack('<I4s',len(binary),b'BIN\0')+binary
 
 
+def stl_glb(mutate=None):
+    binary = struct.pack('<9f', 0,0,0,2,0,0,0,1,0) + struct.pack('<3H', 0,1,2)
+    doc = {'asset': {'version':'2.0'}, 'buffers':[{'byteLength':len(binary)}],
+           'bufferViews':[{'buffer':0,'byteOffset':0,'byteLength':36}, {'buffer':0,'byteOffset':36,'byteLength':6}],
+           'accessors':[{'bufferView':0,'componentType':5126,'count':3,'type':'VEC3'},
+                        {'bufferView':1,'componentType':5123,'count':3,'type':'SCALAR'}],
+           'meshes':[{'primitives':[{'attributes':{'POSITION':0},'indices':1}]}],
+           'nodes':[{'mesh':0}], 'scenes':[{'nodes':[0]}], 'scene':0}
+    if mutate: mutate(doc)
+    encoded = json.dumps(doc, separators=(',',':')).encode()
+    encoded += b' ' * (-len(encoded) % 4)
+    binary += b'\0' * (-len(binary) % 4)
+    return struct.pack('<4sII',b'glTF',2,28+len(encoded)+len(binary)) + struct.pack('<I4s',len(encoded),b'JSON') + encoded + struct.pack('<I4s',len(binary),b'BIN\0') + binary
+
+
 class FakeClient:
     def __init__(self):
         self.calls = []
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj'}):
+        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl'}):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
@@ -107,6 +122,9 @@ class FakeClient:
                 refs.append({'path': f'models/{kind}/texture.png', 'role': 'texture', 'required': True})
                 attributes['item']['refs'] = refs
                 attributes['format_info'] = {kind: {'scan_complete': True, 'texture_refs': ['texture.png']}}
+            if kind == 'stl':
+                attributes['item']['refs'] = refs
+                attributes['format_info'] = {'stl': {'composition_complete': True}}
             if kind == 'obj':
                 refs.extend({'path':'models/obj/'+name,'role':role,'required':True} for name,role in [
                     ('paint blue.mtl','material_library'),('paint red.mtl','material_library_2'),
@@ -757,7 +775,7 @@ class FTPConsumerTest(unittest.TestCase):
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
-        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj'])
+        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj', 'stl'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
         self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
@@ -823,13 +841,18 @@ class FTPConsumerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             for source in expected['models']:
-                raw = multi_material_obj_glb() if source['format']=='obj' else GLB.fixture_glb(source['format'])
+                raw = multi_material_obj_glb() if source['format']=='obj' else stl_glb() if source['format']=='stl' else GLB.fixture_glb(source['format'])
                 (artifacts / f"ftp-{source['format']}.glb").write_bytes(raw)
                 proof['models'].append({'format': source['format'], 'item_id': source['item_id'],
                                         'task_id': 10, 'execution_id': 'owned-execution', 'result_id': 20,
                                         'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                                         'source_download': source_download_proof(source, artifacts), 'rendered': True,
                                         'reopened': True, 'cached_without_execution': True})
+                if source['format'] == 'stl':
+                    proof['models'][-1]['basic_preview'] = {'status':200,'size':source['size'],'sha256':source['sha256'],
+                        'rendered':True,'user_bearer':True,'cookie_sent':False,'ticket_sent':False,'generation_requests':0}
+                    (artifacts / 'ftp-stl-basic-source.stl').write_bytes((Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.stl').read_bytes())
+                    (artifacts / 'ftp-stl-basic.png').write_bytes(b'unit proof placeholder; real browser owns PNG')
             M.validate_browser_report(proof, expected, artifacts)
             for key, value in (('principal_id', 'another'), ('meta_ui_scan', False), ('downloads', []), ('previews', 2), ('models', [])):
                 changed = {**proof, key: value}
@@ -850,6 +873,55 @@ class FTPConsumerTest(unittest.TestCase):
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)
 
+
+    def test_stl_oracle_rejects_external_resources_wrong_indices_scene_and_transforms(self):
+        self.assertEqual(M.validate_stl_glb(stl_glb())['bounds'], {'min':[0.,0.,0.], 'max':[2.,1.,0.]})
+        for mutate in (
+            lambda doc: doc.update(images=[{'uri':'outside.png'}]),
+            lambda doc: doc['buffers'][0].update(uri='outside.bin'),
+            lambda doc: doc['accessors'][0].update(count=6),
+            lambda doc: doc['meshes'][0]['primitives'][0].update(indices=0),
+            lambda doc: doc['nodes'][0].update(mesh=1),
+            lambda doc: doc['nodes'][0].update(translation=[1,0,0]),
+            lambda doc: doc['nodes'][0].update(matrix=[1,0,0,0,0,1,0,0,0,0,1,0,1,0,0,1]),
+            lambda doc: doc['nodes'][0].update(children=[0]),
+            lambda doc: doc['scenes'][0].update(nodes=[0,0]),
+            lambda doc: doc['scenes'][0].update(nodes=[]),
+        ):
+            with self.subTest(mutate=mutate), self.assertRaises((M.SuiteError, M.MODEL.SuiteError)):
+                M.validate_stl_glb(stl_glb(mutate))
+
+    def test_all_raw_source_exits_deny_before_grant_and_after_revocation(self):
+        client = FakeClient()
+        report = {'engine_id':17,'models':M.prepare_models(client.items,17,client.model_samples)}
+        fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+        pinned = {M.model_scope(relative):name for _,relative,name in M.SEED.MODEL_SAMPLE_FILES}
+        for status in (403,200,403):
+            calls = []
+            def request(method, url, statuses, *, raw_response=False):
+                calls.append((method,url,statuses,raw_response))
+                self.assertEqual(statuses,(status,))
+                self.assertEqual(raw_response,status==200)
+                parsed = urlsplit(url)
+                if status == 403: return SimpleNamespace(payload={'error':'source permission denied','error_code':'forbidden'})
+                if parsed.path.endswith('/downloads/file'):
+                    model = next(model for model in report['models'] if model['locator']==parse_qs(parsed.query)['locator'][0])
+                    with tempfile.TemporaryDirectory() as directory:
+                        proof = source_download_proof(model, Path(directory))
+                        return SimpleNamespace(payload=(Path(directory)/proof['artifact']).read_bytes())
+                path = (parse_qs(parsed.query)['storage_ref'][0] if parsed.path.endswith('/storage-stream') else unquote(parsed.path.split('/items/',1)[1].split('/',1)[1]))
+                return SimpleNamespace(payload=(fixture/pinned[path]).read_bytes())
+            result = M.verify_raw_model_reads(SimpleNamespace(request=request), report, status)
+            self.assertEqual(len(result),sum(len(model['composition'])*2+1 for model in report['models']))
+            self.assertEqual({row['format'] for row in result},{'ifc','3ds','dae','obj','stl'})
+            self.assertEqual({row['exit'] for row in result},{'stream','asset','download'})
+            self.assertTrue(all(row['status']==status for row in result))
+            self.assertNotIn('addp_at_',json.dumps(result))
+        for payload in ({'error':'denied','data':'leaked'}, {'error':'policy','error_code':'security_protection_required'}, b'private bytes'):
+            with self.subTest(payload=payload), self.assertRaises(M.SuiteError):
+                M.verify_raw_model_reads(SimpleNamespace(request=lambda *a,**kw:SimpleNamespace(payload=payload)),report,403)
+        with self.assertRaises(M.SuiteError):
+            M.verify_raw_model_reads(SimpleNamespace(request=lambda *a,**kw:SimpleNamespace(payload=b'changed')),report,200)
 
     def test_logical_source_download_rejects_incomplete_duplicate_extra_or_corrupt_members(self):
         source = M.prepare_models(FakeClient().items, 17, model_samples())[1]
@@ -997,9 +1069,9 @@ class FTPConsumerTest(unittest.TestCase):
         issuer = FakeSourceIssuer(report)
         authorization = M.ModelSourceAuthorization(issuer, consumer, report)
         receipts = [authorization.grant(model) for model in report['models']]
-        self.assertEqual(len(receipts), 4)
+        self.assertEqual(len(receipts), 5)
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
-        self.assertEqual([body['recipient_id'] for body in commands], ['8'] * 4)
+        self.assertEqual([body['recipient_id'] for body in commands], ['8'] * len(report['models']))
         for body in commands:
             self.assertIs(body['initialize_approval'], True)
             self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
@@ -1335,7 +1407,7 @@ class FTPConsumerTest(unittest.TestCase):
             result = M.verify_composition_rules(client, Authorization(), report, source, 'deny-A', 30)
         self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
                                   'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
-        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200})
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200, 'stl': 200})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):

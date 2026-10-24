@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
@@ -26,12 +27,13 @@ import (
 )
 
 type MetadataService struct {
-	metadataRepo   *repository.MetadataRepository
-	systemClient   *commonClient.SystemClient
-	metaClient     *commonClient.MetaClient
-	metaUserClient *commonClient.MetaScanUserClient
-	previews       *preview.PreviewRegistry
-	content        *objectcontent.ObjectContentRegistry
+	metadataRepo       *repository.MetadataRepository
+	systemClient       *commonClient.SystemClient
+	metaClient         *commonClient.MetaClient
+	metaUserClient     *commonClient.MetaScanUserClient
+	previews           *preview.PreviewRegistry
+	content            *objectcontent.ObjectContentRegistry
+	modelSourceChecker modelStorageReadChecker
 }
 
 // StorageDataItem is a server-verified storage item identity. Callers must use
@@ -43,6 +45,9 @@ type StorageDataItem struct {
 	StorageRef      string
 	ItemFingerprint string
 	Descriptor      dataitem.ItemDescriptor
+	engine          *models.Engine
+	item            *commonModels.MetaItem
+	locator         string
 }
 
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
@@ -199,23 +204,20 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 		TenantID:         tenantIDPtr,
 		LifecycleState:   src.LifecycleState,
 		ConnectionStatus: src.ConnectionStatus,
+		Version:          src.Version,
 	}
 }
 
 // StreamStorageContent 对存储叶子内容做流式传输，支持 HTTP Range 请求。
-func (s *MetadataService) StreamStorageContent(
-	ctx context.Context,
-	resourceID uint,
-	storageRef string,
-	rangeHeader string,
-	tenantID *uint,
-) (io.ReadCloser, int64, string, string, error) {
-	// 获取resource信息
-	resource, err := s.getResourceForTenant(ctx, resourceID, tenantID)
+func (s *MetadataService) StreamStorageContent(ctx context.Context, target *StorageDataItem, rangeHeader string, tenantID *uint, credential string, human bool) (io.ReadCloser, int64, string, string, error) {
+	read, err := s.prepareStorageRead(target, tenantID, credential, human, nil)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
+	return read.stream(ctx, target.StorageRef, rangeHeader)
+}
 
+func (s *MetadataService) streamStorageContent(ctx context.Context, resource *models.Engine, storageRef, rangeHeader string, check func() error) (io.ReadCloser, int64, string, string, error) {
 	pl, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
@@ -234,6 +236,9 @@ func (s *MetadataService) StreamStorageContent(
 		return nil, 0, "", "", err
 	}
 
+	if err := check(); err != nil {
+		return nil, 0, "", "", err
+	}
 	meta, err := streamEngineCatalogFacts(ctx, factsProvider, connInfo, itemPath, displayPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat storage content: %w", err)
@@ -250,6 +255,9 @@ func (s *MetadataService) StreamStorageContent(
 	}
 
 	// 获取对象流
+	if err := check(); err != nil {
+		return nil, 0, "", "", err
+	}
 	var reader io.ReadCloser
 	if readOptions.Length > 0 && rangeReader != nil {
 		reader, err = rangeReader.OpenRange(ctx, connInfo, itemPath, readOptions)
@@ -279,7 +287,7 @@ func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resour
 	if len(refs) == 0 {
 		refs = []models.DownloadRef{{
 			StorageRef: displayPath,
-			Role:       "main",
+			Role:       storagePrimaryRole(descriptor),
 			Required:   true,
 			Primary:    true,
 			FileName:   path.Base(displayPath),
@@ -385,6 +393,7 @@ func (s *MetadataService) ResolveStorageAssetTarget(ctx context.Context, engineI
 		StorageRef:      storageRefFromLocator(resource.EngineType, itemLocator),
 		ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
 		Descriptor:      dataitem.DescriptorFromAttributes(item.Attributes),
+		engine:          resource, item: item, locator: itemLocator.ToURI(),
 	}
 	_, normalizedRef, err := streamStorageRefPath(target.EngineType, target.EngineID, storageRef)
 	if err != nil {
@@ -437,6 +446,7 @@ func (s *MetadataService) resolveStorageDataItem(ctx context.Context, locatorURI
 		StorageRef:      storageRefFromLocator(resource.EngineType, loc),
 		ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
 		Descriptor:      dataitem.DescriptorFromAttributes(item.Attributes),
+		engine:          resource, item: item, locator: loc.ToURI(),
 	}, item, nil
 }
 
@@ -457,6 +467,14 @@ func storageRefBelongsToDataItem(engineType, itemStorageRef, requestedStorageRef
 	requestedStorageRef = cleanStorageRef(requestedStorageRef)
 	if itemStorageRef == "" || requestedStorageRef == "" {
 		return false
+	}
+	if descriptor.DataType == datatype.Model3D && descriptor.Layout == format.LayoutSingle {
+		for _, ref := range descriptor.Refs {
+			if ref.Path == requestedStorageRef && ref.Required {
+				return true
+			}
+		}
+		return requestedStorageRef == itemStorageRef
 	}
 	switch descriptor.Layout {
 	case format.LayoutSingle:
@@ -501,21 +519,8 @@ func storageRefFromLocator(engineType string, loc *resourcetree.ResourceLocator)
 	return strings.Join(loc.Path, "/")
 }
 
-func (s *MetadataService) StreamStorageDownloadPlan(ctx context.Context, resourceID uint, plan *models.DownloadPlan, tenantID *uint, writer io.Writer) error {
-	if plan == nil {
-		return ErrDownloadNotSupported
-	}
-	if plan.Kind == models.DownloadKindBundle {
-		entries, err := s.openDownloadBundleEntries(ctx, resourceID, plan, tenantID)
-		if err != nil {
-			return err
-		}
-		return writeDownloadBundle(entries, writer)
-	}
-	if plan.Kind != models.DownloadKindStream || len(plan.Refs) == 0 {
-		return ErrDownloadNotSupported
-	}
-	reader, err := s.openDownloadRef(ctx, resourceID, plan.Refs[0], tenantID)
+func (s *MetadataService) StreamStorageDownloadPlan(ctx context.Context, target *StorageDataItem, plan *models.DownloadPlan, tenantID *uint, credential string, human bool, writer io.Writer) error {
+	reader, err := s.OpenStorageDownloadPlan(ctx, target, plan, tenantID, credential, human)
 	if err != nil {
 		return err
 	}
@@ -524,12 +529,21 @@ func (s *MetadataService) StreamStorageDownloadPlan(ctx context.Context, resourc
 	return err
 }
 
-func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, resourceID uint, plan *models.DownloadPlan, tenantID *uint) (io.ReadCloser, error) {
+func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, target *StorageDataItem, plan *models.DownloadPlan, tenantID *uint, credential string, human bool) (io.ReadCloser, error) {
 	if plan == nil {
 		return nil, ErrDownloadNotSupported
 	}
 	if plan.Kind == models.DownloadKindBundle {
-		entries, err := s.openDownloadBundleEntries(ctx, resourceID, plan, tenantID)
+		if _, err := downloadBundleNames(plan.Refs); err != nil {
+			return nil, err
+		}
+	}
+	read, err := s.prepareStorageRead(target, tenantID, credential, human, plan)
+	if err != nil {
+		return nil, err
+	}
+	if plan.Kind == models.DownloadKindBundle {
+		entries, err := s.openDownloadBundleEntries(ctx, read, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -543,7 +557,7 @@ func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, resourceI
 	if plan.Kind != models.DownloadKindStream || len(plan.Refs) == 0 {
 		return nil, ErrDownloadNotSupported
 	}
-	return s.openDownloadRef(ctx, resourceID, plan.Refs[0], tenantID)
+	return s.openDownloadRef(ctx, read, plan.Refs[0])
 }
 
 type downloadBundleEntry struct {
@@ -551,14 +565,14 @@ type downloadBundleEntry struct {
 	reader io.ReadCloser
 }
 
-func (s *MetadataService) openDownloadBundleEntries(ctx context.Context, resourceID uint, plan *models.DownloadPlan, tenantID *uint) ([]downloadBundleEntry, error) {
+func (s *MetadataService) openDownloadBundleEntries(ctx context.Context, read *storageRead, plan *models.DownloadPlan) ([]downloadBundleEntry, error) {
 	names, err := downloadBundleNames(plan.Refs)
 	if err != nil {
 		return nil, err
 	}
 	entries := make([]downloadBundleEntry, 0, len(plan.Refs))
 	for index, ref := range plan.Refs {
-		reader, err := s.openDownloadRef(ctx, resourceID, ref, tenantID)
+		reader, err := s.openDownloadRef(ctx, read, ref)
 		if err != nil {
 			if ref.Required {
 				closeDownloadBundleEntries(entries)
@@ -577,8 +591,8 @@ func (s *MetadataService) openDownloadBundleEntries(ctx context.Context, resourc
 	return entries, nil
 }
 
-func (s *MetadataService) openDownloadRef(ctx context.Context, resourceID uint, ref models.DownloadRef, tenantID *uint) (io.ReadCloser, error) {
-	reader, _, _, _, err := s.StreamStorageContent(ctx, resourceID, ref.StorageRef, "", tenantID)
+func (s *MetadataService) openDownloadRef(ctx context.Context, read *storageRead, ref models.DownloadRef) (io.ReadCloser, error) {
+	reader, _, _, _, err := read.stream(ctx, ref.StorageRef, "")
 	return reader, err
 }
 
@@ -844,4 +858,11 @@ func streamEngineCatalogFacts(ctx context.Context, factsProvider plugin.EngineCa
 		return nil, err
 	}
 	return resourceutil.EngineCatalogFactsToStorageObjectFacts(item, fallbackPath), nil
+}
+
+func storagePrimaryRole(descriptor dataitem.ItemDescriptor) string {
+	if descriptor.DataType == datatype.Model3D {
+		return "model"
+	}
+	return "main"
 }

@@ -78,7 +78,7 @@ func TestManagerModel3DResultReadUsesExpectedSourceInSameHumanDecision(t *testin
 			}))
 			t.Cleanup(server.Close)
 			client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("must-not-be-used"), server.Client())
-			err := client.CheckManagerModel3DResultRead(t.Context(), "addp_at_current_human", generated)
+			err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", generated)
 			switch outcome {
 			case "same source":
 				if err != nil {
@@ -104,29 +104,29 @@ func TestManagerModel3DResultReadRejectsTicketsDelegatesAndMalformedExpectedSour
 	generated := model3DExpectedSourceFixture(t, "Original.PNG")
 	client := NewSystemServiceClient("http://must-not-be-contacted.invalid", staticSystemServiceTokenSource("must-not-be-used"), nil)
 	for _, token := range []string{"", "addp_rat_ticket", "addp_dat_tool", "addp_at_", "addp_at_user\n"} {
-		if err := client.CheckManagerModel3DResultRead(context.Background(), token, generated); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
+		if err := client.CheckManagerModel3DRead(context.Background(), token, generated); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
 			t.Fatalf("credential accepted: %v", err)
 		}
 	}
 	for _, version := range []string{"", "0", "-1", "05", "+5", "5.0", strings.Repeat("9", 40)} {
 		invalid := generated
 		invalid.EngineVersion = version
-		if err := client.CheckManagerModel3DResultRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
+		if err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
 			t.Fatalf("invalid expected version accepted: %v", err)
 		}
 	}
 	invalid := generated
 	invalid.FileComposition = authorizationfacts.FileCompositionBoundary{}
-	if err := client.CheckManagerModel3DResultRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
+	if err := client.CheckManagerModel3DRead(t.Context(), "addp_at_current_human", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
 		t.Fatalf("missing composition accepted: %v", err)
 	}
 }
 
 func TestManagerModel3DExpectedObjectSource(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
 		t.Run(format, func(t *testing.T) {
 			refs := []authorizationfacts.FileCompositionRef{{Target: plugin.ObjectItemPath(33, "models", "scene/model."+format), Role: "model", Required: true, Primary: true}}
-			if format != "ifc" {
+			if format != "ifc" && format != "stl" {
 				refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(33, "models", "scene/ Original.PNG "), Role: "texture", Required: true})
 			}
 			composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)

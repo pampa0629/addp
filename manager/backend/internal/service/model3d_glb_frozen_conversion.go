@@ -107,7 +107,7 @@ func decodeFileModel3DGLBConversion(raw json.RawMessage) (Model3DGLBExecutionCon
 		return Model3DGLBExecutionConfig{}, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if wire.Source.ItemLocator == "" || wire.Source.SourceEngineID == 0 || wire.Source.ItemID == 0 || wire.Source.ItemFingerprint == "" ||
-		(wire.Source.Format != "ifc" && wire.Source.Format != "3ds" && wire.Source.Format != "dae" && wire.Source.Format != "obj") || wire.Result.StorageRef == "" || wire.Result.FileName == "" {
+		!commonExecution.ManagerModel3DFileFormat(wire.Source.Format) || wire.Result.StorageRef == "" || wire.Result.FileName == "" {
 		return Model3DGLBExecutionConfig{}, ErrModel3DGLBSourceAuthorizationRequired
 	}
 	var result Model3DGLBExecutionConfig

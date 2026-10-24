@@ -308,7 +308,7 @@ test('hides GLB generation when FTP source capability excludes the format', asyn
   const notice = page.locator('.quick-view-status-icon.is-info')
   await expect(notice).toBeVisible()
   await notice.hover()
-  await expect(page.getByRole('tooltip')).toContainText('FTP 的 GLB 生成仅接受 IFC、3DS 模型。')
+  await expect(page.getByRole('tooltip')).toContainText('FTP 的 GLB 生成仅接受已确认完整组成的 IFC、3DS、DAE、OBJ、STL 模型。')
   await expect(page.getByRole('button', { name: '生成 GLB 快显', exact: true })).toHaveCount(0)
   expect(backend.quickViewActions).toEqual([])
 })

@@ -85,7 +85,15 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
             'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','ONLINE_SUITE_INPUT':'ftp-consumer-flow',
             'ADDP_ONLINE_ARTIFACT_DIR':str(self.host.artifacts),'ADDP_ONLINE_SECRET_DIR':str(self.host.secrets),
             'ADDP_TEST_GATE_TRACE':str(self.host.trace),'ADDP_TEST_BACKGROUND_PIDS':str(self.host.background_pids),**overrides}
-        return subprocess.run(['bash','scripts/test/online-hosted-ftp-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
+        try:
+            return subprocess.run(['bash','scripts/test/online-hosted-ftp-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
+        except subprocess.TimeoutExpired:
+            # This harness contains only disposable fake commands. Report its
+            # owned lifecycle facts, never the runtime env or captured credentials.
+            trace = self.host.trace.read_text() if self.host.trace.exists() else '<no trace>'
+            summary_path = self.host.artifacts / 'summary.txt'
+            summary = summary_path.read_text() if summary_path.exists() else '<no summary>'
+            self.fail(f'FTP lifecycle harness exceeded 20s; trace={trace!r}; summary={summary!r}')
 
     def test_success_registers_two_engines_and_checks_native_then_cleans_everything(self):
         # Override the inherited two-engine case: FTP admits only reads.

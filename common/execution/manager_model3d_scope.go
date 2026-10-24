@@ -20,18 +20,19 @@ func ManagerModel3DSourceEngineType(engineType string) bool {
 
 // ManagerModel3DSourceFormat is the single admission rule for conversion routes.
 func ManagerModel3DSourceFormat(engineType, format string) bool {
-	switch engineType {
-	case "ftp", "nfs", "minio":
-		return format == "ifc" || format == "3ds" || format == "dae" || format == "obj"
-	default:
-		return false
-	}
+	return ManagerModel3DSourceEngineType(engineType) && ManagerModel3DFileFormat(format)
+}
+
+// ManagerModel3DFileFormat is the shared exact-composition format admission.
+// Identity, basic completeness and the native file/object shape remain mandatory.
+func ManagerModel3DFileFormat(format string) bool {
+	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl"
 }
 
 // ManagerModel3DSourceComposition also proves the native catalog shape. Engine
 // identity alone must never let a file scope authorize an object or vice versa.
 func ManagerModel3DSourceComposition(engineType string, composition *authorizationfacts.FileCompositionBoundary) bool {
-	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) {
+	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) || ((composition.Format == "ifc" || composition.Format == "stl") && len(composition.Refs) != 1) {
 		return false
 	}
 	primary, err := composition.PrimaryTarget()
@@ -91,13 +92,13 @@ func NewManagerModel3DReadScope(raw json.RawMessage, taskID, taskVersion, engine
 func (s *ManagerModel3DReadScope) Validate() error {
 	if s == nil || !authorizationfacts.ValidItemFingerprint(s.ConfigDigest) || !positiveModel3DVersion(s.OwnerTaskID) ||
 		!positiveModel3DVersion(s.OwnerTaskVersion) || !positiveModel3DVersion(s.EngineVersion) ||
-		(s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae" && s.FileComposition.Format != "obj") {
+		!ManagerModel3DFileFormat(s.FileComposition.Format) {
 		return errManagerModel3DScope
 	}
 	primary, err := s.FileComposition.PrimaryTarget()
 	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile &&
 		primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject) ||
-		(s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
+		((s.FileComposition.Format == "ifc" || s.FileComposition.Format == "stl") && len(s.FileComposition.Refs) != 1) {
 		return errManagerModel3DScope
 	}
 	return nil

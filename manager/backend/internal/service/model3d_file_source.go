@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/obj"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -50,7 +51,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	if err != nil || loc.EngineID != engine.ID || (loc.ItemID != nil && *loc.ItemID != req.Config.Source.ItemID) || loc.Type != sourceType || strings.Join(loc.Path, "/") != primary.StringPath() || commonModels.GenerateItemFingerprint(engine.ID, primary.StringPath()) != req.Config.Source.ItemFingerprint {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
-	if composition.Format == "ifc" && len(composition.Refs) != 1 {
+	if (composition.Format == "ifc" || composition.Format == "stl") && len(composition.Refs) != 1 {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if err := auth.Checkpoint(ctx); err != nil {
@@ -193,6 +194,34 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if int64(len(primaryBytes)) != primarySize {
 			return errors.New("model main file size changed during preparation")
 		}
+	}
+	if composition.Format == "stl" {
+		// The same strictly revalidated bytes are staged; the source is not reopened.
+		const maxSTLPreparationBytes = int64(64 << 20)
+		if primarySize > maxSTLPreparationBytes {
+			return errors.New("STL preparation exceeds the 64 MiB model budget")
+		}
+		stream, err := open(ctx, primary)
+		if err != nil {
+			return err
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(&model3DStagingContextReader{ctx: ctx, reader: stream}, primarySize+1))
+		closeErr := stream.Close()
+		if readErr != nil || closeErr != nil {
+			return errors.Join(readErr, closeErr)
+		}
+		if int64(len(raw)) != primarySize {
+			return errors.New("STL size changed during preparation")
+		}
+		provider, err := format.GetModel3DCompositionProvider(format.FormatSTL)
+		if err != nil {
+			return err
+		}
+		refs, err := provider.ReadModel3DComposition(ctx, bytes.NewReader(raw), primarySize)
+		if err != nil || len(refs) != 0 {
+			return errors.New("STL structure no longer proves the frozen single-file composition")
+		}
+		primaryBytes = raw
 	}
 	parentDepth := len(primary.Segments) - 1
 	relative := func(target plugin.EngineCatalogPath) (string, error) {

@@ -3340,11 +3340,9 @@ paths:
       x-ai-hint: 查询指定 locator 已保存的数据剖析结果；该接口不会触发源数据读取。
   /downloads/file:
     get:
-      description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs
-        的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by
-        ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs
-        common parent without flattening or renaming; invalid or duplicate compositions
-        are rejected
+      description: |-
+        按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected
+        模型源包仅接受当前普通用户 Bearer；在每个源读取前，以完整组成及同一 Engine 版本核验现行源许可。资源票据或终态执行授权不能代替；原有下载权限与保护检查仍须满足。 | Model source packages require the current User Bearer and current source permission bound to the complete composition and same Engine version before each read. Resource tickets or terminal execution authorizations cannot replace it; download permissions and protection checks still apply.
       parameters:
       - description: 资源定位符 URI | Resource locator URI
         in: query
@@ -3358,6 +3356,11 @@ paths:
           description: 下载内容流 | Download content stream
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要当前用户凭据 | Current User credential required
           schema:
             additionalProperties: true
             type: object
@@ -6391,10 +6394,9 @@ paths:
       - manager.configuration.update
   /storage-assets/{engine_id}/items/{item_id}/{storage_ref}:
     get:
-      description: 以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。
-        | Stream one asset from a multi-file preview dataset with path-relative URL
-        resolution and Range support; storage-engine and tenant authorization still
-        apply.
+      description: |-
+        以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.
+        模型资源仅限已批准完整组成中的精确成员，以当前普通用户 Bearer 每次重核；未准入的模型组成拒绝。 | Model assets must be exact members of the approved complete composition, rechecked for the current User Bearer on every request; unsupported model composition is denied.
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -6423,6 +6425,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要当前用户凭据 | Current User credential required
+          schema:
+            additionalProperties: true
+            type: object
         "403":
           description: 无权访问 | Access denied
           schema:
@@ -6443,11 +6450,9 @@ paths:
       - manager.content.read
   /storage-stream:
     get:
-      description: 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref
-        在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range
-        request support for online previews such as images, PDF, and video; use downloads/file
-        for user downloads. storage_ref is bucket/path for object catalogs and file
-        path for file catalogs
+      description: |-
+        支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
+        模型主文件及确认依赖须以当前普通用户 Bearer 核验完整组成和现行源许可，不接受 Resource Ticket 代替源授权。 | Model primaries and confirmed dependencies require the current User Bearer, complete composition and current source rules; resource tickets cannot replace source authorization.
       parameters:
       - description: 带 item_id 的存储数据项定位符 | Storage DataItem locator with item_id
         in: query
@@ -6468,6 +6473,11 @@ paths:
           description: 部分存储内容流 | Partial storage content stream
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要当前用户凭据 | Current User credential required
           schema:
             additionalProperties: true
             type: object

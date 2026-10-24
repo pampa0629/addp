@@ -189,7 +189,7 @@ func appendModel3DGLBGarbage(state *model3DGLBOutputState, ref model3DGLBOutputR
 func (r *Model3DGLBRepository) PrepareExecutionOutput(ctx context.Context, desired *models.Model3DGLB, outputRef string) (*models.Model3DGLB, error) {
 	lease, ok := commonExecution.LeaseFromContext(ctx)
 	if !ok || desired == nil || desired.TenantID == 0 || desired.TaskID == nil || *desired.TaskID == 0 || desired.ItemFingerprint == "" || desired.SourceEngineID == 0 ||
-		(desired.SourceFormat != "ifc" && desired.SourceFormat != "3ds" && desired.SourceFormat != "dae" && desired.SourceFormat != "obj") || desired.LastExecutionID == nil || *desired.LastExecutionID != lease.ExecutionID || int(desired.TenantID) != lease.TenantID || outputRef == "" {
+		!commonExecution.ManagerModel3DFileFormat(desired.SourceFormat) || desired.LastExecutionID == nil || *desired.LastExecutionID != lease.ExecutionID || int(desired.TenantID) != lease.TenantID || outputRef == "" {
 		return nil, commonAPI.ErrConflict
 	}
 	var result models.Model3DGLB

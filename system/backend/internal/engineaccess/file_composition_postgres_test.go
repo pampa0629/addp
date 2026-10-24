@@ -25,7 +25,8 @@ import (
 func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID int64,
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}} {
+		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -51,6 +52,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					refs := []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
 						{Target: targetFor(texture), Role: "texture", Required: true},
+					}
+					if format == "stl" {
+						refs = refs[:1]
 					}
 					if format == "obj" {
 						refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("model.mtl"), Role: "material_library", Required: true})
@@ -160,6 +164,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				var stored authorizationfacts.FileCompositionBoundary
 				expectedRefs := 2
+				if format == "stl" {
+					expectedRefs = 1
+				}
 				if format == "obj" {
 					expectedRefs = 3
 				}
@@ -176,6 +183,40 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				bare.RequestID = uuid.New()
 				if err := repo.insertSourceGrant(ctx, bare); !errors.Is(err, commonapi.ErrBadRequest) {
 					t.Fatal("primary-only upgrade accepted", err)
+				}
+				if format == "stl" {
+					current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
+					if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrConflict) {
+						t.Fatal("incomplete STL facts did not fail closed", err)
+					}
+					current = original
+					read(request, true)
+					denyID := uuid.New()
+					if _, err := service.CreateDeny(ctx, CreateDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, CatalogPath: primary, ItemFingerprint: original.ItemFingerprint,
+						RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Deny exact STL"}); err != nil {
+						t.Fatal(err)
+					}
+					read(request, false)
+					if _, err := service.ReleaseDeny(ctx, ReleaseDenyInput{Actor: actor, EngineID: int64(engine.ID), DenyID: denyID, Reason: "Release STL denial"}); err != nil {
+						t.Fatal(err)
+					}
+					read(request, true)
+					if err := db.Table("system.engines").Where("id=?", engine.ID).Update("version", 2).Error; err != nil {
+						t.Fatal(err)
+					}
+					read(request, false)
+					request.ExpectedSource.EngineVersion = "2"
+					read(request, true)
+					offline = true
+					if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
+						t.Fatal("Meta outage allowed STL", err)
+					}
+					offline = false
+					if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: grantA.RequestID, Reason: "Withdraw STL"}); err != nil {
+						t.Fatal(err)
+					}
+					read(request, false)
+					return
 				}
 				current = factsFor("B.PNG")
 				currentRequest := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}

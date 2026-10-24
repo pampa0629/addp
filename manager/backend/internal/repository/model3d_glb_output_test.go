@@ -17,7 +17,7 @@ import (
 )
 
 func TestGLBIsolatedOutputSwitchesOnlyWithAtomicSuccess(t *testing.T) {
-	for _, sourceFormat := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, sourceFormat := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
 		for _, outcome := range []string{"success", "failed", "lost lease"} {
 			t.Run(sourceFormat+"/"+outcome, func(t *testing.T) {
 				db := newTileCacheExecutionRepositoryTestDB(t)

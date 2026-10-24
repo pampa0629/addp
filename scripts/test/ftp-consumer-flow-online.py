@@ -965,6 +965,42 @@ def source_read_control(client, engine_id, model, status):
     return status
 
 
+def verify_raw_model_reads(client, report, status):
+    require(status in {200, 403}, 'raw model proof requires an explicit allowed or denied state')
+    fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
+    pinned = {model_scope(relative): name for _, relative, name in SEED.MODEL_SAMPLE_FILES}
+    observations = []
+    for model in report['models']:
+        routes = []
+        for ref in model['composition']:
+            expected = (fixture / pinned[ref['path']]).read_bytes()
+            routes.extend([
+                ('stream', ref['path'], '/api/v1/manager/storage-stream?' + urlencode({
+                    'locator': model['locator'], 'storage_ref': ref['path']}), expected),
+                ('asset', ref['path'], f"/api/v1/manager/storage-assets/{report['engine_id']}/items/{model['item_id']}/" +
+                    quote(ref['path'], safe='/'), expected),
+            ])
+        routes.append(('download', model['full_name'], '/api/v1/manager/downloads/file?' +
+                       urlencode({'locator': model['locator']}), None))
+        for exit_name, path, url, original in routes:
+            payload = client.request('GET', url, (status,), raw_response=status == 200).payload
+            row = {'format': model['format'], 'exit': exit_name, 'path': path, 'status': status}
+            if status == 200:
+                require(isinstance(payload, bytes), 'raw model content must be bytes')
+                if exit_name == 'download':
+                    validate_logical_source_bytes(payload, model)
+                else:
+                    require(payload == original, 'raw model response differs from the exact source bytes')
+                row.update(size=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+            else:
+                require(isinstance(payload, dict) and bool(payload.get('error')) and
+                        set(payload).issubset({'error', 'error_code'}) and
+                        payload.get('error_code') != 'security_protection_required',
+                        'raw source denial must be an explicit source decision without content')
+            observations.append(row)
+    return observations
+
+
 def scan_scope(client, engine_id, directories, depth, timeout):
     require(depth in {'basic', 'deep'} and directories and all(isinstance(value, str) and
             all(part and part not in {'.', '..'} for part in value.split('/')) for value in directories),
@@ -1047,7 +1083,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in ('ifc', '3ds', 'dae', 'obj'):
+    for kind in ('ifc', '3ds', 'dae', 'obj', 'stl'):
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')
@@ -1075,6 +1111,9 @@ def prepare_models(items, engine_id, samples):
             require(native.get('texture_refs') == ['texture.png'],
                     'FTP texture model must retain its exact texture declaration')
             expected_refs.append({'path': by_format['dae_png' if kind == 'dae' else 'png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
+        if kind == 'stl':
+            require(native.get('composition_complete') is True and not native.get('texture_refs'),
+                    'STL requires basic complete single-primary composition without external references')
         if kind == 'obj':
             require(native.get('composition_complete') is True and native.get('material_libraries') == [
                 {'reference':'paint blue.mtl','texture_refs':['blue/color.png']},
@@ -1167,6 +1206,13 @@ def validate_source_download(observed, source, artifact_dir):
     raw = (artifact_dir / artifact).read_bytes()
     require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed['sha256'],
             'FTP logical source response differs from the captured bytes')
+    require((observed['content_type'] == 'application/zip') == bundled,
+            'FTP logical source response MIME type differs from its composition')
+    validate_logical_source_bytes(raw, source)
+
+
+def validate_logical_source_bytes(raw, source):
+    bundled = len(source['composition']) > 1
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
     pinned = {model_scope(relative):source for _,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(all(ref['path'] in pinned for ref in source['composition']),
@@ -1179,10 +1225,9 @@ def validate_source_download(observed, source, artifact_dir):
             hashlib.sha256(expected[Path(source['full_name']).name]).hexdigest() == source['sha256'],
             'FTP source manifest differs from the fixed physical primary')
     if not bundled:
-        require(observed['content_type'] != 'application/zip' and raw == next(iter(expected.values())),
+        require(raw == next(iter(expected.values())),
                 'FTP single-file source differs from the physical primary')
         return
-    require(observed['content_type'] == 'application/zip', 'FTP multi-ref source must be a logical ZIP bundle')
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             entries = archive.infolist()
@@ -1281,6 +1326,77 @@ def validate_obj_multi_material_glb(raw):
             'image_sha256': sorted(image_hashes)}
 
 
+def validate_stl_glb(raw):
+    """Independent oracle for the fixed single STL triangle, not a format parser."""
+    doc, view_bytes = MODEL.parse_model_glb(raw)
+    require(doc.get('images', []) == [] and doc.get('textures', []) == [],
+            'STL must not acquire source textures')
+    def self_contained(value):
+        if isinstance(value, dict):
+            require(not any(key == 'uri' or key.endswith('Texture') for key in value),
+                    'STL GLB must not reference an external resource or texture')
+            for child in value.values(): self_contained(child)
+        elif isinstance(value, list):
+            for child in value: self_contained(child)
+    self_contained(doc)
+    meshes, accessors = doc.get('meshes', []), doc.get('accessors', [])
+    require(len(meshes) == 1 and len(meshes[0].get('primitives', [])) == 1,
+            'STL must retain exactly one mesh primitive')
+    primitive = meshes[0]['primitives'][0]
+    require(primitive.get('mode', 4) == 4, 'STL must remain a triangle primitive')
+    def values(index, width, component, code):
+        require(type(index) is int and 0 <= index < len(accessors), 'STL accessor index invalid')
+        a = accessors[index]
+        require(a.get('componentType') == component and a.get('count') == 3 and
+                a.get('type') == ('SCALAR' if width == 1 else 'VEC3') and
+                not a.get('normalized', False) and 'sparse' not in a, 'STL accessor type differs')
+        data, view = view_bytes(a.get('bufferView'))
+        step = struct.calcsize('<' + code * width)
+        stride, start = view.get('byteStride', step), a.get('byteOffset', 0)
+        require(type(stride) is int and stride >= step and type(start) is int and start >= 0 and
+                start + 2 * stride + step <= len(data), 'STL accessor exceeds its view')
+        return [struct.unpack_from('<' + code * width, data, start + i * stride) for i in range(3)]
+    points = values(primitive.get('attributes', {}).get('POSITION'), 3, 5126, 'f')
+    require(all(math.isfinite(x) for point in points for x in point), 'STL positions must be finite')
+    order = [0, 1, 2]
+    if 'indices' in primitive:
+        index = primitive['indices']
+        require(type(index) is int and 0 <= index < len(accessors), 'STL index accessor missing')
+        component = accessors[index].get('componentType')
+        require(component in {5121, 5123, 5125}, 'STL indices must be unsigned integers')
+        order = [row[0] for row in values(index, 1, component, {5121: 'B', 5123: 'H', 5125: 'I'}[component])]
+        require(sorted(order) == [0, 1, 2], 'STL triangle index coverage differs')
+    identity = [1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.]
+    nodes, visited, instances = doc.get('nodes', []), set(), []
+    def visit(index, parent):
+        require(type(index) is int and 0 <= index < len(nodes) and index not in visited,
+                'STL scene contains an invalid, cyclic or repeated node')
+        visited.add(index)
+        node = nodes[index]
+        # The fixed Assimp fixture uses matrix transforms; do not silently ignore TRS.
+        require(not any(key in node for key in ('translation', 'rotation', 'scale')), 'STL fixture transform encoding differs')
+        local = node.get('matrix', identity)
+        require(isinstance(local, list) and len(local) == 16 and
+                all(type(n) in {int, float} and math.isfinite(n) for n in local) and
+                local[3::4] == [0, 0, 0, 1], 'STL scene matrix is not finite affine')
+        world = [sum(parent[k*4+r] * local[c*4+k] for k in range(4)) for c in range(4) for r in range(4)]
+        if 'mesh' in node:
+            require(type(node['mesh']) is int and node['mesh'] == 0, 'STL scene references a foreign mesh')
+            instances.append([tuple(sum(world[k*4+axis] * points[i][k] for k in range(3)) + world[12+axis]
+                                    for axis in range(3)) for i in order])
+        for child in node.get('children', []): visit(child, world)
+    require(len(doc.get('scenes', [])) == 1 and doc.get('scene', 0) == 0, 'STL must retain one active scene')
+    for index in doc['scenes'][0].get('nodes', []): visit(index, identity)
+    require(len(instances) == 1, 'STL must render its triangle exactly once')
+    actual = instances[0]
+    expected = [(0.,0.,0.), (2.,0.,0.), (0.,1.,0.)]
+    require(any(all(all(math.isfinite(a) and math.isclose(a, b, abs_tol=1e-6) for a, b in zip(actual[i], expected[(i+offset)%3]))
+                        for i in range(3)) for offset in range(3)),
+            'STL scene geometry, orientation or bounds differ from the physical source')
+    return {'vertex_count': 3, 'triangle_count': 1, 'embedded_images': 0,
+            'bounds': {'min': [0.,0.,0.], 'max': [2.,1.,0.]}}
+
+
 def validate_browser_report(actual, expected, artifact_dir):
     proof = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
     proof.update(meta_ui_scan=True, previews=3, downloads=[{key: sample[key] for key in ('format', 'item_id', 'size', 'sha256')} for sample in expected['samples']])
@@ -1290,14 +1406,23 @@ def validate_browser_report(actual, expected, artifact_dir):
     require(isinstance(models, list) and len(models) == len(expected['models']),
             'FTP browser must generate and reopen every declared model format')
     for observed, source in zip(models, expected['models']):
-        require(set(observed) == {'format', 'item_id', 'task_id', 'execution_id', 'result_id',
+        require(set(observed) == ({'format', 'item_id', 'task_id', 'execution_id', 'result_id',
                                  'size', 'sha256', 'source_download', 'rendered', 'reopened',
-                                 'cached_without_execution'} and
+                                 'cached_without_execution'} | ({'basic_preview'} if source['format'] == 'stl' else set())) and
                 observed.get('format') == source['format'] and observed.get('item_id') == source['item_id'] and
                 all(type(observed.get(key)) is int and observed[key] > 0 for key in ('task_id', 'result_id', 'size')) and
                 isinstance(observed.get('execution_id'), str) and bool(observed['execution_id']) and
                 all(observed.get(key) is True for key in ('rendered', 'reopened', 'cached_without_execution')),
                 'FTP browser model identity, source integrity, rendering or cache proof differs')
+        if source['format'] == 'stl':
+            basic_proof = {'status': 200, 'size': source['size'], 'sha256': source['sha256'],
+                    'rendered': True, 'user_bearer': True, 'cookie_sent': False, 'ticket_sent': False, 'generation_requests': 0}
+            require(isinstance(observed['basic_preview'], dict) and set(observed['basic_preview']) == set(basic_proof) and
+                    all(type(observed['basic_preview'][key]) is type(value) and observed['basic_preview'][key] == value for key, value in basic_proof.items()),
+                    'STL basic preview must use the current User before any conversion')
+            basic = (artifact_dir / 'ftp-stl-basic-source.stl').read_bytes()
+            require(len(basic) == source['size'] and hashlib.sha256(basic).hexdigest() == source['sha256'] and
+                    (artifact_dir / 'ftp-stl-basic.png').is_file(), 'STL basic preview bytes or screenshot missing')
         validate_source_download(observed['source_download'], source, artifact_dir)
         raw = (artifact_dir / f"ftp-{source['format']}.glb").read_bytes()
         require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed.get('sha256'),
@@ -1305,6 +1430,8 @@ def validate_browser_report(actual, expected, artifact_dir):
         try:
             if source['format'] == 'obj':
                 validate_obj_multi_material_glb(raw)
+            elif source['format'] == 'stl':
+                validate_stl_glb(raw)
             else:
                 MODEL.validate_model_glb(raw, source['format'])
         except MODEL.SuiteError as error:
@@ -1356,8 +1483,11 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
     issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
                                    SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), min(timeout, 30))
     authorization = ModelSourceAuthorization(issuer, client, report)
+    report['raw_source_reads'] = {'before_grant': verify_raw_model_reads(client, report, 403)}
+    save_completed_phase(report, 'raw_sources_denied_before_grant')
     try:
         report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
+        report['raw_source_reads']['after_grant'] = verify_raw_model_reads(client, report, 200)
         report['browser'] = run_browser(report)
         save_completed_phase(report, 'browser_generation_cache_and_source_downloads')
         report['physical_model_storage'] = verify_owned_model_storage(client, report)
@@ -1367,7 +1497,7 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
         report['denied_generations'] = []
         report['composition_checks'] = {}
         for source in report['models']:
-            if source['format'] == 'ifc':
+            if source['format'] in {'ifc', 'stl'}:
                 continue
             checks = {}
             report['composition_checks'][source['format']] = checks
@@ -1382,6 +1512,7 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
             save_completed_phase(report, source['format'] + '_composition_rules_and_restoration')
     finally:
         authorization.cleanup()
+    report['raw_source_reads']['after_revocation'] = verify_raw_model_reads(client, report, 403)
     report['revoked_cached_content'] = verify_cached_results(client, report, {model['format']: 403 for model in report['models']})
     report['denied_generations'].extend(verify_denied_generation(client, report, model['format'], 'source_withdrawn')
                                         for model in report['models'])

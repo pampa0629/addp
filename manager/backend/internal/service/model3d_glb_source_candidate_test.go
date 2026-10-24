@@ -24,6 +24,9 @@ func model3DGLBCandidateFixture(format string) (Model3DGLBSourceConfig, *commonM
 		"storage":     map[string]any{"physical_path": item.FullName, "total_size": 999999},
 		"format_info": map[string]any{format: map[string]any{"scan_complete": true, "texture_refs": []string{"TEST.PNG"}}},
 	}
+	if format == "stl" {
+		item.Attributes["format_info"] = map[string]any{"stl": map[string]any{"composition_complete": true}}
+	}
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
@@ -144,5 +147,32 @@ func TestModel3DGLBCandidateDistinguishesNoDeclaredTexturesFromUnknown(t *testin
 	candidate, err = model3DGLBCandidateFromMeta(7, source, item)
 	if err != nil || len(candidate.composition.Refs) != 1 {
 		t.Fatalf("IFC candidate=%+v err=%v", candidate, err)
+	}
+}
+
+func TestSTLModelCandidateRequiresBasicCompletenessAndExactSinglePrimary(t *testing.T) {
+	for _, fault := range []string{"none", "deep-only", "extra", "missing-primary"} {
+		t.Run(fault, func(t *testing.T) {
+			source, item := model3DGLBCandidateFixture("stl")
+			facts := item.Attributes["item"].(map[string]any)
+			switch fault {
+			case "deep-only":
+				item.Attributes["format_info"] = map[string]any{"stl": map[string]any{"scan_complete": true}}
+			case "extra":
+				facts["refs"] = append(facts["refs"].([]map[string]any), map[string]any{"path": "models/neighbor.png", "role": "texture", "required": true})
+			case "missing-primary":
+				delete(facts, "refs")
+			}
+			candidate, err := model3DGLBCandidateFromMeta(7, source, item)
+			if fault != "none" {
+				if err == nil {
+					t.Fatal("incomplete STL composition admitted")
+				}
+				return
+			}
+			if err != nil || len(candidate.composition.Refs) != 1 || len(candidate.declarations) != 0 || len(candidate.libraries) != 0 {
+				t.Fatalf("candidate=%+v err=%v", candidate, err)
+			}
+		})
 	}
 }

@@ -143,7 +143,7 @@ func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 }
 
 func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
 		for _, kind := range []string{"ftp", "nfs", "minio", "s3"} {
 			for _, term := range []string{"file", "object"} {
 				target := plugin.FileItemPath(33, "models/model."+format)
@@ -163,6 +163,33 @@ func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
 					t.Fatalf("wrong scope shape %s/%s", term, format)
 				}
 			}
+		}
+	}
+}
+
+func TestSTLModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		if !ManagerModel3DSourceFormat(kind, "stl") || ManagerModel3DSourceFormat(kind, "STL") {
+			t.Fatal("non-canonical STL admission")
+		}
+		target := plugin.FileItemPath(33, "models/model.stl")
+		if kind == "minio" {
+			target = plugin.ObjectItemPath(33, "models", "model.stl")
+		}
+		composition, err := authorizationfacts.NewFileCompositionBoundary("stl", []authorizationfacts.FileCompositionRef{{Target: target, Role: "model", Primary: true, Required: true}})
+		if err != nil || !ManagerModel3DSourceComposition(kind, composition) {
+			t.Fatal(err)
+		}
+		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		if scope.Validate() != nil {
+			t.Fatal("single STL scope rejected")
+		}
+		extra := target
+		extra.Segments = append([]plugin.EngineCatalogSegment{}, target.Segments...)
+		extra.Segments[len(extra.Segments)-1].Name = "unapproved.png"
+		scope.FileComposition.Refs = append(scope.FileComposition.Refs, authorizationfacts.FileCompositionRef{Target: extra, Role: "texture", Required: true})
+		if scope.Validate() == nil {
+			t.Fatal("STL acquired external dependencies")
 		}
 	}
 }

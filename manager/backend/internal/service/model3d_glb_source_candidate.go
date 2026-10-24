@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format/plugins/obj"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -27,7 +28,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	reject := ErrModel3DGLBSourceAuthorizationRequired
 	if tenantID == 0 || source.ItemID == 0 || item == nil || item.ID != source.ItemID || item.TenantID != tenantID ||
 		item.EngineID != source.SourceEngineID || (item.ItemType != "file" && item.ItemType != "object") || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||
-		(source.Format != "ifc" && source.Format != "3ds" && source.Format != "dae" && source.Format != "obj") {
+		!commonExecution.ManagerModel3DFileFormat(source.Format) {
 		return nil, reject
 	}
 	locator, err := resourcetree.ParseURI(source.ItemLocator)
@@ -93,7 +94,10 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	if err != nil {
 		return nil, reject
 	}
-	if source.Format == "ifc" && len(composition.Refs) != 1 {
+	if (source.Format == "ifc" || source.Format == "stl") && len(composition.Refs) != 1 {
+		return nil, reject
+	}
+	if source.Format == "stl" && commonJSON.Section(item.Attributes, "format_info.stl")["composition_complete"] != true {
 		return nil, reject
 	}
 	candidate := &model3DGLBSourceCandidate{composition: composition}

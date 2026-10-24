@@ -67,7 +67,7 @@ func (s *Model3DGLBTaskService) CheckResultRead(ctx context.Context, result *mod
 	if s.sourceConsumer == nil {
 		return engineaccess.ErrUnavailable
 	}
-	return s.sourceConsumer.CheckManagerModel3DResultRead(ctx, credential, commonClient.ManagerModel3DExpectedSource{
+	return s.sourceConsumer.CheckManagerModel3DRead(ctx, credential, commonClient.ManagerModel3DExpectedSource{
 		EngineVersion:   scope.EngineVersion,
 		FileComposition: *scope.FileComposition.Clone(),
 	})

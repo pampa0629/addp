@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonformat "github.com/addp/common/format"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
@@ -39,7 +40,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout == "" || dataType == "" || format == "" {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
-	if layout != "single" || dataType != "model_3d" || (format != "ifc" && format != "3ds" && format != "dae" && format != "obj") {
+	if layout != "single" || dataType != "model_3d" || !commonExecution.ManagerModel3DFileFormat(format) {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	targetFor := func(name string) plugin.EngineCatalogPath {
@@ -114,8 +115,11 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if primaryCount != 1 {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
-	if format == "ifc" && len(refs) != 1 {
+	if (format == "ifc" || format == "stl") && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
+	if format == "stl" && commonjson.Section(item.Attributes, "format_info.stl")["composition_complete"] != true {
+		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
 	if format == "obj" {
 		native := commonjson.Section(item.Attributes, "format_info.obj")

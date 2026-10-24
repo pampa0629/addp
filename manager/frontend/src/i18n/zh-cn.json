@@ -935,7 +935,7 @@
       "gaussianSplatPreviewNotSupported": "当前高斯泼溅模型已完成识别，但尚未接入专用快显渲染器。",
       "requiresKSplatGeneration": "需要先生成平台受管的 3DGS - KSplat 快显。",
       "sourceFormatDirectPreview": "源格式已可直接预览，无需生成或切换快显。",
-      "model3DGLBSourceNotSupported": "FTP 的 GLB 生成仅接受 IFC、3DS 模型。",
+      "model3DGLBSourceNotSupported": "FTP 的 GLB 生成仅接受已确认完整组成的 IFC、3DS、DAE、OBJ、STL 模型。",
       "loadingGaussianSplat": "正在加载高斯泼溅模型...",
       "loadGaussianSplatFailed": "高斯泼溅模型加载失败",
       "loadGaussianSplatTimeout": "高斯泼溅模型加载超时",

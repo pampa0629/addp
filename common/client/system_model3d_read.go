@@ -6,9 +6,10 @@ import (
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 )
 
-// ManagerModel3DExpectedSource is the generated source boundary for a current
+// ManagerModel3DExpectedSource is the exact current or generated boundary for a current
 // Human read. It contains no execution, task, Grant, credential or Allow.
 type ManagerModel3DExpectedSource struct {
 	EngineVersion   string                                     `json:"engine_version"`
@@ -20,20 +21,21 @@ func (s *ManagerModel3DExpectedSource) Validate() error {
 		return ErrManagerPreviewReadDenied
 	}
 	version, err := strconv.ParseInt(s.EngineVersion, 10, 64)
-	if err != nil || version <= 0 || strconv.FormatInt(version, 10) != s.EngineVersion || (s.FileComposition.Format != "ifc" && s.FileComposition.Format != "3ds" && s.FileComposition.Format != "dae" && s.FileComposition.Format != "obj") {
+	if err != nil || version <= 0 || strconv.FormatInt(version, 10) != s.EngineVersion || !commonExecution.ManagerModel3DFileFormat(s.FileComposition.Format) {
 		return ErrManagerPreviewReadDenied
 	}
 	primary, err := s.FileComposition.PrimaryTarget()
-	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile && primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject) || (s.FileComposition.Format == "ifc" && len(s.FileComposition.Refs) != 1) {
+	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile && primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject) || ((s.FileComposition.Format == "ifc" || s.FileComposition.Format == "stl") && len(s.FileComposition.Refs) != 1) {
 		return ErrManagerPreviewReadDenied
 	}
 	return nil
 }
 
-// CheckManagerModel3DResultRead uses the existing fixed ManagerPreview endpoint.
+// CheckManagerModel3DRead uses the existing fixed ManagerPreview endpoint for
+// current raw model content and generated results.
 // System must compare expected_source with current trusted facts in the same
 // Human permission decision. No primary-only fallback, terminal EA or ticket.
-func (c *SystemServiceClient) CheckManagerModel3DResultRead(ctx context.Context, credential string, expectedSource ManagerModel3DExpectedSource) error {
+func (c *SystemServiceClient) CheckManagerModel3DRead(ctx context.Context, credential string, expectedSource ManagerModel3DExpectedSource) error {
 	if err := expectedSource.Validate(); err != nil {
 		return err
 	}

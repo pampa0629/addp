@@ -22,15 +22,23 @@ func resolveStructuredExchangeModelItem(ctx context.Context, input DirectoryReso
 	return exchangeModelResourceItem(file, formatType, declarations, files, err == nil)
 }
 
-// Both structural identification and deep summaries use the same resource
-// matching and persistence rules. Neither path opens declared dependencies.
+// Structural identification persists the exact observed composition. The
+// legacy exchange summary fallback does not apply to STL. Neither opens dependencies.
 func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType, declarations []string, files map[string]StorageFileRef, complete bool) *DetectedItem {
 	refs := []dataitem.ItemRef{{Role: "model", Path: file.Path, Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
 	claims := []string{file.Path}
 	total := file.Size
+	detectionReason := "model_declared_textures"
 	native := map[string]interface{}{"scan_complete": complete}
+	if formatType == format.FormatSTL {
+		detectionReason = "model_single_primary"
+		native = map[string]interface{}{"composition_complete": complete && len(declarations) == 0}
+		complete = complete && len(declarations) == 0
+	}
 	if complete {
-		native["texture_refs"] = append([]string{}, declarations...)
+		if formatType != format.FormatSTL {
+			native["texture_refs"] = append([]string{}, declarations...)
+		}
 		ordered := append([]string{}, declarations...)
 		sort.Strings(ordered)
 		seen := map[string]bool{file.Path: true}
@@ -56,7 +64,7 @@ func exchangeModelResourceItem(file StorageFileRef, formatType format.FormatType
 	}
 	item := detectedItemFromResolvedItem(file.Path, dataitem.ResolvedItem{Name: file.Name, FullName: file.Path, Layout: format.LayoutSingle,
 		DataType: datatype.Model3D, Format: string(formatType), PrimaryContentPath: file.Path, RefList: refs, ClaimPaths: claims, SizeBytes: &total,
-		DetectionReason: "model_declared_textures"})
+		DetectionReason: detectionReason})
 	// An unsuccessful observation replaces the old complete declaration, rather
 	// than retaining an authorization boundary that the current scan cannot prove.
 	item.Attributes = map[string]interface{}{"format_info": map[string]interface{}{string(formatType): native}}

@@ -20,6 +20,7 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -42,12 +43,16 @@ func TestDownloadFileModelCompositionPreservesExactBytes(t *testing.T) {
 					refs = append(refs, map[string]interface{}{"path": parent + "/texture.png", "role": "texture", "required": true})
 				}
 				if format == "obj" {
-					for _, name := range []string{"paint red.mtl", "paint blue.mtl", "red/color.png", "blue/color.png"} {
+					for index, name := range []string{"paint blue.mtl", "paint red.mtl", "blue/color.png", "red/color.png"} {
 						files[parent+"/"+name] = name + "\x00\xfe\r\n"
-						refs = append(refs, map[string]interface{}{"path": parent + "/" + name, "role": "dependency", "required": true})
+						refs = append(refs, map[string]interface{}{"path": parent + "/" + name, "role": []string{"material_library", "material_library_2", "texture", "texture_2"}[index], "required": true})
 					}
 				}
-				engineType := fmt.Sprintf("api_model_download_fixture_%s_%v", format, object)
+				engineType := "ftp"
+				if object {
+					engineType = "minio"
+				}
+				previous, previousErr := plugin.Get(engineType)
 				itemType := "file"
 				if object {
 					plugin.Register(newAPIDownloadTestObjectPlugin(engineType, files))
@@ -55,22 +60,31 @@ func TestDownloadFileModelCompositionPreservesExactBytes(t *testing.T) {
 				} else {
 					plugin.Register(newAPIDownloadTestFilePlugin(engineType, files))
 				}
-				t.Cleanup(func() { plugin.Unregister(engineType) })
+				t.Cleanup(func() {
+					if previousErr == nil {
+						plugin.Register(previous)
+					} else {
+						plugin.Unregister(engineType)
+					}
+				})
 				item, err := json.Marshal(map[string]interface{}{
-					"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": itemType, "name": "model." + format, "full_name": primary,
-					"attributes": map[string]interface{}{"item": map[string]interface{}{"layout": "single", "format": format, "data_type": "model_3d", "refs": refs}},
+					"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": itemType, "name": "model." + format, "full_name": primary, "fingerprint": commonModels.GenerateItemFingerprint(9, primary),
+					"attributes": map[string]interface{}{"storage": map[string]interface{}{"physical_path": primary}, "format_info": apiDownloadModelNative(format), "item": map[string]interface{}{"layout": "single", "format": format, "data_type": "model_3d", "refs": refs}},
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
 				metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, string(item)), nil, nil)
+				metadata.SetModelSourceReadChecker(apiModelReadChecker(func(context.Context, string, client.ManagerModel3DExpectedSource) error { return nil }))
 				handler := NewDownloadHandler(metadata, apiDownloadProtectionGate{})
 				router := gin.New()
 				router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
 				router.GET("/downloads/file", handler.DownloadFile)
 				locator := "addp://engine/9/path/" + primary + "?type=" + itemType + "&item_id=1"
 				response := httptest.NewRecorder()
-				router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil))
+				request := httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil)
+				request.Header.Set("Authorization", "Bearer addp_at_model_user")
+				router.ServeHTTP(response, request)
 				if response.Code != http.StatusOK {
 					t.Fatalf("status = %d, want 200", response.Code)
 				}
@@ -337,6 +351,7 @@ func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string)
 			"name":              "engine",
 			"engine_type":       engineType,
 			"connection_info":   map[string]interface{}{},
+			"version":           1,
 			"lifecycle_state":   "active",
 			"connection_status": "online",
 		})
@@ -507,4 +522,21 @@ func TestDownloadFileRejectsMalformedRawCompositionWithLocalizedError(t *testing
 			}
 		}
 	}
+}
+
+type apiModelReadChecker func(context.Context, string, client.ManagerModel3DExpectedSource) error
+
+func (f apiModelReadChecker) CheckManagerModel3DRead(ctx context.Context, credential string, scope client.ManagerModel3DExpectedSource) error {
+	return f(ctx, credential, scope)
+}
+func apiDownloadModelNative(format string) map[string]interface{} {
+	switch format {
+	case "3ds", "dae":
+		return map[string]interface{}{format: map[string]interface{}{"scan_complete": true, "texture_refs": []string{"texture.png"}}}
+	case "obj":
+		return map[string]interface{}{"obj": map[string]interface{}{"composition_complete": true, "material_libraries": []map[string]interface{}{
+			{"reference": "paint blue.mtl", "texture_refs": []string{"blue/color.png"}}, {"reference": "paint red.mtl", "texture_refs": []string{"red/color.png"}},
+		}}}
+	}
+	return map[string]interface{}{}
 }

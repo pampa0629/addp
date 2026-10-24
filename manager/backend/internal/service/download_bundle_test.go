@@ -46,10 +46,10 @@ func TestDownloadBundleRejectsInvalidNamesBeforeOpeningAnySource(t *testing.T) {
 			// reject the entire plan before attempting to obtain source information.
 			svc := &MetadataService{}
 			plan := &models.DownloadPlan{Kind: models.DownloadKindBundle, Refs: refs}
-			if _, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, nil); !errors.Is(err, ErrInvalidDownloadBundle) {
+			if _, err := svc.OpenStorageDownloadPlan(t.Context(), nil, plan, nil, "", false); !errors.Is(err, ErrInvalidDownloadBundle) {
 				t.Fatalf("Open: %v", err)
 			}
-			if err := svc.StreamStorageDownloadPlan(t.Context(), 9, plan, nil, nil); !errors.Is(err, ErrInvalidDownloadBundle) {
+			if err := svc.StreamStorageDownloadPlan(t.Context(), nil, plan, nil, "", false, nil); !errors.Is(err, ErrInvalidDownloadBundle) {
 				t.Fatalf("Stream: %v", err)
 			}
 		})

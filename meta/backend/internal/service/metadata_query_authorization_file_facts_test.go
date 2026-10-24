@@ -39,6 +39,9 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
+	if format == "stl" {
+		item.Attributes["format_info"] = map[string]any{"stl": map[string]any{"composition_complete": true}}
+	}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, item.FullName)
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
@@ -52,7 +55,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
@@ -96,9 +99,25 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			if strings.Contains(string(raw), "physical_path") || strings.Contains(string(raw), "texture_refs") {
 				t.Fatal("private attributes escaped fact projection")
 			}
+			if format == "stl" {
+				native := item.Attributes["format_info"].(map[string]any)["stl"].(map[string]any)
+				native["composition_complete"] = false
+				native["scan_complete"] = true
+				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+					t.Fatal(err)
+				}
+				incomplete, err := s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
+				if err != nil || incomplete.BasisState != authorizationfacts.AuthorizationBasisIncomplete || incomplete.Boundary != nil {
+					t.Fatalf("deep promoted STL basic closure: %+v %v", incomplete, err)
+				}
+				native["composition_complete"] = true
+				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if format == "ifc" {
 				delete(item.Attributes["item"].(map[string]any), "refs")
-			} else {
+			} else if format != "stl" {
 				refs := item.Attributes["item"].(map[string]any)["refs"].([]any)
 				refs[0], refs[1] = refs[1], refs[0]
 			}

@@ -29,7 +29,7 @@ describe('System live-catalog protocol adapter', () => {
     const node = (term, name, role = 'leaf') => ({ metadata: { approval_engine_type: 'minio', catalog_entry: {
       role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
     } } })
-    for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj']) expect(isApprovalSelection(node('object', name))).toBe(true)
+    for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj', 'part.STL']) expect(isApprovalSelection(node('object', name))).toBe(true)
     for (const name of ['TEST.PNG', 'model.mtl', 'other.fbx']) expect(isApprovalSelection(node('object', name))).toBe(false)
     expect(isApprovalSelection(node('prefix', 'prefix', 'branch'))).toBe(false)
     expect(isApprovalSelection(node('bucket', 'bucket', 'branch'))).toBe(false)

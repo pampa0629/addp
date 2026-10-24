@@ -39,6 +39,7 @@ type ftpModelReadSpy struct {
 	files        map[string][]byte
 	facts, opens []string
 	closes       int
+	sizeReported *int64
 }
 
 func (s *ftpModelReadSpy) Type() string { return s.engineType }
@@ -54,6 +55,9 @@ func (s *ftpModelReadSpy) DescribeEngineCatalogFacts(_ context.Context, info plu
 		return nil, errors.New("exact model file absent")
 	}
 	size := int64(len(data))
+	if s.sizeReported != nil {
+		size = *s.sizeReported
+	}
 	kind := plugin.EngineCatalogKindFile
 	if s.engineType == "minio" {
 		kind = plugin.EngineCatalogKindObject
@@ -123,6 +127,9 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 		t.Fatal(err)
 	}
 	spy := &ftpModelReadSpy{FTPPlugin: &ftpPlugin.FTPPlugin{}, engineType: engineType, t: t, files: map[string][]byte{item.FullName: []byte("ifc input")}}
+	if format == "stl" {
+		spy.files[item.FullName] = []byte("solid triangle\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 2 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid triangle\n")
+	}
 	if format == "3ds" || format == "dae" {
 		if format == "dae" {
 			spy.files[item.FullName] = []byte(daeStagingInput("TEST.PNG"))
@@ -205,12 +212,14 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactModelSource(t, "nfs") }
 func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
 func testExactModelSource(t *testing.T, engineType string) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
 				if fault == "changed-declaration" && format != "ifc" {
-					if format == "obj" {
+					if format == "stl" {
+						spy.files["models/model.stl"] = []byte("solid triangle\nfacet normal 0 0 1\n")
+					} else if format == "obj" {
 						spy.files["models/model.mtl"] = []byte("newmtl paint\nmap_Kd OTHER.PNG\n")
 					} else if format == "dae" {
 						spy.files["models/model.dae"] = []byte(daeStagingInput("OTHER.PNG"))
@@ -259,7 +268,7 @@ func testExactModelSource(t *testing.T, engineType string) {
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
@@ -464,4 +473,33 @@ func TestFTPModelBuildUsesFrozenNumbersCreateTargetAndCurrentPublicationAuthoriz
 
 func daeStagingInput(ref string) string {
 	return `<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><library_images><image><init_from>` + ref + `</init_from></image></library_images></COLLADA>`
+}
+
+func TestSTLPreparationRejectsOversizeAndChangedObservationBeforeWriting(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		for _, fault := range []string{"oversize", "length changed", "invalid structure"} {
+			t.Run(kind+"/"+fault, func(t *testing.T) {
+				ctx, req, engine, spy, _ := fileModelAuthorizedFixture(t, kind, "stl", nil)
+				if fault == "oversize" {
+					size := int64(64<<20) + 1
+					spy.sizeReported = &size
+				}
+				if fault == "length changed" {
+					size := int64(len(spy.files["models/model.stl"])) + 1
+					spy.sizeReported = &size
+				}
+				if fault == "invalid structure" {
+					spy.files["models/model.stl"] = []byte("solid triangle\n")
+				}
+				store, consumed := &stagingModelStore{}, false
+				err := stagingModelExecutor(store).withFileModel3DSource(ctx, req, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error { consumed = true; return nil })
+				if err == nil || consumed || store.puts != 0 || len(store.objects) != 0 || spy.closes != len(spy.opens) {
+					t.Fatalf("invalid STL escaped into staging: err=%v consumed=%v puts=%d", err, consumed, store.puts)
+				}
+				if fault == "oversize" && len(spy.opens) != 0 {
+					t.Fatal("oversize STL was opened")
+				}
+			})
+		}
+	}
 }

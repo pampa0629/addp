@@ -21,7 +21,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { createAuthenticatedFetch, useAddpI18n } from '@common-ui'
 import { useAuthStore } from '@/store/auth'
 import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
-import { isManagedModel3DGLBURL, loadManagedModel3DGLB } from '@/utils/model3DGLBSource.js'
+import { fetchModel3DSource } from '@/utils/model3DSource.js'
 
 const props = defineProps({
   data: {
@@ -382,98 +382,61 @@ function handleModelLoadError(error, generation) {
   loading.value = false
 }
 
-async function loadGLTFModel(url, generation) {
-  const loader = new GLTFLoader()
-  if (isManagedModel3DGLBURL(url, window.location.origin)) {
-    const controller = new AbortController()
-    managedModelRequest = controller
-    try {
-      const gltf = await loadManagedModel3DGLB(loader, url, authenticatedFetch, {
-        origin: window.location.origin, signal: controller.signal, language: locale.value
-      })
-      const object = gltf.scene || gltf.scenes?.[0]
-      if (generation !== modelLoadGeneration || !scene) {
-        disposeModelObject(object)
-        return
-      }
-      applyLoadedObject(object, generation)
-    } catch (error) {
-      if (generation === modelLoadGeneration && !controller.signal.aborted) handleModelLoadError(error, generation)
-    } finally {
-      if (managedModelRequest === controller) managedModelRequest = null
-    }
-    return
+async function loadSourceBytes(url, generation, parse) {
+  const controller = new AbortController()
+  managedModelRequest = controller
+  try {
+    const bytes = await fetchModel3DSource(url, authenticatedFetch, {
+      origin: window.location.origin, signal: controller.signal, language: locale.value
+    })
+    if (generation !== modelLoadGeneration || !scene) return
+    const object = await parse(bytes)
+    if (generation !== modelLoadGeneration || !scene) { disposeModelObject(object); return }
+    applyLoadedObject(object, generation)
+  } catch (error) {
+    if (generation === modelLoadGeneration && !controller.signal.aborted) handleModelLoadError(error, generation)
+  } finally {
+    if (managedModelRequest === controller) managedModelRequest = null
   }
-  loader.load(
-    url,
-    (gltf) => {
-      applyLoadedObject(gltf.scene || gltf.scenes?.[0], generation)
-    },
-    undefined,
-    (error) => handleModelLoadError(error, generation)
-  )
+}
+
+function loadGLTFModel(url, generation) {
+  return loadSourceBytes(url, generation, async bytes => {
+    const gltf = await new GLTFLoader().parseAsync(bytes, '')
+    return gltf.scene || gltf.scenes?.[0]
+  })
+}
+
+function loadMeshSource(url, generation, loader, parameters) {
+  return loadSourceBytes(url, generation, bytes => {
+    const geometry = loader.parse(bytes)
+    geometry.computeVertexNormals()
+    return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial(parameters))
+  })
 }
 
 function loadSTLModel(url, generation) {
-  const loader = new STLLoader()
-  loader.load(
-    url,
-    (geometry) => {
-      geometry.computeVertexNormals()
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xa7abb2,
-        metalness: 0.06,
-        roughness: 0.58
-      })
-      applyLoadedObject(new THREE.Mesh(geometry, material), generation)
-    },
-    undefined,
-    (error) => handleModelLoadError(error, generation)
-  )
+  return loadMeshSource(url, generation, new STLLoader(), { color: 0xa7abb2, metalness: 0.06, roughness: 0.58 })
 }
 
 function loadPLYModel(url, generation) {
-  const loader = new PLYLoader()
-  loader.load(
-    url,
-    (geometry) => {
-      geometry.computeVertexNormals()
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xa7abb2,
-        metalness: 0.04,
-        roughness: 0.62
-      })
-      applyLoadedObject(new THREE.Mesh(geometry, material), generation)
-    },
-    undefined,
-    (error) => handleModelLoadError(error, generation)
-  )
+  return loadMeshSource(url, generation, new PLYLoader(), { color: 0xa7abb2, metalness: 0.04, roughness: 0.62 })
 }
 
 function loadOBJModel(url, generation) {
-  const loader = new OBJLoader()
-  loader.load(
-    url,
-    (object) => {
-      applyFallbackMaterial(object)
-      applyLoadedObject(object, generation)
-    },
-    undefined,
-    (error) => handleModelLoadError(error, generation)
-  )
+  return loadSourceBytes(url, generation, bytes => {
+    const object = new OBJLoader().parse(new TextDecoder().decode(bytes))
+    applyFallbackMaterial(object)
+    return object
+  })
 }
 
 function loadFBXModel(url, generation) {
-  const loader = new FBXLoader()
-  loader.load(
-    url,
-    (object) => {
-      applyFallbackMaterial(object)
-      applyLoadedObject(object, generation)
-    },
-    undefined,
-    (error) => handleModelLoadError(error, generation)
-  )
+  return loadSourceBytes(url, generation, bytes => {
+    const object = new FBXLoader().parse(bytes, '')
+    applyFallbackMaterial(object)
+    return object
+  })
 }
 
 function applyFallbackMaterial(object) {

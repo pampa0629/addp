@@ -349,7 +349,7 @@ func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
 		t.Fatalf("plan = %#v, want NFS shapefile zip bundle", plan)
 	}
 
-	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, &tenantID)
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), &StorageDataItem{EngineID: 26}, plan, &tenantID, "", false)
 	if err != nil {
 		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
 	}
@@ -424,7 +424,7 @@ func TestOpenStorageDownloadPlanBundlesObjectShapefileRefs(t *testing.T) {
 		t.Fatalf("normalized refs = %#v, want bucket-prefixed object refs", plan.Refs)
 	}
 
-	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, &tenantID)
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), &StorageDataItem{EngineID: 9}, plan, &tenantID, "", false)
 	if err != nil {
 		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
 	}
@@ -489,7 +489,7 @@ func TestOpenStorageDownloadPlanFailsBeforeWritingWhenRequiredRefMissing(t *test
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
-	if _, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, &tenantID); err == nil {
+	if _, err := svc.OpenStorageDownloadPlan(t.Context(), &StorageDataItem{EngineID: 26}, plan, &tenantID, "", false); err == nil {
 		t.Fatal("OpenStorageDownloadPlan() succeeded with missing required ref")
 	}
 }
@@ -871,7 +871,7 @@ func TestDownloadBundleOptionalMissingMemberDoesNotChangeRelativePaths(t *testin
 	svc := &MetadataService{systemClient: testSystemClient(t, 9, engineType, nil)}
 	tenant := uint(11)
 	plan := &models.DownloadPlan{Kind: models.DownloadKindBundle, Refs: []models.DownloadRef{{StorageRef: "models/deep/a.obj", Primary: true, Required: true, FileName: "a.obj"}, {StorageRef: "models/missing.png", FileName: "missing.png"}}}
-	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, &tenant)
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), &StorageDataItem{EngineID: 9}, plan, &tenant, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
