@@ -485,8 +485,12 @@
           <el-card shadow="never" class="detail-card">
             <template #header><strong>{{ t('catalog.edit.semanticLinks') }}</strong></template>
             <el-table :data="entry.semantic_links || []">
-              <el-table-column prop="semantic_type" :label="t('catalog.edit.semanticType')" width="120" />
-              <el-table-column prop="relation_role" :label="t('catalog.edit.relationRole')" width="120" />
+              <el-table-column prop="semantic_type" :label="t('catalog.edit.semanticType')" width="120">
+                <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.edit.semanticTypeLabel', row.semantic_type) }}</template>
+              </el-table-column>
+              <el-table-column prop="relation_role" :label="t('catalog.edit.relationRole')" width="120">
+                <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.edit', row.relation_role) }}</template>
+              </el-table-column>
               <el-table-column :label="t('catalog.edit.referenceName')" min-width="180">
                 <template #default="{ row }">{{ row.observed_snapshot?.name || t('catalog.edit.referenceUnavailable') }}</template>
               </el-table-column>
@@ -504,7 +508,9 @@
               <el-table-column :label="t('catalog.edit.referenceName')" min-width="180">
                 <template #default="{ row }">{{ row.observed_snapshot?.name || t('catalog.edit.referenceUnavailable') }}</template>
               </el-table-column>
-              <el-table-column prop="status" :label="t('catalog.edit.responsibilityStatus')" width="120" />
+              <el-table-column prop="status" :label="t('catalog.edit.responsibilityStatus')" width="120">
+                <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.responsibility', row.status) }}</template>
+              </el-table-column>
             </el-table>
             <el-empty v-if="!entry.responsibilities?.length" :image-size="60" :description="t('catalog.edit.noResponsibilities')" />
           </el-card>

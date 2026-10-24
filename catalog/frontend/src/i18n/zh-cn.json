@@ -736,6 +736,10 @@
       "glossaries": "业务术语关联",
       "semanticLinks": "业务语义关联",
       "semanticType": "语义类型",
+      "semanticTypeLabel": {
+        "domain": "业务域",
+        "glossary": "业务术语"
+      },
       "relationRole": "关系角色",
       "referenceName": "已验证名称",
       "responsibilities": "责任关系",
@@ -769,6 +773,7 @@
       "referenceUnavailable": "已保存引用（当前名称不可用）",
       "primary": "主业务域",
       "secondary": "辅助业务域",
+      "applies": "适用术语",
       "remove": "移除",
       "cancel": "取消",
       "save": "保存编目",
@@ -900,6 +905,10 @@
       "standardDocument": "标准文档"
     },
     "status": {
+      "responsibility": {
+        "active": "有效",
+        "needs_transfer": "待移交"
+      },
       "source": {
         "active": "有效",
         "missing": "来源缺失"

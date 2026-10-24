@@ -736,6 +736,10 @@
       "glossaries": "Glossary links",
       "semanticLinks": "Business semantic links",
       "semanticType": "Semantic type",
+      "semanticTypeLabel": {
+        "domain": "Business domain",
+        "glossary": "Business term"
+      },
       "relationRole": "Relation role",
       "referenceName": "Verified name",
       "responsibilities": "Responsibilities",
@@ -769,6 +773,7 @@
       "referenceUnavailable": "Saved reference (current name unavailable)",
       "primary": "Primary domain",
       "secondary": "Secondary domain",
+      "applies": "Applicable term",
       "remove": "Remove",
       "cancel": "Cancel",
       "save": "Save curation",
@@ -900,6 +905,10 @@
       "standardDocument": "Standard document"
     },
     "status": {
+      "responsibility": {
+        "active": "Active",
+        "needs_transfer": "Transfer required"
+      },
       "source": {
         "active": "Active",
         "missing": "Missing source"
