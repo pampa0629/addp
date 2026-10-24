@@ -969,3 +969,31 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 实源门禁保留两次失败记录：`cgroup-query-t2-final.log` 在并行环境的前置窗口测试累计超过既有 60 秒，未进入新增查询；串行 `cgroup-query-t2-serial.log` 八类窗口通过，但初始夹具采样在 65 秒内未满足，缺少当次目标诊断，唯一根因未查明。随后同一标准入口增加脱敏失败诊断及对应确定性测试，才执行上述最终验证；不记录原始目标 URL、OAuth 配置或 scrape 错误，最终准备回归亦通过。两次失败的项目分别为 `addp-metrics-t2-324f7394baad45dc96ae9f0b049909ce`、`addp-metrics-t2-379720025b1f4c31affdfd63682db7ee`，退出后均独立核对容器／网络／卷为零，不以未进入目标断言的执行计通过。
 
 最终实源项目为 `addp-metrics-t2-8ca4e7a7aeff4f9f805140ee6d13dc0e`。该夹具刻意让三个进程共享同一 cgroup，证明采集／查询和拒绝边界，**不证明一实例独立容器、部署发布器在原生 Linux 上读取完整层级、System 至真实用户页面的整个配额闭环或正式身份 T4**。这些实机／正式身份验收尚未运行，当前 Mac 原生进程也没有容器配额。CI、产品镜像全包、Hosted 及生产 T5 未在本会话执行或轮询，继续由专门会话回传；未扩大已有 Hosted Token 用途，未设置定时任务。
+
+
+### 正式身份本地第七窗口：准备守卫修正及IAM权限冲突，闭环未通过（2026-10-24）
+
+用户授权窗口为2026-10-24 16:32:47–17:32:47（Asia/Shanghai），准备、构建、等待与重试共用该截止时间；最多8 CPU／12 GiB、所有当次卷及私有可写目录达到4 GiB停止。仅运行根入口`make test-monitor-traces-local`，不运行Hosted、容量或定时，不接管个人开发服务或共享数据库。实际8次尝试全部失败，正式登录→执行→Trace查询→日志→页面闭环仍未通过；第六窗口的登录局部证据不能替代本窗口或完整闭环。
+
+本次修正：`b5b543863501d371d851a9dd69601f55875677f3`在依赖启动前准备全部当次Compose空卷和构建器，保留独占所有权／Compose标签；`5a1a4c0330809c836edb13e08ec4b1e3b578b1a8`把受0.25 CPU／64 MiB及30秒准入预算限制的只读卷辅助容器准备与首次完整测量分开，之后才启动依赖。周期四秒检查预算、最长五秒间隔、CPU／内存／磁盘上限、OOM及测量失败即停止均保持。`4108c283a183e4bfc89e76a3b38aa7cc1f6e48a8`补充首次资源检查的固定操作／耗时诊断；`d9a3cec22e12db098182e25bc96a62e0916f5f32`细分依赖初始化阶段及固定公共诊断标记，不保存凭据、SQL或原始失败正文。
+
+每次实际结果（同一窗口，无自动续期）：
+
+| 尝试 | 实际源码提交 | 停止阶段／原因 | 成功资源测量次数 |
+| --- | --- | --- | --- |
+| 1 | `c93da8151` | `isolated_dependencies_start`；`prepare_volume_sampler`超过资源检查预算 | 2 |
+| 2 | `c93da8151` | 同上，未计通过 | 2 |
+| 3 | `b5b543863` | `product_compile`；`measure_owned_volumes`超时，依赖已就绪 | 71 |
+| 4 | `cdd038f22` | `bounded_builder`；`command_deadline_exceeded`，尚无完整资源样本；旧报告不能进一步定位 | 0 |
+| 5 | `3a5cd4c54` | 同上，尚无完整资源样本 | 0 |
+| 6 | `5a1a4c033` | `initial_resource_sample`；`command_deadline_exceeded` | 0 |
+| 7 | `4108c283a` | `isolated_dependencies_start`；退出2，固定标记为空，未能定位具体准备命令或唯一根因 | 6 |
+| 8 | `d9a3cec22` | `formal_identity_preparation`；退出1，固定标记为空；未到达真实登录及业务执行 | 253 |
+
+第8次完成7个源码二进制、10个实际产品镜像、浏览器依赖、同一产品Nginx的11项路径／参数断言、缺席模块502及已部署模块仍可读检查；六个Backend均经`/health/live`核验实际提交为`d9a3cec22e12db098182e25bc96a62e0916f5f32`。正式身份准备失败后未继续业务；没有本次正式登录、成功／受控失败父子execution、真实检查点、自然尾采样、精确Trace／Link／日志、Console页面或旧会话拒绝的通过证据。
+
+代码调查确认一项必须先讨论的权限冲突：此前`6b7704611ff20856cfc03db9f4c3b6cfd1150e3a`用`local.execution_trace_preparation`自定义角色授予`system.engine.create/execute`，但当前`system/authorization/permissions.yaml`及迁移目录中两者均不可租户定制；`TenantRoleService.CreateRole`必经`validateCustomizablePermissions`拒绝该方案。这是此前夹具设计错误，原精确权限单测未覆盖真实目录约束；现有运行报告尚不能证明它是第8次退出1的唯一原因。没有修改权限目录、制造AAL2、直接写授权表或擅自授予更大角色。建议讨论仅当次准备User通过正式密码／TOTP、真实增强认证及角色分配取得现有`tenant.infrastructure_administrator`；其11项权限超出此前准备身份两项初值，尚未确认或实施，普通执行User仍保持原11项权限。完整重跑需要另行确认新窗口。
+
+当前最终代码的`make test-infra-runtime-log-lifecycle`通过70项本地入口契约、60项生命周期测试、Node语法、Online登记及System fixture Go检查；日志为`/tmp/addp-p19-formal-local-20261024-window7/dependency-diagnostics-lifecycle.log`。此前67／68／69项中间版本及各60项生命周期门禁分别记录，不代替最终运行验收；现有标准入口及CI登记继续覆盖本次脚本，未新增Hosted触发或定时。
+
+原始脱敏报告为`/tmp/addp-p19-formal-local-20261024-window7/attempt-{1..8}-report.json`，同目录`window.json`、各`attempt-*-source.json`／日志、`receipt.json`及`cleanup-audit.json`保留窗口及源码身份。独立只读清理核对于17:22:07完成：8次均为当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO不可变镜像仍保留。334次成功资源样本的硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3637747712字节（约3.39 GiB），成功单次测量最长2.640秒；超时失败样本单独按失败记录，不从成功最大值中隐去。没有观察到OOM或4 GiB停止线触发；资源守卫超时及身份准备失败不得计为通过。
