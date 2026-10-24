@@ -1058,3 +1058,26 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 首次浏览器专项有两项因测试将共享中文占位“起始时间”误写为“开始时间”而失败；按实际共享译名修订后，四项专项及上述整套最终通过。原失败 `/tmp/addp-alert-time-browser.log` 保留，不计通过；后续专项 `/tmp/addp-alert-time-browser-green.log` 只作为中间证据，最终草稿／翻页增强以整套 421 项结果为准。
 
 现有 owner／路径自动发现、PostgreSQL `TestIntegrationPostgres` 与前端标准入口已实际命中新用例，不新增 Makefile／workflow。T3 使用受控 API，不代替正式身份、个人 Safari 或 Hosted；没有重启个人服务、修改个人业务库或 IAM，没有查询／重跑 CI／Hosted或设置定时任务，相关结果继续等专门会话回传。
+
+
+### 正式身份本地第八窗口：真实MFA与准备角色通过，成功查询被保护链拒绝（2026-10-24）
+
+用户确认准备User仅在当次隔离环境，经真实密码／TOTP与正式IAM API取得既有`tenant.infrastructure_administrator`；普通执行User的原11项权限保持。先修规范和入口，`558cb372659a9b863d14ae78fdbe7ba1014870bf`删除不可租户定制的自定义准备角色，夹具不预授准备角色、不制造会话或AAL2。实际入口核对内置角色当前11项权限及同一Membership，自助TOTP登记替换Cookie／Access Token、验证旧令牌401；真实AAL2和有效step-up后分配限于窗口期限的角色，再经正式Refresh重读同一身份及准确授权。普通User权限在准备后再次核对。
+
+本次唯一运行窗口为2026-10-24 20:55:05–21:55:05（Asia/Shanghai），8 CPU／12 GiB、卷和私有可写目录4 GiB停止线保持。每次运行均为根入口`make test-monitor-traces-local`、当前已提交源码私有副本、产品构建与原六后端／三页面，不复用旧产品镜像，只有固定MinIO／mc镜像按既有规则核验复用。不运行Hosted、容量或定时，不接管个人开发服务／共享数据库。三次尝试都失败，完整执行→Trace→日志→页面闭环未通过。
+
+| 尝试 | 实际源码 | 结果与实际覆盖 |
+| --- | --- | --- |
+| 1 | `558cb372659a9b863d14ae78fdbe7ba1014870bf` | 7个源码二进制及依赖准备通过；`product_image_gateway`退出2，固定标记`failed to solve`／`not found`。缺少足以确定唯一根因的正文诊断，不能认定已修复镜像故障。未进入身份阶段。 |
+| 2 | `25c5aab9165f582556ead36f8d5f4bb75118dfb5` | 7个二进制、10个产品镜像、浏览器依赖、11项产品Nginx路径／参数断言、缺席模块502及已有模块可读通过；六后端运行提交均匹配该源码。真实平台密码／MFA／AuthContext、普通User最小权限、准备User真实MFA／内置角色、两次旧Token拒绝、合成引擎注册与连接测试通过。成功查询编排终态不匹配，未保存进一步错误码，不计执行通过。 |
+| 3 | `b57e481009c83fb200cd0ccd986937802d6c363e` | 同样完成源码／产品／实际版本／Nginx及上述五项身份和引擎断言。复现成功查询失败：父执行为`orchestrator.execution.child_failed`，Develop子执行为`develop.query.protection_required`。已实际走通正式User提交与Orchestrator派发到Develop子执行；实际子执行失败，不能算成功查询通过。 |
+
+第3次的父执行UUID为`9fad5ff2-f121-4f67-9e81-e1c64293b7ac`，子执行UUID为`de10928e-f672-41f5-8780-6b8e0b3a5457`，仅保留身份引用、状态、步骤与稳定码。`b57e48100`补充这条失败诊断，不输出错误正文、SQL、参数或结果，原终态断言未放宽。普通User准备后仍保持原11项权限；没有为查询失败扩大权限、增加源Grant或绕过保护。由于成功查询断言已失败，未继续受控失败场景、真实检查点／自然尾采样、精确Trace／Link／日志读取、平台Trace／日志无权限与最终退出负例、真实页面闭环；浏览器接收端未观察到页面回执，不计页面通过。
+
+代码和规范调查另确认入口漏了既有的新Tenant保护初始化前置：`docs/spec/addp数据安全与隐私保护实现规范.md`明确实例就绪不等于新Tenant已完成Owner首轮投影；Develop以30秒周期消费实际Security投影。本地夹具原来没有等待这项状态。窗口结束后，仅做代码与不启动环境的门禁：`8c2a83abe`复用既有`waitForOwnerProtection`，在导出凭据前只读等待当次Tenant、固定Develop的持久初始化checkpoint，最长60秒，仍受身份准备／总窗口预算；不开放可选Owner参数，不直接写投影／checkpoint，不把业务拒绝重试成成功。标准入口同时覆盖已有`ProtectionReadiness`单测，并补固定Owner／精确Tenant／导出顺序约束；失败报告只保留Owner已有类型化`stage/reason`，不保存SQL上下文。该准备缺口已修代码，但尚未运行验证，不能认定是实际保护拒绝的唯一根因，也不能宣称闭环已修复。
+
+标准代码门禁分层记录：初次共享工作区的`make test-monitor-traces-local-runner`在本专项73项通过后，被无关未提交拓扑登记阻断，不计整入口通过；仓库外冻结已提交main与本次代码后，`make test-infra-runtime-log-lifecycle`的73项入口、60项生命周期、Node语法／登记及System fixture Go检查通过，冻结源码随后删除。执行诊断版本同入口74＋60通过。最终`8c2a83abe`输入在共享工作区运行同一标准入口75＋60通过，Go范围为`ExecutionTrace|ProtectionReadiness`；其余无关工作区改动未提交本专项。既有CI输入与owner登记命中，未新增workflow或Hosted调度；本次未轮询／宣称CI通过。公开产品API未变，无Swagger变更。
+
+证据目录`/tmp/addp-p19-formal-local-20261024-window8/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`preparation-evidence.json`／`preparation-lifecycle.log`、`execution-diagnostics-lifecycle.log`、`readiness-final-lifecycle.log`、`receipt.json`及`cleanup-audit.json`。另有初始准备冻结的输入清单／原日志，路径见`preparation-evidence.json`及`/tmp/addp-p19-mfa-preparation-path`，只保留脱敏文件，源码副本已移除。
+
+21:52:18独立只读核对三次全部当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO镜像保留；页面回执读取器亦已退出。684次成功资源测量的合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3649245184字节（约3.40 GiB），成功测量最长2.769秒；没有OOM、资源采样失败或磁盘停止线触发。窗口结束后没有新增真实运行。当前状态仍部分实现；下一次完整运行必须另行确认本地窗口，重点先验证当次Owner初始化，再验证成功／受控失败查询与Trace／日志／页面，不能把本次MFA及引擎准备通过替代完整闭环。
