@@ -337,6 +337,19 @@ class Lifecycle:
         output=self.command(['du','-sk',str(self.work)],guarded=False,timeout=timeout)
         return int(output.split()[0])*1024
 
+    def prepare_volume_sampler(self, volumes, *, timeout):
+        require(not self.sampler_started, 'volume_sampler_already_started')
+        volumes=tuple(sorted(set(volumes)))
+        args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
+                '--label', LABEL+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
+                '--network', 'none', '--tmpfs', '/data:rw,noexec,nosuid,size=1m', '--entrypoint', '/bin/sh']
+        for i,name in enumerate(volumes):
+            args += ['--mount',f'type=volume,source={name},target=/space/{i},readonly']
+        args += [self.minio_image,'-ec','while :; do sleep 3600; done']
+        self.docker(*args,guarded=False,timeout=timeout)
+        self.sampler_started=True
+        self.sampler_volumes=volumes
+
     def sample(self):
         with self.sample_lock:
             return self._sample()
@@ -390,15 +403,7 @@ class Lifecycle:
                 if self.sampler_started:
                     self.docker('rm','-fv',self.run_id+'-space',guarded=False,timeout=remaining())
                     self.sampler_started = False
-                args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
-                        '--label', LABEL+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
-                        '--network', 'none', '--tmpfs', '/data:rw,noexec,nosuid,size=1m', '--entrypoint', '/bin/sh']
-                for i, name in enumerate(volumes):
-                    args += ['--mount', f'type=volume,source={name},target=/space/{i},readonly']
-                args += [self.minio_image, '-ec', 'while :; do sleep 3600; done']
-                self.docker(*args,guarded=False,timeout=remaining())
-                self.sampler_started = True
-                self.sampler_volumes = volumes
+                self.prepare_volume_sampler(volumes,timeout=remaining())
             self.sample_operation = 'measure_owned_volumes'
             while True:
                 measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
@@ -568,6 +573,11 @@ def build(life):
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
     require(len(ids) == 1, 'owned_builder_identity_missing')
     life.builder_ids = set(json.loads(life.docker('inspect', *ids))[0]['Id'] for _ in [0])
+    life.phase='volume_sampler_admission'
+    rows=json.loads(life.docker('inspect',*sorted(life.builder_ids)))
+    life.builder_volumes.update(m['Name'] for row in rows for m in row.get('Mounts',[]) if m['Type']=='volume')
+    life.prepare_volume_sampler(life.owned('volume')+sorted(life.builder_volumes),timeout=30)
+    life.phase='initial_resource_sample'
     life.sample()
     life.thread=threading.Thread(target=life.monitor,daemon=True)
     life.thread.start()

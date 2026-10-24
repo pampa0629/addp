@@ -68,9 +68,23 @@ class VolumePreparationContractTests(unittest.TestCase):
                     self.assertEqual([args[-1] for args in calls if args[1]=='create'],
                         [life.run_id+'_postgres-data',life.run_id+'_runtime-logs'])
         source=__import__('inspect').getsource(m.build)
-        order=['prepare_isolated_configuration(', 'prepare_sampling_volumes(', "life.builder_ids =", 'life.sample()', 'life.thread.start()', 'start_dependencies(']
+        order=['prepare_isolated_configuration(', 'prepare_sampling_volumes(', "life.builder_ids =", 'life.prepare_volume_sampler(', 'life.sample()', 'life.thread.start()', 'start_dependencies(']
         positions=[source.index(token) for token in order]
         self.assertEqual(positions,sorted(positions))
+
+    def test_sampler_admission_is_bounded_readonly_and_cannot_replace_a_running_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.docker=mock.Mock(return_value='owned')
+            life.prepare_volume_sampler(['z','a','z'],timeout=30)
+            args=life.docker.call_args.args
+            self.assertEqual(life.sampler_volumes,('a','z'))
+            self.assertEqual(life.docker.call_args.kwargs,{'guarded':False,'timeout':30})
+            self.assertIn(str(m.SAMPLER_CPU),args);self.assertIn('64m',args);self.assertIn('none',args)
+            self.assertEqual([a for a in args if a.startswith('type=volume,')],
+                ['type=volume,source=a,target=/space/0,readonly','type=volume,source=z,target=/space/1,readonly'])
+            with self.assertRaisesRegex(m.GateError,'volume_sampler_already_started'):
+                life.prepare_volume_sampler(['foreign'],timeout=30)
+            self.assertEqual(life.docker.call_count,1)
 
 
 class BuilderResumeContractTests(unittest.TestCase):
