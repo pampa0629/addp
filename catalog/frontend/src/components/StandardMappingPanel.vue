@@ -75,7 +75,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createStandardMapping, deleteStandardMapping, listReferenceCandidates, listStandardMappingRevisionOptions, reviewStandardMapping, updateStandardMapping } from '../api/catalog'
@@ -105,6 +105,19 @@ const canSubmit = computed(() => form.componentId && form.elementId && form.revi
 let elementSearchVersion = 0
 let revisionRequestVersion = 0
 
+watch(dialogVisible, visible => {
+  if (!visible) invalidateCandidateQueries()
+})
+watch(() => props.entry.id, () => { dialogVisible.value = false })
+onBeforeUnmount(invalidateCandidateQueries)
+
+function invalidateCandidateQueries() {
+  elementSearchVersion++
+  revisionRequestVersion++
+  elementsLoading.value = false
+  revisionsLoading.value = false
+}
+
 function statusType(status) {
   return ({ proposed: 'info', approved: 'success', rejected: 'danger', withdrawn: 'warning' })[status] || 'info'
 }
@@ -114,6 +127,7 @@ const revisionLabel = row => standardMappingRevisionLabel(row, t)
 const elementOptionLabel = option => referenceCandidateLabel(option, t('catalog.mapping.elementUnavailable'))
 
 async function openCandidate(row = null) {
+  invalidateCandidateQueries()
   editingId.value = row?.id || ''
   Object.assign(form, {
     componentId: row?.component_id || '', elementId: row?.element_id ? String(row.element_id) : '',
@@ -130,6 +144,7 @@ async function openCandidate(row = null) {
 }
 
 async function searchElements(search) {
+  if (!dialogVisible.value) return
   const version = ++elementSearchVersion
   elementsLoading.value = true
   try {
@@ -146,10 +161,12 @@ async function searchElements(search) {
 }
 
 async function loadRevisions(preserveSelection = false) {
+  if (!dialogVisible.value) return
   const version = ++revisionRequestVersion
   const selectedRevision = preserveSelection ? form.revisionId : ''
   form.revisionId = ''
   revisions.value = []
+  revisionsLoading.value = false
   if (!form.elementId) return
   revisionsLoading.value = true
   try {
