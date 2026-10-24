@@ -71,6 +71,7 @@
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
 | `raster_hillshade` | raster、必填高程单位、band、方位角／高度角 | 同网格地形晕渲，常规有效灰度 1–255；不表示三维场景。 |
 | `raster_contour` | raster、必填高程单位、band、等高距或指定高程 | 源 CRS 的二维 LineString GeoDataFrame，`elevation` 为米；可接既有矢量保存节点。 |
+| `raster_snap_pour_points` | 未加权累积计数、同网格同有效覆盖的唯一正编号标记、两个显式波段及米制半径 | 圆内最大计数、再按距离／行／列决胜；保留编号、碰撞失败，嵌套仍由汇水区检查。Native／Linux／Hosted分别记账。 |
 | `raster_stream_to_vector_d8` | 既有D8方向、同网格／同有效覆盖0／1河网、两个显式数据波段 | 源CRS二维LineString与既有河段ID／零基起止行列／米制中心间长度；上游补到汇合中心，孤立单像元失败，终点单像元只作端点，复用矢量save。Native／Linux／Hosted分别记账。 |
 
 除 `raster_to_cog` 外，上表算子只支持 workflow。波段表达式允许 `b1/b2/...`、常量、加减乘除、有限常数幂及 `abs/sqrt/log/minimum/maximum`，拒绝属性访问、索引、导入和任意 Python 执行。
@@ -287,3 +288,7 @@ D8河流分级扩展复用 `raster_stream_order_d8`，新增 `method=strahler/sh
 独立Hosted准备的标准Native专项 `make test-geopython-workflow`（`-k stream_to_vector_d8`）**158 passed／4280 deselected／5.52秒**，0失败／跳过，输入无漂移；其中新增夹具46项，涵盖八份真实GDAL GeoPackage、20条双语准确失败、23类物理篡改拒绝及源／先前成果不变。基于修正提交5419a73ad，候选树 `2290b776308c6e0c86940a4a6f0557a48f598906`，原始日志SHA-256 `89cf9b3e1ae6efbe5dbb9c3cc8c0faeb1d4afc409da51eb8ce7f48b6f6f9157e`；筛除不计通过，不把专项与旧全量相加。三种单位直接样本各21条线／444条边／465个顶点，跳过终点ID2；阈值样本34条线／3542条边，DEM为7条／3612条，填洼链为5条／2582条，空河网与全无效均零要素且保留Schema／CRS。
 
 Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20.403秒**及完整Online登记通过，原始日志SHA-256 `a5a53ce92de30f6d24e240ea662b64d2e84b181b958ff72c832be4d700c4e6fc`。完整 `make test-raster-online-runner` 退出0、输入无漂移，耗时744.59秒，25组Python子门禁及原215项生命周期、隔离身份夹具Go T1通过（共享回归重复，不求和作唯一测试数）；原始日志SHA-256 `b52e1fa5f190351d166207ca1186873a9322c9a1f1184a243412926ae6c2c496`。上述本地记录保持原验证层级；本节夹具已另纳入固定9e4339d55的正式Linux全量，终审证据见专题。真实Hosted用户／扫描／当前执行血缘／Monitor及隔离清理尚待平台执行证明；数值极限继续单列Native，不模拟Hosted越界。实际Hosted仍等专门CI会话协调和完整原始归档领域审计，无自行触发／轮询／定时。
+
+### 汇水点吸附首期验收边界
+
+`raster_snap_pour_points` 已实现：在显式米制圆半径内选最大未加权累积计数，允许跨分水岭，按距离／行列稳定决胜；保留用户唯一编号，碰撞整次失败，嵌套仍由既有汇水区算子拒绝。完整准入与数值规则见[算子契约](workflow/栅格算子契约.md)，实际证据见[后续专题](../next/栅格算子体系后续专题.md#汇水点吸附首期)。本地标准Native全量4786项／21 warnings／1040.36秒通过，0失败／跳过／筛除、输入无漂移；含独立全像元／mask、单位与精确边界、双语失败和真实Runtime异步COG保存清理。Linux与既有Hosted等专门CI会话回传；本算子独立Hosted未新增、未运行，不计平台扫描／血缘／Monitor、UI或容量。

@@ -2939,6 +2939,100 @@ def raster_drainage_basins_d8(input_raster, band):
     return _d8_output(source, _d8_drainage_basins(directions))
 
 
+_SNAP_MESSAGES = {
+    'grid': ('汇水点吸附需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Pour-point snapping requires a projected north-up grid with known linear units; reproject explicitly'),
+    'band': ('汇水点吸附必须显式选择有效的一基未加权累积计数波段', 'Pour-point snapping requires an explicit valid one-based unweighted accumulation-count band'),
+    'complex': ('汇水点吸附不支持复数计数或复数alpha波段', 'Pour-point snapping does not support complex counts or complex alpha bands'),
+    'alpha': ('汇水点吸附不能选择alpha波段作为计数', 'Pour-point snapping cannot use an alpha band as counts'),
+    'scale': ('汇水点吸附前必须显式应用计数scale/offset', 'Pour-point snapping requires count scale/offset to be applied first'),
+    'points_band': ('汇水点吸附必须显式选择有效的一基汇水点标记数据波段', 'Pour-point snapping requires an explicit valid one-based points data band'),
+    'points_complex': ('汇水点吸附不支持复数标记或复数alpha波段', 'Pour-point snapping does not support complex points or complex alpha bands'),
+    'points_alpha': ('汇水点吸附不能选择alpha波段作为标记', 'Pour-point snapping cannot use an alpha band as points'),
+    'points_scale': ('汇水点吸附前必须显式应用标记scale/offset', 'Pour-point snapping requires points scale/offset to be applied first'),
+    'alignment': ('汇水点吸附的计数与标记必须具有相同尺寸、完整仿射网格和等价CRS，请先显式对齐', 'Pour-point snapping requires counts and points to have the same dimensions, full affine grid and equivalent CRS; align explicitly'),
+    'coverage': ('汇水点吸附的计数与标记必须具有完全相同的有效覆盖，不能取交集或补零', 'Pour-point snapping requires exactly the same effective coverage for counts and points; do not intersect coverage or fill missing values with zero'),
+    'counts_values': ('汇水点吸附的有效未加权累积计数必须为0至2^53−1内的精确整数', 'Pour-point snapping requires exact integer unweighted accumulation counts from 0 to 2^53-1'),
+    'points_values': ('汇水点吸附的有效标记必须为0至2^53−1内的精确整数，0为未选择', 'Pour-point snapping requires exact integer point values from 0 to 2^53-1; zero means unselected'),
+    'empty': ('汇水点吸附必须至少选择一个有效汇水点', 'Pour-point snapping requires at least one effective selected point'),
+    'duplicate': ('汇水点吸附的正编号必须全图唯一，一个编号只能标记一个像元', 'Pour-point snapping requires globally unique positive IDs, one cell per ID'),
+    'radius': ('汇水点吸附必须显式指定有限非负的米制半径，不接受布尔值或字符串', 'Pour-point snapping requires an explicit finite nonnegative radius in metres, not a boolean or string'),
+    'distance': ('汇水点吸附的米制像元中心步长必须为有限正数', 'Pour-point snapping requires finite positive pixel-centre steps in metres'),
+    'collision': ('汇水点吸附碰撞：多个编号选到同一目标像元，整个工作流失败', 'Pour-point snapping collision: multiple IDs selected the same target cell; the entire workflow fails'),
+}
+
+
+def _snap_error(code):
+    return ValueError(_SNAP_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _snap_pour_points(counts, points, xstep, ystep, radius_metres):
+    """Independent circular searches; original counts and points never change."""
+    try:
+        radius = float(radius_metres) if type(radius_metres) in (int, float) else math.nan
+    except OverflowError:
+        radius = math.nan
+    if not math.isfinite(radius) or radius < 0:
+        raise _snap_error('radius')
+    if any(not math.isfinite(step) or step <= 0 for step in (xstep, ystep)):
+        raise _snap_error('distance')
+    valid = np.isfinite(counts)
+    if not np.array_equal(np.isfinite(points), valid):
+        raise _snap_error('coverage')
+    for values, code in ((counts[valid], 'counts_values'), (points[valid], 'points_values')):
+        if np.any((values < 0) | (values > _D8_MAX_EXACT_COUNT) | (values != np.floor(values))):
+            raise _snap_error(code)
+    selected = np.argwhere(valid & (points > 0))
+    if not selected.size:
+        raise _snap_error('empty')
+    ids = points[valid & (points > 0)]
+    if np.unique(ids).size != ids.size:
+        raise _snap_error('duplicate')
+    height, width = counts.shape
+    # Clamp before converting the radius/step ratio to an integer, even for huge radii.
+    row_radius = math.ceil(min(height - 1, radius / ystep))
+    col_radius = math.ceil(min(width - 1, radius / xstep))
+    result = np.where(valid, 0., np.nan)
+    for row, col in selected:
+        left, right = max(0, col - col_radius), min(width, col + col_radius + 1)
+        columns = np.arange(left, right)
+        best = None
+        for y in range(max(0, row - row_radius), min(height, row + row_radius + 1)):
+            with np.errstate(over='ignore'):
+                distances = np.hypot((columns - col) * xstep, (y - row) * ystep)
+            candidates = valid[y, left:right] & (distances <= radius)
+            if not candidates.any():
+                continue
+            maximum = np.max(counts[y, left:right][candidates])
+            candidates &= counts[y, left:right] == maximum
+            nearest = np.min(distances[candidates])
+            x = int(columns[np.flatnonzero(candidates & (distances == nearest))[0]])
+            rank = (-float(maximum), float(nearest), y, x)
+            if best is None or rank < best:
+                best = rank
+        # The original valid point is always in its own inclusive search circle.
+        _, _, y, x = best
+        if result[y, x] != 0:
+            raise _snap_error('collision')
+        result[y, x] = points[row, col]
+    return result
+
+
+def raster_snap_pour_points(input_raster, points_raster, band, points_band, radius_metres):
+    """Snap unique user IDs to the largest count, allowing cross-divide searches."""
+    source, counts, metres = _d8_direction_source(input_raster, band, _snap_error)
+    points_source = _open(points_raster)
+    try:
+        _require_same_grid(source, points_source)
+    except ValueError as cause:
+        raise _snap_error('alignment') from cause
+    points_source = None
+    _, points, _ = _d8_direction_source(points_raster, points_band,
+        lambda code: _snap_error('alignment' if code == 'grid' else 'points_' + code))
+    grid = source.GetGeoTransform()
+    values = _snap_pour_points(counts, points, grid[1] * metres, -grid[5] * metres, radius_metres)
+    return _d8_output(source, values)
+
+
 _D8_WATERSHED_MESSAGES = {
     key: (zh.replace('D8 汇流累积', 'D8 指定汇水点汇水区'),
           en.replace('D8 flow accumulation', 'D8 specified-outlet watershed'))
@@ -3400,6 +3494,7 @@ _SPECS = [
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
+    (raster_snap_pour_points, OperatorCategory.RASTER_CELL, '汇水点吸附', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的唯一正安全整数标记，零为未选；保留编号，碰撞失败', role='input'), _param('band', 'int', '显式未加权累积计数数据波段'), _param('points_band', 'int', '显式汇水点标记数据波段'), _param('radius_metres', 'float', '显式有限非负米制圆半径；允许跨分水岭，最大计数后按距离／行／列决胜')], 'raster', ['read']),
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
@@ -3436,6 +3531,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_stream_order_d8':
         examples.update({'method': 'strahler'})
+    if name == 'raster_snap_pour_points':
+        examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1, 'radius_metres': 100.})
     if name == 'raster_watershed_d8':
         examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1})
     if name == 'raster_flow_accumulation_weighted_d8':

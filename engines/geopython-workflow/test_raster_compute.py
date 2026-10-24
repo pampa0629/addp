@@ -8950,3 +8950,289 @@ def test_profile_environment_never_starts_implicit_subprocess(monkeypatch,warm_c
     assert result=={'platform':'-'.join((platform.system(),platform.release(),platform.machine())),
         'machine':platform.machine(),'cpu_count':os.cpu_count(),'python':platform.python_version(),
         'gdal':gdal.VersionInfo('RELEASE_NAME'),'gdal_cache_max_bytes':gdal.GetCacheMax()}
+
+
+# Pour-point snapping oracle deliberately scans all cells with scalar distances.
+def _snap_scalar_oracle(counts, points, xstep, ystep, radius):
+    valid=np.isfinite(counts);result=np.where(valid,0.,np.nan)
+    for row,col in np.argwhere(points>0):
+        candidates=[]
+        for y,x in np.argwhere(valid):
+            distance=math.hypot(int(x-col)*xstep,int(y-row)*ystep)
+            if distance<=radius:candidates.append((-counts[y,x],distance,int(y),int(x)))
+        _,_,y,x=min(candidates)
+        if result[y,x]>0:raise ValueError('oracle collision')
+        result[y,x]=points[row,col]
+    return result
+
+
+@pytest.mark.parametrize('seed',range(20))
+@pytest.mark.parametrize('radius',[0.,2.,5.,1e308])
+def test_snap_pour_points_random_complete_scalar_oracle(tmp_path,seed,radius):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);counts=rng.integers(0,5,(7,9)).astype(float);counts[rng.random(counts.shape)<.15]=np.nan
+    points=np.where(np.isfinite(counts),0.,np.nan)
+    for cell,id in zip(rng.choice(np.flatnonzero(np.isfinite(counts)),3,replace=False),[91,2,2**53-1]):points.flat[cell]=id
+    paths=_watershed_files(tmp_path,counts,points);before=[p.read_bytes() for p in paths]
+    try:expected=_snap_scalar_oracle(counts,points,2.,3.,radius)
+    except ValueError:expected=None
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];workspace=inputs[0].workspace
+        if expected is None:
+            with pytest.raises(ValueError,match='碰撞'):compute.raster_snap_pour_points(*inputs,1,1,radius)
+        else:
+            result=compute.raster_snap_pour_points(*inputs,1,1,radius);ds=gdal.Open(str(result.path))
+            np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected)
+            np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(counts));ds=None
+    assert not workspace.exists() and [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('radius',[math.nextafter(5.,0.),5.,math.nextafter(5.,math.inf)])
+def test_snap_pour_points_inclusive_circle_distance_row_col_decisions(radius):
+    import operators.raster_compute as compute
+    counts=np.zeros((5,5));points=np.zeros_like(counts);points[2,2]=42
+    # 3/4/5 triangle in a rectangular grid. Equal maxima at the four diagonal candidates.
+    for row,col in [(1,1),(1,3),(3,1),(3,3)]:counts[row,col]=7
+    result=compute._snap_pour_points(counts,points,3.,4.,radius)
+    np.testing.assert_array_equal(result,_snap_scalar_oracle(counts,points,3.,4.,radius))
+    assert result[1,1]==42 if radius>=5 else result[2,2]==42
+    # Equal counts prefer the original centre even if a smaller row occurs first.
+    counts[:]=7;result=compute._snap_pour_points(counts,points,3.,4.,radius)
+    assert result[2,2]==42
+
+
+def test_snap_pour_points_crosses_divide_and_invalid_hole_keeps_original_snapshot():
+    import operators.raster_compute as compute
+    counts=np.array([[1.,np.nan,9.,0.,0.,0.,0.,7.]])
+    points=np.array([[777.,np.nan,0.,0.,0.,0.,42.,0.]])
+    expected=np.array([[0.,np.nan,777.,0.,0.,0.,0.,42.]])
+    for ids in ([777,42],[42,777]):
+        changed=points.copy();changed[0,0],changed[0,6]=ids
+        output=compute._snap_pour_points(counts,changed,2,3,4)
+        np.testing.assert_array_equal(output,np.where(expected==777,ids[0],np.where(expected==42,ids[1],expected)))
+    # No direction input or original-point priority can prevent two IDs choosing one cell.
+    with pytest.raises(ValueError,match='碰撞'):compute._snap_pour_points(counts,points,2,3,100)
+    np.testing.assert_array_equal(counts,[[1.,np.nan,9.,0.,0.,0.,0.,7.]])
+    np.testing.assert_array_equal(points,[[777.,np.nan,0.,0.,0.,0.,42.,0.]])
+
+
+@pytest.mark.parametrize('radius',[None,True,False,'5',-1,math.inf,-math.inf,math.nan,10**400,[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_invalid_radius_bilingual(radius,language):
+    import operators.raster_compute as compute
+    with raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute._snap_pour_points(np.array([[1.]]),np.array([[42.]]),2,3,radius)
+    assert str(caught.value)==compute._SNAP_MESSAGES['radius'][language=='en']
+
+
+@pytest.mark.parametrize('case',['negative_count','fraction_count','unsafe_count','negative_point','fraction_point','unsafe_point','duplicate','empty','all_invalid','coverage','collision','distance'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_invalid_values_no_private_output(tmp_path,case,language):
+    import operators.raster_compute as compute
+    counts=np.array([[0.,3.,1.]]);points=np.array([[42.,0.,0.]])
+    if case.endswith('_count'):counts[0,2]={'negative_count':-1,'fraction_count':.5,'unsafe_count':2**53}[case]
+    if case.endswith('_point'):points[0,2]={'negative_point':-1,'fraction_point':.5,'unsafe_point':2**53}[case]
+    if case=='duplicate':points[0,2]=42
+    if case=='empty':points[:]=0
+    if case=='all_invalid':counts[:]=points[:]=np.nan
+    if case=='coverage':points[0,2]=np.nan
+    if case=='collision':points[0,2]=7
+    paths=_watershed_files(tmp_path,counts,points)
+    if case=='distance':
+        for path in paths:
+            ds=gdal.Open(str(path),gdal.GA_Update);ds.SetGeoTransform((0,1e100,0,0,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);srs.SetLinearUnits('huge',1e250);ds.SetProjection(srs.ExportToWkt());ds=None
+    key='counts_values' if case.endswith('_count') else 'points_values' if case.endswith('_point') else 'empty' if case=='all_invalid' else case
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];workspace=inputs[0].workspace;before=set(workspace.iterdir())
+        with pytest.raises(ValueError) as caught:compute.raster_snap_pour_points(*inputs,1,1,20.)
+        assert str(caught.value)==compute._SNAP_MESSAGES[key][language=='en']
+        assert set(workspace.iterdir())==before
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize('role',['count','points'])
+@pytest.mark.parametrize('band',[None,0,-1,True,1.,'1',2])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_both_bands_explicit(tmp_path,role,band,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,3.]]),np.array([[42.,0.]]))
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_snap_pour_points(*[raster_load(source_plan(p)) for p in paths],band if role=='count' else 1,band if role=='points' else 1,2)
+    assert str(caught.value)==compute._SNAP_MESSAGES['band' if role=='count' else 'points_band'][language=='en']
+
+
+@pytest.mark.parametrize('change',['dimensions','origin','resolution','crs','rotation'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_same_full_grid(tmp_path,change,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,3.]]),np.array([[42.,0.]]))
+    if change=='dimensions':create_raster(paths[1],np.array([[42.,0.,0.]]),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    else:
+        ds=gdal.Open(str(paths[1]),gdal.GA_Update)
+        if change=='origin':ds.SetGeoTransform((500001,2,0,3000000,0,-3))
+        if change=='resolution':ds.SetGeoTransform((500000,3,0,3000000,0,-3))
+        if change=='rotation':ds.SetGeoTransform((500000,2,.1,3000000,0,-3))
+        if change=='crs':srs=osr.SpatialReference();srs.ImportFromEPSG(32650);ds.SetProjection(srs.ExportToWkt())
+        ds=None
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_snap_pour_points(*[raster_load(source_plan(p)) for p in paths],1,1,2)
+    assert str(caught.value)==compute._SNAP_MESSAGES['alignment'][language=='en']
+
+
+@pytest.mark.parametrize('role',['count','points'])
+@pytest.mark.parametrize('change',['alpha','complex','complex_alpha','scale','offset','geographic','no_crs','south_up','rotation'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_grid_and_data_admission(tmp_path,role,change,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,3.]]),np.array([[42.,0.]]));path=paths[role=='points']
+    ds=gdal.Open(str(path),gdal.GA_Update)
+    if change=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if change=='scale':ds.GetRasterBand(1).SetScale(2)
+    if change=='offset':ds.GetRasterBand(1).SetOffset(1)
+    if change=='no_crs':ds.SetProjection('')
+    if change=='geographic':srs=osr.SpatialReference();srs.ImportFromEPSG(4326);ds.SetProjection(srs.ExportToWkt())
+    if change=='south_up':ds.SetGeoTransform((500000,2,0,3000000,0,3))
+    if change=='rotation':ds.SetGeoTransform((500000,2,.1,3000000,0,-3))
+    ds=None
+    if change in ('complex','complex_alpha'):
+        ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,2 if change=='complex_alpha' else 1,gdal.GDT_CFloat64)
+        ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt());ds.GetRasterBand(1).WriteArray(np.array([[1+0j,0+0j]]))
+        if change=='complex_alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).Fill(255)
+        ds=None
+    key='scale' if change in ('scale','offset') else 'complex' if change.startswith('complex') else 'alpha' if change=='alpha' else 'grid'
+    if role=='points':key='alignment' if key=='grid' else 'points_'+key
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError) as caught:
+        compute.raster_snap_pour_points(*[raster_load(source_plan(p)) for p in paths],1,1,2)
+    assert str(caught.value)==compute._SNAP_MESSAGES[key][language=='en']
+
+
+@pytest.mark.parametrize('role',['count','points'])
+@pytest.mark.parametrize('dtype',['Int64','UInt64'])
+@pytest.mark.parametrize('value',[2**53-1,2**53,2**53+1,2**63-2])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_native_nodata_before_float_safe_integer_admission(tmp_path,role,dtype,value,language):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,np.nan]]),np.array([[42.,np.nan]]));path=paths[role=='points']
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,getattr(gdal,'GDT_'+dtype));ds.SetGeoTransform((500000,2,0,3000000,0,-3));srs=osr.SpatialReference();srs.ImportFromEPSG(3857);ds.SetProjection(srs.ExportToWkt())
+    nodata=2**63-1;band=ds.GetRasterBand(1);(band.SetNoDataValueAsInt64 if dtype=='Int64' else band.SetNoDataValueAsUInt64)(nodata)
+    band.WriteArray(np.array([[value,nodata]],dtype=np.int64 if dtype=='Int64' else np.uint64));band=ds=None
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];workspace=inputs[0].workspace
+        if value>2**53-1:
+            with pytest.raises(ValueError) as caught:compute.raster_snap_pour_points(*inputs,1,1,0)
+            assert str(caught.value)==compute._SNAP_MESSAGES['counts_values' if role=='count' else 'points_values'][language=='en']
+        else:
+            result=compute.raster_snap_pour_points(*inputs,1,1,0);ds=gdal.Open(str(result.path))
+            np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),[[42. if role=='count' else float(value),np.nan]]);ds=None
+
+
+@pytest.mark.parametrize('unit_name,unit',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_snap_pour_points_linear_units_radius_and_cross_block_cog(tmp_path,unit_name,unit):
+    import operators.raster_compute as compute
+    counts=np.zeros((3,515));counts[1,513]=7;points=np.zeros_like(counts);points[1,511]=2**53-1;counts[0,0]=points[0,0]=np.nan
+    srs=osr.SpatialReference();srs.ImportFromEPSG(3857);srs.SetLinearUnitsAndUpdateParameters(unit_name,unit)
+    paths=tuple(create_raster(tmp_path/(name+'.tif'),values,(500000,2,0,3000000,0,-3),srs.ExportToWkt()) for name,values in [('counts',counts),('points',points)])
+    # Radius is expressed against the CRS fact actually persisted by GDAL, without tolerance.
+    stored=gdal.Open(str(paths[0]));srs=stored.GetSpatialRef().Clone();unit=srs.GetLinearUnits();stored=None
+    before=[p.read_bytes() for p in paths];target=tmp_path/'snap.cog.tif'
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];workspace=inputs[0].workspace
+        result=compute.raster_snap_pour_points(*inputs,1,1,4*unit)
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        ds=gdal.Open(str(target));expected=_snap_scalar_oracle(counts,points,2*unit,3*unit,4*unit)
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);assert expected[1,513]==2**53-1
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(counts))
+        assert ds.GetGeoTransform()==(500000,2,0,3000000,0,-3) and ds.GetSpatialRef().IsSame(srs)
+        band=ds.GetRasterBand(1);assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetUnitType()=='' and band.GetScale() in (None,1) and band.GetOffset() in (None,0) and band.GetColorTable() is None
+        band=ds=None;assert validate_cog(raster_load(source_plan(target)))['valid']
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+        saved=target.read_bytes()
+        with pytest.raises(ValueError):compute.raster_snap_pour_points(*inputs,1,1,-1)
+        assert target.read_bytes()==saved
+    assert [p.read_bytes() for p in paths]==before
+
+
+def test_snap_pour_points_multiband_alpha_mask_nonfinite_and_zero(tmp_path):
+    import operators.raster_compute as compute
+    counts=np.zeros((3,7));counts[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
+    alpha=np.full(counts.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
+    mask=np.full(counts.shape,255,np.uint8);mask[1,5]=0
+    valid=np.isfinite(counts)&(counts!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    points=np.where(valid,0.,counts);points[0,0]=2**53-1;points[2,2]=42
+    path=create_raster(tmp_path/'multi.tif',np.stack([np.full(counts.shape,-1.),counts,points,alpha]),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(3).SetUnitType('foot')
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_snap_pour_points(source,source,2,3,0);ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.where(valid,points,np.nan));ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('stage',['read','search','write','metadata'])
+def test_snap_pour_points_injected_failure_cleanup(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    paths=_watershed_files(tmp_path,np.array([[0.,3.]]),np.array([[42.,0.]]));before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];workspace=inputs[0].workspace;existing=set(workspace.iterdir())
+        def fail(*a,**kw):raise RuntimeError('injected snapping '+stage)
+        if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
+        elif stage=='search':monkeypatch.setattr(compute,'_snap_pour_points',fail)
+        elif stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',fail)
+        else:monkeypatch.setattr(compute,'_raster',fail)
+        with pytest.raises(RuntimeError,match='injected snapping'):compute.raster_snap_pour_points(*inputs,1,1,2)
+        assert set(workspace.iterdir())==existing
+    assert not workspace.exists() and [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('case',['direct','accumulate','watershed','nested','collision','radius','counts_values'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_snap_pour_points_real_async_composition_and_language_freeze(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    import operators.raster_compute as compute
+    directions=np.ones((9,11));directions[:,-1]=0;counts=np.tile(np.arange(11,dtype=float),(9,1));points=np.zeros_like(counts);points[4,5]=777
+    if case=='nested':points[4,1]=7
+    if case=='collision':points[4,6]=7;counts[4,6]=99
+    if case=='counts_values':counts[0,0]=-.5
+    paths=_watershed_files(tmp_path,directions if case in ('accumulate','watershed','nested') else counts,points);before=[p.read_bytes() for p in paths];target=tmp_path/'snap.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[0])}}, {'id':'points','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}}];prior='source'
+    if case in ('accumulate','watershed','nested'):
+        tasks.append({'id':'counts','operator':'raster_flow_accumulation_d8','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1}});prior='counts'
+    tasks.append({'id':'snap','operator':'raster_snap_pour_points','depends_on':[prior,'points'],'params':{'input_raster':{'$ref':prior},'points_raster':{'$ref':'points'},'band':1,'points_band':1,'radius_metres':-1 if case=='radius' else 2}});prior='snap'
+    if case in ('watershed','nested'):
+        tasks.append({'id':'watershed','operator':'raster_watershed_d8','depends_on':['source','snap'],'params':{'input_raster':{'$ref':'source'},'points_raster':{'$ref':'snap'},'band':1,'points_band':1}});prior='watershed'
+    tasks.append({'id':'save','operator':'raster_save','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'access_plan':target_plan(target),'profile':'cog','blocksize':128,'overview_resampling':'nearest'}})
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_snap_pour_points':workspaces.extend([params['input_raster'].workspace,params['points_raster'].workspace])
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('nested','collision','radius','counts_values');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists();messages=compute._D8_WATERSHED_MESSAGES if case=='nested' else compute._SNAP_MESSAGES
+        node='watershed' if case=='nested' else 'snap';assert '任务 '+node+' 执行失败: '+messages[case][language=='en'] in status['error']
+    else:
+        expected=_snap_scalar_oracle(counts,points,2,3,2)
+        if case=='watershed':expected=_watershed_walk_oracle(directions,expected)
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_snap_pour_points/invoke',json={'params':{}}).status_code==403
+
+
+def test_snap_pour_points_discovery_required_inputs_and_single_owner():
+    spec=next(item for item in list_operators() if item['id']=='raster_snap_pour_points')
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','points_raster','band','points_band','radius_metres'} and all(p['required'] for p in params.values())
+    assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','points_raster'))
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'points_raster':{'$ref':'points'},'band':1,'points_band':1,'radius_metres':100.}
