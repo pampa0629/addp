@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 		business = httptest.NewServer(router)
 		defer business.Close()
 	}
-	data, err := json.Marshal(map[string]any{"id": os.Getenv("ADDP_PROCESS_T2_ID"), "module_name": identity.ModuleName, "instance_id": name, "role": identity.Role, "started_at": identity.StartedAt, "instance": listen, "cgroup": source.Declaration().Cgroup})
+	data, err := json.Marshal(map[string]any{"id": os.Getenv("ADDP_PROCESS_T2_ID"), "module_name": identity.ModuleName, "instance_id": name, "role": identity.Role, "started_at": identity.StartedAt, "instance": listen, "cgroup": source.Declaration().Cgroup, "cgroup_diagnostic": integrationCgroupFacts()})
 	if err != nil || os.WriteFile(path, data, 0666) != nil {
 		t.Fatal("write test-owned identity")
 	}
@@ -107,4 +108,24 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 		time.Sleep(40 * time.Millisecond)
 	}
 	t.Fatal("standard gate did not stop the test-owned source")
+}
+
+// Only the owned T2 executable calls this. Emit fixed booleans, never raw
+// proc paths, kernel file contents, endpoints or environment values.
+func integrationCgroupFacts() map[string]bool {
+	facts := map[string]bool{"self_sample_valid": sampleSelfCgroup().valid()}
+	root, err := os.OpenRoot("/sys/fs/cgroup")
+	facts["root_readable"] = err == nil
+	if err != nil {
+		return facts
+	}
+	defer root.Close()
+	data, err := readCgroupFile(root.FS(), "cpu.stat")
+	facts["cpu_stat_readable"] = err == nil
+	if err == nil {
+		facts["core_sched_field_present"] = strings.Contains("\n"+string(data), "\ncore_sched.force_idle_usec ")
+	}
+	_, _, err = readCgroupUsage(root.FS(), ".")
+	facts["root_usage_parse_valid"] = err == nil
+	return facts
 }

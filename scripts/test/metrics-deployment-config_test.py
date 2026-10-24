@@ -58,7 +58,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
     def cgroup_probe(self, mismatch=False):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
-        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'check_self_cgroup_samples')
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name in ('check_self_cgroup_samples', 'cgroup_source_diagnostics')]
         records = [{'instance_id': 'native-'+str(i), 'instance': 'source:'+str(i)} for i in (1, 2, 3)]
         queried = []
 
@@ -70,8 +71,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'value': [1, '1']} for record in records]
 
         compose = mock.Mock(return_value='10000000-0000-4000-8000-000000000001\n101\npid:[202]\n')
-        namespace = {'compose': compose, 'query': query, 'math': __import__('math'), 're': re}
-        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        namespace = {'compose': compose, 'query': query, 'math': __import__('math'), 're': re, 'json': json}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(path), 'exec'), namespace)
         with redirect_stdout(io.StringIO()):
             namespace['check_self_cgroup_samples'](records)
         self.assertEqual(len(queried), 3)
@@ -87,6 +88,32 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
     def test_self_cgroup_probe_rejects_mismatched_namespace_evidence(self):
         with self.assertRaisesRegex(AssertionError, 'cgroup evidence must match'):
             self.cgroup_probe(mismatch=True)
+
+    def test_cgroup_diagnostic_identifies_missing_source_without_logging_body_or_endpoint(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        function = next(node for node in ast.parse(path.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and node.name == 'cgroup_source_diagnostics')
+        secret = 'do-not-log-private-value'
+        records = [{'instance_id': 'native-1', 'instance': 'private.internal:9443',
+                    'cgroup_diagnostic': {'self_sample_valid': False, 'root_usage_parse_valid': False,
+                                          'core_sched_field_present': True, 'raw': secret}}]
+        body = b'# secret '+secret.encode()+b'\nprocess_resident_memory_bytes 4096\n'
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = body
+        namespace = {'json': json, 're': re, 'urllib': __import__('urllib'), 'source_context': None}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        output = io.StringIO()
+        with mock.patch('urllib.request.urlopen', return_value=response) as opened, redirect_stdout(output):
+            namespace['cgroup_source_diagnostics'](records, {'addp_cgroup_identity_info': []}, {})
+        response.__enter__.return_value.read.assert_called_once_with((256 << 10) + 1)
+        self.assertEqual(opened.call_args.kwargs['timeout'], 5)
+        text = output.getvalue()
+        self.assertNotIn(secret, text)
+        self.assertNotIn('private.internal', text)
+        result = json.loads(text.split('diagnostic ', 1)[1])['sources'][0]
+        self.assertEqual(result['ordinal'], 1)
+        self.assertEqual(result['direct_source'], {'state': 'read', 'counts': {'addp_cgroup_identity_info': 0}})
+        self.assertTrue(result['sdk']['core_sched_field_present'])
 
     def resource_window_check(self, work):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'

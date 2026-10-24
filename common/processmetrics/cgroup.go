@@ -78,9 +78,16 @@ func readCgroupUsage(files fs.FS, group string) (float64, uint64, error) {
 		if len(fields) != 2 || seen[fields[0]] || len(fields[0]) > 64 {
 			return 0, 0, errCgroupUnavailable
 		}
-		for _, r := range fields[0] {
-			if !(r >= 'a' && r <= 'z' || r == '_') {
+		// Linux CONFIG_SCHED_CORE emits core_sched.force_idle_usec. Dots
+		// separate accounting namespaces; they are not filesystem paths.
+		for _, segment := range strings.Split(fields[0], ".") {
+			if segment == "" {
 				return 0, 0, errCgroupUnavailable
+			}
+			for _, r := range segment {
+				if !(r >= 'a' && r <= 'z' || r == '_') {
+					return 0, 0, errCgroupUnavailable
+				}
 			}
 		}
 		value, err := cgroupUnsigned(fields[1])

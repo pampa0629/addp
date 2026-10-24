@@ -283,6 +283,43 @@ def native_process_history_diagnostics(records):
     return diagnostic
 
 
+def cgroup_source_diagnostics(records, observations, expected):
+    metrics = tuple(observations)
+    sources = []
+    for index, record in enumerate(records):
+        row = {'ordinal': index + 1, 'declaration_present': record.get('cgroup') is not None,
+               'sdk': {key: value for key, value in record.get('cgroup_diagnostic', {}).items()
+                       if key in ('self_sample_valid', 'root_readable', 'cpu_stat_readable',
+                                  'core_sched_field_present', 'root_usage_parse_valid') and type(value) is bool},
+               'prometheus': {}}
+        missing = False
+        for metric, samples in observations.items():
+            selected = [sample for sample in samples if
+                        (sample['metric'].get('addp_instance_id'), sample['metric'].get('instance')) ==
+                        (record['instance_id'], record['instance'])]
+            row['prometheus'][metric] = {'count': len(selected), 'kernel_identity_matches':
+                len(selected) == 1 and all(selected[0]['metric'].get(key) == value for key, value in expected.items())}
+            missing = missing or len(selected) != 1
+        if missing:
+            # One bounded mTLS read per missing source distinguishes SDK output
+            # from SD/scrape ingestion. Neither URLs nor raw bodies are logged.
+            try:
+                with urllib.request.urlopen('https://' + record['instance'] + '/metrics',
+                                            context=source_context, timeout=5) as response:
+                    body = response.read((256 << 10) + 1)
+                if len(body) > 256 << 10:
+                    row['direct_source'] = {'state': 'oversize'}
+                else:
+                    text = body.decode('utf-8')
+                    row['direct_source'] = {'state': 'read', 'counts': {
+                        metric: len(re.findall(r'^' + re.escape(metric) + r'(?:\{[^\n]*\})? ', text, re.M))
+                        for metric in metrics}}
+            except (OSError, UnicodeError, urllib.error.URLError):
+                row['direct_source'] = {'state': 'unavailable'}
+        sources.append(row)
+    print('Metrics T2: cgroup source diagnostic ' + json.dumps({'sources': sources}, sort_keys=True), flush=True)
+
+
 def check_self_cgroup_samples(records):
     # Independent kernel reads from the owned shared source container. Three
     # SDK processes intentionally share this boundary: none proves a dedicated
@@ -294,8 +331,10 @@ def check_self_cgroup_samples(records):
     assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', boot)
     assert all(re.fullmatch(r'[1-9][0-9]*', expected[key]) for key in ('cgroup_id', 'pid_namespace_id'))
     selector = '{job="addp_nodes",addp_monitor_kind="process_resources"}'
-    for metric in ('addp_cgroup_identity_info', 'addp_cgroup_cpu_usage_seconds_total', 'addp_cgroup_memory_current_bytes'):
-        rows = query(metric + selector)
+    observations = {metric: query(metric + selector) for metric in (
+        'addp_cgroup_identity_info', 'addp_cgroup_cpu_usage_seconds_total', 'addp_cgroup_memory_current_bytes')}
+    cgroup_source_diagnostics(records, observations, expected)
+    for metric, rows in observations.items():
         assert len(rows) == len(records) == 3, 'all current SDK sources must expose their genuine cgroup sample'
         assert {(row['metric']['addp_instance_id'], row['metric']['instance']) for row in rows} == {(record['instance_id'], record['instance']) for record in records}
         for row in rows:
@@ -330,8 +369,9 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
     assert source_inspect['HostConfig']['CgroupnsMode'] == 'private'
     if check_cgroup:
         kernel_tests = compose('exec', '-T', 'metrics-source', '/source/process-source.test',
-                           '-test.run=^TestCgroupMountCoordinatesNeverEscapeVisibleSubtree$', '-test.v')
+                           '-test.run=^Test(CgroupMountCoordinatesNeverEscapeVisibleSubtree|CgroupUsageAcceptsKernelCoreSchedulingAccounting)$', '-test.v')
         assert '--- PASS: TestCgroupMountCoordinatesNeverEscapeVisibleSubtree' in kernel_tests
+        assert '--- PASS: TestCgroupUsageAcceptsKernelCoreSchedulingAccounting' in kernel_tests
         assert '--- SKIP:' not in kernel_tests and '[no tests to run]' not in kernel_tests
         print(kernel_tests, flush=True)
     source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']

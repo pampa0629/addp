@@ -250,6 +250,8 @@ TCP 当前连接数为 `node.tcp.current_connections`（unit=`connections`，瞬
 
 自身 cgroup 采样与容器身份分开：Linux Common SDK 仅在进程部署输入显式选择 `cgroup_v2=true` 时，才可在既有 mTLS 来源发布当前 cgroup v2 的 `addp_cgroup_identity_info`、`addp_cgroup_cpu_usage_seconds_total` 和 `addp_cgroup_memory_current_bytes`。身份只含内核 boot UUID、cgroup inode 和 PID namespace inode，均以规范字符串标识；只读 `/proc/self/cgroup`、`/proc/self/mountinfo`、自身 PID／cgroup namespace、内核 boot ID 及当前组固定资源文件，不扫描其他进程或组。路径、凭据和原始错误不发布；文件、字段、读取量及路径严格有界。迁组／身份变化或读取失败时清除本次组指标，不能变为有效零值，也不能影响原进程 CPU／RSS／启动指标。该三项为后续容器来源的私有采集事实，不扩展当前用户查询目录、列表摘要或告警。
 
+`cpu.stat` 沿 Linux 扁平键值格式读取 `usage_usec`；内核的 `core_sched.force_idle_usec` 等点号命名空间键不应使整组样本失效。仍严格校验有界字段名、每行两项、唯一键及规范无符号整数；不把其他计数并入 CPU 用量、不改变指标目录。字段依据见 [Linux v6.11 内核实现](https://github.com/torvalds/linux/blob/v6.11/kernel/cgroup/rstat.c#L555)。
+
 2026-10-24 已确认由部署侧提供容器身份及限制层级的只读证明，应用不开放宿主 cgroup 命名空间、不持有 Docker socket。仅在当前登记实例／本次进程启动、真实容器／本次容器启动及内核边界完全匹配，且限制层级证明完整新鲜时，才可进入容器配额观测。可见组用量不证明独立容器、独享额度或完整父级限制。自身采集、部署证明、System 关联、Monitor 查询与页面分别验证；新增自身采集基础不能替代后续产品链路及对应验收。
 
 容器资源沿同一进程来源接入：SDK 在启动时取得的 boot UUID／cgroup inode／PID namespace inode 随不可变私有声明登记，后续采样仍核对当前边界。部署发布器在原有受管目录发布 `addp.container-proofs/v1`，仅可信本机 Linux Docker、当前工作区 `addp-platform`、标准 runtime-log 单应用入口；读完整容器 ID／启动／宿主 PID及真实完整 cgroup v2 层级，双读核对，最长 90 秒。父级隐藏、平台不支持、读取失败或来源中断清除当前证明，不以 Docker 配置额度替代真实父级限制。首期要求层级 CPU burst 为零；CPU 上界来自完整层级 quota/period 与有效 cpuset，内存取有限 memory.max 最小值；均为硬上界，不是独享或保证容量。连续快照一致的限制记录重新启动／变化／超时即重新累计；CPU 比率要求记录覆盖完整一分钟及边界裕量。

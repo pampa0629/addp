@@ -31,6 +31,16 @@ func TestCgroupUsageReadsWholeGroupAndPreservesRealZero(t *testing.T) {
 	}
 }
 
+func TestCgroupUsageAcceptsKernelCoreSchedulingAccounting(t *testing.T) {
+	// CONFIG_SCHED_CORE adds this namespaced counter in kernel/cgroup/rstat.c.
+	// It is not part of usage_usec and must not invalidate the entire sample.
+	files := cgroupFixture("usage_usec 1250000\nuser_usec 1000000\nsystem_usec 250000\ncore_sched.force_idle_usec 99\n", "67108864\n")
+	cpu, memory, err := readCgroupUsage(files, "own")
+	if err != nil || cpu != 1.25 || memory != 64<<20 {
+		t.Fatalf("kernel core scheduling field invalidated usage: %v %v %v", cpu, memory, err)
+	}
+}
+
 func TestDeploymentSamplerDoesNotReadGroupsUnlessSelected(t *testing.T) {
 	reads := 0
 	group := func() *CgroupSample { reads++; return nil }
@@ -52,11 +62,18 @@ func TestDeploymentSamplerDoesNotReadGroupsUnlessSelected(t *testing.T) {
 
 func TestCgroupUsageRejectsMissingMalformedAndUnboundedFiles(t *testing.T) {
 	for name, mutate := range map[string]func(fstest.MapFS){
-		"missing cpu":             func(f fstest.MapFS) { delete(f, "own/cpu.stat") },
-		"missing memory":          func(f fstest.MapFS) { delete(f, "own/memory.current") },
-		"missing usage":           func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("user_usec 1\n") },
-		"duplicate usage":         func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\nusage_usec 2\n") },
-		"duplicate other field":   func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\nuser_usec 1\nuser_usec 1\n") },
+		"missing cpu":           func(f fstest.MapFS) { delete(f, "own/cpu.stat") },
+		"missing memory":        func(f fstest.MapFS) { delete(f, "own/memory.current") },
+		"missing usage":         func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("user_usec 1\n") },
+		"duplicate usage":       func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\nusage_usec 2\n") },
+		"duplicate other field": func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\nuser_usec 1\nuser_usec 1\n") },
+		"duplicate namespace": func(f fstest.MapFS) {
+			f["own/cpu.stat"].Data = []byte("usage_usec 1\ncore_sched.force_idle_usec 1\ncore_sched.force_idle_usec 2\n")
+		},
+		"empty namespace":         func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\ncore_sched..force_idle_usec 1\n") },
+		"leading dot":             func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\n.core_sched 1\n") },
+		"trailing dot":            func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\ncore_sched. 1\n") },
+		"path as namespace":       func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1\ncore_sched/force_idle_usec 1\n") },
 		"negative cpu":            func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec -1\n") },
 		"cpu decimal":             func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 1.25\n") },
 		"cpu overflow":            func(f fstest.MapFS) { f["own/cpu.stat"].Data = []byte("usage_usec 18446744073709551616\n") },

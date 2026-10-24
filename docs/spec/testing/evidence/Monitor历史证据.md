@@ -970,6 +970,22 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 最终实源项目为 `addp-metrics-t2-8ca4e7a7aeff4f9f805140ee6d13dc0e`。该夹具刻意让三个进程共享同一 cgroup，证明采集／查询和拒绝边界，**不证明一实例独立容器、部署发布器在原生 Linux 上读取完整层级、System 至真实用户页面的整个配额闭环或正式身份 T4**。这些实机／正式身份验收尚未运行，当前 Mac 原生进程也没有容器配额。CI、产品镜像全包、Hosted 及生产 T5 未在本会话执行或轮询，继续由专门会话回传；未扩大已有 Hosted Token 用途，未设置定时任务。
 
+## 自身 cgroup Linux CI 缺样：点号统计字段解析与逐源诊断（2026-10-24）
+
+专门 CI 会话回传源码 `4108c283a183e4bfc89e76a3b38aa7cc1f6e48a8` 的 [Run 40080160036／Job 120835774116](https://github.com/pampa0629/addp/actions/runs/40080160036/job/120835774116)：RSS 三源进入发现后，`check_self_cgroup_samples` 的三条组样本断言失败。已读取原始日志 `/tmp/addp-ci-20261024-100026/job-120835774116.log` 第 796—804 行。该日志未标明缺失的具体族或来源；TLS 负例、udev 提示和 System 240 迁移恢复均不能替代本条 CI 根因／通过证据。核对 `f72ac75b1` 后原字段名解析规则仍未改变，不能声称既有功能提交已修复该失败。
+
+独立复现了一个确定的采集缺陷：[Linux v6.11 `kernel/cgroup/rstat.c`](https://github.com/torvalds/linux/blob/v6.11/kernel/cgroup/rstat.c#L555) 在 `CONFIG_SCHED_CORE` 下输出 `core_sched.force_idle_usec`，原解析器只允许小写字母／下划线，遇到这个合法字段会丢弃整组 CPU／内存。先添加真实字段形状的回归，`make test-module MODULE=common GO_ONLY=1` 因此测试失败（其余 150 个 package 通过）；再将唯一解析路径改为有界点号分段名称。仍拒绝空段、前后点号、路径字符、重复键、非规范数字及超长内容，仍仅读取 `usage_usec`，没有忽略畸形内容或补零。修后同一入口 151 个 package 通过。
+
+最小诊断沿现有专属 T2：各 SDK 启动记录只增加固定布尔事实（是否取得自身样本、根组文件可读、解析有效、内核是否有该字段）；每个来源按固定序号报告三项 Prometheus 样本数量和独立内核身份匹配。缺样时每来源仅一次五秒、最多 256 KiB 的原 mTLS 读取，区分源端未输出与发现／入库问题；不记录端点、原始正文、任意附加字段或凭据。原精确三源集合、独立内核身份、真实有限数值和后续完整窗口／新鲜度断言全部保留，没有新增等待以迁就缺样。
+
+冻结源码目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-ci-fix-d0aycm9k/source`，基线 `704ecab46edeedc47da520512bc2abd083984271`，`inputs.json` SHA-256 `5a2b1e01e8d4ae476f3397d6687e5588e4073ec38b9c8ae94abfa054206ce7d3`，交付前任务文件逐项复核无漂移。证据位于同级目录：
+
+- `common-red.log`／`common-green.log`：上述 Common 标准入口红／绿结果。
+- `system-t1.log`／`monitor-t1.log`：`make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=monitor GO_ONLY=1` 均退出 0；不将环境门控的集成跳过计为 T2。
+- `cgroup-t2.log`：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source` 退出 0，55 项准备回归、八类窗口、mTLS／标签／超量限制、Linux 挂载坐标和新增点号字段回归通过；三个真实 SDK 的三族各一条且身份匹配，`TestIntegrationMetricsCgroupSources` 实际执行 59.34 秒通过完整组 CPU／内存、错误身份拒绝及共享组不推算配额。标准清理和独立项目标签核对均为容器／网络／卷零残留、临时文件清零，项目 `addp-metrics-t2-8efb0820d7a748e6b9789bbd909d59b1`。日志 SHA-256 `e4fadba2e2766ec6f8120d97f5deb36721208db348da18451357fc2551782ec6`。
+
+本机 Docker Desktop 内核的三条启动诊断均为 `core_sched_field_present=false`；新增合法字段回归另在真实 Linux 专属容器执行通过。**已证实并修复字段解析缺陷，但尚未取得修复后 Linux CI 实际步的诊断，不能把它断言为旧 CI 缺样的唯一根因或已通过。** 新诊断用于核对原生 Linux 的字段存在性及实际缺失阶段，相关 CI 仍等专门会话回传，不重复触发排队／运行中的门禁或 Hosted，不设定时任务。现有 Release 五场景矩阵及 Common／Monitor 路径与输入自动发现已覆盖本次六个文件，无新 API／DTO、权限、迁移、配置或前端变化，不要求 Swagger／前端重跑；未操作个人服务、keepalive 或数据卷。
+
 
 ### 正式身份本地第七窗口：准备守卫修正及IAM权限冲突，闭环未通过（2026-10-24）
 
