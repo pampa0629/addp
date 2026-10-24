@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely import from_wkb, get_coordinates, has_m, has_z, make_valid
-from shapely.geometry import MultiPolygon
+from shapely.geometry import LineString, MultiPolygon
 from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
 from addp_common.workflow_access import (
@@ -3094,16 +3094,16 @@ def _d8_stream_link_error(code):
     return ValueError(_D8_STREAM_LINK_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _d8_stream_links(directions, streams):
-    """Number stream starts in row/column order; confluences own the downstream segment."""
-    valid, downstream, order = _d8_stream_graph(directions, streams, _d8_stream_link_error)
+def _d8_stream_segments(directions, streams, error):
+    """One stream numbering path shared by raster labels and downstream lines."""
+    valid, downstream, order = _d8_stream_graph(directions, streams, error)
     river = streams.ravel()
     incoming = np.zeros(directions.size, dtype=np.uint8)
     donors = np.flatnonzero(river & (downstream >= 0))
     np.add.at(incoming, downstream[donors], 1)
     starts = np.flatnonzero(river & (incoming != 1))
     if starts.size > _D8_MAX_EXACT_COUNT:
-        raise _d8_stream_link_error('overflow')
+        raise error('overflow')
     labels = np.zeros(directions.size, dtype=np.int64)
     labels[starts] = np.arange(1, starts.size + 1, dtype=np.int64)
     for cell in order:
@@ -3111,6 +3111,11 @@ def _d8_stream_links(directions, streams):
             target = int(downstream[cell])
             if target >= 0 and incoming[target] == 1:
                 labels[target] = labels[cell]
+    return valid, downstream, incoming, starts, labels
+
+
+def _d8_stream_links(directions, streams):
+    valid, _, _, _, labels = _d8_stream_segments(directions, streams, _d8_stream_link_error)
     result = labels.reshape(directions.shape).astype(np.float64)
     result[~valid] = np.nan
     return result
@@ -3121,6 +3126,86 @@ def raster_stream_link_d8(input_raster, stream_raster, band, stream_band):
     source, directions, streams = _d8_stream_sources(
         input_raster, stream_raster, band, stream_band, _d8_stream_link_error)
     return _d8_output(source, _d8_stream_links(directions, streams))
+
+
+_D8_STREAM_VECTOR_MESSAGES = {
+    key: (zh.replace('D8 河段编号', 'D8 河网转矢量线'),
+          en.replace('D8 stream link', 'D8 stream vectorization'))
+    for key, (zh, en) in _D8_STREAM_LINK_MESSAGES.items()
+}
+_D8_STREAM_VECTOR_MESSAGES.update({
+    'isolated': ('D8 河网转矢量线不支持孤立河网单像元，不能生成零长度线',
+                 'D8 stream vectorization does not support isolated single stream cells; zero-length lines cannot be generated'),
+    'step': ('D8 河网转矢量线的米制横纵及对角步长必须有限且严格为正',
+             'D8 stream vectorization requires finite, strictly positive horizontal, vertical and diagonal steps in metres'),
+    'length': ('D8 河网转矢量线累计长度超过Float64有限范围',
+               'D8 stream vectorization accumulated length exceeds the finite Float64 range'),
+    'coordinates': ('D8 河网转矢量线要求有限且相邻不同的像元中心坐标，不能生成零长度线',
+                    'D8 stream vectorization requires finite, distinct adjacent cell-centre coordinates; zero-length lines cannot be generated'),
+})
+
+
+def _d8_stream_vector_error(code):
+    return ValueError(_D8_STREAM_VECTOR_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_stream_lines(directions, streams, transform, horizontal_metres, projection):
+    """Emit each stream edge once; upstream lines include the next confluence centre."""
+    error = _d8_stream_vector_error
+    _, downstream, incoming, starts, labels = _d8_stream_segments(directions, streams, error)
+    # Reject isolated selected cells even in a mixed network before building features.
+    if np.any((downstream[starts] < 0) & (incoming[starts] == 0)):
+        raise error('isolated')
+    steps = _d8_length_steps(transform[1] * horizontal_metres, -transform[5] * horizontal_metres, error)
+    width = directions.shape[1]
+    codes = directions.ravel()
+    records, geometries = [], []
+
+    def centre(cell):
+        row, col = divmod(cell, width)
+        point = (transform[0] + (col + .5) * transform[1],
+                 transform[3] + (row + .5) * transform[5])
+        if not all(math.isfinite(value) for value in point):
+            raise error('coordinates')
+        return point
+
+    for start in starts:
+        cell = int(start)
+        if downstream[cell] < 0:
+            # A terminal confluence has no edge of its own; incoming lines end here.
+            continue
+        link_id = int(labels[cell])
+        points = [centre(cell)]
+        length = 0.0
+        while downstream[cell] >= 0:
+            target = int(downstream[cell])
+            point = centre(target)
+            if ((target % width != cell % width and point[0] == points[-1][0])
+                or (target // width != cell // width and point[1] == points[-1][1])):
+                raise error('coordinates')
+            points.append(point)
+            length += steps[codes[cell]]
+            if not math.isfinite(length):
+                raise error('length')
+            cell = target
+            if labels[cell] != link_id:
+                break
+        from_row, from_col = divmod(int(start), width)
+        to_row, to_col = divmod(cell, width)
+        records.append((link_id, from_row, from_col, to_row, to_col, length))
+        geometries.append(LineString(points))
+    fields = ('link_id', 'from_row', 'from_col', 'to_row', 'to_col', 'length_m')
+    attributes = pd.DataFrame.from_records(records, columns=fields).astype({
+        name: 'float64' if name == 'length_m' else 'int64' for name in fields})
+    return gpd.GeoDataFrame(attributes, geometry=gpd.GeoSeries(geometries, crs=projection), crs=projection)
+
+
+def raster_stream_to_vector_d8(input_raster, stream_raster, band, stream_band):
+    """Convert explicit D8 stream segments to source-CRS two-dimensional lines."""
+    source, directions, streams = _d8_stream_sources(
+        input_raster, stream_raster, band, stream_band, _d8_stream_vector_error)
+    horizontal_metres = _projected_north_up_grid(source)
+    return _d8_stream_lines(directions, streams, source.GetGeoTransform(), horizontal_metres, source.GetProjection())
 
 
 def _terrain(input_raster, elevation_unit, band, processing, **options):
@@ -3267,6 +3352,7 @@ _SPECS = [
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
+    (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -3295,7 +3381,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'foreground_value': 1})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
-    if name in ('raster_stream_order_d8', 'raster_stream_link_d8'):
+    if name in ('raster_stream_order_d8', 'raster_stream_link_d8', 'raster_stream_to_vector_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_stream_order_d8':
         examples.update({'method': 'strahler'})

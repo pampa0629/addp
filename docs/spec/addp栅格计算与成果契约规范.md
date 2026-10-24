@@ -71,6 +71,7 @@
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
 | `raster_hillshade` | raster、必填高程单位、band、方位角／高度角 | 同网格地形晕渲，常规有效灰度 1–255；不表示三维场景。 |
 | `raster_contour` | raster、必填高程单位、band、等高距或指定高程 | 源 CRS 的二维 LineString GeoDataFrame，`elevation` 为米；可接既有矢量保存节点。 |
+| `raster_stream_to_vector_d8` | 既有D8方向、同网格／同有效覆盖0／1河网、两个显式数据波段 | 源CRS二维LineString与既有河段ID／零基起止行列／米制中心间长度；上游补到汇合中心，孤立单像元失败，终点单像元只作端点，复用矢量save。Native／Linux／Hosted分别记账。 |
 
 除 `raster_to_cog` 外，上表算子只支持 workflow。波段表达式允许 `b1/b2/...`、常量、加减乘除、有限常数幂及 `abs/sqrt/log/minimum/maximum`，拒绝属性访问、索引、导入和任意 Python 执行。
 
@@ -274,3 +275,7 @@ D8河流分级扩展复用 `raster_stream_order_d8`，新增 `method=strahler/sh
 已批准手工 `raster-stream-shreve-d8-persistence`：沿用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限和600秒预算。六条Shreve保存链加同源默认／显式Strahler两条对照，共八条COG；断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环、双角色非法波段及非法method九类各中英文，共18条准确失败。独立逐源头前向路径oracle核完整量级／mask、出口源头数守恒、非河网供体排除和对角交叉独立，默认／显式Strahler完整物理成果相等且符合独立原规则；严格核COG／网格／CRS、三方相等正整数大小、精确扫描／全部实际输入当前血缘／Monitor、源与先前成果不变及零残留，失败零发布／新增扫描血缘、反向查询不改提交语言。整数越界继续单列Native证据，不模拟Hosted越界或降低产品上限；不改原套件、权限或跨模块产品逻辑，不计UI或容量。本地新夹具与脚本门禁通过，实际Hosted未运行；固定5898首期Linux全量已通过，固定883aed7b5的Linux全量4189项已通过，实际Hosted仍等专门CI会话回传，本会话不触发、轮询或设置定时。
 
 本独立夹具本地Native专项53项、标准独立runner65项、Online／Python CI登记及共享栅格总入口24组均通过；原产品Native全量4136项固定证据保留，固定883aed7b5正式Linux全量4189项已通过，实际Hosted仍待专门CI会话回传。整数累计越界仅列Native受控上界回归，Hosted精确64位非法方向码不等同量级累计越界；完整固定证据见[栅格专题](../next/栅格算子体系后续专题.md#shreve-独立持久化验收)。
+
+### D8 河网转矢量线首期验收边界
+
+`raster_stream_to_vector_d8` 已实现；唯一河段编号路径生成源CRS二维线，保留每个中心、既有ID、零基起止行列和米制长度。每条实际河网边恰好一次，汇合边归上游；孤立单像元整次失败，单像元汇合终点仅为端点、无零长度线，ID允许间隔。复用既有矢量save／GeoPackage，无新增权限或跨模块逻辑。本地标准Native全量4387项／21 warnings／843.23秒通过，0失败／跳过／筛除，输入无漂移；候选树 `9784d97b2abcac1ba61dba757236988c457d913e`，原始日志SHA-256 `5fab071ed826ad4181ecdb941d7fc1eccbaa74cddce268ef0af330c9b62e37f0`。含独立完整逐边／几何／字段／单位及真实GeoPackage、异步DAG双语失败和清理，CI登记检查通过；不计Linux正式全量或真实平台扫描／血缘／Monitor、UI、容量。未新增独立Hosted入口；现有Hosted继续等专门CI会话回传。完整规则见[工作流栅格契约](workflow/栅格算子契约.md#栅格计算契约)。

@@ -7251,29 +7251,30 @@ def test_d8_strahler_axes_empty_streams_and_all_invalid(tmp_path,directions,stre
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_strahler_recursive_oracle(directions,streams));ds=None
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('band',[True,False,0,-1,2,1.5,'1',None])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_both_bands_explicit_valid_and_bilingual(tmp_path,role,band,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError,match='波段' if language=='zh-cn' else 'band'):
+        with pytest.raises(ValueError,match='波段' if language=='zh-cn' else 'band') as error:
             getattr(compute,operator)(source,mask,band if role=='direction' else 1,band if role=='mask' else 1,**({'method':method} if method else {}))
+        assert str(error.value)==messages['band' if role=='direction' else 'mask_band'][language=='en']
         assert set(source.workspace.iterdir())==prior
 
 
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('case',['code','terminal','outside','invalid','cycle','cycle-with-outlet','break'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_full_graph_and_stream_break_fail_even_off_network(tmp_path,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     directions=np.array([[1.,1.,0.]])
     if case=='code':directions[0,0]=3
     if case=='terminal':directions=np.zeros((3,3))
@@ -7295,12 +7296,12 @@ def test_d8_streams_full_graph_and_stream_break_fail_even_off_network(tmp_path,c
 
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('bad',[-1,2,255,.25,2**53,np.nan,np.inf])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_nonbinary_mask_and_coverage_mismatch_fail_closed(tmp_path,bad,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.array([[bad,1.]]));key='mask_values' if math.isfinite(bad) else 'coverage'
     with raster_workspace(),raster_error_language(language):
         source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
@@ -7311,13 +7312,13 @@ def test_d8_streams_nonbinary_mask_and_coverage_mismatch_fail_closed(tmp_path,ba
 
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('case',['scale','offset','alpha','complex','rotated','geographic','no-crs','south-up'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_band_encoding_and_projected_grid_admission(tmp_path,role,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
     path=paths[role=='mask'];ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,gdal.GDT_CFloat64 if case=='complex' else gdal.GDT_Float64)
     ds.SetGeoTransform((500000,2,.1 if case=='rotated' else 0,3000000,0,3 if case=='south-up' else -3))
@@ -7339,12 +7340,12 @@ def test_d8_streams_band_encoding_and_projected_grid_admission(tmp_path,role,cas
 
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('case',['dimensions','origin','resolution','crs','mask_missing','direction_missing'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_requires_exact_grid_and_effective_coverage(tmp_path,case,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     directions=np.array([[1.,1.,0.]]);streams=np.ones((1,3))
     if case=='mask_missing':streams[0,1]=np.nan
     if case=='direction_missing':directions[0,0]=np.nan
@@ -7364,13 +7365,13 @@ def test_d8_streams_requires_exact_grid_and_effective_coverage(tmp_path,case,lan
 
 
 
-@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None)])
+@pytest.mark.parametrize('operator,method',[('raster_stream_order_d8','strahler'),('raster_stream_order_d8','shreve'),('raster_stream_link_d8',None),('raster_stream_to_vector_d8',None)])
 @pytest.mark.parametrize('role',['direction','mask'])
 @pytest.mark.parametrize('dtype',[gdal.GDT_Int64,gdal.GDT_UInt64])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_d8_streams_native_nodata_does_not_hide_adjacent_large_invalid_code(tmp_path,role,dtype,language,operator,method):
     import operators.raster_compute as compute
-    messages=compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
+    messages=compute._D8_STREAM_VECTOR_MESSAGES if operator=='raster_stream_to_vector_d8' else compute._D8_STREAM_LINK_MESSAGES if operator=='raster_stream_link_d8' else compute._D8_SHREVE_MESSAGES if method=='shreve' else compute._D8_STREAM_ORDER_MESSAGES
     paths=_strahler_files(tmp_path,np.array([[np.nan,1.,0.]]),np.array([[np.nan,1.,1.]]));path=paths[role=='mask']
     ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype);ds.SetGeoTransform((500000,2,0,3000000,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
     band=ds.GetRasterBand(1);array=np.array([[2**53,2**53+1,0 if role=='direction' else 1]],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64);band.WriteArray(array)
@@ -8578,3 +8579,272 @@ def test_d8_shreve_long_single_route_is_one_headwater_without_recursion():
     import operators.raster_compute as compute
     directions=np.ones((1,100001));directions[0,-1]=0
     np.testing.assert_array_equal(compute._d8_stream_order(directions,np.ones(directions.shape,bool),'shreve'),np.ones(directions.shape))
+
+
+# Vectorization oracle follows incoming edges back to a segment start. It does
+# not use the production topological graph, numbering helper or forward labels.
+def _stream_vector_edge_oracle(directions, streams, transform, metres):
+    from collections import defaultdict
+    river = {tuple(map(int, cell)) for cell in np.argwhere(streams == 1)}
+    edges, donors = {}, defaultdict(list)
+    for cell in river:
+        if directions[cell] != 0:
+            dy, dx = _STRAHLER_STEPS[directions[cell]]
+            target = cell[0]+dy, cell[1]+dx
+            assert target in river
+            edges[cell] = target
+            donors[target].append(cell)
+    starts = sorted(cell for cell in river if len(donors[cell]) != 1)
+    ids = {cell: index+1 for index, cell in enumerate(starts)}
+    assert all(cell in edges or donors[cell] for cell in river), 'isolated stream cell'
+    origin, groups = {}, defaultdict(dict)
+    for cell, target in edges.items():
+        upstream, walked = cell, []
+        while upstream not in ids and upstream not in origin:
+            walked.append(upstream)
+            upstream = donors[upstream][0]
+        start = upstream if upstream in ids else origin[upstream]
+        for member in walked:
+            origin[member] = start
+        groups[start][cell] = target
+    expected = []
+    for start, component in sorted(groups.items()):
+        vertices = [start]
+        while vertices[-1] in component:
+            vertices.append(component[vertices[-1]])
+        coords = [(transform[0]+(col+.5)*transform[1], transform[3]+(row+.5)*transform[5])
+                  for row, col in vertices]
+        length = math.fsum(math.hypot((b[1]-a[1])*transform[1], (b[0]-a[0])*transform[5])*metres
+                           for a, b in zip(vertices, vertices[1:]))
+        expected.append((ids[start], *start, *vertices[-1], length, coords))
+    return edges, expected
+
+
+def _assert_stream_vector_complete(actual, directions, streams, transform, metres, epsg):
+    from collections import Counter
+    edges, expected = _stream_vector_edge_oracle(directions, streams, transform, metres)
+    assert list(actual.columns) == ['link_id','from_row','from_col','to_row','to_col','length_m','geometry']
+    assert all(str(actual[name].dtype) == 'int64' for name in actual.columns[:5])
+    assert str(actual.length_m.dtype) == 'float64' and actual.crs.to_epsg() == epsg
+    assert len(actual) == len(expected)
+    observed = Counter()
+    for row, truth in zip(actual.itertuples(index=False), expected):
+        assert tuple(row[:5]) == truth[:5]
+        assert row.length_m == pytest.approx(truth[5], rel=1e-12, abs=1e-9)
+        assert row.geometry.geom_type == 'LineString' and not row.geometry.has_z
+        assert list(row.geometry.coords) == truth[6] and row.length_m > 0
+        cells = [(round((y-transform[3])/transform[5]-.5),round((x-transform[0])/transform[1]-.5))
+                 for x,y in row.geometry.coords]
+        observed.update(zip(cells, cells[1:]))
+    assert observed == Counter(edges.items())
+
+
+@pytest.mark.parametrize('epsg,metres',[(3857,1.),(2222,.3048),(2277,1200/3937)])
+@pytest.mark.parametrize('case',['tree','crossing','terminal-gap','empty','invalid','adjacent-confluences'])
+def test_d8_stream_vector_full_geometry_edges_ids_units_and_geopackage(tmp_path,epsg,metres,case):
+    import geopandas as gpd
+    import operators.raster_compute as compute
+    from operators.io_operators import save
+    directions, streams = _strahler_tree()
+    if case == 'crossing':
+        directions = np.array([[2.,8.],[0.,0.]])
+        streams = np.ones_like(directions)
+    if case == 'terminal-gap':
+        directions = np.full((2,6),np.nan)
+        directions[0,:3]=[1,1,0];directions[1,1]=128;directions[0,4:]=[1,0]
+        streams=np.where(np.isfinite(directions),1.,np.nan)
+    if case == 'adjacent-confluences':
+        directions=np.array([[2.,4.,8.,np.nan],[1.,1.,0.,np.nan]])
+        streams=np.where(np.isfinite(directions),1.,np.nan)
+    if case in ('empty','invalid'):
+        directions=np.array([[1.,0.]]) if case=='empty' else np.full((2,3),np.nan)
+        streams=np.where(np.isfinite(directions),0.,np.nan)
+    paths=_strahler_files(tmp_path,directions,streams)
+    for path in paths:
+        ds=gdal.Open(str(path),gdal.GA_Update);crs=osr.SpatialReference();crs.ImportFromEPSG(epsg);ds.SetProjection(crs.ExportToWkt());ds.GetRasterBand(1).SetUnitType('classification');ds=None
+    before=[p.read_bytes() for p in paths];target=tmp_path/'river.gpkg'
+    transform=(500000,2,0,3000000,0,-3)
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        result=compute.raster_stream_to_vector_d8(source,mask,1,1)
+        _assert_stream_vector_complete(result,directions,streams,transform,metres,epsg)
+        assert set(source.workspace.iterdir())==prior
+        if case=='terminal-gap':assert list(result.link_id)==[1,3,4]
+        save(result,path=target.name,connection_info={'mount_path':str(tmp_path)})
+        assert target.stat().st_size>0
+        saved=gpd.read_file(target)
+        _assert_stream_vector_complete(saved,directions,streams,transform,metres,epsg)
+        ds=ogr.Open(str(target));layer=ds.GetLayer(0)
+        assert all(layer.GetLayerDefn().GetFieldDefn(i).GetType()==ogr.OFTInteger64 for i in range(5))
+        assert layer.GetLayerDefn().GetFieldDefn(5).GetType()==ogr.OFTReal
+        assert layer.GetSpatialRef().IsSame(crs)
+        layer=ds=None
+        snapshot=target.read_bytes();compute.raster_stream_to_vector_d8(source,mask,1,1)
+        assert target.read_bytes()==snapshot
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('seed',range(12))
+def test_d8_stream_vector_random_forests_independent_complete_edge_coverage(tmp_path,seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);directions=np.zeros((8,11))
+    for row in range(8):
+        for col in range(10):
+            choices=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if dx==1 and 0<=row+dy<8]
+            directions[row,col]=rng.choice(choices)
+    # No source may point out of the effective domain. Nonriver isolated outlets
+    # remain valid direction cells and must not become spurious vector features.
+    streams=np.ones_like(directions)
+    targets={(row+_STRAHLER_STEPS[directions[row,col]][0],col+1) for row in range(8) for col in range(10)}
+    for row in range(8):
+        if (row,10) not in targets:streams[row,10]=0
+    paths=_strahler_files(tmp_path,directions,streams)
+    with raster_workspace():
+        result=compute.raster_stream_to_vector_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        _assert_stream_vector_complete(result,directions,streams,(500000,2,0,3000000,0,-3),1.,3857)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['isolated','mixed','nonriver-donor','step-zero','step-infinite','coordinates-collapse','coordinates-infinite','length','overflow'])
+def test_d8_stream_vector_precise_degenerate_numeric_failures(language,case,monkeypatch):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]])
+    streams=np.ones_like(directions,dtype=bool)
+    transform=(500000,2,0,3000000,0,-3);factor=1.;key=case
+    if case in ('isolated','nonriver-donor'):
+        streams[:]=False;streams[0,-1]=True;key='isolated'
+    elif case=='mixed':
+        directions=np.array([[1.,0.,np.nan,0.]])
+        streams=np.isfinite(directions);key='isolated'
+    elif case=='step-zero':transform=(0,0,0,0,0,-3);key='step'
+    elif case=='step-infinite':factor=float('inf');key='step'
+    elif case=='coordinates-collapse':transform=(1e308,2,0,3000000,0,-3);key='coordinates'
+    elif case=='coordinates-infinite':transform=(1e308,1e308,0,3000000,0,-3);key='coordinates'
+    elif case=='length':transform=(0,1,0,0,0,-1);monkeypatch.setattr(compute,'_d8_length_steps',lambda *args:{1:1e308})
+    elif case=='overflow':monkeypatch.setattr(compute,'_D8_MAX_EXACT_COUNT',0)
+    with raster_error_language(language),pytest.raises(ValueError) as error:
+        compute._d8_stream_lines(directions,streams,transform,factor,'EPSG:3857')
+    assert str(error.value)==compute._D8_STREAM_VECTOR_MESSAGES[key][language=='en']
+
+
+def test_d8_stream_vector_long_route_cross_block_and_exact_original_vertices(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    width=10001;directions=np.ones((1,width));directions[0,-1]=0;streams=np.ones_like(directions)
+    paths=_strahler_files(tmp_path,directions,streams);reads=[];original=gdal.Band.ReadAsArray
+    def read(self,*args,**kwargs):
+        if len(args)>=4:reads.append(args[2:4])
+        return original(self,*args,**kwargs)
+    monkeypatch.setattr(gdal.Band,'ReadAsArray',read)
+    with raster_workspace():
+        result=compute.raster_stream_to_vector_d8(*[raster_load(source_plan(p)) for p in paths],1,1)
+        _assert_stream_vector_complete(result,directions,streams,(500000,2,0,3000000,0,-3),1.,3857)
+        assert len(result)==1 and len(result.geometry.iloc[0].coords)==width
+    assert reads and all(w<=512 and h<=512 for w,h in reads)
+
+
+@pytest.mark.parametrize('stage',['read','graph','line','frame'])
+def test_d8_stream_vector_injected_failures_no_private_outputs_or_source_mutation(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    paths=_strahler_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)));before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        source,mask=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        def fail(*args,**kwargs):raise RuntimeError('injected stream vector failure')
+        if stage=='read':monkeypatch.setattr(compute,'_blocks',fail)
+        if stage=='graph':monkeypatch.setattr(compute,'_d8_stream_graph',fail)
+        if stage=='line':monkeypatch.setattr(compute,'LineString',fail)
+        if stage=='frame':monkeypatch.setattr(compute.gpd,'GeoDataFrame',fail)
+        with pytest.raises(RuntimeError,match='injected stream vector failure'):compute.raster_stream_to_vector_d8(source,mask,1,1)
+        assert set(source.workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['direct','threshold','filled','empty','invalid','isolated','break','cycle'])
+def test_d8_stream_vector_real_async_save_composition_bilingual_failure_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server
+    import workflow_engine
+    import geopandas as gpd
+    import operators.raster_compute as compute
+    values=np.array([[3.,2.,1.,0.]]) if case=='filled' else np.array([[1.,1.,1.,0.]])
+    directions=np.array([[1.,1.,1.,0.]])
+    streams=np.ones_like(directions)
+    if case=='empty':streams[:]=0
+    if case=='invalid':values[:]=np.nan;directions[:]=np.nan;streams[:]=np.nan
+    if case=='isolated':streams[:]=0;streams[0,-1]=1
+    if case=='break':streams[0,1]=0
+    if case=='cycle':values[0,:2]=[1,16]
+    paths=_strahler_files(tmp_path,values,streams);before=[p.read_bytes() for p in paths];target=tmp_path/'river.gpkg'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[0])}}];prior='source'
+    if case=='filled':
+        tasks.extend([{'id':'fill','operator':'raster_fill_depressions','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'elevation_unit':'metre'}},
+          {'id':'direction','operator':'raster_flow_direction_d8','depends_on':['fill'],'params':{'input_raster':{'$ref':'fill'},'band':1,'elevation_unit':'metre'}}]);prior='direction'
+        directions=_d8_bellman_ford_oracle(_fill_level_reachability_oracle(values))
+    if case=='threshold':
+        tasks.extend([{'id':'accumulate','operator':'raster_flow_accumulation_d8','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1}},
+          {'id':'streams','operator':'raster_reclassify','depends_on':['accumulate'],'params':{'input_raster':{'$ref':'accumulate'},'band':1,'rules':[{'min':None,'max':1,'class':0},{'min':1,'max':None,'class':1}]}}]);streams=np.where(_accumulation_walk_oracle(directions)>=1,1.,0.)
+    else:tasks.append({'id':'streams','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(paths[1])}})
+    tasks.extend([{'id':'lines','operator':'raster_stream_to_vector_d8','depends_on':[prior,'streams'],'params':{'input_raster':{'$ref':prior},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}},
+      {'id':'save','operator':'save','depends_on':['lines'],'params':{'input_df':{'$ref':'lines'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_stream_to_vector_d8':workspaces.extend([params['input_raster'].workspace,params['stream_raster'].workspace])
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('isolated','break','cycle');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists()
+        assert '任务 lines 执行失败: '+compute._D8_STREAM_VECTOR_MESSAGES[case][language=='en'] in status['error']
+    else:
+        _assert_stream_vector_complete(gpd.read_file(target),directions,streams,(500000,2,0,3000000,0,-3),1.,3857)
+        assert target.stat().st_size>0
+    assert client.post('/api/operators/raster_stream_to_vector_d8/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('code,offset',list(_STRAHLER_STEPS.items()))
+def test_d8_stream_vector_eight_direction_centres_and_anisotropic_diagonal(code,offset):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code
+    dy,dx=offset;directions[1+dy,1+dx]=0
+    streams=np.where(np.isfinite(directions),1.,np.nan);transform=(500000,7,0,3000000,0,-11)
+    result=compute._d8_stream_lines(directions,streams==1,transform,1.,'EPSG:3857')
+    _assert_stream_vector_complete(result,directions,streams,transform,1.,3857)
+    assert result.length_m.iloc[0]==pytest.approx(math.hypot(dx*7,dy*11))
+
+
+def test_d8_stream_vector_selected_second_band_exact_mask_alpha_nodata_and_zero(tmp_path):
+    import operators.raster_compute as compute
+    values=np.zeros((3,7));values[0,:3]=[1,1,0];values[1,:]=[np.inf,-9999,np.nan,255,255,255,0]
+    alpha=np.full(values.shape,255.);alpha[1,3]=0;alpha[1,4]=np.nan;alpha[0,0]=128
+    mask=np.full(values.shape,255,np.uint8);mask[1,5]=0
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    streams=np.where(valid,0.,values);streams[0,:3]=1
+    paths=[]
+    for label,data in (('direction',values),('mask',streams)):
+        path=create_raster(tmp_path/(label+'.tif'),np.stack([np.full(values.shape,3.),data,alpha]),(500000,2,0,3000000,0,-3),'EPSG:3857')
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;paths.append(path)
+    before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        source,river=[raster_load(source_plan(p)) for p in paths];prior=set(source.workspace.iterdir())
+        result=compute.raster_stream_to_vector_d8(source,river,2,2)
+        _assert_stream_vector_complete(result,np.where(valid,values,np.nan),np.where(valid,streams,np.nan),(500000,2,0,3000000,0,-3),1.,3857)
+        assert len(result)==1 and result.length_m.iloc[0]==4 and set(source.workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_stream_vector_rejects_partial_coordinate_precision_collapse(language):
+    import operators.raster_compute as compute
+    directions=np.array([[2.,np.nan],[np.nan,0.]])
+    with raster_error_language(language),pytest.raises(ValueError) as error:
+        compute._d8_stream_lines(directions,np.isfinite(directions),(1e308,2,0,0,0,-3),1.,'EPSG:3857')
+    assert str(error.value)==compute._D8_STREAM_VECTOR_MESSAGES['coordinates'][language=='en']
