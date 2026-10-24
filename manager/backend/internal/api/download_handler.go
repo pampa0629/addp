@@ -26,7 +26,7 @@ func NewDownloadHandler(metadataService *service.MetadataService, protectionStor
 
 // DownloadFile 按 ResourceLocator 下载存储型数据项。
 // @Summary 下载存储数据项 | Download storage item
-// @Description 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP | Download a storage engine item by ResourceLocator; bundles multi-ref items as ZIP
+// @Description 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected
 // @Tags Manager
 // @Produce octet-stream
 // @Param locator query string true "资源定位符 URI | Resource locator URI"
@@ -52,6 +52,10 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 	target, plan, err := h.metadataService.ResolveStorageDownloadPlanByLocator(c.Request.Context(), locator, tenantID)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidDownloadBundle) {
+			invalidDownloadBundle(c)
+			return
+		}
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
 			return
@@ -76,6 +80,10 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	}
 	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), target.EngineID, plan, tenantID)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidDownloadBundle) {
+			invalidDownloadBundle(c)
+			return
+		}
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
 			return

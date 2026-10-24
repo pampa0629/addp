@@ -3340,9 +3340,11 @@ paths:
       x-ai-hint: 查询指定 locator 已保存的数据剖析结果；该接口不会触发源数据读取。
   /downloads/file:
     get:
-      description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP |
-        Download a storage engine item by ResourceLocator; bundles multi-ref items
-        as ZIP
+      description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs
+        的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by
+        ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs
+        common parent without flattening or renaming; invalid or duplicate compositions
+        are rejected
       parameters:
       - description: 资源定位符 URI | Resource locator URI
         in: query

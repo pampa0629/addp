@@ -858,8 +858,33 @@ func TestPhysicalWhitespaceContentBoundaryDoesNotGrantTrimmedAlias(t *testing.T)
 	if !storageRefBelongsToDataItem("ftp", exact, exact, descriptor) || storageRefBelongsToDataItem("ftp", exact, "models / TEST.PNG", descriptor) {
 		t.Fatal("content boundary conflates padded and unpadded names")
 	}
-	used := map[string]int{}
-	if uniqueZipEntryName("TEST.PNG", used) != "TEST.PNG" || uniqueZipEntryName(" TEST.PNG ", used) != " TEST.PNG " {
+	names, err := downloadBundleNames([]models.DownloadRef{{StorageRef: "models/TEST.PNG"}, {StorageRef: "models/ TEST.PNG "}})
+	if err != nil || strings.Join(names, "|") != "TEST.PNG| TEST.PNG " {
 		t.Fatal("ZIP renamed an exact constituent")
+	}
+}
+
+func TestDownloadBundleOptionalMissingMemberDoesNotChangeRelativePaths(t *testing.T) {
+	const engineType = "download_optional_root_fixture"
+	plugin.Register(newDownloadTestFilePlugin(engineType, map[string]string{"models/deep/a.obj": "original"}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+	svc := &MetadataService{systemClient: testSystemClient(t, 9, engineType, nil)}
+	tenant := uint(11)
+	plan := &models.DownloadPlan{Kind: models.DownloadKindBundle, Refs: []models.DownloadRef{{StorageRef: "models/deep/a.obj", Primary: true, Required: true, FileName: "a.obj"}, {StorageRef: "models/missing.png", FileName: "missing.png"}}}
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, &tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.File) != 1 || archive.File[0].Name != "deep/a.obj" {
+		t.Fatalf("remaining entry moved: %+v", archive.File)
 	}
 }

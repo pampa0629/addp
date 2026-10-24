@@ -43,3 +43,7 @@ func protectionRequired(c *gin.Context) {
 		"error_code": "security_protection_required",
 	})
 }
+
+func invalidDownloadBundle(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgDownloadBundleInvalid), "error_code": "download_bundle_invalid"})
+}

@@ -335,3 +335,6 @@ other = "导入来源核验暂不可用"
 
 [manager.error.item_refresh_failed]
 other = "数据项刷新失败，请核对扫描权限、服务状态后重试"
+
+[manager.error.download_bundle_invalid]
+other = "文件组成包含非法、重复或相互冲突的路径，无法生成下载包。请重新扫描后再试。"

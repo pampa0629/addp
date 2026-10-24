@@ -267,6 +267,9 @@ func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resour
 	if item == nil && storageRefRequiresMetaRefs(displayPath) {
 		return nil, fmt.Errorf("%w: multi-ref storage item requires scanned meta item refs", ErrDownloadNotSupported)
 	}
+	if err := validateDownloadItemRefPaths(item); err != nil {
+		return nil, err
+	}
 	descriptor := downloadItemDescriptor(item)
 	refs := downloadRefsFromDescriptor(descriptor)
 	if descriptor.Layout == format.LayoutMulti && len(refs) == 0 {
@@ -293,6 +296,13 @@ func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resour
 	fileName := path.Base(displayPath)
 	contentType := objectcontent.InferContentType(displayPath, "")
 	if len(refs) > 1 {
+		names, err := downloadBundleNames(refs)
+		if err != nil {
+			return nil, err
+		}
+		for index := range refs {
+			refs[index].FileName = names[index]
+		}
 		kind = models.DownloadKindBundle
 		fileName = bundleFileName(displayPath, descriptor)
 		contentType = "application/zip"
@@ -542,9 +552,12 @@ type downloadBundleEntry struct {
 }
 
 func (s *MetadataService) openDownloadBundleEntries(ctx context.Context, resourceID uint, plan *models.DownloadPlan, tenantID *uint) ([]downloadBundleEntry, error) {
-	usedNames := map[string]int{}
+	names, err := downloadBundleNames(plan.Refs)
+	if err != nil {
+		return nil, err
+	}
 	entries := make([]downloadBundleEntry, 0, len(plan.Refs))
-	for _, ref := range plan.Refs {
+	for index, ref := range plan.Refs {
 		reader, err := s.openDownloadRef(ctx, resourceID, ref, tenantID)
 		if err != nil {
 			if ref.Required {
@@ -554,7 +567,7 @@ func (s *MetadataService) openDownloadBundleEntries(ctx context.Context, resourc
 			continue
 		}
 		entries = append(entries, downloadBundleEntry{
-			name:   uniqueZipEntryName(ref.FileName, usedNames),
+			name:   names[index],
 			reader: reader,
 		})
 	}
@@ -656,7 +669,6 @@ func downloadItemDescriptor(item *commonModels.MetaItem) dataitem.ItemDescriptor
 func normalizeDownloadRefs(engineType, primaryStorageRef string, refs []models.DownloadRef) []models.DownloadRef {
 	primaryStorageRef = strings.Trim(primaryStorageRef, "/")
 	result := make([]models.DownloadRef, 0, len(refs))
-	seen := map[string]bool{}
 	for _, ref := range refs {
 		storageRef := strings.Trim(ref.StorageRef, "/")
 		if storageRef == "" {
@@ -665,10 +677,6 @@ func normalizeDownloadRefs(engineType, primaryStorageRef string, refs []models.D
 		if resourceutil.ItemTermMatches(engineType, plugin.EngineCatalogTermObject) {
 			storageRef = normalizeObjectDownloadRef(primaryStorageRef, storageRef)
 		}
-		if seen[storageRef] {
-			continue
-		}
-		seen[storageRef] = true
 		ref.StorageRef = storageRef
 		if ref.FileName == "" {
 			ref.FileName = path.Base(storageRef)
@@ -734,21 +742,6 @@ func bundleFileName(storageRef string, descriptor dataitem.ItemDescriptor) strin
 		base = "download"
 	}
 	return base + ".zip"
-}
-
-func uniqueZipEntryName(name string, used map[string]int) string {
-	name = strings.Trim(name, "/")
-	if name == "" || name == "." {
-		name = "file"
-	}
-	count := used[name]
-	used[name] = count + 1
-	if count == 0 {
-		return name
-	}
-	ext := path.Ext(name)
-	base := strings.TrimSuffix(name, ext)
-	return fmt.Sprintf("%s-%d%s", base, count+1, ext)
 }
 
 func parseStorageRange(rangeHeader string, size int64) (plugin.ReadOptions, int64, string, error) {

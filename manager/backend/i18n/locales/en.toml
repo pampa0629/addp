@@ -335,3 +335,6 @@ other = "The source changed or its index has no source version. Refresh metadata
 
 [manager.error.preview_source_unavailable]
 other = "The source version cannot be verified. Preview is paused; please retry later."
+
+[manager.error.download_bundle_invalid]
+other = "The file composition contains invalid, duplicate or conflicting paths. Rescan metadata before downloading the bundle."

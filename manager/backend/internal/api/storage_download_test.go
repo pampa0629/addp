@@ -19,83 +19,102 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 func TestDownloadFileModelCompositionPreservesExactBytes(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds"} {
-		t.Run(format, func(t *testing.T) {
-			primary := "models/" + format + "/model." + format
-			// Downloading does not parse model formats. Include non-text bytes to
-			// verify that both streaming and bundling preserve the entire payload.
-			files := map[string]string{primary: "model\x00\xff\x80\r\n" + format}
-			refs := []map[string]interface{}{{"path": primary, "role": "model", "required": true, "primary": true}}
-			if format == "3ds" {
-				files["models/3ds/texture.png"] = "texture\x00\xfe\x81\r\n"
-				refs = append(refs, map[string]interface{}{"path": "models/3ds/texture.png", "role": "texture", "required": true})
-			}
-			engineType := "api_model_download_fixture_" + format
-			plugin.Register(newAPIDownloadTestFilePlugin(engineType, files))
-			t.Cleanup(func() { plugin.Unregister(engineType) })
-			item, err := json.Marshal(map[string]interface{}{
-				"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": "file", "name": "model." + format, "full_name": primary,
-				"attributes": map[string]interface{}{"item": map[string]interface{}{"layout": "single", "format": format, "data_type": "model_3d", "refs": refs}},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, string(item)), nil, nil)
-			handler := NewDownloadHandler(metadata, apiDownloadProtectionGate{})
-			router := gin.New()
-			router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
-			router.GET("/downloads/file", handler.DownloadFile)
-			locator := "addp://engine/9/path/" + primary + "?type=file&item_id=1"
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil))
-			if response.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200", response.Code)
-			}
-			name := "model." + format
-			if len(refs) == 1 {
-				if !bytes.Equal(response.Body.Bytes(), []byte(files[primary])) {
-					t.Fatal("single-file download differs from its original bytes")
+	for _, object := range []bool{false, true} {
+		for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+			t.Run(fmt.Sprintf("%s/object=%v", format, object), func(t *testing.T) {
+				parent := "models/" + format
+				if object {
+					parent = "bucket/" + parent
 				}
-			} else {
-				name += ".zip"
-				if response.Header().Get("Content-Type") != "application/zip" {
-					t.Fatal("multi-ref model download must return application/zip")
+				primary := parent + "/model." + format
+				// Downloading does not parse model formats. Include non-text bytes to
+				// verify that both streaming and bundling preserve the entire payload.
+				files := map[string]string{primary: "model\x00\xff\x80\r\n" + format}
+				refs := []map[string]interface{}{{"path": primary, "role": "model", "required": true, "primary": true}}
+				if format == "3ds" || format == "dae" {
+					files[parent+"/texture.png"] = "texture\x00\xfe\x81\r\n"
+					refs = append(refs, map[string]interface{}{"path": parent + "/texture.png", "role": "texture", "required": true})
 				}
-				archive, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
+				if format == "obj" {
+					for _, name := range []string{"paint red.mtl", "paint blue.mtl", "red/color.png", "blue/color.png"} {
+						files[parent+"/"+name] = name + "\x00\xfe\r\n"
+						refs = append(refs, map[string]interface{}{"path": parent + "/" + name, "role": "dependency", "required": true})
+					}
+				}
+				engineType := fmt.Sprintf("api_model_download_fixture_%s_%v", format, object)
+				itemType := "file"
+				if object {
+					plugin.Register(newAPIDownloadTestObjectPlugin(engineType, files))
+					itemType = "object"
+				} else {
+					plugin.Register(newAPIDownloadTestFilePlugin(engineType, files))
+				}
+				t.Cleanup(func() { plugin.Unregister(engineType) })
+				item, err := json.Marshal(map[string]interface{}{
+					"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": itemType, "name": "model." + format, "full_name": primary,
+					"attributes": map[string]interface{}{"item": map[string]interface{}{"layout": "single", "format": format, "data_type": "model_3d", "refs": refs}},
+				})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(archive.File) != len(refs) {
-					t.Fatal("bundle must contain exactly the primary and confirmed texture")
+				metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, string(item)), nil, nil)
+				handler := NewDownloadHandler(metadata, apiDownloadProtectionGate{})
+				router := gin.New()
+				router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
+				router.GET("/downloads/file", handler.DownloadFile)
+				locator := "addp://engine/9/path/" + primary + "?type=" + itemType + "&item_id=1"
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil))
+				if response.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200", response.Code)
 				}
-				seen := map[string]bool{}
-				for _, entry := range archive.File {
-					original, ok := files["models/3ds/"+entry.Name]
-					if !ok || seen[entry.Name] {
-						t.Fatalf("unexpected or duplicate member %q", entry.Name)
+				name := "model." + format
+				if len(refs) == 1 {
+					if !bytes.Equal(response.Body.Bytes(), []byte(files[primary])) {
+						t.Fatal("single-file download differs from its original bytes")
 					}
-					seen[entry.Name] = true
-					content, err := entry.Open()
+				} else {
+					name += ".zip"
+					if response.Header().Get("Content-Type") != "application/zip" {
+						t.Fatal("multi-ref model download must return application/zip")
+					}
+					archive, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
 					if err != nil {
 						t.Fatal(err)
 					}
-					raw, err := io.ReadAll(content)
-					_ = content.Close()
-					if err != nil || !bytes.Equal(raw, []byte(original)) || sha256.Sum256(raw) != sha256.Sum256([]byte(original)) {
-						t.Fatalf("member %q differs from its original bytes", entry.Name)
+					if len(archive.File) != len(refs) {
+						t.Fatal("bundle must contain exactly the primary and confirmed texture")
+					}
+					seen := map[string]bool{}
+					for _, entry := range archive.File {
+						original, ok := files[parent+"/"+entry.Name]
+						if !ok || seen[entry.Name] {
+							t.Fatalf("unexpected or duplicate member %q", entry.Name)
+						}
+						seen[entry.Name] = true
+						content, err := entry.Open()
+						if err != nil {
+							t.Fatal(err)
+						}
+						raw, err := io.ReadAll(content)
+						_ = content.Close()
+						if err != nil || !bytes.Equal(raw, []byte(original)) || sha256.Sum256(raw) != sha256.Sum256([]byte(original)) {
+							t.Fatalf("member %q differs from its original bytes", entry.Name)
+						}
 					}
 				}
-			}
-			if response.Header().Get("Content-Disposition") != fmt.Sprintf("attachment; filename=%q", name) {
-				t.Fatal("logical-object download filename differs")
-			}
-			t.Logf("format=%s status=%d bytes=%d refs=%d content_type=%q disposition=%q", format, response.Code, response.Body.Len(), len(refs), response.Header().Get("Content-Type"), response.Header().Get("Content-Disposition"))
-		})
+				if response.Header().Get("Content-Disposition") != fmt.Sprintf("attachment; filename=%q", name) {
+					t.Fatal("logical-object download filename differs")
+				}
+				t.Logf("format=%s status=%d bytes=%d refs=%d content_type=%q disposition=%q", format, response.Code, response.Body.Len(), len(refs), response.Header().Get("Content-Type"), response.Header().Get("Content-Disposition"))
+			})
+		}
 	}
 }
 
@@ -430,4 +449,62 @@ func (p *apiDownloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.Conn
 		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
 	return io.NopCloser(strings.NewReader(content)), nil
+}
+
+func TestDownloadFileRejectsMalformedRawCompositionWithLocalizedError(t *testing.T) {
+	for _, object := range []bool{false, true} {
+		for _, lang := range []string{"zh-cn", "en"} {
+			for _, bad := range []string{"models/model.obj", "../secret", "/absolute", "models/./a", "models//a", "models/model.obj/child"} {
+				t.Run(fmt.Sprintf("%v/%s/%s", object, lang, bad), func(t *testing.T) {
+					engineType := fmt.Sprintf("api_bad_bundle_%v_%s_%s", object, lang, bad)
+					primary := "models/model.obj"
+					itemType := "file"
+					if object {
+						primary = "bucket/" + primary
+						itemType = "object"
+						if strings.HasPrefix(bad, "models/") {
+							bad = "bucket/" + bad
+						}
+					}
+					files := map[string]string{primary: "must not be read"}
+					if object {
+						plugin.Register(newAPIDownloadTestObjectPlugin(engineType, files))
+					} else {
+						plugin.Register(newAPIDownloadTestFilePlugin(engineType, files))
+					}
+					t.Cleanup(func() { plugin.Unregister(engineType) })
+					refs := []map[string]interface{}{{"path": primary, "primary": true, "required": true}, {"path": bad, "required": true}}
+					item, err := json.Marshal(map[string]interface{}{"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": itemType, "name": "model.obj", "full_name": primary, "attributes": map[string]interface{}{"item": map[string]interface{}{"layout": "single", "format": "obj", "refs": refs}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, string(item)), nil, nil)
+					handler := NewDownloadHandler(metadata, apiDownloadProtectionGate{})
+					router := gin.New()
+					router.Use(commoni18n.I18nMiddleware())
+					router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
+					router.GET("/downloads/file", handler.DownloadFile)
+					locator := "addp://engine/9/path/" + primary + "?type=" + itemType + "&item_id=1"
+					req := httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil)
+					req.Header.Set("Accept-Language", lang)
+					response := httptest.NewRecorder()
+					router.ServeHTTP(response, req)
+					var body struct {
+						Error string `json:"error"`
+						Code  string `json:"error_code"`
+					}
+					if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+						t.Fatal(err)
+					}
+					word := "组成"
+					if lang == "en" {
+						word = "composition"
+					}
+					if response.Code != http.StatusBadRequest || body.Code != "download_bundle_invalid" || !strings.Contains(body.Error, word) || response.Header().Get("Content-Type") == "application/zip" {
+						t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+					}
+				})
+			}
+		}
+	}
 }

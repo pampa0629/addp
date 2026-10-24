@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
+	MsgDownloadBundleInvalid   = "manager.error.download_bundle_invalid"
 	MsgImportSourceInvalid     = "manager.import.source_invalid"
 	MsgImportSourceNotFound    = "manager.import.source_not_found"
 	MsgImportSourceUnavailable = "manager.import.source_unavailable"
