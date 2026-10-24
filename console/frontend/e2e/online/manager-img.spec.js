@@ -9,9 +9,10 @@ import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefr
 test('IMG native metadata, COG pixels and cached reopen through the real Console', async ({ page }) => {
   test.setTimeout(240_000)
   const env = process.env
-  const evidence = JSON.parse(env.ADDP_ONLINE_MANAGER_IMG_JSON || '{}')
+  const evidence = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON || '{}')
   expect(evidence.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(evidence.cases.map(source => source.case)).toEqual(['wgs84', 'utm50n', 'unlocated'])
+  expect(['img', 'jpeg2000']).toContain(evidence.source_format)
+  expect(evidence.cases.map(source => source.case)).toEqual(evidence.source_format === 'img' ? ['wgs84', 'utm50n', 'unlocated'] : ['wgs84', 'utm50n', 'unlocated', 'codestream'])
   const expectedIdentity = { principalID: evidence.identity.principal_id, tenantID: evidence.identity.tenant_id,
     permissions: new Set(evidence.identity.permissions_verified) }
   const diagnostics = createBrowserGpuDiagnostics('img-login')
@@ -51,11 +52,11 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       sha256: source.sha256, source_srid: source.source_srid }
     try {
       const meta = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'IMG source metadata')
-      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: 'img', layout: 'single' })
-      expect(meta.attributes.type_info.media).toMatchObject({ encoding: 'HFA', width: 256, height: 256 })
-      expect(meta.attributes.format_info.img).toMatchObject({ scan_complete: true, band_count: 3, driver: 'HFA' })
+      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: 'single' })
+      expect(meta.attributes.type_info.media).toMatchObject({ encoding: source.driver, width: 256, height: 256 })
+      expect(meta.attributes.format_info[evidence.source_format]).toMatchObject({ scan_complete: true, band_count: 3, driver: source.driver })
       await frame.getByRole('tab', { name: /^(?:属性|Attributes)$/, exact: true }).click()
-      await expect(frame.getByText('HFA', { exact: true }).first()).toBeVisible()
+      await expect(frame.getByText(source.driver, { exact: true }).first()).toBeVisible()
       actual.metadata_verified = true
       await frame.getByRole('tab', { name: /^(?:预览|Preview)$/, exact: true }).click()
       if (source.source_srid === null) {
@@ -64,7 +65,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         await expect(frame.locator('.raster-tiff-quick-view')).toHaveCount(0)
         actual.generation_unavailable = true
         actual.map_absent = true
-        await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'img-unlocated.png') })
+        await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${evidence.source_format}-${source.case}.png`) })
       } else {
         expect(meta.attributes.capabilities.spatial.srid).toBe(source.source_srid)
         const response = await rangeResponse
@@ -86,7 +87,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         actual.map_loaded = true
         actual.preview_url = source.preview_url
         diagnostics.setStage(`img-${source.case}:screenshot`)
-        await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `img-${source.case}.png`) })
+        await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${evidence.source_format}-${source.case}.png`) })
         diagnostics.setStage(`img-${source.case}:reopen`)
         const reloaded = page.waitForResponse(result => new URL(result.url()).pathname === '/api/v1/manager/quick-view/capability'
           && new URL(result.url()).searchParams.get('locator') === source.locator)
@@ -119,9 +120,9 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   expect(generationRequests).toBe(0)
   expect(warnings).toEqual([])
   expect(failures).toEqual([])
-  writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-img-browser.json'), JSON.stringify({
-    schema_version: 'addp.manager-img-browser/v1', run_id: evidence.run_id, result: 'passed',
-    identity: evidence.identity, cases, generation_requests: generationRequests,
+  writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-${evidence.source_format}-browser.json`), JSON.stringify({
+    schema_version: 'addp.manager-raster-media-browser/v1', run_id: evidence.run_id, result: 'passed',
+    source_format: evidence.source_format, identity: evidence.identity, cases, generation_requests: generationRequests,
     failed_business_responses: failures.length, warnings_errors: warnings.length,
     gpu_performance_diagnostics: diagnostics.snapshot()
   }) + '\n')

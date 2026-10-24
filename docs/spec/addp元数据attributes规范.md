@@ -352,6 +352,10 @@ TIFF / GeoTIFF 的 CRS、extent、transform 等跨格式空间事实写入 `capa
 
 `format=img` 首期只接受自包含 ERDAS Imagine HFA。Runtime 检查返回 `driver=HFA`、`profile=hfa`、`scan_complete=true`、`band_count` 及每个波段的 `dtype`、`color_interpretation`、`nodata`、`nodata_is_nan`、`block_size` 和 `overviews`。这些为源格式事实，不存像元或转换结果。宽高、编码及大小属于 `type_info.media`；源 CRS、完整自定义 WKT 定义及覆盖范围仍属于 `capabilities.spatial`，不猜测缺失定位。失败的本次摘要必须清除旧媒体、空间与 IMG 完整标记，错误按 Meta 原有扫描/刷新事务语义处理，不把失败检查登记为成功。
 
+### format_info.jpeg2000
+
+自包含 JPEG2000 的 Runtime 摘要保存 `driver=JP2OpenJPEG`、`profile=jp2/j2k`、`scan_complete=true`、`band_count` 与 `bands`（结构沿用 IMG 的波段摘要）。宽高、编码、MIME、原大小属于 `type_info.media`，内部 GeoJP2／GMLJP2 的源 CRS 与 extent 属于 `capabilities.spatial`。不读取外部定位或把 J2K 的像素坐标推断为经纬度。失败必须清除旧媒体、空间与完整标记；源编码与派生 COG 不混用。
+
 ### format_info.raster_mosaic
 
 `format_info.raster_mosaic` 表达栅格镶嵌数据集的格式层事实。Raster mosaic 是 `data_type=media`、`layout=whole`、`format=raster_mosaic` 的 whole-scope 数据集，不是单个 TIFF / COG。

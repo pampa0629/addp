@@ -29,6 +29,85 @@ from operators.raster_operators import build_raster_mosaic
 from operators.raster_compute import raster_inspect, _require_self_contained_hfa
 
 
+
+@pytest.mark.parametrize('codec,epsg,geoboxes', [
+    ('JP2',4326,['GeoJP2=YES','GMLJP2=NO']),
+    ('JP2',32650,['GeoJP2=NO','GMLJP2=YES']),
+    ('JP2',None,['GeoJP2=NO','GMLJP2=NO']),
+    ('J2K',None,[]),
+])
+@pytest.mark.parametrize('lossless', [True, False])
+def test_jpeg2000_native_inspection_and_cog_preserve_decoded_pixels(tmp_path, codec, epsg, geoboxes, lossless):
+    path = tmp_path / ('scene.jp2' if codec == 'JP2' else 'scene.j2k')
+    source = gdal.GetDriverByName('MEM').Create('', 64, 32, 3, gdal.GDT_Byte)
+    grid = (113.,.001,0.,28.,0.,-.001) if epsg == 4326 else (500000.,10.,0.,3100000.,0.,-10.)
+    if epsg:
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(epsg)
+        source.SetSpatialRef(crs); source.SetGeoTransform(grid)
+    expected = np.arange(64*32,dtype=np.uint8).reshape(32,64)
+    for i in range(1,4): source.GetRasterBand(i).WriteArray(expected + i)
+    encoded = gdal.GetDriverByName('JP2OpenJPEG').CreateCopy(str(path),source,options=[
+        'CODEC='+codec, 'REVERSIBLE='+('YES' if lossless else 'NO'),
+        'QUALITY='+('100' if lossless else '35'), 'RESOLUTIONS=2', *geoboxes])
+    encoded = None; source = None
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    decoded = gdal.OpenEx(str(path),gdal.OF_RASTER,allowed_drivers=['JP2OpenJPEG'],open_options=['GEOREF_SOURCES=INTERNAL'])
+    native_pixels = decoded.ReadAsArray(); decoded = None
+    # Even explicitly conflicting external positioning must not override the internal source.
+    Path(str(path)+'.aux.xml').write_text('<PAMDataset><SRS>EPSG:3857</SRS><GeoTransform>1,1,0,2,0,-1</GeoTransform></PAMDataset>')
+    path.with_suffix('.j2w').write_text('1\n0\n0\n-1\n100\n100\n')
+    facts = raster_inspect(source_plan(path,'jpeg2000'))
+    assert facts['format'] == 'jpeg2000'
+    description = facts['description']
+    assert description['media']['encoding'] == 'JP2OpenJPEG'
+    assert description['media']['size_bytes'] == path.stat().st_size
+    assert description['format_info']['profile'] == codec.lower()
+    assert description['format_info']['scan_complete'] is True
+    assert description['format_info']['band_count'] == 3
+    if epsg:
+        assert description['spatial']['srid'] == epsg
+    else:
+        assert description['spatial'] is None
+    target = tmp_path/'result.cog.tif'
+    plan = {**source_plan(path,'jpeg2000'),'target':target_plan(target)['target']}
+    raster_to_cog(plan)
+    output = gdal.Open(str(target))
+    np.testing.assert_array_equal(output.ReadAsArray(),native_pixels)
+    if lossless:
+        for i in range(3): np.testing.assert_array_equal(native_pixels[i],expected+i+1)
+    if epsg:
+        assert output.GetSpatialRef().GetAuthorityCode(None)==str(epsg)
+        assert output.GetGeoTransform() == pytest.approx(grid)
+    else: assert not output.GetProjection() and output.GetGeoTransform(can_return_null=True) is None
+    output = None
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==before
+
+
+@pytest.mark.parametrize('mutation', ['wrong-magic','bad-length','multi-codestream','external-fragments','jpx'])
+def test_jpeg2000_framing_rejected_before_native_open(tmp_path, monkeypatch, mutation):
+    import struct
+    signature = b'\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a'
+    def box(kind,payload): return struct.pack('>I4s',len(payload)+8,kind)+payload
+    ftyp = box(b'ftyp',b'jp2 '+bytes(4)+b'jp2 ')
+    stream = box(b'jp2c',b'\xff\x4f\xff\x51')
+    raw = signature+ftyp+stream
+    if mutation=='wrong-magic': raw=b'not a JPEG2000 file'
+    elif mutation=='bad-length': raw=signature+struct.pack('>I4s',0xfffffffe,b'ftyp')
+    elif mutation=='multi-codestream': raw+=stream
+    elif mutation=='external-fragments': raw+=box(b'ftbl',b'')
+    elif mutation=='jpx': raw=signature+box(b'ftyp',b'jpx '+bytes(4)+b'jpx ')+stream
+    path=tmp_path/'invalid.jp2';path.write_bytes(raw)
+    monkeypatch.setattr(gdal,'OpenEx',lambda *a,**kw:pytest.fail('native decoder opened invalid composition'))
+    with pytest.raises(ValueError): raster_inspect(source_plan(path,'jpeg2000'))
+
+
+def test_jpeg2000_disguised_tiff_and_truncated_codestream_rejected(tmp_path):
+    fake=create_raster(tmp_path/'fake.jp2',np.ones((2,2)))
+    with pytest.raises(ValueError,match='JPEG2000'): raster_inspect(source_plan(fake,'jpeg2000'))
+    path=tmp_path/'truncated.j2k';path.write_bytes(b'\xff\x4f\xff\x51'+bytes(64))
+    with pytest.raises((ValueError,RuntimeError)): raster_inspect(source_plan(path,'jpeg2000'))
+
+
 @pytest.mark.parametrize('compressed', [False, True])
 @pytest.mark.parametrize('epsg', [4326, 32650, None])
 def test_img_real_hfa_inspect_and_cog_pixels(tmp_path, compressed, epsg):

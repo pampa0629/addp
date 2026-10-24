@@ -171,6 +171,11 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			wantPreviewable: false,
 		},
 		{
+			name:         "jpeg2000_requires_managed_cog_even_with_image_mime",
+			input:        previewHintInput{Name: "scene.jp2", Format: format.FormatJPEG2000, DataType: string(datatype.Media), ContentType: "image/jp2"},
+			wantMaterial: "unsupported", wantRenderer: "unsupported", wantPreviewable: false,
+		},
+		{
 			name: "known_video",
 			input: previewHintInput{
 				Name:     "clip.mp4",

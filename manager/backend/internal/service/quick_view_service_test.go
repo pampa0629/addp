@@ -294,41 +294,45 @@ func TestQuickViewCapabilityUsesDirectTIFFForSmallRasterItem(t *testing.T) {
 	}
 }
 
-func TestIMGRequiresCompleteMetaFactsAndManagedCOGEvenWhenSmall(t *testing.T) {
-	attrs := map[string]interface{}{
-		"item":         map[string]interface{}{"data_type": "media", "format": "img"},
-		"type_info":    map[string]interface{}{"media": map[string]interface{}{"width": 32, "height": 16}},
-		"format_info":  map[string]interface{}{"img": map[string]interface{}{"profile": "hfa", "band_count": 3}},
-		"capabilities": map[string]interface{}{"spatial": map[string]interface{}{"srid": 4326, "extent": []float64{110, 20, 120, 30}}},
-	}
-	locator := "addp://engine/26/path/scene.img?type=file&item_id=99"
-	if RasterQuickViewSourceFromAttributes(attrs, locator, 26) != nil {
-		t.Fatal("unverified IMG acquired COG capability")
-	}
-	attrs["format_info"].(map[string]interface{})["img"].(map[string]interface{})["scan_complete"] = true
-	source := RasterQuickViewSourceFromAttributes(attrs, locator, 26)
-	if source == nil || source.Format != "img" || source.BandCount != 3 || source.ClientRenderLibrary != "" {
-		t.Fatalf("bad IMG source: %+v", source)
-	}
-	svc := NewQuickViewService(newTileCacheTaskServiceTestDB(t), nil)
-	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: commonModels.GenerateItemFingerprint(26, "scene.img"), Locator: locator},
-		EngineID: 26, Raster: source,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if capability.CanUseQuickView || capability.RenderSource == QuickViewRenderSourceDirectTIFF || capability.Raster.RecommendedAction != "create_cog" {
-		t.Fatalf("IMG must never go to direct TIFF renderer: %+v", capability)
-	}
-	source.SourceSRID = 0
-	source.SourceCRS = ""
-	applyRasterCRSInference(source)
-	if source.SourceSRID != 0 || source.CRSInferred {
-		t.Fatal("invented IMG CRS from longitude-like extent")
-	}
-	if rasterUnavailableReason(source, 0, 0) != RasterUnavailableReasonMissingCRS || rasterUnavailableOptionalAction(RasterUnavailableReasonMissingCRS, source) != "" {
-		t.Fatal("unpositioned IMG offered map generation")
+func TestNativeRasterRequiresCompleteMetaFactsAndManagedCOGEvenWhenSmall(t *testing.T) {
+	for _, sourceFormat := range []string{"img", "jpeg2000"} {
+		t.Run(sourceFormat, func(t *testing.T) {
+			attrs := map[string]interface{}{
+				"item":         map[string]interface{}{"data_type": "media", "format": sourceFormat},
+				"type_info":    map[string]interface{}{"media": map[string]interface{}{"width": 32, "height": 16}},
+				"format_info":  map[string]interface{}{sourceFormat: map[string]interface{}{"profile": "hfa", "band_count": 3}},
+				"capabilities": map[string]interface{}{"spatial": map[string]interface{}{"srid": 4326, "extent": []float64{110, 20, 120, 30}}},
+			}
+			locator := "addp://engine/26/path/scene.img?type=file&item_id=99"
+			if RasterQuickViewSourceFromAttributes(attrs, locator, 26) != nil {
+				t.Fatal("unverified IMG acquired COG capability")
+			}
+			attrs["format_info"].(map[string]interface{})[sourceFormat].(map[string]interface{})["scan_complete"] = true
+			source := RasterQuickViewSourceFromAttributes(attrs, locator, 26)
+			if source == nil || source.Format != sourceFormat || source.BandCount != 3 || source.ClientRenderLibrary != "" {
+				t.Fatalf("bad IMG source: %+v", source)
+			}
+			svc := NewQuickViewService(newTileCacheTaskServiceTestDB(t), nil)
+			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: commonModels.GenerateItemFingerprint(26, "scene.img"), Locator: locator},
+				EngineID: 26, Raster: source,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if capability.CanUseQuickView || capability.RenderSource == QuickViewRenderSourceDirectTIFF || capability.Raster.RecommendedAction != "create_cog" {
+				t.Fatalf("IMG must never go to direct TIFF renderer: %+v", capability)
+			}
+			source.SourceSRID = 0
+			source.SourceCRS = ""
+			applyRasterCRSInference(source)
+			if source.SourceSRID != 0 || source.CRSInferred {
+				t.Fatal("invented IMG CRS from longitude-like extent")
+			}
+			if rasterUnavailableReason(source, 0, 0) != RasterUnavailableReasonMissingCRS || rasterUnavailableOptionalAction(RasterUnavailableReasonMissingCRS, source) != "" {
+				t.Fatal("unpositioned IMG offered map generation")
+			}
+		})
 	}
 }
 

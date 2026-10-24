@@ -1391,23 +1391,27 @@ func TestRasterConversionRejectsRuntimePlanAndUnsupportedFormat(t *testing.T) {
 	}
 }
 
-func TestRasterAdapterPreservesIMGIdentityInSourceOnlyPlan(t *testing.T) {
-	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
-		1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
-	})
-	workflow := map[string]interface{}{"tasks": []interface{}{
-		map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/image.img?type=file&item_id=8"}},
-	}}
-	result, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tasks, _ := workflowTasksFromInterface(result["tasks"])
-	params := tasks[0]["params"].(map[string]interface{})
-	plan := params["access_plan"].(commonModels.JSONMap)
-	source := plan["source"].(commonModels.JSONMap)
-	if source["format"] != "img" || source["kind"] != "file" || plan["target"] != nil || len(targets) != 0 {
-		t.Fatalf("invalid IMG source plan: %+v", plan)
+func TestRasterAdapterPreservesNativeRasterIdentityInSourceOnlyPlan(t *testing.T) {
+	for _, spec := range []struct{ extension, format string }{{"img", "img"}, {"jp2", "jpeg2000"}, {"j2k", "jpeg2000"}} {
+		t.Run(spec.extension, func(t *testing.T) {
+			svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+				1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+			})
+			workflow := map[string]interface{}{"tasks": []interface{}{
+				map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/image." + spec.extension + "?type=file&item_id=8"}},
+			}}
+			result, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tasks, _ := workflowTasksFromInterface(result["tasks"])
+			params := tasks[0]["params"].(map[string]interface{})
+			plan := params["access_plan"].(commonModels.JSONMap)
+			source := plan["source"].(commonModels.JSONMap)
+			if source["format"] != spec.format || source["kind"] != "file" || plan["target"] != nil || len(targets) != 0 {
+				t.Fatalf("invalid IMG source plan: %+v", plan)
+			}
+		})
 	}
 }
 

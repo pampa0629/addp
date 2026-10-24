@@ -68,6 +68,8 @@ COPY engines/geopython-workflow/workflow_engine.py .
 COPY engines/geopython-workflow/api_server.py .
 COPY engines/geopython-workflow/container_entrypoint.sh .
 
+RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'"
+
 # Verify the packaged API and health route without starting a service or contacting System.
 RUN python -c "import api_server; assert api_server.app.test_client().get('/health').status_code == 200"
 

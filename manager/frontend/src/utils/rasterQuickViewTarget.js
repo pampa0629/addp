@@ -31,7 +31,7 @@ export function isRasterCOGSourceMeta(previewData, selectedNode) {
   const attrs = rasterMetaAttributes(previewData, selectedNode)
   const item = nestedObject(attrs, 'item')
   return normalizedFormat(item.data_type) === 'media' &&
-    ['tiff', 'img'].includes(normalizedFormat(item.format))
+    ['tiff', 'img', 'jpeg2000'].includes(normalizedFormat(item.format))
 }
 
 export function isRasterMosaicMeta(previewData, selectedNode) {

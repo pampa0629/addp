@@ -1404,9 +1404,10 @@ def test_manager_cog_rejects_non_cog_layout(manager_physical):
         fixture.manager_worker('verify', manager_physical)
 
 
-def manager_img_target(config, case, corrupt=None):
-    source = config.parent / f'{case}.img'
-    source.write_bytes(LocalMinio.objects['source', 'business', f'raster/img-{case}.img'])
+def manager_img_target(config, case, corrupt=None, source_format='img'):
+    extension = 'img' if source_format == 'img' else 'jp2'
+    source = config.parent / f'{case}.{extension}'
+    source.write_bytes(LocalMinio.objects['source', 'business', f'raster/{source_format}-{case}.{extension}'])
     output = config.parent / f'{case}.cog.tif'
     dataset = gdal.Open(str(source))
     working = config.parent / f'{case}-working.tif'
@@ -1424,7 +1425,7 @@ def manager_img_target(config, case, corrupt=None):
     raw = output.read_bytes();fingerprint = ('a' if case == 'wgs84' else 'b') * 64
     key = f'tenant_42/cog/{fingerprint}/{case}.cog.tif'
     LocalMinio.objects['infra', 'manager', key] = raw
-    request = {'source_case': case, 'tenant_id': 42, 'fingerprint': fingerprint,
+    request = {'source_format': source_format, 'source_case': case, 'tenant_id': 42, 'fingerprint': fingerprint,
                'locator': f'addp-infra://minio/manager/{key}?type=object', 'size_bytes': len(raw),
                'sha256': hashlib.sha256(raw).hexdigest()}
     fixture.private_json(config.parent / 'manager-raster-request.json', request)
@@ -1432,13 +1433,12 @@ def manager_img_target(config, case, corrupt=None):
 
 
 @pytest.mark.parametrize('case', ['wgs84', 'utm50n'])
-def test_manager_img_real_hfa_cog_full_pixels_and_delete(manager_physical, case):
-    seed = fixture.manager_worker('img-source', manager_physical)
+@pytest.mark.parametrize('source_format',['img','jpeg2000'])
+def test_manager_img_real_hfa_cog_full_pixels_and_delete(manager_physical, case, source_format):
+    seed = fixture.manager_worker(source_format+'-source', manager_physical)
     assert seed['source_unchanged']
-    assert [s['case'] for s in seed['img_sources']] == ['wgs84', 'utm50n', 'unlocated']
-    for facts in seed['img_sources']:
-        assert LocalMinio.objects['source', 'business', facts['object']].startswith(b'EHFA_HEADER_TAG\x00')
-    request, key = manager_img_target(manager_physical, case)
+    assert [s['case'] for s in seed[source_format+'_sources']] == (['wgs84','utm50n','unlocated'] if source_format=='img' else ['wgs84','utm50n','unlocated','codestream'])
+    request, key = manager_img_target(manager_physical, case, source_format=source_format)
     evidence = fixture.manager_worker('verify', manager_physical)
     assert evidence == {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 196608,
                         'size_bytes': request['size_bytes'], 'sha256': request['sha256'], 'source_case': case}
@@ -1450,8 +1450,9 @@ def test_manager_img_real_hfa_cog_full_pixels_and_delete(manager_physical, case)
 
 @pytest.mark.parametrize('case', ['wgs84', 'utm50n'])
 @pytest.mark.parametrize('corrupt', ['pixels', 'nodata', 'grid', 'crs', 'layout', 'dtype'])
-def test_manager_img_oracle_rejects_corrupted_cog(manager_physical, case, corrupt):
-    manager_img_target(manager_physical, case, corrupt)
+@pytest.mark.parametrize('source_format',['img','jpeg2000'])
+def test_manager_img_oracle_rejects_corrupted_cog(manager_physical, case, corrupt, source_format):
+    manager_img_target(manager_physical, case, corrupt, source_format)
     with pytest.raises(fixture.FixtureError): fixture.manager_worker('verify', manager_physical)
 
 
@@ -2010,9 +2011,10 @@ def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(
         if failure == 'write' and len(attempted) == 2: raise OSError('AccessDenied: private storage diagnostic')
         result = publish(path, plan)
         if (failure == 'cleanup-mid' and len(attempted) == 1) or (failure == 'cleanup-final' and len(attempted) == 4):
-            import subprocess, sys, hashlib
-            events.append(json.loads(subprocess.check_output([sys.executable, '-c', fixture.CLEANUP_OBSTACLE_SCRIPT,
-                str(path.parent.parent), hashlib.sha256(path.read_bytes()).hexdigest(), str(path.stat().st_size)], text=True)))
+            import sys, hashlib
+            from operators import _native_process
+            events.append(json.loads(_native_process.run([sys.executable, '-c', fixture.CLEANUP_OBSTACLE_SCRIPT,
+                str(path.parent.parent), hashlib.sha256(path.read_bytes()).hexdigest(), str(path.stat().st_size)], capture_output=True, text=True, check=True).stdout))
         return result
     monkeypatch.setattr(compute, 'publish_target_file', deny_second)
     result = execute_workflow(definition)

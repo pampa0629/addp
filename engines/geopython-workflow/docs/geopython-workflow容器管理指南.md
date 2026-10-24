@@ -22,7 +22,7 @@ bash scripts/dev/start.sh -geopython-workflow
 ./scripts/dev/restart.sh -geopython-workflow
 ```
 
-start/restart 复用 [geopython-workflow.sh](../../../scripts/dev/geopython-workflow.sh)，同步依赖并核对绑定版本、依赖一致性、PGeo、OpenFileGDB、GTiff/COG 驱动、`EPSG:4326` 和端口归属。检查失败则终止准备、不启动该服务；重启先停止所选服务再执行准备。默认端口为 `8099`，实际地址以标准生命周期输出及 `.dev-state/ports.env` 为准；外部监听者占用开发端口时拒绝启动，不自动接管容器或外部进程。日志为 `logs/geopython-workflow-engine.log`。
+start/restart 复用 [geopython-workflow.sh](../../../scripts/dev/geopython-workflow.sh)，同步依赖并核对绑定版本、依赖一致性、PGeo、OpenFileGDB、GTiff/COG/HFA/JP2OpenJPEG 驱动、`EPSG:4326` 和端口归属。检查失败则终止准备、不启动该服务；重启先停止所选服务再执行准备。默认端口为 `8099`，实际地址以标准生命周期输出及 `.dev-state/ports.env` 为准；外部监听者占用开发端口时拒绝启动，不自动接管容器或外部进程。日志为 `logs/geopython-workflow-engine.log`。
 
 ## 产品镜像
 

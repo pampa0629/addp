@@ -19,7 +19,7 @@
 | RasterRef | 只投影尺寸、波段、CRS、transform、四角 extent、NoData 和 overview 等摘要，不建立第二种公开资源身份。 |
 | RasterArtifact | 已持久化栅格的成果事实；Develop 根据授权目标构造稳定 locator，不信任 Runtime 返回的路径或 locator。 |
 
-加载支持自包含 TIFF、PNG、JPEG 和 ERDAS Imagine HFA IMG（不含 spill、dependent file、RRD 引用列表），声明格式必须与实际 GDAL driver 一致；拒绝外部 sidecar 和伪装成 TIFF 的 VRT。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
+加载支持自包含 JPEG2000（JP2/J2K，内部定位）、TIFF、PNG、JPEG 和 ERDAS Imagine HFA IMG（不含 spill、dependent file、RRD 引用列表），声明格式必须与实际 GDAL driver 一致；拒绝外部 sidecar 和伪装成 TIFF 的 VRT。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
 
 栅格文件输出限定 `.tif/.tiff`，GeoTIFF 与 COG 是布局 profile。COG 编码复用唯一实现，压缩支持 DEFLATE/LZW/ZSTD/NONE，块大小为 128–4096 内的 16 倍数。目录全局 overview 及其内部金字塔从完整全局网格生成，不复用 leaf 的局部抽样金字塔。
 

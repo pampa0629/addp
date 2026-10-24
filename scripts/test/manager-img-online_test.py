@@ -13,9 +13,9 @@ OWNER = importlib.import_module('scripts.test.manager-internal-artifact-lineage-
 
 
 def detail(spec, index=1):
-    attrs = {'item': {'data_type': 'media', 'format': 'img', 'layout': 'single'},
-             'type_info': {'media': {'kind': 'image', 'encoding': 'HFA', 'width': 256, 'height': 256}},
-             'format_info': {'img': {'scan_complete': True, 'driver': 'HFA', 'band_count': 3}}}
+    attrs = {'item': {'data_type': 'media', 'format': spec['source_format'], 'layout': 'single'},
+             'type_info': {'media': {'kind': 'image', 'encoding': spec['driver'], 'width': 256, 'height': 256}},
+             'format_info': {spec['source_format']: {'scan_complete': True, 'driver': spec['driver'], 'band_count': 3}}}
     if spec['source_srid']:
         attrs['capabilities'] = {'spatial': {'srid': spec['source_srid'], 'extent': list(spec['extent'])}}
     return {'id': index, 'item_type': 'object', 'fingerprint': str(index) * 64,
@@ -33,8 +33,8 @@ def browser_report(evidence):
         else:
             case.update(generation_unavailable=True, map_absent=True)
         cases.append(case)
-    return {'schema_version': 'addp.manager-img-browser/v1', 'result': 'passed', 'run_id': evidence['run_id'],
-            'identity': evidence['identity'], 'cases': cases, 'generation_requests': 0,
+    return {'schema_version': 'addp.manager-raster-media-browser/v1', 'result': 'passed', 'run_id': evidence['run_id'],
+            'source_format':evidence['source_format'], 'identity': evidence['identity'], 'cases': cases, 'generation_requests': 0,
             'failed_business_responses': 0, 'warnings_errors': 0}
 
 
@@ -55,10 +55,10 @@ class ManagerIMGTests(unittest.TestCase):
                     self.assertTrue(any(matches),(locale,role,name,patterns))
 
     def test_meta_accepts_located_and_unknown_facts_but_rejects_false_claims(self):
-        for spec in IMG.SOURCES:
+        for spec in (*IMG.SOURCES, *IMG.JPEG2000_SOURCES):
             good = detail(spec)
             IMG.validate_meta(OWNER, good, spec)
-            mutations = [lambda d: d['attributes']['format_info']['img'].update(scan_complete=False),
+            mutations = [lambda d: d['attributes']['format_info'][spec['source_format']].update(scan_complete=False),
                          lambda d: d['attributes']['type_info']['media'].update(encoding='GTiff'),
                          lambda d: d['attributes']['item'].update(format='tiff')]
             if spec['source_srid']:
@@ -70,7 +70,7 @@ class ManagerIMGTests(unittest.TestCase):
                 with self.assertRaises(OWNER.SuiteError): IMG.validate_meta(OWNER, bad, spec)
 
     def test_browser_requires_each_source_real_colors_range_reopen_and_no_generation(self):
-        evidence = {'run_id': 'run', 'identity': {'principal_id': '3'},
+        evidence = {'source_format':'img', 'run_id': 'run', 'identity': {'principal_id': '3'},
                     'cases': [{**spec, 'item_id': i, 'locator': f'item:{i}', 'sha256': 'a' * 64,
                                'preview_url': '/api/v1/manager/raster_cog/1/content'} for i, spec in enumerate(IMG.SOURCES, 1)]}
         report = browser_report(evidence)
@@ -84,10 +84,11 @@ class ManagerIMGTests(unittest.TestCase):
             bad = copy.deepcopy(report); mutate(bad)
             with self.assertRaises(OWNER.SuiteError): IMG.validate_browser(OWNER, bad, evidence)
 
-    def scenario(self, root, *, fail_browser=False, fail_delete=False, wrong_task_format=False):
-        items = [detail(spec, i) for i, spec in enumerate(IMG.SOURCES, 1)]
-        seed = {'source_unchanged': True, 'img_sources': [{**{k: s[k] for k in ('case', 'object', 'source_srid')},
-                 'size_bytes': 4, 'sha256': hashlib.sha256(b'test').hexdigest()} for s in IMG.SOURCES]}
+    def scenario(self, root, *, fail_browser=False, fail_delete=False, wrong_task_format=False, source_format="img"):
+        sources = {"img": IMG.SOURCES, "jpeg2000": IMG.JPEG2000_SOURCES}[source_format]
+        items = [detail(spec, i) for i, spec in enumerate(sources, 1)]
+        seed = {'source_unchanged': True, source_format+'_sources': [{**{k: s[k] for k in ('case', 'object', 'source_srid')},
+                 'size_bytes': 4, 'sha256': hashlib.sha256(b'test').hexdigest()} for s in sources]}
         generated, cleaned = [], []
         def request(method, path, expected, body=None):
             parsed = urlsplit(path)
@@ -96,7 +97,8 @@ class ManagerIMGTests(unittest.TestCase):
             elif parsed.path == '/api/v1/manager/downloads/file': return OWNER.Response(200, {}, {}, b'test')
             elif parsed.path == '/api/v1/manager/quick-view/capability': payload = {'available_actions': [], 'can_use_quick_view': False}
             elif parsed.path.startswith('/api/v1/manager/tasks/'):
-                payload = {'config': {'raster': {'source_format': 'tiff' if wrong_task_format else 'img'}}}
+                payload = {'config': {'raster': {'source_format': 'tiff' if wrong_task_format else source_format}}}
+            elif parsed.path.endswith('/content'): return OWNER.Response(200, {}, {}, b'test')
             elif parsed.path == '/api/v1/manager/raster_cog':
                 task = int(parse_qs(parsed.query)['task_id'][0]);payload = {'total': 1, 'data': [{'id': task + 10, 'last_execution_id': f'exec-{task}'}]}
             else: raise AssertionError((method, path))
@@ -105,7 +107,7 @@ class ManagerIMGTests(unittest.TestCase):
         def generate(_client, fixture, tenant, timeout, physical, source_facts=None):
             generated.append(fixture.format);fixture.task_id = fixture.item['id'];fixture.result_id = fixture.task_id + 10
             fixture.execution_id = f'exec-{fixture.task_id}'
-            fixture.artifact = {'preview_url': f'/api/v1/manager/raster_cog/{fixture.result_id}/content',
+            fixture.artifact = {'size_bytes':4, 'sha256':hashlib.sha256(b'test').hexdigest(), 'preview_url': f'/api/v1/manager/raster_cog/{fixture.result_id}/content',
                                 'physical_request': {'source_case': source_facts['case'], 'locator': 'owned'}}
         def clean(_client, fixture, *args):
             cleaned.append(fixture.format)
@@ -115,23 +117,23 @@ class ManagerIMGTests(unittest.TestCase):
             if fail_browser: raise OWNER.SuiteError('original browser assertion')
             return browser_report(evidence)
         def physical(action, request):
-            return copy.deepcopy(seed) if action == 'img-source' else {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+            return copy.deepcopy(seed) if action == source_format+'-source' else {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
         owner = SimpleNamespace(**{key: getattr(OWNER, key) for key in ('SuiteError', '_object', 'positive_int', 'find_fixture_item', 'ArtifactFixture', 'build_item_locator', 'RASTER_TASK_TYPE')},
             GatewayClient=lambda *args: client, validate_user_identity=lambda *args: {'principal_id': '3'},
             generate_raster_cog=generate, cleanup_managed_artifact=clean)
         env = {'ADDP_ONLINE_TEST_TENANT_ID': '4', 'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '2', 'GATEWAY_URL': 'http://127.0.0.1',
                'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'synthetic-unit-token', 'ADDP_ONLINE_TEST_RUN_ID': 'run',
                'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'bucket', 'ADDP_ONLINE_ARTIFACT_DIR': str(root)}
-        return lambda: IMG.run(Path('/repository'), env, owner, browser_runner=browser, physical_runner=physical), generated, cleaned
+        return lambda: IMG.run(Path('/repository'), env, owner, browser_runner=browser, physical_runner=physical, source_format=source_format), generated, cleaned
 
     def test_full_orchestration_generates_exactly_two_and_cleans_both(self):
         with tempfile.TemporaryDirectory() as root:
-            run, generated, cleaned = self.scenario(root)
+            run, generated, cleaned = self.scenario(root, source_format='jpeg2000')
             report = run()
             self.assertEqual(report['result'], 'passed')
-            self.assertEqual(generated, ['img-wgs84', 'img-utm50n'])
+            self.assertEqual(generated, ['jpeg2000-wgs84', 'jpeg2000-utm50n'])
             self.assertEqual(cleaned, list(reversed(generated)))
-            self.assertEqual(len(report['cases']), 3)
+            self.assertEqual(len(report['cases']), 4)
             self.assertTrue(report['source_unchanged'])
 
     def test_original_failure_survives_cleanup_failure_and_evidence_is_saved(self):

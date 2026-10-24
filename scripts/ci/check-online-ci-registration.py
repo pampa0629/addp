@@ -397,11 +397,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     manager_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
-    if ("img_scene.run(repository, environment, sys.modules[__name__])" not in manager_owner
+    if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner
+            or "for source_format in ('img', 'jpeg2000')" not in manager_owner
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')
             or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in img_runner.group('body')
-            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'img-source', 'addp.manager-img/v1'))
-            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'download_sha256', 'addp.manager-img-browser/v1'))):
+            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'addp.manager-raster-media/v1'))
+            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'download_sha256', 'addp.manager-raster-media-browser/v1'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):

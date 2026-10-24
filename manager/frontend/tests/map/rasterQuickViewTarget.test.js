@@ -75,6 +75,7 @@ describe('rasterQuickViewTarget', () => {
 
   it('uses canonical IMG metadata for COG capability without treating a raw suffix as evidence', () => {
     const node = { attributes: { item: { data_type: 'media', format: 'img' } } }
+    expect(isRasterCOGSourceMeta({}, { attributes: { item: { data_type: 'media', format: 'jpeg2000' } } })).toBe(true)
     expect(isRasterCOGSourceMeta({}, node)).toBe(true)
     expect(isRasterCOGSourceMeta({}, { name: 'fake.img', format: 'img' })).toBe(false)
     expect(isRasterCOGSourceMeta({}, { attributes: { item: { data_type: 'unknown', format: 'img' } } })).toBe(false)

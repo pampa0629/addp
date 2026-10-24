@@ -196,7 +196,8 @@ def _open(raster):
     if not isinstance(raster, RasterDataset) or raster.workspace != _WORKSPACE.get() or raster.workspace is None:
         raise ValueError('input_raster must come from a raster port in this execution')
     drivers = [raster.native_driver] if raster.native_driver else ['GTiff', 'PNG', 'JPEG']
-    dataset = gdal.OpenEx(str(raster.path), gdal.OF_RASTER, allowed_drivers=drivers)
+    options = ['GEOREF_SOURCES=INTERNAL', 'OPEN_REMOTE_GML=NO', 'STRICT=YES', '1BIT_ALPHA_PROMOTION=NO'] if raster.native_driver == 'JP2OpenJPEG' else []
+    dataset = gdal.OpenEx(str(raster.path), gdal.OF_RASTER, allowed_drivers=drivers, open_options=options)
     if dataset is None or dataset.RasterCount < 1:
         raise ValueError('Raster dataset has no bands')
     return dataset
@@ -407,38 +408,84 @@ def _require_self_contained_hfa(path):
             pending.extend(pointer for pointer in (next_entry, child) if pointer)
 
 
+def _require_single_jpeg2000(path):
+    """Inspect framing only; JP2OpenJPEG remains the sole pixel/CRS decoder."""
+    size = path.stat().st_size
+    with path.open('rb') as stream:
+        if stream.read(4) == b'\xff\x4f\xff\x51':
+            return 'j2k'
+        stream.seek(0)
+        if stream.read(12) != b'\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a':
+            raise ValueError('JPEG2000 requires a JP2 container or J2K codestream')
+        offset, boxes, codestreams, filetype = 12, 0, 0, False
+        while offset < size:
+            if boxes >= 4096 or size - offset < 8:
+                raise ValueError('Invalid or over-budget JP2 box table')
+            boxes += 1
+            stream.seek(offset)
+            length, kind = struct.unpack('>I4s', stream.read(8))
+            header = 8
+            if length == 1:
+                if size - offset < 16:
+                    raise ValueError('Truncated JP2 extended box')
+                length, = struct.unpack('>Q', stream.read(8))
+                header = 16
+            elif length == 0:
+                length = size - offset
+            if length < header or length > size - offset:
+                raise ValueError('Invalid JP2 box bounds')
+            if kind == b'ftyp':
+                if filetype or length - header < 12 or length - header > 1024 or (length - header) % 4:
+                    raise ValueError('Invalid JP2 file type')
+                brands = stream.read(length - header)
+                if brands[:4] != b'jp2 ' or b'jp2 ' not in [brands[i:i+4] for i in range(8, len(brands), 4)]:
+                    raise ValueError('JPX compositions are not supported')
+                filetype = True
+            if kind in (b'ftbl', b'dtbl', b'jpch', b'jplh', b'comp'):
+                raise ValueError('JPEG2000 external fragments and JPX compositions are not supported')
+            if kind == b'jp2c':
+                codestreams += 1
+            offset += length
+        if not filetype or codestreams != 1:
+            raise ValueError('JP2 requires exactly one self-contained codestream')
+    return 'jp2'
+
+
 def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
     path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
     source_format = plan['source']['format']
-    if source_format == 'img':
+    if source_format in ('img', 'jpeg2000'):
         # Do not expose sibling .aux.xml, .rrd or .ige resources to native HFA.
         isolated = _path().parent / uuid.uuid4().hex / path.name
         isolated.parent.mkdir()
         shutil.copyfile(path, isolated)
         path = isolated
-        _require_self_contained_hfa(path)
-    native_driver = 'HFA' if source_format == 'img' else ''
+        if source_format == 'img':
+            _require_self_contained_hfa(path)
+        else:
+            _require_single_jpeg2000(path)
+    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG'}.get(source_format, '')
     raster = _raster(path, native_driver)
     try:
         dataset = _open(raster)
     except RuntimeError as exc:
         raise ValueError('Source format must match a supported raster driver') from exc
-    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA'}
+    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA', 'jpeg2000':'JP2OpenJPEG'}
     if drivers.get(source_format) != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
-    if source_format == 'img':
+    if source_format in ('img', 'jpeg2000'):
         bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
         if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):
-            raise ValueError('Complex HFA bands require an explicit real-valued conversion before loading')
+            raise ValueError(f'Complex {native_driver} bands require an explicit real-valued conversion before loading')
         nodata = [band.GetNoDataValue() for band in bands]
         nodata = ['nan' if value is not None and math.isnan(value) else value for value in nodata]
         if len({band.DataType for band in bands}) != 1 or any(value != nodata[0] for value in nodata):
-            raise ValueError('HFA bands must share one data type and NoData value for lossless TIFF conversion')
+            raise ValueError(f'{native_driver} bands must share one data type and NoData value for lossless TIFF conversion')
     if any(Path(file).resolve() != path.resolve() for file in dataset.GetFileList() or []):
         raise ValueError('Raster input must be self-contained; external sidecars are not supported')
     # Snapshot the selected resource so later writes cannot change an upstream input.
-    snapshot = path if source_format == 'img' else _path(path.suffix)
+    snapshot = path if native_driver else _path(path.suffix)
     if snapshot != path:
         shutil.copyfile(path, snapshot)
     dataset = None
@@ -462,11 +509,14 @@ def raster_load(access_plan, source_crs=''):
 def raster_inspect(access_plan):
     """Read-only native media facts; no publication and no pixel statistics."""
     plan = require_source_plan({'access_plan': access_plan})
-    if plan['source']['format'] != 'img':
-        raise ValueError('raster_inspect requires IMG format')
+    source_format = plan['source']['format']
+    if source_format not in ('img', 'jpeg2000'):
+        raise ValueError('raster_inspect requires IMG or JPEG2000 format')
     with raster_workspace():
         raster = raster_load(plan)
         facts = raster_info(raster)
+        driver = raster.native_driver
+        profile = 'hfa' if source_format == 'img' else _require_single_jpeg2000(raster.path)
         spatial = {}
         if facts['extent']:
             spatial['extent'] = facts['extent']
@@ -478,12 +528,13 @@ def raster_inspect(access_plan):
             reference = 'ADDP:CRS:' + hashlib.sha256(definition.encode()).hexdigest()
             spatial.update({'crs_ref': reference, 'crs_definitions': [{
                 'id': reference, 'definition_encoding': 'wkt', 'definition': definition,
-                'source': 'gdal_hfa'}]})
-        return {'schema_version': 'gdal.raster.inspect/v1', 'format': 'img', 'description': {
-            'media': {'kind': 'image', 'encoding': 'HFA', 'width': facts['width'],
+                'source': 'gdal_' + driver.lower()}]})
+        return {'schema_version': 'gdal.raster.inspect/v1', 'format': source_format, 'description': {
+            'media': {'kind': 'image', 'encoding': driver, 'width': facts['width'],
+                      'mime_type': 'image/jp2' if profile == 'jp2' else 'application/octet-stream',
                       'height': facts['height'], 'size_bytes': raster.path.stat().st_size},
             'spatial': spatial or None,
-            'format_info': {'profile': 'hfa', 'driver': 'HFA', 'scan_complete': True,
+            'format_info': {'profile': profile, 'driver': driver, 'scan_complete': True,
                             'band_count': facts['band_count'], 'bands': facts['bands']}}}
 
 

@@ -1522,7 +1522,7 @@ def raster_physical(repository, environment, action, request):
     source_case = request.get('source_case', '')
     if source_case and source_case not in ('wgs84', 'utm50n'):
         raise SuiteError('unknown IMG physical source case')
-    suffix = '-' + source_case if source_case else ''
+    suffix = ('-'+request.get('source_format','img')+'-'+source_case) if source_case else ''
     artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / f'manager-artifact-physical-{action}{suffix}.json'
     artifact.unlink(missing_ok=True)
     secret_root = Path(environment['ADDP_ONLINE_SECRET_DIR'])
@@ -1614,6 +1614,7 @@ def generate_raster_cog(client, raster, tenant_id, timeout, physical, source_fac
         raster.artifact['runtime_execution_id'] = runtime['execution_id']
     if source_facts.get('case'):
         raster.artifact['physical_request']['source_case'] = source_facts['case']
+        raster.artifact['physical_request']['source_format'] = source_facts['source_format']
     evidence = physical('verify', raster.artifact['physical_request'])
     if (evidence.get('cog_valid') is not True or evidence.get('source_unchanged') is not True
             or evidence.get('pixels_verified') != 65536 * band_count or evidence.get('size_bytes') != size
@@ -2363,7 +2364,8 @@ def main() -> int:
         img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
         img_scene = importlib.util.module_from_spec(img_spec)
         img_spec.loader.exec_module(img_scene)
-        report['img'] = img_scene.run(repository, environment, sys.modules[__name__])
+        for source_format in ('img', 'jpeg2000'):
+            report[source_format] = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
         report["content_boundaries"] = boundaries
         report["index_source_versions"] = versions
     except (OSError, ValueError, SuiteError, subprocess.SubprocessError) as error:

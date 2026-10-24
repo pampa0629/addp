@@ -4,7 +4,7 @@
 
 本页定义 TIFF / GeoTIFF 基础预览、COG 快显、内容读取、来源驱动生成与执行生命周期。共用状态与 API 见[共用契约](共用契约.md)。
 
-IMG 复用同一 COG 任务与地图显示链路：仅接受 Meta 已完整检查的自包含 HFA (`format_info.img.scan_complete=true`)；永不把 IMG 源发送给 geotiff.js。生成任务的 `config.raster.source_format` 必须保存 Meta 的 canonical 格式 (`tiff` 或 `img`)，执行器按此构造源计划，不再固定声明 TIFF。该字段缺失或未知的任务配置拒绝执行，旧任务须从源重新创建，不提供兼容默认。IMG 无定位事实时保持未知；Runtime 读取并确认定位后，COG 沿既有事实传递与校验处理。
+IMG 与 JPEG2000 复用同一 COG 任务与地图显示链路：仅接受 Meta 已完整检查的自包含 HFA 或 JP2/J2K (`format_info.<format>.scan_complete=true`)；永不把这些源发送给 geotiff.js。生成任务的 `config.raster.source_format` 必须保存 Meta 的 canonical 格式 (`tiff`、`img` 或 `jpeg2000`)，执行器按此构造源计划。该字段缺失或未知的任务配置拒绝执行，旧任务须从源重新创建，不提供兼容默认。IMG/JPEG2000 无定位事实时保持未知；Runtime 读取并确认定位后，COG 沿既有事实传递与校验处理。JPEG2000 仅使用内部定位，外部世界文件/PAM 不被自动读取。
 
 地图全幅定位按 `quick_view.extent_srid` 的明确声明转换范围到 EPSG:3857，复用 OpenLayers 已有投影与转换（包括 UTM）；不再仅接受经纬度范围。缺失或未注册的范围坐标系不作经纬度推断，也不改写源文件及其 CRS。
 

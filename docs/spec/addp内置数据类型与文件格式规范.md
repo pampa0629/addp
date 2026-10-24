@@ -71,6 +71,7 @@
 | 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `webp` / `bmp` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
 | Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
 | ERDAS Imagine IMG | `single` | `media` | `img` | 自包含 HFA；Runtime 深扫确认，快显派生受管 COG；外部 spill / dependent 组件暂不支持 |
+| JPEG2000 | `single` | `media` | `jpeg2000` | 自包含 JP2 / J2K；JP2OpenJPEG 原生检查，内部定位，快显派生受管 COG |
 | 矢量瓦片集 | `single` | `media` | `pmtiles` | PMTiles v3 单文件；当前内部瓦片编码固定为 MVT |
 | 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
 | 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |

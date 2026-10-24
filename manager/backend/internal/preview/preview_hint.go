@@ -100,6 +100,10 @@ func previewHintDataType(formatType format.FormatType, contentType string) strin
 }
 
 func previewHintSemantics(formatType format.FormatType, dataType, contentType string, peek []byte) (string, string, bool, bool) {
+	if formatType == format.FormatIMG || formatType == format.FormatJPEG2000 {
+		// Browser raster rendering consumes the managed COG, never these source codecs.
+		return previewMaterialUnsupported, "unsupported", false, false
+	}
 	if formatType == format.FormatMarkdown {
 		return previewMaterialMarkdown, "markdown", true, true
 	}

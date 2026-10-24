@@ -2323,7 +2323,7 @@ func rasterInfoFromSource(raster *RasterQuickViewSource) *QuickViewRasterInfo {
 }
 
 func applyRasterCRSInference(raster *RasterQuickViewSource) {
-	if raster == nil || raster.Format == "img" {
+	if raster == nil || (raster.Format == "img" || raster.Format == "jpeg2000") {
 		return
 	}
 	if raster.SourceSRID > 0 || strings.TrimSpace(raster.SourceCRS) != "" {
@@ -2648,7 +2648,7 @@ func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels 
 	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
 		return RasterUnavailableReasonMissingCRS
 	}
-	if raster.Format == "img" {
+	if raster.Format == "img" || raster.Format == "jpeg2000" {
 		return RasterUnavailableReasonRequiresCOGGeneration
 	}
 	if strings.TrimSpace(raster.PreviewURL) == "" {
@@ -2681,7 +2681,7 @@ func rasterDirectTIFFOptionalAction(raster *RasterQuickViewSource) string {
 }
 
 func rasterUnavailableOptionalAction(reason string, raster *RasterQuickViewSource) string {
-	if raster != nil && raster.Format == "img" {
+	if raster != nil && (raster.Format == "img" || raster.Format == "jpeg2000") {
 		return ""
 	}
 	switch strings.TrimSpace(reason) {
@@ -3030,10 +3030,10 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 		return nil
 	}
 	sourceFormat := commonJSON.String(attrs, "item", "format")
-	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") || (sourceFormat != "tiff" && sourceFormat != "img") {
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), "media") || (sourceFormat != "tiff" && sourceFormat != "img" && sourceFormat != "jpeg2000") {
 		return nil
 	}
-	if sourceFormat == "img" && commonJSON.Section(attrs, "format_info.img")["scan_complete"] != true {
+	if sourceFormat != "tiff" && commonJSON.Section(attrs, "format_info."+sourceFormat)["scan_complete"] != true {
 		return nil
 	}
 	tiffInfo := commonJSON.Section(attrs, "format_info."+sourceFormat)
@@ -3077,7 +3077,7 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	if raster.PreviewURL == "" && strings.TrimSpace(locator) != "" {
 		raster.PreviewURL = SourceStorageStreamURLFromLocator(locator, engineID)
 	}
-	if sourceFormat == "img" {
+	if sourceFormat != "tiff" {
 		raster.BandCount = commonJSON.InterfaceInt64(tiffInfo["band_count"])
 		raster.ClientReadMode = ""
 		raster.ClientRenderLibrary = ""

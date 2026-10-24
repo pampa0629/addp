@@ -457,8 +457,8 @@ func normalizeRasterCOGTaskConfig(config commonModels.JSONMap, bucket string, te
 		return RasterCOGExecutionConfig{}, err
 	}
 	raster := normalizeRasterCOGRaster(config)
-	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" {
-		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff or img")
+	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" {
+		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img or jpeg2000")
 	}
 	cog := normalizeRasterCOGOptions(config)
 	result := normalizeRasterCOGTargetResult(config, target, bucket, tenantID)

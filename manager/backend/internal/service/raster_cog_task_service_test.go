@@ -78,11 +78,11 @@ func newRasterCOGTaskDefinition() *models.RasterCOGTask {
 }
 
 func TestRasterCOGTaskRequiresActualSourceFormat(t *testing.T) {
-	for _, sourceFormat := range []string{"", "other", "img", "tiff"} {
+	for _, sourceFormat := range []string{"", "other", "img", "tiff", "jpeg2000"} {
 		task := newRasterCOGTaskDefinition()
 		task.Config["raster"].(commonModels.JSONMap)["source_format"] = sourceFormat
 		config, err := normalizeRasterCOGTaskConfig(task.Config, "manager", task.TenantID)
-		if sourceFormat == "img" || sourceFormat == "tiff" {
+		if sourceFormat == "img" || sourceFormat == "tiff" || sourceFormat == "jpeg2000" {
 			if err != nil || config.Raster.SourceFormat != sourceFormat {
 				t.Fatalf("%s: %+v %v", sourceFormat, config, err)
 			}

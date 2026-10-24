@@ -1415,7 +1415,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -1508,27 +1508,36 @@ MANAGER_IMG_CASES = (
 )
 
 
+MANAGER_JPEG2000_CASES = (*MANAGER_IMG_CASES, ('codestream', None, None))
+
 def manager_img_pixels(band):
     colors = ((255, 0, 255), (0, 255, 255), (255, 255, 0), (32, 32, 64))
     return bytes(colors[(x // 32 + y // 32) % 4][band - 1] for y in range(256) for x in range(256))
 
 
-def manager_seed_imgs(client, bucket, directory):
+def manager_seed_imgs(client, bucket, directory, source_format='img'):
     from osgeo import gdal, osr
     sources = []
-    for case, srid, transform in MANAGER_IMG_CASES:
-        path = Path(directory) / f'{case}.img'
-        dataset = gdal.GetDriverByName('HFA').Create(str(path), 256, 256, 3, gdal.GDT_Byte, ['COMPRESSED=YES'])
+    cases = MANAGER_IMG_CASES if source_format == 'img' else MANAGER_JPEG2000_CASES
+    for case, srid, transform in cases:
+        extension = 'img' if source_format == 'img' else ('j2k' if case == 'codestream' else 'jp2')
+        path = Path(directory) / f'{source_format}-{case}.{extension}'
+        dataset = (gdal.GetDriverByName('HFA').Create(str(path),256,256,3,gdal.GDT_Byte,['COMPRESSED=YES'])
+                   if source_format == 'img' else gdal.GetDriverByName('MEM').Create('',256,256,3,gdal.GDT_Byte))
         if srid:
             crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
             dataset.SetSpatialRef(crs); dataset.SetGeoTransform(transform)
         for band in range(1, 4):
             dataset.GetRasterBand(band).WriteRaster(0, 0, 256, 256, manager_img_pixels(band))
+        if source_format == 'jpeg2000':
+            options=['CODEC='+('J2K' if case=='codestream' else 'JP2'),'REVERSIBLE=YES','QUALITY=100','RESOLUTIONS=3',
+                     'GeoJP2='+('YES' if case=='wgs84' else 'NO'),'GMLJP2='+('YES' if case=='utm50n' else 'NO')]
+            dataset=gdal.GetDriverByName('JP2OpenJPEG').CreateCopy(str(path),dataset,options=options)
         dataset.FlushCache()
         if dataset.GetFileList() != [str(path)]:
             raise FixtureError('Manager IMG source must be self-contained')
         dataset = None
-        key = f'raster/img-{case}.img'
+        key = f'raster/{source_format}-{case}.{extension}'
         client.fput_object(bucket, key, str(path), content_type='application/octet-stream')
         sources.append({'case': case, 'object': key, 'source_srid': srid,
                         'size_bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
@@ -1546,21 +1555,26 @@ def manager_img_worker(action, path):
     source = config['source']
     clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
                for role, entry in config.items()}
-    seeded = json.loads((root / 'manager-raster-source.json').read_text())['img_sources']
-    if [s['case'] for s in seeded] != [case for case, _, _ in MANAGER_IMG_CASES]:
+    request = {} if action in ('img-source','jpeg2000-source') else json.loads((root / 'manager-raster-request.json').read_text())
+    source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source') else request.get('source_format', 'img')
+    if source_format not in ('img','jpeg2000'): raise FixtureError('unknown raster source format')
+    cases = MANAGER_IMG_CASES if source_format == 'img' else MANAGER_JPEG2000_CASES
+    seeded = json.loads((root / 'manager-raster-source.json').read_text())[source_format+'_sources']
+    if [s['case'] for s in seeded] != [case for case, _, _ in cases]:
         raise FixtureError('Manager IMG source receipt must include all three exact cases')
     with tempfile.TemporaryDirectory(prefix='manager-img-physical-') as directory:
         for facts in seeded:
-            local = Path(directory) / (facts['case'] + '.img')
-            if facts['object'] != 'raster/img-' + facts['case'] + '.img':
+            extension = 'img' if source_format == 'img' else ('j2k' if facts['case'] == 'codestream' else 'jp2')
+            local = Path(directory) / (facts['case'] + '.' + extension)
+            if facts['object'] != 'raster/'+source_format+'-' + facts['case'] + '.' + extension:
                 raise FixtureError('Manager IMG source object differs from its exact fixture')
             clients['source'].fget_object(source['bucket'], facts['object'], str(local))
             if local.stat().st_size != facts['size_bytes'] or hashlib.sha256(local.read_bytes()).hexdigest() != facts['sha256']:
                 raise FixtureError('Manager IMG source changed')
-        if action == 'img-source':
-            return {'source_unchanged': True, 'img_sources': seeded}
+        if action == source_format+'-source':
+            return {'source_unchanged': True, source_format+'_sources': seeded}
         request = json.loads((root / 'manager-raster-request.json').read_text())
-        matches = [(case, srid, transform) for case, srid, transform in MANAGER_IMG_CASES if case == request.get('source_case') and srid]
+        matches = [(case, srid, transform) for case, srid, transform in cases if case == request.get('source_case') and srid]
         if len(matches) != 1:
             raise FixtureError('Manager IMG output requires one located source case')
         case, srid, transform = matches[0]
@@ -1595,7 +1609,7 @@ def manager_img_worker(action, path):
             raise FixtureError('Manager IMG COG dimensions changed')
         crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
         crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-        original = gdal.Open(str(Path(directory) / (case + '.img')))
+        original = gdal.Open(str(Path(directory) / (case + ('.img' if source_format == 'img' else '.jp2'))))
         source_transform = tuple(original.GetGeoTransform())
         if (not original.GetSpatialRef().IsSame(crs)
                 or source_transform != transform
@@ -1621,7 +1635,7 @@ def manager_worker(action, path):
     if action.startswith('pdf-'):
         return manager_pdf_worker(action, path)
     request_file = Path(path).parent / 'manager-raster-request.json'
-    if action == 'img-source' or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
+    if action in ('img-source','jpeg2000-source') or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
         return manager_img_worker(action, path)
     from minio import Minio
     from minio.error import S3Error
@@ -1640,7 +1654,8 @@ def manager_worker(action, path):
             write_source_raster(source_path, 'source.tif', False, -9999.)
             clients['source'].fput_object(source['bucket'], source['object'], str(source_path), content_type='image/tiff')
             return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size,
-                    'img_sources': manager_seed_imgs(clients['source'], source['bucket'], directory)}
+                    'img_sources': manager_seed_imgs(clients['source'], source['bucket'], directory),
+                    'jpeg2000_sources': manager_seed_imgs(clients['source'], source['bucket'], directory, 'jpeg2000')}
         clients['source'].fget_object(source['bucket'], source['object'], str(source_path))
         seeded = json.loads((root / 'manager-raster-source.json').read_text())
         if hashlib.sha256(source_path.read_bytes()).hexdigest() != seeded['sha256']:
