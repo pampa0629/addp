@@ -838,7 +838,7 @@ async function selectFTPModel(page, format) {
   await page.locator('.resource-tree-select__panel').getByRole('button', { name: new RegExp(`model\\.${format}`) }).click()
   await page.getByTestId('approval-add-selection').click()
 }
-for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
+for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })
   const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
@@ -851,6 +851,10 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   const confirmation = page.locator('.el-message-box')
   await expect(confirmation).toContainText('完整文件组成')
   await expect(confirmation).toContainText(`Models / model.${format}`)
+  if (format === 'stl') {
+    await expect(confirmation).not.toContainText('TEST.PNG')
+    await expect(confirmation).not.toContainText('model.mtl')
+  }
   if (format === 'obj') await expect(confirmation).toContainText('Models / model.mtl')
   if (['3ds', 'dae', 'obj'].includes(format)) await expect(confirmation).toContainText('Models / TEST.PNG')
   await confirmation.getByRole('button', { name: '取消', exact: true }).click()
