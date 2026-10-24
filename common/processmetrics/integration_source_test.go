@@ -26,7 +26,7 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 	if os.Getenv("ADDP_PROCESS_T2_ROLE") == "backend" {
 		identity.Role = "backend"
 	}
-	source, err := Start(config.ProcessMetricsDeployment{ModuleName: identity.ModuleName, Role: identity.Role, Listen: listen, Endpoint: endpoint, TLSDir: "/source/process-tls"}, identity)
+	source, err := Start(config.ProcessMetricsDeployment{ModuleName: identity.ModuleName, Role: identity.Role, Listen: listen, Endpoint: endpoint, TLSDir: "/source/process-tls", CgroupV2: true}, identity)
 	if err != nil {
 		t.Fatal(err)
 	}

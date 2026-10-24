@@ -147,7 +147,17 @@ func handler(registry *prometheus.Registry) http.Handler {
 // Start validates deployment inputs before binding. Failures are optional-source
 // failures; the caller must continue its business registration without a declaration.
 func Start(d config.ProcessMetricsDeployment, identity Identity) (*Server, error) {
-	return start(d, identity, sampleSelf)
+	return start(d, identity, deploymentSampler(d.CgroupV2, sampleSelf, sampleSelfCgroup))
+}
+
+func deploymentSampler(cgroupEnabled bool, process Sampler, cgroup func() *CgroupSample) Sampler {
+	return func() (Sample, error) {
+		sample, err := process()
+		if err == nil && cgroupEnabled {
+			sample.Cgroup = cgroup()
+		}
+		return sample, err
+	}
 }
 
 // StartOptional is the sole deployment adapter shared by the ordinary lease

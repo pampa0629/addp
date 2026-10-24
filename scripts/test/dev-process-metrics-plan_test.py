@@ -19,6 +19,16 @@ def deployment(module, role, port):
 
 
 class ProcessMetricsPlanTest(unittest.TestCase):
+    def test_cgroup_observation_is_an_explicit_per_unit_boolean(self):
+        for value in (True, False):
+            plan = {"meta-worker-1": dict(deployment("meta", "worker", 19106), cgroup_v2=value)}
+            result = LAUNCH.select_deployment(json.dumps(plan), "meta-worker-1", "meta", "worker")
+            self.assertIs(json.loads(result)[0]["cgroup_v2"], value)
+        for value in (None, "true", 1, [], {}):
+            plan = {"meta-worker-1": dict(deployment("meta", "worker", 19106), cgroup_v2=value)}
+            with self.assertRaises(ValueError):
+                LAUNCH.select_deployment(json.dumps(plan), "meta-worker-1", "meta", "worker")
+
     def setUp(self):
         self.plan = {
             "meta": deployment("meta", "backend", 19104),

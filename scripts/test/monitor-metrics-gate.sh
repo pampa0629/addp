@@ -12,6 +12,7 @@ case "${1:-}" in
   --case=http-quality) metrics_case=http-quality ;;
   --case=process-alerts) metrics_case=process-alerts ;;
   --case=host-resources) metrics_case=host-resources ;;
+  --case=cgroup-source) metrics_case=cgroup-source ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac
 export ADDP_METRICS_T2_CASE="$metrics_case"

@@ -639,6 +639,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | development process metrics plan | 开发进程采集计划 | 标准开发启动入口为具体启动单元分配独立进程采集配置的部署输入。 | 当前启动单元使用已有生命周期进程名称；不等于业务 role 或进程级 instance_id。启动时派生该进程的 SDK 输入；同类型多副本须各有独立启动单元、端点和证书，计划本身不提供多副本启动或任务分配。 |
 | process CPU core equivalent | 进程 CPU 核占用 | 当前进程 user + system CPU 累计秒数在完整窗口内的每秒增量，单位核当量。 | 多线程可超过 1 核；不是百分比、配额或独占物理核。来源改变、累计重置或窗口不足时没有有效值。 |
 | process resident memory | 进程驻留内存 | 当前进程驻留在内存中的 RSS 字节数。 | 不是 Go 堆、虚拟地址空间、峰值或独占物理内存；不同进程 RSS 不简单求和，也不除以未关联宿主容量。 |
+| self cgroup observation | 自身控制组观测 | Linux 进程读取其当前 cgroup v2 的 CPU 累计量、整体内存当前量及内核边界身份。 | 不是进程 RSS，也不单凭 cgroup 路径、命名空间或 inode 认定容器；容器关联和完整限制层级由部署侧只读证明，未核验时不计算配额利用率。 |
 | instance offline determination time | 实例离线判定时间 | System 对当前实例离线观测采用的时间；正常注销使用注销时间，租约超时使用租约到期时间。 | 对应实例投影 `stopped_at`，不是已确认的进程退出时间。租约已过期但扫描尚未落库时，读取仍按到期时间判定；同一实例恢复后清除该观测。按此时间查询不代表完整的历史离线事件查询。 |
 | registered host | 登记主机 | 从模块运行实例的服务地址（无服务地址时为健康检查地址）解析出的主机名或 IP，不包含端口。 | 用于按登记地址精确筛选实例；域名和 `localhost` 不等于物理节点 IP。无监听端点的 Worker、Scheduler 可以为空，不据此推断其节点地址。 |
 | runtime hostname | 运行环境主机名 | 由进程所在操作系统自动采集的主机名，容器内表示容器运行环境。 | 对应 `runtime_hostname`；用于定位包括无监听端点 Worker 在内的进程，不从登记 URL 或实例 ID 推断宿主节点。 |

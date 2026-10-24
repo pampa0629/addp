@@ -25,6 +25,22 @@ func TestProcessMetricsDeploymentSelection(t *testing.T) {
 	}
 }
 
+func TestProcessMetricsCgroupCollectionRequiresExplicitBooleanSelection(t *testing.T) {
+	for _, field := range []string{"", `,"cgroup_v2":false`, `,"cgroup_v2":true`} {
+		raw := "[" + strings.TrimSuffix(selectedProcessDeployment, "}") + field + "}]"
+		got, err := ProcessMetricsDeploymentFor(raw, "monitor", "backend")
+		if err != nil || got == nil || got.CgroupV2 != strings.Contains(field, "true") {
+			t.Fatalf("explicit cgroup selection: %v %v", got, err)
+		}
+	}
+	for _, field := range []string{`null`, `"true"`, `1`, `{}`, `[]`, `true,"cgroup_v2":false`} {
+		raw := "[" + strings.TrimSuffix(selectedProcessDeployment, "}") + `,"cgroup_v2":` + field + "}]"
+		if _, err := ProcessMetricsDeploymentFor(raw, "monitor", "backend"); err == nil {
+			t.Fatal("non-boolean or duplicate selection admitted")
+		}
+	}
+}
+
 func TestProcessMetricsDeploymentRejectsAmbiguousOrUnsafeInput(t *testing.T) {
 	valid := "[" + selectedProcessDeployment + "]"
 	inputs := []string{"null", "{}", valid + "[]", "[" + selectedProcessDeployment + "," + selectedProcessDeployment + "]", strings.Repeat(" ", 256<<10) + valid}

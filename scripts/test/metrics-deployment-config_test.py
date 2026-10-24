@@ -30,6 +30,39 @@ probe_spec.loader.exec_module(postgres_probe)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def cgroup_probe(self, mismatch=False):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(path.read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'check_self_cgroup_samples')
+        records = [{'instance_id': 'native-'+str(i), 'instance': 'source:'+str(i)} for i in (1, 2, 3)]
+        queried = []
+
+        def query(expression):
+            queried.append(expression)
+            return [{'metric': dict(record, addp_instance_id=record['instance_id'],
+                                    kernel_boot_id='10000000-0000-4000-8000-000000000001',
+                                    cgroup_id='999' if mismatch else '101', pid_namespace_id='202'),
+                     'value': [1, '1']} for record in records]
+
+        compose = mock.Mock(return_value='10000000-0000-4000-8000-000000000001\n101\npid:[202]\n')
+        namespace = {'compose': compose, 'query': query, 'math': __import__('math'), 're': re}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        with redirect_stdout(io.StringIO()):
+            namespace['check_self_cgroup_samples'](records)
+        self.assertEqual(len(queried), 3)
+        self.assertTrue(all(expression.startswith('addp_cgroup_') for expression in queried))
+        self.assertEqual(compose.call_count, 1)
+        self.assertNotIn('/proc/1/', compose.call_args.args[-1])
+
+    def test_self_cgroup_probe_matches_independent_kernel_identity_without_inventing_quota(self):
+        self.cgroup_probe()
+        source = (ROOT / 'scripts/test/docker-compose.monitor-metrics-t2.yml').read_text()
+        self.assertIn('cgroup: private', source)
+
+    def test_self_cgroup_probe_rejects_mismatched_namespace_evidence(self):
+        with self.assertRaisesRegex(AssertionError, 'cgroup evidence must match'):
+            self.cgroup_probe(mismatch=True)
+
     def resource_window_check(self, work):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
@@ -225,13 +258,13 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('common/httpmetrics/ common/modulelifecycle/', gate)
         self.assertIn('--case=http-quality) metrics_case=http-quality ;;', gate)
         self.assertIn('export ADDP_METRICS_T2_CASE="$metrics_case"', gate)
-        self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts')", probe)
+        self.assertIn("os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts', 'cgroup-source')", probe)
         pg_scope = re.search(r'(?ms)^if \[\[ "\$metrics_case" == all \|\| "\$metrics_case" == postgres-source \]\]; then\n  export METRICS_T2_POSTGRES_SOURCE_ENABLED=true\n.*?^fi$', gate)
         self.assertIsNotNone(pg_scope)
         self.assertIn('postgres-observation-probe.py', pg_scope.group())
         self.assertIn('postgres_directory_probe', pg_scope.group())
         stub = 'python3(){ printf "probe\\n"; }; postgres_directory_probe(){ printf "directory\\n"; }; metrics_case="$1"\n'
-        for case in ('http-quality', 'process-alerts', 'host-resources', 'all', 'postgres-source'):
+        for case in ('http-quality', 'process-alerts', 'host-resources', 'all', 'postgres-source', 'cgroup-source'):
             completed = subprocess.run(['bash', '-c', stub + pg_scope.group(), '_', case], capture_output=True, text=True, timeout=5)
             self.assertEqual(completed.returncode, 0)
             expected = ['probe'] * pg_scope.group().count('\n  python3 ') + ['directory']
@@ -242,12 +275,12 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         selector = next(index for index, node in enumerate(probe.body)
                         if isinstance(node, ast.If) and any(isinstance(item, ast.Name)
                         and item.id == 'check_native_process_sources' for item in ast.walk(node)))
-        selection = compile(ast.Module(body=probe.body[selector:selector+3], type_ignores=[]), '<metrics case selection>', 'exec')
-        for case in ('all', 'http-quality', 'process-alerts', 'host-resources'):
+        selection = compile(ast.Module(body=probe.body[selector:selector+4], type_ignores=[]), '<metrics case selection>', 'exec')
+        for case in ('all', 'http-quality', 'process-alerts', 'host-resources', 'cgroup-source'):
             native = mock.Mock()
             environment = mock.Mock(environ={'ADDP_METRICS_T2_CASE': case})
             namespace = {'os': environment, 'check_native_process_sources': native, 'print': mock.Mock()}
-            if case in ('http-quality', 'process-alerts'):
+            if case in ('http-quality', 'process-alerts', 'cgroup-source'):
                 with self.assertRaises(SystemExit) as stopped:
                     exec(selection, namespace)
                 self.assertEqual(stopped.exception.code, 0)
@@ -258,18 +291,20 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 'http-quality': [mock.call()],
                 'process-alerts': [mock.call(process_alerts=True)],
                 'host-resources': [],
+                'cgroup-source': [mock.call(cgroup_only=True)],
             }[case])
         gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         self.assertIn("''|--case=all) metrics_case=all ;;", gate)
         self.assertIn('--case=host-resources) metrics_case=host-resources ;;', gate)
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
+        self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
         self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
 
     def test_ci_requires_every_isolated_metrics_case_and_preserves_budget(self):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources]', cases)
+        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, cgroup-source]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)

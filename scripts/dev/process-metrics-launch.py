@@ -37,10 +37,12 @@ def select_deployment(raw, unit, module, role):
     for name, deployment in plan.items():
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,99}", name):
             raise ValueError(INVALID)
-        if not isinstance(deployment, dict) or set(deployment) != FIELDS:
+        if not isinstance(deployment, dict) or not FIELDS <= set(deployment) or set(deployment) - FIELDS - {"cgroup_v2"}:
             raise ValueError(INVALID)
         if any(not isinstance(value, str) or not value or len(value) > 1024
-               for value in deployment.values()):
+               for key, value in deployment.items() if key in FIELDS):
+            raise ValueError(INVALID)
+        if "cgroup_v2" in deployment and type(deployment["cgroup_v2"]) is not bool:
             raise ValueError(INVALID)
         if not re.fullmatch(r"[a-z0-9_-]{1,50}", deployment["module_name"]):
             raise ValueError(INVALID)

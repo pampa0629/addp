@@ -2044,7 +2044,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [postgres-source, http-quality, process-alerts, host-resources]
+        case: [postgres-source, http-quality, process-alerts, host-resources, cgroup-source]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

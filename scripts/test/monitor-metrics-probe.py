@@ -257,8 +257,35 @@ def native_process_history_diagnostics(records):
     return diagnostic
 
 
-def check_native_process_sources(*, process_alerts=False):
+def check_self_cgroup_samples(records):
+    # Independent kernel reads from the owned shared source container. Three
+    # SDK processes intentionally share this boundary: none proves a dedicated
+    # container or a quota allocation merely by exposing these raw samples.
+    boot, group_id, namespace = compose('exec', '-T', 'metrics-source', 'sh', '-c',
+        'cat /proc/sys/kernel/random/boot_id; stat -c %i /sys/fs/cgroup; readlink /proc/self/ns/pid').strip().splitlines()
+    assert namespace.startswith('pid:[') and namespace.endswith(']')
+    expected = {'kernel_boot_id': boot, 'cgroup_id': group_id, 'pid_namespace_id': namespace[5:-1]}
+    assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', boot)
+    assert all(re.fullmatch(r'[1-9][0-9]*', expected[key]) for key in ('cgroup_id', 'pid_namespace_id'))
+    selector = '{job="addp_nodes",addp_monitor_kind="process_resources"}'
+    for metric in ('addp_cgroup_identity_info', 'addp_cgroup_cpu_usage_seconds_total', 'addp_cgroup_memory_current_bytes'):
+        rows = query(metric + selector)
+        assert len(rows) == len(records) == 3, 'all current SDK sources must expose their genuine cgroup sample'
+        assert {(row['metric']['addp_instance_id'], row['metric']['instance']) for row in rows} == {(record['instance_id'], record['instance']) for record in records}
+        for row in rows:
+            assert {key: row['metric'].get(key) for key in expected} == expected, 'cgroup evidence must match kernel namespace and inode'
+            value = float(row['value'][1])
+            assert math.isfinite(value) and value >= 0
+            if metric == 'addp_cgroup_identity_info':
+                assert value == 1
+            elif metric == 'addp_cgroup_memory_current_bytes':
+                assert value.is_integer() and value > 0
+    print('Metrics T2: three SDK sources match independently read shared cgroup identity and raw CPU/memory; no container association or quota inferred', flush=True)
+
+
+def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
     global base
+    check_cgroup = cgroup_only or os.environ.get('ADDP_METRICS_T2_CASE') == 'all' and not process_alerts
     alert_binary = WORK / 'process-alert-lifecycle.test'
     if process_alerts:
         # Prepare before starting the finite-lived native sources. Compilation
@@ -274,6 +301,13 @@ def check_native_process_sources(*, process_alerts=False):
     source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
     assert source_inspect['HostConfig']['NanoCpus'] == 250_000_000
     assert source_inspect['HostConfig']['Memory'] == 128 * 1024**2
+    assert source_inspect['HostConfig']['CgroupnsMode'] == 'private'
+    if check_cgroup:
+        kernel_tests = compose('exec', '-T', 'metrics-source', '/source/process-source.test',
+                           '-test.run=^TestCgroupMountCoordinatesNeverEscapeVisibleSubtree$', '-test.v')
+        assert '--- PASS: TestCgroupMountCoordinatesNeverEscapeVisibleSubtree' in kernel_tests
+        assert '--- SKIP:' not in kernel_tests and '[no tests to run]' not in kernel_tests
+        print(kernel_tests, flush=True)
     source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
     processes, records = [], []
     try:
@@ -318,6 +352,10 @@ def check_native_process_sources(*, process_alerts=False):
         process_metadata.write_text(json.dumps(records))
         eventually(lambda: len(query('process_resident_memory_bytes{job="addp_nodes",addp_monitor_kind="process_resources"}')) == 3,
                    'three genuine Linux processes enter the sole SD job')
+        if check_cgroup:
+            check_self_cgroup_samples(records)
+        if cgroup_only:
+            return
         if desktop_transport:
             def desktop_process_targets():
                 active = [t for t in api('targets')['activeTargets'] if t['labels'].get('addp_monitor_kind') == 'process_resources']
@@ -438,7 +476,9 @@ if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'http-quality'):
     check_native_process_sources()
 if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'process-alerts'):
     check_native_process_sources(process_alerts=True)
-if os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts'):
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'cgroup-source':
+    check_native_process_sources(cgroup_only=True)
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('http-quality', 'process-alerts', 'cgroup-source'):
     print('Metrics T2: native process scope complete; host-resource regression belongs to --case=host-resources or --case=all', flush=True)
     raise SystemExit(0)
 

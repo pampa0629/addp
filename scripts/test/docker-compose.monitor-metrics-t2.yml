@@ -57,6 +57,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    cgroup: private
     cpus: 0.25
     mem_limit: 128m
     tmpfs: ["/tmp:size=16m,mode=1777"]

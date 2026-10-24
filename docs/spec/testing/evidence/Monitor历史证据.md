@@ -901,3 +901,31 @@ MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）�
 当前源码1c5a5cc26的`make test-infra-runtime-log-lifecycle`退出0：66项入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过。源码未修改产品业务API、内置角色、采样或保留策略，不需生成Swagger；普通Tenant执行、Trace／Link与精确日志、Console闭环及退出后旧令牌拒绝本窗口均未通过。三份完整报告全部failed；正式登录的实际局部证据不能替代完整闭环，也不能外推Linux Runner T4、Hosted、72小时或生产T5。
 
 全窗口516项成功资源测量，峰值7.8 CPU／10,468,982,784字节（9.75 GiB），卷及私有可写目录最高3,619,434,496字节，最长测量1.126秒；无OOM或资源停止线触发。三次自动清理及独立审计均为当次容器、网络、卷、构建器、镜像标签和私有源码／秘密零残留，原核验MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261024-window6/`，含window.json、三份attempt-*-report.json、nginx-route-gate-3.log、prepare-source.json、committed-lifecycle.log、final-lifecycle.log、t2-registration.log、receipt.json及cleanup-audit.json。仅只读查看过源码6621748的既有Release and T2自动运行40050940303，当时queued，未计通过，未手工触发工作流或跟踪无关CI。清单第19行（B18）、第45行（B44）继续部分实现。
+
+
+## 服务实例容器配额：自身 cgroup 采集基础（2026-10-24，本地）
+
+用户已确认采用部署侧只读容器身份／限制层级证明，应用只采自身用量。本批仅实现 Common 的自身 cgroup v2 采集基础：同一进程部署对象显式设置 `cgroup_v2=true` 后，Linux 在原 mTLS 端点发布当前组 CPU 累计秒数、整体内存当前字节及内核 boot／cgroup inode／PID namespace 身份。默认不读组统计，不读取其他进程／组；文件／路径／整数／响应读取量有界，采样前后核对成员路径、组 inode 和 cgroup namespace，失败不生成组零值或影响原进程 CPU／RSS／启动数据。组用量与进程用量分别采集，不计算配额利用率。
+
+最终冻结源码：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-release-p9kt3o_j/source`，输入清单 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-release-p9kt3o_j/inputs.json`（SHA-256 `c89f711a4b14528236c568a2dcde8f5a39f5564906868d19fa5781d93c90bc8f`），交付前已复核当前任务源文件逐项匹配。
+
+- `make test-module MODULE=common GO_ONLY=1`：通过，151 个 Go package 报告 ok；包含配置严格布尔选择、有界读取、真实零值、缺失／重复／非法／超长文件、共享组与进程用量区分、不可用时不保留旧组值。macOS T1 不代替 Linux 原生采样，亦不计为其他模块 T2。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source`：最终冻结版本通过。53 项准备回归、原有八类固定窗口检查及 Linux 挂载坐标测试执行通过；三个独立 SDK 进程在同一专属、非 root、private cgroup 的受限容器运行，经真实 mTLS／HTTP SD／Prometheus 读取，与独立内核 boot ID、组 inode、PID namespace 对照一致，CPU／内存原始量均有效。共享组明确不证明“一实例独立容器”或配额；未做任何比例计算或用户 API 读取。退出的 owned containers／networks／volumes／临时文件均为零，并额外核对本轮三次受控项目的容器／网络／卷零残留。
+- 上一冻结版本 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/source` 的 `make test-dev-lifecycle` 串行通过：130 项单元／生命周期回归、66 项 Infra 日志生命周期回归及后续标准端口、构建身份、并发／安装锁、Owner 命令构建检查均执行至入口成功退出。`make test-build-registration` 串行通过，59 项＋9 项回归，检查 26 个 Go 服务／Worker、59 个产品镜像登记。新增 cgroup 分项的五场景矩阵、分流及预算约束已在最终版本 53 项准备回归再次执行；未因新增分项减少原有四个场景。
+- 上一冻结版本还实际通过 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`：真实进程资源／趋势／混合身份拒绝／停源隔离、真实 HTTP 查询及告警生命周期（165.71 秒）通过并零残留。随后仅对组采样增加 namespace 前后核对及分项编排，已由最终 cgroup-source 实源分项补验；不将此前完整 HTTP 结果表述为最终源码全批重跑。
+
+保留的失败：首次并行 `test-dev-lifecycle` 有 12 项 Worker 回执超时；首次并行 `test-build-registration` 有 3 项超时 error、3 项未等到构建事件的 failure。同一 Worker 夹具单独诊断随后启动正常，两个原标准入口串行均通过，未改产品逻辑、放宽超时或删除断言；尚未证明首次超时的唯一环境根因，不能把首次执行改记通过。新增分项另一次误在共享工作区执行，仅准备回归一项旧分流字符串断言失败，在资源创建前退出；断言已随真实新分项契约同步，最终冻结入口通过，该次不计为产品 T2 通过或最终版本证据。
+
+CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，与默认 all 共用唯一标准入口、原 20 分钟 Job 和零残留要求。Common 目录会按既有规则命中 Go 消费者及产品镜像；本机未运行全量产品镜像构建、原生 Linux 全包 T1 或正式身份 Hosted。CI／Hosted 结果仍等专门会话回传，不轮询、不自行触发重跑、不设置定时任务。未更改 IAM、个人部署限额或服务状态，未扩展既有 T4 Token 用途；本批无用户 HTTP API／DTO 变化，不要求生成 Swagger。
+
+尚未实现：部署侧完整且新鲜的容器／限制层级证明、System 私有投影精确关联、Monitor 配额查询与页面。不能将采集基础计为服务实例配额视图或容器监控闭环完成。
+
+原始日志与指纹：
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-release-p9kt3o_j/common-t1.log`：`1e17914fa134ee70075fd36ceba70a356b7d12736d693bee65990eb7b58fbe66`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-release-p9kt3o_j/cgroup-t2.log`：`e01b40538e2751291a6aa4f1ebc40aba1a40f93f2aca84035f229fea9afe6b41`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/common-t1.log`：`6c4c5676a95e9847a5b6487ae2095d19705596aae8bdfb042cc7bf0478659f1e`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/metrics-t2.log`：`76a62821ade34329719415c648a1372d1f5ffe9d71981111c6ba5e86e849294f`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/dev-lifecycle.log`：`0607b9c8148824291c81270dbd29de06b50ce53b232b2765cfbb7fa95144fac8`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/build-registration.log`：`96d399f371844f82e7dec186994a49a1326c4bc9f078381f1e8aca8006ce3554`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/dev-lifecycle-serial.log`：`a8857c205b427f30663e7e1495ccb3782ee9b7a2594b39f1252a804b0d58d110`。
+- `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/build-registration-serial.log`：`18a14e13947e6803a759306be2ca5c66310cedfa4de80b1be80d858bad2d394a`。

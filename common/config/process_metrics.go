@@ -24,6 +24,7 @@ type ProcessMetricsDeployment struct {
 	Listen     string
 	Endpoint   string
 	TLSDir     string
+	CgroupV2   bool
 }
 
 // ProcessMetricsDeploymentFor validates the complete deployment input before
@@ -60,12 +61,21 @@ func ProcessMetricsDeploymentFor(raw, module, role string) (*ProcessMetricsDeplo
 				return nil, ErrProcessMetricsConfiguration
 			}
 			switch name {
-			case "module_name", "role", "listen", "endpoint", "tls_dir":
+			case "module_name", "role", "listen", "endpoint", "tls_dir", "cgroup_v2":
 			default:
 				return nil, ErrProcessMetricsConfiguration
 			}
 			if _, exists := fields[name]; exists {
 				return nil, ErrProcessMetricsConfiguration
+			}
+			if name == "cgroup_v2" {
+				token, err := d.Token()
+				enabled, ok := token.(bool)
+				if err != nil || !ok {
+					return nil, ErrProcessMetricsConfiguration
+				}
+				fields[name] = strconv.FormatBool(enabled)
+				continue
 			}
 			var value string
 			if d.Decode(&value) != nil || value == "" || len(value) > 1024 {
@@ -73,10 +83,10 @@ func ProcessMetricsDeploymentFor(raw, module, role string) (*ProcessMetricsDeplo
 			}
 			fields[name] = value
 		}
-		if token, err = d.Token(); err != nil || token != json.Delim('}') || len(fields) != 5 {
+		if token, err = d.Token(); err != nil || token != json.Delim('}') || (len(fields) != 5 && len(fields) != 6) {
 			return nil, ErrProcessMetricsConfiguration
 		}
-		entry := ProcessMetricsDeployment{ModuleName: fields["module_name"], Role: fields["role"], Listen: fields["listen"], Endpoint: fields["endpoint"], TLSDir: fields["tls_dir"]}
+		entry := ProcessMetricsDeployment{ModuleName: fields["module_name"], Role: fields["role"], Listen: fields["listen"], Endpoint: fields["endpoint"], TLSDir: fields["tls_dir"], CgroupV2: fields["cgroup_v2"] == "true"}
 		key := entry.ModuleName + "/" + entry.Role
 		if entry.Validate() != nil || seen[key] || endpoints[entry.Endpoint] || listeners[entry.Listen] {
 			return nil, ErrProcessMetricsConfiguration

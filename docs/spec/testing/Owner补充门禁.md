@@ -70,7 +70,7 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 ## 平台指标设施独占门禁
 
-默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的四个互补分组：`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=process-alerts` 覆盖真实进程 CPU/RSS 规则触发、恢复与签名通知；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警。各分组独占随机 Compose 项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
+默认 `make test-monitor-metrics` 仍顺序执行全部场景。CI 使用同一入口的五个互补分组：`MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 覆盖专业来源、认证与生命周期；`--case=http-quality` 覆盖真实 SDK 进程、HTTP 查询与告警；`--case=process-alerts` 覆盖真实进程 CPU/RSS 规则触发、恢复与签名通知；`--case=host-resources` 覆盖 HTTP SD、主机/受限来源、中心恢复、总览与资源告警；`--case=cgroup-source` 覆盖显式选入的自身 cgroup v2 内核身份及 CPU／内存原始量，三个 SDK 来源与独立内核读取对照，明确共享组不证明独立容器或配额。各分组独占随机 Compose 项目、保持原窗口/新鲜度/等待期限及退出零残留；共享传输与固定窗口前置条件可各自重验，领域场景不重复。Release 使用独立 Linux Runner 矩阵、`fail-fast: false`，每项维持 20 分钟 Job 上限；稳定名称 `Monitor metrics infrastructure` 只汇总真实结果，任一分组失败、取消或被跳过均不能计为已选门禁通过。旧的单 Job 串行全量编排删除，不靠增加超时或削减场景获得通过。
 
 进程告警专项在设施准备阶段，以原有 65 秒等待期限确认三个当前进程的 CPU 计数器均有至少四个一分钟内样本和一分钟前边界，按实例身份与端点精确匹配；首次 RSS 样本不能替代 CPU 来源就绪。之后的 Go 场景仍使用 270 秒总预算、每阶段 100 秒等待及 300 秒可执行测试上限；规则创建后的完整 CPU 窗口先就绪，再验证连续空闲正常，释放内存后先以真实 RSS 确认执行到释放分支，再验证 CPU/RSS 的同一事件恢复。真实抓取抖动使两次样本未满 15 秒时，仍须等待第三个样本，不舍入采样时刻或放宽持续窗口。来源八分钟寿命、固定阈值、签名通知重试及全部场景断言均保留；准备超时直接失败，不重试场景、不改写历史，也不放宽生产采样或告警规则。
 
