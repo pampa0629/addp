@@ -3066,28 +3066,39 @@ def _d8_watershed_error(code):
     return ValueError(_D8_WATERSHED_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _d8_watershed(directions, points):
-    """Full upstream watersheds of unique, nonnested user IDs on a validated graph."""
-    valid, downstream, indegree = _d8_graph(directions, _d8_watershed_error)
-    order = _d8_topological_order(valid, downstream, indegree, _d8_watershed_error)
+_D8_SUBCATCHMENTS_MESSAGES = {
+    key: (zh.replace('D8 指定汇水点汇水区', 'D8 增量子汇水区'),
+          en.replace('D8 specified-outlet watershed', 'D8 incremental subcatchments'))
+    for key, (zh, en) in _D8_WATERSHED_MESSAGES.items() if key != 'nested'
+}
+
+
+def _d8_subcatchments_error(code):
+    return ValueError(_D8_SUBCATCHMENTS_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_point_catchments(directions, points, error, *, reject_nested):
+    """One validated graph and reverse pass; a selected point owns its upstream cells."""
+    valid, downstream, indegree = _d8_graph(directions, error)
+    order = _d8_topological_order(valid, downstream, indegree, error)
     if not np.array_equal(np.isfinite(points), valid):
-        raise _d8_watershed_error('coverage')
+        raise error('coverage')
     values = points[valid]
     if np.any((values < 0) | (values > _D8_MAX_EXACT_COUNT) | (values != np.floor(values))):
-        raise _d8_watershed_error('points_values')
+        raise error('points_values')
     selected = values[values > 0]
     if selected.size == 0:
-        raise _d8_watershed_error('empty')
+        raise error('empty')
     if np.unique(selected).size != selected.size:
-        raise _d8_watershed_error('duplicate')
+        raise error('duplicate')
     labels = np.zeros(directions.size, dtype=np.int64)
     original = points.ravel()
     for cell in order[::-1]:
         target = int(downstream[cell])
         inherited = labels[target] if target >= 0 else 0
         if original[cell] > 0:
-            if inherited != 0:
-                raise _d8_watershed_error('nested')
+            if reject_nested and inherited != 0:
+                raise error('nested')
             labels[cell] = int(original[cell])
         else:
             labels[cell] = inherited
@@ -3096,18 +3107,39 @@ def _d8_watershed(directions, points):
     return result
 
 
-def raster_watershed_d8(input_raster, points_raster, band, points_band):
-    """Preserve explicit outlet IDs; never snap points, truncate or split nested watersheds."""
-    source, directions, _ = _d8_direction_source(input_raster, band, _d8_watershed_error)
+def _d8_watershed(directions, points):
+    """Full upstream watersheds of unique, nonnested user IDs."""
+    return _d8_point_catchments(directions, points, _d8_watershed_error, reject_nested=True)
+
+
+def _d8_subcatchments(directions, points):
+    """Disjoint incremental regions owned by the first selected point downstream."""
+    return _d8_point_catchments(directions, points, _d8_subcatchments_error, reject_nested=False)
+
+
+def _d8_point_inputs(input_raster, points_raster, band, points_band, error):
+    source, directions, _ = _d8_direction_source(input_raster, band, error)
     points_source = _open(points_raster)
     try:
         _require_same_grid(source, points_source)
     except ValueError as cause:
-        raise _d8_watershed_error('alignment') from cause
+        raise error('alignment') from cause
     points_source = None
     _, points, _ = _d8_direction_source(points_raster, points_band,
-        lambda code: _d8_watershed_error('alignment' if code == 'grid' else 'points_' + code))
+        lambda code: error('alignment' if code == 'grid' else 'points_' + code))
+    return source, directions, points
+
+
+def raster_watershed_d8(input_raster, points_raster, band, points_band):
+    """Preserve full upstream regions; nested user points are rejected."""
+    source, directions, points = _d8_point_inputs(input_raster, points_raster, band, points_band, _d8_watershed_error)
     return _d8_output(source, _d8_watershed(directions, points))
+
+
+def raster_subcatchments_d8(input_raster, points_raster, band, points_band):
+    """Preserve user IDs at the first selected point downstream, allowing nested points."""
+    source, directions, points = _d8_point_inputs(input_raster, points_raster, band, points_band, _d8_subcatchments_error)
+    return _d8_output(source, _d8_subcatchments(directions, points))
 
 
 _D8_STREAM_ORDER_MESSAGES = {
@@ -3496,6 +3528,7 @@ _SPECS = [
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CELL, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_snap_pour_points, OperatorCategory.RASTER_CELL, '汇水点吸附', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的唯一正安全整数标记，零为未选；保留编号，碰撞失败', role='input'), _param('band', 'int', '显式未加权累积计数数据波段'), _param('points_band', 'int', '显式汇水点标记数据波段'), _param('radius_metres', 'float', '显式有限非负米制圆半径；允许跨分水岭，最大计数后按距离／行／列决胜')], 'raster', ['read']),
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
+    (raster_subcatchments_d8, OperatorCategory.RASTER_CELL, 'D8 增量子汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身；允许嵌套，按下游第一个指定点划分互斥增量范围')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
@@ -3533,7 +3566,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'method': 'strahler'})
     if name == 'raster_snap_pour_points':
         examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1, 'radius_metres': 100.})
-    if name == 'raster_watershed_d8':
+    if name in ('raster_watershed_d8', 'raster_subcatchments_d8'):
         examples.update({'points_raster': {'$ref': 'points'}, 'band': 1, 'points_band': 1})
     if name == 'raster_flow_accumulation_weighted_d8':
         examples.update({'weights_raster': {'$ref': 'weights'}, 'band': 1, 'weights_band': 1})
