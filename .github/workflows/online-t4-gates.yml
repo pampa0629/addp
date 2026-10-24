@@ -76,6 +76,11 @@ on:
           - transfer-relational-sql-etl
           - transfer-continuous-events
           - workbench-service-consumption
+      pg_source_commit:
+        description: Optional full ancestor SHA for pg-source-authorization only
+        required: false
+        type: string
+        default: ''
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true
@@ -132,11 +137,31 @@ jobs:
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: pg-source-authorization
     steps:
+      - name: Validate requested PG source commit
+        env:
+          PG_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
+        run: |
+          if [[ -n "$PG_SOURCE_COMMIT" && ! "$PG_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'PG source commit must be a full lowercase SHA' >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.pg_source_commit || github.sha }}
+
+      - name: Verify PG source ancestry
+        env:
+          PG_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
+          PG_DISPATCH_COMMIT: ${{ github.sha }}
+        run: |
+          selected="${PG_SOURCE_COMMIT:-$PG_DISPATCH_COMMIT}"
+          [ "$(git rev-parse HEAD)" = "$selected" ] || { echo 'PG source checkout mismatch' >&2; exit 1; }
+          git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"
+          printf 'PG source commit=%s; dispatch commit=%s\n' "$selected" "$PG_DISPATCH_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

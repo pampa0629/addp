@@ -767,6 +767,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, destination)
         CHECK.validate_pg_authorization_profile(self.repository, {'pg-source-authorization'})
         for relative, fragment in ((paths[0], "inputs.suite != 'pg-source-authorization'"),
+                                   (paths[0], 'name: Validate requested PG source commit'),
+                                   (paths[0], 'ref: ${{ inputs.pg_source_commit || github.sha }}'),
+                                   (paths[0], 'git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"'),
                                    (paths[2], 'online-metric-postgres-fixture.sh stop'),
                                    (paths[3], 'lifecycle.cleanup()'),
                                    (paths[4], '@$(MAKE) test-pg-authorization-online-runner'),

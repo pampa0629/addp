@@ -3355,6 +3355,14 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'pg-source-authorization'\n" not in job.group("body")
     ) or "&& inputs.suite != 'pg-source-authorization'" not in workflow:
         raise RegistrationError("PG authorization must use its single manual Hosted job")
+    if '      pg_source_commit:\n' not in workflow or any(fragment not in job.group('body') for fragment in (
+        'name: Validate requested PG source commit', 'name: Verify PG source ancestry',
+        'PG_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}', 'PG_DISPATCH_COMMIT: ${{ github.sha }}',
+        '^[0-9a-f]{40}$', 'ref: ${{ inputs.pg_source_commit || github.sha }}',
+        '[ "$(git rev-parse HEAD)" = "$selected" ]',
+        'git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"',
+    )):
+        raise RegistrationError("PG fixed source must validate exact SHA, checkout and dispatch ancestry")
     required = {
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',

@@ -1,12 +1,64 @@
 import importlib
 import os
+import re
 import shutil
 import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
 SUPPORT = importlib.import_module('scripts.test.online-hosted-opengauss-gate_test')
 SCRIPT = Path(__file__).with_name('online-hosted-pg-authorization-gate.sh')
+
+
+class PGSourcePinWorkflowTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pg-source-pin-')
+        self.addCleanup(self.temporary.cleanup)
+        self.repository = Path(self.temporary.name)
+        self.git('init', '-q', '--initial-branch=main')
+        self.git('commit', '--allow-empty', '-qm', 'ancestor')
+        self.ancestor = self.git('rev-parse', 'HEAD')
+        self.git('commit', '--allow-empty', '-qm', 'dispatch')
+        self.dispatch = self.git('rev-parse', 'HEAD')
+        self.foreign = self.git('commit-tree', 'HEAD^{tree}', '-m', 'unrelated root')
+        workflow = (SCRIPT.parents[2] / '.github/workflows/online-t4-gates.yml').read_text()
+        self.assertEqual(workflow.count('ref: ${{ inputs.pg_source_commit || github.sha }}'), 1)
+        self.job = re.search(r'(?ms)^  pg-authorization-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow).group(1)
+
+    def git(self, *args):
+        return subprocess.check_output(['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
+                                        *args], cwd=self.repository, text=True).strip()
+
+    def guard(self, name, selected, dispatch=None):
+        step = re.search(r'      - name: ' + re.escape(name) + r'\n(.*?)(?=\n      - name:|\Z)', self.job, re.S)
+        self.assertIsNotNone(step, 'missing source pin admission step')
+        body = step.group(1).split('        run: |\n', 1)[1]
+        return subprocess.run(['bash', '-eu', '-o', 'pipefail', '-c', textwrap.dedent(body)], cwd=self.repository,
+            env=dict(os.environ, PG_SOURCE_COMMIT=selected, PG_DISPATCH_COMMIT=dispatch or self.dispatch),
+            capture_output=True, text=True, timeout=5)
+
+    def test_pin_format_is_validated_before_checkout_without_expression_execution(self):
+        self.assertLess(self.job.index('Validate requested PG source commit'), self.job.index('Check out repository'))
+        for value in ['', self.ancestor]:
+            self.assertEqual(self.guard('Validate requested PG source commit', value).returncode, 0)
+        for value in ['main', self.ancestor[:12], self.ancestor.upper(), '-other', '$(touch injected)']:
+            with self.subTest(value=value):
+                self.assertNotEqual(self.guard('Validate requested PG source commit', value).returncode, 0)
+        self.assertFalse((self.repository / 'injected').exists())
+
+    def test_checked_out_source_must_match_and_belong_to_dispatch_ancestry(self):
+        self.assertIn('ref: ${{ inputs.pg_source_commit || github.sha }}', self.job)
+        self.assertLess(self.job.index('Verify PG source ancestry'), self.job.index('Set up Go'))
+        self.assertEqual(self.guard('Verify PG source ancestry', '').returncode, 0)
+        self.assertNotEqual(self.guard('Verify PG source ancestry', self.ancestor).returncode, 0)
+        self.git('checkout', '-q', '--detach', self.ancestor)
+        self.assertEqual(self.guard('Verify PG source ancestry', self.ancestor).returncode, 0)
+        self.git('checkout', '-q', '--detach', self.foreign)
+        self.assertNotEqual(self.guard('Verify PG source ancestry', self.foreign).returncode, 0)
+        self.git('checkout', '-q', '--detach', self.dispatch)
+        self.assertNotEqual(self.guard('Verify PG source ancestry', self.dispatch, self.ancestor).returncode, 0)
 
 
 class HostedPGAuthorizationTest(unittest.TestCase):
