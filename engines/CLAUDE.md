@@ -42,6 +42,8 @@ Spark Workflow 确定性测试统一运行 `make test-spark-workflow`，自动�
 
 GeoPython Workflow 开发环境使用独立 Python 3.12 venv 和同版本原生 GDAL 绑定，PGeo 使用 MDBTools/unixODBC。`scripts/dev/geopython-workflow.sh` 是 start/restart 的唯一准备与启动实现，删除开发镜像路线；stop 按 PID 退出。GDAL/PROJ 路径派生自原生依赖，ODBC 配置限制在 `.dev-state/geopython-odbc`，不继承 Anaconda 的资源变量或系统 site-packages。重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖并验证原生能力；准备失败的服务不启动，入口返回非零。开发和产品统一由 `python api_server.py` 进入单 Worker、四线程 Gunicorn，就绪后异步注册，跨请求状态保留在同一 Worker。该脚本先进入轻量 Gunicorn 启动，再由 Worker 导入应用及 GIS 原生库；不能仅设置 `preload_app=False`，却在主进程先导入应用后 fork。否则 macOS 的异步执行线程首次创建 PROJ/SQLite 上下文可能崩溃。`make test-geopython-workflow` 同时验证真实脚本入口的首次 CRS 工作流和无 Worker 替换；生命周期 T1 和原生 ArcGIS Runtime 读取分别验证既有契约；栅格 Hosted T4 独立调用根产品构建入口，核对镜像 ID、默认入口与零残留。
 
+GeoPython 的必要原生子进程统一经 `operators/_native_process.py` 启动：父进程仅调用公开 `os.posix_spawn`，新解释器先关闭非标准文件描述符，再切换工作目录及 exec 目标，短命令和 cwd 不可回退到 fork。凭据仍走 stdin；保留流式输出、独立 env、超时回收和退出码。该启动器随现有 operators 目录进入产品镜像，健康资源观测不得借助 sysctl 子进程；无法读取物理内存时沿原契约保留未知值，容器祖先限额仍取最严格值。测试通过与运行期间无新增原生崩溃报告须分别核验。
+
 Spark Workflow 本地开发使用 Python 3.11/3.12 虚拟环境与原生 OpenJDK 11，`start.sh -spark-workflow` 和 `restart.sh -spark-workflow` 共用 `scripts/dev/spark-workflow.sh`，通过已有依赖安装互斥锁同步完整 requirements 与 editable Common Python。`stop.sh` 按原生 PID 停止；HTTP 绑定回环，就绪核对 PID、监听和 HTTP。macOS 需要本机 `/etc/hosts` 的 `127.0.0.1 host.docker.internal` 映射，Docker Worker 仍用内置解析。生产与 Hosted 产品验收保留镜像默认入口，使用 `scripts/utils/hosted-online.sh` 的独立产品启动，不依赖开发脚本构建 Spark 镜像。
 
 Spark 产品镜像使用 Python 3.11 Bookworm 和官方 Temurin Java 11 JRE，安装同一仓库的 `common-python`。唯一构建入口为 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"`，使用根目录构建上下文；本地缓存与 CI 影响选择均覆盖共享 Python 包。镜像构建包含依赖一致性、Flask API 导入及本地 Spark 计算检查；该构建检查不代表分布式 Worker 验收。

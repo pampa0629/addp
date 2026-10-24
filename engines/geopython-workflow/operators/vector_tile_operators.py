@@ -33,6 +33,7 @@ from .base import (
     register_operator,
 )
 from .raster_operators import _progress_reporter
+from . import _native_process
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ request = json.load(sys.stdin)
 transformer = Transformer.from_crs(request['source_crs'], 'EPSG:4326', always_xy=True)
 print(json.dumps([transformer.transform(*point) for point in request['points']]))
 """
-    completed = subprocess.run([sys.executable, "-c", transform_extent],
+    completed = _native_process.run([sys.executable, "-c", transform_extent],
         input=json.dumps({"source_crs": source_crs, "points": [
             [min_x, min_y], [min_x, max_y], [max_x, min_y], [max_x, max_y]]}),
         capture_output=True, text=True, check=True, timeout=60)
@@ -181,7 +182,7 @@ for layer_index in range(dataset.GetLayerCount()):
         for index in range(definition.GetFieldCount())]})
 print(json.dumps({'layers': layers}))
 """
-    completed = subprocess.run([sys.executable, "-c", inspect_source, source_uri, source_srs],
+    completed = _native_process.run([sys.executable, "-c", inspect_source, source_uri, source_srs],
         env={**os.environ, **{key: str(value) for key, value in source_env.items()}},
         capture_output=True, text=True, check=True, timeout=60)
     layers = json.loads(completed.stdout).get("layers", [])
@@ -298,54 +299,54 @@ def _run_command_with_gdal_progress(
             if key and value is not None:
                 env[str(key)] = str(value)
 
-    process = subprocess.Popen(
+    with _native_process.start(
         args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         env=env,
         bufsize=0,
-    )
-    output_parts: list[str] = []
-    scan_text = ""
-    last_progress = -1
-    if process.stdout is not None:
-        while True:
-            chunk = process.stdout.read(1)
-            if chunk == "" and process.poll() is not None:
-                break
-            if not chunk:
-                continue
-            output_parts.append(chunk)
-            scan_text += chunk
-            if len(scan_text) > 256:
-                scan_text = scan_text[-256:]
-            for progress in _extract_gdal_progress_values(scan_text):
-                if progress <= last_progress:
+    ) as process:
+        output_parts: list[str] = []
+        scan_text = ""
+        last_progress = -1
+        if process.stdout is not None:
+            while True:
+                chunk = process.stdout.read(1)
+                if chunk == "" and process.poll() is not None:
+                    break
+                if not chunk:
                     continue
-                last_progress = progress
-                _emit_progress(
-                    emit,
-                    "generate",
-                    progress,
-                    100,
-                    min_zoom,
-                    max_zoom,
-                    overall_progress=_weighted_progress(
-                        MVT_GENERATE_PROGRESS_START,
-                        MVT_GENERATE_PROGRESS_SPAN,
+                output_parts.append(chunk)
+                scan_text += chunk
+                if len(scan_text) > 256:
+                    scan_text = scan_text[-256:]
+                for progress in _extract_gdal_progress_values(scan_text):
+                    if progress <= last_progress:
+                        continue
+                    last_progress = progress
+                    _emit_progress(
+                        emit,
+                        "generate",
                         progress,
-                    ),
-                )
+                        100,
+                        min_zoom,
+                        max_zoom,
+                        overall_progress=_weighted_progress(
+                            MVT_GENERATE_PROGRESS_START,
+                            MVT_GENERATE_PROGRESS_SPAN,
+                            progress,
+                        ),
+                    )
 
-    returncode = process.wait()
-    output = "".join(output_parts)
-    if returncode != 0:
-        message = f"command failed with exit code {returncode}: {' '.join(args)}"
-        if output.strip():
-            message = f"{message}; output: {output.strip()}"
-        raise RuntimeError(message)
-    return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=output, stderr="")
+        returncode = process.wait()
+        output = "".join(output_parts)
+        if returncode != 0:
+            message = f"command failed with exit code {returncode}: {' '.join(args)}"
+            if output.strip():
+                message = f"{message}; output: {output.strip()}"
+            raise RuntimeError(message)
+        return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=output, stderr="")
 
 
 def _emit_progress(

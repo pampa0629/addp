@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import math
 import os
-import subprocess
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,11 +51,7 @@ def resource_observation(*, cgroup_root=Path('/sys/fs/cgroup'), proc_cgroup=Path
         if pages > 0 and page_size > 0:
             memory.append(pages * page_size)
     except (OSError, ValueError):
-        if os.uname().sysname == 'Darwin':
-            try:
-                memory.append(int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], timeout=1)))
-            except (OSError, ValueError, subprocess.SubprocessError):
-                pass
+        pass
     try:
         groups = [parts for line in proc_cgroup.read_text().splitlines() if len(parts := line.split(':', 2)) == 3]
     except OSError:

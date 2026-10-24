@@ -35,6 +35,7 @@ def test_real_entry_executes_first_crs_workflow_without_worker_replacement(tmp_p
     from pathlib import Path
     import socket
     import subprocess
+    from operators import _native_process
     import sys
     import time
     from urllib.request import ProxyHandler, Request, build_opener
@@ -49,7 +50,7 @@ def test_real_entry_executes_first_crs_workflow_without_worker_replacement(tmp_p
     base = f"http://127.0.0.1:{port}"
     log = tmp_path / "native-entry.log"
     with log.open("w") as stream:
-        process = subprocess.Popen([sys.executable, "api_server.py"], cwd=Path(__file__).parent,
+        process = _native_process.start([sys.executable, "api_server.py"], cwd=Path(__file__).parent,
                                    env=env, stdout=stream, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 30
@@ -147,6 +148,7 @@ def test_real_gunicorn_listens_before_registration_and_shares_worker_state(tmp_p
     from pathlib import Path
     import socket
     import subprocess
+    from operators import _native_process
     import sys
     import time
     from urllib.request import ProxyHandler, build_opener
@@ -171,7 +173,7 @@ def test_real_gunicorn_listens_before_registration_and_shares_worker_state(tmp_p
     }
     for format_name, content in exchange_sources.items():
         (tmp_path / ('sites.' + format_name)).write_text(content, encoding='utf-8')
-    script = '''
+    probe = '''
 import api_server, json, os
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
@@ -207,14 +209,37 @@ def register():
     with build_opener(ProxyHandler({})).open('http://127.0.0.1:' + os.environ['PORT'] + '/health') as r:
         Path(os.environ['REGISTRATION']).write_text(json.dumps({'health': r.status, 'pid': os.getpid()}))
 api_server.register_to_system_with_retry = register
-api_server.run_runtime()
 '''
+    # Install the test-only routes when the worker imports the application.
+    # The real api_server.py master remains free of GIS imports before fork.
+    script = '''
+import importlib.abc, importlib.machinery, runpy, sys
+from gunicorn.arbiter import Arbiter
+original_spawn = Arbiter.spawn_worker
+def spawn_worker(self):
+    assert not any(name in sys.modules for name in ('api_server', 'osgeo.gdal', 'pyproj'))
+    return original_spawn(self)
+Arbiter.spawn_worker = spawn_worker
+class Probe(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname != 'api_server': return None
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+        self.loader = spec.loader
+        spec.loader = self
+        return spec
+    def create_module(self, spec): return None
+    def exec_module(self, module):
+        self.loader.exec_module(module)
+        exec(PROBE, {})
+sys.meta_path.insert(0, Probe())
+runpy.run_path('api_server.py', run_name='__main__')
+'''.replace('PROBE', repr(probe))
     env = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', REGISTRATION=str(registration), VECTOR_SOURCE=str(vector_source),
                SYSTEM_URL='http://127.0.0.1:1', GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET='')
     opener = build_opener(ProxyHandler({}))
     log = tmp_path / 'server.log'
     with log.open('w') as stream:
-        process = subprocess.Popen([sys.executable, '-c', script], cwd=Path(__file__).parent,
+        process = _native_process.start([sys.executable, '-c', script], cwd=Path(__file__).parent,
                                    env=env, stdout=stream, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 30

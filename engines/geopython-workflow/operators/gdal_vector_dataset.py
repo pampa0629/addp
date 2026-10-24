@@ -9,7 +9,7 @@ import json
 import math
 import re
 import shutil
-import subprocess
+from . import _native_process
 import sys
 import tempfile
 import xml.parsers.expat
@@ -949,7 +949,7 @@ def _register_native_operator(metadata, function):
         # A fresh interpreter must initialize PROJ/SQLite, not the forked HTTP
         # worker. Use this route on every platform, as vector tiles already do.
         # Access-plan credentials are sent on stdin, never in process arguments.
-        completed = subprocess.run([
+        completed = _native_process.run([
             sys.executable, "-c",
             "from operators.gdal_vector_dataset import _native_process_main; _native_process_main()",
         ], input=json.dumps({"operation": function.__name__, "params": params}, allow_nan=False),

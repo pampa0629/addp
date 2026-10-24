@@ -164,7 +164,7 @@ def test_vector_to_pmtiles_metadata_uses_access_plan_contract():
 def test_vector_to_pmtiles_standard_plan_native_attributes_and_create(tmp_path, source_format, monkeypatch):
     from osgeo import gdal
     import operators.vector_tile_operators as module
-    run_subprocess = module.subprocess.run
+    run_subprocess = module._native_process.run
 
     def run_with_indexed_dataset(command, **kwargs):
         # Hosted bindings expose indexed layer access without Dataset iteration.
@@ -173,7 +173,7 @@ def test_vector_to_pmtiles_standard_plan_native_attributes_and_create(tmp_path, 
             command = [*command[:2], 'from osgeo import gdal\ngdal.Dataset.__iter__ = None\n' + command[2], *command[3:]]
         return run_subprocess(command, **kwargs)
 
-    monkeypatch.setattr(module.subprocess, 'run', run_with_indexed_dataset)
+    monkeypatch.setattr(module._native_process, 'run', run_with_indexed_dataset)
     work_dirs = []
     create_work_dir = module.tempfile.mkdtemp
     def track_work_dir(*args, **kwargs):

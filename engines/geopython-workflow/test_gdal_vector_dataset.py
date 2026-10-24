@@ -452,7 +452,8 @@ def test_native_process_keeps_access_plan_out_of_arguments(monkeypatch):
         assert json.loads(kwargs['input'])['params']['access_plan'] == plan
         return subprocess.CompletedProcess(command, 0, stdout='{"result": {"ok": true}}')
 
-    monkeypatch.setattr(subprocess, 'run', run)
+    from operators import _native_process
+    monkeypatch.setattr(_native_process, 'run', run)
     assert get_operator('vector_dataset.inspect')(access_plan=plan) == {'ok': True}
     assert len(calls) == 1
 

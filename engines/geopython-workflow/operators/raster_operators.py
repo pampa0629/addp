@@ -17,7 +17,6 @@ import re
 import fnmatch
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import subprocess
 import uuid
 from datetime import datetime, timezone
 from time import perf_counter
@@ -57,35 +56,6 @@ def _import_gdal():
     return gdal
 
 
-def _run_command(args: list[str], extra_env: Dict[str, Any] | None = None) -> subprocess.CompletedProcess:
-    logger.info("执行栅格命令: %s", " ".join(args))
-    env = os.environ.copy()
-    if extra_env:
-        for key, value in extra_env.items():
-            if key and value is not None:
-                env[str(key)] = str(value)
-    completed = subprocess.run(args, check=False, capture_output=True, text=True, env=env)
-    if completed.returncode != 0:
-        stderr = (completed.stderr or "").strip()
-        stdout = (completed.stdout or "").strip()
-        message = f"command failed with exit code {completed.returncode}: {' '.join(args)}"
-        if stderr:
-            message = f"{message}; stderr: {stderr}"
-        if stdout:
-            message = f"{message}; stdout: {stdout}"
-        raise RuntimeError(message)
-    return completed
-
-
-def _gdalinfo_json(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    try:
-        completed = _run_command(["gdalinfo", "-json", path], gdal_env)
-        return json.loads(completed.stdout or "{}")
-    except Exception as exc:
-        logger.warning("读取 GeoTIFF 元数据失败: %s", exc)
-        return {}
-
-
 def _authority_code_from_wkt(wkt: str) -> str:
     text = str(wkt or "")
     for pattern in (r'AUTHORITY\["EPSG","(\d+)"\]', r'ID\["EPSG",\s*(\d+)'):
@@ -116,43 +86,6 @@ def _wkt_depth_at(text: str, offset: int) -> int:
         elif char == "]" and depth > 0:
             depth -= 1
     return depth
-
-
-def _raster_facts(path: str, gdal_env: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    info = _gdalinfo_json(path, gdal_env)
-    size = info.get("size") if isinstance(info.get("size"), list) else []
-    width = int(size[0]) if len(size) > 0 and isinstance(size[0], (int, float)) else 0
-    height = int(size[1]) if len(size) > 1 and isinstance(size[1], (int, float)) else 0
-    bands = info.get("bands") if isinstance(info.get("bands"), list) else []
-    extent = []
-    extent_srid = 0
-    corner_coordinates = info.get("cornerCoordinates")
-    if isinstance(corner_coordinates, dict):
-        lower_left = corner_coordinates.get("lowerLeft")
-        upper_right = corner_coordinates.get("upperRight")
-        if isinstance(lower_left, list) and isinstance(upper_right, list) and len(lower_left) >= 2 and len(upper_right) >= 2:
-            extent = [float(lower_left[0]), float(lower_left[1]), float(upper_right[0]), float(upper_right[1])]
-    coordinate_system = info.get("coordinateSystem")
-    source_crs = ""
-    source_crs_definition = ""
-    if isinstance(coordinate_system, dict):
-        source_crs_definition = str(coordinate_system.get("wkt") or "").strip()
-        source_crs = _authority_code_from_wkt(source_crs_definition)
-        if source_crs.startswith("EPSG:"):
-            try:
-                extent_srid = int(source_crs.split(":", 1)[1])
-            except ValueError:
-                extent_srid = 0
-    return {
-        "width": width,
-        "height": height,
-        "band_count": len(bands),
-        "size_bytes": os.path.getsize(path) if os.path.exists(path) else 0,
-        "extent": extent,
-        "extent_srid": extent_srid,
-        "source_crs": source_crs,
-        "source_crs_definition": source_crs_definition,
-    }
 
 
 def _is_gdal_virtual_path(path: str) -> bool:

@@ -1,3 +1,4 @@
+import pytest
 #!/usr/bin/env python3
 """
 GeoPython Workflow Test Script
@@ -402,3 +403,211 @@ def test_plain_dataframe_projection_preserves_int64_null_and_bounds_preview():
     empty=_project(frame.head(0))
     assert empty['row_count']==0 and empty['preview_rows']==[] and empty['truncated'] is False
     assert empty['schema']==projected['schema']
+
+
+@pytest.mark.parametrize('memory', ['physical', 'oserror', 'valueerror', 'unknown', 'cgroup'])
+def test_resource_memory_observation_never_starts_process(tmp_path, monkeypatch, memory):
+    import os
+    import subprocess
+    import raster_resources as module
+    attempts = []
+    def forbidden(*args, **kwargs):
+        attempts.append(True)
+        raise AssertionError('health observation must stay in process')
+    monkeypatch.setattr(subprocess, 'Popen', forbidden)
+    def sysconf(key):
+        if memory in ('oserror', 'cgroup'): raise OSError('unknown physical memory')
+        if memory == 'valueerror': raise ValueError('unknown physical memory')
+        return -1 if memory == 'unknown' else 4096 if key == 'SC_PAGE_SIZE' else 1048576
+    monkeypatch.setattr(os, 'sysconf', sysconf)
+    root = tmp_path / 'cgroup'; root.mkdir()
+    proc = tmp_path / 'proc'
+    if memory == 'cgroup':
+        proc.write_text('0::/\n'); (root / 'memory.max').write_text(str(1024**3))
+    fact = module.resource_observation(cgroup_root=root, proc_cgroup=proc)
+    assert not attempts
+    assert fact['memory_limit_bytes'] == (4096 * 1048576 if memory == 'physical' else 1024**3 if memory == 'cgroup' else None)
+    if memory in ('oserror', 'valueerror', 'unknown'): assert fact['advice'] is None
+
+
+@pytest.mark.parametrize('route', ['extent', 'facts', 'progress', 'vector'])
+def test_native_runtime_spawn_route_never_forks_loaded_gis(tmp_path, monkeypatch, route):
+    import os
+    import subprocess
+    import sys
+    import threading
+    from pyproj import Transformer
+    from operators import get_operator
+    from operators import vector_tile_operators as tiles
+    Transformer.from_crs(4326, 3857, always_xy=True).transform(112, 28)
+    stop = threading.Event(); active = threading.Thread(target=stop.wait); active.start()
+    calls = []
+    native_spawn = os.posix_spawn
+    def spawn(*args, **kwargs):
+        calls.append(args[0]); return native_spawn(*args, **kwargs)
+    def forbidden(*args, **kwargs): raise AssertionError('unsafe fork attempted after GIS initialization')
+    monkeypatch.setattr(os, 'posix_spawn', spawn)
+    monkeypatch.setattr(os, 'fork', forbidden)
+    monkeypatch.setattr(subprocess, '_fork_exec', forbidden)
+    source = tmp_path / 'points.geojson'
+    source.write_text('{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"长沙"},"geometry":{"type":"Point","coordinates":[112,28]}}]}')
+    try:
+        if route == 'extent':
+            result = tiles._extent_to_wgs84([0, 0, 1000, 1000], 3857)
+            assert result[0] == result[1] == 0 and 0 < result[2] < 1
+        elif route == 'facts':
+            layer, fields, geometry = tiles._vector_source_facts(str(source), {}, {}, 'EPSG:4326')
+            assert layer == 'points' and fields == {'name': 'String'} and geometry
+        elif route == 'progress':
+            events = []
+            tiles._run_command_with_gdal_progress([sys.executable, '-c', "print('0...50...100 - done.')"], {}, events.append, 0, 1)
+            assert [e['progress_percent'] for e in events] == [0, 50, 100]
+        else:
+            exchange = tmp_path / 'sites.kml'
+            exchange.write_text('<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>长沙</name><Point><coordinates>112,28</coordinates></Point></Placemark></Document></kml>')
+            result = get_operator('vector_dataset.inspect')(access_plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'kml','access':{'method':'mounted_path','path':str(exchange)}}})
+            assert result['container']['children']
+        assert len(calls) == 1
+    finally:
+        stop.set(); active.join(5)
+
+
+@pytest.mark.parametrize('text', [False, True])
+@pytest.mark.parametrize('short_command', [False, True])
+def test_native_process_pipes_environment_cwd_and_descriptor_isolation(tmp_path, monkeypatch, text, short_command):
+    import fcntl
+    import hashlib
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from operators import _native_process as native
+    sentinel = tmp_path / 'private-parent-only'; sentinel.write_text('private descriptor')
+    with sentinel.open() as stream:
+        leaked = fcntl.fcntl(stream.fileno(), fcntl.F_DUPFD, 100)
+    os.set_inheritable(leaked, True)
+    request = 'stdin-private-secret:' + '数' * 600000
+    payload = request if text else request.encode()
+    env = {'PATH':str(Path(sys.executable).parent), 'ONLY_CHILD':'isolated'}
+    monkeypatch.setenv('PARENT_ONLY_SECRET', 'must-not-leak')
+    calls = []
+    spawn = os.posix_spawn
+    def observed(file, args, values, **kwargs):
+        assert 'stdin-private-secret' not in repr(args)
+        calls.append(args); return spawn(file, args, values, **kwargs)
+    monkeypatch.setattr(os, 'posix_spawn', observed)
+    script = '''
+import hashlib,json,os,sys
+try: os.fstat(int(sys.argv[1])); closed=False
+except OSError: closed=True
+value=sys.stdin.buffer.read()
+print(json.dumps({'cwd':os.getcwd(),'closed':closed,'only':os.environ.get('ONLY_CHILD'),'private':os.environ.get('PARENT_ONLY_SECRET'),'sha256':hashlib.sha256(value).hexdigest()}))
+sys.stdout.write('o'*2000000)
+sys.stderr.write('e'*1000000)
+'''
+    try:
+        result = native.run([Path(sys.executable).name if short_command else sys.executable, '-c', script, str(leaked)],
+            input=payload, capture_output=True, text=text, cwd=tmp_path, env=env, timeout=10, check=True)
+        stdout = result.stdout if text else result.stdout.decode()
+        facts, large = stdout.split('\n', 1)
+        facts = json.loads(facts)
+        assert facts == {'cwd':str(tmp_path.resolve()), 'closed':True, 'only':'isolated', 'private':None, 'sha256':hashlib.sha256(request.encode()).hexdigest()}
+        assert large == 'o' * 2000000
+        assert result.stderr == ('e' * 1000000 if text else b'e' * 1000000)
+        assert len(calls) == 1 and env == {'PATH':str(Path(sys.executable).parent),'ONLY_CHILD':'isolated'}
+    finally: os.close(leaked)
+
+
+@pytest.mark.parametrize('problem', ['exit', 'timeout', 'missing', 'cwd', 'spawn'])
+def test_native_process_failures_reap_children_and_preserve_errors(tmp_path, monkeypatch, problem):
+    import os
+    import signal
+    import subprocess
+    import sys
+    from operators import _native_process as native
+    before = set(os.listdir('/dev/fd'))
+    processes = []
+    start = native.start
+    def observed(*args, **kwargs):
+        process = start(*args, **kwargs); processes.append(process); return process
+    monkeypatch.setattr(native, 'start', observed)
+    if problem == 'exit':
+        with pytest.raises(subprocess.CalledProcessError) as caught:
+            native.run([sys.executable, '-c', "import sys;print('output');print('error',file=sys.stderr);sys.exit(23)"], capture_output=True, text=True, check=True)
+        assert caught.value.returncode == 23 and caught.value.stdout == 'output\n' and caught.value.stderr == 'error\n'
+    elif problem == 'timeout':
+        with pytest.raises(subprocess.TimeoutExpired) as caught:
+            native.run([sys.executable, '-c', "import time; print('ready',flush=True); time.sleep(30)"], capture_output=True, text=True, timeout=.5)
+        assert caught.value.output == b'ready\n' and processes[0].returncode == -signal.SIGKILL
+    elif problem == 'missing':
+        with pytest.raises(FileNotFoundError): native.run(['definitely-no-addp-executable'], capture_output=True)
+    elif problem == 'cwd':
+        with pytest.raises(FileNotFoundError): native.run([sys.executable, '-c', 'pass'], cwd=tmp_path/'missing')
+    else:
+        def unavailable(*args, **kwargs): raise OSError('spawn unavailable; no fork fallback')
+        monkeypatch.setattr(os, 'posix_spawn', unavailable)
+        with pytest.raises(OSError, match='spawn unavailable'): native.run([sys.executable, '-c', 'pass'], capture_output=True)
+    for process in processes:
+        assert process.poll() is not None
+        with pytest.raises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
+    assert set(os.listdir('/dev/fd')) == before
+
+
+def test_native_process_streams_progress_before_exit_and_terminates(tmp_path):
+    import subprocess
+    import sys
+    from operators import _native_process as native
+    from operators.vector_tile_operators import _run_command_with_gdal_progress
+    marker = tmp_path/'done'
+    events = []
+    def emit(event):
+        events.append(event)
+        if event['progress_percent'] < 100: assert not marker.exists()
+    _run_command_with_gdal_progress([sys.executable, '-c',
+        "import sys,time,pathlib;print('0...',end='',flush=True);time.sleep(.1);print('50...',end='',flush=True);time.sleep(.1);pathlib.Path(sys.argv[1]).touch();print('100 - done.',flush=True)",str(marker)], {}, emit, 0, 1)
+    assert [e['progress_percent'] for e in events] == [0,50,100]
+    with native.start([sys.executable,'-c','import time;time.sleep(30)'], stdout=subprocess.PIPE) as process:
+        process.terminate(); assert process.wait(5) < 0
+
+
+def test_health_unknown_memory_observation_is_healthy_without_subprocess(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import api_server
+    import raster_resources as module
+    observe = module.resource_observation
+    def unknown(_): raise OSError('physical memory unavailable')
+    def forbidden(*args, **kwargs): raise AssertionError('health must not create a process')
+    monkeypatch.setattr(os, 'sysconf', unknown)
+    monkeypatch.setattr(subprocess, 'Popen', forbidden)
+    monkeypatch.setattr(module, 'resource_observation', lambda: observe(cgroup_root=tmp_path, proc_cgroup=tmp_path/'missing'))
+    with api_server.app.test_client() as client: response = client.get('/health')
+    assert response.status_code == 200 and response.get_json()['status'] == 'healthy'
+    assert response.get_json()['raster_resources']['memory_limit_bytes'] is None
+    assert response.get_json()['raster_resources']['advice'] is None
+
+
+def test_native_process_progress_error_terminates_and_reaps(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+    from operators import _native_process as native
+    from operators.vector_tile_operators import _run_command_with_gdal_progress
+    processes = []
+    start = native.start
+    def observed(*args, **kwargs):
+        process = start(*args, **kwargs); processes.append(process); return process
+    def fail(_): raise RuntimeError('progress consumer failed')
+    monkeypatch.setattr(native, 'start', observed)
+    try:
+        with pytest.raises(RuntimeError, match='progress consumer failed'):
+            _run_command_with_gdal_progress([sys.executable,'-c',"import time;print('0...',end='',flush=True);time.sleep(30)"],{},fail,0,1)
+        assert len(processes) == 1 and processes[0].poll() is not None
+        assert processes[0].stdout.closed
+        with pytest.raises(ChildProcessError): os.waitpid(processes[0].pid, os.WNOHANG)
+    finally:
+        for process in processes:
+            if process.poll() is None: process.kill()
+            process.wait(5)
+            if process.stdout is not None: process.stdout.close()
