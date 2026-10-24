@@ -49,6 +49,30 @@ def bare_lifecycle(directory):
     return life
 
 
+class VolumePreparationContractTests(unittest.TestCase):
+    def test_complete_owned_compose_volumes_are_created_before_sampling_and_startup(self):
+        for wrong_owner in (False,True):
+            with self.subTest(wrong_owner=wrong_owner),tempfile.TemporaryDirectory() as directory:
+                life=bare_lifecycle(directory);life.deployment_config={'volumes':{'runtime-logs':{},'postgres-data':{}}};calls=[]
+                def docker(*args,**kwargs):
+                    calls.append(args);name=args[-1]
+                    if args[1]=='create':return name+'\n'
+                    logical=name.removeprefix(life.run_id+'_')
+                    return json.dumps([{'Name':name,'Labels':{m.LABEL:'foreign' if wrong_owner else life.run_id,
+                        'com.docker.compose.project':life.run_id,'com.docker.compose.volume':logical}}])
+                life.docker=docker
+                if wrong_owner:
+                    with self.assertRaisesRegex(m.GateError,'owned_volume_preparation_ownership_mismatch'):m.prepare_sampling_volumes(life)
+                else:
+                    m.prepare_sampling_volumes(life)
+                    self.assertEqual([args[-1] for args in calls if args[1]=='create'],
+                        [life.run_id+'_postgres-data',life.run_id+'_runtime-logs'])
+        source=__import__('inspect').getsource(m.build)
+        order=['prepare_isolated_configuration(', 'prepare_sampling_volumes(', "life.builder_ids =", 'life.sample()', 'life.thread.start()', 'start_dependencies(']
+        positions=[source.index(token) for token in order]
+        self.assertEqual(positions,sorted(positions))
+
+
 class BuilderResumeContractTests(unittest.TestCase):
     def test_planned_stop_is_cleared_only_after_exact_healthy_builder_resumes(self):
         for running,oom in ((True,False),(False,False),(True,True)):

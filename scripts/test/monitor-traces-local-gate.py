@@ -553,12 +553,7 @@ def build(life):
     verify_telemetry_configuration(life)
     references={name:f'localhost:5001/addp-{name}:{life.run_id}' for name in BACKENDS+FRONTENDS}
     prepare_isolated_configuration(life,env,references)
-    life.sample()
-    life.thread=threading.Thread(target=life.monitor,daemon=True)
-    life.thread.start()
-    life.phase='isolated_dependencies_start'
-    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
-    life.dependencies_ready=True
+    prepare_sampling_volumes(life)
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -573,6 +568,12 @@ def build(life):
     ids = life.docker('ps', '-aq', '--filter', 'name=^buildx_buildkit_' + life.builder + '0$').split()
     require(len(ids) == 1, 'owned_builder_identity_missing')
     life.builder_ids = set(json.loads(life.docker('inspect', *ids))[0]['Id'] for _ in [0])
+    life.sample()
+    life.thread=threading.Thread(target=life.monitor,daemon=True)
+    life.thread.start()
+    life.phase='isolated_dependencies_start'
+    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
+    life.dependencies_ready=True
     life.phase='builder_stop_guard_preflight'
     life.stop_builder()
     docker_path = shutil.which('docker', path=env['PATH'])
@@ -693,6 +694,18 @@ def nginx_route_contract():
         errors=life.cleanup()
         require(not errors,'nginx_route_contract_cleanup_failed')
         print('Nginx route contract: zero owned resources',flush=True)
+
+
+def prepare_sampling_volumes(life):
+    life.phase='owned_volume_preparation'
+    for logical in sorted(life.deployment_config['volumes']):
+        name=life.run_id+'_'+logical
+        labels={LABEL:life.run_id,'com.docker.compose.project':life.run_id,'com.docker.compose.volume':logical}
+        args=[part for key,value in labels.items() for part in ('--label',key+'='+value)]
+        require(life.docker('volume','create',*args,name).strip()==name,'owned_volume_preparation_identity_mismatch')
+        actual=json.loads(life.docker('volume','inspect',name))[0]
+        require(actual.get('Name')==name and all(actual.get('Labels',{}).get(key)==value for key,value in labels.items()),
+                'owned_volume_preparation_ownership_mismatch')
 
 
 def start_dependencies(compose, initialization_sql):
