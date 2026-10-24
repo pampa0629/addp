@@ -70,9 +70,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         self.shell_init.write_text(''.join(
             command + '() { /bin/bash ' + shlex.quote(str(self.bin / command)) + ' "$@"; }\n'
             for command in ('docker', 'curl', 'lsof')))
-        docker = self.bin / "docker"
-        docker.write_text("#!/bin/sh\nexit 44\n")
-        docker.chmod(0o755)
+        self.install_command('docker', "#!/bin/sh\nexit 44\n")
         self.secrets = self.root / "secrets"
         self.secrets.mkdir(mode=0o700)
         self.envfile = self.secrets / "runtime.env"
@@ -104,12 +102,24 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         return subprocess.run(["bash", "scripts/infra/up.sh", *cli], cwd=self.repo, env=env,
                               capture_output=True, text=True, timeout=30)
 
+    def install_command(self, name, source):
+        # The owned discovery observer can still execute an older mock.
+        # Publish a new inode rather than truncate an executing file (ETXTBSY).
+        descriptor, path = tempfile.mkstemp(dir=self.bin, prefix=f'.{name}-')
+        temporary = Path(path)
+        try:
+            with os.fdopen(descriptor, 'w') as output:
+                output.write(source)
+            temporary.chmod(0o755)
+            temporary.replace(self.bin / name)
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def healthy_docker(self):
         self.commands = self.root / "commands.argv"
-        docker = self.bin / "docker"
         # up.sh invokes Docker around 90 times. Keep the fake in shell so the
         # fixture measures lifecycle behavior rather than Python startup cost.
-        docker.write_text(r'''#!/bin/bash
+        self.install_command('docker', r'''#!/bin/bash
 set -eu
 # Lifecycle Python children deliberately inherit no test/ADDP secrets. These
 # fixed read-only context/source-list facts do not depend on MOCK_* variables.
@@ -211,16 +221,11 @@ case "$1" in
 esac
 exit 0
 ''')
-        docker.chmod(0o755)
-        curl = self.bin / "curl"
-        curl.write_text('#!/bin/sh\nexit 0\n')
-        curl.chmod(0o755)
-        lsof = self.bin / "lsof"
-        lsof.write_text("#!/bin/sh\n"
+        self.install_command('curl', '#!/bin/sh\nexit 0\n')
+        self.install_command('lsof', "#!/bin/sh\n"
                         "printf '%s\\n' \"$*\" >> "
                         + shlex.quote(str(self.root / "listener-calls"))
                         + "\nexit 1\n")
-        lsof.chmod(0o755)
         return dict(MOCK_COMMANDS=str(self.commands), SKIP_POSTGRESQL_INIT="1", SKIP_MINIO_INIT="1", SKIP_MEILISEARCH_INIT="1")
 
     def calls(self):
@@ -228,6 +233,18 @@ exit 0
         # without launching a serializer for each fake Docker invocation.
         fields = iter(self.commands.read_bytes().decode().split('\0')[:-1])
         return [[next(fields) for _ in range(int(count))] for count in fields]
+
+    def test_reinstall_preserves_open_command_versions(self):
+        # A deployment observer may still execute a prior command between
+        # subtests. Reinstallation must not rewrite its executable inode.
+        for name in ('docker', 'curl', 'lsof'):
+            command = self.bin / name
+            original = '#!/bin/sh\n# prior version\nexit 44\n'
+            command.write_text(original)
+            with command.open('rb') as previous:
+                self.healthy_docker()
+                self.assertEqual(previous.read(), original.encode(), name)
+                self.assertNotEqual(command.read_bytes(), original.encode(), name)
 
     def test_mock_preserves_literal_command_arguments(self):
         values = self.healthy_docker()
@@ -601,8 +618,7 @@ exit 0
         self.assertIn("must match source directory ownership", result.stderr)
 
     def test_force_does_not_authorize_personal_volume_deletion(self):
-        docker = self.bin / "docker"
-        docker.write_text("#!/bin/sh\nif [ \"$1 $2\" = \"compose version\" ]; then exit 0; fi\nexit 99\n")
+        self.install_command('docker', "#!/bin/sh\nif [ \"$1 $2\" = \"compose version\" ]; then exit 0; fi\nexit 99\n")
         env = self.fixture_environment()
         env.update(PATH=f"{self.bin}:{env['PATH']}", GITHUB_ACTIONS="false", ADDP_ONLINE_HOST="0")
         result = subprocess.run(["bash", "scripts/infra/down.sh", "--volumes", "--force"], cwd=self.repo,
