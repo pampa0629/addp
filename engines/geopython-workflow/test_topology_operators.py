@@ -261,7 +261,7 @@ def test_line_self_overlap_deduplicates_only_generated_intersections(visits, mon
     compared, merged = [], []
 
     def intersect(a, b):
-        compared.append((a.wkb, b.wkb))
+        compared.extend((left.wkb, right.wkb) for left, right in zip(np.atleast_1d(a), np.atleast_1d(b)))
         return original_intersection(a, b)
 
     def merge(parts, *args, **kwargs):
@@ -282,6 +282,103 @@ def test_line_self_overlap_deduplicates_only_generated_intersections(visits, mon
     assert result.overlap_length.tolist() == [8, 8]
     assert all(list(g.geoms[0].coords) == [(0, 0), (8, 0)] for g in result.geometry)
     assert_geodataframe_equal(frame, before)
+
+
+@pytest.mark.parametrize("count, expected_sizes", [(64, [2016]), (65, [2048, 32])])
+def test_line_self_overlap_batch2048_preserves_all_original_pair_order(count, expected_sizes, monkeypatch):
+    from operators import geometric_operators as operators
+    original = operators.shapely.intersection
+    segments = [LineString([(0, 0), (i + 1, 0)]) for i in range(count)]
+    compared, sizes = [], []
+
+    def intersect(left, right):
+        assert isinstance(left, np.ndarray) and isinstance(right, np.ndarray)
+        sizes.append(len(left))
+        compared.extend((int(a.coords[-1][0]) - 1, int(b.coords[-1][0]) - 1)
+                        for a, b in zip(left, right))
+        return original(left, right)
+
+    monkeypatch.setattr(operators.shapely, "intersection", intersect)
+    result = list(operators._self_overlap_intersections(segments))
+    assert sizes == expected_sizes
+    assert compared == [(a, b) for a in range(count) for b in range(a + 1, count)]
+    assert [list(part.coords) for part in result] == [[(0, 0), (i + 1, 0)] for i in range(count - 1)]
+
+
+def test_line_self_overlap_batch2048_exact_limit_and_no_empty_tail(monkeypatch):
+    from operators import geometric_operators as operators
+    original = operators.shapely.intersection
+    # C(64,2) + 32 disjoint duplicate pairs = exactly 2048 bbox pairs.
+    segments = [LineString([(0, 0), (1, 0)])] * 64
+    segments += [LineString([(3 * i, 0), (3 * i + 1, 0)]) for i in range(1, 33) for _ in range(2)]
+    sizes = []
+
+    def intersect(left, right):
+        assert isinstance(left, np.ndarray) and isinstance(right, np.ndarray)
+        sizes.append(len(left))
+        return original(left, right)
+
+    monkeypatch.setattr(operators.shapely, "intersection", intersect)
+    assert len(list(operators._self_overlap_intersections(segments))) == 33
+    assert sizes == [2048]
+    assert list(operators._self_overlap_intersections([])) == []
+    assert list(operators._self_overlap_intersections(segments[:1])) == []
+    assert sizes == [2048]
+
+
+def test_line_self_overlap_batch2048_dedup_spans_batches_but_not_sources(monkeypatch):
+    from operators import geometric_operators as operators
+    original_intersection, original_union = operators.shapely.intersection, operators.shapely.union_all
+    sizes, merged = [], []
+
+    def intersect(left, right):
+        assert isinstance(left, np.ndarray) and isinstance(right, np.ndarray)
+        sizes.append(len(left))
+        return original_intersection(left, right)
+
+    def merge(parts, *args, **kwargs):
+        merged.append(len(parts))
+        return original_union(parts, *args, **kwargs)
+
+    monkeypatch.setattr(operators.shapely, "intersection", intersect)
+    monkeypatch.setattr(operators.shapely, "union_all", merge)
+    source = MultiLineString([[(0, 0), (8, 0)] if i % 2 else [(8, 0), (0, 0)] for i in range(65)])
+    frame = line_overlap_frame([source, source], ["first", "second"])
+    before = frame.copy(deep=True)
+    result = self_overlap(frame)
+    assert sizes == [2048, 32, 2048, 32]
+    assert merged == [1, 1]
+    assert result.source_id.tolist() == ["first", "second"]
+    assert result.overlap_length.tolist() == [8, 8]
+    assert all(list(shape.geoms[0].coords) == [(0, 0), (8, 0)] for shape in result.geometry)
+    assert_geodataframe_equal(frame, before)
+
+
+def test_line_self_overlap_batch2048_failure_does_not_fallback_or_save(tmp_path, monkeypatch):
+    from operators import geometric_operators as operators
+    source = line_overlap_frame([MultiLineString([[(0, 0), (8, 0)]] * 65)])
+    source.to_file(tmp_path / "source.gpkg", layer="routes", driver="GPKG")
+    before = (tmp_path / "source.gpkg").read_bytes()
+    original, calls = operators.shapely.intersection, []
+
+    def intersect(left, right):
+        assert isinstance(left, np.ndarray) and isinstance(right, np.ndarray)
+        calls.append(len(left))
+        if len(calls) == 2:
+            raise RuntimeError("batch intersection failure")
+        return original(left, right)
+
+    monkeypatch.setattr(operators.shapely, "intersection", intersect)
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
+        {"id": "check", "operator": "check_line_self_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "rejected.gpkg", "mode": "fail"}, "depends_on": ["check"]},
+    ]
+    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    assert calls == [2048, 32]
+    assert not (tmp_path / "rejected.gpkg").exists()
+    assert (tmp_path / "source.gpkg").read_bytes() == before
 
 
 def test_line_self_overlap_exact_collection_retains_tiny_differences_and_segmentation():

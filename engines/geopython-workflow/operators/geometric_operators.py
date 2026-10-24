@@ -283,14 +283,32 @@ def _normalized_line_overlap(intersections):
 
 
 
-def _self_overlap_intersections(segments):
-    """Compare every original occurrence; retain each exact positive piece once."""
+_SELF_OVERLAP_PAIR_LIMIT = 2048
+
+
+def _self_overlap_candidate_batches(segments):
+    """Bound original candidate pairs without changing their occurrence order."""
     tree = shapely.STRtree(segments)
-    seen = set()
+    left, right = [], []
     for a, segment in enumerate(segments):
         candidates = tree.query(segment)
         for b in np.sort(candidates[candidates > a]):
-            pending = [shapely.intersection(segment, segments[b])]
+            left.append(a)
+            right.append(b)
+            if len(left) == _SELF_OVERLAP_PAIR_LIMIT:
+                yield np.asarray(left, dtype=np.intp), np.asarray(right, dtype=np.intp)
+                left, right = [], []
+    if left:
+        yield np.asarray(left, dtype=np.intp), np.asarray(right, dtype=np.intp)
+
+
+def _self_overlap_intersections(segments):
+    """Compare every original occurrence in bounded batches; dedup only results."""
+    segments = np.asarray(segments, dtype=object)
+    seen = set()
+    for left, right in _self_overlap_candidate_batches(segments):
+        for intersection in shapely.intersection(segments[left], segments[right]):
+            pending = [intersection]
             while pending:
                 part = pending.pop()
                 if part.geom_type == "LineString" and not part.is_empty:
