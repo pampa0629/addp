@@ -36,6 +36,216 @@ def split_at_intersections(frame, id_field="route_key"):
     return get_operator("split_line_intersections")(input_gdf=frame, id_field=id_field)
 
 
+def connected_parts(frame, id_field="route_key"):
+    return get_operator("group_line_components")(input_gdf=frame, id_field=id_field)
+
+
+def test_group_line_components_transitive_labels_follow_first_source_not_identifier_sort():
+    frame = line_overlap_frame([
+        LineString([(0, 0), (1, 0)]), LineString([(4, 0), (5, 0)]),
+        LineString([(100, 0), (101, 0)]), LineString([(1, 0), (4, 0)]),
+    ], pd.Series([90, 10, 70, 20], dtype="Int64"))
+    result = connected_parts(frame)
+    assert result.component_id.tolist() == [1, 1, 2, 1]
+    assert result.source_id.tolist() == [90, 10, 70, 20]
+    assert result.part_no.tolist() == [1, 1, 1, 1]
+    assert result.source_id.dtype == frame.route_key.dtype
+    assert [g.wkb for g in result.geometry] == [g.wkb for g in frame.geometry]
+
+
+def test_group_line_components_labels_do_not_depend_on_tree_candidate_order(monkeypatch):
+    import operators.geometric_operators as module
+    frame = line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(4,0),(5,0)]),
+                                LineString([(100,0),(101,0)]),LineString([(1,0),(4,0)])])
+    expected = connected_parts(frame)
+    original = module.shapely.STRtree
+    class ReverseCandidates:
+        def __init__(self, shapes):
+            self.tree = original(shapes)
+        def query(self, *args, **kwargs):
+            return self.tree.query(*args, **kwargs)[::-1]
+    monkeypatch.setattr(module.shapely, "STRtree", ReverseCandidates)
+    assert_geodataframe_equal(connected_parts(frame), expected)
+
+
+@pytest.mark.parametrize("other,connected", [
+    ([(2, 0), (3, 1)], True),  # endpoint
+    ([(1, -1), (1, 0)], True),  # T contact
+    ([(1, -1), (1, 1)], True),  # crossing without a source vertex
+    ([(1, 0), (3, 0)], True),  # positive overlap
+    ([(2, 0), (0, 0)], True),  # reversed duplicate
+    ([(2 + 2**-40, 0), (3, 0)], False),  # exact micro gap
+    ([(0, 2**-40), (2, 2**-40)], False),  # near parallel
+])
+def test_group_line_components_exact_contacts_and_micro_gaps(other, connected):
+    frame = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString(other)])
+    result = connected_parts(frame)
+    assert result.component_id.tolist() == ([1, 1] if connected else [1, 2])
+    assert [g.wkb for g in result.geometry] == [g.wkb for g in frame.geometry]
+
+
+def test_group_line_components_overlapping_envelopes_are_not_connectivity():
+    frame = line_overlap_frame([LineString([(0, 0), (2, 2)]), LineString([(0, 1), (1, 2)])])
+    assert connected_parts(frame).component_id.tolist() == [1, 2]
+
+
+def test_group_line_components_multipart_is_not_an_implicit_bridge_and_keeps_attributes():
+    parts = [[(2, 0), (1, 0), (0, 0)], [(10, 0), (11, 0)], [(30, 0), (32, 0), (32, 2), (30, 0)]]
+    frame = line_overlap_frame([MultiLineString(parts), LineString([(1, -1), (1, 1)]),
+                                LineString([(40, 0), (42, 0), (42, 2), (40, 0)])],
+                               pd.Series([2**60 + 1, 2**60 + 2, 2**60 + 3], dtype="Int64"))
+    frame["grade"] = pd.Series([None, 4, 8], dtype="Int64")
+    frame["label"] = pd.Series(["道路甲", None, "闭环"], dtype="string")
+    frame["enabled"] = pd.Series([True, None, False], dtype="boolean")
+    frame["kind"] = pd.Series(pd.Categorical(["a", "b", "a"]))
+    frame.index = pd.Index([7, 7, -2], name="old_index")
+    before = frame.copy(deep=True)
+    result = connected_parts(frame)
+    assert result.component_id.tolist() == [1, 2, 3, 1, 4]
+    assert result.part_no.tolist() == [1, 2, 3, 1, 1]
+    assert result.source_id.tolist() == [2**60 + 1] * 3 + [2**60 + 2, 2**60 + 3]
+    assert result.index.equals(pd.RangeIndex(5)) and result.geometry.name == "boundary"
+    assert result.part_no.dtype == result.component_id.dtype == "int64"
+    assert list(result.columns) == list(frame.columns) + ["source_id", "part_no", "component_id"]
+    expected = frame.iloc[[0, 0, 0, 1, 2]].reset_index(drop=True)
+    expected["boundary"] = gpd.GeoSeries([*(LineString(v) for v in parts), *frame.geometry.iloc[1:]], crs=frame.crs)
+    assert_geodataframe_equal(result[frame.columns], expected)
+    assert_geodataframe_equal(frame, before)
+
+
+@pytest.mark.parametrize("shape", [
+    LineString([(0, 0), (2, 2), (0, 2), (2, 0)]),
+    LineString([(0, 0), (2, 0), (0, 0)]),
+    LineString([(0, 0), (0, 0), (2, 0), (2, 0)]),
+    LineString([(0, 0), (2, 0), (2, 2), (0, 0)]),
+    MultiLineString([[(0, 0), (2, 0)], [(1, -1), (1, 1)], [(2, 0), (0, 0)]]),
+])
+def test_group_line_components_keeps_internal_crossing_overlap_and_original_vertices(shape):
+    frame = line_overlap_frame([shape], ["原线"])
+    result = connected_parts(frame)
+    expected = list(shapely.get_parts(shape))
+    assert result.component_id.tolist() == [1] * len(expected)
+    assert result.part_no.tolist() == list(range(1, len(expected) + 1))
+    assert [g.wkb for g in result.geometry] == [g.wkb for g in expected]
+
+
+@pytest.mark.parametrize("identifiers", [pd.Series(["甲"], dtype="string"), pd.Series([2**60 + 5], dtype="Int64"), pd.Series([True], dtype="boolean")])
+@pytest.mark.parametrize("empty", [False, True])
+def test_group_line_components_empty_and_nonempty_preserve_source_schema(identifiers, empty):
+    frame = line_overlap_frame([LineString([(0, 0), (1, 0)])], identifiers)
+    if empty:
+        frame = frame.iloc[:0]
+    result = connected_parts(frame)
+    assert len(result) == len(frame) and result.crs == frame.crs and result.geometry.name == frame.geometry.name
+    assert result.source_id.dtype == frame.route_key.dtype
+    assert all(result[c].dtype == frame[c].dtype for c in frame.columns)
+    assert result.part_no.dtype == result.component_id.dtype == "int64"
+
+
+@pytest.mark.parametrize("field", ["source_id", "part_no", "component_id"])
+def test_group_line_components_rejects_output_column_collision(field):
+    frame = line_overlap_frame([LineString([(0, 0), (1, 0)])]);frame[field] = 8
+    with pytest.raises(ValueError, match="column|field"):
+        connected_parts(frame)
+
+
+@pytest.mark.parametrize("shape", [None, LineString(), MultiLineString(), Point(0, 0), box(0, 0, 1, 1),
+    LineString([(0, 0, 1), (1, 1, 2)]), shapely.from_wkt("LINESTRING M (0 0 1, 1 1 2)"),
+    LineString([(0, 0), (float("inf"), 1)]), LineString([(0, 0), (float("nan"), 1)]),
+    LineString([(0, 0), (0, 0)])])
+def test_group_line_components_rejects_bad_geometry_without_mutation(shape):
+    frame = line_overlap_frame([shape]);before = frame.copy(deep=True)
+    with pytest.raises(ValueError):
+        connected_parts(frame)
+    # Invalid NaN/Inf inputs cannot be compared by topological equality.
+    # Compare original bytes and non-geometry values without asking GEOS to
+    # evaluate an invalid geometry a second time.
+    assert frame.geometry.to_wkb().tolist() == before.geometry.to_wkb().tolist()
+    pd.testing.assert_frame_equal(frame.drop(columns=frame.geometry.name), before.drop(columns=before.geometry.name))
+
+
+@pytest.mark.parametrize("crs", [None, "EPSG:4326", "EPSG:4978"])
+def test_group_line_components_requires_known_projected_xy(crs):
+    with pytest.raises(ValueError, match="projected"):
+        connected_parts(line_overlap_frame([LineString([(0, 0), (1, 0)])], crs=crs))
+
+
+@pytest.mark.parametrize("identifiers", [[None, 2], [1, 1], ["", "b"], ["  ", "b"], [[1], [2]]])
+def test_group_line_components_requires_unique_scalar_source_identity(identifiers):
+    with pytest.raises(ValueError, match="id_field"):
+        connected_parts(line_overlap_frame([LineString([(0, 0), (1, 0)]), LineString([(2, 0), (3, 0)])], identifiers))
+
+
+@pytest.mark.parametrize("id_field", ["absent", "boundary", None])
+def test_group_line_components_does_not_infer_identifier(id_field):
+    with pytest.raises(ValueError, match="id_field"):
+        connected_parts(line_overlap_frame([LineString([(0, 0), (1, 0)])]), id_field)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_group_line_components_workflow_native_save_reload_and_rejection_no_publish(tmp_path, empty):
+    from osgeo import ogr
+    frame = line_overlap_frame([MultiLineString([[(2, 0), (1, 0), (0, 0)], [(10, 0), (11, 0)]]),
+                                LineString([(1, -1), (1, 1)])], ["甲", "乙"])
+    frame["note"] = pd.Series([None, "支线"], dtype="string")
+    frame["grade"] = pd.Series([2**60 + 1, 3], dtype="Int64")
+    if empty:frame = frame.iloc[:0]
+    frame.to_file(tmp_path / "source.gpkg", layer="routes", driver="GPKG")
+    before = (tmp_path / "source.gpkg").read_bytes();connection = {"engine_type":"nfs", "mount_path":str(tmp_path)}
+    tasks = [
+        {"id":"load", "operator":"load", "params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+        {"id":"group", "operator":"group_line_components", "params":{"input_gdf":{"$ref":"load"},"id_field":"route_key"},"depends_on":["load"]},
+        {"id":"save", "operator":"save", "params":{"input_df":{"$ref":"group"},"connection_info":connection,"path":"groups.gpkg","mode":"fail"},"depends_on":["group"]},
+    ]
+    execution = execute_workflow({"tasks":tasks});assert execution["status"] == "success", execution
+    dataset = ogr.Open(str(tmp_path / "groups.gpkg"));layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == (0 if empty else 3) and layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    assert [field.name for field in layer.schema] == ["source_name","route_key","note","grade","source_id","part_no","component_id"]
+    for field in ("grade","part_no","component_id"):
+        assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(field)).GetType() == ogr.OFTInteger64
+    expected = [[(2,0),(1,0),(0,0)],[(10,0),(11,0)],[(1,-1),(1,1)]]
+    for i,feature in enumerate(layer):
+        assert feature.GetGeometryRef().GetGeometryName() == "LINESTRING" and feature.GetGeometryRef().GetPoints() == expected[i]
+        assert feature.GetField("source_id") == feature.GetField("route_key") == ("甲" if i < 2 else "乙")
+        assert feature.GetField("component_id") == [1,2,1][i] and feature.GetField("part_no") == [1,2,1][i]
+        assert feature.GetField("note") == (None if i < 2 else "支线") and feature.GetField("grade") == (2**60 + 1 if i < 2 else 3)
+    dataset = None;assert (tmp_path / "source.gpkg").read_bytes() == before
+    tasks[1]["params"]["id_field"] = "absent";tasks[2]["params"]["path"] = "rejected.gpkg"
+    assert execute_workflow({"tasks":tasks})["status"] == "failed" and not (tmp_path / "rejected.gpkg").exists()
+
+
+def test_group_line_components_metadata_async_discovery_and_workflow_only(tmp_path, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame = line_overlap_frame([MultiLineString([[(0,0),(1,0)],[(10,0),(11,0)]]),LineString([(1,0),(2,0)])], ["甲","乙"])
+    frame.to_file(tmp_path / "source.gpkg", layer="routes", driver="GPKG")
+    tasks = [
+        {"id":"load","operator":"load","params":{"connection_info":{"engine_type":"nfs","mount_path":str(tmp_path)},"path":"source.gpkg"},"depends_on":[]},
+        {"id":"group","operator":"group_line_components","params":{"input_gdf":{"$ref":"load"},"id_field":"route_key"},"depends_on":["load"]},
+    ]
+    monkeypatch.setattr(api_server,"executions",ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "group_line_components")
+        assert op["display_name"] == "连通分组" and op["category_path"] == ["矢量处理","几何处理"]
+        assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+        assert [(p["name"],p["required"]) for p in op["parameters"]] == [("input_gdf",True),("id_field",True)]
+        assert len(op["output_ports"]) == 1 and op["output_ports"][0]["name"] == "result" and op["output_ports"][0]["is_default"] is True
+        assert client.post("/api/operators/group_line_components/invoke",json={"params":{}}).status_code == 403
+        response = client.post("/api/workflow",json={"workflow_def":{"tasks":tasks},"runtime":{"tenant_id":7,"execution_authorization":{"id":1,"effects":["read"]}}})
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
+            if state["status"] in ("success","failed"):break
+            time.sleep(.01)
+        assert state["status"] == "success", state
+        features = json.loads(state["result"])["features"]
+        assert [f["properties"]["component_id"] for f in features] == [1,2,1]
+        assert [f["properties"]["source_id"] for f in features] == ["甲","甲","乙"]
+    tasks[1]["params"].pop("id_field")
+    assert execute_workflow({"tasks":tasks})["status"] == "failed"
+
+
 def test_split_line_intersections_crossings_t_junctions_vertices_contacts_and_attributes():
     frame = line_overlap_frame([
         LineString([(0, 0), (1, 0), (3, 0)]), LineString([(1, -1), (1, 1)]),

@@ -434,6 +434,52 @@ def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> 
     return result
 
 
+def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Label exact planar connectivity while retaining every original line part."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    if any(field in input_gdf.columns for field in ("source_id", "part_no", "component_id")):
+        raise ValueError("output columns source_id, part_no and component_id must not overwrite source fields")
+
+    parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
+    parents = list(range(len(parts)))
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    # Query one original part at a time; exact intersection includes contacts,
+    # crossings and overlaps without noding or changing any source coordinates.
+    tree = shapely.STRtree(parts)
+    for a, part in enumerate(parts):
+        for b in tree.query(part, predicate="intersects"):
+            if b > a:
+                left, right = root(a), root(int(b))
+                if left != right:
+                    parents[max(left, right)] = min(left, right)
+
+    components, part_numbers, component_numbers = {}, [], []
+    source_part_counts = np.zeros(len(input_gdf), dtype=np.int64)
+    for index, source_row in enumerate(source_rows):
+        source_part_counts[source_row] += 1
+        part_numbers.append(source_part_counts[source_row])
+        component = root(index)
+        if component not in components:
+            components[component] = len(components) + 1
+        component_numbers.append(components[component])
+
+    result = input_gdf.iloc[source_rows].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(parts, crs=geometry.crs)
+    result["source_id"] = ids.iloc[source_rows].reset_index(drop=True)
+    result["part_no"] = pd.Series(part_numbers, dtype="int64")
+    result["component_id"] = pd.Series(component_numbers, dtype="int64")
+    return result
+
+
 def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Split original paths at cross-feature point meetings, preserving provenance."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -755,6 +801,22 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
+    name="group_line_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="连通分组", brief_description="按原始线部件的精确相交关系归组，保留来源、全部属性和原路径",
+    execution_modes=["workflow"], effects=["read"],
+    overview="端点、T形、十字及重合均按精确XY连通，传递相连部件归入同组。"
+             "逐原始部件输出，不因同源而连接，不打断、合并或修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待分组的单个线图层", notes="有效有限二维LineString/MultiLineString，已知投影CRS；拒绝缺失及空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何唯一非空标量列；不推断主键或使用索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="每行一个原始LineString部件，保留原列并追加source_id/part_no/component_id", is_default=True)],
+    use_cases=["识别线网的独立连通组和孤立闭环", "保留来源及业务属性，为后续分组加工提供标识"],
+    notes=["同源多个部件可以分属不同组；保留源行和部件顺序、原方向、全部顶点和闭环接缝", "部件号在源内从1开始；组号按首次出现从1开始，仅是本次计算标识", "source_id/part_no/component_id冲突时失败，不覆盖或自动改名", "精确XY不判断桥隧或质量，不设容差，不吸附、打断、去重、删组或修复", "源不变，保存另接save；索引和成果驻内存，高密度候选可能平方增长，不承诺固定容量"],
+    workflow_example={"id": "group_lines", "operator": "group_line_components", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
 
 SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
     name="split_line_intersections", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1469,4 +1531,5 @@ OPERATORS = dict([
     register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),
     register_operator(CHECK_LINE_SELF_INTERSECTION_METADATA, check_line_self_intersection),
     register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
+    register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
 ])
