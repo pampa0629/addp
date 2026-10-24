@@ -49,6 +49,72 @@ func receiverRoot(t *testing.T, s Store) Ref {
 	return r
 }
 
+type nativeQueueReadGate struct {
+	Store
+	entered, release chan struct{}
+	once             sync.Once
+}
+
+func (s *nativeQueueReadGate) Read(ctx context.Context, v Version) ([]byte, Protection, error) {
+	s.once.Do(func() {
+		close(s.entered)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+		}
+	})
+	return s.Store.Read(ctx, v)
+}
+
+func nativeQueueFixture() string {
+	return strings.NewReplacer(`"GetObject"`, `"PutObject"`, `"bucket":"audit"`, `"bucket":"source-owned"`, `"object":"safe-object"`, `"object":"queued-first"`).Replace(accessFixture("known-source-put"))
+}
+
+func TestNativeQueueObservationDoesNotRejectARealDelivery(t *testing.T) {
+	s := &memoryStore{}
+	h := fixtureReceiver(t, s, receiverRoot(t, s))
+	gate := &nativeQueueReadGate{Store: s, entered: make(chan struct{}), release: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := nativeQueueObserve(ctx, gate, h); done <- err }()
+	select {
+	case <-gate.entered:
+	case <-ctx.Done():
+		t.Fatal("observation did not reach its controlled read")
+	}
+	code := receiveRequest(h, nativeQueueFixture(), nil)
+	close(gate.release)
+	if err := <-done; err != nil {
+		t.Fatal("observation could not finish", err)
+	}
+	if code != http.StatusNoContent {
+		t.Fatalf("a read-only observation rejected a real delivery: status=%d", code)
+	}
+}
+
+func TestNativeQueueObservationRequiresACommittedReceipt(t *testing.T) {
+	s := &memoryStore{}
+	root := receiverRoot(t, s)
+	fault := &receiverFaultStore{Store: s, failReceipt: true}
+	h := fixtureReceiver(t, fault, root)
+	if code := receiveRequest(h, nativeQueueFixture(), nil); code != 503 {
+		t.Fatal("fixture did not leave an unconfirmed body", code)
+	}
+	snapshot, err := nativeQueueObserve(context.Background(), s, h)
+	if err != nil || snapshot.Sequence != 0 || snapshot.Known != [3]int{} {
+		t.Fatal("observation counted an unconfirmed source request", snapshot, err)
+	}
+	h = fixtureReceiver(t, s, root)
+	if code := receiveRequest(h, nativeQueueFixture(), nil); code != 204 {
+		t.Fatal("orphan retry was not confirmed", code)
+	}
+	snapshot, err = nativeQueueObserve(context.Background(), s, h)
+	if err != nil || snapshot.Sequence != 1 || snapshot.Known != [3]int{1, 0, 0} {
+		t.Fatal("confirmed source request was not observed exactly once", snapshot, err)
+	}
+}
+
 func TestReceiverPersistsWholeBatchBeforeAckAndResolvesLostConfirmation(t *testing.T) {
 	s := &memoryStore{}
 	root := receiverRoot(t, s)

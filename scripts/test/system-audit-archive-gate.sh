@@ -24,6 +24,12 @@ cleanup() {
             status=1
             continue
         fi
+        if [ "$status" -ne 0 ] && [ "$identity" = "$A_ID" ]; then
+            # Inspect only this job's source queue before destroying it. Counts
+            # distinguish pending replay from an empty store; never dump events.
+            queue_counts=$(docker exec "$identity" sh -c 'printf "files=%s kib=%s" "$(find /queue -type f | wc -l | tr -d " ")" "$(du -sk /queue | cut -f1)"' 2>/dev/null) || queue_counts=unavailable
+            printf 'AUDIT_NATIVE_QUEUE_FAILURE %s\n' "$queue_counts"
+        fi
         docker rm -fv "$identity" >/dev/null || status=1
     done
     if [ -n "$(docker ps -aq --filter "label=addp.test.audit-archive=$OWNER")" ]; then status=1; fi

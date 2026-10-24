@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -248,13 +249,30 @@ func testNativeAuditQueue(t *testing.T, ctx context.Context, writer, reader Stor
 	var blocked atomic.Bool
 	blocked.Store(true)
 	var rejected atomic.Int64
+	diagnostics := nativeQueueDiagnostics{Statuses: make(map[int]int)}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if blocked.Load() {
+		// Observe only bounded fixture metadata; never log raw webhook bytes,
+		// credentials, arbitrary resource names or request headers.
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, receiverBytes+1))
+		_ = r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		events, parseErr := parseAccess(body, deployment)
+		record := httptest.NewRecorder()
+		unavailable := blocked.Load()
+		if unavailable {
 			rejected.Add(1)
-			w.WriteHeader(503)
-			return
+			record.WriteHeader(503)
+		} else {
+			receiver.ServeHTTP(record, r)
 		}
-		receiver.ServeHTTP(w, r)
+		for key, values := range record.Header() {
+			w.Header()[key] = values
+		}
+		w.WriteHeader(record.Code)
+		if flush, ok := w.(http.Flusher); ok {
+			flush.Flush()
+		}
+		diagnostics.record(record.Code, unavailable, events, readErr != nil || parseErr != nil)
 	}), ReadHeaderTimeout: time.Second, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}}}
 	done := make(chan error, 1)
 	go func() { done <- server.ServeTLS(listener, "", "") }()
@@ -276,47 +294,122 @@ func testNativeAuditQueue(t *testing.T, ctx context.Context, writer, reader Stor
 		time.Sleep(50 * time.Millisecond)
 	}
 	if rejected.Load() == 0 {
+		diagnostics.log(t, "waiting_for_real_503", nativeQueueObservation{}, nil)
 		t.Fatal("native A queue did not actually encounter an unavailable B")
 	}
 	empty, e := VerifyReceiver(ctx, reader, source, deployment, root, Ref{})
 	if e != nil || empty.Events != 0 {
+		diagnostics.log(t, "blocked_receipt_check", nativeQueueObservation{AccessObservation: empty}, e)
 		t.Fatal("unavailable B acknowledged source events")
 	}
+	diagnostics.log(t, "recovery_opened_after_real_503_and_zero_receipts", nativeQueueObservation{AccessObservation: empty}, nil)
 	blocked.Store(false)
 	deadline = time.Now().Add(30 * time.Second)
-	wanted := map[string]bool{"queued-first": false, "queued-second": false, "queued-third": false}
+	var snapshot nativeQueueObservation
+	var observationErr error
 	for time.Now().Before(deadline) {
-		// Access to the B source is serialized with delivery; inspect complete receipts.
-		receiver.mu.Lock()
-		out, e := VerifyReceiver(ctx, reader, source, deployment, root, Ref{})
-		if e == nil {
-			e = reader.Walk(ctx, accessPrefix(source)+"data/", func(v Version) error {
-				raw, _, e := reader.Read(ctx, v)
-				if e != nil {
-					return e
-				}
-				var b accessBatch
-				if decode(raw, &b) != nil {
-					return ErrUnknown
-				}
-				for _, event := range b.Events {
-					if event.API.Name == "PutObject" {
-						if _, ok := wanted[event.API.Object]; ok {
-							wanted[event.API.Object] = true
-						}
-					}
-				}
-				return nil
-			})
-		}
-		receiver.mu.Unlock()
-		if e == nil && wanted["queued-first"] && wanted["queued-second"] && wanted["queued-third"] && out.Events >= 3 {
+		// Published receipt versions are immutable. The observer must never take
+		// the live handler lock: TryLock would turn observation into extra 503s.
+		snapshot, observationErr = nativeQueueObserve(ctx, reader, receiver)
+		if observationErr == nil && snapshot.Known == [3]int{1, 1, 1} && snapshot.Events >= 3 && diagnostics.respondedToKnownSet() {
+			diagnostics.log(t, "reconciled_committed_exact_request_set", snapshot, nil)
 			t.Log("unmodified A native disk webhook queue received actual 503 responses and replayed all three known source PutObject events after B recovered; only this bounded outage request set was reconciled, not the accepted crash/full-queue loss boundary")
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	diagnostics.log(t, "recovery_deadline", snapshot, observationErr)
 	t.Fatal("native audit queue did not reconcile the known source request set")
+}
+
+// nativeQueueObservation is a bounded test observation, never a receiving lock.
+type nativeQueueObservation struct {
+	AccessObservation
+	Known [3]int
+}
+
+func nativeQueueObserve(ctx context.Context, reader Store, h *Receiver) (nativeQueueObservation, error) {
+	out, err := VerifyReceiver(ctx, reader, h.source, h.deployment, h.root, Ref{})
+	snapshot := nativeQueueObservation{AccessObservation: out}
+	if err != nil {
+		return snapshot, err
+	}
+	// Read only batches referenced by the verified receipt prefix. Scanning all
+	// body objects would also count orphan writes which B never confirmed.
+	ref := out.Checkpoint
+	for sequence := out.Sequence; sequence > 0; sequence-- {
+		raw, _, err := readRef(ctx, reader, ref, true)
+		var receipt AccessReceipt
+		if err != nil || decode(raw, &receipt) != nil || receipt.Sequence != sequence {
+			return snapshot, ErrUnknown
+		}
+		raw, _, err = readRef(ctx, reader, receipt.Data, false)
+		var batch accessBatch
+		if err != nil || decode(raw, &batch) != nil {
+			return snapshot, ErrUnknown
+		}
+		for _, event := range batch.Events {
+			if event.API.Name == "PutObject" && event.API.Bucket == "source-owned" && event.API.StatusCode == 200 {
+				for i, name := range []string{"queued-first", "queued-second", "queued-third"} {
+					if event.API.Object == name {
+						snapshot.Known[i]++
+					}
+				}
+			}
+		}
+		ref = receipt.Previous
+	}
+	if ref != h.root {
+		return snapshot, ErrConflict
+	}
+	return snapshot, nil
+}
+
+type nativeQueueDiagnostics struct {
+	sync.Mutex
+	Statuses           map[int]int
+	Blocked, Invalid   int
+	Known503, Known204 [3]int
+}
+
+func (d *nativeQueueDiagnostics) record(status int, blocked bool, events []AccessEvent, invalid bool) {
+	d.Lock()
+	defer d.Unlock()
+	d.Statuses[status]++
+	if blocked {
+		d.Blocked++
+	}
+	if invalid {
+		d.Invalid++
+	}
+	for _, event := range events {
+		if event.API.Name != "PutObject" || event.API.Bucket != "source-owned" {
+			continue
+		}
+		for i, name := range []string{"queued-first", "queued-second", "queued-third"} {
+			if event.API.Object == name {
+				if status == 503 {
+					d.Known503[i]++
+				}
+				if status == 204 {
+					d.Known204[i]++
+				}
+			}
+		}
+	}
+}
+
+func (d *nativeQueueDiagnostics) log(t *testing.T, phase string, snapshot nativeQueueObservation, err error) {
+	t.Helper()
+	d.Lock()
+	defer d.Unlock()
+	t.Logf("native_queue phase=%s statuses=%v blocked=%d invalid_payloads=%d known_503=%v known_204=%v committed_known=%v receipts=%d events=%d observation_error_type=%T observer_lock=none", phase, d.Statuses, d.Blocked, d.Invalid, d.Known503, d.Known204, snapshot.Known, snapshot.Sequence, snapshot.Events, err)
+}
+
+func (d *nativeQueueDiagnostics) respondedToKnownSet() bool {
+	d.Lock()
+	defer d.Unlock()
+	return d.Known204[0] > 0 && d.Known204[1] > 0 && d.Known204[2] > 0
 }
 
 // This is a version-specific test oracle, not a runtime fallback. Malformed
