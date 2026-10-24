@@ -50,6 +50,10 @@ def bare_lifecycle(directory):
 
 
 class VolumePreparationContractTests(unittest.TestCase):
+    def test_protection_readiness_failure_exports_only_fixed_markers(self):
+        markers=m.diagnostic_markers(b'execution trace Develop protection readiness: Tenant PRIVATE-TOKEN protection initialization incomplete')
+        self.assertEqual(markers,['protection readiness','protection initialization'])
+
     def test_dependency_failure_names_the_exact_stage_and_only_fixed_public_markers(self):
         stages=[]
         def compose(*args,**kwargs):

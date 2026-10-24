@@ -76,6 +76,7 @@ def diagnostic_markers(raw):
         'failed to initialize database','failed to ensure export session store','does not exist','sqlstate',
         'psql:','connection to server','server closed the connection unexpectedly','database system is starting up',
         'authentication failed','resource temporarily unavailable','too many open files','exec failed',
+        'protection readiness','protection initialization',
         '初始化失败','监听绑定失败','配置无效') if marker.encode() in raw.lower()]
 
 

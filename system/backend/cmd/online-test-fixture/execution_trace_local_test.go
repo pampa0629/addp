@@ -147,6 +147,53 @@ func TestExecutionTraceFixtureDoesNotPregrantPreparationAuthority(t *testing.T) 
 	}
 }
 
+func TestExecutionTraceWaitsForActualDevelopProtectionBeforeCredentialExport(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "execution_trace_local.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		name, ok := call.Fun.(*ast.Ident)
+		if !ok || name.Name != "waitForOwnerProtection" {
+			return true
+		}
+		calls++
+		if len(call.Args) != 4 {
+			t.Fatal("readiness must bind exact tenant and existing store")
+		}
+		tenant, ok := call.Args[3].(*ast.SelectorExpr)
+		if !ok || tenant.Sel.Name != "ID" {
+			t.Fatal("readiness must observe the created Tenant")
+		}
+		created, ok := tenant.X.(*ast.Ident)
+		if !ok || created.Name != "tenant" {
+			t.Fatal("readiness cannot observe a foreign Tenant")
+		}
+		owners, ok := call.Args[2].(*ast.CompositeLit)
+		if !ok || len(owners.Elts) != 1 {
+			t.Fatal("only fixed Develop owner is admitted")
+		}
+		owner, ok := owners.Elts[0].(*ast.BasicLit)
+		if !ok || owner.Value != `"develop"` {
+			t.Fatal("unexpected protection owner")
+		}
+		return true
+	})
+	raw, err := os.ReadFile("execution_trace_local.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	if calls != 1 || strings.Index(source, "waitForOwnerProtection(ctx, db,") > strings.Index(source, "return writeExecutionTraceLocalEnvironment(output, values)") {
+		t.Fatal("credentials exported before real owner protection readiness")
+	}
+}
+
 func TestExecutionTraceCredentialsPrivateExactAndNeverContainSessions(t *testing.T) {
 	directory := privateTraceTestDir(t)
 	output := filepath.Join(directory, "identity.env")

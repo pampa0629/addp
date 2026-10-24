@@ -195,6 +195,9 @@ def execution_failure_diagnostic(item):
     def closed_code(value):
         return value if isinstance(value,str) and re.fullmatch('[a-z][a-z0-9_.]{0,99}',value) else 'unavailable'
     result['error_code']=closed_code(item.get('error_details',{}).get('code'))
+    diagnostic=item.get('error_details',{}).get('diagnostic')
+    if isinstance(diagnostic,dict):
+        result['diagnostic']={key:closed_code(diagnostic.get(key)) for key in ('stage','reason')}
     step=item.get('metadata',{}).get('step_results',{}).get('query',{})
     if isinstance(step,dict):
         result['query_step']={key:closed_code(step.get(key)) for key in ('status','phase','error_code')}

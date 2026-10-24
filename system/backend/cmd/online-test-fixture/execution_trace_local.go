@@ -185,6 +185,9 @@ func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, outpu
 		return err
 	}
 	values["ADDP_EXECUTION_TRACE_USER_USERNAME"], values["ADDP_EXECUTION_TRACE_USER_PASSWORD"], values["ADDP_EXECUTION_TRACE_TENANT_ID"] = "local-execution-trace-user", password, fmt.Sprint(tenant.ID)
+	if err := waitForOwnerProtection(ctx, db, []string{"develop"}, tenant.ID); err != nil {
+		return fmt.Errorf("execution trace Develop protection readiness: %w", err)
+	}
 	return writeExecutionTraceLocalEnvironment(output, values)
 }
 

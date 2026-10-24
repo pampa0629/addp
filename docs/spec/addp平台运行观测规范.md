@@ -450,6 +450,8 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 夹具只创建初始Tenant管理员和原业务用户，不提前授准备角色、不创建准备自定义角色，也不签发会话。入口从真实AuthContext读取准备Membership，核对既有角色的准确权限集合；MFA完成须替换HttpOnly Cookie与Access Token，并验证旧令牌拒绝。自分配前使用真实AAL2及未过期step-up，分配后沿正式Refresh与AuthContext重读同一User／Tenant／Membership和准确角色／权限；完成准备后再次确认普通执行User权限未变。失败诊断仅保留固定操作码／HTTP状态／稳定错误码，不保存密码、TOTP Secret、验证码、Cookie或响应正文。第七窗口的自定义准备角色方案已被本唯一主路径取代，原失败证据仍保留。
 
+新Tenant创建后，身份夹具必须在导出凭据前复用既有`waitForOwnerProtection`，只读等待当次Tenant的Develop持久保护初始化checkpoint，最长60秒并计入原窗口／身份准备预算。固定Owner为Develop，不开放额外Owner参数，不直接写投影或checkpoint，也不把业务拒绝重试为成功。实际Owner从Security完整消费后才可开始执行；实例`/health/ready`不能替代该Tenant状态。此要求沿数据安全规范既有初始化边界，不改变普通User权限、源读取授权或数据保护裁决。
+
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。
 
 2026-10-23 用户确认本地验收复用已有固定版本 MinIO 产品镜像：以当前提交的 `scripts/infra/Dockerfile.minio` 中 MinIO／mc 发布版本及源码提交为唯一预期，核验已有镜像的不可变 ID、Linux ARM64 身份及两个二进制的版本／嵌入提交声明。核验通过的同一镜像 ID 用于当次卷测量、真实 MinIO 和两个存储初始化步骤；缺失、不匹配或核验失败即拒绝运行，不回退冷构建，也不接管现有 MinIO 服务。本专项后端、runtime-log 及前端继续从当前已提交源码经标准产品入口构建。实际镜像核验、构建、部署及等待均计入当次已批准窗口，过期不自动续开。

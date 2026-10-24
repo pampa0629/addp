@@ -353,7 +353,10 @@ func run(args []string, environment []string) error {
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
 		return errors.New("usage: online-test-fixture --suite <suite> --output <absolute-path>")
 	}
-	if *waitOwners != "" && (*suite == "platform-node-metrics" || *suite == executionTraceLocalSuite) {
+	if *waitOwners != "" && *suite == executionTraceLocalSuite {
+		return errors.New("execution-trace-local uses fixed Develop protection readiness")
+	}
+	if *waitOwners != "" && *suite == "platform-node-metrics" {
 		return errors.New("platform-node-metrics has no Tenant protection initialization")
 	}
 	permissions, err := suitePermissions(*suite)

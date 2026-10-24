@@ -1331,7 +1331,7 @@ test-monitor-traces-local-runner: ## 验证本地 Trace 准入、资源守卫、
 	@node --check --input-type=module < console/frontend/e2e/online/execution-trace-local.spec.js
 	@node --check console/frontend/e2e/online/execution-trace-local-support.mjs
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
-	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace' -count=1
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace|ProtectionReadiness' -count=1
 
 .PHONY: test-nginx-routes
 test-nginx-routes: ## 隔离验证产品Nginx按需页面解析与路径参数转发

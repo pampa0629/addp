@@ -252,11 +252,13 @@ class PreparationMFAContractTests(unittest.TestCase):
 class LocalExecutionTraceOwnerTests(unittest.TestCase):
     def test_execution_failure_diagnostic_keeps_codes_and_drops_raw_error_sql_and_data(self):
         item={'execution_id':EXECUTIONS[('orchestrator','success')],'status':'failed',
-            'error_details':{'code':'orchestrator.execution.contract_unavailable','message':'PRIVATE SQL PASSWORD'},
+            'error_details':{'code':'orchestrator.execution.contract_unavailable','message':'PRIVATE SQL PASSWORD',
+                'diagnostic':{'stage':'preparation','reason':'data_protection_not_ready','context':'PRIVATE SQL PASSWORD'}},
             'metadata':{'step_results':{'query':{'status':'failed','phase':'terminal','error_code':'orchestrator.execution.contract_unavailable','error':'PRIVATE SQL PASSWORD','result':{'rows':['PRIVATE']}}}}}
         value=M.execution_failure_diagnostic(item)
         self.assertEqual(value['error_code'],'orchestrator.execution.contract_unavailable')
         self.assertEqual(value['query_step']['phase'],'terminal')
+        self.assertEqual(value['diagnostic'],{'stage':'preparation','reason':'data_protection_not_ready'})
         self.assertNotIn('PRIVATE',json.dumps(value));self.assertNotIn('result',json.dumps(value))
         item['error_details']['code']='PRIVATE SQL PASSWORD'
         self.assertEqual(M.execution_failure_diagnostic(item)['error_code'],'unavailable')
