@@ -709,18 +709,32 @@ class LocalTracePrivateFilesTests(unittest.TestCase):
 class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
     def test_init_commands_finish_successfully_before_long_running_consumers(self):
         calls=[]
-        def compose(*args):
+        def compose(*args,**kwargs):
+            if args[0]=='exec':
+                self.assertEqual(kwargs,{'data':'standard-initialization-sql'})
+                self.assertIn('ON_ERROR_STOP=1',args[-1])
+                self.assertIn('$POSTGRES_DB',args[-1])
             if args[0]=='up':
                 self.assertIn('--wait',args)
                 self.assertFalse({'runtime-log-store-init','trace-store-init'}.intersection(args))
             calls.append(args)
-        m.start_dependencies(compose)
+        m.start_dependencies(compose,'standard-initialization-sql')
         m.start_deployment(compose)
-        self.assertEqual(calls[1:3],[('run','--no-deps','runtime-log-store-init'),('run','--no-deps','trace-store-init')])
+        self.assertEqual(calls[2:4],[('run','--no-deps','runtime-log-store-init'),('run','--no-deps','trace-store-init')])
         self.assertTrue(all(name in calls[0] for name in ('postgres','business-postgres','redis','minio')))
-        self.assertIn('alloy',calls[3])
-        self.assertIn('system-backend',calls[4])
-        self.assertFalse(any(set(call).intersection(m.TRACE+('postgres','business-postgres','redis')) for call in calls[4:]))
+        self.assertEqual(calls[1][:3],('exec','-T','postgres'))
+        self.assertIn('alloy',calls[4])
+        self.assertIn('system-backend',calls[5])
+        self.assertFalse(any(set(call).intersection(m.TRACE+('postgres','business-postgres','redis')) for call in calls[5:]))
+    def test_database_initialization_failure_stops_all_product_startup(self):
+        calls=[]
+        def compose(*args,**kwargs):
+            calls.append(args)
+            if args[0]=='exec':raise m.GateError('initialization_rejected')
+        with self.assertRaisesRegex(m.GateError,'initialization_rejected'):
+            m.start_dependencies(compose,'standard-initialization-sql')
+        self.assertEqual(len(calls),2)
+
     def test_private_writable_directories_are_part_of_the_same_stop_line(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory)

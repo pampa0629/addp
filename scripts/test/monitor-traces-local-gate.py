@@ -42,7 +42,7 @@ OWN_INPUTS = (
     'Makefile', 'scripts/ci/check-online-ci-registration.py', 'scripts/ci/check-execution-trace-local-registration_test.py',
     'scripts/test/monitor-traces-local-gate.py', 'scripts/test/monitor-traces-local-gate_test.py',
     'scripts/test/monitor-traces-local-online.py', 'scripts/test/monitor-traces-local-online_test.py',
-    'scripts/test/monitor-traces-gate.sh', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
+    'scripts/test/monitor-traces-gate.sh', 'scripts/infra/init-postgresql.sql', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
     'common/httptrace/tracetest/runtime.go', 'develop/backend/internal/repository/execution_repository.go',
     'develop/backend/internal/repository/execution_trace.go', 'develop/backend/internal/repository/execution_trace_test.go',
     'develop/backend/internal/service/execution_trace.go', 'develop/backend/internal/service/execution_trace_test.go',
@@ -73,7 +73,9 @@ def diagnostic_markers(raw):
         'failed to solve','failed to resolve','failed to authorize','certificate signed','no space left',
         'context canceled','connection refused','proxyconnect','tls handshake','unexpected eof',
         'not found','unsupported','traceback','syntaxerror','keyerror','no builder','timeout','timed out',
-        'exec format','cannot connect','not accessible','binary not found','error response from daemon') if marker.encode() in raw.lower()]
+        'exec format','cannot connect','not accessible','binary not found','error response from daemon',
+        'failed to initialize database','failed to ensure export session store','does not exist','sqlstate',
+        '初始化失败','监听绑定失败','配置无效') if marker.encode() in raw.lower()]
 
 
 def minio_product_contract(source):
@@ -546,7 +548,7 @@ def build(life):
     life.thread=threading.Thread(target=life.monitor,daemon=True)
     life.thread.start()
     life.phase='isolated_dependencies_start'
-    start_dependencies(life.compose)
+    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
     life.dependencies_ready=True
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
@@ -622,8 +624,10 @@ def build(life):
     return commit,env,images
 
 
-def start_dependencies(compose):
+def start_dependencies(compose, initialization_sql):
     compose('up','-d','--wait','--no-build','postgres','business-postgres','redis','minio')
+    compose('exec','-T','postgres','sh','-ec',
+            'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',data=initialization_sql)
     for name in ('runtime-log-store-init','trace-store-init'):
         compose('run','--no-deps',name)
     compose('up','-d','--wait','--no-build','loki','runtime-log-api','tempo','trace-query','alloy')
@@ -699,7 +703,7 @@ def prepare_isolated_configuration(life, env, images):
     path=life.private_json('compose.json',config)
     life.deployment_config=config
     life.compose_path=path
-    life.compose=lambda *args:life.command(['docker','compose','--env-file','/dev/null','-f',str(path),*args],env=env,timeout=300)
+    life.compose=lambda *args,**kwargs:life.command(['docker','compose','--env-file','/dev/null','-f',str(path),*args],env=env,timeout=300,**kwargs)
     return config
 
 
@@ -824,6 +828,12 @@ def main():
                     for mount in inspected.get('Mounts',[]):
                         if mount['Type']=='volume' and mount.get('Name') in life.sampler_volumes:
                             index=life.sampler_volumes.index(mount['Name'])
+                            if mount['Destination']=='/var/log/addp':
+                                module_name=state['service'].removesuffix('-backend')
+                                captured=life.docker('exec',life.run_id+'-space','sh','-ec',
+                                    'find /space/'+str(index)+'/'+module_name+' -type f -name "*.jsonl" -exec tail -n 8 {} + | tail -c 65536',
+                                    guarded=False,timeout=1).encode()
+                                item['runtime_log_diagnostics']={'output_sha256':hashlib.sha256(captured).hexdigest(),'markers':diagnostic_markers(captured)}
                             value=life.docker('exec',life.run_id+'-space','stat','-c','%u %g %a','/space/'+str(index),guarded=False,timeout=1).strip()
                             if re.fullmatch(r'[0-9]+ [0-9]+ [0-7]+',value):
                                 uid,gid,mode=value.split();item['data_mounts'].append({'target':mount['Destination'],'uid':int(uid),'gid':int(gid),'mode':mode,'writable':mount.get('RW')})
