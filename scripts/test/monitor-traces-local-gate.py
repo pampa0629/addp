@@ -83,6 +83,36 @@ def diagnostic_markers(raw):
         '初始化失败','监听绑定失败','配置无效') if marker.encode() in raw.lower()]
 
 
+
+def public_build_failure_diagnostic(raw):
+    """Closed fields from public BuildKit failures, never arbitrary log text."""
+    text = raw[-131072:].decode(errors='replace').lower()
+    errors = '\n'.join(line for line in text.splitlines() if 'error:' in line or 'failed to solve:' in line)
+    frames = '\n'.join(line.strip() for line in text.splitlines() if line.lstrip().startswith('> '))
+    reasons = [name for name, pattern in (
+        ('context_input_missing', r'failed to calculate checksum[^\n]*not found'),
+        ('content_digest_missing', r'content digest sha256:[a-f0-9]{64}[^\n]*not found'),
+        ('base_metadata_resolution', r'failed to resolve source metadata'),
+        ('registry_authorization', r'failed to authorize|failed to fetch anonymous token'),
+        ('registry_http_status', r'unexpected status from'),
+        ('dockerfile_process_exit', r'did not complete successfully: exit code:'),
+        ('export_failed', r'failed to export'),
+    ) if re.search(pattern, errors)]
+    steps = [name for name, pattern in (
+        ('base_metadata', r'load metadata for'), ('dockerfile', r'load build definition'),
+        ('context', r'load build context'), ('copy', r'\] copy '),
+        ('package_install', r'\] run .*apt-get'), ('run', r'\] run '),
+        ('export', r'exporting to (?:image|docker image format)|failed to export'),
+    ) if re.search(pattern, frames + '\n' + errors)]
+    inputs = sorted('dist/release-linux-arm64/' + name.removesuffix('-backend') for name in BACKENDS + ('runtime-log',)
+                    if 'dist/release-linux-arm64/' + name.removesuffix('-backend') in errors)
+    lines = sorted({int(number) for number in re.findall(r'(?m)^\s*(?:[^\s]+/)?dockerfile(?:\.prebuilt)?:([1-9][0-9]{0,4})\s*$', text)})
+    statuses = sorted({int(number) for number in re.findall(r'unexpected status[^\n]*?:\s+([45][0-9]{2})(?:\s|$)', errors)})
+    codes = sorted({int(number) for number in re.findall(r'did not complete successfully: exit code:\s*([0-9]{1,3})(?:\D|$)', errors) if int(number) <= 255})
+    return {'reasons': reasons or ['unclassified'], 'steps': steps, 'inputs': inputs,
+            'dockerfile_lines': lines[:8], 'http_statuses': statuses[:8], 'process_exit_codes': codes[:8]}
+
+
 def minio_product_contract(source):
     pattern = (r'git clone --depth 1 --branch (?P<release>\S+) '
         r'https://github\.com/minio/(?P<name>minio|mc)\.git (?P=name) &&\s*\\\s*'
@@ -308,6 +338,8 @@ class Lifecycle:
             # Keep only an input hash and authored code. Raw output may carry login/SQL details.
             self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
             self.last_failure['diagnostic_markers']=diagnostic_markers(raw)
+            if self.phase.startswith('product_image_'):
+                self.last_failure['public_build']=public_build_failure_diagnostic(raw)
             if args[0] == 'du':
                 diagnostics=[line for line in raw.decode(errors='replace').splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
                 self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)

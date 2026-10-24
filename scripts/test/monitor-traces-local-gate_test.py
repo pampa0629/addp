@@ -755,6 +755,41 @@ class LocalTraceCleanupTests(unittest.TestCase):
                 self.assertEqual(markers, expected)
                 self.assertNotIn('PRIVATE', repr(markers))
 
+    def test_public_build_diagnostic_distinguishes_missing_input_from_content(self):
+        missing = m.public_build_failure_diagnostic(b'#7 ERROR: failed to calculate checksum: "/dist/release-linux-arm64/gateway": not found PRIVATE-TOKEN\n > [2/3] COPY dist/release-linux-arm64/gateway ./server:\nDockerfile.prebuilt:14')
+        self.assertEqual(missing['reasons'], ['context_input_missing'])
+        self.assertEqual(missing['steps'], ['copy'])
+        self.assertEqual(missing['inputs'], ['dist/release-linux-arm64/gateway'])
+        self.assertEqual(missing['dockerfile_lines'], [14])
+        content = m.public_build_failure_diagnostic(('ERROR: failed to solve: content digest sha256:' + 'a' * 64 + ': not found PRIVATE-TOKEN\n > exporting to image:').encode())
+        self.assertEqual(content['reasons'], ['content_digest_missing'])
+        self.assertEqual(content['steps'], ['export'])
+        self.assertNotIn('PRIVATE', repr(missing) + repr(content))
+        self.assertNotIn('a' * 64, repr(content))
+
+    def test_public_build_diagnostic_retains_bounded_codes_without_bodies(self):
+        value = m.public_build_failure_diagnostic(b'ERROR: unexpected status from HEAD request: https://PRIVATE-TOKEN/repo: 404 Not Found\n > [internal] load metadata for localhost:5001/debian-slim:bookworm:\nDockerfile.prebuilt:1\nSQL=PRIVATE-SQL password=PRIVATE-PASSWORD')
+        self.assertEqual(value['reasons'], ['registry_http_status'])
+        self.assertEqual(value['steps'], ['base_metadata'])
+        self.assertEqual(value['http_statuses'], [404])
+        self.assertNotIn('PRIVATE', repr(value))
+        self.assertNotIn('https', repr(value))
+        unknown = m.public_build_failure_diagnostic(b'ERROR: PRIVATE-TOKEN /private/password SQL=SECRET')
+        self.assertEqual(unknown, {'reasons':['unclassified'], 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[]})
+
+    def test_failed_product_image_command_adds_only_structured_public_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory); life.phase = 'product_image_gateway'
+            process = mock.Mock(pid=654321, returncode=17); process.poll.return_value = 17
+            def start(*args, **kwargs):
+                kwargs['stdout'].write(b'ERROR: content digest sha256:' + b'a' * 64 + b': not found PRIVATE-TOKEN')
+                return process
+            with mock.patch.object(m.time, 'monotonic', return_value=1), mock.patch.object(m.subprocess, 'Popen', side_effect=start):
+                with self.assertRaisesRegex(m.GateError, '^command_failed_17$'):
+                    life.command(['make', 'build-images'])
+            self.assertEqual(life.last_failure['public_build']['reasons'], ['content_digest_missing'])
+            self.assertNotIn('PRIVATE', repr(life.last_failure))
+
     def test_public_build_failure_diagnostics_remain_fixed_markers(self):
         markers = m.diagnostic_markers(b'ERROR: failed to solve: proxyconnect tcp PRIVATE-TOKEN: connection refused')
         self.assertEqual(markers, ['failed to solve', 'connection refused', 'proxyconnect'])
