@@ -279,6 +279,16 @@ T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）�
 两个最终脚本与成功验证副本逐字节一致；T2 CI 登记检查通过，既有根 Make、输入登记及 Release 分组已覆盖，无新增工作流或平行门禁。本地真实 T2 使用现有依赖缓存，冷准备预算由确定性回归覆盖，不代替新输入在原生 Linux 的冷构建结果；该项继续等待专门 CI 会话回传。本轮不重复专业 Hosted 已通过验收，不自行查询、重跑云端 CI、设置定时或操作个人服务。
 
 
+### PostgreSQL 专业来源固定版本 Linux T2 复核（2026-10-24）
+
+专门 CI 会话回传 [Release 40048425338 / job 120741235374](https://github.com/pampa0629/addp/actions/runs/40048425338/job/120741235374)，固定源码 `5d91fa31c326fc636c73810edb542ae7f95e4db0`、attempt 2，由协调会话对原 push 的失败 Job 进行唯一一次定向复验。本会话独立核对原始日志、固定脚本与关键测试断言，没有重新运行或查询／调度 CI。实际 `Verify isolated metrics lifecycle` 执行 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，51 项准备测试通过（1.118 秒），进入真实 PostgreSQL、mTLS、Prometheus 及查询／生命周期阶段，最终该分组 selected／success。
+
+覆盖十二项原生专业指标、四项摘要、当前数据库容器段趋势、启动边界／外来身份拒绝、统计重置留空及 SQL 失败清空／新样恢复；原始日志含四次 `TestIntegrationMetricsPostgreSQLSource` 和三次 `TestIntegrationMetricsPostgreSQLAdmission` 实际 PASS。Infra／Business 两个作用域均验证固定函数与受限采集身份、mTLS／受限 HTTP、权限拒绝、密码轮转及幂等；Business 另验证维护账号 SCRAM、其他库／socket 拒绝与原管理员规则保留。两作用域账号安装、NOLOGIN、重新启用、已有未知会话拒绝和凭据丢失拒绝通过，仓库外认证目录只读挂载、宿主原子更新、真实 reload 与完整还原亦通过。脚本最后明确报告当次 owned 容器／网络／卷及设施临时文件零残留，不能只以摘要或 cleanup 成功替代这些实际执行断言。
+
+原 [job 120735545333 / attempt 1](https://github.com/pampa0629/addp/actions/runs/40048425338/job/120735545333) 仍记失败：51 项准备中 `test_business_postgres_compose_mount_is_readonly_and_requires_preparation` 的 `docker compose ... config --format json postgres` 在原 15 秒期限超时（共 50 项通过、1 项错误），尚未执行产品采集阶段。原准备测试冻结源码与同 SHA Git 源码逐字节一致，复验门禁脚本亦与该 SHA 一致；本次成功不回写首轮为通过，也不据此断言暂态环境的唯一根因已确认。未修改断言、期限或权限来取得通过。
+
+证据位于 `/tmp/addp-ci-20261024-020017/`：`job-120741235374.log` SHA-256 为 `91633f44e24988756d38ea144d46d6f7f07c9144114aee45add85ce38622f9c3`，`monitor-metrics-gate-frozen.sh` 为 `95cd991422623e4cad7cb193bd4337181af62085b295efb0ab7abe8be1ba2626`，已用哈希及 `git show` 精确比对。`Monitor-PG-5d91-retry-actual-T2-pass.json` 为回传审计，`Monitor-PG-5d91-domain-audit.json` 保存本次领域核对；首失败原始日志与审计保留在 `/tmp/addp-ci-20261024-013016/`。本次只证明该固定版本的 PG source 实源 T2，不代表当前共享 HEAD 全批、七天自然留存、容量或新的 Online T4；既有独立版本专业 T4 按其原证据保留。未操作个人服务／数据库、未设置定时，待确认的容器配额语义及采集范围未实施、未计为已授权。
+
 ### 同模块双 Worker 的实源隔离
 
 2026-10-22，既有 `http-quality` 标准 T2 扩展为同一模块一个 Backend、两个 Worker，仍使用同一受限非 root 来源容器、原 CPU/内存配额、独立 mTLS 及唯一 HTTP SD。三个真实 Common SDK 进程分别具有实例身份、启动时刻和端点；两个 Worker 各自的 CPU/RSS/时长与当前段趋势有效，双向分别交换实例身份、端点或启动时刻时，摘要和趋势均不能借用对方数值。先停止 Backend，再停止其中一个 Worker；两次均核对失败来源的当前值清空，仍运行 Worker 的即时值和趋势继续有效。既有 HTTP 完整窗口、历史故障、真实告警触发、签名通知及恢复断言保留。
