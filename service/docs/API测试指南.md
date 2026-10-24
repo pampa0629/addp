@@ -1,5 +1,7 @@
 # Service 模块 API 测试指南
 
+[返回核心架构总入口](service核心概念和架构设计.md)
+
 本指南组织查询/要素协议、二维瓦片、注册服务与代理的测试方法，以及图查询的验收入口与已知边界。当前 API 以[Service Router](../backend/internal/api/router.go)和对应 Handler 为据；专题导航不表示已完成全部模块验收。
 
 ## 专题导航
