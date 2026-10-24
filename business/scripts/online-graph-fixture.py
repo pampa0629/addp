@@ -21,6 +21,11 @@ DENSE_EDGES = [(source, target, "Link") for i, source in enumerate(DENSE_NODES)
                for target in list(DENSE_NODES)[i+1:]] + [("n02", "n01", "Link"), ("n01", "n02", "Parallel"), ("n12", "n12", "Link"), ("n01", "n12", "Parallel"), ("n04", "n09", "Parallel"), ("n05", "n08", "Parallel")]
 
 
+def dense_relationship_properties(index, source, target):
+    return {"fixture_id": f"r{index+1:02}", "source_key": source, "target_key": target,
+            "ordinal": index, "score": (index + 1) / 4, "active": index % 2 == 0}
+
+
 def exploration(secret_dir, previous_control_graph_id):
     if type(previous_control_graph_id) is not int or previous_control_graph_id <= 0:
         raise RuntimeError("Dense fixture requires a positive previous control Graph ID")
@@ -53,7 +58,11 @@ def exploration(secret_dir, previous_control_graph_id):
         print("Synthetic Graph dense control index reset: exact previous index removed; zero fulltext indexes")
     native(graph, "MATCH (n) DETACH DELETE n", False)
     nodes = [f"({key}:{':'.join(labels)} {{id:'{key}', name:'Dense {key[1:]}'}})" for key, labels in DENSE_NODES.items()]
-    edges = [f"({source})-[:{kind}]->({target})" for source, target, kind in DENSE_EDGES]
+    edges = []
+    for index, (source, target, kind) in enumerate(DENSE_EDGES):
+        properties = dense_relationship_properties(index, source, target)
+        literal = ', '.join(key + ':' + json.dumps(value) for key, value in properties.items())
+        edges.append(f"({source})-[:{kind} {{{literal}}}]->({target})")
     native(graph, "CREATE " + ", ".join(nodes + edges), False)
     if native(graph, "MATCH (n) RETURN count(n)") != len(DENSE_NODES) or native(graph, "MATCH ()-[r]->() RETURN count(r)") != len(DENSE_EDGES):
         raise RuntimeError("Dense fixture native counts differ")

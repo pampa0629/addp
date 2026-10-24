@@ -426,11 +426,11 @@ def dense_fixture_contract():
     spec = importlib.util.spec_from_file_location("dense_native_fixture", Path(__file__).resolve().parents[2] / "business/scripts/online-graph-fixture.py")
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
-    return fixture.DENSE_NODES, fixture.DENSE_EDGES
+    return fixture.DENSE_NODES, fixture.DENSE_EDGES, fixture.dense_relationship_properties
 
 
 def verify_dense_reference(nodes, edges):
-    labels, relations = dense_fixture_contract()
+    labels, relations, properties = dense_fixture_contract()
     require(type(nodes) is list and len(nodes) == len(labels), "Dense native node count differs")
     ids = {}
     for node in nodes:
@@ -442,18 +442,27 @@ def verify_dense_reference(nodes, edges):
     reverse = {value: key for key, value in ids.items()}
     require(type(edges) is list and len(edges) == len(relations) and len({e.get("id") for e in edges}) == len(relations), "Dense native edge count/identity differs")
     actual = []
+    by_fixture = {properties(index, source, target)["fixture_id"]: (source, target, kind, properties(index, source, target)) for index, (source, target, kind) in enumerate(relations)}
+    seen = set()
     for edge in edges:
-        require(set(edge) == {"id", "source", "target", "type"} and type(edge["id"]) is str and bool(edge["id"]) and
+        require(set(edge) == {"id", "source", "target", "type", "properties"} and type(edge["id"]) is str and bool(edge["id"]) and
                 edge["source"] in reverse and edge["target"] in reverse, "Dense native edge endpoints differ")
+        require(type(edge["properties"]) is dict, "Dense native relation properties missing")
+        key = edge["properties"].get("fixture_id")
+        wanted = by_fixture.get(key)
+        require(wanted is not None and key not in seen and edge["properties"] == wanted[3] and
+                (reverse[edge["source"]], reverse[edge["target"]], edge["type"]) == wanted[:3], "Dense native relation properties/identity differ")
+        require(type(edge["properties"]["active"]) is bool and type(edge["properties"]["ordinal"]) is int and type(edge["properties"]["score"]) in (int, float), "Dense native relation property types differ")
+        seen.add(key)
         actual.append((reverse[edge["source"]], reverse[edge["target"]], edge["type"]))
     require(sorted(actual) == sorted(relations), "Dense native relation direction/type/multiplicity differs")
     return ids
 
 
 def verify_dense(visual, expected):
-    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests"} and
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships"} and
             all(visual.get(key) == value for key, value in expected.items()) and
-            visual["schema_version"] == "addp.graph-dense-stable-frame/v1", "Dense evidence identity differs")
+            visual["schema_version"] == "addp.graph-dense-stable-frame/v2", "Dense evidence identity differs")
     ids = verify_dense_reference(expected["nodes"], expected["edges"])
     shapes = expected["shapes"]
     label_sets = {tuple(sorted(labels)) for labels in dense_fixture_contract()[0].values()}
@@ -501,9 +510,47 @@ def verify_dense(visual, expected):
             layout, label = [("dagre", "分层"), ("circular", "环形"), ("radial", "辐射"), ("force", "力导向")][index-5]
             require(stage["layout"] == layout and stage["selected_label"] == label and sorted(positions) != previous_positions, "Dense layout did not visibly change")
         previous_positions = sorted(positions)
+    verify_relationships(visual["relationships"], expected, stages[-4:])
     root = f"/api/v1/graph/graphs/{expected['graph_id']}"
     require(visual["requests"] == [{"method": "POST", "path": root + "/search", "body": stages[0]["request"]},
         {"method": "POST", "path": root + "/expand", "body": stages[2]["request"]}], "Dense filter/layout made unexpected requests")
+
+
+def verify_relationships(layouts, expected, stages):
+    require(type(layouts) is list and [layout.get("layout") for layout in layouts] == ["dagre", "circular", "radial", "force"], "Relationship layouts incomplete")
+    edges = {edge["id"]: edge for edge in expected["edges"]}
+    number = lambda value: type(value) in (int, float) and math.isfinite(value)
+    display = lambda value: str(value).lower() if type(value) is bool else format(value, 'g') if type(value) in (int, float) else str(value)
+    for layout, stage in zip(layouts, stages):
+        require(set(layout) == {"layout", "width", "height", "stable_frames", "attempts", "hits"} and type(layout["stable_frames"]) is int and layout["stable_frames"] >= 10 and
+                type(layout["attempts"]) is int and layout["attempts"] >= len(edges) and all(number(layout[key]) and layout[key] > 0 for key in ("width", "height")), "Relationship frame is invalid")
+        centers = {hit["native_id"]: (hit["x"], hit["y"], pixel["box"]) for group in stage["groups"] for pixel, hit in zip(group["frame"]["nodes"], group["hits"])}
+        require(all((group["frame"]["width"], group["frame"]["height"]) == (layout["width"], layout["height"]) for group in stage["groups"]), "Relationship viewport differs")
+        hits = layout["hits"]
+        require(type(hits) is list and len(hits) == len(edges) and {hit.get("native_id") for hit in hits} == set(edges), "Relationship mouse identities incomplete/duplicated")
+        for hit in hits:
+            require(set(hit) == {"fixture_id", "native_id", "source", "target", "type", "properties", "path", "path_source", "path_target", "x", "y", "t", "pixel"}, "Relationship hit fields differ")
+            edge = edges[hit["native_id"]]
+            require(all(hit[key] == edge[key] for key in ("source", "target", "type")) and hit["fixture_id"] == edge["properties"]["fixture_id"] and
+                    hit["properties"] == {key: display(value) for key, value in edge["properties"].items()}, "Relationship DOM type/properties/native binding differs")
+            require({hit["path_source"], hit["path_target"]} == {edge["source"], edge["target"]}, "Relationship painted endpoints differ")
+            require(all(number(hit[key]) for key in ("x", "y", "t")) and 0 < hit["t"] < 1 and 1 < hit["x"] < layout["width"]-1 and 1 < hit["y"] < layout["height"]-1, "Relationship click outside viewport")
+            require(not any(box[0]-2 <= hit["x"] <= box[2]+2 and box[1]-2 <= hit["y"] <= box[3]+2 for _, _, box in centers.values()), "Relationship click overlaps node")
+            pixel = hit["pixel"]
+            require(type(pixel) is list and len(pixel) == 4 and all(type(channel) is int and 0 <= channel <= 255 for channel in pixel) and pixel[3] > 0 and
+                    all(abs(pixel[channel] - next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"])[channel]) <= 16 for channel in range(3)), "Relationship click has no matching relation pixel")
+            path = hit["path"]
+            require(type(path) is list and len(path) == 2 and path[0][0] == "M" and len(path[0]) == 3 and path[1][0] in ("L", "Q", "C") and
+                    len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
+            for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
+                nearest = min(centers, key=lambda key: math.hypot(centers[key][0]-endpoint[0], centers[key][1]-endpoint[1]))
+                require(nearest == identifier, "Relationship painted/native endpoint identity differs")
+            t, q = hit["t"], 1-hit["t"]
+            start, segment = path[0][1:], path[1]
+            if segment[0] == "L": point = [q*start[i]+t*segment[i+1] for i in (0, 1)]
+            elif segment[0] == "Q": point = [q*q*start[i]+2*q*t*segment[i+1]+t*t*segment[i+3] for i in (0, 1)]
+            else: point = [q*q*q*start[i]+3*q*q*t*segment[i+1]+3*q*t*t*segment[i+3]+t*t*t*segment[i+5] for i in (0, 1)]
+            require(math.hypot(point[0]-hit["x"], point[1]-hit["y"]) < .05, "Relationship click is not on painted curve")
 
 
 def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id):
@@ -529,7 +576,7 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         anchor = next(entity["id"] for entity in found["data"] if entity["properties"]["id"] == "n01")
         native = reader.request("POST", f"/api/v1/graph/kg/{graph_id}/subgraph", (200,), {"node_id": anchor, "depth": 2, "limit": 100}).payload
         nodes = sorted([{"id": node["id"], "labels": sorted(node["labels"]), "properties": node["properties"]} for node in native["nodes"]], key=lambda node: node["id"])
-        edges = sorted([{key: edge[key] for key in ("id", "source", "target", "type")} for edge in native["edges"]], key=lambda edge: edge["id"])
+        edges = sorted([{key: edge[key] for key in ("id", "source", "target", "type", "properties")} for edge in native["edges"]], key=lambda edge: edge["id"])
         verify_dense_reference(nodes, edges)
         snapshot = reader.request("GET", f"/api/v1/graph/graphs/{graph_id}/browse-snapshot", (200,)).payload
         require(snapshot["stats"]["node_count"] == 12 and snapshot["stats"]["relationship_count"] == 72 and snapshot["stats"].get("by_label") == {"Person": 6, "Employee": 3, "Organization": 6, "Partner": 3}, "Dense stats incomplete or overlapping labels double-counted")
@@ -540,6 +587,8 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
         raw = artifact / "graph-dense-stable-frame.json"
         raw.unlink(missing_ok=True)
+        (artifact / "graph-relationship-hit-frame.json").unlink(missing_ok=True)
+        for path in artifact.glob("relationship-*-console.png"): path.unlink()
         diagnostics = artifact / "graph-dense-browser-diagnostics.json"
         diagnostics.unlink(missing_ok=True)
         for path in artifact.glob("dense-*-console.png"): path.unlink()
@@ -547,14 +596,19 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         for key in ("ADDP_ONLINE_TEST_USER_USERNAME", "ADDP_ONLINE_TEST_USER_PASSWORD"):
             env[key] = SUPPORT.required_environment(key)
         env["ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS"] = json.dumps(expected)
-        result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js", "--config=playwright.online.config.js", "--grep", "multi-label dense", "--reporter=line"], cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=env, timeout=300)
+        result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js", "--config=playwright.online.config.js", "--grep", "multi-label dense", "--reporter=line"], cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=env, timeout=600)
         require(result.returncode == 0 and raw.is_file(), "Dense Console evidence missing or failed")
         require(diagnostics.is_file() and json.loads(diagnostics.read_text()) == {"schema_version": "addp.graph-browser-diagnostics/v1", "entries": []}, "Dense browser diagnostics missing or dirty")
         visual = json.loads(raw.read_text())
         verify_dense(visual, expected)
+        interaction_file = artifact / "graph-relationship-hit-frame.json"
+        require(interaction_file.is_file(), "Relationship mouse/property evidence missing")
+        require(json.loads(interaction_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-hit-frame/v1", "layouts": visual["relationships"]}, "Independent relationship evidence differs")
+        for layout in ("dagre", "circular", "radial", "force"):
+            require((artifact / ("relationship-" + layout + "-console.png")).is_file(), "Relationship screenshot missing")
         for stage in visual["stages"]:
             require((artifact / (stage["phase"] + "-console.png")).is_file(), "Dense screenshot missing")
-        report["dense"] = {"schema_version": "addp.graph-dense-online/v1", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]]}
+        report["dense"] = {"schema_version": "addp.graph-dense-online/v2", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"]}
     except Exception:
         failed = True
         raise
@@ -745,7 +799,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v12", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v13", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

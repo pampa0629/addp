@@ -1311,6 +1311,7 @@ test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消�
 .PHONY: test-graph-online-runner
 test-graph-online-runner: ## 验证图保护和人工审核原生夹具、普通身份、浏览器证据与 CI 登记
 	@node --check --input-type=module < console/frontend/e2e/graph-visual.fixture.js
+	@node --check --input-type=module < console/frontend/e2e/graph-relationship.fixture.js
 	@node --check --input-type=module < console/frontend/e2e/online/graph-review.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/graph-protection.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/develop-graph-query.spec.js

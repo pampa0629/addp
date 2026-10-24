@@ -18,7 +18,11 @@ const SEMANTIC_EDGE_TYPE = 'addp-semantic-quadratic'
 for (const parent of ['quadratic', 'loop']) {
   G6.registerEdge(`addp-semantic-${parent}`, {
     getPathPoints(config) {
-      if (parent !== 'loop') return config
+      if (parent !== 'loop') {
+        const distance = Math.hypot(config.endPoint.x - config.startPoint.x, config.endPoint.y - config.startPoint.y)
+        const side = config.source < config.target ? 1 : -1
+        return { ...config, controlPoints: undefined, curveOffset: (config.curveOffset || 0) + side * distance / 4 }
+      }
       const center = config.sourceNode.getModel()
       return G6.Shape.getFactory('edge').getShape('loop').getPathPoints({
         ...config, startPoint: { x: center.x, y: center.y }, endPoint: { x: center.x, y: center.y }, controlPoints: undefined
@@ -40,30 +44,8 @@ function renderSemanticEdge(shape, config, group) {
   const points = shape.getPathPoints({ ...config })
   const controls = shape.getControlPoints(points) || []
   const path = shape.getPath([points.startPoint, ...controls, points.endPoint])
-  updateSemanticEdgeLine(config, group, path)
+  group.find(element => element.get('name') === 'edge-shape')?.attr({ path })
   updateDirectionMarker(config, group, path)
-}
-
-function updateSemanticEdgeLine(config, group, path) {
-  const existing = group.find(element => element.get('name') === 'semantic-edge-line')
-  if (!path) {
-    existing?.hide()
-    return
-  }
-  const attrs = {
-    path,
-    fill: null,
-    stroke: config._meta?.visual_color || config._meta?.color,
-    lineDash: config._meta?.visual_line_dash || [],
-    lineWidth: config.style?.lineWidth,
-    opacity: config.style?.opacity
-  }
-  if (existing) {
-    existing.show()
-    existing.attr(attrs)
-  } else {
-    group.addShape('path', { name: 'semantic-edge-line', capture: false, attrs })
-  }
 }
 
 function updateDirectionMarker(config, group, edgePath) {
@@ -208,7 +190,7 @@ function buildG6Data(nodes, edges) {
           stroke: color,
           lineDash: edge.visual_line_dash || [],
           lineWidth: isAggregate ? Math.min(6, 2 + Math.log2((edge.count || 1) + 1) * 0.35) : density.dense ? 2 : 2.5,
-          lineAppendWidth: 8,
+          lineAppendWidth: density.dense ? 2 : 8,
           opacity: density.dense ? 0.78 : 0.9
         },
         labelCfg: {
@@ -483,10 +465,6 @@ function syncRenderedSize(item, zoom) {
     fontSize: Math.min(fontSize, 14 / zoom),
     lineWidth: (model.labelCfg.style.lineWidth || 0) * scale
   })
-  group.find(element => element.get('name') === 'semantic-edge-line')?.attr({
-    lineWidth: style.lineWidth * scale,
-    lineDash: (model.style?.lineDash || []).map(length => length * scale)
-  })
   const marker = group.find(element => element.get('name') === 'direction-marker')
   const path = marker?.get('unscaledPath')
   if (path) {
@@ -543,14 +521,6 @@ function restoreSemanticChannels() {
     const model = edge.getModel()
     const color = model._meta?.visual_color || model._meta?.color || theme.edgeDefault
     edge.getKeyShape()?.attr({ stroke: color, lineDash: model._meta?.visual_line_dash || [] })
-    const semanticLine = edge.getContainer().find(element => element.get('name') === 'semantic-edge-line')
-    const emphasized = edge.hasState('selected') || edge.hasState('path')
-    semanticLine?.attr({
-      stroke: color,
-      lineDash: model._meta?.visual_line_dash || [],
-      lineWidth: emphasized ? 4 : edge.hasState('related') ? 3 : model.style?.lineWidth,
-      opacity: model.style?.opacity
-    })
     const marker = edge.getContainer().find(element => element.get('name') === 'direction-marker')
     marker?.attr({
       fill: color,

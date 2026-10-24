@@ -508,7 +508,7 @@ function handleNodeSelect(node) {
 }
 
 function handleEdgeSelect(edge) {
-  selectedItem.value = { ...edge, type: 'edge' }
+  selectedItem.value = { ...edge, relation_type: edge.type, type: 'edge' }
   selectedNode.value = ''
   selectedNodeId.value = ''
   selectedEdgeId.value = edge.id

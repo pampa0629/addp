@@ -118,8 +118,10 @@ class GraphFixtureTest(unittest.TestCase):
                         self.assertTrue(writes.pop(0).args[1].startswith('DROP INDEX `addp_graph_2_search_'))
                     self.assertEqual(writes[0].args[1], 'MATCH (n) DETACH DELETE n')
                     self.assertIn(':Employee:Person', writes[1].args[1])
-                    self.assertIn('(n12)-[:Link]->(n12)', writes[1].args[1])
-                    self.assertIn('(n01)-[:Parallel]->(n02)', writes[1].args[1])
+                    self.assertIn('(n12)-[:Link {fixture_id:"r69"', writes[1].args[1])
+                    self.assertIn('source_key:"n12", target_key:"n12"', writes[1].args[1])
+                    self.assertIn('ordinal:0, score:0.25, active:true', writes[1].args[1])
+                    self.assertIn('(n01)-[:Parallel {fixture_id:"r68"', writes[1].args[1])
                 with patch.object(FIXTURE, 'command', return_value='foreign'), patch.object(FIXTURE, 'native') as native:
                     with self.assertRaisesRegex(RuntimeError, 'ownership'): FIXTURE.exploration(folder, 2)
                     native.assert_not_called()

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
 import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from '../graph-visual.fixture.js'
+import { installGraphRelationshipPaint } from '../graph-relationship.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -243,6 +244,8 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
 
 
 test('ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
+  test.setTimeout(540000)
+  await page.addInitScript(installGraphRelationshipPaint)
   const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], development = [], releaseScripts = new Set()
   const credentials = new Set(Object.entries(process.env).filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|USERNAME)$/.test(key) && value).map(([, value]) => value))
@@ -293,6 +296,9 @@ test('ordinary reader proves multi-label dense native graph through Console', as
   expect(development).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-stable-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-dense-stable-frame/v1', ...visual
+    ...expected, schema_version: 'addp.graph-dense-stable-frame/v2', ...visual
+  }, null, 2))
+  writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-relationship-hit-frame.json'), JSON.stringify({
+    ...expected, schema_version: 'addp.graph-relationship-hit-frame/v1', layouts: visual.relationships
   }, null, 2))
 })

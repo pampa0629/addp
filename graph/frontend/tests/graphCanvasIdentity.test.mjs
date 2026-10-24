@@ -139,20 +139,28 @@ it('keeps reverse and parallel relationships distinct and selects native loop ge
   wrapper.unmount()
 })
 
-it('preserves inherited quadratic and cubic paths and uses their final tangent for direction', () => {
+it('uses one capturable quadratic or cubic path for painting and hit testing, including after updates', () => {
   for (const [type, path] of [['quadratic', [['M', 0, 0], ['Q', 20, -30, 100, 0]]],
     ['loop', [['M', -10, -20], ['C', -80, -80, 80, -80, 10, -20]]]]) {
     const registered = [...edgeTypes.values()].find(entry => entry.parent === type)
     expect(registered).toBeDefined()
-    const created = new Map()
+    const key = { attrs: { path: [['M', 0, 0]] }, get: name => name === 'name' ? 'edge-shape' : undefined, attr(attrs) { Object.assign(this.attrs, attrs) } }
+    const created = new Map([['edge-shape', key]])
     const group = { find: predicate => [...created.values()].find(predicate), addShape: (shape, config) => {
-      const element = { get: key => key === 'name' ? config.name : undefined, attrs: config.attrs }
+      const element = { get: key => config[key], set: (key, value) => { config[key] = value }, attrs: config.attrs, show() {}, attr(attrs) { Object.assign(this.attrs, attrs) } }
       created.set(config.name, element); return element
     } }
     const points = path[0].slice(1)
     const cfg = { startPoint: { x: points[0], y: points[1] }, endPoint: { x: points[0], y: points[1] }, style: {}, _meta: { directed: true } }
     registered.definition.afterDraw.call({ getPathPoints: value => value, getControlPoints: () => [], getPath: () => path }, cfg, group)
-    expect(created.get('semantic-edge-line')?.attrs.path).toEqual(path)
+    expect(key.attrs.path).toEqual(path)
+    expect(created.has('semantic-edge-line')).toBe(false)
+    key.attrs.path = [['M', 0, 0]]
+    group.getTotalMatrix = () => null
+    const item = { getContainer: () => group, getKeyShape: () => key,
+      getModel: () => ({ ...cfg, labelCfg: { style: { fontSize: 11 } } }), hasState: () => false }
+    registered.definition.afterUpdate.call({ getPathPoints: value => value, getControlPoints: () => [], getPath: () => path }, cfg, item)
+    expect(key.attrs.path).toEqual(path)
     expect(created.get('direction-marker')?.attrs.path[0]).toEqual(['M', ...path.at(-1).slice(-2)])
   }
 })
@@ -170,4 +178,28 @@ it('recomputes loop anchors from the current node instead of retaining invalid l
     endPoint: { x: NaN, y: NaN }, controlPoints: [{ x: NaN, y: NaN }], loopCfg: { position: 'top', dist: 50 } })
   expect([points.startPoint, ...points.controlPoints, points.endPoint].every(point => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true)
   expect(points.startPoint).not.toEqual(points.endPoint)
+})
+
+it('separates collinear nested relations while retaining canonical parallel offsets', () => {
+  const registered = [...edgeTypes.values()].find(entry => entry.parent === 'quadratic')
+  const points = length => ({ source: 'a', target: 'b', startPoint: { x: 0, y: 0 }, endPoint: { x: length, y: 0 }, curveOffset: 0 })
+  const inherited = { ...G6.Shape.getFactory('edge').getShape(registered.parent), ...registered.definition }
+  const offset = cfg => inherited.getPathPoints(cfg).curveOffset
+  expect(offset(points(100))).toBeGreaterThan(0)
+  expect(offset(points(200))).toBeGreaterThan(offset(points(100)))
+  const base = points(100)
+  expect(offset({ ...base, curveOffset: 40 }) - offset(base)).toBe(40)
+  expect(offset({ ...base, curveOffset: -40 }) - offset(base)).toBe(-40)
+  expect(offset({ ...base, source: 'b', target: 'a' })).toBe(-offset(base))
+  expect(base.curveOffset).toBe(0)
+})
+
+it('keeps dense relationship hit areas close to the visible stroke instead of masking neighboring curves', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const nodes = [{ id: 'a' }, { id: 'b' }]
+  const edges = Array.from({ length: 72 }, (_, index) => ({ id: String(index), source: 'a', target: 'b' }))
+  const wrapper = mount(GraphCanvas, { props: { nodes, edges }, global: { directives: { loading: {} } } })
+  await nextTick()
+  expect(instances[0].model.edges.every(edge => edge.style.lineAppendWidth === 2)).toBe(true)
+  wrapper.unmount()
 })

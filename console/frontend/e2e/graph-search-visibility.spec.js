@@ -1,3 +1,4 @@
+import { installGraphRelationshipPaint, stableRelationshipPaths } from './graph-relationship.fixture.js'
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
 import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from './graph-visual.fixture.js'
@@ -89,7 +90,8 @@ for (const replace of [false, true]) {
 
 
 test('Graph multi-label dense search, filter and four layouts preserve every native identity', async ({ page }, testInfo) => {
-  test.setTimeout(120_000)
+  test.setTimeout(240_000)
+  await page.addInitScript(installGraphRelationshipPaint)
   const diagnostics = []
   page.on('pageerror', error => diagnostics.push(error.message))
   page.on('console', message => { if (['warning', 'error'].includes(message.type())) diagnostics.push(message.text()) })
@@ -102,7 +104,7 @@ test('Graph multi-label dense search, filter and four layouts preserve every nat
   const edges = nodes.flatMap((source, index) => nodes.slice(index + 1).map(target => ({ source: source.id, target: target.id, type: 'Link' })))
   edges.push({ source: nodes[1].id, target: nodes[0].id, type: 'Link' }, { source: nodes[0].id, target: nodes[1].id, type: 'Parallel' }, { source: nodes[11].id, target: nodes[11].id, type: 'Link' })
   edges.push({ source: nodes[0].id, target: nodes[11].id, type: 'Parallel' }, { source: nodes[3].id, target: nodes[8].id, type: 'Parallel' }, { source: nodes[4].id, target: nodes[7].id, type: 'Parallel' })
-  edges.forEach((edge, index) => Object.assign(edge, { id: 'relationship-' + index, directed: true }))
+  edges.forEach((edge, index) => Object.assign(edge, { id: 'relationship-' + index, directed: true, properties: { fixture_id: 'r' + String(index + 1).padStart(2, '0'), source_key: edge.source.slice(7), target_key: edge.target.slice(7), ordinal: index, score: (index + 1) / 4, active: index % 2 === 0 } }))
   const shapes = labelSets.map(labels => ({ name: [...labels].sort().join('+'), labels })).sort((a, b) => a.name.localeCompare(b.name))
   const unexpected = await mockGraph(page, { permissions: ['graph.graph.read'], responses: {
     '/api/v1/graph/graphs/7': { id: 7, name: '多标签密集关系隔离图' },
@@ -119,6 +121,10 @@ test('Graph multi-label dense search, filter and four layouts preserve every nat
     await testInfo.attach(phase + '.png', { body: await page.screenshot(), contentType: 'image/png' })
   })
   await testInfo.attach('graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  const nativeCanvas = frame.locator('.graph-canvas canvas')
+  await nativeCanvas.evaluate(element => { element.style.opacity = '0' })
+  await expect(frame.locator('.graph-canvas').evaluate(stableRelationshipPaths, { nodes: result.stages.at(-1).groups, timeout: 1000 })).rejects.toThrow('not visible')
+  await nativeCanvas.evaluate(element => { element.style.opacity = '' })
   expect(unexpected).toEqual([])
   expect(diagnostics).toEqual([])
 })

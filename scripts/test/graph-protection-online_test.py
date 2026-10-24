@@ -38,10 +38,10 @@ def exploration_fixture(expected):
 
 
 def dense_evidence():
-    labels, relations = SUITE.dense_fixture_contract()
+    labels, relations, properties = SUITE.dense_fixture_contract()
     ids = {key: 'native-'+key for key in labels}
     nodes = [{'id': ids[key], 'labels': sorted(value), 'properties': {'id': key, 'name': 'Dense '+key[1:]}} for key, value in labels.items()]
-    edges = sorted([dict(id='edge-'+str(index), source=ids[source], target=ids[target], type=kind) for index, (source, target, kind) in enumerate(relations)], key=lambda edge: edge['id'])
+    edges = sorted([dict(id='edge-'+str(index), source=ids[source], target=ids[target], type=kind, properties=properties(index, source, target)) for index, (source, target, kind) in enumerate(relations)], key=lambda edge: edge['id'])
     shapes = [dict(name='+'.join(value), labels=list(value)) for value in sorted({tuple(sorted(value)) for value in labels.values()})]
     expected = dict(run_id='run', tenant_id='2', principal_id='4', engine_type='falkordb', engine_id=14, graph_id=8, nodes=nodes, edges=edges, shapes=shapes)
     phases = ['dense-search', 'dense-search-cleared', 'dense-expand', 'dense-filter', 'dense-filter-restored'] + ['dense-layout-'+key for key in ('dagre', 'circular', 'radial', 'force')]
@@ -68,8 +68,20 @@ def dense_evidence():
         if index >= 5:
             stage.update(layout=['dagre','circular','radial','force'][index-5], selected_label=['分层','环形','辐射','力导向'][index-5])
         stages.append(stage)
-    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v1', stages=stages,
+    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v2', stages=stages,
         requests=[dict(method='POST',path='/api/v1/graph/graphs/8/'+operation,body=stages[index]['request']) for operation,index in [('search',0),('expand',2)]])
+    visual['relationships'] = []
+    for stage in stages[-4:]:
+        centers = {hit['native_id']: (hit['x'],hit['y'],pixel['box']) for group in stage['groups'] for pixel,hit in zip(group['frame']['nodes'],group['hits'])}
+        hits = []
+        for edge in edges:
+            start,end = centers[edge['source']][:2],centers[edge['target']][:2]
+            point = next((x,y) for y in range(30,570,35) for x in range(30,770,35) if not any(box[0]-10 <= x <= box[2]+10 and box[1]-10 <= y <= box[3]+10 for _,_,box in centers.values()))
+            control = [2*point[i]-.5*(start[i]+end[i]) for i in (0,1)]
+            display = lambda value: str(value).lower() if type(value) is bool else format(value,'g') if type(value) in (float,int) else str(value)
+            hits.append(dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type=edge['type'],
+                properties={key:display(value) for key,value in edge['properties'].items()},path=[['M',*start],['Q',*control,*end]],path_source=edge['source'],path_target=edge['target'],x=point[0],y=point[1],t=.5,pixel=[*next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"]),255]))
+        visual['relationships'].append(dict(layout=stage['layout'],width=800,height=600,stable_frames=10,attempts=72,hits=hits))
     return expected, visual
 
 
@@ -78,6 +90,37 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
         environment.start()
         self.addCleanup(environment.stop)
+
+    def test_dense_report_refuses_missing_relationship_mouse_and_property_evidence(self):
+        expected, visual = dense_evidence()
+        del visual["relationships"]
+        with self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(visual, expected)
+
+    def test_relationship_evidence_rejects_missing_duplicate_wrong_properties_and_geometry(self):
+        expected, visual = dense_evidence()
+        SUITE.verify_dense(visual, expected)
+        changes = {
+            'missing': lambda raw: raw['relationships'][0]['hits'].pop(),
+            'duplicate': lambda raw: raw['relationships'][0]['hits'].__setitem__(1,copy.deepcopy(raw['relationships'][0]['hits'][0])),
+            'native': lambda raw: raw['relationships'][0]['hits'][0].update(native_id='foreign'),
+            'reverse': lambda raw: raw['relationships'][0]['hits'][0].update(source=raw['relationships'][0]['hits'][0]['target']),
+            'type': lambda raw: raw['relationships'][0]['hits'][0].update(type='Wrong'),
+            'property': lambda raw: raw['relationships'][0]['hits'][0]['properties'].update(active='wrong'),
+            'boolean_type': lambda raw: raw['relationships'][0]['hits'][0]['properties'].update(active=True),
+            'frame': lambda raw: raw['relationships'][0].update(stable_frames=9),
+            'boolean_frame': lambda raw: raw['relationships'][0].update(stable_frames=True),
+            'viewport': lambda raw: raw['relationships'][0].update(width=100),
+            'click': lambda raw: raw['relationships'][0]['hits'][0].update(x=0),
+            'curve': lambda raw: raw['relationships'][0]['hits'][0].update(t=.25),
+            'wrong_pixel': lambda raw: raw['relationships'][0]['hits'][0].update(pixel=[250,250,250,255]),
+            'transparent': lambda raw: raw['relationships'][0]['hits'][0].update(pixel=[0,0,0,0]),
+            'wrong_path_identity': lambda raw: raw['relationships'][0]['hits'][0].update(path_source='foreign'),
+            'layout_missing': lambda raw: raw['relationships'].pop(),
+            'old_schema': lambda raw: raw.update(schema_version='addp.graph-dense-stable-frame/v1'),
+        }
+        for name, change in changes.items():
+            candidate=copy.deepcopy(visual);change(candidate)
+            with self.subTest(name=name), self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(candidate,expected)
 
     def test_service_graph_requires_exact_native_rows_and_no_output_on_protection_failure(self):
         good = {'rows_count': 3, 'columns': ['id', 'name'], 'rows': [
@@ -262,7 +305,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_dense_phase_uses_reader_browser_and_cleans_after_success_or_failure(self):
         expected, visual = dense_evidence()
-        for failure in ("none", "browser", "identity"):
+        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
                 deleted = []
                 class Client:
@@ -284,16 +327,27 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     actual = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'])
                     self.assertEqual(actual, expected)
                     Path(folder, 'graph-dense-stable-frame.json').write_text(json.dumps(visual))
+                    if failure != 'relationship-missing':
+                        interaction = dict(expected,schema_version='addp.graph-relationship-hit-frame/v1',layouts=visual['relationships'])
+                        if failure == 'relationship-identity': interaction['principal_id'] = 'foreign'
+                        Path(folder, 'graph-relationship-hit-frame.json').write_text(json.dumps(interaction))
+                    for layout in visual['relationships']:
+                        if failure != 'relationship-png' or layout['layout'] != 'force':
+                            Path(folder,'relationship-'+layout['layout']+'-console.png').write_bytes(b'unit-test')
                     Path(folder, 'graph-dense-browser-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=[])))
                     for stage in visual['stages']: Path(folder, stage['phase']+'-console.png').write_bytes(b'unit-test')
                     return type('Result', (), {'returncode': 1 if failure == "browser" else 0})()
                 environment = dict(ADDP_ONLINE_TEST_RUN_ID='run',ADDP_ONLINE_ARTIFACT_DIR=folder,ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='secret',ADDP_ONLINE_TEST_USER_USERNAME='reader',ADDP_ONLINE_TEST_USER_PASSWORD='reader-password')
                 report = {'identities': {'reader': {'principal_id': '4'}}}
+                if failure == 'relationship-missing':
+                    Path(folder, 'graph-relationship-hit-frame.json').write_text(json.dumps(dict(expected,schema_version='addp.graph-relationship-hit-frame/v1',layouts=visual['relationships'])))
                 with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'identity', return_value=dict(principal_id='5' if failure == 'identity' else '4')), patch.object(SUITE.subprocess, 'run', side_effect=subprocess_run):
                     if failure == "identity":
                         with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     elif failure == "browser":
                         with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
+                    elif failure.startswith("relationship-"):
+                        with self.assertRaises(SUITE.SuiteError): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     else:
                         SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                         self.assertTrue(report['dense']['passed'])

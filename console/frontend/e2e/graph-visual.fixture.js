@@ -1,3 +1,4 @@
+import { graphRelationshipHits } from './graph-relationship.fixture.js'
 import { expect } from '@playwright/test'
 
 // Shared browser observations for synthetic T3 and native Hosted production builds.
@@ -238,13 +239,13 @@ export async function exploreGraphLayouts(page, frame, canvas, root, nodes, edge
 // Four full label sets share the same pixel observer and settle in one rAF sequence.
 export async function denseGraphStages(page, frame, canvas, expected, capture) {
   const root = `/api/v1/graph/graphs/${expected.graph_id}`
-  const normalize = values => values.map(({ id, source, target, type }) => ({ id, source, target, type })).sort((a, b) => a.id.localeCompare(b.id))
+  const normalize = values => values.map(({ id, source, target, type, properties }) => ({ id, source, target, type, properties })).sort((a, b) => a.id.localeCompare(b.id))
   const nodeFacts = nodes => nodes.map(node => ({ id: node.id, labels: [...node.labels].sort(), properties: node.properties })).sort((a, b) => a.id.localeCompare(b.id))
   // This fixture's ontology explicitly declares name as its display property.
   // The independent KG reference intentionally contains no browser display DTO.
   const reference = expected.nodes.map(node => ({ ...node, display_name: node.properties.name }))
   const shapes = expected.shapes
-  const requests = [], stages = []
+  const requests = [], stages = [], relationships = []
   const record = request => {
     if (new URL(request.url()).pathname.startsWith(root)) requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.method() === 'POST' ? request.postDataJSON() : null })
   }
@@ -330,12 +331,14 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
       await list.getByRole('option', { name: label, exact: true }).click()
       await expect(select).toHaveText(label)
       await observe('dense-layout-' + layout, reference, expected.edges, { layout, selected_label: await select.innerText() })
+      relationships.push(await graphRelationshipHits(page, frame, canvas, expected.edges, stages.at(-1)))
+      await capture('relationship-' + layout)
     }
     expect(requests).toEqual([
       { method: 'POST', path: root + '/search', body: stages[0].request },
       { method: 'POST', path: root + '/expand', body: stages[2].request }
     ])
-    return { stages, requests }
+    return { stages, requests, relationships }
   } finally { page.off('request', record) }
 }
 
