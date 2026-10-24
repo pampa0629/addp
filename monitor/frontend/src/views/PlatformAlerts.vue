@@ -19,6 +19,9 @@
         <el-select :model-value="state.status" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
           <el-option :label="t('monitor.platformAlerts.active')" value="active" /><el-option :label="t('monitor.platformAlerts.allStatuses')" value="" /><el-option v-for="status in ['open','acknowledged','resolved']" :key="status" :label="t(`monitor.platformAlerts.statuses.${status}`)" :value="status" />
         </el-select>
+        <el-select :model-value="state.severity" @update:model-value="value => change({ severity: value, page: 1 })" :aria-label="t('monitor.platformAlerts.severity')">
+          <el-option :label="t('monitor.platformAlerts.allSeverities')" value="" /><el-option v-for="severity in ['critical','warning']" :key="severity" :label="t(`monitor.platformAlerts.severities.${severity}`)" :value="severity" />
+        </el-select>
         <el-input :model-value="state.subject_id" @change="value => change({ subject_id: value, page: 1 })" :placeholder="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
       </div>
       <el-table :data="incidents" data-testid="pipeline-incidents">
@@ -232,8 +235,8 @@ async function load() {
       check(lease); if (own !== request) return
       destinations.value = targets; deliveries.value = attempts
     } else {
-      const { page, category, status, subject_id } = state.value
-      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}) }, controller.signal)
+      const { page, category, status, subject_id, severity } = state.value
+      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}) }, controller.signal)
       check(lease); if (own !== request) return
       incidents.value = result.data; total.value = result.total
       if (canReadHosts.value) {

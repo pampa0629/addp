@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -215,7 +216,7 @@ func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing
 	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now) }); err != nil {
 		t.Fatal(err)
 	}
-	list, err := f.n.Incidents(ctx, 1, 20, "resource", "active", subject)
+	list, err := f.n.Incidents(ctx, 1, 20, "resource", "active", subject, "")
 	if err != nil || list.Total != 1 {
 		t.Fatal("resource list", list, err)
 	}
@@ -255,7 +256,7 @@ func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing
 	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now.Add(time.Minute)) }); err != nil {
 		t.Fatal(err)
 	}
-	list, err = f.n.Incidents(ctx, 1, 20, "resource", "resolved", subject)
+	list, err = f.n.Incidents(ctx, 1, 20, "resource", "resolved", subject, "")
 	if err != nil || list.Total != 1 {
 		t.Fatal("recovery", err)
 	}
@@ -266,5 +267,56 @@ func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing
 	db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", incident.ID).Count(&events)
 	if events != 2 {
 		t.Fatal("lifecycle duplicated", events)
+	}
+}
+
+func TestIntegrationPostgresPlatformAlertSeverityBeforePagination(t *testing.T) {
+	f := newLogRetryFixture(t, "webhook")
+	ctx, subject := context.Background(), "severity-"+uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	rows := []models.PlatformAlertIncident{}
+	for n, severity := range []string{"warning", "critical", "warning", "critical", "warning"} {
+		rows = append(rows, models.PlatformAlertIncident{Category: "resource", SubjectKind: "host_node", SubjectID: subject, Signal: fmt.Sprintf("severity-%d", n), Severity: severity, Status: "open", OpenedAt: now.Add(time.Duration(n) * time.Second), LastObservedAt: now})
+	}
+	rows[4].Status = "resolved"
+	rows = append(rows, models.PlatformAlertIncident{Category: "process_resource", SubjectKind: "module_instance", SubjectID: subject, Signal: "process.cpu.cores", Severity: "warning", Status: "open", OpenedAt: now.Add(6 * time.Second), LastObservedAt: now})
+	t.Cleanup(func() {
+		if err := f.db.Where("subject_id=?", subject).Delete(&models.PlatformAlertIncident{}).Error; err != nil {
+			t.Error(err)
+		}
+		var count int64
+		if err := f.db.Model(&models.PlatformAlertIncident{}).Where("subject_id=?", subject).Count(&count).Error; err != nil || count != 0 {
+			t.Errorf("severity fixture residue=%d err=%v", count, err)
+		}
+	})
+	if err := f.db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		category, status, severity string
+		total                      int64
+		ids                        []uint
+	}{
+		{"resource", "active", "warning", 2, []uint{rows[2].ID, rows[0].ID}},
+		{"resource", "active", "critical", 2, []uint{rows[3].ID, rows[1].ID}},
+		{"resource", "resolved", "warning", 1, []uint{rows[4].ID}},
+		{"process_resource", "active", "warning", 1, []uint{rows[5].ID}},
+		{"resource", "active", "", 4, []uint{rows[3].ID, rows[2].ID, rows[1].ID, rows[0].ID}},
+	} {
+		for page, id := range tc.ids {
+			list, err := f.n.Incidents(ctx, page+1, 1, tc.category, tc.status, subject, tc.severity)
+			if err != nil || list.Total != tc.total || list.TotalPages != int(tc.total) || len(list.Data) != 1 || list.Data[0].ID != id {
+				t.Fatalf("filter=%+v page=%d result=%+v err=%v", tc, page+1, list, err)
+			}
+		}
+	}
+	empty, err := f.n.Incidents(ctx, 1, 20, "process_resource", "active", subject, "critical")
+	if err != nil || empty.Total != 0 || len(empty.Data) != 0 {
+		t.Fatalf("empty intersection=%+v err=%v", empty, err)
+	}
+	for _, severity := range []string{"info", "Critical", "warning ", "warning' OR 1=1--"} {
+		if _, err := f.n.Incidents(ctx, 1, 20, "", "", subject, severity); !errors.Is(err, ErrLogInvalid) {
+			t.Fatalf("unsupported severity accepted: %q err=%v", severity, err)
+		}
 	}
 }

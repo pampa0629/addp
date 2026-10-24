@@ -1013,3 +1013,23 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 当前最终代码的`make test-infra-runtime-log-lifecycle`通过70项本地入口契约、60项生命周期测试、Node语法、Online登记及System fixture Go检查；日志为`/tmp/addp-p19-formal-local-20261024-window7/dependency-diagnostics-lifecycle.log`。此前67／68／69项中间版本及各60项生命周期门禁分别记录，不代替最终运行验收；现有标准入口及CI登记继续覆盖本次脚本，未新增Hosted触发或定时。
 
 原始脱敏报告为`/tmp/addp-p19-formal-local-20261024-window7/attempt-{1..8}-report.json`，同目录`window.json`、各`attempt-*-source.json`／日志、`receipt.json`及`cleanup-audit.json`保留窗口及源码身份。独立只读清理核对于17:22:07完成：8次均为当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO不可变镜像仍保留。334次成功资源样本的硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3637747712字节（约3.39 GiB），成功单次测量最长2.640秒；超时失败样本单独按失败记录，不从成功最大值中隐去。没有观察到OOM或4 GiB停止线触发；资源守卫超时及身份准备失败不得计为通过。
+
+
+## 平台告警级别组合筛选（2026-10-24，本地）
+
+对应原功能表 Excel 第 51 行、B 列 50“告警信息管理”。事件查询新增现有 `critical|warning` 精确筛选，与类别、状态和主体取交集，在计数及分页前执行；省略／空值读取全部级别，排序、事件快照、权限和生命周期不变。未知级别、重复／未知参数及编码错误返回 400。Monitor 页面选择级别回到首页，刷新、重载和浏览器返回保留条件；Console 同一 iframe 内同步级别地址，切换通知页保留筛选。未实现名称／时间组合检索、高等级置顶、依赖拓扑、影响范围或根因分析。
+
+源码为基线 `e814fed8d` 加本节同批任务改动；19 项任务输入摘要见 `/tmp/addp-monitor-severity-inputs.json`，收据 SHA-256 为 `da396ec8485ef25e3582eafbf4e1456756d06915d31031847be8c4f1d73c2f33`。与本批无关的工作区文件未纳入输入或提交。
+
+| 标准命令 | 实际结果与范围 | 本机证据 |
+| --- | --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1` | 7 个 Go 测试包通过；含平台 User 原权限守卫及级别／重复／未知查询拒绝；不计为完整模块 T0–T3 | `/tmp/addp-monitor-severity-go.log` |
+| `make test-monitor-postgres` | 35 项 PostgreSQL T2 顶层用例通过，无跳过；本地先经 Infra status 核对 `25432`，只使用 `addp_test`。新增级别用例覆盖两级交错数据、计数／分页顺序、类别／状态／主体交集、空结果及 SQL 字面拒绝；当次独有主体清理后核对零行 | `/tmp/addp-monitor-severity-postgres.log` |
+| `make test-monitor-frontend` | 115 项 T1、417 项隔离浏览器 T3 及 Vite 构建通过；新增中英文级别选择、页码重置、刷新／返回／重载、无效条件不扩查和失败清空均包含于本轮整套通过结果 | `/tmp/addp-monitor-severity-frontend-full.log` |
+| `make test-console-frontend`；`npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js` | Console 195 项 T1、219 项 T3 及构建通过；随后同一测试文件增加级别同步断言，最终 5 项专项再次通过，验证同一 iframe 文档、真实模块路由和通知页重载，产品输入未再变化 | `/tmp/addp-monitor-severity-console.log`、`/tmp/addp-monitor-severity-console-navigation-final.log` |
+| `bash scripts/swagger/gen-swagger.sh monitor`；`bash scripts/swagger/check-route-coverage.sh monitor` | 生成成功，91 个公开路由方法覆盖一致；新增级别参数与枚举的双语文档 | `/tmp/addp-monitor-severity-swagger.log`、`/tmp/addp-monitor-severity-coverage.log` |
+| `make test-frontend-ci-registration` | 20 项登记回归及 21 个前端登记核对通过；现有 Monitor／Console 前端与 Monitor PostgreSQL workflow 已覆盖本批路径，无新增入口／依赖或编排 | `/tmp/addp-monitor-severity-ci-registration.log` |
+
+最初浏览器专项因测试使用错误中文标签、随后点击 Element Plus 内部输入被选中标签遮挡而失败；修订测试定位到既有可操作下拉框外层，3 项专项和最终整套 417 项均通过，原失败日志仍保留为 `/tmp/addp-monitor-severity-browser.log`、`/tmp/addp-monitor-severity-new-interactions.log`，不计通过。不改变共享组件或以强制点击绕过交互。
+
+本批 T3 使用受控 API 返回，不代表正式身份、个人 Safari 或 Hosted 验收；没有重启个人服务、修改 IAM／个人业务库、设置定时任务或主动跟踪 CI。CI／Hosted 结果继续等专门会话回传。

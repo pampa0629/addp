@@ -1885,6 +1885,16 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "critical",
+                            "warning"
+                        ],
+                        "type": "string",
+                        "description": "级别（省略为全部） | Severity (omitted for all)",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "主体 ID | Subject ID",
                         "name": "subject_id",

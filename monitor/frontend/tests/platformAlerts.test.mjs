@@ -78,3 +78,16 @@ test('monitor management views share the sole bounded host-reference resolver', 
    assert.doesNotMatch(source, /Promise\.allSettled/u)
  }
 })
+
+
+test('incident severity survives routing and invalid conditions never broaden to all levels', () => {
+ for (const severity of ['critical', 'warning', 'info']) {
+  const query = { severity, category: 'process_resource', status: 'resolved', page: '2' }
+  assert.deepEqual(platformAlertQuery(platformAlertState(query)), query)
+ }
+ assert.deepEqual(platformAlertQuery(platformAlertState({ severity: '' })), {})
+ for (const severity of [['critical', 'warning'], 'x'.repeat(33), null]) {
+  assert.equal(platformAlertState({ severity }).severity, 'invalid')
+  assert.equal(platformAlertQuery(platformAlertState({ severity })).severity, 'invalid')
+ }
+})

@@ -23,9 +23,9 @@ type PlatformAlertList struct {
 	TotalPages int                            `json:"total_pages"`
 }
 
-func (s *PlatformAlertService) Incidents(ctx context.Context, page, size int, category, status, subject string) (PlatformAlertList, error) {
+func (s *PlatformAlertService) Incidents(ctx context.Context, page, size int, category, status, subject, severity string) (PlatformAlertList, error) {
 	result := PlatformAlertList{Data: []models.PlatformAlertIncident{}, Page: page, PageSize: size}
-	if page < 1 || page > 10000 || size < 1 || size > 100 || (category != "" && !validPlatformAlertCategory(category)) || len(subject) > 100 || strings.ContainsAny(subject, "\r\n\x00") {
+	if page < 1 || page > 10000 || size < 1 || size > 100 || (category != "" && !validPlatformAlertCategory(category)) || (severity != "" && severity != "critical" && severity != "warning") || len(subject) > 100 || strings.ContainsAny(subject, "\r\n\x00") {
 		return result, ErrLogInvalid
 	}
 	switch status {
@@ -39,6 +39,9 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, page, size int, ca
 	q := s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{})
 	if category != "" {
 		q = q.Where("category=?", category)
+	}
+	if severity != "" {
+		q = q.Where("severity=?", severity)
 	}
 	if subject != "" {
 		q = q.Where("subject_id=?", subject)

@@ -1038,6 +1038,7 @@
         "yes": "是",
         "no": "否"
       },
+      "allSeverities": "全部级别",
       "severities": {
         "critical": "严重",
         "warning": "警告"

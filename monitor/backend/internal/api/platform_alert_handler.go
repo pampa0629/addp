@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -48,6 +49,7 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Security BearerAuth
 // @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
+// @Param severity query string false "级别（省略为全部） | Severity (omitted for all)" Enums(critical,warning)
 // @Param subject_id query string false "主体 ID | Subject ID"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页条数 | Page size" default(20)
@@ -60,13 +62,30 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @x-addp-required-permissions ["monitor.platform_alert.read"]
 // @Router /platform/alerts [get]
 func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
+	query, parseErr := url.ParseQuery(c.Request.URL.RawQuery)
+	if parseErr != nil {
+		platformAlertRespond(c, nil, service.ErrLogInvalid)
+		return
+	}
+	for key, values := range query {
+		switch key {
+		case "page", "page_size", "category", "status", "subject_id", "severity":
+		default:
+			platformAlertRespond(c, nil, service.ErrLogInvalid)
+			return
+		}
+		if len(values) != 1 {
+			platformAlertRespond(c, nil, service.ErrLogInvalid)
+			return
+		}
+	}
 	page, e := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, e2 := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	if e != nil || e2 != nil {
 		platformAlertRespond(c, nil, service.ErrLogInvalid)
 		return
 	}
-	result, err := h.service.Incidents(c.Request.Context(), page, size, c.Query("category"), c.Query("status"), c.Query("subject_id"))
+	result, err := h.service.Incidents(c.Request.Context(), page, size, c.Query("category"), c.Query("status"), c.Query("subject_id"), query.Get("severity"))
 	platformAlertRespond(c, result, err)
 }
 

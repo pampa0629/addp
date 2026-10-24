@@ -312,3 +312,48 @@ test('resource rule form rejects missing recovery values before writing', async 
  await expect(dialog).toBeHidden()
  expect(state.requests.filter(r => r.method !== 'GET').at(-1).body.recovery_percent).toBe(25)
 })
+
+
+for (const locale of ['zh-cn', 'en']) {
+ test(`severity filters reset pages and survive refresh and browser return ${locale}`, async ({ page }) => {
+  const entries = Array.from({ length: 27 }, (_, i) => ({ id: i + 1, version: 1, category: 'log_pipeline', subject_kind: 'log_observer', subject_id: `severity-host-${i}`, signal: 'collector_dropped', severity: i < 25 ? 'critical' : 'warning', status: 'open', opened_at: '2026-10-24T00:00:00Z' }))
+  const state = await fixture(page, { locale, entries, path: '/platform-alerts?severity=critical&page=2' })
+  const table = page.getByTestId('pipeline-incidents')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  const label = locale === 'en' ? 'Severity' : '严重级别'
+  const warning = locale === 'en' ? 'Warning' : '警告'
+  await page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) }).click()
+  await page.getByRole('option', { name: warning, exact: true }).click()
+  await expect(page).toHaveURL(/severity=warning/)
+  expect(new URL(page.url()).searchParams.has('page')).toBe(false)
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(2)
+  expect(state.requests.filter(r => r.path.endsWith('/alerts')).at(-1).query).toMatchObject({ severity: 'warning', page: '1', status: 'active' })
+  await page.locator('.platform-alerts').getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(2)
+  await page.goto('/platform-alerts?severity=critical&page=2')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  await page.goBack()
+  await expect(page).toHaveURL(/severity=warning/)
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(2)
+  await page.reload()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(2)
+  await page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) }).click()
+  await page.getByRole('option', { name: locale === 'en' ? 'All severities' : '全部级别', exact: true }).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  expect(new URL(page.url()).searchParams.has('severity')).toBe(false)
+ })
+}
+
+test('invalid severity is rejected without broadening and failed refresh clears filtered rows', async ({ page }) => {
+ const state = await fixture(page, { path: '/platform-alerts?severity=invalid' })
+ await expect(page.getByText('Invalid severity', { exact: true })).toBeVisible()
+ await expect(page.getByTestId('pipeline-incidents').locator('tbody > tr.el-table__row')).toHaveCount(0)
+ expect(state.requests.filter(r => r.path.endsWith('/alerts')).at(-1).query.severity).toBe('invalid')
+ await page.goto('/platform-alerts?severity=critical')
+ await expect(page.getByTestId('pipeline-incidents').locator('tbody > tr.el-table__row')).toHaveCount(1)
+ state.fail()
+ await page.locator('.platform-alerts').getByRole('button', { name: '刷新', exact: true }).click()
+ await expect(page.getByTestId('pipeline-incidents').locator('tbody > tr.el-table__row')).toHaveCount(0)
+ await expect(page.getByText('观测不可用', { exact: true })).toBeVisible()
+ expect(state.requests.filter(r => r.path.endsWith('/alerts')).at(-1).query.severity).toBe('critical')
+})

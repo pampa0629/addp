@@ -147,7 +147,7 @@ func (f *resourceRuleFixture) evaluate(t *testing.T, seconds int) {
 }
 func (f *resourceRuleFixture) active(t *testing.T) []models.PlatformAlertIncident {
 	t.Helper()
-	r, e := f.n.Incidents(context.Background(), 1, 20, "resource", "active", f.target.NodeID)
+	r, e := f.n.Incidents(context.Background(), 1, 20, "resource", "active", f.target.NodeID, "")
 	if e != nil {
 		t.Fatal(e)
 	}

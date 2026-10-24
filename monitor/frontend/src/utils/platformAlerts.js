@@ -4,13 +4,14 @@ import { isTargetUUID } from './monitoringTargets.js'
 export function platformAlertState(query = {}) {
   const positive = value => typeof value === 'string' && /^[1-9][0-9]*$/u.test(value) && Number(value) <= 10000 ? Number(value) : 1
   return { tab: ['notifications', 'rules', 'http-rules', 'process-rules'].includes(query.tab) ? query.tab : 'incidents',
+    severity: query.severity === undefined ? '' : typeof query.severity === 'string' && query.severity.length <= 32 ? query.severity : 'invalid',
     category: ['log_pipeline', 'resource', 'http_quality', 'process_resource'].includes(query.category) ? query.category : '',
     status: query.status === 'all' ? '' : ['open', 'acknowledged', 'resolved'].includes(query.status) ? query.status : 'active',
     subject_id: typeof query.subject_id === 'string' && query.subject_id.length <= 100 && !/[\r\n\u0000]/u.test(query.subject_id) ? query.subject_id : '',
     process_rule_page: positive(query.process_rule_page), http_rule_page: positive(query.http_rule_page), rule_page: positive(query.rule_page), page: positive(query.page), delivery_page: positive(query.delivery_page) }
 }
 export function platformAlertQuery(state) {
-  return { ...(['notifications', 'rules', 'http-rules', 'process-rules'].includes(state.tab) ? { tab: state.tab } : {}), ...(state.category ? { category: state.category } : {}),
+  return { ...(['notifications', 'rules', 'http-rules', 'process-rules'].includes(state.tab) ? { tab: state.tab } : {}), ...(state.category ? { category: state.category } : {}), ...(state.severity ? { severity: state.severity } : {}),
     ...(state.status === 'active' ? {} : { status: state.status || 'all' }), ...(state.subject_id ? { subject_id: state.subject_id } : {}),
     ...(state.process_rule_page > 1 ? { process_rule_page: String(state.process_rule_page) } : {}), ...(state.http_rule_page > 1 ? { http_rule_page: String(state.http_rule_page) } : {}), ...(state.rule_page > 1 ? { rule_page: String(state.rule_page) } : {}), ...(state.page > 1 ? { page: String(state.page) } : {}), ...(state.delivery_page > 1 ? { delivery_page: String(state.delivery_page) } : {}) }
 }

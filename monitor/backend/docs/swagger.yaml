@@ -3911,6 +3911,13 @@ paths:
         in: query
         name: status
         type: string
+      - description: 级别（省略为全部） | Severity (omitted for all)
+        enum:
+        - critical
+        - warning
+        in: query
+        name: severity
+        type: string
       - description: 主体 ID | Subject ID
         in: query
         name: subject_id

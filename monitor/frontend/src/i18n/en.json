@@ -1038,6 +1038,7 @@
         "yes": "Yes",
         "no": "No"
       },
+      "allSeverities": "All severities",
       "severities": {
         "critical": "Critical",
         "warning": "Warning"
