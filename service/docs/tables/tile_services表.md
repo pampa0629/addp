@@ -42,7 +42,7 @@
 
 ## 管理、访问与删除
 
-管理操作按当前 Tenant 限定服务，使用精确 `service.definition.*` Permission；公开入口有 public/private Tenant 校验，实际来源读取还经过数据保护门禁；不能仅凭协议或状态配置已保存，就断言所有消费入口均执行了对应拒绝。当前 XYZ 按 layer_name 查找图层，没有按 enabled 过滤，`enabled=false` 不能作为已验证的访问阻断。服务状态、协议开关与图层启用的统一执行资格仍需核对。
+管理操作按当前 Tenant 限定服务，使用精确 `service.definition.*` Permission；公开消费的身份、数据保护以及 status/protocols/enabled 阻断缺口统一见[管理与消费状态](../architecture/瓦片发布与缓存.md#管理与消费状态)。字段保存不保证消费阻断生效。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
