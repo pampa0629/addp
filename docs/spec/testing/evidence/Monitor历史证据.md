@@ -1203,6 +1203,16 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 本机证据：`/tmp/addp-alert-name-safari-result.json`，匹配／刷新／空结果／清除／通知往返的 `addp-alert-name-safari-{match,refresh,empty,clear,return}.txt`，匹配／空结果／最终页面的 `addp-alert-name-safari-{match,empty,final}.png`，均位于 `/tmp/`。本轮只追加本节，执行 `git diff --check`；不重复仍有效的产品门禁，不查询或触发CI／Hosted，不重启服务、不设置定时任务。清单只读核对Excel第51行、B列50“告警信息管理”，由维护会话统一更新M列。
 
+### 执行概览只读维护真实进程验收（2026-10-25）
+
+本批仅补第一期只读候选评估的真实 System 维护首轮，人工 Hosted Linux `execution-retention-readonly`，独占 System／Gateway／Infra；不启用 180 天概览物理删除，不改变任何 Owner 专业结果期限、业务实现或现有读取授权。System-owned helper 通过正式 Tenant Service 建立两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`；实际 AuthContext 校验后，由受限 Common 历史 helper 准备合成旧记录，标准生命周期停止／启动的仅是本轮独占 System。维护使用产品既有首轮与周期，不直接调用评估函数代替真实进程，不增加测试 API 或产品调度参数。
+
+首轮 [Run40138788559／Job121005906648](https://github.com/pampa0629/addp/actions/runs/40138788559/job/121005906648)，固定源码 `2a3cbb1f677af23f955ff02038205d525aafc93d`，**失败**于历史准备，后续 14 棵树的维护断言未运行，不能计为通过。夹具错误地使用了现行 `chk_task_executions_status` 禁止的 `unknown_fixture`；原日志仅记录 `prepare:CalledProcessError`，没有当时的 SQLSTATE，不补写为已观测的数据库错误码。应用及凭据清理为 passed、Infra 为 zero_residuals。官方 Artifact `12577428981` 已下载并独立核对 ZIP SHA-256 `1a4fe210c3d121de2f13e977751df08dfe51f1b47121d105aa87a2527843b9b8`；原日志 `/tmp/addp-retention-t4-40138788559.log`、提取报告 `/tmp/addp-retention-t4-40138788559/`、审查回执 `/tmp/addp-retention-readonly-t4-receipt-20261025.json`。
+
+修正提交 `86f58b3764c4c3e47af1a141d81e21f94109150c` 改用合法 pending 夹具，并补当前存储 CHECK 与所有夹具状态的交叉回归；未知状态的防御仍仅由 Common 单元层覆盖，不放宽或删除生产约束。测试驱动的 SQL 失败只记录 SQLSTATE，汇总失败只保留白名单计数，拒绝归档原始 SQL、私有字段或任意保留原因内容。标准入口 `make test-execution-retention-online-runner` 实际 **28 项 Python 回归通过**，System `cmd/online-test-fixture` Go 测试通过；含只读汇总封闭性、计数错误、整行／事件变化拒绝、容器身份拒绝、初次日志落盘等待、准备失败、业务失败与清理残留拒绝，日志 `/tmp/addp-retention-t4-runner-fixed.log`。本轮不重复未变产品的既有 Common PostgreSQL T2；全库注册检查在共享未提交工作区曾受并行 Graph 契约修改阻断，不计为通过，也不修复该 Owner 的业务实现。本批注册验证、唯一人工 Hosted profile、Online 分发器及标准 runner 归属已由上述定向门禁覆盖。
+
+修正版真实验收 [Run40140020076／Job121009605836](https://github.com/pampa0629/addp/actions/runs/40140020076/job/121009605836) 绑定 `86f58b3764c4c3e47af1a141d81e21f94109150c`，截至 2026-10-25 07:00（Asia/Shanghai）仍等待 Runner；未取得结果前不计为 T4 通过。验收要求 16 条合成历史形成 14 棵执行树、5 棵时间候选，核对完整超期树、年轻子执行、running／pending、有效 lease、完成时间缺失、缺父／跨 Tenant／自指及树外 retry／recovery 引用；全部树始终保留 Owner 释放和消费者引用未核验原因。维护前后执行完整行与 30 天内事件的数据库摘要必须一致，报告仅保留安全批次事实，退出还须核验独占应用／Infra／卷／凭据清理。该证据不代表用户执行读取权限、Owner 释放、专业结果生命周期、30 天事件物理维护、小时周期、概览删除、容量／HA 或生产 T5 验收；清单实际第327／328／329行继续部分实现。
+
 
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
