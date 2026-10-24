@@ -92,6 +92,81 @@ class CapacityTest(unittest.TestCase):
             with self.subTest(path=path),self.assertRaises(AssertionError):m.observation_summary(changed)
         with self.assertRaises(AssertionError):m.observation_summary(groups[:-1])
 
+    def test_comparison_plan_is_balanced_paired_100k_and_unwrapped(self):
+        plan=m.measurement_plan('comparison')
+        self.assertEqual([p['implementation'] for p in plan],['old','new','new','old','old','new','new','old'])
+        self.assertEqual([p['repetition'] for p in plan],[1,1,2,2,3,3,4,4])
+        self.assertEqual(len({p['id'] for p in plan}),8)
+        self.assertTrue(all(p['case']==m.asdict(m.Case('many',100000,'self')) and p['observer']=='A' for p in plan))
+
+    def test_comparison_sources_change_only_fixed_collectors(self):
+        import ast
+        repo=Path(__file__).resolve().parents[2]
+        variants,manifest=m.comparison_sources(repo)
+        self.assertEqual(manifest['legacy_commit'],'8a3006670e7f6cfaddf018253515ccb37ab5bc78')
+        self.assertEqual(manifest['batched_commit'],'adb605b67676bc4396307bc9ea7449c63de183bc')
+        def rest(text):
+            return ast.dump(ast.Module(body=[n for n in ast.parse(text).body if m.definition_name(n) not in m.COMPARISON_DEFINITIONS],type_ignores=[]),include_attributes=False)
+        self.assertEqual(rest(variants['old']),rest(variants['new']))
+        for name in ['old','new']:
+            self.assertEqual(m.implementation_identity(variants[name]),manifest[name])
+        self.assertNotIn('def _self_overlap_candidate_batches',variants['old'])
+        self.assertIn('shapely.intersection(segment, segments[b])',variants['old'])
+        self.assertIn('shapely.intersection(segments[left], segments[right])',variants['new'])
+        with self.assertRaises(AssertionError):
+            m.comparison_variant(variants['new'].replace('_SELF_OVERLAP_PAIR_LIMIT = 2048','_SELF_OVERLAP_PAIR_LIMIT = 2049'),variants['old'],variants['new'])
+        with self.assertRaises(AssertionError):m.comparison_variant(variants['new'],variants['new'],variants['new'])
+
+    def test_comparison_image_layers_and_execution_configuration_fail_closed(self):
+        import copy
+        base={'Id':'sha256:new','RootFS':{'Layers':['a','b']},'Config':{'Cmd':['sh','container_entrypoint.sh'],'Env':['ONE=1'],'WorkingDir':'/app'}}
+        old=copy.deepcopy(base);old['Id']='sha256:old';old['RootFS']['Layers'].append('copy')
+        proof=m.comparison_image_proof(base,old)
+        self.assertEqual(proof['base_image_id'],base['Id'])
+        for path,value in [(('Id',),'sha256:new'),(('RootFS','Layers'),['foreign','copy']), (('Config','Cmd'),['python','other']), (('Config','Env'),['ONE=2'])]:
+            changed=copy.deepcopy(old);target=changed
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.comparison_image_proof(base,changed)
+
+    def test_comparison_summary_requires_loaded_code_identity_and_exact_oracle(self):
+        import copy
+        manifest={name:{'module_sha256':name[0]*64,'collector_sha256':name[-1]*64} for name in ['old','new']}
+        proof={'base_image_id':'new-image','images':{'old':'old-image','new':'new-image'}}
+        groups=[]
+        for item in m.measurement_plan('comparison'):
+            seconds=10. if item['implementation']=='old' else 6.
+            observed={'observer':'A','wrapping_enabled':False,'sampling_enabled':False,'sampling_interval_seconds':None,'samples':0,'observed_memory_current_peak_bytes':{},**{k:None for k in ['collection_seconds','fusion_seconds','collection_calls','fusion_calls','fusion_input_fragments']}}
+            worker={'case':item['case'],'observer':'A','measurement_id':item['id'],'source_frame_sha256':'a'*64,'result':'passed','stage':'complete','duration_seconds':seconds,'worker_peak_rss_bytes':10,'implementation_identity':{**manifest[item['implementation']],'loaded_collector_matches_source':True},'compute_observation':observed,'timings':{k:seconds if k=='compute' else 0 for k in ['generate','read','source_oracle','compute','save','reload_oracle']},'versions':{'python':'same'},'physical':{'rows':100000,'crs':'EPSG:3857','all_coordinates_ids_lengths_verified':True,'full_result_sha256':'f'*64},'source':{'size_bytes':10,'sha256':'b'*64},'output':{'size_bytes':10,'sha256':'c'*64}}
+            metrics={'cpu_usage_usec':1,'memory_peak_bytes':123,'memory_limit_bytes':m.MEMORY,'cpu_quota':4,'swap_current_bytes':0,'oom':0,'oom_kill':0}
+            groups.append({**item,'result':'passed','cleanup':'passed','image_id':proof['images'][item['implementation']],'worker':worker,'wall_seconds':seconds+.5,'resource_samples':10,'resource_before':metrics,'resource_after':{**metrics,'cpu_usage_usec':1000001}})
+        result=m.comparison_summary(groups,manifest,proof)
+        self.assertEqual(result['pairs'][0]['compute_seconds_saved'],4.)
+        self.assertAlmostEqual(result['pairs'][0]['compute_reduction_percent'],40.)
+        self.assertAlmostEqual(result['paired_medians']['compute_speedup'],10/6)
+        slower=copy.deepcopy(groups)
+        for group in slower:
+            if group['implementation']=='new':
+                group['wall_seconds']=12.5;group['worker']['duration_seconds']=12.
+                group['worker']['timings']['compute']=12.
+        self.assertEqual(m.comparison_summary(slower,manifest,proof)['paired_medians']['compute_seconds_saved'],-2.)
+        for path,value in [(('image_id',),'wrong'),(('implementation',),'new'),(('worker','implementation_identity','collector_sha256'),'x'*64),(('worker','implementation_identity','module_sha256'),'x'*64),(('worker','versions'),{'python':'other'}),(('worker','source_frame_sha256'),'b'*64),(('worker','physical','full_result_sha256'),'e'*64),(('result',),'time_limit'),(('cleanup',),'failed'),(('resource_after','swap_current_bytes'),1),(('resource_after','cpu_usage_usec'),0)]:
+            changed=copy.deepcopy(groups);target=changed[0]
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.comparison_summary(changed,manifest,proof)
+        with self.assertRaises(AssertionError):m.comparison_summary(groups[:-1],manifest,proof)
+
+    def test_comparison_cleanup_removes_old_before_base_and_continues_after_failure(self):
+        calls=[]
+        def remove(args):
+            calls.append(args[-1])
+            if args[-1]=='old':raise RuntimeError('old removal failed')
+        with patch.object(m.subprocess,'run',side_effect=[SimpleNamespace(returncode=0),SimpleNamespace(returncode=0),SimpleNamespace(returncode=1)]),patch.object(m,'command',side_effect=remove):
+            errors=m.cleanup_images(((False,'foreign'),(True,'old'),(True,'new')))
+        self.assertEqual(calls,['old','new'])
+        self.assertEqual(errors,['old removal failed'])
+
     def test_closed_form_oracle_has_exact_order_and_unique_length(self):
         for c in [m.Case('many',6,'overlap'),m.Case('many',6,'self'),m.Case('long',1000,'self'),m.Case('dense',4,'overlap'),m.Case('dense',1000,'self')]:
             rows=list(m.expected(c));self.assertEqual(len(rows),m.expected_rows(c))
@@ -260,6 +335,11 @@ class CapacityTest(unittest.TestCase):
                 (files[2],'SECONDS = 180','SECONDS = 181'),
                 (files[2],"'--memory-swap'","'--removed-swap'"),
                 (files[1],'default: matrix','default: observation'),
+                (files[1],'          - comparison','          - removed'),
+                (files[1],'fetch-depth: 0','fetch-depth: 1'),
+                (files[2],'def comparison_sources(repository):','def removed_sources(repository):'),
+                (files[2],'def loaded_implementation_identity(module):','def removed_identity(module):'),
+                (files[3],'test_topology_capacity_native_comparison_variants_keep_exact_oracle','removed_comparison_native'),
                 (files[1],'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}','REMOVED: observation'),
                 (files[3],'test_topology_capacity_native_observer_modes_preserve_exact_result','removed_observer_test'),
             ]:

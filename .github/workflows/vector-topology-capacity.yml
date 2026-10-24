@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Capacity matrix or controlled 100k observation comparison
+        description: Matrix, observation overhead or old/new collector comparison
         type: choice
         default: matrix
         options:
           - matrix
           - observation
+          - comparison
 
 permissions:
   contents: read
@@ -24,6 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Validate capacity registration and deterministic runner
         run: make test-vector-topology-capacity-runner
       - name: Run manual line capacity gate

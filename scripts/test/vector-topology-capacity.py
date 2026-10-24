@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import types
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import hashlib
@@ -24,6 +26,10 @@ CPUS = 4
 MEMORY = 2 << 30
 SECONDS = 180
 SCHEMA = 'addp.vector-topology-capacity/v2'
+LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
+BATCHED_COMMIT = 'adb605b67676bc4396307bc9ea7449c63de183bc'
+GEOMETRY_MODULE = 'engines/geopython-workflow/operators/geometric_operators.py'
+COMPARISON_DEFINITIONS = {'_self_overlap_intersections', '_self_overlap_candidate_batches', '_SELF_OVERLAP_PAIR_LIMIT'}
 
 
 @dataclass(frozen=True)
@@ -49,12 +55,123 @@ def matrix():
 def measurement_plan(profile):
     if profile == 'matrix':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'C', 'repetition': None} for case in matrix()]
+    if profile == 'comparison':
+        return [{'id': f'comparison-{repetition}-{implementation}',
+                 'case': asdict(Case('many', 100000, 'self')), 'observer': 'A',
+                 'repetition': repetition, 'implementation': implementation}
+                for repetition, order in enumerate((('old', 'new'), ('new', 'old')) * 2, 1)
+                for implementation in order]
     if profile != 'observation':
         raise ValueError('unknown capacity profile')
     case = asdict(Case('many', 100000, 'self'))
     return [{'id': f'observation-{repetition}-{observer.lower()}', 'case': case.copy(),
              'observer': observer, 'repetition': repetition}
             for repetition, order in enumerate(('ABC', 'BCA', 'CAB'), 1) for observer in order]
+
+
+def definition_name(node):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node.name
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        return node.targets[0].id
+    return None
+
+
+def implementation_identity(source):
+    collector = next(n for n in ast.parse(source).body if definition_name(n) == '_self_overlap_intersections')
+    return {'module_sha256': hashlib.sha256(source.encode()).hexdigest(),
+            'collector_sha256': hashlib.sha256(ast.get_source_segment(source, collector).encode()).hexdigest()}
+
+
+def loaded_implementation_identity(module):
+    source = Path(module.__file__).read_text()
+    code = compile(source, module.__file__, 'exec', dont_inherit=True, optimize=sys.flags.optimize)
+    expected = next(c for c in code.co_consts if isinstance(c, types.CodeType) and c.co_name == '_self_overlap_intersections')
+    # Reject a stale pyc or a monkeypatched function even if the source file is correct.
+    assert module._self_overlap_intersections.__code__ == expected, 'loaded collector differs from source'
+    return {**implementation_identity(source), 'loaded_collector_matches_source': True}
+
+
+def comparison_variant(current, legacy, batched):
+    trees = [ast.parse(text) for text in (current, legacy, batched)]
+    blocks = [{definition_name(n): n for n in tree.body if definition_name(n) in COMPARISON_DEFINITIONS} for tree in trees]
+    assert set(blocks[0]) == set(blocks[2]) == COMPARISON_DEFINITIONS
+    assert set(blocks[1]) == {'_self_overlap_intersections'}
+    for name in COMPARISON_DEFINITIONS:
+        assert ast.dump(blocks[0][name], include_attributes=False) == ast.dump(blocks[2][name], include_attributes=False), 'current batched implementation drifted'
+    assert ast.dump(blocks[0]['_self_overlap_intersections'], include_attributes=False) != ast.dump(blocks[1]['_self_overlap_intersections'], include_attributes=False)
+    lines = current.splitlines(keepends=True)
+    for name, node in sorted(blocks[0].items(), key=lambda item: item[1].lineno, reverse=True):
+        replacement = ast.get_source_segment(legacy, blocks[1][name]) + '\n' if name == '_self_overlap_intersections' else ''
+        lines[node.lineno - 1:node.end_lineno] = [replacement]
+    old = ''.join(lines)
+    def rest(text):
+        return ast.dump(ast.Module(body=[n for n in ast.parse(text).body if definition_name(n) not in COMPARISON_DEFINITIONS], type_ignores=[]), include_attributes=False)
+    assert rest(old) == rest(current), 'comparison changed unrelated code'
+    return {'old': old, 'new': current}
+
+
+def comparison_sources(repository):
+    current = (repository / GEOMETRY_MODULE).read_text()
+    legacy = command(['git', '-C', str(repository), 'show', f'{LEGACY_COMMIT}:{GEOMETRY_MODULE}'])
+    batched = command(['git', '-C', str(repository), 'show', f'{BATCHED_COMMIT}:{GEOMETRY_MODULE}'])
+    variants = comparison_variant(current, legacy, batched)
+    manifest = {'legacy_commit': LEGACY_COMMIT, 'batched_commit': BATCHED_COMMIT,
+                'legacy_git_module_sha256': hashlib.sha256(legacy.encode()).hexdigest(),
+                'only_changed_definitions': sorted(COMPARISON_DEFINITIONS),
+                **{name: implementation_identity(text) for name, text in variants.items()}}
+    return variants, manifest
+
+
+def comparison_image_proof(base, old):
+    assert base['Id'] != old['Id']
+    layers = base['RootFS']['Layers']; old_layers = old['RootFS']['Layers']
+    assert old_layers[:-1] == layers and len(old_layers) == len(layers) + 1
+    keys = ('Cmd', 'Entrypoint', 'Env', 'WorkingDir', 'User', 'ExposedPorts', 'Volumes', 'StopSignal', 'Healthcheck', 'Shell')
+    config = {key: base['Config'].get(key) for key in keys}
+    assert config == {key: old['Config'].get(key) for key in keys}
+    return {'base_image_id': base['Id'], 'base_layers': layers, 'old_layers': old_layers,
+            'execution_config': config, 'images': {'old': old['Id'], 'new': base['Id']}}
+
+
+def comparison_summary(groups, sources, proof):
+    plan = measurement_plan('comparison')
+    assert proof['base_image_id'] == proof['images']['new'] and proof['images']['old'] != proof['images']['new']
+    assert len(groups) == len(plan)
+    for group, item in zip(groups, plan):
+        assert all(group[key] == value for key, value in item.items())
+        assert group['result'] == group['cleanup'] == 'passed' and group['resource_samples'] > 0
+        assert 0 < group['wall_seconds'] <= SECONDS
+        assert group['image_id'] == proof['images'][item['implementation']]
+        assert group['worker']['implementation_identity'] == {**sources[item['implementation']], 'loaded_collector_matches_source': True}
+        validate_worker(group['worker'], Case(**item['case']), 'A', item['id'])
+        assert group['resource_after']['cpu_usage_usec'] >= group['resource_before']['cpu_usage_usec']
+        for metrics in (group['resource_before'], group['resource_after']):
+            assert metrics['memory_limit_bytes'] == MEMORY and metrics['cpu_quota'] == CPUS
+            assert metrics['swap_current_bytes'] == metrics['oom'] == metrics['oom_kill'] == 0
+            assert 0 < metrics['memory_peak_bytes'] <= MEMORY
+    for field in ('source_frame_sha256', 'versions'):
+        assert len({json.dumps(g['worker'][field], sort_keys=True) for g in groups}) == 1
+    assert len({g['worker']['physical']['full_result_sha256'] for g in groups}) == 1
+    summary = {}
+    for implementation in ('old', 'new'):
+        selected = [g for g in groups if g['implementation'] == implementation]
+        values = {'wall_seconds': [g['wall_seconds'] for g in selected],
+                  'compute_seconds': [g['worker']['timings']['compute'] for g in selected],
+                  'memory_peak_bytes': [g['resource_after']['memory_peak_bytes'] for g in selected],
+                  'cpu_seconds': [(g['resource_after']['cpu_usage_usec'] - g['resource_before']['cpu_usage_usec']) / 1e6 for g in selected]}
+        summary[implementation] = {key: {'median': statistics.median(v), 'min': min(v), 'max': max(v)} for key, v in values.items()}
+    pairs = []
+    for repetition in range(1, 5):
+        pair = {g['implementation']: g for g in groups if g['repetition'] == repetition}
+        old, new = pair['old'], pair['new']; a, b = old['worker']['timings']['compute'], new['worker']['timings']['compute']
+        assert a > 0 and b > 0
+        pairs.append({'repetition': repetition, 'old_id': old['id'], 'new_id': new['id'],
+                      'compute_seconds_saved': a - b, 'compute_speedup': a / b, 'compute_reduction_percent': (a - b) / a * 100,
+                      'wall_seconds_saved': old['wall_seconds'] - new['wall_seconds']})
+    return {'result': 'passed', 'groups': summary, 'pairs': pairs,
+            'paired_medians': {key: statistics.median(p[key] for p in pairs) for key in ('compute_seconds_saved', 'compute_speedup', 'compute_reduction_percent', 'wall_seconds_saved')},
+            'interpretation': 'Four balanced interleaved pairs on one Runner/base image, only collector definitions differ; finite-sample workload-specific estimates, not SLA.'}
 
 
 def observation_summary(groups):
@@ -321,7 +438,9 @@ def run_worker(case, root, observer='C', measurement_id=None):
     sys.path.insert(0, '/app')
     from operators.io_operators import load, save
     from operators.geometric_operators import check_line_overlap, check_line_self_overlap
-    started = time.monotonic(); report = {'case': asdict(case), 'observer': observer,
+    from operators import geometric_operators
+    identity = loaded_implementation_identity(geometric_operators)
+    started = time.monotonic(); report = {'implementation_identity': identity, 'case': asdict(case), 'observer': observer,
         'measurement_id': measurement_id or case.key, 'result': 'incomplete', 'timings': {}}
     progress = root / 'progress.json'
 
@@ -423,7 +542,7 @@ def validate_worker(report, case, observer='C', measurement_id=None):
         checksum = report[field]['sha256']; assert len(checksum) == 64 and all(c in '0123456789abcdef' for c in checksum)
 
 
-def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, repetition=None):
+def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, repetition=None, implementation=None):
     from scripts.utils.capacity_resources import cgroup_directory, read_metrics
     if observer not in ('A', 'B', 'C'):
         raise ValueError('unknown observer')
@@ -434,6 +553,9 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
     root = artifact / measurement_id; root.mkdir(mode=0o700)
     workspace = root / 'data'; workspace.mkdir(mode=0o700)
     driver = Path(__file__).resolve(); outcome = {'id': measurement_id, 'case': asdict(case), 'observer': observer, 'repetition': repetition, 'result': 'incomplete'}
+    if implementation is not None:
+        assert implementation in ('old', 'new')
+        outcome['implementation'] = implementation
     created = False; process = None
     try:
         created = True  # Record the attempt before mutation, including an unknown CLI outcome.
@@ -516,6 +638,18 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
     return outcome
 
 
+def cleanup_images(attempts):
+    errors = []
+    for attempted, owned_image in attempts:
+        if attempted and subprocess.run(['docker', 'image', 'inspect', owned_image], capture_output=True).returncode == 0:
+            try:
+                command(['docker', 'image', 'rm', owned_image])
+                if subprocess.run(['docker', 'image', 'inspect', owned_image], capture_output=True).returncode == 0:
+                    raise RuntimeError('private product image remains')
+            except Exception as error: errors.append(str(error))
+    return errors
+
+
 def run_gate(profile='matrix'):
     plan = measurement_plan(profile)
     repository = Path(__file__).resolve().parents[2]
@@ -541,6 +675,8 @@ def run_gate(profile='matrix'):
               'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
               'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
     registry_created = False; image_attempted = False
+    old_image = f'{image}-old'
+    old_image_attempted = False
     try:
         registry_created = True
         command(['docker', 'create', '--name', registry, '--label', f'com.addp.capacity-run={run_id}', '-p', '127.0.0.1:5001:5000', 'registry:2'])
@@ -561,9 +697,25 @@ def run_gate(profile='matrix'):
         build = subprocess.run(['make', 'build-images', f'IMAGE_BUILD_ARGS=--services geopython-workflow-engine --tag topology-capacity-{run_id} --verify --jobs 1'], cwd=repository)
         if build.returncode:
             raise RuntimeError('product image build failed')
+        images = {'new': image}
+        if profile == 'comparison':
+            variants, report['comparison_sources'] = comparison_sources(repository)
+            context = artifact / 'comparison'; context.mkdir()
+            for name, text in variants.items(): (context / f'{name}.py').write_text(text)
+            command(['docker', 'push', image], timeout=180)
+            base = json.loads(command(['docker', 'image', 'inspect', image]))[0]
+            references = [value for value in base['RepoDigests'] if value.startswith(image.rsplit(':', 1)[0] + '@sha256:')]
+            assert len(references) == 1, 'comparison requires the private base manifest digest'
+            report['comparison_base_manifest'] = references[0]
+            (context / 'Dockerfile').write_text(f"FROM {references[0]}\nCOPY --chmod=0644 old.py /app/operators/geometric_operators.py\n")
+            old_image_attempted = True
+            command(['docker', 'build', '--network', 'none', '--pull=false', '-t', old_image, str(context)], timeout=180)
+            old = json.loads(command(['docker', 'image', 'inspect', old_image]))[0]
+            report['comparison_image_proof'] = comparison_image_proof(base, old)
+            images = report['comparison_image_proof']['images']
         for index, item in enumerate(plan):
-            report['groups'].append(run_case(Case(**item['case']), image, run_id, artifact,
-                observer=item['observer'], measurement_id=item['id'], repetition=item['repetition']))
+            report['groups'].append(run_case(Case(**item['case']), images[item.get('implementation', 'new')], run_id, artifact,
+                observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation')))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
                 report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
@@ -571,16 +723,13 @@ def run_gate(profile='matrix'):
         report['result'] = 'passed' if len(report['groups']) == len(plan) and all(group['result'] == 'passed' for group in report['groups']) else 'failed'
         if profile == 'observation' and report['result'] == 'passed':
             report['observation_summary'] = observation_summary(report['groups'])
+        if profile == 'comparison' and report['result'] == 'passed':
+            report['comparison_summary'] = comparison_summary(report['groups'], report['comparison_sources'], report['comparison_image_proof'])
     except Exception as error:
         report.update(result='failed', error=str(error))
     finally:
         errors = [f'case cleanup failed: {group["case"]}' for group in report['groups'] if group.get('cleanup') != 'passed']
-        if image_attempted and subprocess.run(['docker', 'image', 'inspect', image], capture_output=True).returncode == 0:
-            try:
-                command(['docker', 'image', 'rm', image])
-                if subprocess.run(['docker', 'image', 'inspect', image], capture_output=True).returncode == 0:
-                    raise RuntimeError('private product image remains')
-            except Exception as error: errors.append(str(error))
+        errors.extend(cleanup_images(((old_image_attempted, old_image), (image_attempted, image))))
         if registry_created:
             try: owned_remove(registry, run_id)
             except Exception as error: errors.append(str(error))
@@ -596,7 +745,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
     parser.add_argument('--worker', choices=[case.key for case in matrix()])
-    parser.add_argument('--profile', choices=('matrix', 'observation'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()

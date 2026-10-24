@@ -68,3 +68,38 @@ def test_topology_capacity_native_observer_modes_preserve_exact_result(tmp_path)
         reports.append(report)
     assert len({r['source_frame_sha256'] for r in reports})==1
     assert len({r['physical']['full_result_sha256'] for r in reports})==1
+
+
+@pytest.mark.parametrize('kind,size', [('many', 6), ('long', 12), ('dense', 8)])
+def test_topology_capacity_native_comparison_variants_keep_exact_oracle(tmp_path, monkeypatch, kind, size):
+    import types
+    import numpy as np
+    import shapely
+    from operators import geometric_operators as operators
+    from operators.io_operators import load, save
+    variants, manifest = m.comparison_sources(SCRIPT.parents[2])
+    results = []; case = m.Case(kind, size, 'self')
+    for name in ('old', 'new'):
+        folder = tmp_path / name; folder.mkdir(); path = folder / 'geometry.py'; path.write_text(variants[name])
+        # Compile the complete module to preserve the compiler's imported-name
+        # symbol information, but instantiate only the isolated collector definitions.
+        codes = compile(variants[name], str(path), 'exec', dont_inherit=True).co_consts
+        namespace = {'np': np, 'shapely': shapely, '_SELF_OVERLAP_PAIR_LIMIT': 2048}
+        for code in codes:
+            if isinstance(code, types.CodeType) and code.co_name in m.COMPARISON_DEFINITIONS:
+                namespace[code.co_name] = types.FunctionType(code, namespace)
+        module = types.SimpleNamespace(__file__=str(path), _self_overlap_intersections=namespace['_self_overlap_intersections'])
+        assert m.loaded_implementation_identity(module) == {**manifest[name], 'loaded_collector_matches_source': True}
+        with pytest.raises(AssertionError, match='loaded collector'):
+            m.loaded_implementation_identity(types.SimpleNamespace(__file__=str(path), _self_overlap_intersections=lambda parts: iter(())))
+        with monkeypatch.context() as patch:
+            patch.setattr(operators, '_self_overlap_intersections', module._self_overlap_intersections)
+            m.seed(case, folder / 'source.gpkg'); before = m.digest(folder / 'source.gpkg')
+            connection = {'engine_type': 'nfs', 'mount_path': str(folder)}
+            frame = load(connection_info=connection, path='source.gpkg'); m.verify_source(frame, case)
+            original = m.frame_digest(frame)
+            result = operators.check_line_self_overlap(frame, 'route_key')
+            save(result, connection_info=connection, path='result.gpkg', mode='fail')
+            results.append(m.verify_output(case, folder / 'result.gpkg'))
+            assert m.frame_digest(frame) == original and m.digest(folder / 'source.gpkg') == before
+    assert results[0] == results[1]

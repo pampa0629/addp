@@ -88,13 +88,17 @@ def validate_topology_capacity(repository: Path) -> list[str]:
         '.github/workflows/vector-topology-capacity.yml': ('  workflow_dispatch:',
                      'run: make test-vector-topology-capacity\n', 'run: make test-vector-topology-capacity-runner',
                      'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@',
-                     'default: matrix', '          - observation', 'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}'),
+                     'default: matrix', '          - observation', '          - comparison', 'fetch-depth: 0', 'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}'),
         'scripts/test/vector-topology-capacity.py': ('CPUS = 4', 'MEMORY = 2 << 30', 'SECONDS = 180',
                      "'--memory-swap'", "'--network', 'none'", "'sh', 'container_entrypoint.sh'",
                      'frame_digest(frame) == before', 'verify_output(case, target)',
-                     "enumerate(('ABC', 'BCA', 'CAB'), 1)", 'def observation_summary(groups):'),
+                     "enumerate(('ABC', 'BCA', 'CAB'), 1)", 'def observation_summary(groups):', 'def comparison_summary(groups, sources, proof):',
+                     'def loaded_implementation_identity(module):', 'def comparison_image_proof(base, old):',
+                     'def comparison_sources(repository):', 'BATCHED_COMMIT =', 'LEGACY_COMMIT =',
+                     'old_image_attempted = True', 'report[\'comparison_image_proof\'] = comparison_image_proof(base, old)'),
         'engines/geopython-workflow/test_topology_capacity.py': ('test_topology_capacity_native_oracle_rejects_real_saved_corruption',
-                     'test_topology_capacity_native_observer_modes_preserve_exact_result',),
+                     'test_topology_capacity_native_observer_modes_preserve_exact_result',
+                     'test_topology_capacity_native_comparison_variants_keep_exact_oracle',),
     }
     errors = []
     for name, fragments in required.items():
