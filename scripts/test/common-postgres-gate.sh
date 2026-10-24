@@ -189,12 +189,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then
     echo "Common PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
-if [ "$test_group" = all ] || [ "$test_group" = kml-export ]; then
-    grep -q -- '--- PASS: TestIntegrationPostgresKMLWriter ' "$WORK_DIR/common-postgres.log" || {
-        echo 'KML export gate requires real transformed PostGIS rows, writer and fixture cleanup' >&2
-        exit 1
-    }
-fi
+
 if [ "$test_group" = all ] || [ "$test_group" = query-read-set ]; then
     grep -q -- '--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite ' "$WORK_DIR/common-postgres.log" || {
         echo "Common PostgreSQL gate requires the real output rewrite equivalence test" >&2
@@ -204,6 +199,13 @@ fi
 if [ "$test_group" = all ] || [ "$test_group" = highgo-write ]; then
     grep -q -- '--- PASS: TestIntegrationHighGoTableWrite ' "$WORK_DIR/common-postgres.log" || {
         echo "Common PostgreSQL gate requires the HighGo write protocol contract test" >&2
+        exit 1
+    }
+fi
+
+if [ "$test_group" = all ] || [ "$test_group" = kml-export ]; then
+    grep -q -- '--- PASS: TestIntegrationPostgresKMLWriter ' "$WORK_DIR/common-postgres.log" || {
+        echo 'KML export gate requires real transformed PostGIS rows, writer and fixture cleanup' >&2
         exit 1
     }
 fi

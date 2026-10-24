@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
-      "sha256": "7c875861d80e2a5839dd1e5c66b3538821f1b0b2a5692a625f2660b4b27035a7",
+      "commit": "47b02db01342a049c4fe01ae1f3ee15369b04863",
+      "sha256": "bbf74595f3cc23a153ff27d7cb87e92301f6ae6ee97418eee37b4e847acf9b09",
       "use": {
-        "zh-cn": "来源可携带可选字段角色选择，不改变 native table、bounded/snapshot、目标 replace/append 或查询绑定验证。角色资格由 Owner 和共享本人角色契约核验，不由配置自报；CSV/TSV 表头继承及 encoded 未建模范围保持。",
-        "en": "Source endpoints may carry optional field role choices without changing native table, bounded/snapshot, target replace/append or query binding validation. The Owner and shared current-user contract verify role eligibility rather than trusting config; CSV/TSV header inheritance and unmodeled encoded scope remain unchanged."
+        "zh-cn": "复核 KML 固定 CRS 声明及共享重投影，仅扩展未建模的 encoded 执行；native table、bounded/snapshot、replace/append、查询绑定与源字段角色资格校验保持；停止态创建不执行、调度或扫描，权限、条件与效果不变。",
+        "en": "KML fixed-CRS declarations reuse reprojection for unmodeled encoded execution only. Native table, bounded/snapshot, replace/append, query binding and Owner-verified source field roles remain unchanged. Stopped native creation retains its permissions, conditions and effects, without execution, scheduling or scanning."
       }
     },
     {
