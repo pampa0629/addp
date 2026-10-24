@@ -49,6 +49,26 @@ def bare_lifecycle(directory):
     return life
 
 
+class BuilderResumeContractTests(unittest.TestCase):
+    def test_planned_stop_is_cleared_only_after_exact_healthy_builder_resumes(self):
+        for running,oom in ((True,False),(False,False),(True,True)):
+            with self.subTest(running=running,oom=oom),tempfile.TemporaryDirectory() as directory:
+                life=bare_lifecycle(directory);life.builder_stopped=True;life.builder_ids={'owned-id'};life.sample=mock.Mock()
+                life.docker=mock.Mock(side_effect=['bootstrapped',json.dumps([{'Id':'owned-id','State':{'Running':running,'OOMKilled':oom}}])])
+                if running and not oom:
+                    life.resume_builder();self.assertFalse(life.builder_stopped);life.sample.assert_called_once()
+                else:
+                    with self.assertRaisesRegex(m.GateError,'owned_builder_resume_not_healthy'):life.resume_builder()
+                    self.assertTrue(life.builder_stopped);life.sample.assert_not_called()
+
+    def test_two_cpu_compilation_with_stopped_builder_fits_aggregate_budget(self):
+        dependencies=('postgres','business-postgres','redis','minio','loki','runtime-log-api','tempo','trace-query','alloy')
+        rows=[row(cpu=m.LIMITS[name][0],memory=m.LIMITS[name][1]*1024**2,service=name) for name in dependencies]
+        rows += [row(cpu=2,memory=3*1024**3,service=None),row(cpu=.25,memory=64*1024**2,service=None)]
+        cpu,memory=m.validate_resources(rows)
+        self.assertLessEqual(cpu,8);self.assertLessEqual(memory,12*1024**3)
+
+
 class NginxRouteContractTests(unittest.TestCase):
     def probe(self,directory,strip_query=False):
         life=bare_lifecycle(directory);calls=[];life.sample=mock.Mock()

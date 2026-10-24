@@ -323,6 +323,16 @@ class Lifecycle:
         return self.docker(kind, 'ls', *(['-a'] if kind == 'container' else []), '-q', '--filter',
                            f'label={LABEL}={self.run_id}', guarded=False, **kw).split()
 
+    def resume_builder(self):
+        require(self.builder_stopped and bool(self.builder_ids),'owned_builder_resume_requires_planned_stop')
+        self.docker('buildx','inspect',self.builder,'--bootstrap')
+        rows=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
+        require({row['Id'] for row in rows}==self.builder_ids and all(row['State'].get('Running') and not row['State'].get('OOMKilled') for row in rows),
+                'owned_builder_resume_not_healthy')
+        with self.sample_lock:
+            self.builder_stopped=False
+        self.sample()
+
     def owned_bind_bytes(self, *, timeout):
         output=self.command(['du','-sk',str(self.work)],guarded=False,timeout=timeout)
         return int(output.split()[0])*1024
@@ -565,9 +575,6 @@ def build(life):
     life.builder_ids = set(json.loads(life.docker('inspect', *ids))[0]['Id'] for _ in [0])
     life.phase='builder_stop_guard_preflight'
     life.stop_builder()
-    life.builder_stopped=False
-    life.docker('buildx','inspect',life.builder,'--bootstrap')
-    life.sample()
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
     wrapper = shim/'docker'
@@ -589,15 +596,17 @@ def build(life):
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_compile'
-    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '1', '--memory', '2g',
+    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '2', '--memory', '3g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
                 '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
                 '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
-                '-e', 'GOMAXPROCS=1', '-e', 'GOFLAGS=-p=1', 'golang:1.24',
+                '-e', 'GOMAXPROCS=2', '-e', 'GOFLAGS=-p=2', 'golang:1.24',
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
     shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
+    life.phase='bounded_builder_resume'
+    life.resume_builder()
     life.phase='product_images'
     services=BACKENDS+FRONTENDS
     references=[f'localhost:5001/addp-{name}:{life.run_id}' for name in services]
