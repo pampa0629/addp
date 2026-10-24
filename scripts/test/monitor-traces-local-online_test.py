@@ -25,7 +25,7 @@ EXECUTIONS = {
 
 def identity(who):
     granted = ({'monitor.trace.read', 'platform.module_log.read', 'platform.module.read'} if who == 'ADMIN'
-               else BUSINESS_PERMISSIONS if who == 'USER' else set())
+               else BUSINESS_PERMISSIONS if who == 'USER' else {'system.engine.create','system.engine.execute'} if who == 'PREPARER' else set())
     return {'principal': {'id': who, 'type': 'user'}, 'delegation': None,
             'context': {'type': 'platform' if who in ('ADMIN', 'SECURITY') else 'tenant', 'tenant_id': '7'},
             'token': {'type': 'first_party_access_token'}, 'authentication': {'assurance_level': 'aal2'},
@@ -156,6 +156,16 @@ class FormalAPI:
 
 
 class LocalExecutionTraceOwnerTests(unittest.TestCase):
+    def test_safe_assertion_and_transport_diagnostics_exclude_private_text(self):
+        with self.assertRaisesRegex(M.LocalTraceAssertionFailure,'^local_trace_assertion_failed$'):
+            M.require(False,'password=PRIVATE-SENTINEL')
+        def rejected(*args,**kwargs):raise M.API.SuiteError('POST /api/v1/system/engines returned HTTP 403 (permission_denied)')
+        client=SimpleNamespace(request=rejected)
+        life=SimpleNamespace(request_timeout=lambda:10,check=lambda:None)
+        M.guard_client(client,life)
+        with self.assertRaises(M.API.SuiteError):client.request('POST','/owned',(201,),{})
+        self.assertEqual(life.api_failure,{'http_status':403,'error_code':'permission_denied'})
+
     def test_guard_failure_stops_http_before_any_new_business_request(self):
         calls=[]
         client=SimpleNamespace(request=lambda *a,**k:calls.append(a))

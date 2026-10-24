@@ -435,6 +435,8 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 当次独立 Tenant 初始管理员仅经公开密码登录准备合成 Engine；不作执行或平台读取身份。普通 Tenant User 通过正式密码登录、AuthContext 与原执行授权提交 Orchestrator → Develop bounded query；Platform 系统管理员通过真实密码／TOTP／AuthContext 查询 Trace 和日志，安全管理员为无权限负例。只使用临时最小权限与合成只读查询，单并发一组成功和一组受控失败；正式 API 创建定义、核对父子 execution 和终态。通过 System 日志接口按 execution UUID 找到真实检查点，再以精确 Trace ID 查询 Monitor、核对 Link，并回到同一实例的精确 trace/span 日志；不得直读 execution 私有列、注入日志或手工返回 Trace 引用充当闭环。
 
+准备身份的Engine创建／测试能力须由当次IAM临时角色显式授予既有`system.engine.create`、`system.engine.execute`，不能从租户管理员角色推定。正式AuthContext核验准备能力；普通执行用户仍精确限定原11项权限。失败诊断仅记录已声明的断言码或HTTP状态／稳定错误码，不保存传输错误正文、连接配置或凭据。
+
 采样 v2 和所有查询预算保持；失败终态须实际可查，普通阶段或 Link 目标独立未保留可以按规范查无数据，不强制全采样或凭空补链。真实 Console/Monitor 页面必须经密码／MFA 登录，不 mock API／注入 Token。验证 Tenant 无新增私有观测字段，负例无权访问平台 Trace／日志，正式退出后旧令牌拒绝；不将会话撤销冒充单实例撤权。
 
 2026-10-23 用户确认本地验收复用已有固定版本 MinIO 产品镜像：以当前提交的 `scripts/infra/Dockerfile.minio` 中 MinIO／mc 发布版本及源码提交为唯一预期，核验已有镜像的不可变 ID、Linux ARM64 身份及两个二进制的版本／嵌入提交声明。核验通过的同一镜像 ID 用于当次卷测量、真实 MinIO 和两个存储初始化步骤；缺失、不匹配或核验失败即拒绝运行，不回退冷构建，也不接管现有 MinIO 服务。本专项后端、runtime-log 及前端继续从当前已提交源码经标准产品入口构建。实际镜像核验、构建、部署及等待均计入当次已批准窗口，过期不自动续开。

@@ -111,6 +111,20 @@ func TestExecutionTraceBusinessUserPermissionsStayExact(t *testing.T) {
 	}
 }
 
+func TestExecutionTracePreparationPermissionsStaySeparate(t *testing.T) {
+	want := []string{"system.engine.create", "system.engine.execute"}
+	if !reflect.DeepEqual(executionTracePreparationPermissions, want) {
+		t.Fatal("preparation permission drift")
+	}
+	for _, permission := range executionTraceLocalPermissions {
+		for _, preparation := range want {
+			if permission == preparation {
+				t.Fatal("business User received preparation authority")
+			}
+		}
+	}
+}
+
 func TestExecutionTraceCredentialsPrivateExactAndNeverContainSessions(t *testing.T) {
 	directory := privateTraceTestDir(t)
 	output := filepath.Join(directory, "identity.env")

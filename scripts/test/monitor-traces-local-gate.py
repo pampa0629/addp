@@ -873,8 +873,9 @@ def main():
         require(life.failure is None,life.failure or 'resource_guard_failed')
         report['result']='passed'
     except BaseException as error:
-        report.update(stage=life.phase,error_code=str(error) if isinstance(error,GateError) and re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__)
+        report.update(stage=life.phase,error_code=str(error) if (isinstance(error,GateError) or type(error).__name__=='LocalTraceAssertionFailure') and re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__)
         if hasattr(life,'last_failure'):report['command_failure']=life.last_failure
+        if hasattr(life,'api_failure'):report['api_failure']=life.api_failure
         diagnostics=[]
         for state in getattr(life,'failed_container_states',[]):
             remaining=MAX_SECONDS-(time.monotonic()-life.started)

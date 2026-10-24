@@ -19,9 +19,14 @@ sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parents[2]
 API = importlib.import_module('scripts.utils.online-api')
 
 
+class LocalTraceAssertionFailure(API.SuiteError):
+    def __init__(self,code):
+        super().__init__(code if re.fullmatch('[a-z0-9_]+',code) else 'local_trace_assertion_failed')
+
+
 def require(value, code):
     if not value:
-        raise API.SuiteError(code)
+        raise LocalTraceAssertionFailure(code)
 
 
 def utc(value=None):
@@ -36,7 +41,12 @@ def guard_client(client, life):
     request = client.request
     def guarded(*args, **kwargs):
         client.timeout = life.request_timeout()
-        reply = request(*args, **kwargs)
+        try:
+            reply = request(*args, **kwargs)
+        except API.SuiteError as error:
+            matched=re.fullmatch(r'(?:GET|POST|PUT|DELETE) /\S+ returned HTTP ([1-5][0-9]{2}) \(([a-z][a-z0-9_]*)\)',str(error))
+            if matched:life.api_failure={'http_status':int(matched[1]),'error_code':matched[2]}
+            raise
         life.check()
         return reply
     client.request = guarded
@@ -144,6 +154,7 @@ def run(life, env, report):
         'orchestrator.workflow.create','orchestrator.workflow.read','orchestrator.workflow.delete','orchestrator.workflow.execute',
         'develop.task.create','develop.task.read','develop.task.delete','develop.task.execute','develop.data_read.execute',
         'monitor.execution.read','system.execution_authorization.create'},'business_user_not_minimal')
+    require({'system.engine.create','system.engine.execute'}<=permissions(preparer_identity),'preparer_engine_permissions_missing')
     require(preparer_identity['principal']['id']!=user_identity['principal']['id'],'preparation_and_execution_identity_must_differ')
     report['assertions']={'formal_password_mfa_authcontext':True,'tenant_user_minimal':True}
     life.local_clients=(admin,negative,user,preparer)
