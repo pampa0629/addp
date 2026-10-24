@@ -1181,3 +1181,14 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 同步CI规范与现有前端登记检查：拒绝丢失Monitor的30分钟例外、越界／非数字／重复预算、改变全局20分钟默认或给其他owner扩预算。先增加测试，标准 `make test-frontend-ci-registration`因缺失新校验函数失败（22项中9个错误含子场景），补齐唯一校验和矩阵声明后，同一入口22项及当前21个前端实际登记通过；`python3 scripts/test/changed-gate_test.py`标准脚本25项通过，独立调用同一影响矩阵确认workflow改动自动选择Monitor。`git diff --check`通过。本批仅改CI编排／登记／文档，产品、用例和依赖未变，不重复本地15分钟整套或重跑旧超时运行。推送只沿main正常触发，后继实际117＋424＋build是否全过继续等专门CI会话回传，不自行轮询、重试、派发Hosted、重启用户服务或设置定时任务。
 
 原始后继日志 `/tmp/addp-ci-20261024-200030/job-120948753235.log` SHA-256 `580d23329fc832e57792bd5f66e330627eed281e0d14ba5ebb057546c9e0e15d`；两份annotation文件SHA-256分别为 `a240f2e0643b2676aca613f5f7335a1f9a9a7f8105aee8c4860b40542a193e6a`（a604）、`1cf37185d974dd0961e1bc2c152580aeada267ea50ddb7ddea56550c40343e3d`（f2ca）。本地红／绿与选择回归日志 `/tmp/addp-monitor-ci-budget-{red,green,selection}.log`。名称检索个人Safari、正式身份／Hosted缺口仍独立，功能清单第51行保持部分实现。
+
+
+### 名称检索前端 CI 预算闭环：固定 a292 整套通过（2026-10-25）
+
+专门CI会话回传后，本会话仅独立核对落地日志、Job步骤、日志摘要和Git输入差异，未轮询、重跑或触发CI。主验收为唯一自动push [Platform Run40128534338／Monitor frontend Job120975073843](https://github.com/pampa0629/addp/actions/runs/40128534338/job/120975073843)，attempt1、完整源码 `a2928b9a76a749f0ca5002754c2bc12d118e31fe`。真实 `Run Monitor frontend gate` 步骤和Job均success；原始日志实际117项单测通过、fail／skip均0，424项受控浏览器全部通过（22.4分钟），Vite构建成功（10.78秒），并非仅摘要步骤成功。Job实际24分钟左右完成，证明原20分钟预算不能容纳这轮完整门禁，Monitor限定30分钟可完成本次全套。
+
+名称功能提交 `a6048b9e71b0689893a3cf90db5a0ef4822d8866` 至该验收提交仅六项文件变化：workflow、前端登记检查及其测试、CI规范与证据文档、retention门禁模拟测试。已用Git实际比较确认Monitor产品／前端／424用例、Common Frontend、Node版本、Makefile和标准browser launcher没有差异；单Worker保留，其他前端仍20分钟。因此该固定版本可闭合本批名称前端T1/T3／build及其限定CI预算适配，原两轮20分钟超时继续保留为未通过，原38项PostgreSQL CI另有独立证据。
+
+同SHA的既有GitHub schedule [Run40132268218／Job120986322295](https://github.com/pampa0629/addp/actions/runs/40132268218/job/120986322295) 亦实际117／424／构建通过（浏览器21.9分钟、构建10.53秒）；它是既有workflow的调度，不是本会话创建定时或手工追加运行，只作补充稳定性证据，不替代前述唯一push主验收。
+
+证据目录 `/tmp/addp-ci-20261024-220030/`：两份原始日志 `job-120975073843.log` SHA-256 `04a94d867b231c443c58ab27e32b73038567a6081312f178fe9be68ea5da711a`、`job-120986322295.log` SHA-256 `004918f057e8ce35f6b23e1397e2df8dcd88a72359f76e18a5d7a04aface9388` 均核对一致；两份jobs元数据确认实际步骤与head_sha。协调审计为 `Monitor-a292-actual-full-frontend-CI-audit.json`，本会话核对收据 `Monitor-a292-owner-independent-audit.json`。本轮仅追加文档并执行 `git diff --check`，不重复仍有效的本地测试。CI受控浏览器不替代用户重启后的Safari名称检索、正式身份／Hosted T4或整行其他开发缺口；第51行仍为部分实现。
