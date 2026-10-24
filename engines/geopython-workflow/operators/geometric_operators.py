@@ -434,6 +434,120 @@ def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> 
     return result
 
 
+def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: list) -> dict:
+    """Join exact non-branching paths, with lossless original-part membership."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    reserved = {"chain_id", "member_count", "member_no", "source_part_no", "is_reversed"}
+    if reserved.intersection(input_gdf.columns):
+        raise ValueError("chain output columns must not overwrite source fields")
+    if (not isinstance(match_fields, list) or
+            any(not isinstance(field, str) or field not in input_gdf.columns or
+                field == id_field or isinstance(input_gdf[field].dtype, gpd.array.GeometryDtype)
+                for field in match_fields) or len(set(match_fields)) != len(match_fields)):
+        raise ValueError("match_fields must explicitly list distinct non-geometry business columns excluding id_field")
+    attributes = list(input_gdf[match_fields].itertuples(index=False, name=None))
+    if any(not pd.api.types.is_scalar(value) for row in attributes for value in row):
+        raise ValueError("match_fields requires scalar business values")
+
+    def matches(a, b):
+        if not match_fields:
+            return True
+        for left, right in zip(attributes[a], attributes[b]):
+            missing_left, missing_right = pd.isna(left), pd.isna(right)
+            if missing_left or missing_right:
+                if missing_left and missing_right:
+                    continue
+                return False
+            if type(left) is not type(right) or left != right:
+                return False
+        return True
+
+    parts, sources = shapely.get_parts(geometry.array, return_index=True)
+    if not shapely.is_simple(parts).all():
+        raise ValueError("internal point intersection or self-overlap is not supported; resolve explicitly before merging")
+    vertices = [list(part.coords) for part in parts]
+    ends, part_numbers = {}, []
+    source_counts = np.zeros(len(input_gdf), dtype=np.int64)
+    for index, row in enumerate(sources):
+        source_counts[row] += 1
+        part_numbers.append(source_counts[row])
+        for side in (0, 1):
+            ends.setdefault(vertices[index][0 if side == 0 else -1], []).append((index, side))
+    tree = shapely.STRtree(parts)
+    for a, part in enumerate(parts):
+        candidates = tree.query(part)
+        for b in np.sort(candidates[candidates > a]):
+            for piece in _line_intersection_parts(shapely.intersection(part, parts[b])):
+                if piece.geom_type != "Point":
+                    raise ValueError("positive-length overlap is not supported; resolve overlap explicitly before merging")
+                point = (piece.x, piece.y)
+                if point not in (vertices[a][0], vertices[a][-1]) or point not in (vertices[b][0], vertices[b][-1]):
+                    raise ValueError("non-endpoint intersection is not supported; split intersections explicitly before merging")
+
+    # Full network degree is fixed before comparing business attributes. A
+    # branch can never disappear merely because another arm differs in value.
+    links = {}
+    for incident in ends.values():
+        if len(incident) == 2:
+            left, right = incident
+            if left[0] != right[0] and matches(sources[left[0]], sources[right[0]]):
+                links[left], links[right] = right, left
+
+    visited, chain_shapes, representatives, member_sources = set(), [], [], []
+    chain_ids, ordinals, source_parts, reversed_parts, member_shapes = [], [], [], [], []
+    member_counts = []
+    for seed in range(len(parts)):
+        if seed in visited:
+            continue
+        # Walk backward from the earliest original part. Open chains preserve
+        # that part's direction; cycles start at its original seam/direction.
+        start, side = seed, 0
+        while (start, side) in links:
+            previous, entry = links[(start, side)]
+            start, side = previous, 1 - entry
+            if start == seed:
+                start, side = seed, 0
+                break
+        chain_id, count, coordinates = len(chain_shapes) + 1, 0, []
+        current = start
+        while current not in visited:
+            visited.add(current)
+            reverse = side == 1
+            points = vertices[current][::-1] if reverse else vertices[current]
+            coordinates.extend(points if not coordinates else points[1:])
+            count += 1
+            member_sources.append(sources[current])
+            member_shapes.append(parts[current])
+            chain_ids.append(chain_id)
+            ordinals.append(count)
+            source_parts.append(part_numbers[current])
+            reversed_parts.append(reverse)
+            following = links.get((current, 1 - side))
+            if following is None:
+                break
+            current, side = following
+        chain_shapes.append(shapely.LineString(coordinates))
+        representatives.append(sources[seed])
+        member_counts.append(count)
+
+    result = input_gdf.iloc[representatives][match_fields + [geometry.name]].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(chain_shapes, crs=geometry.crs)
+    result["chain_id"] = pd.Series(range(1, len(chain_shapes) + 1), dtype="int64")
+    result["member_count"] = pd.Series(member_counts, dtype="int64")
+    members = input_gdf.iloc[member_sources].copy().reset_index(drop=True)
+    members[geometry.name] = gpd.GeoSeries(member_shapes, crs=geometry.crs)
+    members["chain_id"] = pd.Series(chain_ids, dtype="int64")
+    members["member_no"] = pd.Series(ordinals, dtype="int64")
+    members["source_part_no"] = pd.Series(source_parts, dtype="int64")
+    members["is_reversed"] = pd.Series(reversed_parts, dtype="bool")
+    _finite_xy_geometry(result, "result")
+    _require_nonempty_valid_lines(result.geometry)
+    return {"result": result, "members": members}
+
+
 def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Label exact planar connectivity while retaining every original line part."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -801,6 +915,27 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
+    name="merge_line_chains", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="链路合并", brief_description="按精确端点和显式一致字段串联非分支线，双输出保留完整来源明细",
+    execution_modes=["workflow"], effects=["read"],
+    overview="全图度二且显式字段同值时串联，分支或属性变化处停止，不选择主路。"
+             "主结果保存共同属性，独立明细保留每个原始部件、全部原属性和沿链顺序及反向标记。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="已在交点打断的有效二维投影线图层"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="现有唯一非空原始行标识列，不使用存储FID推断"),
+        OperatorParam(name="match_fields", type="param", data_type="list[str]", required=True, description="须精确一致的业务字段；显式空数组表示仅按连接合并", notes="不能含来源ID或几何列；缺失与缺失一致，不取首值或聚合其他属性"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="每链一条LineString，保留显式共同字段及chain_id/member_count", is_default=True),
+        OutputPort(name="members", type="geodataframe", description="原始部件和全部原列，追加chain_id/member_no/source_part_no/is_reversed", is_default=False),
+    ],
+    use_cases=["按相同名称和等级串联已打断道路", "整理非分支管线并逐部件追溯原始属性", "在分支及属性变化处保留链路边界"],
+    notes=["全图度先于属性；三岔或更高分支全部停止，不按角度或属性选择主路", "未打断交会、内部自交及任何正长度重合整批拒绝；不吸附、打断、去重或修复", "允许反转部件以连接，明细几何保原方向及全部顶点，记录沿链顺序和反向标记", "链号只关联本次双成果；输出字段冲突明确失败，不覆盖或自动改名", "两个端口分别接save；索引及成果驻内存，不承诺固定容量"],
+    workflow_example={"id":"merge_chains", "operator":"merge_line_chains", "params":{"input_gdf":{"$ref":"load"},"id_field":"segment_id","match_fields":["name","grade"]},"depends_on":["load"]},
+)
+
 
 GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
     name="group_line_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1532,4 +1667,5 @@ OPERATORS = dict([
     register_operator(CHECK_LINE_SELF_INTERSECTION_METADATA, check_line_self_intersection),
     register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
     register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
+    register_operator(MERGE_LINE_CHAINS_METADATA, merge_line_chains),
 ])

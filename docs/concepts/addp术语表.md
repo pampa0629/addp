@@ -447,6 +447,7 @@
 | Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |
 | line point intersection check | 线交检查 | 检查单个线图层内不同源要素的精确点状交会，按无序要素对及 XY 去重后逐点关联双方来源。 | 只报告平面交会事实，包含十字、T 形和端点接触；不提取重合线段端点、不检查线内自交、不打断或自动判定质量。 |
 | isolated line self-intersection check | 线内自交 | 检查单个线要素内部非相邻线段或不同部件的孤立点交会，每源按 XY 去重。 | 排除正常相邻接点、闭环首尾接点以及位于正长度自叠线（含端点）上的点；只诊断，不打断或修复，不等同几何有效性或业务质量。 |
+| exact attribute-constrained line merging | 链路合并 | 按精确端点连接和显式一致字段，将非分支连续线部件串联为链路，并以独立明细保留全部来源与原属性。 | 全图节点度先于属性判断，度大于二处全部停止；不吸附、打断、去重或选择主路。默认链路与原部件明细双输出，链号仅关联本次计算。 |
 | line connected-component grouping | 连通分组 | 按单个线图层原始部件的精确 XY 相交关系划分连通组，逐原始部件保留来源和业务属性。 | 端点、T形、十字及重合均相连，传递归组；同源不同部件可分属不同组。组号仅为本次计算稳定编号，不判断桥隧或质量，不吸附、打断、合并或修复。 |
 | exact cross-feature line splitting | 交点打断 | 在同一线图层不同要素的精确 XY 点交会处切分原始路径，逐片段保留来源标识、业务属性及部件和片段编号。 | 内部自交、自叠及跨要素正长度重合明确拒绝；不吸附、延伸、去重或判断立交，不改写源。 |
 | Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |

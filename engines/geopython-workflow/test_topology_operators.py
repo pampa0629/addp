@@ -40,6 +40,279 @@ def connected_parts(frame, id_field="route_key"):
     return get_operator("group_line_components")(input_gdf=frame, id_field=id_field)
 
 
+def merge_chains(frame, fields=None):
+    return get_operator("merge_line_chains")(frame, "route_key", [] if fields is None else fields)
+
+
+def test_merge_line_chains_keeps_all_source_attributes_and_exact_traversal():
+    frame = line_overlap_frame([LineString([(1,0),(2,0)]),LineString([(0,0),(1,0)]),LineString([(3,0),(2,0)])],
+                               pd.Series([10,20,30],dtype="Int64"))
+    frame["grade"] = pd.Series([7,7,7],dtype="Int64")
+    frame["note"] = pd.Series(["middle",None,"reverse"],dtype="string")
+    frame["enabled"] = pd.Series([True,None,False],dtype="boolean")
+    frame["kind"] = pd.Categorical(["a","b","a"])
+    frame.index = [7,7,-2];before = frame.copy(deep=True)
+    outputs = merge_chains(frame,["grade"]);result,members = outputs["result"],outputs["members"]
+    assert set(outputs)=={"result","members"}
+    assert list(result.columns)==["grade","boundary","chain_id","member_count"]
+    assert list(result.geometry.iloc[0].coords)==[(0,0),(1,0),(2,0),(3,0)]
+    assert result.chain_id.tolist()==[1] and result.member_count.tolist()==[3]
+    assert members.route_key.tolist()==[20,10,30] and members.member_no.tolist()==[1,2,3]
+    assert members.source_part_no.tolist()==[1,1,1] and members.is_reversed.tolist()==[False,False,True]
+    assert_geodataframe_equal(members[frame.columns],frame.iloc[[1,0,2]].reset_index(drop=True))
+    assert result.grade.dtype==frame.grade.dtype
+    for field in frame.columns:assert members[field].dtype==frame[field].dtype
+    assert result.index.equals(pd.RangeIndex(1)) and members.index.equals(pd.RangeIndex(3))
+    assert result.crs==members.crs==frame.crs
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("degree",[3,4,5])
+def test_merge_line_chains_branch_uses_full_network_before_attributes(degree):
+    endpoints=[(1,0),(-1,0),(0,1),(0,-1),(1,1)]
+    frame=line_overlap_frame([LineString([p,(0,0)]) for p in endpoints[:degree]])
+    frame["road"]=["same","same"]+["different"]*(degree-2)
+    result=merge_chains(frame,["road"])["result"]
+    assert len(result)==degree and result.member_count.tolist()==[1]*degree
+    assert [g.wkb for g in result.geometry]==frame.geometry.to_wkb().tolist()
+
+
+@pytest.mark.parametrize("values",[["a","b"],["a","a "],["A","a"],[0.0,2**-40],[True,1],[None,0]])
+def test_merge_line_chains_exact_attribute_difference_stops_not_fails(values):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])])
+    frame["tag"]=pd.Series(values,dtype=object)
+    output=merge_chains(frame,["tag"])
+    assert output["result"].member_count.tolist()==[1,1]
+    assert output["members"].route_key.tolist()==[0,1]
+
+
+@pytest.mark.parametrize("values",[[None,pd.NA],[np.nan,None],[pd.NaT,None],["same","same"]])
+def test_merge_line_chains_missing_matches_missing(values):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])])
+    frame["tag"]=pd.Series(values,dtype=object)
+    assert merge_chains(frame,["tag"])["result"].member_count.tolist()==[2]
+
+
+def test_merge_line_chains_explicit_empty_fields_ignores_no_source_information():
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])])
+    frame["grade"]=[1,2]
+    output=merge_chains(frame,[])
+    assert list(output["result"].columns)==["boundary","chain_id","member_count"]
+    assert output["result"].member_count.tolist()==[2]
+    assert output["members"].grade.tolist()==[1,2]
+    with pytest.raises(TypeError):get_operator("merge_line_chains")(frame,"route_key")
+
+
+def test_merge_line_chains_matches_all_selected_fields_and_preserves_selection_order():
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)]),LineString([(2,0),(3,0)])])
+    frame["kind"]=["a"]*3;frame["grade"]=[1,1,2]
+    result=merge_chains(frame,["grade","kind"])["result"]
+    assert list(result.columns)==["grade","kind","boundary","chain_id","member_count"]
+    assert result.member_count.tolist()==[2,1] and result.grade.tolist()==[1,2]
+
+
+def test_merge_line_chains_multipart_members_are_original_parts_not_source_shortcuts():
+    frame=line_overlap_frame([MultiLineString([[(0,0),(1,0)],[(10,0),(11,0)],[(1,0),(2,0)]]),LineString([(11,0),(12,0)])],
+                               pd.Series(["多源","其他"],dtype="string"))
+    output=merge_chains(frame);r,m=output["result"],output["members"]
+    assert [list(g.coords) for g in r.geometry]==[[(0,0),(1,0),(2,0)],[(10,0),(11,0),(12,0)]]
+    assert m.route_key.tolist()==["多源","多源","多源","其他"]
+    assert m.source_part_no.tolist()==[1,3,2,1] and m.chain_id.tolist()==[1,1,2,2]
+    assert [g.wkb for g in m.geometry]==[shapely.get_parts(frame.geometry.iloc[0])[i].wkb for i in [0,2,1]]+[frame.geometry.iloc[1].wkb]
+
+
+@pytest.mark.parametrize("multipart",[False,True])
+def test_merge_line_chains_isolated_closed_path_keeps_earliest_part_seam_and_direction(multipart):
+    shapes=[LineString([(2,0),(2,2),(0,2)]),LineString([(0,0),(2,0)]),LineString([(0,2),(0,0)])]
+    frame=line_overlap_frame([MultiLineString(shapes)] if multipart else shapes)
+    output=merge_chains(frame);r,m=output["result"],output["members"]
+    assert len(r)==1 and r.member_count.tolist()==[3]
+    assert list(r.geometry.iloc[0].coords)==[(2,0),(2,2),(0,2),(0,0),(2,0)]
+    assert m.is_reversed.tolist()==[False,False,False]
+    assert m.source_part_no.tolist()==([1,3,2] if multipart else [1,1,1])
+
+
+def test_merge_line_chains_closed_component_at_branch_is_not_opened_or_routed():
+    ring=LineString([(0,0),(2,0),(2,2),(0,0)]);arm=LineString([(0,0),(-1,0)])
+    frame=line_overlap_frame([ring,arm]);result=merge_chains(frame)["result"]
+    assert result.member_count.tolist()==[1,1] and result.geometry.to_wkb().tolist()==frame.geometry.to_wkb().tolist()
+
+
+def test_merge_line_chains_duplicate_vertices_and_micro_gap_remain_exact():
+    frame=line_overlap_frame([LineString([(0,0),(0,0),(1,0),(1,0)]),LineString([(2,0),(2,0),(1,0),(1,0)]),
+                              LineString([(2+2**-40,0),(3,0)])])
+    output=merge_chains(frame);r,m=output["result"],output["members"]
+    assert r.member_count.tolist()==[2,1]
+    assert list(r.geometry.iloc[0].coords)==[(0,0),(0,0),(1,0),(1,0),(1,0),(2,0),(2,0)]
+    assert list(r.geometry.iloc[1].coords)==[(2+2**-40,0),(3,0)]
+    assert m.is_reversed.tolist()==[False,True,False]
+    assert m.geometry.to_wkb().tolist()==frame.geometry.to_wkb().tolist()
+
+
+def test_merge_line_chains_order_does_not_follow_identifier_or_index_candidates(monkeypatch):
+    import operators.geometric_operators as module
+    frame=line_overlap_frame([LineString([(10,0),(11,0)]),LineString([(1,0),(2,0)]),LineString([(0,0),(1,0)])],[90,70,20])
+    expected=merge_chains(frame);original=module.shapely.STRtree
+    class Reverse:
+        def __init__(self,shapes):self.tree=original(shapes)
+        def query(self,*args,**kwargs):return self.tree.query(*args,**kwargs)[::-1]
+    monkeypatch.setattr(module.shapely,"STRtree",Reverse)
+    actual=merge_chains(frame)
+    for port in expected:assert_geodataframe_equal(actual[port],expected[port])
+    assert actual["members"].route_key.tolist()==[90,20,70]
+    assert actual["result"].member_count.tolist()==[1,2]
+
+
+@pytest.mark.parametrize("field",["chain_id","member_count","member_no","source_part_no","is_reversed"])
+def test_merge_line_chains_rejects_reserved_columns(field):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])]);frame[field]=1
+    with pytest.raises(ValueError,match="column"):merge_chains(frame)
+
+
+@pytest.mark.parametrize("fields",[None,"grade",("grade",),["missing"],["boundary"],["route_key"],["grade","grade"],[1]])
+def test_merge_line_chains_requires_explicit_valid_business_field_list(fields):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])]);frame["grade"]=1
+    with pytest.raises(ValueError,match="match_fields"):get_operator("merge_line_chains")(frame,"route_key",fields)
+
+
+@pytest.mark.parametrize("value",[[1],{"nested":1},np.array([1])])
+def test_merge_line_chains_rejects_non_scalar_consistency_values(value):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])]);frame["tag"]=[value]
+    with pytest.raises(ValueError,match="scalar"):merge_chains(frame,["tag"])
+
+
+@pytest.mark.parametrize("shapes",[
+    [LineString([(0,0),(2,0)]),LineString([(1,-1),(1,0)])],
+    [LineString([(0,0),(2,0)]),LineString([(1,-1),(1,1)])],
+    [LineString([(0,0),(2,0)]),LineString([(1,0),(3,0)])],
+    [LineString([(0,0),(2,0)]),LineString([(2,0),(0,0)])],
+    [LineString([(0,0),(2,2),(0,2),(2,0)])],
+    [LineString([(0,0),(2,0),(0,0)])],
+    [MultiLineString([[(0,0),(2,0)],[(1,-1),(1,0)]])],
+])
+def test_merge_line_chains_rejects_unresolved_crossings_and_overlap_without_mutation(shapes):
+    frame=line_overlap_frame(shapes);before=frame.copy(deep=True)
+    with pytest.raises(ValueError,match="intersection|overlap"):merge_chains(frame)
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("shape",[None,LineString(),Point(0,0),LineString([(0,0),(0,0)]),
+    LineString([(0,0,1),(1,0,1)]),shapely.from_wkt("LINESTRING M (0 0 1, 1 0 1)"),
+    LineString([(0,0),(float("inf"),1)]),LineString([(0,0),(float("nan"),1)])])
+def test_merge_line_chains_rejects_invalid_geometry(shape):
+    frame=line_overlap_frame([shape]);before=frame.geometry.to_wkb().tolist()
+    with pytest.raises(ValueError):merge_chains(frame)
+    assert frame.geometry.to_wkb().tolist()==before
+
+
+@pytest.mark.parametrize("crs",[None,"EPSG:4326","EPSG:4978"])
+def test_merge_line_chains_requires_projected_crs(crs):
+    with pytest.raises(ValueError,match="projected"):merge_chains(line_overlap_frame([LineString([(0,0),(1,0)])],crs=crs))
+
+
+@pytest.mark.parametrize("ids",[[None],[" "],[1,1],[[1]]])
+def test_merge_line_chains_requires_unique_nonempty_scalar_source_id(ids):
+    frame=line_overlap_frame([LineString([(i,0),(i+1,0)]) for i in range(len(ids))],ids)
+    with pytest.raises(ValueError):merge_chains(frame)
+
+
+@pytest.mark.parametrize("empty",[False,True])
+def test_merge_line_chains_preserves_nullable_schema_and_source_identity(empty):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])],pd.Series([2**60+5],dtype="Int64"))
+    frame["tag"]=pd.Series([pd.NA],dtype="string");frame["kind"]=pd.Categorical(["a"])
+    if empty:frame=frame.iloc[:0]
+    r,m=merge_chains(frame,["tag","kind"]).values()
+    assert r.tag.dtype==m.tag.dtype==frame.tag.dtype and r.kind.dtype==frame.kind.dtype
+    assert m.route_key.dtype==frame.route_key.dtype
+    assert r.chain_id.dtype==r.member_count.dtype==m.member_no.dtype==m.source_part_no.dtype=="int64"
+    assert m.is_reversed.dtype=="bool" and len(r)==len(m)==len(frame)
+    assert r.crs==m.crs==frame.crs and r.geometry.name==m.geometry.name=="boundary"
+
+
+def test_merge_line_chains_metadata_workflow_only_two_geodataframe_ports(monkeypatch):
+    import api_server
+    op=next(o for o in list_operators() if o["id"]=="merge_line_chains")
+    assert op["display_name"]=="链路合并" and op["category_path"]==["矢量处理","几何处理"]
+    assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
+    assert [(p["name"],p["required"]) for p in op["parameters"]]==[("input_gdf",True),("id_field",True),("match_fields",True)]
+    assert [(p["name"],p["type"],p["is_default"]) for p in op["output_ports"]]==[("result","geodataframe",True),("members","geodataframe",False)]
+    assert op["parameters"][-1]["type"]=="array" and op["parameters"][-1]["item_type"]=="string" and "default" not in op["parameters"][-1]
+    with api_server.app.test_client() as client:
+        listed=next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"]=="merge_line_chains")
+        assert listed==op
+        assert client.post("/api/operators/merge_line_chains/invoke",json={"params":{}}).status_code==403
+
+
+def test_merge_line_chains_workflow_two_saves_reloaded_by_independent_ogr(tmp_path):
+    from osgeo import ogr
+    ogr.UseExceptions()
+    frame=line_overlap_frame([LineString([(1,0),(2,0)]),LineString([(0,0),(1,0)]),LineString([(3,0),(2,0)])],["中","左","右"])
+    frame["grade"]=pd.Series([7,7,7],dtype="Int64");frame["note"]=pd.Series(["m",None,"r"],dtype="string")
+    source=tmp_path/"source.gpkg";frame.to_file(source,driver="GPKG",layer="source");before=source.read_bytes()
+    connection={"engine_type":"nfs","mount_path":str(tmp_path)}
+    tasks=[{"id":"load","operator":"load","params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+           {"id":"merge","operator":"merge_line_chains","params":{"input_gdf":{"$ref":"load"},"id_field":"route_key","match_fields":["grade"]},"depends_on":["load"]}]
+    for port in ["result","members"]:
+        ref={"$ref":"merge"} if port=="result" else {"$ref":"merge","port":port}
+        tasks.append({"id":"save_"+port,"operator":"save","params":{"input_df":ref,"connection_info":connection,"path":port+".gpkg"},"depends_on":["merge"]})
+    execution=execute_workflow({"tasks":tasks});assert execution["status"]=="success",execution.get("error")
+    preview=json.loads(execution["all_results"]["merge"]);assert set(preview)=={"result","members"}
+    for port,count,shapes in [("result",1,[[(0,0),(1,0),(2,0),(3,0)]]),("members",3,[[(0,0),(1,0)],[(1,0),(2,0)],[(3,0),(2,0)]])]:
+        ds=ogr.Open(str(tmp_path/(port+".gpkg")),0);layer=ds.GetLayer(0)
+        assert layer.GetFeatureCount()==count and layer.GetSpatialRef().GetAuthorityCode(None)=="3857"
+        rows=list(layer);assert [list(f.GetGeometryRef().GetPoints()) for f in rows]==shapes
+        assert all(f.GetGeometryRef().GetGeometryName()=="LINESTRING" for f in rows)
+        if port=="result":assert rows[0].GetField("chain_id")==1 and rows[0].GetField("member_count")==3 and "route_key" not in [f.GetName() for f in layer.schema]
+        else:
+            assert [f.GetField("route_key") for f in rows]==["左","中","右"]
+            assert [f.GetField("note") for f in rows]==[None,"m","r"]
+            assert [f.GetField("is_reversed") for f in rows]==[False,False,True]
+            assert [f.GetField("member_no") for f in rows]==[1,2,3]
+        for name in (["grade","chain_id","member_count"] if port=="result" else ["grade","chain_id","member_no","source_part_no"]):
+            assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(name)).GetType()==ogr.OFTInteger64
+        if port=="members":
+            assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex("is_reversed")).GetSubType()==ogr.OFSTBoolean
+    assert source.read_bytes()==before
+
+
+def test_merge_line_chains_branch_on_closed_path_remains_the_chain_boundary():
+    frame=line_overlap_frame([LineString([(2,0),(2,2)]),LineString([(0,0),(2,0)]),
+        LineString([(2,2),(0,0)]),LineString([(0,0),(-1,0)])])
+    result,members=merge_chains(frame).values()
+    assert result.member_count.tolist()==[3,1]
+    assert list(result.geometry.iloc[0].coords)==[(0,0),(2,0),(2,2),(0,0)]
+    assert members.route_key.tolist()==[1,0,2,3] and members.is_reversed.tolist()==[False]*4
+
+
+def test_merge_line_chains_keeps_upstream_source_columns_in_members_only():
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])],["segment-a","segment-b"])
+    frame["source_id"]=["original", "original"];frame["part_no"]=[1,1];frame["segment_no"]=[1,2]
+    result,members=merge_chains(frame).values()
+    assert len(result)==1 and result.member_count.tolist()==[2]
+    assert "source_id" not in result.columns
+    assert members.source_id.tolist()==["original"]*2 and members.segment_no.tolist()==[1,2]
+    assert members.source_part_no.tolist()==[1,1] and members.route_key.tolist()==["segment-a","segment-b"]
+
+
+def test_merge_line_chains_lens_with_two_common_endpoints_produces_one_closed_chain():
+    frame=line_overlap_frame([LineString([(0,0),(1,1),(2,0)]),LineString([(0,0),(1,-1),(2,0)])])
+    result,members=merge_chains(frame).values()
+    assert result.member_count.tolist()==[2] and members.is_reversed.tolist()==[False,True]
+    assert list(result.geometry.iloc[0].coords)==[(0,0),(1,1),(2,0),(1,-1),(0,0)]
+
+
+def test_merge_line_chains_input_rejection_leaves_no_dag_save_targets(tmp_path):
+    source=tmp_path/"source.gpkg";line_overlap_frame([LineString([(0,0),(2,0)]),LineString([(1,-1),(1,1)])]).to_file(source,driver="GPKG")
+    connection={"engine_type":"nfs","mount_path":str(tmp_path)}
+    tasks=[{"id":"load","operator":"load","params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+        {"id":"merge","operator":"merge_line_chains","params":{"input_gdf":{"$ref":"load"},"id_field":"route_key","match_fields":[]},"depends_on":["load"]}]
+    for port in ["result","members"]:
+        tasks.append({"id":port,"operator":"save","params":{"input_df":{"$ref":"merge","port":port},"connection_info":connection,"path":port+".gpkg"},"depends_on":["merge"]})
+    state=execute_workflow({"tasks":tasks})
+    assert state["status"]=="failed" and "non-endpoint intersection" in state["error"]
+    assert not (tmp_path/"result.gpkg").exists() and not (tmp_path/"members.gpkg").exists()
+
+
 def test_group_line_components_transitive_labels_follow_first_source_not_identifier_sort():
     frame = line_overlap_frame([
         LineString([(0, 0), (1, 0)]), LineString([(4, 0), (5, 0)]),
