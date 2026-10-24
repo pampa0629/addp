@@ -929,3 +929,16 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/build-registration.log`：`96d399f371844f82e7dec186994a49a1326c4bc9f078381f1e8aca8006ce3554`。
 - `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/dev-lifecycle-serial.log`：`a8857c205b427f30663e7e1495ccb3782ee9b7a2594b39f1252a804b0d58d110`。
 - `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-final-e68g773p/build-registration-serial.log`：`18a14e13947e6803a759306be2ca5c66310cedfa4de80b1be80d858bad2d394a`。
+
+## 进程资源声明 240 迁移启动阻断修复（2026-10-24，本地）
+
+本批开发中新增的 JSONB 子对象减键表达式缺少括号，现场标准启动在迁移阶段失败；已修正为先取子对象再减键，保留完整严格约束。为现场留下的 `240/dirty` 补既有 `iam-migration-repair --migration 240 --apply` 的限定案例：串行化锁内逐条校验 1—239 的文件名／摘要、原已验证 CHECK 及不可变触发器函数，仅恢复 `239/clean`；不改实例、权限、角色或 checksum，之后仍由正常 Runner 执行 240。默认不带 `--apply` 明确拒绝。
+
+独立冻结仅含本次启动修复的八个文件，不含仍在开发验证的配额查询／界面；输入清单 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cgroup-repair-qi1nba46/inputs.json`，SHA-256 `71b05ac64be67fa6123439da503ffa0ef309b8ea80fc54719a426cf2608fedb0`。已通过：
+
+- `make test-module MODULE=system GO_ONLY=1`：System Go T1，`system-t1.log`；不将被环境隔离的集成测试计为 T2。
+- `make test-system-iam-runner`：30 项确定性入口回归，`runner-t0.log`。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test process-cgroup-repair --source-root <上述冻结 source>"`：实际 `addp_iam_test`，精确复现错误 SQL 与事务回滚；拒绝 clean 状态、历史摘要变更、触发器停用和旧约束变更；只恢复失败标记后正常执行完整目录至 `240/clean`，重复启动通过，拒绝重放恢复及已记录 240 的回退。`repair-t2.log` 无条件跳过，测试拥有 Schema 在退出清理。
+- `make build-iam-migration-repair` 及构建产物不带 `--apply` 的调用：构建通过，默认拒绝修改并退出 2；`build.log`、`apply-guard.log`。
+
+现场仅做只读元数据核对：开发库 `addp` 为 `240/dirty`，checksum 恰好 239 项且全部匹配当前目录，240 无记录，原 CHECK 和不可变触发器完整。尚未获得本次个人开发库恢复授权，未执行恢复或服务重启；以上本地隔离通过不能记为现场已恢复、CI 或 Hosted 通过。修复工具的使用边界及标准重启步骤见数据库迁移故障排查的 240 专节。

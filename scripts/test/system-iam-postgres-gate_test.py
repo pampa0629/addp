@@ -294,6 +294,22 @@ elif args[:2] != ["volume", "ls"]:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package repository", result.stderr)
 
+    def test_observability_identity_filter_uses_existing_repository_case(self):
+        result = self.run_gate(arguments=("--package", "repository", "--test", "observability-identity"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/repository -run ^TestObservabilityIdentityProjectionAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "observability-identity"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package repository", result.stderr)
+
+    def test_process_cgroup_repair_filter_is_migration_only(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "process-cgroup-repair"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^TestProcessCgroupDirtyMigrationRepairAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "repository", "--test", "process-cgroup-repair"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration", result.stderr)
+
     def test_coordination_filter_preserves_complete_default_discovery(self):
         result = self.run_gate(arguments=("--test", "engine-access-coordination"))
         self.assertEqual(result.returncode, 0, result.stderr)

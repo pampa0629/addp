@@ -230,6 +230,10 @@ case "$TEST_FILTER" in
         [ "$PACKAGE_FILTER" = repository ] || { echo "host-nodes requires --package repository" >&2; exit 2; }
         test_pattern='^TestHostNodeIdentityVersionAndBindingAgainstPostgres$'
         ;;
+    observability-identity)
+        [ "$PACKAGE_FILTER" = repository ] || { echo "observability-identity requires --package repository" >&2; exit 2; }
+        test_pattern='^TestObservabilityIdentityProjectionAgainstPostgres$'
+        ;;
     unified-data-authorizer)
         [ "$PACKAGE_FILTER" = migration ] || { echo "unified-data-authorizer requires --package migration" >&2; exit 2; }
         test_pattern='^Test(UnifiedDataAuthorizer(AssignedSessionRefresh|ForwardMigration)|Runner)AgainstPostgres$'
@@ -390,6 +394,10 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestSecurityProtectionAccessRequestDirtyMigrationRepairAgainstPostgres$'
+        ;;
+    process-cgroup-repair)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "process-cgroup-repair requires --package migration" >&2; exit 2; }
+        test_pattern='^TestProcessCgroupDirtyMigrationRepairAgainstPostgres$'
         ;;
     invitation-enrollment-removal)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
