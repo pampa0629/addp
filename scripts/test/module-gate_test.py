@@ -20,6 +20,15 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+COMMON_POSTGRES_SUCCESS_OUTPUT = (
+    "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n"
+    "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n"
+    "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
+    "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
+    "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
+    "PASS"
+)
+
 
 class ModuleGateTest(unittest.TestCase):
     def test_go_only_selects_existing_go_steps_without_t2_preflight(self) -> None:
@@ -184,7 +193,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = COMMON_POSTGRES_SUCCESS_OUTPUT, extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -193,7 +202,11 @@ class ModuleGateTest(unittest.TestCase):
             go.write_text(
                 '#!/usr/bin/env bash\n'
                 'printf "%s\\n" "$*" >> "$ADDP_GATE_TEST_GO_CALLS"\n'
-                'printf "%s\\n" "$ADDP_GATE_TEST_GO_OUTPUT"\n',
+                'if [[ "$2" == "./execution" && "${ADDP_GATE_TEST_EXECUTION_OUTPUT+present}" == "present" ]]; then\n'
+                '  printf "%s\\n" "$ADDP_GATE_TEST_EXECUTION_OUTPUT"\n'
+                'else\n'
+                '  printf "%s\\n" "$ADDP_GATE_TEST_GO_OUTPUT"\n'
+                'fi\n',
                 encoding="utf-8",
             )
             go.chmod(0o755)
@@ -210,6 +223,7 @@ class ModuleGateTest(unittest.TestCase):
                 "ADDP_GATE_TEST_GO_OUTPUT": output,
             })
             environment.pop("ADDP_TEST_EXECUTION_POSTGRES_DSN", None)
+            environment.pop("ADDP_GATE_TEST_EXECUTION_OUTPUT", None)
             for name in tuple(environment):
                 if name.startswith("ADDP_TEST_HIGHGO_"):
                     environment.pop(name)
@@ -232,6 +246,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("./engine/plugins/highgo", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
+        self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment)AgainstPostgres$ -count=1 -v", calls[1])
         self.assertIn("./exportartifact", calls[2])
         self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
         self.assertIn("./dataprotection/projectionstore", calls[3])
@@ -245,6 +260,41 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)|TestIntegrationPostgresQueryReadSession)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_explicit_all_keeps_full_default(self) -> None:
+        default, default_calls = self._run_common_postgres_group([])
+        explicit, explicit_calls = self._run_common_postgres_group(["--test", "all"])
+        self.assertEqual(0, default.returncode, default.stderr)
+        self.assertEqual(0, explicit.returncode, explicit.stderr)
+        self.assertEqual(6, len(explicit_calls))
+        self.assertEqual(default_calls, explicit_calls)
+
+    def test_common_postgres_retention_group_is_exactly_scoped(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "execution-retention"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["test ./execution -run ^TestExecutionRetentionAssessmentAgainstPostgres$ -count=1 -v"], calls)
+        self.assertIn("read-only group passed (not the full PostgreSQL gate)", result.stdout)
+
+    def test_common_postgres_retention_requires_marker_and_refuses_skips(self) -> None:
+        marker = "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)"
+        for arguments, count, error in (
+            ([], 2, "Common execution PostgreSQL gate"),
+            (["--test", "execution-retention"], 1, "Common execution retention gate"),
+        ):
+            for output in (
+                "PASS [no tests to run]",
+                "--- PASS: TestExecutionEventRetentionAgainstPostgres (0.01s)\nPASS",
+                marker + "\n--- SKIP: TestExecutionRetentionAssessmentAgainstPostgres (0.00s)\nPASS",
+            ):
+                with self.subTest(arguments=arguments, output=output):
+                    # Only the execution call changes: the default path must
+                    # reach this guard after the existing Provider group passes.
+                    result, calls = self._run_common_postgres_group(arguments,
+                        extra_env={"ADDP_GATE_TEST_EXECUTION_OUTPUT": output})
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn(error, result.stderr)
+                    self.assertEqual(count, len(calls))
+                    self.assertIn("./execution", calls[-1])
 
     def test_common_postgres_projection_store_group_and_skip_rejection(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "projection-store"])
