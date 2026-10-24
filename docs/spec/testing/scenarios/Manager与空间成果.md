@@ -345,3 +345,11 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 独立Hosted准备的标准Native专项 `make test-geopython-workflow`（`-k stream_to_vector_d8`）**158 passed／4280 deselected／5.52秒**，0失败／跳过，输入无漂移；其中新增夹具46项，涵盖八份真实GDAL GeoPackage、20条双语准确失败、23类物理篡改拒绝及源／先前成果不变。基于修正提交5419a73ad，候选树 `2290b776308c6e0c86940a4a6f0557a48f598906`，原始日志SHA-256 `89cf9b3e1ae6efbe5dbb9c3cc8c0faeb1d4afc409da51eb8ce7f48b6f6f9157e`；筛除不计通过，不把专项与旧全量相加。三种单位直接样本各21条线／444条边／465个顶点，跳过终点ID2；阈值样本34条线／3542条边，DEM为7条／3612条，填洼链为5条／2582条，空河网与全无效均零要素且保留Schema／CRS。
 
 Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20.403秒**及完整Online登记通过，原始日志SHA-256 `a5a53ce92de30f6d24e240ea662b64d2e84b181b958ff72c832be4d700c4e6fc`。完整 `make test-raster-online-runner` 退出0、输入无漂移，耗时744.59秒，25组Python子门禁及原215项生命周期、隔离身份夹具Go T1通过（共享回归重复，不求和作唯一测试数）；原始日志SHA-256 `b52e1fa5f190351d166207ca1186873a9322c9a1f1184a243412926ae6c2c496`。这些是本地准备与Native证据，不计正式Linux全量、真实Hosted用户／扫描／当前执行血缘／Monitor及清理通过；数值极限继续单列Native，不模拟Hosted越界。实际Hosted仍等专门CI会话协调和完整原始归档领域审计，无自行触发／轮询／定时。
+
+## raster-snap-pour-points-persistence
+
+已获用户授权新增独立手工Hosted：复用既有NFS、同源默认入口产品Runtime和普通用户原12权限，独立600秒业务预算。8条COG保存链包括米／国际英尺／美制测量英尺直接吸附、零半径、标记重分类、DEM接流向累积吸附、填洼接上述链，以及流向→累积→吸附→汇水区。13类各中英文提交，共26条失败链：碰撞、重复编号、全零无点、全无效、非法计数、非法编号、覆盖不一致、网格不一致、负半径、两个角色非法波段、旋转网格及吸附后嵌套；嵌套须由原汇水区节点失败，吸附节点先成功。整数非法样本包括原UInt64 NoData相邻大整数；非有限半径／单位溢出等极限保留Native证据。
+
+独立逐候选核完整编号／mask、真实CRS米制圆边界、距离／行列决胜、跨分水岭／无效区、零与编号保留；严格COG／原网格CRS／单位清除，artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎、当前执行全部实际输入血缘／Monitor，源与先前成果不变和全部清理。失败无发布／新增扫描／输出血缘，反向查询不改提交语言。入口与夹具已实现，本地最终标准Native专项312项（新增夹具53项，4538筛除）、独立脚本63项与完整Online登记通过；原栅格总入口固定准备候选实跑通过，最终Worker独立性另经Native／独立入口覆盖；实际Hosted未运行，不计UI或容量，不改产品逻辑／权限／原套件，Linux与其余Hosted等专门CI会话回传，不自行轮询或触发。
+
+标准入口：`make test-online ONLINE_SUITE=raster-snap-pour-points-persistence`；脚本门禁：`make test-raster-snap-pour-points-online-runner`。现场重新读取完整物理成果与源哈希，只有不可变数学预期可缓存；现场完整像元校验与原始归档终审分别记账，不把未归档TIFF称为离线重读。

@@ -2818,6 +2818,52 @@ def validate_raster_watershed_d8_profile(repository: Path, registered: set[str])
 
 
 
+def validate_raster_snap_pour_points_profile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-snap-pour-points-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-snap-pour-points-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-snap-pour-points-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-snap-pour-points-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('pour-point snapping requires a manual isolated Hosted NFS job')
+    required = {
+        'scripts/test/online-hosted-raster-snap-pour-points-gate.sh': (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount',
+            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            'online-raster-snap-pour-points-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+        'scripts/test/raster-snap-pour-points-persistence-online.py': (
+            'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'scan_identity',
+            'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
+            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'snap_verified', 'radius_and_tie_verified', 'point_ids_verified', 'unselected_zero_verified', 'unit_cleared_verified', 'case_inputs(name)', 'points_raster', 'points_band', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit'),
+        'business/scripts/online-raster-snap-pour-points-fixture.py': (
+            'NFSExport', 'owned_root', 'expected_pixels', 'snap_oracle', 'snap_evidence', 'reclass.cog.tif', 'dem-snap.cog.tif', 'point_values', 'np.array_equal(actual,expected,equal_nan=True)', 'GDAL_TIFF_INTERNAL_MASK',
+            'runtime_workspaces_removed', 'source file changed', 'full_check=True'),
+        'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'),
+        'engines/geopython-workflow/test_online_snap_pour_points_fixture.py': (
+            'test_snap_pour_points_persistence_real_gdal_eight_cog_chains_and_complete_pixels',
+            'test_snap_pour_points_persistence_oracle_rejects_corruption',
+            'test_snap_pour_points_worker_is_self_contained_without_repository_imports'),
+        'Makefile': ('@$(MAKE) test-raster-snap-pour-points-online-runner',
+            'test_online_snap_pour_points_fixture.py',
+            'scripts/test/raster-snap-pour-points-persistence-online_test.py',
+            'scripts/test/online-raster-snap-pour-points-fixture_test.py',
+            'scripts/test/online-hosted-raster-snap-pour-points-gate_test.py',
+            'test_snap_pour_points_requires_manual_nfs_full_pixels_and_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'pour-point snapping persistence contract is incomplete: {relative}')
+
+
+
+
+
 def validate_raster_band_recommendation_profile(repository: Path, registered: set[str]) -> None:
     suite = 'raster-band-recommendation-workflow'
     if suite not in registered:
@@ -3647,6 +3693,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_stream_link_d8_profile(repository, registered)
     validate_raster_flow_accumulation_weighted_d8_profile(repository, registered)
     validate_raster_watershed_d8_profile(repository, registered)
+    validate_raster_snap_pour_points_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
