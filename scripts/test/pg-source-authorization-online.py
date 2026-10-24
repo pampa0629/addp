@@ -58,6 +58,8 @@ COLLECTION_BROWSER_CHECKS = ['collection_workspace_read_only_navigation', 'colle
     'collection_browser_revoke_and_history', 'collection_browser_worker_boundary']
 COLLECTION_EXPIRY_CHECKS = ['meta_collection_before_expiry_readable', 'meta_collection_natural_expiry_denied',
                           'meta_collection_expired_replay_preserves_history']
+COLLECTION_SCHEDULED_CHECKS = ['meta_collection_scheduled_unapproved_denied', 'meta_collection_scheduled_approved_repeat',
+                             'meta_collection_scheduled_revoked_denied', 'meta_collection_scheduled_source_rules_unchanged']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -856,6 +858,9 @@ class MetaCollectionScenario:
         require(str(uuid.UUID(execution)) == execution and execution not in self.executions, 'scan execution is not unique')
         self.executions[execution] = task
         attempt['execution_id'] = execution
+        return self.observe_execution(task, execution, allowed, attempt)
+
+    def observe_execution(self, task, execution, allowed, attempt, *, scheduled_due=None):
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             attempt['stage'] = 'execution_read'
@@ -864,8 +869,15 @@ class MetaCollectionScenario:
             binding = {'execution': run.get('execution_id') == execution, 'task': run.get('source_task_id') == str(task),
                        'module': run.get('module') == 'meta', 'task_type': run.get('task_type') == 'scan',
                        'tenant': run.get('tenant_id') == self.life.tenant,
-                       'actor': run.get('triggered_by') == int(self.life.recipient),
+                       'actor': (run.get('triggered_by') is None if scheduled_due is not None else
+                                 run.get('triggered_by') == int(self.life.recipient)),
                        'scope': run.get('scan_context') == {'engine_id': self.life.engine, 'scan_depth': 'basic'}}
+            if scheduled_due is not None:
+                binding.update(trigger=run.get('trigger_type') == 'scheduled', source=run.get('source') == 'meta',
+                    boundary=run.get('execution_boundary') == 'bounded', parent=run.get('parent_execution_id') is None,
+                    retry=run.get('retry_of_execution_id') is None)
+                created = collection_instant(run.get('created_at'))
+                require(created >= collection_instant(scheduled_due), 'scheduled execution predates its due time')
             metadata = run.get('metadata', {})
             category = run.get('error_details', {}).get('category')
             safe_categories = {'permission_denied', 'execution_failed', 'owner_unavailable', 'connection_failed',
@@ -897,11 +909,17 @@ class MetaCollectionScenario:
                 attempt['summary_matches'] = (len(tasks) == 1 and tasks[0].get('last_execution_id') == execution
                                               and tasks[0].get('last_execution_status') == run['status'])
                 require(attempt['summary_matches'], 'task summary did not reach terminal state')
+                timing = {}
+                if scheduled_due is not None:
+                    require(created <= collection_instant(run.get('started_at')) <= collection_instant(run.get('completed_at')),
+                            'scheduled execution has invalid server times')
+                    timing = {key: run[key] for key in ('created_at', 'started_at', 'completed_at', 'trigger_type', 'source')}
+                    timing.update(triggered_by=None, next_run_at=scheduled_due)
                 attempt['stage'] = 'verified'
                 return {'execution_id': execution, 'status': run['status'],
                         'error_category': run.get('error_details', {}).get('category'),
                         'items_scanned': metadata.get('items_scanned', 0),
-                        'catalog_nodes_scanned': metadata.get('catalog_nodes_scanned', 0)}
+                        'catalog_nodes_scanned': metadata.get('catalog_nodes_scanned', 0), **timing}
             time.sleep(1)
         raise SuiteError('collection task exceeded its bounded terminal deadline')
 
@@ -1105,8 +1123,113 @@ class MetaCollectionScenario:
                         stored_status=original['status'], version=original['version'], no_revocation=True)
         report['checks'].append(COLLECTION_EXPIRY_CHECKS[2])
 
+    def scheduled_rows(self, task):
+        result = self.life.reader.request('GET', f'/api/v1/meta/scan/runs?task_id={task}&page_size=100', (200,)).payload
+        rows = result.get('items')
+        require(isinstance(rows, list) and type(result.get('total')) is int and result['total'] == len(rows)
+                and len(rows) <= 100 and all(row.get('source_task_id') == str(task) for row in rows),
+                'truncated or foreign scheduled executions')
+        ids = [row.get('execution_id') for row in rows]
+        require(all(isinstance(value, str) and str(uuid.UUID(value)) == value for value in ids)
+                and len(set(ids)) == len(ids), 'invalid or duplicate scheduled execution identity')
+        return rows
+
+    def pause_schedule(self, owned):
+        # Update owns its attempted body before sending. A lost response must
+        # resolve only this exact task; never ignore a still-enabled schedule.
+        try:
+            self.update(owned, enabled=False)
+        except Exception:
+            self.recover_tasks()
+        rows = [row for row in self.task_rows() if row.get('id') == owned['id']]
+        require(len(rows) == 1 and rows[0].get('enabled') is False
+                and rows[0].get('schedule') == owned['body']['schedule'], 'collection schedule did not stop')
+        owned['body']['enabled'] = False
+
+    def scheduled_run(self, owned, allowed, evidence, label):
+        task = owned['id']
+        known = {run for run, owner in self.executions.items() if owner == task}
+        require({row['execution_id'] for row in self.scheduled_rows(task)} == known,
+                'unexpected execution outside scheduled phase')
+        attempt = {'task_id': str(task), 'expected_terminal': 'success' if allowed else 'failed',
+                   'stage': 'schedule_enable', 'trigger_type': 'scheduled'}
+        self.attempts.append(attempt)
+        self.update(owned, schedule='* * * * *', enabled=True)
+        rows = [row for row in self.task_rows() if row.get('id') == task]
+        require(len(rows) == 1 and rows[0].get('enabled') is True and rows[0].get('schedule') == '* * * * *',
+                'exact collection schedule was not enabled')
+        due = rows[0].get('next_run_at')
+        require(collection_instant(due) > collection_instant(rows[0].get('updated_at')), 'schedule has no future due time')
+        attempt.update(stage='schedule_wait', next_run_at=due)
+        deadline = time.monotonic() + 150  # One minute to due + the unchanged one-minute owner poll.
+        while time.monotonic() < deadline:
+            rows = self.scheduled_rows(task)
+            observed = {row['execution_id'] for row in rows}
+            require(known <= observed, 'scheduled history lost a prior execution')
+            new = observed - known
+            if new:
+                require(len(new) == 1, 'multiple scheduled executions in one isolated phase')
+                execution = new.pop()
+                self.executions[execution] = task
+                attempt.update(execution_id=execution, stage='schedule_pause')
+                self.pause_schedule(owned)
+                evidence['executions'][label] = self.observe_execution(task, execution, allowed, attempt, scheduled_due=due)
+                require({row['execution_id'] for row in self.scheduled_rows(task)} == known | {execution},
+                        'schedule produced another execution after pause')
+                return
+            time.sleep(1)
+        raise SuiteError('scheduled collection exceeded its bounded creation deadline')
+
+    def run_scheduled(self, report):
+        report['phase'] = 'meta_collection_scheduled'
+        evidence = report['meta_collection']['scheduled'] = {'executions': {}}
+        before, credential = self.source_snapshot(), self.life.reader.token
+        task = self.create_task('_scheduled')
+        facts = self.facts(task['id'])
+        evidence.update(task_id=str(task['id']), task_definition_digest=facts['task_definition_digest'])
+        self.scheduled_run(task, False, evidence, 'unapproved')
+        require(self.facts(task['id']) == facts, 'schedule changed functional task facts')
+        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[0])
+        command = str(uuid.uuid4())
+        body = {'command_id': command, 'task_id': str(task['id']),
+                'expected_task_definition_digest': facts['task_definition_digest'],
+                'purpose': 'Disposable PG basic scheduled qualification',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+        self.commands[command] = body
+        report['meta_collection']['qualification_commands'].append(command)
+        evidence['command_id'] = command
+        issued = self.life.operator.request('POST', self.route, (201,), body).payload
+        original = self.row(command)
+        require(same_collection_row(issued, original) and original['status'] == 'active' and original['version'] == '1',
+                'scheduled approval did not persist exact qualification')
+        evidence['expires_at'] = original['expires_at']
+        for label in ('approved_first', 'approved_repeat'):
+            self.scheduled_run(task, True, evidence, label)
+            require(self.facts(task['id']) == facts and same_collection_row(self.row(command), original),
+                    'scheduled repeat changed task facts or qualification history')
+        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[1])
+        revoked = self.revoke(command)
+        replay = self.life.operator.request('POST', self.route, (201,), body).payload
+        require(same_collection_row(replay, revoked), 'scheduled replay revived revoked qualification')
+        self.scheduled_run(task, False, evidence, 'revoked')
+        require(same_collection_row(self.row(command), revoked) and self.facts(task['id']) == facts,
+                'revoked scheduled execution changed task facts or history')
+        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[2])
+        require(self.life.reader.token == credential and self.source_snapshot() == before,
+                'scheduled collection changed credential or source Grant/Deny rules')
+        evidence.update(same_credential=True, history_unchanged=True, source_rules_unchanged=True, schedule_disabled=True)
+        report['checks'].append(COLLECTION_SCHEDULED_CHECKS[3])
+
     def cleanup(self):
         errors = []
+        try:
+            rows = self.recover_tasks()
+            for owned in self.tasks.values():
+                if owned['id'] is not None and owned['body'].get('schedule'):
+                    if any(row.get('id') == owned['id'] for row in rows):
+                        self.pause_schedule(owned)
+        except Exception:
+            errors.append('collection schedule cleanup failed')
         for command in self.commands:
             try:
                 rows = [row for row in self.qualification_rows() if row.get('id') == command]
@@ -1124,6 +1247,9 @@ class MetaCollectionScenario:
                 task = owned['id']
                 if task is None:
                     continue
+                current_tasks = [row for row in self.task_rows() if row.get('id') == task]
+                require(not owned['body'].get('schedule') or not current_tasks or current_tasks[0].get('enabled') is False,
+                        'refusing to delete a still-enabled collection schedule')
                 qualifications = [row for row in self.qualification_rows() if row.get('task_id') == str(task)]
                 require(all(row['id'] in self.commands for row in qualifications), 'foreign qualification on owned task')
                 require(not any(row['status'] == 'active'
@@ -2392,6 +2518,7 @@ def main():
         lifecycle.collection.run(report)
         lifecycle.collection.run_browser(report)
         lifecycle.collection.run_expiry(report)
+        lifecycle.collection.run_scheduled(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

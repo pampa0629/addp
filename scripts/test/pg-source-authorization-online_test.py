@@ -1849,6 +1849,7 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.tasks, self.qualifications, self.runs, self.calls = {}, {}, {}, []
         self.fault, self.lost = None, None
         self.expiry_clock = None
+        self.schedule_dispatch = False
         self.reader, self.operator = Mock(), Mock()
         self.life = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
                                      'external-online-consumer', 'private-password')
@@ -1867,6 +1868,47 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 'scope_kind': 'engine', 'scan_depth': 'basic', 'read_options': {},
                 'force': self.tasks[task]['parameters']['force']}
 
+    def new_run(self, task, *, scheduled=False):
+        current = self.tasks[task]
+        approvals = [row for row in self.qualifications.values() if row['task_id'] == str(task)]
+        state = 'unapproved' if not approvals else 'revoked' if approvals[-1]['status'] == 'revoked' else (
+            'changed' if current['parameters']['force'] else 'allowed')
+        if state == 'allowed' and self.expiry_clock is not None and datetime.fromisoformat(
+                approvals[-1]['expires_at'].replace('Z', '+00:00')) <= self.expiry_clock.now(timezone.utc):
+            state = 'expired'
+        if current['name'].endswith('_copy'):
+            state = 'copied'
+        allowed = state == 'allowed' or self.fault == state + '_allowed'
+        execution = str(uuid.uuid4())
+        self.runs[execution] = {'execution_id': execution, 'module': 'meta', 'task_type': 'scan',
+            'source_task_id': str(task), 'tenant_id': 3, 'triggered_by': 33,
+            'scan_context': {'engine_id': 2, 'scan_depth': 'basic'},
+            'status': 'success' if allowed else 'failed', 'completed_at': '2026-10-23T00:00:00Z',
+            'metadata': {'items_scanned': 3, 'catalog_nodes_scanned': 2} if allowed else {},
+            'error_details': {} if allowed else {'category': 'connection_failed' if self.fault == 'general_failure' else 'permission_denied'}}
+        if self.expiry_clock is not None:
+            self.runs[execution].update(started_at=self.expiry_clock.now(timezone.utc).isoformat(),
+                                       completed_at=self.expiry_clock.now(timezone.utc).isoformat())
+        if self.fault == 'wrong_task':
+            self.runs[execution]['source_task_id'] = '999'
+        if self.fault == 'read_before_deny' and not allowed:
+            self.runs[execution]['metadata'] = {'items_scanned': 1}
+        if self.fault != 'stale_summary':
+            current.update(last_execution_id=execution, last_execution_status=self.runs[execution]['status'])
+        if state == 'allowed' and self.fault == 'repeat_renews':
+            approvals[-1]['expires_at'] = '2035-01-01T00:00:00Z'
+        if scheduled:
+            self.runs[execution].update(triggered_by=None, trigger_type='scheduled', source='meta', execution_boundary='bounded',
+                                        created_at=self.expiry_clock.now(timezone.utc).isoformat())
+            if self.fault == 'manual_run': self.runs[execution]['trigger_type'] = 'manual'
+            if self.fault == 'human_actor': self.runs[execution]['triggered_by'] = 35
+            if self.fault == 'early_run': self.runs[execution]['created_at'] = '2029-01-01T00:00:00Z'
+            if self.fault == 'wrong_source': self.runs[execution]['source'] = 'console'
+            if self.fault == 'wrong_boundary': self.runs[execution]['execution_boundary'] = 'continuous'
+            if self.fault == 'parent_run': self.runs[execution]['parent_execution_id'] = str(uuid.uuid4())
+            if self.fault == 'retry_run': self.runs[execution]['retry_of_execution_id'] = str(uuid.uuid4())
+        return self.runs[execution]
+
     def request(self, actor, method, url, expected, body=None, **kwargs):
         path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
         self.calls.append((actor, method, path, deepcopy(body)))
@@ -1882,43 +1924,21 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 task = 100 + len(self.tasks)
                 self.tasks[task] = dict(body, id=task, tenant_id=3, created_by=35,
                                         parameters={'force': body['force']})
+                if self.expiry_clock is not None:
+                    self.tasks[task]['updated_at'] = self.expiry_clock.now(timezone.utc).isoformat()
                 status, result, operation = 201, self.tasks[task], 'create'
         elif path.startswith('/api/v1/meta/scan/tasks/'):
             task = int(path.split('/')[6])
             if path.endswith('/trigger'):
                 self.assertEqual(actor, 'reader')
-                current = self.tasks[task]
-                approvals = [row for row in self.qualifications.values() if row['task_id'] == str(task)]
-                state = 'unapproved' if not approvals else 'revoked' if approvals[-1]['status'] == 'revoked' else (
-                    'changed' if current['parameters']['force'] else 'allowed')
-                if state == 'allowed' and self.expiry_clock is not None and datetime.fromisoformat(
-                        approvals[-1]['expires_at'].replace('Z', '+00:00')) <= self.expiry_clock.now(timezone.utc):
-                    state = 'expired'
-                if current['name'].endswith('_copy'):
-                    state = 'copied'
-                allowed = state == 'allowed' or self.fault == state + '_allowed'
-                execution = str(uuid.uuid4())
-                self.runs[execution] = {'execution_id': execution, 'module': 'meta', 'task_type': 'scan',
-                    'source_task_id': str(task), 'tenant_id': 3, 'triggered_by': 33,
-                    'scan_context': {'engine_id': 2, 'scan_depth': 'basic'},
-                    'status': 'success' if allowed else 'failed', 'completed_at': '2026-10-23T00:00:00Z',
-                    'metadata': {'items_scanned': 3, 'catalog_nodes_scanned': 2} if allowed else {},
-                    'error_details': {} if allowed else {'category': 'connection_failed' if self.fault == 'general_failure' else 'permission_denied'}}
-                if self.expiry_clock is not None:
-                    self.runs[execution].update(started_at=self.expiry_clock.now(timezone.utc).isoformat(),
-                                               completed_at=self.expiry_clock.now(timezone.utc).isoformat())
-                if self.fault == 'wrong_task':
-                    self.runs[execution]['source_task_id'] = '999'
-                if self.fault == 'read_before_deny' and not allowed:
-                    self.runs[execution]['metadata'] = {'items_scanned': 1}
-                if self.fault != 'stale_summary':
-                    current.update(last_execution_id=execution, last_execution_status=self.runs[execution]['status'])
-                if state == 'allowed' and self.fault == 'repeat_renews':
-                    approvals[-1]['expires_at'] = '2035-01-01T00:00:00Z'
-                result, operation = self.runs[execution], 'trigger'
+                result, operation = self.new_run(task), 'trigger'
             elif method == 'PUT':
-                self.tasks[task].update(body, parameters={'force': body['force']})
-                result = self.tasks[task]
+                if self.fault != 'disable_noop' or body['enabled'] is not False:
+                    self.tasks[task].update(body, parameters={'force': body['force']})
+                if self.expiry_clock is not None:
+                    self.tasks[task].update(updated_at=self.expiry_clock.now(timezone.utc).isoformat(),
+                        next_run_at=(self.expiry_clock.now(timezone.utc) + timedelta(seconds=60)).isoformat())
+                result, operation = self.tasks[task], 'enable' if body['enabled'] else 'disable'
             elif method == 'DELETE':
                 self.tasks.pop(task)
                 operation = 'delete'
@@ -1954,14 +1974,22 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 row = self.qualifications[path.split('/')[-1]]
                 self.assertEqual(body['version'], row['version'])
                 if self.fault != 'revoke_noop':
-                    row.update(status='revoked', version='2', revoked_at='2026-10-23T00:01:00Z',
+                    row.update(status='revoked', version=str(int(row['version']) + 1), revoked_at='2026-10-23T00:01:00Z',
                                revoked_by_principal_id='35', revoked_reason=body['reason'])
                 result, operation = row, 'revoke'
         elif path.startswith('/api/v1/meta/executions/'):
             result = self.runs[path.split('/')[-1]]
         elif path == '/api/v1/meta/scan/runs':
+            task = int(query['task_id'][0])
+            current = self.tasks.get(task)
+            if self.schedule_dispatch and current and current.get('enabled') and self.fault != 'scheduler_stalled' \
+                    and self.expiry_clock.now(timezone.utc) >= datetime.fromisoformat(current['next_run_at']):
+                self.new_run(task, scheduled=True)
+                if self.fault == 'duplicate_scheduled': self.new_run(task, scheduled=True)
+                current['next_run_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(seconds=60)).isoformat()
             rows = [row for row in self.runs.values() if row['source_task_id'] == query['task_id'][0]]
             result = {'items': rows, 'total': len(rows)}
+            if self.fault == 'truncated_scheduled': result['total'] += 1
         else:
             self.fail('unexpected collection API ' + url)
         self.assertIn(status, expected)
@@ -2131,6 +2159,125 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         browser.finish.side_effect = ONLINE.SuiteError('incomplete browser report') if failure == 'finish' else None
         browser.finish.return_value = {'result': 'passed'}
         return create
+
+    def test_scheduled_collection_uses_real_scheduler_observation_without_manual_trigger(self):
+        self.collection_expiry_fixture()
+        self.schedule_dispatch = True
+        self.report['meta_collection'] = {'qualification_commands': []}
+        self.scenario.run_scheduled(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
+        self.assertEqual([row['status'] for row in self.runs.values()], ['failed', 'success', 'success', 'failed'])
+        self.assertTrue(all(row['trigger_type'] == 'scheduled' and row.get('triggered_by') is None
+                            for row in self.runs.values()))
+        self.assertFalse(any(path.endswith('/trigger') for _, _, path, _ in self.calls))
+        self.assertTrue(self.report['meta_collection']['scheduled']['history_unchanged'])
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+        self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+
+    def scheduled_fixture(self, fault=None):
+        self.collection_expiry_fixture()
+        self.schedule_dispatch = True
+        self.report['meta_collection'] = {'qualification_commands': []}
+        self.fault = fault
+
+    def test_scheduled_runs_reject_manual_identity_time_parent_retry_and_general_failures(self):
+        for fault in ('manual_run', 'human_actor', 'early_run', 'wrong_source', 'wrong_boundary', 'parent_run',
+                      'retry_run', 'unapproved_allowed', 'general_failure', 'read_before_deny', 'stale_summary',
+                      'duplicate_scheduled', 'truncated_scheduled', 'scheduler_stalled', 'wrong_task'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.scheduled_fixture(fault)
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_scheduled(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
+                self.fault = None
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertFalse(any(path.endswith('/trigger') for _, _, path, _ in self.calls))
+                self.assertFalse(any('/access_grants' in path or '/access_denies' in path for _, _, path, _ in self.calls))
+
+    def test_scheduled_approval_does_not_renew_or_revive_and_source_rules_stay_unchanged(self):
+        for fault in ('repeat_renews', 'replay_revives', 'revoked_allowed', 'source_changed', 'credential_changed'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.scheduled_fixture(fault)
+                if fault == 'source_changed': self.scenario.source_snapshot = Mock(side_effect=['before', 'after'])
+                if fault == 'credential_changed':
+                    original = ONLINE.time.sleep.side_effect
+                    def changed(seconds):
+                        original(seconds)
+                        self.reader.token = 'another-credential'
+                    ONLINE.time.sleep.side_effect = changed
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_scheduled(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_SCHEDULED_CHECKS)
+                if fault == 'repeat_renews':
+                    with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
+                        self.scenario.cleanup()
+                    self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
+                                         for _, method, path, _ in self.calls))
+                    continue
+                self.fault = None
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+
+    def test_scheduled_unknown_enable_or_disable_response_remains_owned_and_paused_before_delete(self):
+        for operation in ('enable', 'disable', 'approve', 'revoke'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.scheduled_fixture()
+                self.lost = operation
+                if operation in ('enable', 'approve'):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        self.scenario.run_scheduled(self.report)
+                else:
+                    self.scenario.run_scheduled(self.report)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+                deletes = [i for i, (_, method, path, _) in enumerate(self.calls)
+                           if method == 'DELETE' and '/meta/scan/tasks/' in path]
+                self.assertTrue(deletes)
+                self.assertTrue(any(method == 'PUT' and body['enabled'] is False
+                    for _, method, path, body in self.calls[:deletes[0]]))
+
+    def test_scheduled_cleanup_refuses_to_delete_if_disable_did_not_commit(self):
+        self.scheduled_fixture('disable_noop')
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'schedule did not stop'):
+            self.scenario.run_scheduled(self.report)
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'):
+            self.scenario.cleanup()
+        self.assertTrue(self.tasks)
+        self.assertFalse(any(method == 'DELETE' and '/meta/scan/tasks/' in path for _, method, path, _ in self.calls))
+        self.fault = None
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+
+    def test_scheduled_failed_poll_pauses_then_converges_inflight_execution_before_delete(self):
+        self.scheduled_fixture()
+        original = self.reader.request.side_effect
+        observed = []
+        def failed(method, url, *args, **kwargs):
+            if method == 'GET' and '/meta/executions/' in url and not observed:
+                execution = url.rsplit('/', 1)[1]
+                self.runs[execution]['status'] = 'running'
+                observed.append(execution)
+                raise ONLINE.SuiteError('failed execution observation')
+            return original(method, url, *args, **kwargs)
+        self.reader.request.side_effect = failed
+        with self.assertRaises(ONLINE.SuiteError):
+            self.scenario.run_scheduled(self.report)
+        self.assertTrue(observed)
+        self.assertTrue(all(row['enabled'] is False for row in self.tasks.values()))
+        sleep = ONLINE.time.sleep.side_effect
+        def complete(seconds):
+            self.assertTrue(self.tasks)  # Never delete while this execution is in flight.
+            sleep(seconds)
+            self.runs[observed[0]]['status'] = 'failed'
+        ONLINE.time.sleep.side_effect = complete
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
 
     def test_browser_approval_controls_current_worker_results_and_one_cleanup_identity(self):
         with patch.object(ONLINE, 'CollectionObservation', side_effect=self.browser_fixture()):
