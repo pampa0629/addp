@@ -1062,6 +1062,16 @@ class MetaCollectionScenario:
                 require(attempt['summary_matches'], 'task summary did not reach terminal state')
                 timing = {}
                 if scheduled_due is not None:
+                    attempt['stage'] = 'scheduled_timing'
+                    attempt['server_times'] = {}
+                    for key, value in dict(next_run_at=scheduled_due,
+                            **{key: run.get(key) for key in ('created_at', 'started_at', 'completed_at')}).items():
+                        try:
+                            collection_instant(value)
+                        except SuiteError:
+                            attempt['server_times'][key] = 'absent_or_invalid'
+                        else:
+                            attempt['server_times'][key] = value
                     require(created <= collection_instant(run.get('started_at')) <= collection_instant(run.get('completed_at')),
                             'scheduled execution has invalid server times')
                     timing = {key: run[key] for key in ('created_at', 'started_at', 'completed_at', 'trigger_type', 'source')}

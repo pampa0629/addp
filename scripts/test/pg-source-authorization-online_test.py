@@ -1900,6 +1900,11 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         if scheduled:
             self.runs[execution].update(triggered_by=None, trigger_type='scheduled', source='meta', execution_boundary='bounded',
                                         created_at=self.expiry_clock.now(timezone.utc).isoformat())
+            if self.fault == 'created_after_start': self.runs[execution]['created_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(microseconds=1)).isoformat()
+            if self.fault == 'start_after_completion': self.runs[execution]['started_at'] = (self.expiry_clock.now(timezone.utc) + timedelta(microseconds=1)).isoformat()
+            if self.fault == 'missing_start': self.runs[execution].pop('started_at')
+            if self.fault == 'invalid_start': self.runs[execution]['started_at'] = 'token=private-secret https://private.invalid'
+            if self.fault == 'invalid_completion': self.runs[execution]['completed_at'] = {'token': 'private-secret'}
             if self.fault == 'manual_run': self.runs[execution]['trigger_type'] = 'manual'
             if self.fault == 'human_actor': self.runs[execution]['triggered_by'] = 35
             if self.fault == 'early_run': self.runs[execution]['created_at'] = '2029-01-01T00:00:00Z'
@@ -2368,6 +2373,8 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                             for row in self.runs.values()))
         self.assertFalse(any(path.endswith('/trigger') for _, _, path, _ in self.calls))
         self.assertTrue(self.report['meta_collection']['scheduled']['history_unchanged'])
+        self.assertTrue(all(attempt['stage'] == 'verified' and len(attempt['server_times']) == 4
+                            for attempt in self.scenario.attempts))
         self.scenario.cleanup()
         self.assertFalse(self.tasks)
         self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
@@ -2377,6 +2384,33 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.schedule_dispatch = True
         self.report['meta_collection'] = {'qualification_commands': []}
         self.fault = fault
+
+    def test_scheduled_time_failures_keep_bounded_evidence_before_unchanged_assertion(self):
+        for fault in ('created_after_start', 'start_after_completion', 'missing_start', 'invalid_start', 'invalid_completion'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.scheduled_fixture(fault)
+                self.report['meta_collection']['attempts'] = self.scenario.attempts
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_scheduled(self.report)
+                attempt = self.report['meta_collection']['attempts'][-1]
+                self.assertEqual(attempt['stage'], 'scheduled_timing')
+                self.assertTrue(attempt['summary_matches'])
+                times = attempt['server_times']
+                self.assertEqual(set(times), {'next_run_at', 'created_at', 'started_at', 'completed_at'})
+                self.assertEqual(times['next_run_at'], attempt['next_run_at'])
+                if fault in ('missing_start', 'invalid_start'):
+                    self.assertEqual(times['started_at'], 'absent_or_invalid')
+                if fault == 'invalid_completion':
+                    self.assertEqual(times['completed_at'], 'absent_or_invalid')
+                for key, value in times.items():
+                    if value != 'absent_or_invalid': ONLINE.collection_instant(value)
+                self.assertFalse(self.report['checks'])
+                self.assertEqual(self.report['meta_collection']['scheduled']['executions'], {})
+                self.assertNotIn('private-secret', json.dumps(self.report))
+                self.fault = None
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
 
     def test_scheduled_runs_reject_manual_identity_time_parent_retry_and_general_failures(self):
         for fault in ('manual_run', 'human_actor', 'early_run', 'wrong_source', 'wrong_boundary', 'parent_run',
