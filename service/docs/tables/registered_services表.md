@@ -44,7 +44,7 @@
 ## 类型、元数据与上游认证
 
 - 当前服务类型为 WMS、WFS、WMTS、OGC API、XYZ 和 REST；没有 `data_api` 类型。接入类型不等于对协议所有版本或能力已完成验收。
-- 创建后异步刷新、手动与定时刷新使用不同的状态处理；统一见[注册与元数据刷新](../数据库架构.md#注册与元数据刷新)。保存成功不保证图层齐备，异步失败不回滚已创建服务，也不自动写 error；需要重试时使用管理刷新入口。
+- 创建后异步、手动与定时刷新的状态处理统一见[注册与元数据刷新](../数据库架构.md#注册与元数据刷新)。保存成功不保证图层齐备，异步失败不回滚注册记录或自动写 error，需重试时使用管理刷新入口。元数据、图层和状态分步更新，部分失败不保证回滚，也不能从 HTTP 成功推断图层完整。
 - `metadata` 保存能力文档及解析结果；具体图层处理见[注册服务图层](registered_service_layers表.md#解析与刷新)。REST / XYZ 不自动解析任意 API 文档，也不承诺通用版本/端点数组结构。
 - 当前普通 DTO 返回 auth_type 与 has_auth_config，不返回 auth_config 正文；has_auth_config 只表示配置对象非空，不是完整性或有效性校验。endpoint_url 仍会返回，JSONB 存储也没有因此加密。
 
@@ -52,7 +52,7 @@ Basic、Bearer、API Key 的唯一参数与装配说明见[上游认证配置](.
 
 ## 健康、管理与消费
 
-健康探测结果与本表的持久状态分别表达上游请求结果和管理记录，均不构成公开代理消费授权。探测条件、10 秒超时、定时范围、状态与时间的分步回写，以及手动检查对 inactive 的影响，统一见[健康检查与定时刷新](../数据库架构.md#健康检查与定时刷新)；不能从健康接口 HTTP 200 推导上游健康或状态已持久化。
+健康探测结果与本表持久状态均不能证明公开代理已获消费授权。健康接口 HTTP 200 不表示上游健康或状态已持久化；`last_checked_at` 与 `status` 分步回写，可能仅一项成功。探测条件、超时、定时范围及手动检查对 inactive 的影响统一见[健康检查与定时刷新](../数据库架构.md#健康检查与定时刷新)。
 
 管理操作使用当前 Tenant AuthContext 及精确 `service.external_registration.*` Permission；`created_by` 记录来源，不自动授予权限。当前管理列表只读取 `search/page/limit`；Handler 未读取 `service_type/status` 过滤参数，不能因模型有相应字段或 Repository 有方法就声明该 HTTP 能力已开放。搜索与列表共用入口，不保留第二条 registry search 路线。
 
@@ -63,9 +63,11 @@ Basic、Bearer、API Key 的唯一参数与装配说明见[上游认证配置](.
 | GET | `/api/v1/service/registered/:id` | 管理详情，包含解析出的图层。 |
 | PUT | `/api/v1/service/registered/:id` | 更新管理配置。 |
 | DELETE | `/api/v1/service/registered/:id` | 删除注册配置。 |
-| POST | `/api/v1/service/registered/:id/refresh` | 显式刷新上游元数据。 |
-| POST | `/api/v1/service/registered/:id/health` | 手动健康检查。 |
+| POST | `/api/v1/service/registered/:id/refresh` | 显式刷新；图层、部分失败与状态回写按[元数据刷新核对](../testing/注册服务与代理.md#元数据刷新核对)验证。 |
+| POST | `/api/v1/service/registered/:id/health` | 手动探测；结果与持久状态按[健康结果与状态回写核对](../testing/注册服务与代理.md#健康结果与状态回写核对)分别验证。 |
 | ANY | `/api/service/registered/proxy/:id/*path` | 独立的公开代理边界；不继承管理 API 的身份与 Tenant 保证。 |
+
+上述专题是验证方法，不是已通过记录。跨 Tenant 管理回归、单次 HTTP 成功或调度日志不能替代上游解析、真实调度及分步回写验收；未覆盖、未运行与失败项按[统一验收边界](../API测试指南.md#能力与验收边界)分别记录。
 
 公开代理按 ID 读取注册配置、添加上游认证并流式转发，超时 60 秒。当前路由未按管理 Tenant 条件读取，完整调用授权、SSRF/重定向约束与 System 审计接入仍需核对；“已登记”不等于已建立安全白名单。具体访问与失败边界见[数据库架构](../数据库架构.md#认证与访问边界)。
 
