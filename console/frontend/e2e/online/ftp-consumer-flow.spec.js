@@ -191,22 +191,24 @@ async function generateModel(page, expectedIdentity, model) {
     ])
     expect(source.status()).toBe(200)
     expect(await source.finished()).toBeNull()
-    const original = await source.body()
     const headers = await source.request().allHeaders()
     expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
     expect(Object.hasOwn(headers, 'cookie')).toBe(false)
     expect([...new URL(source.url()).searchParams.keys()]).toEqual(['locator'])
     expect(await download.failure()).toBeNull()
     expect(download.suggestedFilename()).toBe(expectedName)
-    expect(readFileSync(await download.path())).toEqual(original)
+    // The persisted download is the evidence. Chromium's response observer can
+    // expose an empty attachment body even when the page saved the full file.
+    // The runner independently compares these saved bytes to every seed member.
+    const original = readFileSync(await download.path())
     const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
     const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
       sha256: createHash('sha256').update(original).digest('hex'),
       content_type: source.headers()['content-type'] || '',
       content_disposition: source.headers()['content-disposition'] || '',
       browser_download: { clicked: true, current_user: true, no_cookie: true,
-        suggested_filename: download.suggestedFilename(), saved_bytes_match: true } }
-    // Preserve the actual logical-object response before checking it. The runner
+        suggested_filename: download.suggestedFilename(), saved_file_read: true } }
+    // Preserve the actual saved logical object before checking it. The runner
     // verifies every bundle member against the confirmed composition and seed.
     writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
     writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-source.json`), JSON.stringify(sourceDownload, null, 2))

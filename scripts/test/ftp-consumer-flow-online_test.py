@@ -50,7 +50,7 @@ def source_download_proof(source, artifacts, entries=None):
              'content_disposition': f'attachment; filename="{Path(source["full_name"]).name}{".zip" if bundled else ""}"'}
     proof['browser_download'] = {'clicked': True, 'current_user': True, 'no_cookie': True,
                                'suggested_filename': Path(source['full_name']).name + ('.zip' if bundled else ''),
-                               'saved_bytes_match': True}
+                               'saved_file_read': True}
     (artifacts / name).write_bytes(raw)
     (artifacts / f"ftp-{source['format']}-source.json").write_text(json.dumps(proof))
     return proof
@@ -68,7 +68,7 @@ class SourceDownloadButtonProofTests(unittest.TestCase):
             proof = source_download_proof(source, artifacts)
             M.validate_source_download(proof, source, artifacts)
             for key, value in [('clicked', False), ('current_user', False), ('no_cookie', False),
-                               ('saved_bytes_match', False), ('suggested_filename', 'renamed.stl')]:
+                               ('saved_file_read', False), ('suggested_filename', 'renamed.stl')]:
                 bad = copy.deepcopy(proof)
                 bad['browser_download'][key] = value
                 with self.subTest(key=key), self.assertRaises(M.SuiteError):
@@ -77,6 +77,22 @@ class SourceDownloadButtonProofTests(unittest.TestCase):
             del bad['browser_download']
             with self.assertRaises(M.SuiteError):
                 M.validate_source_download(bad, source, artifacts)
+
+    def test_saved_file_must_match_the_independent_source_even_with_matching_receipt_hash(self):
+        sample = next(item for item in model_samples() if item['format'] == 'stl')
+        source = {**sample, 'full_name': M.model_scope(sample['full_name'])}
+        source['composition'] = [{'path': source['full_name']}]
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            proof = source_download_proof(source, artifacts)
+            M.validate_source_download(proof, source, artifacts)
+            for raw in (b'', b'corrupt saved model'):
+                bad = copy.deepcopy(proof)
+                (artifacts / bad['artifact']).write_bytes(raw)
+                bad.update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+                (artifacts / 'ftp-stl-source.json').write_text(json.dumps(bad))
+                with self.subTest(raw=raw), self.assertRaises(M.SuiteError):
+                    M.validate_source_download(bad, source, artifacts)
 
 
 def preview():

@@ -1208,10 +1208,10 @@ def validate_source_download(observed, source, artifact_dir):
             'FTP logical source attachment filename differs')
     require(observed['browser_download'] == {
                 'clicked': True, 'current_user': True, 'no_cookie': True,
-                'suggested_filename': filename, 'saved_bytes_match': True} and
+                'suggested_filename': filename, 'saved_file_read': True} and
             all(type(observed['browser_download'][key]) is bool for key in
-                ('clicked', 'current_user', 'no_cookie', 'saved_bytes_match')),
-            'FTP source download requires the actual current-User button and exact saved bytes')
+                ('clicked', 'current_user', 'no_cookie', 'saved_file_read')),
+            'FTP source download requires the actual current-User button and saved file')
     require(json.loads((artifact_dir / f"ftp-{source['format']}-source.json").read_text()) == observed,
             'FTP logical source response metadata differs from the browser report')
     raw = (artifact_dir / artifact).read_bytes()
