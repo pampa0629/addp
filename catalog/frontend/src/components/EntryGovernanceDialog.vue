@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { listEntries } from '../api/catalog'
@@ -86,10 +86,18 @@ let successorRequestVersion = 0
 const showsSuccessor = computed(() => ['deprecate', 'deprecated'].includes(props.mode))
 
 watch(() => [props.visible, props.entry, props.mode], ([visible, entry]) => {
+  invalidateSuccessorSearch()
   if (!visible) return
   Object.assign(form, emptyForm(entry))
   successorOptions.value = initialSuccessorOptions(entry)
 }, { deep: true })
+
+onBeforeUnmount(invalidateSuccessorSearch)
+
+function invalidateSuccessorSearch() {
+  successorRequestVersion++
+  successorLoading.value = false
+}
 
 function emptyForm(entry) {
   return {
@@ -112,6 +120,7 @@ function successorLabel(option) {
 }
 
 async function searchSuccessors(search = '') {
+  if (!props.visible || !showsSuccessor.value) return
   const version = ++successorRequestVersion
   successorLoading.value = true
   try {
