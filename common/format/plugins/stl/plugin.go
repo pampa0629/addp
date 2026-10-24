@@ -55,13 +55,14 @@ func (p *Plugin) DescribeModel3D(ctx context.Context, input io.Reader, options *
 	if err != nil {
 		return nil, err
 	}
-	meshCount := int64(1)
 	model := &datatype.Model3DInfo{
 		ModelKind:     datatype.Model3DKindMeshScene,
-		MeshCount:     &meshCount,
 		VertexCount:   int64Ptr(summary.vertexCount),
 		TriangleCount: int64Ptr(summary.triangleCount),
 		Bounds3D:      summary.bounds,
+	}
+	if summary.meshCount > 0 && (summary.encoding == "binary" || summary.scanComplete) {
+		model.MeshCount = int64Ptr(summary.meshCount)
 	}
 	formatInfo := map[string]interface{}{
 		"encoding":       summary.encoding,
@@ -83,6 +84,7 @@ func (p *Plugin) DescribeModel3D(ctx context.Context, input io.Reader, options *
 
 type stlSummary struct {
 	encoding             string
+	meshCount            int64
 	vertexCount          int64
 	triangleCount        int64
 	bounds               *datatype.Bounds3D
@@ -125,6 +127,8 @@ func scanASCIISTL(ctx context.Context, input io.Reader) (stlSummary, error) {
 			continue
 		}
 		switch strings.ToLower(fields[0]) {
+		case "solid":
+			summary.meshCount++
 		case "facet":
 			summary.triangleCount++
 		case "vertex":
@@ -159,6 +163,7 @@ func scanBinarySTL(ctx context.Context, input io.Reader) (stlSummary, error) {
 	triangleCount := int64(binary.LittleEndian.Uint32(header[80:84]))
 	summary := stlSummary{
 		encoding:      "binary",
+		meshCount:     1,
 		vertexCount:   triangleCount * 3,
 		triangleCount: triangleCount,
 		scanComplete:  triangleCount <= maxSTLBinaryTriangles,
