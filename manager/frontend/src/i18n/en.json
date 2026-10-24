@@ -1178,6 +1178,7 @@
       "downloadNotSupported": "Download not supported",
       "unknownDownloadType": "Unknown download type",
       "downloadStarted": "Download started",
+      "invalidDownloadResponse": "The download response is invalid or its file name is missing",
       "downloadFailed": "Download failed: {error}",
       "exportSubmitted": "Export submitted",
       "exportFailed": "Export failed: {error}",

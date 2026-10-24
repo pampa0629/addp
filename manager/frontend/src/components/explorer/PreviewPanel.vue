@@ -519,8 +519,10 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
+import { createAuthenticatedFetch, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
+import { useAuthStore } from '@/store/auth'
+import { downloadModel3DSource } from '@/utils/model3DSource'
 import { StaticTrajectoryPreview } from '@common-ui-map'
 import { canPreviewStaticTrajectory, readStaticTrajectoryTable } from '@/utils/staticTrajectoryPreview'
 import { dataExplorerAPI } from '@/api/dataExplorer'
@@ -580,7 +582,9 @@ import {
   normalizedNodeType
 } from '@/utils/vectorization'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const authenticatedFetch = createAuthenticatedFetch(() => useAuthStore(), { moduleName: 'Manager' })
+let sourceDownloadController = null
 const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 
@@ -1250,26 +1254,42 @@ const handleDownload = async () => {
     return
   }
 
+  if (downloading.value) return
+  const controller = new AbortController()
+  sourceDownloadController = controller
   downloading.value = true
   try {
     const info = downloadInfo.value
     switch (info.kind) {
       case 'url':
-        await downloadFromUrl(info.url, info.fileName)
+        if (isModel3DGLBSourceNode.value ||
+            [props.previewData?.object?.attributes?.item?.data_type, props.previewData?.metadata?.data_type,
+              props.previewData?.object?.content?.metadata?.data_type].includes('model_3d')) {
+          await downloadModel3DSource(info.url, authenticatedFetch, {
+            origin: window.location.origin, signal: controller.signal, language: locale.value
+          })
+        } else {
+          downloadFromUrl(info.url, info.fileName)
+        }
         break
       default:
         throw new Error(t('manager.explorer.unknownDownloadType'))
     }
+    if (controller.signal.aborted) return
     if (info.note) {
       ElMessage.success(info.note)
     } else {
       ElMessage.success(t('manager.explorer.downloadStarted'))
     }
   } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') return
     console.error('下载失败:', error)
-    ElMessage.error(t('manager.explorer.downloadFailed', { error: error.message || error }))
+    ElMessage.error(t('manager.explorer.downloadFailed', { error: error.message || t('manager.explorer.invalidDownloadResponse') }))
   } finally {
-    downloading.value = false
+    if (sourceDownloadController === controller) {
+      downloading.value = false
+      sourceDownloadController = null
+    }
   }
 }
 
@@ -1313,7 +1333,6 @@ const handleExport = async ({ format, fileName }) => {
 watch(
   () => props.previewData,
   () => {
-    downloading.value = false
     loadSelectedItemEmbeddingState()
   }
 )
@@ -1321,6 +1340,9 @@ watch(
 watch(
   () => props.selectedNode?.locator || '',
   async (locator) => {
+    sourceDownloadController?.abort()
+    sourceDownloadController = null
+    downloading.value = false
     exportAbortController?.abort()
     exportAbortController = null
     exporting.value = false
@@ -1349,6 +1371,8 @@ watch(
 
 // 组件卸载时清理状态（防止 race condition 导致的错误）
 onUnmounted(() => {
+  sourceDownloadController?.abort()
+  sourceDownloadController = null
   downloading.value = false
   exporting.value = false
   exportAbortController?.abort()

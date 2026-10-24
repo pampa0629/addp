@@ -77,3 +77,18 @@ test('authenticated export preserves a bounded localized protection error', asyn
     await assert.rejects(downloadAuthenticatedExport({ get: async () => { throw error } }, { download_url: '/api/v1/develop/exports/7/file' }), result => result === error && result.response.data.error_code === 'query_protection_roles_unavailable')
   } finally { globalThis.window = savedWindow }
 })
+
+test('Blob downloads use one saver and release the temporary URL without renaming', async () => {
+  const { saveBlobDownload } = await import('../src/utils/exportSession.js')
+  const saved = globalThis.document, clicked = [], revoked = []
+  const oldCreate = URL.createObjectURL, oldRevoke = URL.revokeObjectURL, oldTimer = globalThis.setTimeout
+  globalThis.document = { createElement: () => ({ click() { clicked.push({ href: this.href, name: this.download }) } }), body: { appendChild() {}, removeChild() {} } }
+  URL.createObjectURL = blob => { assert.ok(blob instanceof Blob); return 'blob:controlled-download' }
+  URL.revokeObjectURL = url => revoked.push(url)
+  globalThis.setTimeout = callback => { callback(); return 1 }
+  try {
+    saveBlobDownload(new Blob(['original bytes']), ' 模型 原始.stl.zip ')
+    assert.deepEqual(clicked, [{ href: 'blob:controlled-download', name: ' 模型 原始.stl.zip ' }])
+    assert.deepEqual(revoked, ['blob:controlled-download'])
+  } finally { globalThis.document = saved; URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; globalThis.setTimeout = oldTimer }
+})

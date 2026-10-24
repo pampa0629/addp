@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -191,5 +192,22 @@ func TestPhysicalWhitespaceDownloadHeaderPreservesName(t *testing.T) {
 	}
 	if got := storageStreamContentDisposition(" models / TEST.PNG ", "image/png"); got != `inline; filename=" TEST.PNG "` {
 		t.Fatalf("stream renamed: %q", got)
+	}
+}
+
+func TestAttachmentHeaderPreservesUnicodeNameWithStandardASCIIEncoding(t *testing.T) {
+	for _, name := range []string{"model.stl", " TEST.PNG ", " 模型 示例 %.stl.zip ", `quoted"name.stl`} {
+		t.Run(name, func(t *testing.T) {
+			header := attachmentContentDisposition(name)
+			for _, char := range header {
+				if char < 0x20 || char > 0x7e {
+					t.Fatalf("attachment header must use standard ASCII encoding: %q", header)
+				}
+			}
+			mediaType, params, err := mime.ParseMediaType(header)
+			if err != nil || mediaType != "attachment" || params["filename"] != name {
+				t.Fatalf("attachment name changed: %q %v %v", header, params, err)
+			}
+		})
 	}
 }

@@ -48,9 +48,35 @@ def source_download_proof(source, artifacts, entries=None):
     proof = {'artifact': name, 'status': 200, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
              'content_type': 'application/zip' if bundled else 'application/octet-stream',
              'content_disposition': f'attachment; filename="{Path(source["full_name"]).name}{".zip" if bundled else ""}"'}
+    proof['browser_download'] = {'clicked': True, 'current_user': True, 'no_cookie': True,
+                               'suggested_filename': Path(source['full_name']).name + ('.zip' if bundled else ''),
+                               'saved_bytes_match': True}
     (artifacts / name).write_bytes(raw)
     (artifacts / f"ftp-{source['format']}-source.json").write_text(json.dumps(proof))
     return proof
+
+
+class SourceDownloadButtonProofTests(unittest.TestCase):
+    def test_rejects_api_only_or_false_button_proof(self):
+        samples = model_samples()
+        sample = next(item for item in samples if item['format'] == 'stl')
+        source = dict(sample)
+        source['full_name'] = M.model_scope(sample['full_name'])
+        source['composition'] = [{'path': source['full_name']}]
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            proof = source_download_proof(source, artifacts)
+            M.validate_source_download(proof, source, artifacts)
+            for key, value in [('clicked', False), ('current_user', False), ('no_cookie', False),
+                               ('saved_bytes_match', False), ('suggested_filename', 'renamed.stl')]:
+                bad = copy.deepcopy(proof)
+                bad['browser_download'][key] = value
+                with self.subTest(key=key), self.assertRaises(M.SuiteError):
+                    M.validate_source_download(bad, source, artifacts)
+            bad = copy.deepcopy(proof)
+            del bad['browser_download']
+            with self.assertRaises(M.SuiteError):
+                M.validate_source_download(bad, source, artifacts)
 
 
 def preview():

@@ -1178,6 +1178,7 @@
       "downloadNotSupported": "不支持下载",
       "unknownDownloadType": "未知下载类型",
       "downloadStarted": "下载已开始",
+      "invalidDownloadResponse": "下载响应无效或文件名缺失",
       "downloadFailed": "下载失败：{error}",
       "exportSubmitted": "导出已提交",
       "exportFailed": "导出失败：{error}",

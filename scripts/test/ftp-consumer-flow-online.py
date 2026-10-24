@@ -2,6 +2,7 @@
 """Ordinary User FTP catalog, scan, native previews and authorized model GLB."""
 from importlib import import_module
 from contextlib import contextmanager
+from email.message import Message
 import base64
 import copy
 import hashlib
@@ -1194,13 +1195,23 @@ def validate_source_download(observed, source, artifact_dir):
     artifact = f"ftp-{source['format']}-source.{'zip' if bundled else source['format']}"
     filename = Path(source['full_name']).name + ('.zip' if bundled else '')
     require(isinstance(observed, dict) and set(observed) == {
-                'artifact', 'status', 'size', 'sha256', 'content_type', 'content_disposition'} and
+                'artifact', 'status', 'size', 'sha256', 'content_type', 'content_disposition', 'browser_download'} and
             observed.get('artifact') == artifact and type(observed.get('status')) is int and
             observed['status'] == 200 and type(observed.get('size')) is int and
             0 < observed['size'] <= 64 * 1024 and
             isinstance(observed.get('content_type'), str) and bool(observed['content_type']) and
-            observed.get('content_disposition') == f'attachment; filename="{filename}"',
+            isinstance(observed.get('content_disposition'), str),
             'FTP logical source download identity, headers or bounded size differs')
+    disposition = Message()
+    disposition['Content-Disposition'] = observed['content_disposition']
+    require(disposition.get_content_disposition() == 'attachment' and disposition.get_filename() == filename,
+            'FTP logical source attachment filename differs')
+    require(observed['browser_download'] == {
+                'clicked': True, 'current_user': True, 'no_cookie': True,
+                'suggested_filename': filename, 'saved_bytes_match': True} and
+            all(type(observed['browser_download'][key]) is bool for key in
+                ('clicked', 'current_user', 'no_cookie', 'saved_bytes_match')),
+            'FTP source download requires the actual current-User button and exact saved bytes')
     require(json.loads((artifact_dir / f"ftp-{source['format']}-source.json").read_text()) == observed,
             'FTP logical source response metadata differs from the browser report')
     raw = (artifact_dir / artifact).read_bytes()

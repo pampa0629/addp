@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -123,7 +124,7 @@ func TestDownloadFileModelCompositionPreservesExactBytes(t *testing.T) {
 						}
 					}
 				}
-				if response.Header().Get("Content-Disposition") != fmt.Sprintf("attachment; filename=%q", name) {
+				if kind, params, err := mime.ParseMediaType(response.Header().Get("Content-Disposition")); err != nil || kind != "attachment" || params["filename"] != name {
 					t.Fatal("logical-object download filename differs")
 				}
 				t.Logf("format=%s status=%d bytes=%d refs=%d content_type=%q disposition=%q", format, response.Code, response.Body.Len(), len(refs), response.Header().Get("Content-Type"), response.Header().Get("Content-Disposition"))

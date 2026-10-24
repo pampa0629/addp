@@ -178,15 +178,34 @@ async function generateModel(page, expectedIdentity, model) {
     const current = await json(await api.get(capabilityPath), 'FTP model cached capability')
     expect(current.model_3d.result_id).toBe(result.result_id)
     expect(current.model_3d.last_execution_id).toBe(started.execution_id)
-    const source = await api.get(`/api/v1/manager/downloads/file?${new URLSearchParams({ locator: model.locator })}`)
-    expect(source.status()).toBe(200)
-    const original = await source.body()
     const bundled = model.composition.length > 1
+    const expectedName = model.full_name.split('/').at(-1) + (bundled ? '.zip' : '')
+    const [source, download] = await Promise.all([
+      page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === '/api/v1/manager/downloads/file' &&
+          url.searchParams.get('locator') === model.locator
+      }),
+      page.waitForEvent('download'),
+      frame.getByRole('button', { name: '下载', exact: true }).click()
+    ])
+    expect(source.status()).toBe(200)
+    expect(await source.finished()).toBeNull()
+    const original = await source.body()
+    const headers = await source.request().allHeaders()
+    expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+    expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+    expect([...new URL(source.url()).searchParams.keys()]).toEqual(['locator'])
+    expect(await download.failure()).toBeNull()
+    expect(download.suggestedFilename()).toBe(expectedName)
+    expect(readFileSync(await download.path())).toEqual(original)
     const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
     const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
       sha256: createHash('sha256').update(original).digest('hex'),
       content_type: source.headers()['content-type'] || '',
-      content_disposition: source.headers()['content-disposition'] || '' }
+      content_disposition: source.headers()['content-disposition'] || '',
+      browser_download: { clicked: true, current_user: true, no_cookie: true,
+        suggested_filename: download.suggestedFilename(), saved_bytes_match: true } }
     // Preserve the actual logical-object response before checking it. The runner
     // verifies every bundle member against the confirmed composition and seed.
     writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)

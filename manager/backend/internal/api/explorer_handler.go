@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"path"
 	"strconv"
@@ -591,7 +592,7 @@ func attachmentContentDisposition(fileName string) string {
 	if fileName == "" || fileName == "." || fileName == "/" {
 		fileName = "download"
 	}
-	return fmt.Sprintf("attachment; filename=%q", fileName)
+	return mime.FormatMediaType("attachment", map[string]string{"filename": fileName})
 }
 
 func storageStreamContentDisposition(storageRef, contentType string) string {

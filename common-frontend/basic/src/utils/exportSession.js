@@ -59,7 +59,11 @@ export async function downloadAuthenticatedExport(client, session, options = {})
     throw error
   }
   if (!(blob instanceof Blob)) throw new Error(options.failedMessage || 'Invalid export download response')
+  saveBlobDownload(blob, session.file_name || 'download')
+}
+
+export function saveBlobDownload(blob, fileName) {
   const objectUrl = URL.createObjectURL(blob)
-  try { downloadFromUrl(objectUrl, session.file_name || 'download') }
+  try { downloadFromUrl(objectUrl, fileName) }
   finally { globalThis.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000) }
 }
