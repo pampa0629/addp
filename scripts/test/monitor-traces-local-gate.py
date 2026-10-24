@@ -77,6 +77,9 @@ def diagnostic_markers(raw):
         'psql:','connection to server','server closed the connection unexpectedly','database system is starting up',
         'authentication failed','resource temporarily unavailable','too many open files','exec failed',
         'protection readiness','protection initialization',
+        'failed to compute cache key','failed to calculate checksum','content digest',
+        'failed to fetch anonymous token','unexpected status from head request',
+        'failed to read dockerfile','error exporting','failed to export','failed to copy',
         '初始化失败','监听绑定失败','配置无效') if marker.encode() in raw.lower()]
 
 

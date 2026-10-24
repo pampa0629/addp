@@ -743,6 +743,18 @@ class LocalTraceCleanupTests(unittest.TestCase):
             self.assertRegex(life.last_failure['output_sha256'], r'^[a-f0-9]{64}$')
             self.assertNotIn('PRIVATE', repr(life.last_failure))
 
+    def test_build_failure_classification_excludes_arbitrary_output(self):
+        cases = [
+            (b'failed to compute cache key: failed to calculate checksum: PRIVATE-PATH not found', ['not found', 'failed to compute cache key', 'failed to calculate checksum']),
+            (b'failed to solve: content digest sha256:PRIVATE-TOKEN: not found', ['failed to solve', 'not found', 'content digest']),
+            (b'failed to solve: failed to fetch anonymous token: unexpected status from HEAD request: PRIVATE-TOKEN 404 Not Found', ['failed to solve', 'not found', 'failed to fetch anonymous token', 'unexpected status from head request']),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                markers = m.diagnostic_markers(raw)
+                self.assertEqual(markers, expected)
+                self.assertNotIn('PRIVATE', repr(markers))
+
     def test_public_build_failure_diagnostics_remain_fixed_markers(self):
         markers = m.diagnostic_markers(b'ERROR: failed to solve: proxyconnect tcp PRIVATE-TOKEN: connection refused')
         self.assertEqual(markers, ['failed to solve', 'connection refused', 'proxyconnect'])
