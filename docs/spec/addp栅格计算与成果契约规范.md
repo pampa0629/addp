@@ -103,7 +103,7 @@
 | 有效轮廓 | raster_load → raster_footprint → 既有矢量计算／保存节点或 JSON 预览 |
 | DEM 填洼 | raster_load → raster_fill_depressions → raster_save；八邻接、图边／无效区边界开放，输出米制 |
 | DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
-| D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；沿给定方向、不计自身，非法方向／循环失败 |
+| D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；count不计自身，area计入自身、统一平方米；非法方向／循环失败 |
 | D8 加权汇流累积 | 显式D8方向＋同网格同覆盖权重 → raster_flow_accumulation_weighted_d8 → raster_save；不计自身，权重有限非负，缺失权重／非法路线失败 |
 | D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
 | D8 Strahler 河流分级 | 显式D8流向＋同网格0／1河网掩膜 → raster_stream_order_d8 → raster_save；最高同级入流至少两条才升级，断流失败不补线 |
@@ -299,3 +299,7 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 
 
 D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已获授权，按7保存链／30条中英准确失败准备，含非嵌套原完整汇水区等价对照、嵌套原算子拒绝对照及真实吸附接增量。完整物理／COG／严格三方大小／扫描／当前执行实际输入血缘／Monitor／源旧不变与清理为必需断言；普通用户原12权限及600秒预算保持，不改产品逻辑／权限／原套件。夹具、标准入口及手工CI登记已实现；最终Native专项247项（含新增夹具73项、4912筛除）／17.46秒、独立脚本63项和更新后的Online登记通过；Node24.11.1下共享栅格总入口实跑退出0，其后本套件描述与Worker登记收紧经最终专项复核，证据分开记账。实际Hosted尚未运行，由专门CI会话协调，Linux及其余Hosted仍等待回传；范围与证据见[专题](../next/栅格算子体系后续专题.md#d8-增量子汇水区独立-hosted-验收)。
+
+### D8 汇流面积扩展
+
+现有`raster_flow_accumulation_d8`按已确认范围扩展`measure=count/area`，默认count不计自身，area计入自身、统一投影网格平方米（m2），共用完整D8图校验与计数核心。矩形像元及已知线性单位换算、开放终点累入、无效覆盖保留和数值失败规则见[算子契约](workflow/栅格算子契约.md)。不新增算子、权限或跨模块逻辑；已实现并通过本地标准Native全量5264项／21 warnings／1388.75秒，0失败／跳过／筛除且输入无漂移，完整证据与版本边界见[后续专题](../next/栅格算子体系后续专题.md#d8-汇流面积扩展)。Linux继续等CI会话回传；本轮没有新增或运行area独立Hosted，本地异步COG不计平台扫描／血缘、UI或容量，既有count固定证据不作为新模式验收。

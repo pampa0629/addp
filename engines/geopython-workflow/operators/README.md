@@ -23,6 +23,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；`raster_inspect` 是只读媒体元数据 direct 入口，不进入工作流面板；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。
 
+D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选择器，默认count沿原图不计自身；area包含自身并按投影网格及CRS线性单位换算平方米（波段单位m2）。共用完整图校验与计数核心，矩形像元允许，面积数值无法有限正表示或累积溢出失败；不表示椭球面积或径流，汇水点吸附仍须显式提供未加权计数。详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md)。
+
 ## 目录结构
 
 | 文件 | 职责 |

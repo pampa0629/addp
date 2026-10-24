@@ -1121,3 +1121,17 @@ def test_d8_stream_vector_single_route_two_explicit_inputs_and_vector_output():
     assert all(params[name]['type']=='integer' for name in ('band','stream_band'))
     assert spec['output_ports'][0]['type']=='GeoDataFrame'
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'stream_raster':{'$ref':'streams'},'band':1,'stream_band':1}
+
+
+def test_d8_accumulation_exposes_one_measure_selector_and_keeps_count_default():
+    operators = {item['id']: item for item in list_operators()}
+    spec = operators['raster_flow_accumulation_d8']
+    params = {p['name']: p for p in spec['parameters']}
+    assert set(params) == {'input_raster', 'band', 'measure'}
+    assert params['measure']['type'] == 'string' and params['measure']['param_type'] == 'param'
+    assert params['measure']['required'] is False and params['measure']['default'] == 'count'
+    assert params['measure']['enum'] == ['count', 'area']
+    assert spec['detailed_description']['workflow_example']['params']['measure'] == 'count'
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert not {'raster_flow_area_d8', 'raster_flow_accumulation_area_d8'} & operators.keys()
+    assert 'measure' not in {p['name'] for p in operators['raster_flow_accumulation_weighted_d8']['parameters']}

@@ -2609,6 +2609,12 @@ _D8_ACC_MESSAGES = {
     'target': ('D8 汇流累积方向必须指向图内有效像元，不能指向图外或无效覆盖', 'D8 flow accumulation direction must target an in-bounds valid pixel, not outside the grid or invalid coverage'),
     'cycle': ('D8 汇流累积检测到方向循环，整个工作流失败', 'D8 flow accumulation detected a direction cycle; the entire workflow fails'),
     'overflow': ('D8 汇流累积计数超过Float64精确整数上限2^53−1', 'D8 flow accumulation count exceeds the Float64 exact integer limit 2^53-1'),
+    'measure': ('D8 汇流累积的measure只允许精确小写count或area',
+                'D8 flow accumulation measure must be exactly count or area'),
+    'area': ('D8 汇流面积的像元投影面积必须能表示为有限严格正数平方米',
+             'D8 contributing area cell area must be representable as finite strictly positive square metres'),
+    'area_overflow': ('D8 汇流面积累计结果超过Float64有限范围',
+                      'D8 contributing area accumulated result exceeds the finite Float64 range'),
 }
 _D8_MAX_EXACT_COUNT = 2**53 - 1
 
@@ -2732,10 +2738,34 @@ def _d8_output(source, values, unit=''):
             path.unlink(missing_ok=True)
 
 
-def raster_flow_accumulation_d8(input_raster, band):
-    """Count upstream cells on an explicit, validated D8 direction raster."""
-    source, directions, _ = _d8_direction_source(input_raster, band, _d8_acc_error)
-    return _d8_output(source, _d8_accumulation(directions))
+def _d8_cell_area(width, height, horizontal_metres):
+    # Exact finite-input product avoids intermediate overflow and underflow.
+    try:
+        area = float(Fraction(width) * Fraction(height) * Fraction(horizontal_metres) ** 2)
+    except OverflowError as cause:
+        raise _d8_acc_error('area') from cause
+    if not math.isfinite(area) or area <= 0:
+        raise _d8_acc_error('area')
+    return area
+
+
+def raster_flow_accumulation_d8(input_raster, band, measure='count'):
+    """Count upstream cells excluding self, or measure projected area including self."""
+    if type(measure) is not str or measure not in ('count', 'area'):
+        raise _d8_acc_error('measure')
+    source, directions, factor = _d8_direction_source(input_raster, band, _d8_acc_error)
+    area = None
+    if measure == 'area':
+        transform = source.GetGeoTransform()
+        area = _d8_cell_area(transform[1], -transform[5], factor)
+    values = _d8_accumulation(directions)
+    if measure == 'area':
+        with np.errstate(over='ignore', invalid='ignore'):
+            values += 1
+            values *= area
+        if np.any(np.isfinite(directions) & ~np.isfinite(values)):
+            raise _d8_acc_error('area_overflow')
+    return _d8_output(source, values, 'm2' if measure == 'area' else '')
 
 
 _D8_WEIGHTED_MESSAGES = {
@@ -3521,7 +3551,7 @@ _SPECS = [
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_CELL, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_CELL, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
-    (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；上游有效像元计数、不计自身，非法方向或循环失败')], 'raster', ['read']),
+    (raster_flow_accumulation_d8, OperatorCategory.RASTER_CELL, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；非法方向或循环失败'), _param('measure', 'str', 'count：上游有效像元数、不计自身；area：包含自身的投影网格面积、统一平方米', 'count', False, enum=['count', 'area'])], 'raster', ['read']),
     (raster_flow_accumulation_weighted_d8, OperatorCategory.RASTER_CELL, 'D8 加权汇流累积', [_INPUT(), _param('weights_raster', 'raster', '同网格、同有效覆盖的有限非负权重输入，不补零或自动对齐', role='input'), _param('band', 'int', '显式方向数据波段'), _param('weights_band', 'int', '显式权重数据波段；上游权重和、不计自身，沿用权重单位')], 'raster', ['read']),
     (raster_flow_length_d8, OperatorCategory.RASTER_CELL, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
     (raster_flow_length_upstream_d8, OperatorCategory.RASTER_CELL, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
@@ -3560,6 +3590,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'foreground_value': 1})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
+    if name == 'raster_flow_accumulation_d8':
+        examples.update({'measure': 'count'})
     if name in ('raster_stream_order_d8', 'raster_stream_link_d8', 'raster_stream_to_vector_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_stream_order_d8':
