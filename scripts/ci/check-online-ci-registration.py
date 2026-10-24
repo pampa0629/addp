@@ -402,7 +402,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')
             or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in img_runner.group('body')
             or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'addp.manager-raster-media/v1'))
-            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'download_sha256', 'addp.manager-raster-media-browser/v1'))):
+            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'addp.manager-raster-media-browser/v2'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):

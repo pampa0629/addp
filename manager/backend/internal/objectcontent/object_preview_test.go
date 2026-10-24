@@ -2325,3 +2325,27 @@ func TestDelimitedObjectContentUsesScannedHeaderMode(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeRasterSourcesNeverResolveToBrowserImage(t *testing.T) {
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, "../../plugins")
+	for _, req := range []ObjectContentRequest{
+		{Name: "scene.jp2", Format: "jpeg2000", ContentType: "image/jp2"},
+		{Name: "scene.j2k", Format: "jpeg2000", ContentType: "application/octet-stream"},
+		{Name: "scene.JP2", Extension: ".JP2", ContentType: "image/jp2"},
+		{ContentType: "image/jp2"},
+		{Name: "scene.img", Format: "img", ContentType: "application/x-img"},
+	} {
+		t.Run(req.Name+req.ContentType, func(t *testing.T) {
+			req.PreviewURL = "/api/v1/manager/storage-stream?source=native"
+			handler := registry.Resolve(&req)
+			if handler == nil || handler.Name() != "builtin:content-unsupported" {
+				t.Fatalf("handler = %#v, want unsupported native source", handler)
+			}
+			content, truncated, err := handler.Handle(context.Background(), &req, func(limit int64) ([]byte, bool, error) { return []byte{0, 0, 0, 12}, false, nil })
+			if err != nil || truncated || content.FrontendRenderer != models.ObjectPreviewKindUnsupported || content.PreviewMaterial != models.PreviewMaterialUnsupported || content.URL != "" || content.Data != "" {
+				t.Fatalf("native source reached browser decoding: %#v, truncated=%v, err=%v", content, truncated, err)
+			}
+		})
+	}
+}

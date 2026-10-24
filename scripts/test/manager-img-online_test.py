@@ -31,9 +31,9 @@ def browser_report(evidence):
             case.update(preview_url=source['preview_url'], range_loaded=True, map_loaded=True,
                         reopened=True, reused_result=True, pixels={'cyan': 128, 'magenta': 128, 'yellow': 128})
         else:
-            case.update(generation_unavailable=True, map_absent=True)
+            case.update(generation_unavailable=True, map_absent=True, source_image_absent=True, unsupported_message_visible=True)
         cases.append(case)
-    return {'schema_version': 'addp.manager-raster-media-browser/v1', 'result': 'passed', 'run_id': evidence['run_id'],
+    return {'schema_version': 'addp.manager-raster-media-browser/v2', 'result': 'passed', 'run_id': evidence['run_id'],
             'source_format':evidence['source_format'], 'identity': evidence['identity'], 'cases': cases, 'generation_requests': 0,
             'failed_business_responses': 0, 'warnings_errors': 0}
 
@@ -79,10 +79,27 @@ class ManagerIMGTests(unittest.TestCase):
             lambda r: r.update(generation_requests=1), lambda r: r.update(schema_version='old'),
             lambda r: r['cases'][0].update(range_loaded=False), lambda r: r['cases'][1].update(reused_result=False),
             lambda r: r['cases'][1]['pixels'].update(cyan=0), lambda r: r['cases'][2].update(map_absent=False),
+            lambda r: r['cases'][2].update(source_image_absent=False), lambda r: r['cases'][2].pop('unsupported_message_visible'),
             lambda r: r['cases'][0].update(download_sha256='wrong'), lambda r: r.update(cases=r['cases'][:2]),
         ):
             bad = copy.deepcopy(report); mutate(bad)
             with self.assertRaises(OWNER.SuiteError): IMG.validate_browser(OWNER, bad, evidence)
+
+    def test_unlocated_jp2_and_j2k_require_unsupported_renderer_evidence(self):
+        evidence = {'source_format': 'jpeg2000', 'run_id': 'run', 'identity': {},
+                    'cases': [{**spec, 'item_id': i, 'locator': f'item:{i}', 'sha256': 'a' * 64,
+                               'preview_url': '/api/v1/manager/raster_cog/1/content'} for i, spec in enumerate(IMG.JPEG2000_SOURCES)]}
+        good = browser_report(evidence)
+        IMG.validate_browser(OWNER, good, evidence)
+        for index in (2, 3):
+            for field in ('source_image_absent', 'unsupported_message_visible'):
+                for missing in (False, True):
+                    bad = copy.deepcopy(good)
+                    if missing: bad['cases'][index].pop(field)
+                    else: bad['cases'][index][field] = False
+                    with self.assertRaises(OWNER.SuiteError): IMG.validate_browser(OWNER, bad, evidence)
+        bad = copy.deepcopy(good); bad['schema_version'] = 'addp.manager-raster-media-browser/v1'
+        with self.assertRaises(OWNER.SuiteError): IMG.validate_browser(OWNER, bad, evidence)
 
     def scenario(self, root, *, fail_browser=False, fail_delete=False, wrong_task_format=False, source_format="img"):
         sources = {"img": IMG.SOURCES, "jpeg2000": IMG.JPEG2000_SOURCES}[source_format]

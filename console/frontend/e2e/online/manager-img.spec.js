@@ -63,6 +63,11 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         expect(meta.attributes.capabilities?.spatial).toBeUndefined()
         await expect(frame.getByRole('button', { name: /^(?:生成 COG|Generate COG)$/, exact: true })).toHaveCount(0)
         await expect(frame.locator('.raster-tiff-quick-view')).toHaveCount(0)
+        await expect(frame.locator('.unsupported-preview')).toBeVisible()
+        await expect(frame.locator('.image-preview')).toHaveCount(0)
+        await expect(frame.locator('.preview-panel img')).toHaveCount(0)
+        actual.source_image_absent = true
+        actual.unsupported_message_visible = true
         actual.generation_unavailable = true
         actual.map_absent = true
         await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${evidence.source_format}-${source.case}.png`) })
@@ -121,7 +126,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   expect(warnings).toEqual([])
   expect(failures).toEqual([])
   writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-${evidence.source_format}-browser.json`), JSON.stringify({
-    schema_version: 'addp.manager-raster-media-browser/v1', run_id: evidence.run_id, result: 'passed',
+    schema_version: 'addp.manager-raster-media-browser/v2', run_id: evidence.run_id, result: 'passed',
     source_format: evidence.source_format, identity: evidence.identity, cases, generation_requests: generationRequests,
     failed_business_responses: failures.length, warnings_errors: warnings.length,
     gpu_performance_diagnostics: diagnostics.snapshot()
