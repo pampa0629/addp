@@ -984,7 +984,11 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - `system-t1.log`／`monitor-t1.log`：`make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=monitor GO_ONLY=1` 均退出 0；不将环境门控的集成跳过计为 T2。
 - `cgroup-t2.log`：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source` 退出 0，55 项准备回归、八类窗口、mTLS／标签／超量限制、Linux 挂载坐标和新增点号字段回归通过；三个真实 SDK 的三族各一条且身份匹配，`TestIntegrationMetricsCgroupSources` 实际执行 59.34 秒通过完整组 CPU／内存、错误身份拒绝及共享组不推算配额。标准清理和独立项目标签核对均为容器／网络／卷零残留、临时文件清零，项目 `addp-metrics-t2-8efb0820d7a748e6b9789bbd909d59b1`。日志 SHA-256 `e4fadba2e2766ec6f8120d97f5deb36721208db348da18451357fc2551782ec6`。
 
-本机 Docker Desktop 内核的三条启动诊断均为 `core_sched_field_present=false`；新增合法字段回归另在真实 Linux 专属容器执行通过。**已证实并修复字段解析缺陷，但尚未取得修复后 Linux CI 实际步的诊断，不能把它断言为旧 CI 缺样的唯一根因或已通过。** 新诊断用于核对原生 Linux 的字段存在性及实际缺失阶段，相关 CI 仍等专门会话回传，不重复触发排队／运行中的门禁或 Hosted，不设定时任务。现有 Release 五场景矩阵及 Common／Monitor 路径与输入自动发现已覆盖本次六个文件，无新 API／DTO、权限、迁移、配置或前端变化，不要求 Swagger／前端重跑；未操作个人服务、keepalive 或数据卷。
+本机 Docker Desktop 内核的三条启动诊断均为 `core_sched_field_present=false`；新增合法字段回归另在真实 Linux 专属容器执行通过。上述本机交付时尚未取得修复后 Linux CI 诊断，当时没有将旧 CI 缺样断言为唯一根因或记为通过。现有 Release 五场景矩阵及 Common／Monitor 路径与输入自动发现已覆盖本次六个文件，无新 API／DTO、权限、迁移、配置或前端变化；未操作个人服务、keepalive 或数据卷。
+
+2026-10-24 专门 CI 会话回传后，已独立核对固定修复源码 `1f9b44df83d48a78b96fbe4b3d91e447624b8518` 的 [Release and T2 gates／Run 40085914201／Job 120853412269](https://github.com/pampa0629/addp/actions/runs/40085914201/job/120853412269)，事件为 push、attempt 1。checkout 日志与 SHA 一致，实际标准入口为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source`。原始日志 `/tmp/addp-ci-20261024-120030/job-120853412269.log` SHA-256 `4a47c59cfef55b7b7f603959439e9408de61893f6eb240652c94656ce4638a3d` 与独立审计 `/tmp/addp-ci-20261024-120030/Monitor-1f9-cgroup-independent-audit.json` 一致。第 791—803 行显示挂载坐标／点号字段回归通过，三个 SDK 均报告 `core_sched_field_present=true`、解析及自身样本有效，三项 Prometheus 族各一条且匹配独立读取的内核身份；真实完整分钟 CPU／内存查询和错误身份拒绝用例实际运行 58.68 秒通过。第 808 行确认本轮容器、网络、卷及临时文件零残留，后续作业摘要为 success。
+
+因此，本条固定版本 Linux cgroup-source T2 已通过，原旧版本失败及本机证据继续分别保留；不再因同一缺样重复验收。该结果仅证明三个 SDK 的共享组原始量采集、完整窗口读取与身份拒绝，**不证明独立容器关联、完整限制层级、正式身份配额页面或当前 main／告警级别筛选的 CI**。本次只补录回传证据，没有重跑 CI／Hosted、设置定时任务或操作用户服务；同一证据已由协调会话通知清单维护会话，不重复发送。
 
 
 ### 正式身份本地第七窗口：准备守卫修正及IAM权限冲突，闭环未通过（2026-10-24）
