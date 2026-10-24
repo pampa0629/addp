@@ -132,3 +132,25 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 已按 2026-10-23 确认口径接入主机固定目录、即时卡片及趋势：ESTABLISHED＋CLOSE_WAIT 的当前数量，不包含监听或 TIME_WAIT，非百分比、速率或累计值。数据与宿主网络命名空间一致；受限 Desktop 未开放 netstat 时显示无数据，不用容器统计或零值代替。指标、整数边界及来源要求见[正式规范](../spec/addp平台运行观测规范.md)，本地验证见[证据专题](../spec/testing/evidence/Monitor历史证据.md#主机-tcp-当前连接数本地)。
 
 同日已确认 `platform-node-metrics` 的限定用途扩展：沿同一一次性部署／真实密码与 MFA 的临时平台管理员，只增加当次节点 TCP 即时值、趋势及同一真实 Console 页面的读取；收据精确为十项标量，不接受额外指标。独立 Prometheus 身份、主机范围、原预算、零残留及不读租户数据的边界不变。标准验收入口及拒绝检查已同步，未触发 Hosted，仍由专门验收会话安排。
+
+## 服务实例配额与容器利用率（范围已确认，接入方式待定）
+
+2026-10-24 只读核对：当前本机 Monitor、Meta／Transfer／Quality Worker 是 macOS 原生进程；标准开发启动直接执行 `.dev-bins`，未施加独立 CPU／内存配额。Common 自身采集只返回 CPU 累计时间、RSS 和启动时间，现有进程采集声明及部署输入没有资源限额。根 Compose 中 Meta／Transfer Worker 的资源限额示例仍是注释，不能视为已执行配置；Business 部分引擎容器的限额也不属于这些原生进程。继续遵守正式规范 6.1：没有明确配额就不生成进程配额利用率，不以宿主总量或 Go 运行参数补分母。
+
+2026-10-24 按用户继续推进的确认，下一批先支持**明确一实例一独立 Linux 容器**的运维观测，先在当前实例详情分开展示进程 CPU 核消耗／RSS 与容器整体 CPU／内存，不扩大原批量进程摘要目录、列表读取量或默认分页。容器 CPU 用量与其可核验限额比较，内存以同一 cgroup 的整体用量与硬上限比较；不把进程 RSS 除以容器内存上限称作容器使用率，不将超限等同泄漏。`GOMAXPROCS` 是 Go 并行度，`GOMEMLIMIT` 是 Go 运行时软限制，均不能替代操作系统硬上限。来源定义参考 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)、[Go runtime](https://pkg.go.dev/runtime#GOMAXPROCS)及[Go 内存软限制](https://pkg.go.dev/runtime/debug#SetMemoryLimit)。
+
+首批仅考虑 cgroup v2，仅读取当前实例所属边界的固定资源文件，明确容器关联、限制层级／可见范围及采样时间；不向 Web 服务开放 Docker socket，不扫描其他进程或读取环境凭据。共享容器、无法确认容器关联／层级限制、无有限硬上限及不支持的平台不输出归一化利用率；macOS 原生实例仍显示绝对消耗与未设置／不支持的原因。不自动配置额度、不更改现有部署限制、不把整机可见 CPU／内存当作实例独享资源。具体资源身份、字段投影、当前用户裁决与指标公式须在下述接入方式确定后补入正式术语／规范，再实现唯一采集查询链。
+
+当前未改产品、IAM 或部署，范围确认不代表已具备可核验的容器来源。实施时最小验证范围为 Common 跨平台采样／固定文件解析 T1、System 精确身份／投影契约、Monitor 真 cgroup 与 Prometheus T2、前端单位／缺配额／共享边界拒绝 T3，并按实际受影响 owner 扩散标准门禁、同步 API／Swagger 和现有 CI 路径登记。Linux T2 仅用标准一次性受限设施，不修改个人资源限制；CI 和正式身份 Hosted 继续等专门会话安排，既有 CPU／RSS 验收用途不能自动外推为新增容器读取已获验收。
+
+### 待确定：谁提供容器关联与完整限制层级
+
+只读调查确认，现有 `scripts/utils/deployment-inventory.py` 仅发布 `infra`／`business` 引擎来源；其固定 Docker inspect 投影不含应用运行实例关联、cgroup 路径或资源限制。System 不能用这些引擎的来源键推断 ADDP Backend／Worker 所在容器，Common 现有 `ProcessMetricsDeclaration` 也只有协议与采集端点。当前原生开发方式保持不变，不能为了展示配额而把开发 Worker 改为容器。
+
+Linux cgroup v2 的父级约束仍作用于子级；cgroup 命名空间与子树挂载可能隐藏父级。容器内读到有限的 `cpu.max`／`memory.max`，只证明可见层的硬上限，不证明完整限制层级，也不表示实例独享或保证可用的资源。Docker inspect 的配置额度同样不能单独证明父级限制。来源参考 [cgroup v2 层级规则](https://docs.kernel.org/admin-guide/cgroup-v2.html)及 [cgroup 命名空间](https://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html)。
+
+建议由**部署侧**提供有期限的只读证明：精确关联 Docker Engine／完整容器 ID／本次容器启动、当前登记实例及本次进程启动；记录实际 cgroup 及已核验的限制层级。应用仅采自身 cgroup 用量，不持有 Docker socket。部署侧若只能证明叶级配置或不能读取真实层级，则只保留绝对用量，不发布有效配额利用率。该方案需要明确增加部署侧的发布职责和 System 私有投影契约；现有引擎发现能力不能直接外推成已获支持的应用容器发现。
+
+另一种接入方式仅支持显式开放完整宿主 cgroup 层级的容器，由应用在已确认自身关联后读取本层与祖先固定资源文件。它改变容器命名空间／挂载可见范围，不能默认应用于现有 Compose，更不能以只读挂载代替对暴露范围的判断。两种方式必须选定一条，不并行保留自动降级路线。当前已向用户提出这一具体选择，依赖该选择的登记、采集发布和页面利用率实现暂停。
+
+不依赖选择的核对已完成：原有 CPU 核消耗／RSS／时长、查询预算及告警保持现有契约；新读数应与进程指标分组，不能用进程 RSS 作 cgroup 内存分子。后续测试先覆盖有界读取、无限制／零限额／非法文件／层级不可见／身份变化，再由现有 `make test-module MODULE=common GO_ONLY=1` 自动发现 T1；真实来源沿 `make test-monitor-metrics` 扩展，查询与页面按实际 owner 扩散。此次只有设计事实核对，未执行或宣称新的 T1、T2、T3 或 Hosted 通过，亦未设置定时任务。
