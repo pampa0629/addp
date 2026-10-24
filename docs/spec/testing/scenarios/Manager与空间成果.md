@@ -361,3 +361,16 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 独立逐候选核完整编号／mask、真实CRS米制圆边界、距离／行列决胜、跨分水岭／无效区、零与编号保留；严格COG／原网格CRS／单位清除，artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎、当前执行全部实际输入血缘／Monitor，源与先前成果不变和全部清理。失败无发布／新增扫描／输出血缘，反向查询不改提交语言。入口与夹具已实现，本地最终标准Native专项312项（新增夹具53项，4538筛除）、独立脚本63项与完整Online登记通过；原栅格总入口固定准备候选实跑通过，最终Worker独立性另经Native／独立入口覆盖；实际Hosted未运行，不计UI或容量，不改产品逻辑／权限／原套件，Linux与其余Hosted等专门CI会话回传，不自行轮询或触发。
 
 标准入口：`make test-online ONLINE_SUITE=raster-snap-pour-points-persistence`；脚本门禁：`make test-raster-snap-pour-points-online-runner`。现场重新读取完整物理成果与源哈希，只有不可变数学预期可缓存；现场完整像元校验与原始归档终审分别记账，不把未归档TIFF称为离线重读。
+
+
+## raster-subcatchments-d8-persistence
+
+已确认新增独立手工Hosted：复用Hosted／NFS／同源默认入口产品Runtime与普通用户原12权限，独立600秒预算。7条COG链：非嵌套增量分区、相同输入的原完整汇水区对照、多层嵌套与并列支流、标记重分类、DEM接流向、填洼接流向，以及流向→累积→真实移动点的吸附→增量分区。两条非嵌套成果须完整像元一致；嵌套按下游第一个指定点归属且点自身归本点，保留用户编号、未选有效零和原无效覆盖。
+
+14类各中英文，共28条增量失败：重复编号、无点、全无效、非法编号、覆盖／网格不一致、非法方向码、内部伪终点、越界／无效下游、循环、两个角色非法波段及旋转网格；再加原完整汇水区对同一嵌套输入的两条中英文准确拒绝，共30条失败。包含原UInt64 NoData相邻非法大整数。独立逐源路径oracle核全部编号／mask、跨块、多波段、首点／自身、唯一归属和像元数守恒；不读取产品拓扑标签。完整COG、最近邻金字塔、原网格／CRS／单位清除、artifact／物理／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前执行所有实际输入血缘／Monitor、源及先前成果不变及零残留均严格核对。失败须准确节点和提交语言、零发布／新增扫描或输出血缘，反向查询不改旧失败。
+
+本地最终标准Native专项 `make test-geopython-workflow`（`-k subcatchments`）**247 passed／4912 deselected／17.46秒**，0失败／跳过，含新增夹具73项；输入无漂移且无新增Python原生崩溃报告。七份真实COG、30条双语准确失败、完整物理篡改拒绝和真实stdin Worker空目录独立运行均已验；专项筛除项未执行，不计新全量、不与原5073项全量累加。候选树 `adad1eebdd2a117ea800cc20bb5a1bb70d70154d`，日志SHA-256 `382fa9c8de7462820a457bb70c30a27f80960b45accf3e37ca46b4e17d092312`。最终 `make test-raster-subcatchments-d8-online-runner` **63项／38.524秒**及完整Online登记通过，同候选树且输入无漂移，日志SHA-256 `9918247fc8fd72fd185cf4b891226cbc96b8855d9297cfde4a52a9522a171089`。
+
+实际Node24.11.1下完整 `make test-raster-online-runner` 退出0，27组Python子门禁及隔离身份夹具Go T1通过，壁钟1058.90秒，输入无漂移；共享计数不累加为唯一测试数，不计全量IAM／数据库集成。固定准备候选 `a437da2bdfcb277c61ed6a1c5234b18c12e4f9a3`，日志SHA-256 `2b606775546f2a666114f2f7901de906c51fbde23d2d4bf4801772177be1f490`。其后仅本套件错误描述／测试命名及Worker独立性登记收紧，由上述最终Native／独立入口复核，原套件断言保持；PythonCI登记另通过42项与10项及11模块检查。新脚本的变更→engines选择、Native recipe、独立根入口和手工Hosted Job已同次登记。
+
+以上为本地准备及Native证据。实际Hosted尚未运行，仍由专门CI会话协调并回传原始归档终审；Linux全量及其余Hosted继续等待回传，不自行触发、轮询或定时。未计平台身份／扫描／血缘／Monitor与真实部署清理通过，也不计UI或容量；数值极限仍单列Native。
