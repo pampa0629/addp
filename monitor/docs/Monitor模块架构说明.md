@@ -19,7 +19,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 - 当前管理 API 使用 `/api/v1/monitor`；认证、Permission、参数和 DTO 以[模块契约](../CLAUDE.md)、[Router](../backend/internal/api/router.go)及生成 Swagger 为准，不沿用缺少模块前缀的旧接口列表。
 - 页面与共享组件入口见[前端 Router](../frontend/src/router/index.js)；执行详情、安全投影、父子树和通知页签遵守现行监控前端所有权，不用“组件文件存在”代替页面验收。
 - 身份使用 System opaque Token / AuthContext；配置归属见[配置规范](../../docs/spec/addp配置介绍.md)。SMTP Relay 由 Monitor 平台配置管理，租户只维护通知目标；不再使用旧 JWT / 五分钟 Redis 认证缓存方案说明当前链路。
-- 过程事件的 30 天滚动清理由 [System 公共维护循环](../../system/backend/internal/service/execution_event_maintenance.go)调用 Common 完成，不删除 execution 概览或审计。终态概览/步骤/安全错误的 180 天保留目标及引用延长边界见[执行监控规范](../../docs/spec/tasks/执行监控.md)，不能视为该清理已经全部落地。
+- 过程事件的 30 天滚动清理由 [System 公共维护循环](../../system/backend/internal/service/execution_event_maintenance.go)调用 Common 完成，不删除 execution 概览或审计。同一维护循环调用 Common 的 180 天概览只读候选评估，只汇总有界批次的完整树、时间条件及保留／未知原因，不提供删除许可或用户 API。Owner 行内事实释放与跨模块引用覆盖尚未核验；终态概览/步骤/安全错误的保留目标及引用延长边界见[执行监控规范](../../docs/spec/tasks/执行监控.md)，不能视为物理清理已经落地。
 
 ## 后续范围与待核对口径
 

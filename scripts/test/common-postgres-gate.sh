@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write|graph|projection-store) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -90,6 +90,33 @@ postgres_user=${ADDP_TEST_POSTGRES_USER:-addp}
 postgres_password=$ADDP_TEST_POSTGRES_PASSWORD
 postgres_sslmode=${ADDP_TEST_POSTGRES_SSLMODE:-disable}
 execution_dsn=${ADDP_TEST_EXECUTION_POSTGRES_DSN:-postgres://${postgres_user}:${postgres_password}@${postgres_host}:${postgres_port}/${database}?sslmode=${postgres_sslmode}}
+
+# All Common PostgreSQL groups share execution storage with the default gate's
+# migration tests. Keep the same descriptor locked through Go child processes.
+exec 9>>/tmp/addp-common-postgres-gate.lock
+python3 - <<'PY'
+import fcntl
+import sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print('Common PostgreSQL gate is already running; no database operation started', file=sys.stderr)
+    sys.exit(1)
+PY
+
+if [ "$test_group" = execution-retention ]; then
+    cd "$SOURCE_ROOT/common"
+    ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
+        go test ./execution -run '^TestExecutionRetentionAssessmentAgainstPostgres$' \
+        -count=1 -v 2>&1 | tee "$WORK_DIR/common-retention-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/common-retention-postgres.log" ||
+       ! grep -q -- '--- PASS: TestExecutionRetentionAssessmentAgainstPostgres ' "$WORK_DIR/common-retention-postgres.log"; then
+        echo 'Common execution retention gate requires the real read-only assessment test without skips' >&2
+        exit 1
+    fi
+    echo 'Common execution retention read-only group passed (not the full PostgreSQL gate)'
+    exit 0
+fi
 
 run_projection_store_postgres() {
     (cd "$SOURCE_ROOT/common" && ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN="$execution_dsn" \
@@ -175,13 +202,17 @@ fi
 
 ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
     go test ./execution \
-    -run '^TestExecution(AuthorizationFactsMigration|Events|EventRetention)AgainstPostgres$' \
+    -run '^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment)AgainstPostgres$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-execution-postgres.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then
     echo "Common execution PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+grep -q -- '--- PASS: TestExecutionRetentionAssessmentAgainstPostgres ' "$WORK_DIR/common-execution-postgres.log" || {
+    echo 'Common execution PostgreSQL gate requires the read-only retention assessment test' >&2
+    exit 1
+}
 
 ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
     go test ./exportartifact -run '^TestExportExecutionSourceAgainstPostgres$' \
