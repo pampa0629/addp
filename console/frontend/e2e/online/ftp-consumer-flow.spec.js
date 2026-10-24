@@ -187,7 +187,7 @@ async function generateModel(page, expectedIdentity, model) {
           url.searchParams.get('locator') === model.locator
       }),
       page.waitForEvent('download'),
-      frame.getByRole('button', { name: '下载', exact: true }).click()
+      frame.getByRole('button', { name: /^(下载|Download)$/i }).click({ timeout: 30_000 })
     ])
     expect(source.status()).toBe(200)
     expect(await source.finished()).toBeNull()

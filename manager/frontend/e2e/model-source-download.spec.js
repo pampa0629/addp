@@ -6,12 +6,12 @@ const locator = 'addp://engine/2/path/models/model.stl?type=file&item_id=8'
 const otherLocator = 'addp://engine/2/path/models/other.stl?type=file&item_id=9'
 const bytes = Buffer.from('exact original model bytes')
 
-async function install(page, respond) {
+async function install(page, respond, locale = 'zh-cn') {
   const node = (id, label) => ({ id, locator: id, label, type: 'file', hasChildren: false })
   const item = node(locator, 'model.stl'), other = node(otherLocator, 'other.stl')
   const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
   const root = { id: rootLocator, locator: rootLocator, label: 'Model engine', type: 'server', hasChildren: true, children: [item, other] }
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.addInitScript(language => localStorage.setItem('addp-lang', language), locale)
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
   await page.route('**/api/v1/**', route => {
     const path = new URL(route.request().url()).pathname
@@ -30,14 +30,14 @@ async function install(page, respond) {
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
   await page.getByRole('treeitem', { name: 'model.stl', exact: true }).click()
-  await expect(page.getByRole('button', { name: '下载', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^(下载|Download)$/i })).toBeEnabled()
 }
 
-for (const [header, name] of [
+for (const locale of ['zh-cn', 'en']) for (const [header, name] of [
   ['attachment; filename=model.stl', 'model.stl'],
   ["attachment; filename*=utf-8''%E6%A8%A1%E5%9E%8B%20%25.stl.zip", '模型 %.stl.zip']
 ]) {
-  test(`the real model download button saves authenticated bytes as ${name}`, async ({ page }) => {
+  test(`the real model download button saves authenticated bytes as ${name} in ${locale}`, async ({ page }) => {
     let calls = 0
     await install(page, async route => {
       calls++
@@ -46,13 +46,13 @@ for (const [header, name] of [
       expect(headers.cookie).toBeUndefined()
       expect([...new URL(route.request().url()).searchParams.keys()]).toEqual(['locator'])
       return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': header }, body: bytes })
-    })
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '下载', exact: true }).click()])
+    }, locale)
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^(下载|Download)$/i }).click()])
     expect(await download.failure()).toBeNull()
     expect(download.suggestedFilename()).toBe(name)
     expect(readFileSync(await download.path())).toEqual(bytes)
     expect(calls).toBe(1)
-    await expect(page.getByText('下载已开始', { exact: true })).toBeVisible()
+    await expect(page.getByText(/^(下载已开始|Download started)$/i)).toBeVisible()
   })
 }
 
@@ -61,9 +61,9 @@ for (const status of [401, 403]) {
     let downloads = 0, calls = 0
     page.on('download', () => downloads++)
     await install(page, route => { calls++; return json(route, { error: '源模型读取已拒绝' }, status) })
-    await page.getByRole('button', { name: '下载', exact: true }).click()
+    await page.getByRole('button', { name: /^(下载|Download)$/i }).click()
     await expect(page.locator('.el-message--error').filter({ hasText: '源模型读取已拒绝' })).toBeVisible()
-    await expect(page.getByText('下载已开始', { exact: true })).toHaveCount(0)
+    await expect(page.getByText(/^(下载已开始|Download started)$/i)).toHaveCount(0)
     expect(downloads).toBe(0)
     expect(calls).toBe(status === 401 ? 2 : 1)
   })
@@ -73,9 +73,9 @@ test('an empty successful response cannot save an empty model or claim success',
   let downloads = 0
   page.on('download', () => downloads++)
   await install(page, route => route.fulfill({ status: 200, headers: { 'Content-Disposition': 'attachment; filename=model.stl' }, body: '' }))
-  await page.getByRole('button', { name: '下载', exact: true }).click()
+  await page.getByRole('button', { name: /^(下载|Download)$/i }).click()
   await expect(page.locator('.el-message--error').filter({ hasText: '下载响应无效或文件名缺失' })).toBeVisible()
-  await expect(page.getByText('下载已开始', { exact: true })).toHaveCount(0)
+  await expect(page.getByText(/^(下载已开始|Download started)$/i)).toHaveCount(0)
   expect(downloads).toBe(0)
 })
 
@@ -90,13 +90,13 @@ test('switching models cancels an in-flight source download without saving or a 
     await pending
     await route.fulfill({ status: 200, headers: { 'Content-Disposition': 'attachment; filename=model.stl' }, body: bytes }).catch(() => {})
   })
-  await page.getByRole('button', { name: '下载', exact: true }).click()
+  await page.getByRole('button', { name: /^(下载|Download)$/i }).click()
   await requested
   await page.getByRole('treeitem', { name: 'other.stl', exact: true }).click()
   await expect(page).toHaveURL(/other.stl/)
   release()
-  await expect(page.getByRole('button', { name: '下载', exact: true })).toBeEnabled()
-  await expect(page.getByText('下载已开始', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(下载|Download)$/i })).toBeEnabled()
+  await expect(page.getByText(/^(下载已开始|Download started)$/i)).toHaveCount(0)
   expect(downloads).toBe(0)
 })
 
