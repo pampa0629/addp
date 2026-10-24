@@ -612,6 +612,11 @@ class LocalTraceCleanupTests(unittest.TestCase):
             self.assertRegex(life.last_failure['output_sha256'], r'^[a-f0-9]{64}$')
             self.assertNotIn('PRIVATE', repr(life.last_failure))
 
+    def test_public_build_failure_diagnostics_remain_fixed_markers(self):
+        markers = m.diagnostic_markers(b'ERROR: failed to solve: proxyconnect tcp PRIVATE-TOKEN: connection refused')
+        self.assertEqual(markers, ['failed to solve', 'connection refused', 'proxyconnect'])
+        self.assertNotIn('PRIVATE', repr(markers))
+
     def test_invalid_report_admission_removes_private_work_before_any_docker_call(self):
         with tempfile.TemporaryDirectory() as directory:
             root = (Path(directory) / 'repository').resolve(); root.mkdir()

@@ -69,7 +69,11 @@ def require(condition, code):
 
 def diagnostic_markers(raw):
     return [marker for marker in ('permission denied','operation not permitted','chown','setgid','setuid','cannot load certificate',
-        'is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory') if marker.encode() in raw.lower()]
+        'is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory',
+        'failed to solve','failed to resolve','failed to authorize','certificate signed','no space left',
+        'context canceled','connection refused','proxyconnect','tls handshake','unexpected eof',
+        'not found','unsupported','traceback','syntaxerror','keyerror','no builder','timeout','timed out',
+        'exec format','cannot connect','not accessible','binary not found','error response from daemon') if marker.encode() in raw.lower()]
 
 
 def minio_product_contract(source):
