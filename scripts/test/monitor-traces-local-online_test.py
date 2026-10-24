@@ -250,6 +250,17 @@ class PreparationMFAContractTests(unittest.TestCase):
 
 
 class LocalExecutionTraceOwnerTests(unittest.TestCase):
+    def test_execution_failure_diagnostic_keeps_codes_and_drops_raw_error_sql_and_data(self):
+        item={'execution_id':EXECUTIONS[('orchestrator','success')],'status':'failed',
+            'error_details':{'code':'orchestrator.execution.contract_unavailable','message':'PRIVATE SQL PASSWORD'},
+            'metadata':{'step_results':{'query':{'status':'failed','phase':'terminal','error_code':'orchestrator.execution.contract_unavailable','error':'PRIVATE SQL PASSWORD','result':{'rows':['PRIVATE']}}}}}
+        value=M.execution_failure_diagnostic(item)
+        self.assertEqual(value['error_code'],'orchestrator.execution.contract_unavailable')
+        self.assertEqual(value['query_step']['phase'],'terminal')
+        self.assertNotIn('PRIVATE',json.dumps(value));self.assertNotIn('result',json.dumps(value))
+        item['error_details']['code']='PRIVATE SQL PASSWORD'
+        self.assertEqual(M.execution_failure_diagnostic(item)['error_code'],'unavailable')
+
     def test_safe_assertion_and_transport_diagnostics_exclude_private_text(self):
         with self.assertRaisesRegex(M.LocalTraceAssertionFailure,'^local_trace_assertion_failed$'):
             M.require(False,'password=PRIVATE-SENTINEL')

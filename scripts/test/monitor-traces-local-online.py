@@ -190,6 +190,17 @@ def safe_execution(value):
         for child in value: safe_execution(child)
 
 
+def execution_failure_diagnostic(item):
+    result={key:item[key] for key in ('execution_id','status') if key in item}
+    def closed_code(value):
+        return value if isinstance(value,str) and re.fullmatch('[a-z][a-z0-9_.]{0,99}',value) else 'unavailable'
+    result['error_code']=closed_code(item.get('error_details',{}).get('code'))
+    step=item.get('metadata',{}).get('step_results',{}).get('query',{})
+    if isinstance(step,dict):
+        result['query_step']={key:closed_code(step.get(key)) for key in ('status','phase','error_code')}
+    return result
+
+
 def wait_execution(client, execution_id, module):
     deadline=time.monotonic()+120
     while time.monotonic()<deadline:
@@ -274,6 +285,11 @@ def run(life, env, report):
         admitted=user.request('POST',f'/api/v1/orchestrator/orchestrations/{workflow_id}/execute',(202,)).payload
         execution_id=admitted.get('execution_id');require(isinstance(execution_id,str),'pending_execution_identity_missing')
         parent=wait_execution(user,execution_id,'orchestrator')
+        if parent['status']!=expected:
+            report['execution_failure']=execution_failure_diagnostic(parent)
+            diagnostic_child=parent.get('metadata',{}).get('step_results',{}).get('query',{}).get('result',{}).get('execution_id')
+            if isinstance(diagnostic_child,str):
+                report['execution_failure']['child']=execution_failure_diagnostic(wait_execution(user,diagnostic_child,'develop'))
         require(parent['status']==expected,'orchestration_terminal_status_mismatch')
         child_id=parent.get('metadata',{}).get('step_results',{}).get('query',{}).get('result',{}).get('execution_id')
         require(isinstance(child_id,str),'child_execution_identity_missing')
