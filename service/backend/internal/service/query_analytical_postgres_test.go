@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
@@ -23,7 +24,7 @@ type analyticalExecutionGate struct {
 	deny               bool
 }
 
-func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error) {
+func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery, _ *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
 	g.entered = true
 	if _, err := q.ReadSet(ctx); err != nil {
 		return nil, nil, err

@@ -318,7 +318,7 @@ type CreateQueryServiceRequest struct {
 	// SQL 中使用 :name 引用的强类型标量参数。
 	NamedParameters []QueryServiceNamedParameter `json:"named_parameters"`
 
-	// 数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。
+	// 数据配置。table 模式必须提供带 item_id 的 locator；原生单表可保存 protection_choices 字段身份引用。
 	DataConfig map[string]interface{} `json:"data_config"`
 
 	// SQL 模式检测得到的输出契约；快照时间和 hash 由 Service 生成。

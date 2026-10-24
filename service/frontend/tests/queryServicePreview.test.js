@@ -43,7 +43,8 @@ test('a handled protection refusal stays visible without a runtime console error
   const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
   const method = source.slice(source.indexOf('const loadPreviewData = async'), source.indexOf('const handlePreviewPageChange'))
   for (const [status, code, expectedLogs] of [
-    [403, 'data_protection_required', 0], [403, 'permission_denied', 1],
+    [403, 'data_protection_required', 0], [403, 'query_protection_roles_unavailable', 0],
+    [409, 'query_protection_choice_invalid', 0], [403, 'query_protection_choice_invalid', 1], [403, 'permission_denied', 1],
     [500, 'data_protection_required', 1], [undefined, undefined, 1]
   ]) {
     const logs = []

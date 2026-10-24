@@ -107,6 +107,75 @@ test('loaded edit is clean and save success clears dirty state before navigating
   assert.deepEqual(h.navigations, [{ path: '/query-services', dirty: false }])
 })
 
+const roleChoice = { target: { owner_module: 'meta', resource_type: 'data_item', resource_identity: 'source-a' }, component_key: 'phone', selection: { policy_id: 'policy', policy_revision: 1, assessment_revision: 1, option_id: 'option' } }
+const roleService = id => ({ ...service(id), config_type: 'table', engine_id: 11, data_config: { locator: 'source-table', protection_choices: [structuredClone(roleChoice)] } })
+
+test('role choice is loaded and saved once with the service, and explicit removal restores defaults', async () => {
+  let saved
+  const h = harness({ getService: async () => roleService(41), updateService: async (_id, request) => { saved = request; return { version: 3 } } }, { id: '41' })
+  await h.mount()
+  assert.deepEqual(JSON.parse(JSON.stringify(h.state.form.protection_choices)), [roleChoice])
+  assert.equal(h.guard.isDirty(), false)
+  h.state.form.title = 'Role service'
+  await h.state.handleSubmit()
+  assert.deepEqual(saved.data_config.protection_choices, [roleChoice])
+  assert.equal(saved.data_config.protection_choices[0].algorithm, undefined)
+  h.state.form.protection_choices = []
+  assert.equal(h.guard.isDirty(), true)
+  await h.state.handleSubmit()
+  assert.deepEqual(saved.data_config.protection_choices, [])
+  h.unmount()
+})
+
+test('unavailable candidates and failed saves retain saved role choices and the current version', async () => {
+  const h = harness({ getService: async () => roleService(41), getProtectionOptions: async () => { throw { response: { data: { error: 'current method unavailable' } } } }, updateService: async () => { throw { response: { data: { error_code: 'query_protection_choice_invalid', error: 'choice changed' } } } } }, { id: '41' })
+  await h.mount()
+  await h.state.refreshMaskingOptions()
+  assert.equal(h.state.maskingError.value, 'current method unavailable')
+  assert.deepEqual(JSON.parse(JSON.stringify(h.state.form.protection_choices)), [roleChoice])
+  h.state.form.title = 'Unsaved'
+  await h.state.handleSubmit()
+  assert.equal(h.state.form.version, 2)
+  assert.equal(h.guard.isDirty(), true)
+  assert.equal(h.state.form.protection_choices.length, 1)
+  h.unmount()
+})
+
+test('source and editor changes invalidate pending candidates without silently changing the selection', async () => {
+  let finish
+  const h = harness({ getService: async id => roleService(id), getProtectionOptions: () => new Promise(resolve => { finish = resolve }) }, { id: '41' })
+  await h.mount()
+  const pending = h.state.refreshMaskingOptions()
+  h.state.form.locator = 'another-source'
+  await Vue.nextTick()
+  finish({ fields: [{ component_key: 'stale-source-field', options: [] }] })
+  await pending
+  assert.equal(h.state.maskingFields.value.length, 0)
+  assert.equal(h.state.maskingLoading.value, false)
+  assert.equal(h.state.form.protection_choices.length, 1)
+  await h.switchTo(42)
+  assert.equal(h.guard.isDirty(), false)
+  h.state.form.config_type = 'sql'
+  await Vue.nextTick()
+  await h.state.refreshMaskingOptions()
+  assert.equal(h.state.maskingError.value, 'service.query.maskingUnsupported')
+  assert.equal(h.state.form.protection_choices.length, 1)
+  h.unmount()
+})
+
+test('the service form reuses the sole shared field masking component', () => {
+  assert.match(source, /FieldMaskingChoices,/)
+  assert.match(source, /<FieldMaskingChoices[\s\S]*?v-model="form\.protection_choices"/)
+  assert.doesNotMatch(source, /option_id\s*[:=]|policy_revision\s*[:=]|role_keys\s*[:=]/)
+  let found = 0
+  const visit = (node, forms = 0) => {
+    if (node.tag === 'FieldMaskingChoices') { assert.equal(forms, 0, 'shared masking form must not be nested inside another form'); found++ }
+    for (const child of node.children || []) visit(child, forms + (node.tag === 'el-form' ? 1 : 0))
+  }
+  visit(parse(source).descriptor.template.ast)
+  assert.equal(found, 1)
+})
+
 for (const conflict of [false, true]) {
   test(`failed save preserves SQL and parameters (version conflict: ${conflict})`, async () => {
     const h = harness({ createService: async () => { throw { response: { data: { error_code: conflict ? 'resource_version_conflict' : 'unavailable' } } } } })

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/service/internal/models"
@@ -26,13 +27,13 @@ type QueryExecutorService struct {
 	systemService  *client.SystemServiceClient
 	tokenCodec     *queryTokenCodec
 	protectionGate interface {
-		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error)
 		BeginUnresolvedRead(context.Context, uint) (func(), error)
 	}
 }
 
 func (s *QueryExecutorService) SetProtectionGate(gate interface {
-	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error)
 	BeginUnresolvedRead(context.Context, uint) (func(), error)
 }) {
 	s.protectionGate = gate
@@ -82,6 +83,9 @@ func (s *QueryExecutorService) execute(
 		return nil, err
 	}
 	if queryService.UsesFederatedQueryRuntime() {
+		if _, err := s.serviceRoleSelection(ctx, queryService); err != nil {
+			return nil, err
+		}
 		return s.executeFederatedQuery(ctx, queryService, request, protocol)
 	}
 	return s.executeDirectQuery(ctx, queryService, request, protocol)
@@ -136,7 +140,11 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if s.protectionGate == nil {
 		return nil, fmt.Errorf("Service 查询保护门禁未配置")
 	}
-	protect, end, err := s.protectionGate.BeginPreparedQuery(ctx, queryService.TenantID, enginePlugin, prepared)
+	selection, err := s.serviceRoleSelection(ctx, queryService)
+	if err != nil {
+		return nil, err
+	}
+	protect, end, err := s.protectionGate.BeginPreparedQuery(ctx, queryService.TenantID, enginePlugin, prepared, selection)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +152,11 @@ func (s *QueryExecutorService) executeDirectQuery(
 	result, err := prepared.Execute(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("execute query plan: %w", err)
+	}
+	if selection != nil {
+		if _, err := s.serviceRoleSelection(ctx, queryService); err != nil {
+			return nil, err
+		}
 	}
 	return s.finalizeResult(queryService, execution, result, protect)
 }

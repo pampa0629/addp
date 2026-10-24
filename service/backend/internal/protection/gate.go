@@ -24,7 +24,7 @@ func NewGate(store *projectionstore.Store) *Gate {
 	return &Gate{store: store, active: make(map[int64]int)}
 }
 
-func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error) {
+func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery, selection *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
 	end, err := g.begin(tenantID)
 	if err != nil {
 		return nil, nil, err
@@ -34,12 +34,17 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: query provider has no catalog model", ErrRequired)
 	}
-	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "service_execute", dataprotection.SubjectReference{}, nil, time.Now().UTC())
+	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "service_execute", dataprotection.SubjectReference{}, selection, time.Now().UTC())
 	if err != nil {
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
 	}
 	return func(result *plugin.QueryResult) error {
+		if selection != nil {
+			if err := g.store.ValidateRoleChoices(ctx, int64(tenantID), selection, "service_execute", time.Now().UTC()); err != nil {
+				return fmt.Errorf("%w: %w", ErrRequired, err)
+			}
+		}
 		if err := protect.Apply(result); err != nil {
 			return fmt.Errorf("%w: %w", ErrRequired, err)
 		}

@@ -882,7 +882,10 @@ const loadPreviewData = async () => {
       ElMessage.warning(t('service.query.noDataWarning'))
     }
   } catch (error) {
-    if (error.response?.status !== 403 || error.response?.data?.error_code !== 'data_protection_required') {
+    const status = error.response?.status
+    const code = error.response?.data?.error_code
+    const protectionRefusal = (status === 403 && ['data_protection_required', 'query_protection_roles_unavailable'].includes(code)) || (status === 409 && code === 'query_protection_choice_invalid')
+    if (!protectionRefusal) {
       console.error('加载数据预览失败:', error)
     }
     ElMessage.error(t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message))

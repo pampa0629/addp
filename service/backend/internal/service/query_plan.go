@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/datatype"
@@ -623,7 +624,25 @@ func serviceDependencyVersion(service *models.QueryService) string {
 		if err != nil {
 			return ""
 		}
-		return hashString(snapshot.DependencyHash + "\x00" + strings.Join(service.GetStableKey(), "\x00") + "\x00" + string(parameters))
+		payload := snapshot.DependencyHash + "\x00" + strings.Join(service.GetStableKey(), "\x00") + "\x00" + string(parameters)
+		choices, err := service.ProtectionChoices()
+		if err != nil {
+			return ""
+		}
+		if len(choices) > 0 {
+			sort.Slice(choices, func(i, j int) bool {
+				if choices[i].Target.ResourceIdentity != choices[j].Target.ResourceIdentity {
+					return choices[i].Target.ResourceIdentity < choices[j].Target.ResourceIdentity
+				}
+				return choices[i].ComponentKey < choices[j].ComponentKey
+			})
+			encoded, err := json.Marshal(choices)
+			if err != nil {
+				return ""
+			}
+			payload += "\x00" + string(encoded)
+		}
+		return hashString(payload)
 	}
 	return ""
 }

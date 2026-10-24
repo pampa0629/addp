@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/selection"
 	commonmodels "github.com/addp/common/models"
@@ -127,6 +128,9 @@ func (s *QueryServiceService) RebindMetricSource(ctx context.Context, id, tenant
 	if current.Version != req.Version {
 		return nil, commonapi.ErrConflict
 	}
+	if choices, err := current.ProtectionChoices(); err != nil || len(choices) > 0 {
+		return nil, dataprotection.ErrRoleOptionUnavailable
+	}
 	compiled := &models.CreateQueryServiceRequest{ConfigType: "analytical", MetricSource: req.MetricSource}
 	binding, err := s.resolveMetricSource(ctx, compiled, tenantID)
 	if err != nil {
@@ -136,6 +140,9 @@ func (s *QueryServiceService) RebindMetricSource(ctx context.Context, id, tenant
 	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 	config := models.JSONB{models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)}
 	item, err := s.repo.UpdateVersioned(ctx, id, tenantID, req.Version, func(item *models.QueryService) error {
+		if choices, err := item.ProtectionChoices(); err != nil || len(choices) > 0 {
+			return dataprotection.ErrRoleOptionUnavailable
+		}
 		item.ConfigType = "analytical"
 		item.EngineID = nil
 		item.RuntimeEngineID = nil

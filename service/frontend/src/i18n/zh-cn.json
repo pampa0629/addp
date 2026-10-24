@@ -403,7 +403,9 @@
       "executionQueryNoParameters": "无绑定参数",
       "executionQueryParameter": "绑定参数",
       "executionQueryType": "类型",
-      "executionQueryValue": "值（规范文本）"
+      "executionQueryValue": "值（规范文本）",
+      "maskingUnsupported": "角色专用脱敏方式当前仅支持原生单表查询服务。其他来源继续采用默认保护；已有选择请主动移除。",
+      "maskingLoadFailed": "读取字段脱敏方式失败"
     },
     "published": {
       "recentVisitTitle": "数据服务",

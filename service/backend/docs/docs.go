@@ -176,6 +176,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "脱敏选择已变更或不适用 | Masking selection changed or unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1257,6 +1266,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "脱敏选择已变更或不适用 | Masking selection changed or unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1340,6 +1358,15 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "脱敏选择已变更或不适用 | Masking selection changed or unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1879,6 +1906,24 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "403": {
+                        "description": "角色资格或数据保护拒绝 | Role eligibility or data protection refusal",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "脱敏选择已变更或不适用 | Masking selection changed or unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1982,6 +2027,89 @@ const docTemplate = `{
                 ]
             }
         },
+        "/query-protection-options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前第一方登录用户及精确 DataItem 来源，沿 Service 保护投影核验 | Verify the current first-party User and exact DataItem against the Service protection projection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "查询字段脱敏可选方式 | List selectable field masking methods",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "来源 DataItem locator | Source DataItem locator",
+                        "name": "target_locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryProtectionOptionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
+            }
+        },
         "/query/{id}": {
             "get": {
                 "security": [
@@ -2033,6 +2161,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅提交版本和停用状态时保留失效脱敏选择并允许停用，重新启用或任何其他配置更新仍核验当前角色方式 | A version and inactive-status-only update preserves invalid masking choices and permits deactivation; reactivation and all other configuration updates verify current role methods",
                 "consumes": [
                     "application/json"
                 ],
@@ -2077,6 +2206,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "角色资格或数据保护拒绝 | Role eligibility or data protection refusal",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -2087,7 +2225,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
+                        "description": "资源版本冲突或脱敏选择已变更 | Resource version conflict or changed masking selection",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2326,6 +2464,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "角色资格或数据保护拒绝 | Role eligibility or data protection refusal",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -2412,6 +2559,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "角色资格或数据保护拒绝 | Role eligibility or data protection refusal",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "404": {
                         "description": "服务不存在 | Service not found",
                         "schema": {
@@ -2422,7 +2578,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
+                        "description": "资源版本冲突或脱敏选择已变更 | Resource version conflict or changed masking selection",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3901,6 +4057,60 @@ const docTemplate = `{
                 }
             }
         },
+        "dataprotection.FieldRoleOptions": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component_key": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleOptionCandidate"
+                    }
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
+        "dataprotection.ResourceReference": {
+            "type": "object",
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "resource_identity": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.RoleOptionCandidate": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "datatype.CRSDefinition": {
             "type": "object",
             "properties": {
@@ -4847,7 +5057,7 @@ const docTemplate = `{
                     ]
                 },
                 "data_config": {
-                    "description": "数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。",
+                    "description": "数据配置。table 模式必须提供带 item_id 的 locator；原生单表可保存 protection_choices 字段身份引用。",
                     "type": "object",
                     "additionalProperties": true
                 },
@@ -5477,6 +5687,17 @@ const docTemplate = `{
                 },
                 "next_cursor": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryProtectionOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.FieldRoleOptions"
+                    }
                 }
             }
         },

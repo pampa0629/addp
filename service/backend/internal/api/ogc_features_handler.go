@@ -215,6 +215,7 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection | GeoJSON FeatureCollection"
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string "脱敏选择已变更或不适用 | Masking selection changed or unavailable"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string
@@ -269,7 +270,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 		request.Filter = &models.QueryFilter{Field: service.GetGeometryColumn(), Op: "bbox_intersects", Value: bbox}
 	}
 
-	result, err := h.executorSvc.ExecuteOGCQuery(c.Request.Context(), service, &request)
+	result, err := h.executorSvc.ExecuteOGCQuery(queryProtectionContext(c), service, &request)
 	if err != nil {
 		log.Printf("[OGCFeatures] Query execution failed: %v", err)
 		writeQueryExecutionError(c, err)
@@ -328,6 +329,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "GeoJSON Feature | GeoJSON Feature"
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string "脱敏选择已变更或不适用 | Masking selection changed or unavailable"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string
@@ -370,7 +372,7 @@ func (h *OGCFeaturesHandler) GetItem(c *gin.Context) {
 		Select: table.FieldNames(), Filter: filter, Format: "geojson",
 		Page: models.QueryPageRequest{Limit: 1},
 	}
-	result, err := h.executorSvc.ExecuteOGCQuery(c.Request.Context(), service, &request)
+	result, err := h.executorSvc.ExecuteOGCQuery(queryProtectionContext(c), service, &request)
 	if err != nil {
 		log.Printf("[OGCFeatures] Query execution failed: %v", err)
 		writeQueryExecutionError(c, err)

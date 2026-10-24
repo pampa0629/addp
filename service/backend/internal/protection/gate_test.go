@@ -79,7 +79,7 @@ func TestGateMasksManagedMongoQueryForServiceExecute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protect, end, err := NewGate(store).BeginPreparedQuery(t.Context(), 7, enginePlugin, prepared)
+	protect, end, err := NewGate(store).BeginPreparedQuery(t.Context(), 7, enginePlugin, prepared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestGateAllowsUnmanagedPostgresQueryWithoutOutputLineage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protect, end, err := NewGate(store).BeginPreparedQuery(t.Context(), 7, enginePlugin, prepared)
+	protect, end, err := NewGate(store).BeginPreparedQuery(t.Context(), 7, enginePlugin, prepared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := NewGate(store)
-	protect, end, err := gate.BeginPreparedQuery(t.Context(), 7, provider, prepared)
+	protect, end, err := gate.BeginPreparedQuery(t.Context(), 7, provider, prepared, nil)
 	if !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, ErrRequired) || protect != nil || end != nil || executions != 0 || gate.HasActiveExecutionsForTenant(7) {
 		t.Fatalf("expired query admission: error=%v, protector=%t, end=%t, executions=%d, active=%t", err, protect != nil, end != nil, executions, gate.HasActiveExecutionsForTenant(7))
 	}

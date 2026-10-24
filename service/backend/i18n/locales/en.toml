@@ -105,3 +105,13 @@ other = "Unable to compile the query. Check the metric revision, dependencies an
 
 [service.err.data_protection_required]
 other = "The query was blocked because data protection requirements could not be verified. Ask a security administrator to check protection rules, validity and synchronization; retry with supported direct fields or column aliases."
+
+
+[service.protection.choice_invalid]
+other = "The selected masking method changed, expired, or does not apply to this source. Refresh and select a method, or explicitly remove the selection to use default protection."
+
+[service.protection.roles_unavailable]
+other = "The current signed-in user is not eligible for the selected masking method, or eligibility could not be verified. Check the current roles and sign-in status. This does not indicate missing source-data read access. Anonymous, application, and delegated credentials cannot use role-specific methods."
+
+[service.protection.options_unavailable]
+other = "Field masking methods are temporarily unavailable. Please try again later."

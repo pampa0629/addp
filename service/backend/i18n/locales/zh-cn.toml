@@ -105,3 +105,13 @@ other = "无法生成执行查询，请检查指标修订、依赖和引擎状�
 
 [service.err.data_protection_required]
 other = "数据保护要求未满足，本次查询已被阻止。请联系安全管理员核对保护规则、有效期和同步状态；使用受支持的直接字段或字段别名后重试。"
+
+
+[service.protection.choice_invalid]
+other = "所选脱敏方式已变更、失效或不适用于当前来源。请刷新方式并重新选择，或主动移除选择以使用默认保护。"
+
+[service.protection.roles_unavailable]
+other = "无法确认当前登录账号有资格使用所选脱敏方式。请确认账号角色与登录状态；此提示不表示源数据读取权限不足。匿名、应用凭据或委托不能使用角色专用方式。"
+
+[service.protection.options_unavailable]
+other = "暂时无法读取字段脱敏方式，请稍后重试。"

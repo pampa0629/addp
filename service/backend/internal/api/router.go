@@ -140,6 +140,7 @@ func SetupRouter(
 		}
 
 		// 查询服务管理 API
+		api.GET("/query-protection-options", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.QueryProtectionOptions)
 		queryAPI := api.Group("/query")
 		{
 			queryAPI.POST("", permission(serviceauthorization.PermissionServiceDefinitionCreate), queryServiceHandler.CreateService)

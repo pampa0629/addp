@@ -44,6 +44,7 @@
 - `sql`：普通 SQL 使用 `engine_id`，联邦 SQL 使用 `runtime_engine_id`；两者显式互斥，不根据 SQL 文本或空 Engine ID 猜测。联邦发布冻结实际引用的 Source Engine ID 和对象表映射。
 - `analytical`：冻结 Model 指标实现修订、dependency hash 和数据库无关计划包。顶层 Engine、SQL、表来源和 `named_parameters` 不与该来源并存；参数、输出及稳定键从冻结包投影，不保存第二份可编辑契约。
 - `data_config.source_snapshot` 保存发布时的来源、表结构、空间信息、输出契约及依赖事实。数据源变化需要显式检查或刷新发布快照，不承诺 Meta 一更新就自动覆盖服务定义。
+- `data_config.protection_choices` 保存原生单表字段的角色脱敏选项身份与修订，不保存角色事实、算法参数或凭据。省略或空数组均采用默认保护；显式 null、未知字段及重复选择拒绝。保存与调用按当前登录用户复核，已有服务更新权限的用户可仅提交版本与 `status=inactive` 直接停用，保留原选择，不依赖角色方式仍有效；重新启用、携带其他配置的更新及实际调用仍严格核验，不自动清除选择或恢复默认。移除选择须显式保存；选择参与消费版本，空选择不改变原默认契约。其他来源尚不接受非空角色选择。
 - 几何字段由冻结空间契约选定，不固定叫 `geom`；混合几何类型与未知 CRS 继续按已识别事实表达，不能为发布方便猜测坐标系。
 
 `keywords` 保留服务发现所需的关键词。显示标题与描述可以帮助识别服务，但不替代稳定 `id` 或程序标识 `service_name`。名称唯一索引当前声明在 `service_name`；应用查重的 Tenant 范围与数据库约束不能混为一谈。
@@ -65,6 +66,7 @@
 | POST | `/api/v1/service/query` | 创建查询服务。 |
 | GET | `/api/v1/service/query` | 管理列表。 |
 | GET | `/api/v1/service/query/:id` | 管理详情。 |
+| GET | `/api/v1/service/query-protection-options` | 当前登录用户针对显式 DataItem locator 的字段可选脱敏方式。 |
 | PUT | `/api/v1/service/query/:id` | 更新当前定义。 |
 | DELETE | `/api/v1/service/query/:id` | 删除定义。 |
 | POST | `/api/query/:serviceName/query` | 数据查询；公开/私有、发布版本及保护检查由消费路径执行。 |

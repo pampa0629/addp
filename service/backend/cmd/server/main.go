@@ -113,6 +113,7 @@ func main() {
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, systemClient, metaClient, cfg.GatewayURL)
 	queryExecutorService := serviceInternal.NewQueryExecutorService(systemClient, systemServiceClient, cfg.EncryptionKey)
 	queryExecutorService.SetProtectionGate(protectionGate)
+	queryServiceService.SetRoleProtection(queryExecutorService)
 	modelClient := commonClient.NewModelClient(cfg.ModelServiceURL, tokenSource, nil)
 	queryServiceService.SetModelClient(modelClient)
 	queryExecutorService.SetModelClient(modelClient)

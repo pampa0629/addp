@@ -49,6 +49,8 @@ func NewQueryServiceHandler(s *svc.QueryServiceService, executorSvc *svc.QueryEx
 // @Produce json
 // @Param request body models.CreateQueryServiceRequest true "创建请求 | Create request"
 // @Success 201 {object} models.QueryServiceDTO
+// @Failure 403 {object} map[string]string "角色资格或数据保护拒绝 | Role eligibility or data protection refusal"
+// @Failure 409 {object} map[string]string "脱敏选择已变更或不适用 | Masking selection changed or unavailable"
 // @Failure 400 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.create"]
@@ -71,8 +73,11 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.CreateService(c.Request.Context(), &req, tenantID, userID)
+	result, err := h.svc.CreateService(queryProtectionContext(c), &req, tenantID, userID)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		// 区分不同的错误类型
 		if errors.Is(err, svc.ErrInvalidParameterOptions) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidParameterOptions)})
@@ -216,14 +221,16 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 
 // UpdateService 更新服务
 // @Summary 更新查询服务 | Update query service
+// @Description 仅提交版本和停用状态时保留失效脱敏选择并允许停用，重新启用或任何其他配置更新仍核验当前角色方式 | A version and inactive-status-only update preserves invalid masking choices and permits deactivation; reactivation and all other configuration updates verify current role methods
 // @Tags QueryService
 // @Accept json
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
 // @Param request body models.UpdateQueryServiceRequest true "更新请求 | Update request"
 // @Success 200 {object} models.QueryServiceDTO
+// @Failure 403 {object} map[string]string "角色资格或数据保护拒绝 | Role eligibility or data protection refusal"
 // @Failure 400 {object} map[string]string
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 409 {object} map[string]string "资源版本冲突或脱敏选择已变更 | Resource version conflict or changed masking selection"
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
@@ -243,8 +250,11 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.UpdateService(c.Request.Context(), uint(id), tenantIDValue(c), &req)
+	result, err := h.svc.UpdateService(queryProtectionContext(c), uint(id), tenantIDValue(c), &req)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		if writeQueryVersionConflict(c, err) {
 			return
 		}
@@ -343,8 +353,9 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 // @Param id path int true "服务ID | Service ID"
 // @Param request body models.QueryServiceVersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} models.QueryServiceDTO "刷新后的查询服务 | Refreshed query service"
+// @Failure 403 {object} map[string]string "角色资格或数据保护拒绝 | Role eligibility or data protection refusal"
 // @Failure 400 {object} map[string]string "请求错误 | Bad request"
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Failure 409 {object} map[string]string "资源版本冲突或脱敏选择已变更 | Resource version conflict or changed masking selection"
 // @Failure 404 {object} map[string]string "服务不存在 | Service not found"
 // @Failure 500 {object} map[string]string "刷新失败 | Refresh failed"
 // @x-addp-auth-mode "permission"
@@ -362,8 +373,11 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_query_request"})
 		return
 	}
-	result, err := h.svc.RefreshSourceSnapshot(c.Request.Context(), uint(id), tenantIDValue(c), req.Version)
+	result, err := h.svc.RefreshSourceSnapshot(queryProtectionContext(c), uint(id), tenantIDValue(c), req.Version)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		if writeQueryVersionConflict(c, err) {
 			return
 		}
@@ -389,6 +403,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @Param X-ADDP-Query-Intent header string false "查询用途 | Query intent" Enums(query,export) default(query)
 // @Param request body models.QueryExecutionRequest true "结构化查询请求 | Structured query request"
 // @Success 200 {object} models.QueryExecutionResult
+// @Failure 409 {object} map[string]string "脱敏选择已变更或不适用 | Masking selection changed or unavailable"
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
@@ -507,7 +522,7 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 		return
 	}
 
-	result, err := h.executorSvc.ExecuteQuery(c.Request.Context(), service, &request)
+	result, err := h.executorSvc.ExecuteQuery(queryProtectionContext(c), service, &request)
 	if err != nil {
 		log.Printf("[QueryService] Query execution failed: %v", err)
 		auditState.errorCode = queryExecutionErrorCode(err)
@@ -553,8 +568,7 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 }
 
 func writeQueryExecutionError(c *gin.Context, err error) {
-	if queryExecutionErrorCode(err) == "data_protection_required" {
-		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, servicei18n.MsgDataProtectionRequired), "error_code": "data_protection_required"})
+	if writeQueryProtectionError(c, err) {
 		return
 	}
 	if errors.Is(err, svc.ErrInvalidParameterOptions) {
@@ -576,6 +590,12 @@ func queryExecutionErrorCode(err error) string {
 	if plugin.QueryErrorCodeOf(err) != "" || errors.As(err, &state) {
 		return "query_execution_failed"
 	}
+	if errors.Is(err, dataprotection.ErrRoleOptionIneligible) {
+		return "query_protection_roles_unavailable"
+	}
+	if errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+		return "query_protection_choice_invalid"
+	}
 	if errors.Is(err, protection.ErrRequired) || errors.Is(err, dataprotection.ErrDenied) {
 		return "data_protection_required"
 	}
@@ -594,6 +614,7 @@ func queryExecutionErrorCode(err error) string {
 // @Param id path int true "服务 ID | Service ID"
 // @Param request body models.RebindMetricSourceRequest true "指标绑定与当前定义并发版本 | Metric binding and current definition concurrency version"
 // @Success 200 {object} models.QueryServiceDTO
+// @Failure 403 {object} map[string]string "角色资格或数据保护拒绝 | Role eligibility or data protection refusal"
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
@@ -609,8 +630,11 @@ func (h *QueryServiceHandler) RebindMetricSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_metric_publication"})
 		return
 	}
-	result, err := h.svc.RebindMetricSource(c.Request.Context(), uint(id), tenantIDValue(c), &req)
+	result, err := h.svc.RebindMetricSource(queryProtectionContext(c), uint(id), tenantIDValue(c), &req)
 	if err != nil {
+		if writeQueryProtectionError(c, err) {
+			return
+		}
 		status, key, code := http.StatusInternalServerError, servicei18n.MsgMetricPublicationFailed, "metric_publication_failed"
 		if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidConsumerContract) {
 			status, key, code = http.StatusBadRequest, servicei18n.MsgInvalidStructuredQuery, "invalid_metric_publication"

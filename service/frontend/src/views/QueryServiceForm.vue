@@ -414,6 +414,16 @@
           </el-form-item>
         </el-card>
       </el-form>
+      <el-card v-if="maskingSupported || form.protection_choices.length" :header="t('fieldMaskingChoices.title')" style="margin-bottom: 20px">
+        <FieldMaskingChoices
+          v-model="form.protection_choices"
+          :fields="maskingFields"
+          :loading="maskingLoading"
+          :error="maskingError || (!maskingSupported ? t('service.query.maskingUnsupported') : '')"
+          :disabled="submitting || loading"
+          @refresh="refreshMaskingOptions"
+        />
+      </el-card>
     </div>
 
     <!-- 操作按钮 -->
@@ -456,6 +466,7 @@ import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
 import {
   ResourceTreePicker,
+  FieldMaskingChoices,
   createLatestRequestCoordinator,
   detectTableMetadata,
   engineSelectionState,
@@ -519,6 +530,7 @@ const createForm = () => ({
   schema_name: '',
   table_name: '',
   locator: '',
+  protection_choices: [],
   sql_query: '',
   service_name: '',
   title: '',
@@ -534,6 +546,36 @@ const form = reactive(createForm())
 const engines = ref([])
 const tableUsesRuntime = ref(false)
 let engineLoadPromise = null
+const maskingFields = ref([])
+const maskingLoading = ref(false)
+const maskingError = ref('')
+let maskingSequence = 0
+const maskingSupported = computed(() => form.config_type === 'table' && !tableUsesRuntime.value && !form.runtime_engine_id)
+const refreshMaskingOptions = async () => {
+  const sequence = ++maskingSequence
+  const version = editorVersion
+  const current = () => sequence === maskingSequence && version === editorVersion
+  maskingFields.value = []
+  maskingError.value = ''
+  if (!maskingSupported.value) { maskingError.value = t('service.query.maskingUnsupported'); return }
+  if (!form.locator) { maskingError.value = t('fieldMaskingChoices.sourceRequired'); return }
+  maskingLoading.value = true
+  try {
+    const response = await queryServiceAPI.getProtectionOptions(form.locator)
+    if (current()) maskingFields.value = response.fields
+  } catch (error) {
+    if (current()) maskingError.value = error.response?.data?.error || t('service.query.maskingLoadFailed')
+  } finally {
+    if (current()) maskingLoading.value = false
+  }
+}
+watch(() => [form.locator, form.config_type, form.engine_id, form.runtime_engine_id], () => {
+  ++maskingSequence
+  maskingFields.value = []
+  maskingError.value = ''
+  maskingLoading.value = false
+})
+
 
 // Meta resource-tree API 基础 URL。资源选择使用 locator 主身份，业务层按需检测空间能力。
 const metaApiBaseUrl = computed(() => {
@@ -1024,7 +1066,7 @@ const handleSubmit = async () => {
       requestData.table_name = form.table_name
 
       // 构建 data_config
-      const dataConfig = {}
+      const dataConfig = { protection_choices: JSON.parse(JSON.stringify(form.protection_choices)) }
 	  if (!isEdit.value && form.locator) {
         dataConfig.locator = form.locator
       }
@@ -1052,7 +1094,7 @@ const handleSubmit = async () => {
 		  description: String(parameter.description || '').trim(),
 		  ...(!parameter.required ? { default: normalizeSQLNamedParameterValue(parameter) } : {})
 		}))
-		const dataConfig = {}
+		const dataConfig = { protection_choices: JSON.parse(JSON.stringify(form.protection_choices)) }
 		dataConfig.default_fields = parseFieldInput(defaultFieldsInput.value)
 		dataConfig.filterable_fields = parseFieldInput(filterableFieldsInput.value)
 
@@ -1157,6 +1199,7 @@ watch(() => `${route.name}:${route.params.id || ''}`, async () => {
       form.schema_name = service.schema_name || ''
       form.table_name = service.table_name || ''
       form.locator = service.data_config?.locator || ''
+      form.protection_choices = JSON.parse(JSON.stringify(service.data_config?.protection_choices || []))
       form.sql_query = service.sql_query || ''
 	  sqlNamedParameters.value = (service.named_parameters || []).map(parameter => ({
 		name: parameter.name,
@@ -1212,6 +1255,7 @@ watch(() => `${route.name}:${route.params.id || ''}`, async () => {
 }, { immediate: true })
 
 onBeforeUnmount(() => {
+  ++maskingSequence
   editorVersion++
   sampleRequests.invalidate()
   outputContractRequests.invalidate()

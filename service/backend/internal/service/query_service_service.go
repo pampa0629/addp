@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
@@ -20,11 +21,12 @@ import (
 )
 
 type QueryServiceService struct {
-	modelClient  *client.ModelClient
-	repo         *repository.QueryServiceRepository
-	systemClient *client.SystemClient
-	metaClient   *client.MetaClient
-	baseURL      string // 服务的基础URL（用于构建端点）
+	roleProtection *QueryExecutorService
+	modelClient    *client.ModelClient
+	repo           *repository.QueryServiceRepository
+	systemClient   *client.SystemClient
+	metaClient     *client.MetaClient
+	baseURL        string // 服务的基础URL（用于构建端点）
 }
 
 type tableResourceRef struct {
@@ -42,6 +44,10 @@ func NewQueryServiceService(repo *repository.QueryServiceRepository, systemClien
 		metaClient:   metaClient,
 		baseURL:      baseURL,
 	}
+}
+
+func (s *QueryServiceService) SetRoleProtection(executor *QueryExecutorService) {
+	s.roleProtection = executor
 }
 
 func (s *QueryServiceService) SetModelClient(c *client.ModelClient) { s.modelClient = c }
@@ -223,6 +229,10 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		if err := ValidateQueryConsumerContract(service); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := s.validateProtectionChoices(ctx, service); err != nil {
+		return nil, err
 	}
 
 	// 10. 保存到数据库
@@ -499,6 +509,12 @@ func queryServiceUserDataConfig(input map[string]interface{}, configType string)
 	result := models.JSONB{}
 	for key, value := range input {
 		switch key {
+		case models.QueryProtectionChoicesKey:
+			choices, err := dataprotection.DecodeFieldRoleChoices(value)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = choices
 		case "default_fields", "filterable_fields":
 			result[key] = value
 		case "locator":
@@ -528,6 +544,12 @@ func queryServiceMutableDataConfig(input map[string]interface{}, configType stri
 	result := models.JSONB{}
 	for key, value := range input {
 		switch key {
+		case models.QueryProtectionChoicesKey:
+			choices, err := dataprotection.DecodeFieldRoleChoices(value)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = choices
 		case "default_fields", "filterable_fields":
 			result[key] = value
 		case "locator", "stable_key", models.QueryServiceSourceSnapshotKey, "geometry", "object_table":
@@ -746,6 +768,15 @@ func (s *QueryServiceService) ListServices(tenantID uint, offset int, limit int,
 	return dtos, total, nil
 }
 
+// onlyDeactivatesQueryService permits stopping a service without consuming its saved choices.
+// Any accompanying business change must still qualify under the current protection policy.
+func onlyDeactivatesQueryService(req *models.UpdateQueryServiceRequest) bool {
+	return req != nil && req.Status != nil && *req.Status == "inactive" &&
+		req.Title == nil && req.Description == nil && req.Keywords == nil &&
+		req.DataConfig == nil && req.Protocols == nil &&
+		req.PublicAccess == nil && req.MaxFeatures == nil
+}
+
 // UpdateService 更新服务
 func (s *QueryServiceService) UpdateService(ctx context.Context, id, tenantID uint, req *models.UpdateQueryServiceRequest) (*models.QueryServiceDTO, error) {
 	if req == nil || req.Version <= 0 || tenantID == 0 {
@@ -795,6 +826,11 @@ func (s *QueryServiceService) UpdateService(ctx context.Context, id, tenantID ui
 		}
 		if req.Status != nil {
 			item.Status = *req.Status
+		}
+		if !onlyDeactivatesQueryService(req) {
+			if err := s.validateProtectionChoices(ctx, item); err != nil {
+				return err
+			}
 		}
 		if item.Status == "active" && item.IsRESTAPIEnabled() {
 			if err := ValidateQueryConsumerContract(item); err != nil {
@@ -879,6 +915,9 @@ func (s *QueryServiceService) RefreshSourceSnapshot(ctx context.Context, id, ten
 		item.DataConfig = dataConfig
 		if protocols, ok := updates["protocols"].(models.JSONB); ok {
 			item.Protocols = protocols
+		}
+		if err := s.validateProtectionChoices(ctx, item); err != nil {
+			return err
 		}
 		if item.Status == "active" && item.IsRESTAPIEnabled() {
 			return ValidateQueryConsumerContract(item)

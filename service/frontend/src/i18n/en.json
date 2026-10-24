@@ -403,7 +403,9 @@
       "executionQueryNoParameters": "No bound parameters",
       "executionQueryParameter": "Bound parameter",
       "executionQueryType": "Type",
-      "executionQueryValue": "Value (canonical text)"
+      "executionQueryValue": "Value (canonical text)",
+      "maskingUnsupported": "Role-specific masking currently supports native single-table query services. Other sources retain default protection; explicitly remove any saved selection.",
+      "maskingLoadFailed": "Failed to load field masking methods"
     },
     "published": {
       "recentVisitTitle": "Data Service",
