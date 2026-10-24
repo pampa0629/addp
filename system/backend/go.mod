@@ -28,6 +28,8 @@ require (
 	gorm.io/gorm v1.31.2
 )
 
+require github.com/linkedin/goavro/v2 v2.15.0 // indirect
+
 replace github.com/addp/common => ../../common
 
 replace github.com/ory/fosite v0.50.0-addp.4 => github.com/pampa0629/fosite v0.50.0-addp.4

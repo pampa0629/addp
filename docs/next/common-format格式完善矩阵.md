@@ -7,6 +7,16 @@
 1. SGM 的静态几何、基础 RGB/alpha 贴图、同目录/Textures 精确解析已进入正式规范，并有本地真实样例和隔离技术验收；仍缺合法 SDK/许可环境中的正式 Linux Runner T4。私有厂商样例不上传公开 Hosted，不能用普通格式 suite 或单样例成功覆盖全部材质/版本。
 2. 正常彩色 FBX 基础预览已有本地真实页面证据；固定盒子源声明 IndexToDirect 却缺颜色索引，仍不作为基础预览成功。已有 GLB 快显不等于基础解析缺陷已修复。Three.js 升级仍需 CAD/Giro3D 等消费者共同满足版本约束，不能强行 override、私有 FBXLoader 或第二份 Three.js。
 
+2026-10-24 用户要求 MrSID 与 ECW 暂缓，不联系厂商。非商业 SDK 路线优先按以下缺口推进；识别、读取、转换快显和目标格式导出必须分别验收：
+
+| 优先范围 | 当前缺口与推进边界 |
+| --- | --- |
+| 通用表格读取 | Avro 已从 descriptor 补为单文件 OCF 读取，复杂 schema、writer 与正式运行验收仍缺；ORC 仍只有 descriptor，后续补实际表格接口 |
+| 清单 Excel 206 / B205 二维矢量导出 | KML 已有图层读取，尚无 writer；优先评估现有 GDAL KML 的简单要素写出、坐标与字段保真，不将读取成功登记为导出完成 |
+| 清单 Excel 207 / B206 栅格导出 | IMG 的 HFA 读取和 COG 快显已有限定验收，IMG、PNG/JPG 的目标编码／保存链仍缺；需先明确原生波段、NoData、mask、定位及旁文件交付契约，再扩展既有持久化路径 |
+| 清单 GRD / VCT / UDB | 未形成统一导出能力；GRD 后缀对应多种编码，须先明确要求的变体。VCT/UDB 先核官方格式和现有引擎能力，不据后缀宣称可用开源路线 |
+| 其他扩展 | KMZ 尚无内置格式插件；SVG/AVIF/HEIC 的 descriptor 不代表完整媒体解析。当前不以这些扩展代替上述清单内缺口 |
+
 静态轨迹及设备/时间范围读取已完成 CSV、records JSON、Point GeoJSON 三源 Hosted 与本地真实样例，不再列为待实现；每个所选范围仍受 2000 点限制，不自动包含轨迹回放。XLSX、3DS/DAE、SGM 等成功只覆盖各自报告范围；已解决的 Assimp 文件存在性缺陷、SGM 秋树丢图/alpha 不继续当当前故障。
 
 ## 已有格式的后续覆盖
@@ -28,7 +38,8 @@
 
 ## 后续能力准入
 
-- ORC、Avro：现有 descriptor 只证明身份；table info/sample/reader/writer 与真实一致性未实现前不开放读取。
+- Avro：单文件 OCF 的普通标量／可空字段已补元信息、分页样本及连续读取，沿用共享格式接口；支持 null/deflate/snappy 并限制头部和块预算。复杂结构、逻辑类型、whole 合并、writer、真实存储及 Hosted 仍待补，不能将 Common T1 等同运行验收。
+- ORC：现有 descriptor 只证明身份；table info/sample/reader/writer 与真实一致性未实现前不开放读取。
 - SVG/AVIF/HEIC：明确安全渲染、解码依赖、MediaInfoProvider 和真实端到端边界。
 - Video/Audio：固定 type_info.media 元信息与受控内容通道；URL 可播放不等于后端解析全部容器。
 - 三维、点云及高斯扩展见[专门待办](三维与点云后续路线.md)，不复制另一份格式矩阵。

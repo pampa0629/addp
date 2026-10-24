@@ -19,11 +19,13 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/godoes/gorm-oracle v1.6.20
 	github.com/gogama/flatgeobuf v1.0.1
+	github.com/golang/snappy v1.0.0
 	github.com/google/flatbuffers v25.12.19+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/lib/pq v1.10.9
+	github.com/linkedin/goavro/v2 v2.15.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
@@ -112,7 +114,6 @@ require (
 	github.com/go-zookeeper/zk v1.0.4 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/golang/snappy v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

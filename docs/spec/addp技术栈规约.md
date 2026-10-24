@@ -80,6 +80,7 @@
 #### Excel 与文档处理
 
 - **Excel**: `github.com/xuri/excelize/v2@v2.10.0`
+- **Avro 二进制 codec**: `github.com/linkedin/goavro/v2@v2.15.0`（Apache-2.0，纯 Go）；OCF 边界、解压预算和表格语义由 Common Avro 插件持有，不使用 codec 的无界 OCF 解压入口。
 
 #### 工具库
 

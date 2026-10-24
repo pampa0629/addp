@@ -67,7 +67,7 @@ func TestUnknownFormatSnapshotRegistersBinaryReader(t *testing.T) {
 }
 
 func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
-	for _, formatType := range []format.FormatType{format.FormatAvro, format.FormatORC} {
+	for _, formatType := range []format.FormatType{format.FormatORC} {
 		t.Run(string(formatType), func(t *testing.T) {
 			snapshot, ok := format.GetFormatCapabilitySnapshot(formatType)
 			if !ok {
@@ -84,6 +84,19 @@ func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
 				t.Fatalf("%s should expose missing table providers until implemented: %#v", formatType, snapshot.Implementations)
 			}
 		})
+	}
+}
+
+func TestAvroExposesSingleFileReadersOnly(t *testing.T) {
+	snapshot, ok := format.GetFormatCapabilitySnapshot(format.FormatAvro)
+	if !ok || !snapshot.Implementations.TableInfoProvider || !snapshot.Implementations.TableSampleReader || !snapshot.Implementations.TableReaderProvider {
+		t.Fatalf("Avro single-file readers missing: %#v", snapshot)
+	}
+	if snapshot.Implementations.TableWriterProvider || snapshot.Implementations.ScopeTableReader {
+		t.Fatalf("Avro must not advertise unimplemented writer/scope reader: %#v", snapshot.Implementations)
+	}
+	if got := format.DetectFormat("unknown.bin", []byte{'O', 'b', 'j', 1}); got != format.FormatAvro {
+		t.Fatalf("OCF signature detected as %q", got)
 	}
 }
 

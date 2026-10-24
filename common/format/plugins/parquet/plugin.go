@@ -563,6 +563,10 @@ func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit 
 
 func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
 	decimalFields := make(map[string]*parquetfmt.DecimalType)
+	binaryFields := make(map[string]bool)
+	for _, field := range rows.Schema().Fields() {
+		binaryFields[field.Name()] = mapParquetType(field) == datatype.FieldTypeBytes
+	}
 	for _, name := range fieldNames {
 		if leaf, ok := rows.Schema().Lookup(name); ok && leaf.Node.Type() != nil {
 			if logical := leaf.Node.Type().LogicalType(); logical != nil && logical.Decimal != nil {
@@ -591,7 +595,7 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, g
 				for j, val := range parquetRow {
 					if j < len(fieldNames) {
 						name := fieldNames[j]
-						value, err := valueToInterface(val, decimalFields[name], geometryFields[name], geometrySRIDs[name], geometryEncoding)
+						value, err := valueToInterface(val, decimalFields[name], geometryFields[name], geometrySRIDs[name], geometryEncoding, binaryFields[name])
 						if err != nil {
 							return fmt.Errorf("decode parquet field %q: %w", name, err)
 						}
@@ -1713,7 +1717,7 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型
-func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geometry bool, srid int, geometryEncoding format.GeometryEncoding) (interface{}, error) {
+func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geometry bool, srid int, geometryEncoding format.GeometryEncoding, binary bool) (interface{}, error) {
 	if v.IsNull() {
 		return nil, nil
 	}
@@ -1733,6 +1737,9 @@ func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geomet
 	}
 	if decimal != nil {
 		return decimalValueString(v, decimal)
+	}
+	if binary {
+		return append([]byte{}, v.ByteArray()...), nil
 	}
 	switch v.Kind() {
 	case parquetgo.Boolean:
@@ -1860,6 +1867,9 @@ func mapParquetType(f parquetgo.Field) datatype.FieldType {
 
 	// 先检查逻辑类型
 	lt := f.Type().LogicalType()
+	if lt == nil && (f.Type().Kind() == parquetgo.ByteArray || f.Type().Kind() == parquetgo.FixedLenByteArray) {
+		return datatype.FieldTypeBytes
+	}
 	if lt != nil {
 		switch {
 		case lt.Integer != nil && lt.Integer.IsSigned:
