@@ -62,6 +62,8 @@ COLLECTION_SCHEDULED_CHECKS = ['meta_collection_scheduled_unapproved_denied', 'm
                              'meta_collection_scheduled_revoked_denied', 'meta_collection_scheduled_source_rules_unchanged']
 COLLECTION_INFLIGHT_CHECKS = ['meta_collection_inflight_revoke_stops_next_catalog',
                              'meta_collection_inflight_retry_has_no_source_io', 'meta_collection_inflight_fixture_cleanup']
+COLLECTION_INFLIGHT_EXPIRY_CHECKS = ['meta_collection_inflight_expiry_stops_next_catalog',
+    'meta_collection_inflight_expired_replay_has_no_source_io', 'meta_collection_inflight_expiry_fixture_cleanup']
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
@@ -1370,16 +1372,24 @@ class MetaCollectionScenario:
         report['checks'].append(COLLECTION_SCHEDULED_CHECKS[3])
 
     def run_inflight(self, report):
-        report['phase'] = 'meta_collection_inflight_revocation'
-        evidence = report['meta_collection']['inflight'] = {'executions': {}}
+        self._run_inflight(report, natural_expiry=False)
+
+    def run_inflight_expiry(self, report):
+        self._run_inflight(report, natural_expiry=True)
+
+    def _run_inflight(self, report, *, natural_expiry):
+        key = 'inflight_expiry' if natural_expiry else 'inflight'
+        checks = COLLECTION_INFLIGHT_EXPIRY_CHECKS if natural_expiry else COLLECTION_INFLIGHT_CHECKS
+        report['phase'] = 'meta_collection_' + key
+        evidence = report['meta_collection'][key] = {'executions': {}}
         before, credential = self.source_snapshot(), self.life.reader.token
-        task = self.create_task('_inflight')
+        task = self.create_task('_' + key)
         facts = self.facts(task['id'])
         command = str(uuid.uuid4())
         body = {'command_id': command, 'task_id': str(task['id']),
                 'expected_task_definition_digest': facts['task_definition_digest'],
-                'purpose': 'Disposable PG basic in-flight qualification withdrawal',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()}
+                'purpose': 'Disposable PG basic in-flight qualification ' + ('expiry' if natural_expiry else 'withdrawal'),
+                'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=12 if natural_expiry else 300)).isoformat()}
         self.commands[command] = body
         report['meta_collection']['qualification_commands'].append(command)
         evidence.update(task_id=str(task['id']), command_id=command, task_definition_digest=facts['task_definition_digest'])
@@ -1401,35 +1411,60 @@ class MetaCollectionScenario:
                 and running.get('status') == 'running' and running.get('started_at') and not running.get('completed_at'),
                 'source barrier has no exact running Worker execution')
         evidence['running_verified'] = True
-        revoked = self.revoke(command)
-        require(revoked['status'] == 'revoked' and revoked['version'] == '2'
-                and collection_instant(running['started_at']) <= collection_instant(evidence['blocked']['started_at'])
-                <= collection_instant(evidence['blocked']['observed_at']) <= collection_instant(revoked['revoked_at'])
-                and collection_instant(revoked['revoked_at']) < collection_instant(original['expires_at']),
-                'in-flight revocation did not precede release or expired instead')
-        evidence['revoked_at'] = revoked['revoked_at']
+        expiry = collection_instant(original['expires_at'])
+        require(collection_instant(running['started_at']) <= collection_instant(evidence['blocked']['started_at'])
+                <= collection_instant(evidence['blocked']['observed_at']) < expiry,
+                'source enumeration was not admitted before qualification expiry')
+        if natural_expiry:
+            evidence['expires_at'] = original['expires_at']
+            waiting, deadline = time.monotonic(), time.monotonic() + 20
+            while collection_instant(datetime.now(timezone.utc).isoformat()) < expiry:
+                require(time.monotonic() < deadline, 'in-flight natural expiry wait exceeded deadline')
+                time.sleep(.1)
+            # Re-observe the SAME in-flight source after the original deadline;
+            # a local clock or a lock session that timed out is not proof.
+            after = barrier.wait_blocked()
+            require(all(after.get(k) == evidence['blocked'].get(k) for k in ('pid', 'blocker_pid'))
+                    and collection_instant(after['started_at']) == collection_instant(evidence['blocked']['started_at'])
+                    and collection_instant(after['observed_at']) >= expiry,
+                    'original enumeration did not remain blocked across natural expiry')
+            evidence.update(blocked_after_expiry=after, waited_ms=round((time.monotonic() - waiting) * 1000, 3))
+            terminal_history = original
+            require(same_collection_row(self.row(command), original), 'natural expiry changed qualification history')
+        else:
+            terminal_history = self.revoke(command)
+            require(terminal_history['status'] == 'revoked' and terminal_history['version'] == '2'
+                    and collection_instant(evidence['blocked']['observed_at']) <= collection_instant(terminal_history['revoked_at']) < expiry,
+                    'in-flight revocation did not precede release or expired instead')
+            evidence['revoked_at'] = terminal_history['revoked_at']
         barrier.release()
         admitted = report['meta_collection']['scheduled']['executions']['approved_repeat']['items_scanned']
         require(type(admitted) is int and admitted > 0, 'missing prior successful source enumeration count')
         evidence['executions']['inflight'] = self.observe_execution(task['id'], execution, False, attempt, admitted_items=admitted)
         counts = barrier.counts()
-        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during revocation')
+        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during in-flight denial')
         delta = {key: counts['calls'].get(key, 0) - barrier.baseline['calls'].get(key, 0)
                  for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
         require(delta == {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 0},
                 'source opened another Catalog read beyond the admitted enumeration')
         evidence.update(source_call_delta=delta, next_catalog_denied=True, admitted_enumeration_finished=True)
-        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[0])
-        evidence['executions']['revoked_repeat'] = self.trigger(task['id'], False)
-        require(barrier.counts() == counts, 'revoked repeat touched source or altered statistics')
-        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[1])
+        report['checks'].append(checks[0])
+        if natural_expiry:
+            replay = self.life.operator.request('POST', self.route, (201,), body).payload
+            rows = [row for row in self.qualification_rows() if row.get('task_id') == str(task['id'])]
+            require(same_collection_row(replay, original) and len(rows) == 1 and same_collection_row(rows[0], original),
+                    'in-flight expired replay renewed or changed qualification')
+            evidence.update(stored_status=original['status'], version=original['version'], no_revocation=True)
+        evidence['executions']['expired_repeat' if natural_expiry else 'revoked_repeat'] = self.trigger(task['id'], False)
+        require(barrier.counts() == counts, 'denied repeat touched source or altered statistics')
+        report['checks'].append(checks[1])
         barrier.close()
         require(barrier.closed and barrier.released and self.facts(task['id']) == facts
-                and same_collection_row(self.row(command), revoked) and self.life.reader.token == credential
+                and same_collection_row(self.row(command), terminal_history) and self.life.reader.token == credential
                 and self.source_snapshot() == before, 'in-flight cleanup changed source rules, facts or credential')
         evidence.update(source_fixture_cleanup='zero_source_locks_and_schema', source_rules_unchanged=True,
                         same_credential=True, history_unchanged=True)
-        report['checks'].append(COLLECTION_INFLIGHT_CHECKS[2])
+        report['checks'].append(checks[2])
 
     def cleanup(self):
         errors = []
@@ -2744,6 +2779,7 @@ def main():
         lifecycle.collection.run_expiry(report)
         lifecycle.collection.run_scheduled(report)
         lifecycle.collection.run_inflight(report)
+        lifecycle.collection.run_inflight_expiry(report)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

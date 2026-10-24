@@ -2121,8 +2121,8 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.scenario.cleanup()
         self.assertFalse(self.tasks)
 
-    def inflight_fixture(self, fault=None):
-        clock = self.collection_expiry_fixture()
+    def inflight_fixture(self, fault=None, *, natural_expiry=False):
+        clock = self.collection_expiry_fixture(fault)
         self.report['meta_collection'] = {'qualification_commands': [], 'scheduled': {
             'executions': {'approved_repeat': {'items_scanned': 3}}}}
         barrier = SimpleNamespace(baseline={'reset_at': 'stable', 'calls': {}}, closed=False, released=False)
@@ -2133,14 +2133,23 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         def blocked():
             if fault == 'barrier_missing': raise ONLINE.SuiteError('source did not reach lock')
             execution = list(self.runs)[-1]
+            if selected:
+                if fault == 'lost_expiry_barrier': raise ONLINE.SuiteError('lock expired before release')
+                return {'pid': 999 if fault == 'changed_expiry_backend' else 124, 'blocker_pid': 123,
+                        'started_at': self.runs[execution]['started_at'],
+                        'observed_at': (clock.now(timezone.utc) - timedelta(seconds=1 if fault == 'early_source_clock' else 0)).isoformat()}
             selected.append(execution)
             self.runs[execution]['status'] = 'success' if fault == 'not_running' else 'running'
             self.runs[execution].pop('completed_at')
+            if fault == 'admitted_after_expiry': clock.seconds += 13
             return {'pid': 124, 'blocker_pid': 123, 'started_at': clock.now(timezone.utc).isoformat(),
                     'observed_at': clock.now(timezone.utc).isoformat()}
         def release():
-            # Must revoke before opening the source gate, even on failures.
-            self.assertTrue(all(row['status'] == 'revoked' for row in self.qualifications.values()))
+            # A successful expiry scenario never revokes; failures still revoke
+            # any qualification whose original deadline has not passed.
+            self.assertTrue(all(row['status'] == 'revoked' or natural_expiry and
+                datetime.fromisoformat(row['expires_at']) <= clock.now(timezone.utc)
+                for row in self.qualifications.values()))
             if selected and self.runs[selected[0]]['status'] == 'running':
                 row = self.runs[selected[0]]
                 row.update(status='failed', completed_at=clock.now(timezone.utc).isoformat(),
@@ -2167,6 +2176,78 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         barrier.open, barrier.wait_blocked, barrier.release = open_source, blocked, release
         barrier.counts, barrier.close = counts, close
         return barrier
+
+    def test_inflight_expiry_uses_original_deadline_denies_next_catalog_and_preserves_history(self):
+        barrier = self.inflight_fixture(natural_expiry=True)
+        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
+            self.scenario.run_inflight_expiry(self.report)
+        self.assertEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_EXPIRY_CHECKS)
+        evidence = self.report['meta_collection']['inflight_expiry']
+        self.assertTrue(evidence['no_revocation'] and barrier.closed and barrier.released)
+        self.assertEqual(evidence['stored_status'], 'active')
+        self.assertEqual([r['status'] for r in self.runs.values()], ['failed', 'failed'])
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+        self.assertTrue(all(r['status'] == 'active' and r['version'] == '1' for r in self.qualifications.values()))
+        self.assertFalse(any(method == 'DELETE' and '/meta_collection_qualifications/' in path
+                             for _, method, path, _ in self.calls))
+
+    def test_inflight_expiry_rejects_missing_barrier_read_leaks_history_changes_and_wrong_timing(self):
+        for fault in ('source_open', 'barrier_missing', 'not_running', 'general_failure', 'missing_partial',
+                      'too_many_items', 'statistics_reset', 'another_catalog', 'other_sql', 'repeat_source_io',
+                      'lost_expiry_barrier', 'changed_expiry_backend', 'admitted_after_expiry',
+                      'early_source_clock', 'clock_stalled', 'credential_changed', 'expired_allowed', 'expired_replay_renews'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                barrier = self.inflight_fixture(fault, natural_expiry=True)
+                self.fault = fault if fault in {'expired_allowed', 'expired_replay_renews'} else None
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_inflight_expiry(self.report)
+                self.assertNotEqual(self.report['checks'], ONLINE.COLLECTION_INFLIGHT_EXPIRY_CHECKS)
+                if fault == 'expired_replay_renews':
+                    # A corrupt binding must not be blindly revoked or deleted.
+                    with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup'): self.scenario.cleanup()
+                    self.assertTrue(self.tasks)
+                    continue
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(barrier.closed)
+
+    def test_inflight_expiry_cannot_be_replaced_by_manual_revocation(self):
+        barrier = self.inflight_fixture(natural_expiry=True)
+        sleep = ONLINE.time.sleep.side_effect
+        def revoke_while_waiting(seconds):
+            sleep(seconds)
+            row = next(iter(self.qualifications.values()))
+            row.update(status='revoked', version='2', revoked_at=self.expiry_clock.now(timezone.utc).isoformat())
+        ONLINE.time.sleep.side_effect = revoke_while_waiting
+        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
+                ONLINE.SuiteError, 'natural expiry changed qualification history'):
+            self.scenario.run_inflight_expiry(self.report)
+        self.scenario.cleanup()
+        self.assertFalse(self.tasks)
+
+    def test_inflight_expiry_unknown_responses_and_source_cleanup_fail_closed(self):
+        for operation in ('approve', 'trigger', 'replay', 'source_residual'):
+            with self.subTest(operation=operation):
+                self.setUp()
+                barrier = self.inflight_fixture(operation if operation == 'source_residual' else None, natural_expiry=True)
+                if operation == 'replay':
+                    request = self.operator.request.side_effect
+                    def lose_replay(*args, **kwargs):
+                        if args[0] == 'POST' and '/meta_collection_qualifications' in args[1] and self.qualifications:
+                            self.lost = 'approve'
+                        return request(*args, **kwargs)
+                    self.operator.request.side_effect = lose_replay
+                else:
+                    self.lost = operation
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_inflight_expiry(self.report)
+                if operation == 'source_residual':
+                    with self.assertRaisesRegex(ONLINE.SuiteError, 'source fixture cleanup'): self.scenario.cleanup()
+                else:
+                    self.scenario.cleanup()
+                    self.assertFalse(self.tasks)
 
     def test_inflight_revocation_retains_admitted_results_denies_next_catalog_and_cleans_source(self):
         barrier = self.inflight_fixture()
