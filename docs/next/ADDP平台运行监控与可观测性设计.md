@@ -141,11 +141,11 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 
 首批仅考虑 cgroup v2，仅读取当前实例所属边界的固定资源文件，明确容器关联、限制层级／可见范围及采样时间；不向 Web 服务开放 Docker socket，不扫描其他进程或读取环境凭据。共享容器、无法确认容器关联／层级限制、无有限硬上限及不支持的平台不输出归一化利用率；macOS 原生实例仍显示绝对消耗与未设置／不支持的原因。不自动配置额度、不更改现有部署限制、不把整机可见 CPU／内存当作实例独享资源。具体资源身份、字段投影、当前用户裁决与指标公式沿下述已确认接入方式落实，采集与查询只保留一条主路径。
 
-正在落实自身采集基础；未改 IAM 或个人部署，范围确认不代表已具备可核验的容器来源。实施时最小验证范围为 Common 跨平台采样／固定文件解析 T1、System 精确身份／投影契约、Monitor 真 cgroup 与 Prometheus T2、前端单位／缺配额／共享边界拒绝 T3，并按实际受影响 owner 扩散标准门禁、同步 API／Swagger 和现有 CI 路径登记。Linux T2 仅用标准一次性受限设施，不修改个人资源限制；CI 和正式身份 Hosted 继续等专门会话安排，既有 CPU／RSS 验收用途不能自动外推为新增容器读取已获验收。
+实现不改 IAM 或个人部署；有效采样、部署证明与正式身份验收分别判定。实施时最小验证范围为 Common 跨平台采样／固定文件解析 T1、System 精确身份／投影契约、Monitor 真 cgroup 与 Prometheus T2、前端单位／缺配额／共享边界拒绝 T3，并按实际受影响 owner 扩散标准门禁、同步 API／Swagger 和现有 CI 路径登记。Linux T2 仅用标准一次性受限设施，不修改个人资源限制；CI 和正式身份 Hosted 继续等专门会话安排，既有 CPU／RSS 验收用途不能自动外推为新增容器读取已获验收。
 
 ### 已确定：部署侧提供容器关联与完整限制层级
 
-只读调查确认，现有 `scripts/utils/deployment-inventory.py` 仅发布 `infra`／`business` 引擎来源；其固定 Docker inspect 投影不含应用运行实例关联、cgroup 路径或资源限制。System 不能用这些引擎的来源键推断 ADDP Backend／Worker 所在容器，Common 现有 `ProcessMetricsDeclaration` 也只有协议与采集端点。当前原生开发方式保持不变，不能为了展示配额而把开发 Worker 改为容器。
+引擎发现与应用容器证明是两个事实来源：`infra`／`business` 引擎来源不能用于推断 ADDP Backend／Worker 所在容器。应用身份由 Common 的不可变进程声明与部署侧内核证明精确关联。当前原生开发方式保持不变，不能为了展示配额而把开发 Worker 改为容器。
 
 Linux cgroup v2 的父级约束仍作用于子级；cgroup 命名空间与子树挂载可能隐藏父级。容器内读到有限的 `cpu.max`／`memory.max`，只证明可见层的硬上限，不证明完整限制层级，也不表示实例独享或保证可用的资源。Docker inspect 的配置额度同样不能单独证明父级限制。来源参考 [cgroup v2 层级规则](https://docs.kernel.org/admin-guide/cgroup-v2.html)及 [cgroup 命名空间](https://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html)。
 
@@ -153,4 +153,10 @@ Linux cgroup v2 的父级约束仍作用于子级；cgroup 命名空间与子树
 
 2026-10-24 用户已选择部署侧只读证明方案。应用不开放宿主 cgroup 层级，不修改现有容器命名空间／挂载配置，不保留第二套自动降级实现。
 
-自身采集基础已接入 Common SDK：部署项显式选择 `cgroup_v2=true` 后，Linux 仅读取当前组的 CPU／内存及内核身份；默认不读取组统计。沿原 mTLS 监听发布三项原始族，文件／路径／数字严格有界，读取失败保留原进程采集。Mac 原生实例不生成组用量或有效零值；未增加配额利用率、实例列表读取量、告警或权限。验证沿 `make test-module MODULE=common GO_ONLY=1`、`make test-dev-lifecycle` 和现有 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，具体结果见证据专题。部署侧完整层级证明、System 私有投影及 Monitor 产品查询／页面仍未接通，不能将采集基础计为容器配额功能完成；正式身份 T4 用途也未扩展。CI／Hosted 等专门会话回传，不设置定时任务。
+Common SDK 仅在部署项显式选择 `cgroup_v2=true` 后读取当前组 CPU／内存及内核身份，沿原 mTLS 监听发布三项原始族；文件／路径／数字严格有界，失败保留原进程采集。Mac 原生实例不生成组用量或有效零值，详情仅就近说明未接入，不铺四张空卡片。产品接入遵循以下唯一契约；本地分层验证和剩余实机／正式身份验收以证据专题为准。既有 CPU／RSS T4 用途不自动扩展为容器读取。CI／Hosted 等专门会话回传，不设置定时任务。
+
+本批接通契约：SDK 将启动时实际取得的 boot UUID、cgroup inode、PID namespace inode 随不可变进程声明登记。部署发布器沿现有受管目录原子发布独立 `addp.container-proofs/v1` 文件，只支持本机 Linux Docker、当前工作区 `addp-platform` 项目及标准 runtime-log 单应用入口；固定 inspect 字段只读容器完整身份、启动时间、宿主 PID 和入口的模块／角色，不读环境或业务命令。由可只读访问宿主 proc 命名空间与完整 cgroup v2 根挂载的可信部署身份读取该容器真实 cgroup 及全部祖先的 `cpu.max`／`cpu.max.burst`、`memory.max` 和有效 cpuset，读取前后复核容器／内核身份及限制；首期拒绝非零 CPU burst 配置，不把带突发额度的 quota/period 当作同一上界。Docker Desktop、权限不足或父级不可见时不提供有效证明；不通过提升应用权限或在业务容器内执行命令绕过。证明最长 90 秒，持续不变的限制从连续两次发布累计；中断、重启或变化后重新累计，CPU 仅在完整一分钟窗口内限制未变时计算。
+
+System 沿唯一后台投影读取该文件，匹配模块／角色、三项内核身份、容器与进程启动先后及当前有效租约；重复证明、同一容器关联多个当前实例或身份不一致时不关联。不自动登记主机或推断主机关联，不增加 IAM 权限或普通实例 DTO 字段。证明只表达完整可见硬上界，不保证独享或可用容量；CPU 上界取祖先 quota/period 与叶级有效 cpuset 的最小值，内存上界取祖先有限 memory.max 的最小值，各自无有限上界时不计算对应利用率。
+
+Monitor 新增单实例即时 `container_resource_observations`，复用当前 User 的实例读取、受限源解析、查询预算、完成时租约与新鲜度核验；只读四项固定目录：组 CPU 核消耗、组 memory.current、CPU 上界利用率、内存硬上界利用率。CPU 沿原一分钟完整边界、至少四样本、无重置规则；所有来源同时精确核验进程与 cgroup 身份。响应不含容器 ID、端点、内核身份或文件路径，详情弹窗将容器整体用量／硬上界／利用率与进程 CPU／RSS 分开展示，原因就近展示；不改变批量列表、告警或趋势范围。完成时重读私有证明，变更则拒绝本次容器结果，绝不复用旧配额。标准入口为 Common／System／Monitor Go T1、部署发现 T1、System 进程登记 PostgreSQL T2、现有 cgroup-source Prometheus T2、Monitor 前端 T1/T3、双模块 Swagger 生成／覆盖；既有路径发现需覆盖新增源文件与测试。正式身份 Hosted 仍由专门会话另行安排。

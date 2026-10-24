@@ -187,7 +187,33 @@ def valid_sample():
                         or key.startswith(('__meta_', '__tmp_')) for key in labels))
 
 
-eventually(valid_sample, 'real mTLS scrape and controlled job label')
+def fixture_scrape_diagnostic():
+    # Fixed shapes only: do not log target URLs, OAuth configuration or raw
+    # scrape errors (which can contain endpoints or credentials).
+    rows = query('addp_fixture_resource_bytes{job="addp_nodes"}')
+    diagnostic = {'fixture_series_count': len(rows), 'fixture_value_matches':
+                  len(rows) == 1 and rows[0]['value'][1] == '4096', 'targets': []}
+    for target in api('targets?state=active')['activeTargets']:
+        if target.get('labels', {}).get('job') != 'addp_nodes':
+            continue
+        error = target.get('lastError', '').lower()
+        code = re.search(r'\b([45][0-9]{2})\b', error)
+        kind = ('none' if not error else 'tls' if 'certificate' in error or 'tls' in error
+                else 'timeout' if 'timeout' in error or 'deadline' in error
+                else 'connection' if 'connection' in error
+                else 'http_' + code[1] if code else 'other')
+        diagnostic['targets'].append({'health': target.get('health') if target.get('health') in
+                                      ('up', 'down', 'unknown') else 'unknown', 'error_kind': kind})
+    failures = query('prometheus_sd_http_failures_total')
+    diagnostic['http_sd_failure_observed'] = any(float(row['value'][1]) > 0 for row in failures)
+    print('Metrics T2: initial scrape diagnostic ' + json.dumps(diagnostic, sort_keys=True), flush=True)
+
+
+try:
+    eventually(valid_sample, 'real mTLS scrape and controlled job label')
+except AssertionError:
+    fixture_scrape_diagnostic()
+    raise
 # Scrape jobs have independent initial offsets; fixture readiness is not self readiness.
 eventually(self_sample_ready, 'center self scrape and resident memory')
 assert job_is_up('addp_nodes', '1')
@@ -355,6 +381,16 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
         if check_cgroup:
             check_self_cgroup_samples(records)
         if cgroup_only:
+            env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
+                       MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
+                       MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
+            completed = subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsCgroupSources$', '-count=1', '-v', '-timeout=180s'],
+                                      cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=240)
+            print(completed.stdout, flush=True)
+            completed.check_returncode()
+            assert '--- PASS: TestIntegrationMetricsCgroupSources' in completed.stdout
+            assert '--- SKIP:' not in completed.stdout and '[no tests to run]' not in completed.stdout
             return
         if desktop_transport:
             def desktop_process_targets():

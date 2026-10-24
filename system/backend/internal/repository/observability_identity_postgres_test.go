@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"reflect"
@@ -208,19 +209,39 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	// A native process has no invented VM binding. Re-registration uses the
 	// same nanosecond start identity even though PostgreSQL stores microseconds.
 	process := &models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC(), RegistrationClientID: "addp-monitor",
-		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics"}}
+		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics", Cgroup: &commonmodels.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}}}
 	for i := 0; i < 2; i++ {
 		if err := registry.Register(process); err != nil {
 			t.Fatal("same real process re-registration", err)
 		}
 	}
+	copy := *process
+	copy.ProcessMetrics = process.ProcessMetrics.Clone()
+	if err := registry.Register(&copy); err != nil {
+		t.Fatal("value-equal cgroup declaration rejected", err)
+	}
+	copy.ProcessMetrics.Cgroup.CgroupID = "101"
+	if err := registry.Register(&copy); !errors.Is(err, service.ErrInvalidModuleRegistration) {
+		t.Fatal("mutable cgroup declaration accepted", err)
+	}
 	current, err = registry.ObservabilityIdentities(ctx)
 	if err != nil || len(current.ModuleInstances) != 1 || current.ModuleInstances[0].NodeID != "" || current.ModuleInstances[0].ProcessMetrics == nil || current.ModuleInstances[0].ProcessMetrics.Endpoint != process.ProcessMetrics.Endpoint {
 		t.Fatalf("private process projection: %+v %v", current, err)
 	}
+	if !current.ModuleInstances[0].ProcessMetrics.Equal(process.ProcessMetrics) {
+		t.Fatal("private kernel identity lost in JSONB projection")
+	}
 	rows, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{ModuleName: "monitor", Page: 1, PageSize: 100})
 	if err != nil || total != 1 || len(rows) != 1 || !rows[0].ProcessMetricsDeclared {
 		t.Fatalf("public process declaration: %+v %d %v", rows, total, err)
+	}
+	for index, cgroup := range []string{`null`, `{}`, `{"kernel_boot_id":"11111111-1111-4111-8111-111111111111","cgroup_id":"01","pid_namespace_id":"200"}`, `{"kernel_boot_id":"11111111-1111-4111-8111-111111111111","cgroup_id":"18446744073709551616","pid_namespace_id":"200"}`, `{"kernel_boot_id":"11111111-1111-4111-8111-111111111111","cgroup_id":"100","pid_namespace_id":"200","unknown":"field"}`} {
+		document := `{"schema_version":"addp.process-metrics/v1","endpoint":"https://localhost:9443/metrics","cgroup":` + cgroup + `}`
+		name := fmt.Sprintf("invalid-cgroup-%d", index)
+		err := db.Exec(`INSERT INTO system.module_runtime_instances (module_definition_id,instance_id,role,registration_client_id,status,last_heartbeat,lease_expires_at,process_started_at,process_metrics,host_node_ips,registered_at) SELECT module_definition_id,?,role,registration_client_id,status,last_heartbeat,lease_expires_at,process_started_at,?::jsonb,host_node_ips,registered_at FROM system.module_runtime_instances WHERE id=?`, name, document, rows[0].ID).Error
+		if err == nil || !strings.Contains(err.Error(), "process_metrics_declaration_shape") {
+			t.Fatal("invalid cgroup JSONB was not rejected by its shape constraint", index, err)
+		}
 	}
 	exact, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: []uint{rows[0].ID}, Page: 1, PageSize: 100})
 	if err != nil || total != 1 || len(exact) != 1 || exact[0].InstanceID != process.InstanceID {

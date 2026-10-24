@@ -19,7 +19,7 @@ func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC().Truncate(time.Microsecond),
-		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics"}}
+		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics", Cgroup: &commonmodels.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}}}
 	if err := registry.Register(&request); err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +41,10 @@ func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 		t.Fatal("browser DTO exposed private declaration")
 	}
 	for _, mutate := range []func(*models.ModuleRegistrationRequest){
+		func(r *models.ModuleRegistrationRequest) {
+			r.ProcessMetrics = r.ProcessMetrics.Clone()
+			r.ProcessMetrics.Cgroup.CgroupID = "101"
+		},
 		func(r *models.ModuleRegistrationRequest) { r.ProcessMetrics = nil },
 		func(r *models.ModuleRegistrationRequest) {
 			r.ProcessMetrics = &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18101/metrics"}

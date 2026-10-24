@@ -698,6 +698,21 @@ definitions:
       task_type:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.ContainerResourceResponse:
+    properties:
+      cpu_upper_cores:
+        type: number
+      cpu_window_verified:
+        type: boolean
+      memory_upper_bytes:
+        type: integer
+      observation:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessResourceObservation'
+      proof_observed_at:
+        type: string
+      proof_state:
+        type: string
+    type: object
   github_com_addp_monitor_internal_service.EmailTestResult:
     properties:
       delivery_id:
@@ -4029,6 +4044,70 @@ paths:
       x-addp-required-permissions:
       - monitor.platform_alert.read
       - monitor.platform_alert.update
+  /platform/container_resource_observations:
+    get:
+      description: 精确授权一个当前实例；四项固定资源组目录，只有 System 部署证明匹配时提供硬上界利用率。证明缺失不推断容器或额度；进程
+        CPU/RSS 与资源组整体用量分离，私有身份不进入响应。| Authorizes one current instance. Four fixed
+        cgroup metrics; utilization requires matching System deployment evidence.
+        Missing proof never implies a container or allocation. Process CPU/RSS are
+        distinct from cgroup usage; private identities are excluded.
+      parameters:
+      - description: 恰好一个当前实例 ID | Exactly one current instance ID
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ContainerResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取当前实例容器资源 | Read current instance container resources
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
   /platform/engine_resource_observations:
     get:
       description: 仅当前已纳管且有效绑定主机的 Infra/Business PostgreSQL；固定十二项指标，逐请求用当前 User 向

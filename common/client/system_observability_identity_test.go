@@ -12,6 +12,24 @@ import (
 	"github.com/addp/common/models"
 )
 
+func TestSystemObservabilityClientRejectsSharedContainerProofs(t *testing.T) {
+	at := time.Now().UTC()
+	started := at.Add(-time.Minute)
+	cg := models.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}
+	proof := &models.ContainerProof{Identity: cg, DockerEngineID: "engine", ContainerID: strings.Repeat("a", 64), ModuleName: "monitor", Role: "worker", StartedAt: at.Add(-time.Hour), ObservedAt: at, StableSince: at.Add(-2 * time.Minute), HierarchyDigest: strings.Repeat("b", 64)}
+	instance := models.ObservabilityModuleIdentity{ModuleName: "monitor", InstanceID: "actual", Role: "worker", ProcessStartedAt: &started, LeaseExpiresAt: at.Add(time.Minute), ProcessMetrics: &models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: "https://localhost:9443/metrics", Cgroup: &cg}, Container: proof}
+	snapshot := models.ObservabilityIdentitySnapshot{ObservedAt: at, Nodes: []models.ObservabilityNodeIdentity{}, EngineDeployments: []models.ObservabilityEngineIdentity{}, ModuleInstances: []models.ObservabilityModuleIdentity{instance}}
+	if err := validateObservabilityIdentities(snapshot, at, at); err != nil {
+		t.Fatal("valid private proof", err)
+	}
+	other := instance
+	other.InstanceID = "actual-b"
+	snapshot.ModuleInstances = append(snapshot.ModuleInstances, other)
+	if validateObservabilityIdentities(snapshot, at, at) == nil {
+		t.Fatal("shared container private projection accepted")
+	}
+}
+
 func TestSystemObservabilityClientUsesBoundedPlatformProjection(t *testing.T) {
 	fixture := models.ObservabilityIdentitySnapshot{
 		ObservedAt:        time.Now().UTC(),

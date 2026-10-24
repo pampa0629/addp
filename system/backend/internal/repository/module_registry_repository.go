@@ -131,8 +131,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			First(&previous)
 		instanceChanged := false
 		if instanceQuery.Error == nil {
-			declarationEqual := previous.ProcessMetrics == nil && req.ProcessMetrics == nil ||
-				previous.ProcessMetrics != nil && req.ProcessMetrics != nil && *previous.ProcessMetrics == *req.ProcessMetrics
+			declarationEqual := previous.ProcessMetrics.Equal(req.ProcessMetrics)
 			if !declarationEqual || (previous.ProcessMetrics != nil && (previous.Role != req.Role || previous.ProcessStartedAt == nil || !previous.ProcessStartedAt.Truncate(time.Microsecond).Equal(req.ProcessStartedAt.Truncate(time.Microsecond)))) {
 				return ErrProcessMetricsDeclarationImmutable
 			}

@@ -23089,6 +23089,58 @@ const docTemplate = `{
                 }
             }
         },
+        "models.CgroupIdentity": {
+            "type": "object",
+            "properties": {
+                "cgroup_id": {
+                    "type": "string"
+                },
+                "kernel_boot_id": {
+                    "type": "string"
+                },
+                "pid_namespace_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ContainerProof": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "cpu_cores": {
+                    "type": "number"
+                },
+                "docker_engine_id": {
+                    "type": "string"
+                },
+                "hierarchy_digest": {
+                    "type": "string"
+                },
+                "identity": {
+                    "$ref": "#/definitions/models.CgroupIdentity"
+                },
+                "memory_bytes": {
+                    "type": "integer"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "stable_since": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
         "models.ObservabilityEngineIdentity": {
             "type": "object",
             "properties": {
@@ -23158,6 +23210,9 @@ const docTemplate = `{
         "models.ObservabilityModuleIdentity": {
             "type": "object",
             "properties": {
+                "container": {
+                    "$ref": "#/definitions/models.ContainerProof"
+                },
                 "instance_id": {
                     "type": "string"
                 },
@@ -23212,6 +23267,9 @@ const docTemplate = `{
         "models.ProcessMetricsDeclaration": {
             "type": "object",
             "properties": {
+                "cgroup": {
+                    "$ref": "#/definitions/models.CgroupIdentity"
+                },
                 "endpoint": {
                     "type": "string"
                 },

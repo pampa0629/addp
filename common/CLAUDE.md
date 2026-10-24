@@ -104,7 +104,7 @@ ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data
 
 `common/schema` 提供 schema 版本发布、模块级迁移互斥与只读校验，不登记业务模块清单。业务模块自行声明版本并由 Backend 执行迁移；Worker 初始化不执行平台 schema DDL。
 
-`common/processmetrics` 是 macOS/Linux Go 进程 CPU 累计时间、当前 RSS 与启动时间的唯一自身采样 SDK，不读取其他进程。仅在部署显式选择 `cgroup_v2=true` 时，Linux 另读取自身控制组的 CPU／内存用量与内核身份，读取失败不影响原进程采集；组统计不证明独立容器或配额，部署侧证明与后续产品读取仍独立核验。`common/config` 解析显式 `ADDP_PROCESS_METRICS_DEPLOYMENTS`；普通注册生命周期与 System Bootstrap 复用 `StartOptional`，仅成功启动的独立 mTLS 来源发布不可变声明，来源失败不阻断业务登记。`common/client` 的当前 User 实例精确读取与后台私有投影分别授权，不以机器身份补读用户请求。设计及验收范围见平台运行监控设计第 6 节。
+`common/processmetrics` 是 macOS/Linux Go 进程 CPU 累计时间、当前 RSS 与启动时间的唯一自身采样 SDK，不读取其他进程。仅在部署显式选择 `cgroup_v2=true` 时，Linux 另读取自身控制组的 CPU／内存用量与内核身份，读取失败不影响原进程采集；组统计不证明独立容器或配额，启动内核身份随不可变私有声明登记；部署侧完整层级证明与产品读取由 System／Monitor 独立核验。`common/config` 解析显式 `ADDP_PROCESS_METRICS_DEPLOYMENTS`；普通注册生命周期与 System Bootstrap 复用 `StartOptional`，仅成功启动的独立 mTLS 来源发布不可变声明，来源失败不阻断业务登记。`common/client` 的当前 User 实例精确读取与后台私有投影分别授权，不以机器身份补读用户请求。设计及验收范围见平台运行监控设计第 6 节。
 
 `common/httpmetrics` 独占 Go/Gin HTTP 原始指标采集内核：请求及失败计数、秒级耗时直方图和独立并发数。仅消费 Gin 匹配模板、有限方法、HTTP 状态及固定传输错误类别，不读取业务响应、用户身份或完整 URL；各运行实例持有独立 collector，不注册全局指标、不启动监听、不参与业务 Ready。失败计入 5xx 及超时、取消、写失败或未恢复异常中断的请求，4xx 单独保留状态，单请求不重复计失败。Go HTTP 模块通过 `modulelifecycle.NewRouter` 唯一工厂接入，同一进程 mTLS 来源同时暴露 HTTP 指标；查询、页面与告警按接口质量后续阶段分别验证，不将原始采集接入计为产品闭环验收。T1 由 `make test-module MODULE=common GO_ONLY=1` 自动发现，不新增门禁入口。
 

@@ -1363,6 +1363,31 @@
       "recoveryValue": "Recovery threshold",
       "invalid": "Enter a name and positive thresholds. Recovery must be below trigger; durations must be 15–300 seconds in steps of 15.",
       "conflict": "Rule conflict, duplicate metric, or changed instance identity. Input is preserved; close and refresh to review."
+    },
+    "container": {
+      "title": "Container and cgroup usage",
+      "scope": "Usage covers the whole cgroup, including helper processes. It differs from the individual process CPU and RSS.",
+      "verified": "Container identity and the complete limit hierarchy are verified. Hard upper bounds are not exclusive or guaranteed capacity.",
+      "unverified": "No valid container proof. Only absolute usage of this process cgroup is shown. Native macOS and sources without cgroup sampling have no cgroup data.",
+      "proofTime": "Limits verified at {value}; utilization is evaluated at that instant.",
+      "bound": "Verified hard upper bound: {value}",
+      "noProof": "Container identity or complete ancestor limits cannot be verified; utilization is unavailable.",
+      "noLimit": "No finite verified hard upper bound; utilization is unavailable.",
+      "window": "Stable limit evidence does not yet cover the complete CPU window.",
+      "noSample": "Valid fresh samples are unavailable.",
+      "metrics": {
+        "cpu": "Cgroup CPU usage (1 minute)",
+        "memory": "Cgroup memory usage",
+        "cpuRatio": "CPU hard-bound utilization",
+        "memoryRatio": "Memory hard-bound utilization"
+      },
+      "hints": {
+        "cpu": "CPU time increase over one minute, expressed in logical cores.",
+        "memory": "cgroup memory.current includes caches and is not process RSS.",
+        "cpuRatio": "Cgroup CPU core usage divided by the verified CPU bound; not host CPU utilization.",
+        "memoryRatio": "Whole cgroup memory divided by its verified hard bound; not process RSS utilization."
+      },
+      "notConnected": "Cgroup sampling is not connected. Native macOS does not provide it; process CPU and RSS trends remain available below."
     }
   }
 }

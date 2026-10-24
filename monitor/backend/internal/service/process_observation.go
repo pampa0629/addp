@@ -196,6 +196,9 @@ func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, 
 				}
 				physical[resolved.Address] = true
 				scope := resourcequery.ProcessScope{ID: id, ModuleName: r.ModuleName, InstanceID: r.InstanceID, Role: r.Role, StartedAt: *owner.ProcessStartedAt, Instance: resolved.Address}
+				scope.Declaration = owner.ProcessMetrics.Clone()
+				scope.Cgroup = owner.ProcessMetrics.Cgroup
+				scope.Container = owner.Container
 				if scope.Validate() != nil {
 					return result, plan, metricsdiscovery.ErrIdentityUnavailable
 				}

@@ -77,6 +77,7 @@
           </div>
           <p v-if="state.range === '7d'" class="process-hint" data-testid="process-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
           <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
+          <ContainerResources :value="container" :error-key="containerErrorKey" />
           <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="warning" :closable="false" data-testid="process-trend-error" />
           <template v-if="trend">
             <p class="process-hint">{{ t('monitor.resources.window', { start: date(comparisons?.[processMetrics[0].key]?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
@@ -99,6 +100,8 @@
 </template>
 
 <script setup>
+import ContainerResources from '../components/ContainerResources.vue'
+import { validateContainerObservation } from '../utils/containerResources'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -136,6 +139,7 @@ const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeI
 const comparisons = ref(null)
 const trend = ref(null), trendErrorKey = ref('')
 const trendZoom = ref({})
+const container = ref(null), containerErrorKey = ref('')
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
 let disposed = false
@@ -226,6 +230,7 @@ async function reload({ automatic = false } = {}) {
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
+  container.value = null; containerErrorKey.value = ''
   if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; refreshBlocked.value = false }
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
@@ -256,6 +261,15 @@ async function reload({ automatic = false } = {}) {
       else if (!observed) trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable'
       else {
         try {
+          const value = await requests.request(config => api.container(owner.id, config))
+          if (!requests.current(ticket)) return
+          container.value = validateContainerObservation(value, owner)
+        } catch (error) {
+          if (!requests.current(ticket)) return
+          containerErrorKey.value = processErrorKey(error)
+          if ([401, 403, 404].includes(error.response?.status)) throw error
+        }
+        try {
           const params = processTrendParameters(owner.id, state.value.range, observed.queried_at, state.value.compare)
           const history = await requests.request(config => api.trend(params, config))
           if (!requests.current(ticket)) return
@@ -273,6 +287,7 @@ async function reload({ automatic = false } = {}) {
     hostReferences.value = {}; void loadHosts(list.data, ticket)
   } catch (error) {
     if (!requests.current(ticket)) return
+    container.value = null
     errorKey.value = processErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) refreshBlocked.value = true
     trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value

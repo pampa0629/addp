@@ -111,54 +111,63 @@ func (s *EngineDeploymentService) MarkRegisteredDiscovery(ctx context.Context, v
 }
 
 func (s *DeploymentDiscoveryService) readScope(ctx context.Context, scope string) models.DeploymentDiscoveryScope {
-	if s == nil || s.Directory == "" {
-		return discoveryState(scope, "unconfigured", "source_unconfigured")
+	raw, state := s.readDocument(ctx, scope+".json")
+	if state != "" {
+		return discoveryState(scope, state, "source_"+state)
 	}
-	bad := discoveryState(scope, "unavailable", "source_unavailable")
+	return parseDeploymentDiscovery(raw, scope, time.Now().UTC())
+}
+
+// readDocument is the sole bounded, no-follow private snapshot reader.
+func (s *DeploymentDiscoveryService) readDocument(ctx context.Context, name string) ([]byte, string) {
+	if s == nil || s.Directory == "" {
+		return nil, "unconfigured"
+	}
+	bad := "unavailable"
 	if ctx.Err() != nil || !filepath.IsAbs(s.Directory) {
-		return bad
+		return nil, bad
 	}
 	directory, err := os.Lstat(s.Directory)
 	if err != nil || !directory.IsDir() || directory.Mode().Perm()&0077 != 0 {
-		return bad
+		return nil, bad
 	}
 	root, err := os.OpenRoot(s.Directory)
 	if err != nil {
-		return bad
+		return nil, bad
 	}
 	defer root.Close()
 	openedDirectory, err := root.Stat(".")
 	if err != nil || !os.SameFile(directory, openedDirectory) || openedDirectory.Mode().Perm()&0077 != 0 {
-		return bad
+		return nil, bad
 	}
-	before, err := root.Lstat(scope + ".json")
+	before, err := root.Lstat(name)
 	if os.IsNotExist(err) {
-		return discoveryState(scope, "missing", "source_missing")
+		return nil, "missing"
 	}
 	if err != nil || !before.Mode().IsRegular() || before.Mode().Perm()&0077 != 0 {
-		return bad
+		return nil, bad
 	}
-	file, err := root.OpenFile(scope+".json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if os.IsNotExist(err) {
-		return discoveryState(scope, "missing", "source_missing")
+		return nil, "missing"
 	}
 	if err != nil {
-		return bad
+		return nil, bad
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || !os.SameFile(before, info) || info.Mode().Perm()&0077 != 0 || info.Size() > deploymentDiscoveryLimit {
-		return bad
+		return nil, bad
 	}
 	raw, err := io.ReadAll(io.LimitReader(file, deploymentDiscoveryLimit+1))
 	if err != nil || len(raw) > deploymentDiscoveryLimit || ctx.Err() != nil {
-		return bad
+		return nil, bad
 	}
-	after, err := root.Lstat(scope + ".json")
+	after, err := root.Lstat(name)
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(after, info) || after.Mode().Perm()&0077 != 0 {
-		return bad
+		return nil, bad
 	}
-	return parseDeploymentDiscovery(raw, scope, time.Now().UTC())
+	return raw, ""
 }
 
 func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.DeploymentDiscoveryScope {

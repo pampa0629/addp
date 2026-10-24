@@ -880,3 +880,36 @@ test('name auto refresh retains the applied value and intersects host IP, endpoi
   await expect(page.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(6)
   expect(state.listCalls.at(-1)).not.toHaveProperty('node_name')
 })
+
+for (const [locale, verified] of [['zh-cn', true], ['en', false]]) {
+  test(`container values, bounds and local explanations stay separate from process RSS (${locale})`, async ({ page }, testInfo) => {
+    await backend(page, { locale, containerVerified: verified })
+    await page.goto('/service-resources?instance_id=1&refresh=off')
+    const section = page.getByTestId('container-resources')
+    await expect(section).toBeVisible()
+    await expect(section.getByTestId('container-cpu')).toContainText('0.25')
+    await expect(section.getByTestId('container-memory')).toContainText('64')
+    if (verified) {
+      await expect(section.getByTestId('container-cpuRatio')).toContainText('50.00')
+      await expect(section.getByTestId('container-memoryRatio')).toContainText('128')
+      await expect(section.getByTestId('container-proof-state')).toContainText('已核验')
+    } else {
+      await expect(section.getByTestId('container-cpuRatio')).toContainText('—')
+      await expect(section.getByTestId('container-missing').first()).toContainText('cannot be verified')
+    }
+    await expect(section).toContainText('RSS')
+    await expect(section).not.toContainText('native-1')
+    await page.screenshot({ path: testInfo.outputPath(`container-usage-${locale}.png`), fullPage: true })
+  })
+}
+
+test('native instances explain unavailable cgroup sampling without four empty cards', async ({ page }) => {
+  await backend(page, { containerResponse: body => {
+    body.observation.collection = { state: 'not_connected', sampled_at: null }
+    for (const row of body.observation.series) Object.assign(row.points[0], { value: null, sampled_at: null, data_state: 'not_connected' })
+  } })
+  await page.goto('/service-resources?instance_id=1&refresh=off')
+  await expect(page.getByTestId('container-not-connected')).toContainText('原生 macOS')
+  await expect(page.getByTestId('container-cpu')).toHaveCount(0)
+  await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+})

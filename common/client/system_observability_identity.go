@@ -46,6 +46,8 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 	}
 	type identity struct{ module, instance string }
 	instances := make(map[identity]bool, len(snapshot.ModuleInstances))
+	containers := map[string]bool{}
+	boundaries := map[models.CgroupIdentity]bool{}
 	validName := func(value string, max int) bool {
 		return value != "" && strings.TrimSpace(value) == value && utf8.ValidString(value) &&
 			utf8.RuneCountInString(value) <= max && strings.IndexFunc(value, unicode.IsControl) < 0
@@ -58,6 +60,17 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 		}
 		if instance.ProcessMetrics != nil && (instance.ProcessMetrics.Validate() != nil || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.IsZero() || instance.ProcessStartedAt.After(snapshot.ObservedAt)) {
 			return invalid()
+		}
+		if p := instance.Container; p != nil && (p.Validate(snapshot.ObservedAt) != nil || instance.ProcessMetrics == nil || instance.ProcessMetrics.Cgroup == nil || p.Identity != *instance.ProcessMetrics.Cgroup || p.ModuleName != instance.ModuleName || p.Role != instance.Role || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.Before(p.StartedAt) || instance.ProcessStartedAt.After(p.ObservedAt)) {
+			return invalid()
+		}
+		if p := instance.Container; p != nil {
+			key := p.DockerEngineID + "/" + p.ContainerID
+			if containers[key] || boundaries[p.Identity] {
+				return invalid()
+			}
+			containers[key] = true
+			boundaries[p.Identity] = true
 		}
 		switch instance.Role {
 		case "backend", "worker", "scheduler", "ingress":

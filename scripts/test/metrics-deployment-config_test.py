@@ -30,6 +30,31 @@ probe_spec.loader.exec_module(postgres_probe)
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_initial_scrape_diagnostic_reports_only_bounded_safe_facts(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(path.read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                        and node.name == 'fixture_scrape_diagnostic')
+        secret = 'do-not-log-this-credential'
+        namespace = {'json': json, 're': re,
+                     'query': lambda expression: [] if expression.startswith('addp_fixture') else [{'value': [1, '2']}],
+                     'api': lambda _: {'activeTargets': [
+                         {'labels': {'job': 'addp_nodes'}, 'health': 'down',
+                          'scrapeUrl': 'https://user:' + secret + '@private:9443/metrics',
+                          'lastError': 'x509: certificate invalid ' + secret},
+                         {'labels': {'job': 'other'}, 'health': 'up', 'lastError': secret}]}}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            namespace['fixture_scrape_diagnostic']()
+        text = output.getvalue()
+        for forbidden in (secret, 'private:9443', 'scrapeUrl', 'x509:'):
+            self.assertNotIn(forbidden, text)
+        result = json.loads(text.split('diagnostic ', 1)[1])
+        self.assertEqual(result, {'fixture_series_count': 0, 'fixture_value_matches': False,
+                                 'targets': [{'health': 'down', 'error_kind': 'tls'}],
+                                 'http_sd_failure_observed': True})
+
     def cgroup_probe(self, mismatch=False):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
@@ -786,14 +811,25 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 config.render(dict(self.env, ADDP_METRICS_TLS_DIR=health))
 
-    def test_query_certificate_mount_is_independent_and_optional(self):
+    def platform_phase_inputs(self):
         source = (ROOT / 'scripts/prod/start.sh').read_text()
         phase = source.split('bash scripts/prod/wait-infra.sh\n', 1)[1].split('# Containers use', 1)[0]
         script = ('source scripts/utils/observability-env.sh\n'
+                  'PROJECT_ROOT="$PWD"\n'
                   'PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)\ninfra_result=0\n'
                   + phase + '\nprintf "%s\n" "$infra_result" "${PLATFORM_COMPOSE_FILES[*]}"\n')
         env = {key: value for key, value in os.environ.items()
-               if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_', 'MONITOR_PROMETHEUS_'))}
+               if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_', 'MONITOR_PROMETHEUS_',
+                                      'ADDP_PROCESS_METRICS_', 'ADDP_DEPLOYMENT_DISCOVERY_'))}
+        discovery = self.directory / 'deployment-discovery'
+        discovery.mkdir(mode=0o700)
+        env.update(ADDP_METRICS_DEPLOYMENT_DIR=str(self.directory),
+                   ADDP_DEPLOYMENT_DISCOVERY_DIR=str(discovery),
+                   ADDP_PROCESS_METRICS_DEPLOYMENTS='[]')
+        return script, env
+
+    def test_query_certificate_mount_is_independent_and_optional(self):
+        script, env = self.platform_phase_inputs()
         env.update(ADDP_OBSERVABILITY_METRICS_ENABLED='true',
                    MONITOR_METRICS_CA_FILE=str(self.directory / 'source-ca.crt'),
                    MONITOR_METRICS_CLIENT_CERT_FILE=str(self.directory / 'collector.crt'),
@@ -815,12 +851,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertNotIn('depends_on', text)
 
     def test_platform_certificate_mounts_are_selected_only_with_complete_inputs(self):
-        source = (ROOT / 'scripts/prod/start.sh').read_text()
-        phase = source.split('bash scripts/prod/wait-infra.sh\n', 1)[1].split('# Containers use', 1)[0]
-        script = ('source scripts/utils/observability-env.sh\n'
-                  'PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)\ninfra_result=0\n'
-                  + phase + '\nprintf "%s\\n" "$infra_result" "${PLATFORM_COMPOSE_FILES[*]}"\n')
-        env = {key: value for key, value in os.environ.items() if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_', 'MONITOR_PROMETHEUS_'))}
+        script, env = self.platform_phase_inputs()
         for selected, valid, expected in (('false', False, '0'), ('true', False, '1'), ('true', True, '0')):
             with self.subTest(selected=selected, valid=valid):
                 values = dict(env, ADDP_OBSERVABILITY_METRICS_ENABLED=selected)
@@ -833,6 +864,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.splitlines()[0], expected)
                 self.assertEqual('metrics-platform.yml' in result.stdout, selected == 'true' and valid)
+                self.assertEqual('platform-process-metrics.json' in result.stdout, selected == 'true' and valid)
 
     def test_real_compose_passes_optional_identity_and_readonly_admission_files(self):
         env = dict(os.environ, ADDP_OBSERVABILITY_METRICS_ENABLED='true',

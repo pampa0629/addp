@@ -67,6 +67,7 @@ type ObservabilityNodeIdentity struct {
 }
 
 type ObservabilityModuleIdentity struct {
+	Container        *ContainerProof            `json:"container,omitempty"`
 	ProcessMetrics   *ProcessMetricsDeclaration `json:"process_metrics,omitempty"`
 	ProcessStartedAt *time.Time                 `json:"process_started_at,omitempty"`
 	ModuleName       string                     `json:"module_name"`

@@ -942,3 +942,30 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - `make build-iam-migration-repair` 及构建产物不带 `--apply` 的调用：构建通过，默认拒绝修改并退出 2；`build.log`、`apply-guard.log`。
 
 现场仅做只读元数据核对：开发库 `addp` 为 `240/dirty`，checksum 恰好 239 项且全部匹配当前目录，240 无记录，原 CHECK 和不可变触发器完整。尚未获得本次个人开发库恢复授权，未执行恢复或服务重启；以上本地隔离通过不能记为现场已恢复、CI 或 Hosted 通过。修复工具的使用边界及标准重启步骤见数据库迁移故障排查的 240 专节。
+
+随后用户明确授权此次开发库限定恢复。已执行标准构建产物 `addp-iam-migration-repair --migration 240 --apply`，退出成功并报告 `239/clean`；再以只读事务核对数据库确为 `addp`、单行状态 `239/clean`、摘要仍为 239 项且逐项匹配、无 240 摘要、原 CHECK 与不可变保护完整。现场操作日志为同一证据目录的 `现场限定恢复.log`。已告知用户在自己的终端执行 `./scripts/dev/restart.sh -all`，正常应用修正后的 240；AI 未重启服务，此处不宣称现场已达到 `240/clean`。修复已单独发布为 `954220f1688f1737dc8ffc0984aecfc98019ea4a`，不包含待验证的容器配额查询／页面。
+
+交付前再次只读核对，现场随后已正常达到 `240/clean`：checksum 共 240 项且无差异、240 摘要存在、新严格 CHECK 及不可变保护匹配。AI 未执行额外恢复或服务重启；此项只证明迁移状态与约束生效，不代替服务就绪、容器实机或正式身份验收。
+
+## 服务实例容器配额：部署证明、精确关联与即时视图（2026-10-24，本地）
+
+本批接通已确认的一实例一独立 Linux 容器路线：部署侧沿现有观察进程发布有期限的只读完整层级证明，Common 不可变声明提供实际内核边界，System 精确关联当前租约、模块／角色和启动时刻，Monitor 沿当前用户授权／受限来源／预算读取四项组资源。查询后重读证明，变化则拒绝。页面在既有实例详情中分开展示进程 CPU／RSS 与整体组用量、硬上界及利用率，原因就在卡片旁；原生 Mac 不铺四张空卡片。没有完整证明／有限上界时不推算比例，不更改部署额度、应用权限、命名空间或 Docker socket，不增加告警／历史目录。
+
+证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-container-chain-final-bxc7x1qp/`。最终执行输入为 `inputs-diagnostic.json`，SHA-256 `ed2954a8e9fa40c9034bab9817deb839ad71c62ea4e1fc3115458cb41b054544`；交付输入为 `delivery-inputs.json`，SHA-256 `3d8ed24ab1fdd789a9bcecc71e2c2a8a466d9f26bfd6f6d210b13b45a4c102a0`。二者仅观测规范文档不同：保留其他会话已发布的独立段落，并移除本批已接通链路的过时计划措辞；产品及测试源文件逐项一致。早期分层通过结果仅在相应源文件未变时复用，未把临时排错版本计为最终通过。
+
+实际通过的标准入口与范围：
+
+- `make test-module MODULE=common GO_ONLY=1`：151 个 Go package，`common-t1-v4.log`；包含身份格式、声明深复制、私有投影重复容器／边界拒绝、自身采集及原生平台不支持行为。对应 Common 输入与交付一致。
+- `make test-module MODULE=system GO_ONLY=1`：合并迁移恢复工具与本批关联实现后的最终 T1 通过，`system-t1-combined.log`。`make test-system-iam-runner` 的最终恢复工具入口为 30 项通过，证据见上一节。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test observability-identity --source-root <冻结 source>"`：真实 `addp_iam_test` 中登记／重复登记、不可变 cgroup 声明、原始 JSONB 严格约束、私有投影及既有实例筛选通过，`system-pg-t2-v6.log`；该 T2 输入中的登记、投影和 240 SQL 与交付一致，之后只增加上一节独立验证的恢复 CLI，不将此项表述为全量 IAM T2。
+- `make test-module MODULE=monitor GO_ONLY=1`：最终 Monitor T1 通过，`monitor-t1-final.log`；包含固定单实例 API 契约、角色／参数拒绝、当前用户先授权、精确组标签、原完整 CPU 窗口、证明变化拒绝、无证明不出比例及 CPU／内存上界独立判定。集成条件跳过不计 T2。
+- `make test-deployment-discovery`：34 项既有发现与原子发布、5 项新增宿主层级／证明代际／生产只读投射测试通过，`deployment-runner-v3.log`；父级更严上界、缺父级、非零 CPU burst、重复部署、超预算数字、来源变化及不擅自把宿主 CPU 当分配额度均覆盖。此处为受控文件／命令夹具，不能代替真实宿主完整层级证明。
+- `make test-dev-lifecycle`：`dev-lifecycle-fixed.log` 完整退出 0；130 项准备、66 项 Infra 生命周期、60 项后续生命周期、端口／构建身份／并发锁／多 Worker 和四个 Go owner 的命令编译均通过。首次两项失败是截取生产启动阶段的测试未设置项目根目录及私有输入目录，已按真实阶段契约补齐，不调整产品默认值或断言；其后仅增加安全诊断函数及测试，已由下项准备回归覆盖。
+- `make test-build-registration`：59＋9 项回归及 26 个 Go 服务／Worker、59 个产品镜像登记通过，`build-registration-final.log`。新文件沿既有 owner／输入发现命中，现有五场景指标矩阵保持，未另设 CI 或 Hosted 调度。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source`：最终 `cgroup-query-t2-diagnostic.log` 退出 0。八类固定窗口、来源 mTLS／标签控制／超量拒绝、Linux 挂载坐标及三个真实 SDK 来源均通过；新增 `TestIntegrationMetricsCgroupSources` 真实执行 57.58 秒，验证完整一分钟组 CPU、memory.current、错误 cgroup 身份拒绝，以及共享组绝不推断容器额度。标准退出与独立按项目标签核对均为容器／网络／卷零残留，临时文件清零。
+- `make test-monitor-frontend`：最终 `frontend-final.log` 完整退出 0，114 项确定性测试、414 项浏览器 T3（20.4 分钟）及生产构建通过；新增有／无证明的中英文视图、单位、缺配额原因与原生实例不铺空卡片覆盖。更早的全量执行为 411／413 通过、两项导航／刷新超时；原入口最终版本全部通过，未放宽超时、加产品重试或删除断言，不能将首次失败改记成功。
+- `bash scripts/swagger/gen-swagger.sh system monitor`、`bash scripts/swagger/check-route-coverage.sh system monitor`：双模块生成及 247／91 个公开路由方法覆盖通过，`swagger-v3.log`、`swagger-coverage-v3.log`；之后无 API／DTO 变化，生成文件与交付一致。
+
+实源门禁保留两次失败记录：`cgroup-query-t2-final.log` 在并行环境的前置窗口测试累计超过既有 60 秒，未进入新增查询；串行 `cgroup-query-t2-serial.log` 八类窗口通过，但初始夹具采样在 65 秒内未满足，缺少当次目标诊断，唯一根因未查明。随后同一标准入口增加脱敏失败诊断及对应确定性测试，才执行上述最终验证；不记录原始目标 URL、OAuth 配置或 scrape 错误，最终准备回归亦通过。两次失败的项目分别为 `addp-metrics-t2-324f7394baad45dc96ae9f0b049909ce`、`addp-metrics-t2-379720025b1f4c31affdfd63682db7ee`，退出后均独立核对容器／网络／卷为零，不以未进入目标断言的执行计通过。
+
+最终实源项目为 `addp-metrics-t2-8ca4e7a7aeff4f9f805140ee6d13dc0e`。该夹具刻意让三个进程共享同一 cgroup，证明采集／查询和拒绝边界，**不证明一实例独立容器、部署发布器在原生 Linux 上读取完整层级、System 至真实用户页面的整个配额闭环或正式身份 T4**。这些实机／正式身份验收尚未运行，当前 Mac 原生进程也没有容器配额。CI、产品镜像全包、Hosted 及生产 T5 未在本会话执行或轮询，继续由专门会话回传；未扩大已有 Hosted Token 用途，未设置定时任务。

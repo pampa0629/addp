@@ -54,6 +54,14 @@ export async function backend(page, options = {}) {
       body = options.hosts?.find(host => host.node_id === id)
       if (!body) { status = 404; body = { error_code: 'resource_not_found' } }
       if (hostsHeld) await hostsHeld
+    } else if (path === '/api/v1/monitor/platform/container_resource_observations') {
+      const row = rows.find(row => row.id === Number(url.searchParams.get('instance_ids')))
+      const verified = Boolean(options.containerVerified)
+      body = { proof_state: verified ? 'verified' : 'unverified', proof_observed_at: verified ? stamp : null, cpu_upper_cores: verified ? .5 : null, memory_upper_bytes: verified ? 128 * 2 ** 20 : null, cpu_window_verified: verified,
+        observation: { subject: { kind: 'module_instance', id: row.id, module_name: row.module_name, instance_id: row.instance_id, role: row.role }, node_id: row.node_id, policy_version: 1, lookback_seconds: 300, queried_at: stamp, collection: { state: 'collecting', sampled_at: stamp }, series: [
+          ['container.cpu.core_equivalents', 'cores', 60, .25], ['container.memory.current_bytes', 'bytes', 0, 64 * 2 ** 20], ['container.cpu.limit_percent', 'percent', 60, verified ? 50 : null], ['container.memory.limit_percent', 'percent', 0, verified ? 50 : null]
+        ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: value === null ? null : stamp, value, data_state: value === null ? 'no_data' : 'valid' }] })) } }
+      options.containerResponse?.(body)
     } else if (path === '/api/v1/monitor/platform/process_resource_summaries') {
       calls.push(url.searchParams.get('instance_ids'))
       const requested = new Set(url.searchParams.get('instance_ids').split(',').map(Number))

@@ -68,6 +68,10 @@ type ProcessScope struct {
 	ID                                     uint
 	ModuleName, InstanceID, Role, Instance string
 	StartedAt                              time.Time
+	Cgroup                                 *models.CgroupIdentity
+	Container                              *models.ContainerProof
+	Declaration                            *models.ProcessMetricsDeclaration
+	cgroupQuery                            bool
 }
 
 func (s ProcessScope) Validate() error {
@@ -89,7 +93,11 @@ func (s ProcessScope) Validate() error {
 }
 
 func (s ProcessScope) selector(metric string) string {
-	return metric + `{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",addp_module_name=` + strconv.Quote(s.ModuleName) + `,addp_instance_id=` + strconv.Quote(s.InstanceID) + `,addp_runtime_role=` + strconv.Quote(s.Role) + `,instance=` + strconv.Quote(s.Instance) + `}`
+	selector := metric + `{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",addp_module_name=` + strconv.Quote(s.ModuleName) + `,addp_instance_id=` + strconv.Quote(s.InstanceID) + `,addp_runtime_role=` + strconv.Quote(s.Role) + `,instance=` + strconv.Quote(s.Instance)
+	if strings.HasPrefix(metric, "addp_cgroup_") && s.Cgroup != nil {
+		selector += `,kernel_boot_id=` + strconv.Quote(s.Cgroup.BootID) + `,cgroup_id=` + strconv.Quote(s.Cgroup.CgroupID) + `,pid_namespace_id=` + strconv.Quote(s.Cgroup.PIDNamespaceID)
+	}
+	return selector + `}`
 }
 
 func (s ProcessScope) identitySelector() string {
@@ -99,12 +107,19 @@ func (s ProcessScope) identitySelector() string {
 func (s ProcessScope) identityGuard(offset string) string {
 	identity, anyIdentity, start := s.identitySelector()+offset, s.selector("addp_process_identity_info")+offset, s.selector("process_start_time_seconds")+offset
 	expected := strconv.FormatFloat(float64(s.StartedAt.Unix())+float64(s.StartedAt.Nanosecond())/1e9, 'f', 9, 64)
-	return ` and (count(` + anyIdentity + `)==1) and (count(` + identity + `)==1) and (max(` + identity + `)==1) and (count(` + start + `)==1)` +
+	guard := ` and (count(` + anyIdentity + `)==1) and (count(` + identity + `)==1) and (max(` + identity + `)==1) and (count(` + start + `)==1)` +
 		` and (abs(max(` + start + `)-` + expected + `)<=0.000001) and (max(timestamp(` + identity + `))==max(timestamp(` + start + `)))`
+	if s.cgroupQuery {
+		cg := s.selector("addp_cgroup_identity_info") + offset
+		raw := s
+		raw.Cgroup = nil
+		guard += ` and (count(` + raw.selector("addp_cgroup_identity_info") + offset + `)==1) and (count(` + cg + `)==1) and (max(` + cg + `)==1) and (max(timestamp(` + cg + `))==max(timestamp(` + identity + `)))`
+	}
+	return guard
 }
 
 func (s ProcessScope) expression(p Plan) (string, error) {
-	if s.Validate() != nil || len(p.Metrics) < 1 || len(p.Metrics) > len(processDefinitions) {
+	if s.Validate() != nil || len(p.Metrics) < 1 || len(p.Metrics) > len(processDefinitions) || s.cgroupQuery && (s.Cgroup == nil || s.Cgroup.Validate() != nil) {
 		return "", ErrInvalid
 	}
 	info, start, up := s.identitySelector(), s.selector("process_start_time_seconds"), s.selector("up")
@@ -115,6 +130,9 @@ func (s ProcessScope) expression(p Plan) (string, error) {
 		switch d.Key {
 		case "process.cpu.core_equivalents":
 			raw = s.selector("process_cpu_seconds_total")
+			if s.cgroupQuery {
+				raw = s.selector("addp_cgroup_cpu_usage_seconds_total")
+			}
 			previous := raw + ` offset 1m`
 			rate := `rate(` + raw + `[1m])`
 			eligible := `(` + rate + ` and (count_over_time(` + raw + `[1m])>=4) and (resets(` + raw + `[1m])==0)` +
@@ -125,6 +143,9 @@ func (s ProcessScope) expression(p Plan) (string, error) {
 			stamp = `(max(timestamp(` + raw + `))` + guarded + `)`
 		case "process.memory.resident_bytes":
 			raw = s.selector("process_resident_memory_bytes")
+			if s.cgroupQuery {
+				raw = s.selector("addp_cgroup_memory_current_bytes")
+			}
 			value = `(max(` + raw + `)` + guard + `)`
 			stamp = `(max(timestamp(` + raw + `))` + guard + `)`
 		case "process.uptime_seconds":

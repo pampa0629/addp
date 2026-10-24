@@ -17,6 +17,7 @@ from contextlib import contextmanager
 import signal
 import uuid
 import hashlib
+import importlib.util
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -338,6 +339,34 @@ def publish(scope, directory, **kwargs):
         return value
 
 
+def publish_container_proofs(directory):
+    """Optional host capability; absence clears proofs, never blocks engines."""
+    directory = Path(directory)
+    private_directory(directory)
+    with private_lock(directory, 'container-proofs.lock'):
+        value = {'schema': 'addp.container-proofs/v1', 'observed_at': observed_at(), 'proofs': []}
+        try:
+            if platform.system() == 'Linux':
+                docker, info, kind = local_docker()
+                if kind != 'linux_docker':
+                    raise InventoryError('完整宿主层级不可用')
+                helper = Path(__file__).with_name('container-proof.py')
+                spec = importlib.util.spec_from_file_location('addp_container_proof', helper)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                previous = None
+                # The previous proof only extends a verified unchanged interval.
+                target = directory/'container-proofs.json'
+                if target.exists() and not target.is_symlink() and target.stat().st_size <= DISCOVERY_LIMIT:
+                    previous = json.loads(target.read_text())
+                value = module.discover(docker, info, REPOSITORY, value['observed_at'], previous)
+                if len(json.dumps(value).encode()) > DISCOVERY_LIMIT:
+                    raise InventoryError('容器证明超过预算')
+        except (ValueError, TypeError, KeyError, OSError):
+            value['proofs'] = []
+        write_document(directory, 'container-proofs.json', value)
+
+
 def read_private_document(directory, name):
     try:
         fd = os.open(directory / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -386,7 +415,8 @@ def observer_environment():
 
 
 def observer_configuration(env):
-    return hashlib.sha256(Path(__file__).read_bytes()+json.dumps(env, sort_keys=True).encode()).hexdigest()
+    helper = Path(__file__).with_name('container-proof.py')
+    return hashlib.sha256(Path(__file__).read_bytes()+helper.read_bytes()+json.dumps(env, sort_keys=True).encode()).hexdigest()
 
 
 def terminate_observer(record):
@@ -475,6 +505,8 @@ def stop_observer(directory):
         for scope in SCOPES:
             with private_lock(directory, scope+'.lock'):
                 write_document(directory, scope+'.json', unavailable_snapshot(scope))
+        with private_lock(directory, 'container-proofs.lock'):
+            write_document(directory, 'container-proofs.json', {'schema':'addp.container-proofs/v1','observed_at':observed_at(),'proofs':[]})
 
 
 def watch(directory, token):
@@ -507,8 +539,14 @@ def watch(directory, token):
                         publish(scope, directory)
                     except (InventoryError, OSError):
                         pass  # The failure snapshot or freshness deadline clears candidates.
+                publish_container_proofs(directory)
                 time.sleep(30)
         finally:
+            try:
+                with private_lock(directory, 'container-proofs.lock', timeout=0):
+                    write_document(directory, 'container-proofs.json', {'schema':'addp.container-proofs/v1','observed_at':observed_at(),'proofs':[]})
+            except (InventoryError, OSError):
+                pass
             for scope in SCOPES:
                 try:
                     # The controller invalidates both scopes after verifying

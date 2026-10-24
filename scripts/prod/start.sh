@@ -62,6 +62,13 @@ bash scripts/prod/wait-infra.sh
 if addp_metrics_enabled; then
   if addp_metrics_platform_preflight; then
     PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-platform.yml)
+    export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-$PROJECT_ROOT/.dev-state/deployment-discovery}"
+    if python3 scripts/prod/generate-process-metrics-platform.py; then
+      PLATFORM_COMPOSE_FILES+=(-f "$ADDP_METRICS_DEPLOYMENT_DIR/platform-process-metrics.json")
+    else
+      infra_result=1
+      echo 'Process metrics/evidence deployment unconfigured; business startup remains independent' >&2
+    fi
   else
     infra_result=1
     echo 'Monitor metrics admission unconfigured; business startup remains independent' >&2

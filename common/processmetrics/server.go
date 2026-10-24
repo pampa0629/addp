@@ -38,7 +38,7 @@ type Server struct {
 	declaration models.ProcessMetricsDeclaration
 }
 
-func (s *Server) Declaration() *models.ProcessMetricsDeclaration { copy := s.declaration; return &copy }
+func (s *Server) Declaration() *models.ProcessMetricsDeclaration { return s.declaration.Clone() }
 func (s *Server) Close() error                                   { err := s.http.Close(); <-s.done; return err }
 
 func readCertificateFile(path string) ([]byte, error) {
@@ -208,6 +208,11 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 	server := &http.Server{Handler: handler(registry), ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 8192,
 		ErrorLog: log.New(io.Discard, "", 0)}
 	s := &Server{http: server, done: make(chan struct{}), declaration: models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: d.Endpoint}}
+	if d.CgroupV2 {
+		if initial, err := sample(); err == nil && initial.Cgroup.valid() {
+			s.declaration.Cgroup = &models.CgroupIdentity{BootID: initial.Cgroup.BootID, CgroupID: initial.Cgroup.CgroupID, PIDNamespaceID: initial.Cgroup.PIDNamespaceID}
+		}
+	}
 	go func() { defer close(s.done); _ = server.Serve(tls.NewListener(listener, tlsConfig)) }()
 	return s, nil
 }

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/addp/common/models"
 )
 
 var errCgroupUnavailable = errors.New("self cgroup sample unavailable")
@@ -28,15 +28,9 @@ func (s *CgroupSample) valid() bool {
 	if s == nil {
 		return false
 	}
-	boot, err := uuid.Parse(s.BootID)
-	return err == nil && boot != uuid.Nil && boot.String() == s.BootID &&
-		canonicalID(s.CgroupID) && canonicalID(s.PIDNamespaceID) &&
+	identity := models.CgroupIdentity{BootID: s.BootID, CgroupID: s.CgroupID, PIDNamespaceID: s.PIDNamespaceID}
+	return identity.Validate() == nil &&
 		s.CPUSeconds >= 0 && !math.IsNaN(s.CPUSeconds) && !math.IsInf(s.CPUSeconds, 0) && s.MemoryBytes <= 1<<53-1
-}
-
-func canonicalID(value string) bool {
-	n, err := strconv.ParseUint(value, 10, 64)
-	return err == nil && n > 0 && strconv.FormatUint(n, 10) == value
 }
 
 func readCgroupFile(files fs.FS, name string) ([]byte, error) {

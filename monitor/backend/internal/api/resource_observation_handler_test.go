@@ -38,6 +38,19 @@ func TestProcessTrendRejectsUnboundedAndDuplicateInputs(t *testing.T) {
 	}
 }
 
+func TestContainerObservationAcceptsOnlyOneCanonicalCurrentInstance(t *testing.T) {
+	router := resourceAPIRouter(t, targetAPIIdentity("user", "addp-web", "first_party_access_token", "monitor.resource_observation.read"))
+	for _, query := range []string{"", "instance_ids=7,9", "instance_ids=07", "instance_ids=7&instance_ids=9", "instance_ids=7&metrics=container.memory.current_bytes", "instance_ids=7&node_id=guessed", "instance_ids=7&instance_id=7"} {
+		request := httptest.NewRequest("GET", "/api/v1/monitor/platform/container_resource_observations?"+query, nil)
+		request.Header.Set("Authorization", "Bearer addp_at_user")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != 400 || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal(query, response.Code, response.Body.String())
+		}
+	}
+}
+
 func (s *apiResourcePolicies) Get(context.Context) (monitorModels.ResourceQueryPolicy, error) {
 	return s.row, nil
 }
@@ -60,7 +73,7 @@ func resourceAPIRouter(t *testing.T, identity authorization.AuthContext) *gin.En
 	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc, nil, nil, nil, nil)
 }
 func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testing.T) {
-	paths := []string{"/platform/process_resource_summaries", "/platform/process_resource_trends", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
+	paths := []string{"/platform/container_resource_observations", "/platform/process_resource_summaries", "/platform/process_resource_trends", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
 	for _, variant := range []string{"tenant", "service", "delegated", "missing", "anonymous", "user", "oauth"} {
 		for _, path := range paths {
 			t.Run(variant+path, func(t *testing.T) {

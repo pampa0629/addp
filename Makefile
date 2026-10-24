@@ -252,6 +252,7 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 .PHONY: test-deployment-discovery
 test-deployment-discovery: ## 校验 Infra/Business 只读部署发现与原子发布（不启动容器）
 	@python3 scripts/test/business-deployments_test.py
+	@python3 scripts/test/container-proofs_test.py
 	@bash -n scripts/infra/up.sh scripts/infra/down.sh scripts/dev/start.sh business/scripts/start.sh business/scripts/stop.sh
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）

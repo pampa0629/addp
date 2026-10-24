@@ -13,13 +13,37 @@ const ProcessMetricsSchema = "addp.process-metrics/v1"
 
 // ProcessMetricsDeclaration is a deployment declaration, never a user endpoint.
 type ProcessMetricsDeclaration struct {
-	SchemaVersion string `json:"schema_version"`
-	Endpoint      string `json:"endpoint"`
+	SchemaVersion string          `json:"schema_version"`
+	Endpoint      string          `json:"endpoint"`
+	Cgroup        *CgroupIdentity `json:"cgroup,omitempty"`
+}
+
+func (d *ProcessMetricsDeclaration) Equal(other *ProcessMetricsDeclaration) bool {
+	if d == nil || other == nil {
+		return d == other
+	}
+	return d.SchemaVersion == other.SchemaVersion && d.Endpoint == other.Endpoint &&
+		(d.Cgroup == nil && other.Cgroup == nil || d.Cgroup != nil && other.Cgroup != nil && *d.Cgroup == *other.Cgroup)
+}
+
+func (d *ProcessMetricsDeclaration) Clone() *ProcessMetricsDeclaration {
+	if d == nil {
+		return nil
+	}
+	copy := *d
+	if d.Cgroup != nil {
+		identity := *d.Cgroup
+		copy.Cgroup = &identity
+	}
+	return &copy
 }
 
 func (d *ProcessMetricsDeclaration) Validate() error {
 	if d == nil {
 		return nil
+	}
+	if d.Cgroup != nil && d.Cgroup.Validate() != nil {
+		return errors.New("invalid process cgroup declaration")
 	}
 	u, err := url.Parse(d.Endpoint)
 	if err != nil || d.SchemaVersion != ProcessMetricsSchema || len(d.Endpoint) > 512 ||

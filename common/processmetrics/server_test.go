@@ -161,3 +161,24 @@ func TestSourceConfigurationAndSamplingFailureAreExplicit(t *testing.T) {
 		t.Fatal("unexpected secret files accepted")
 	}
 }
+
+func TestSourceRegistersOnlySelectedInitialKernelIdentity(t *testing.T) {
+	directory, _, _ := testSourcePKI(t)
+	d := testDeployment(t, directory)
+	d.CgroupV2 = true
+	source, err := start(d, Identity{ModuleName: "monitor", Role: "worker", InstanceID: "current", StartedAt: time.Now().Add(-time.Second)}, func() (Sample, error) {
+		return Sample{CPUSeconds: 1, ResidentBytes: 1024, Cgroup: &CgroupSample{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200", CPUSeconds: 2, MemoryBytes: 4096}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	declaration := source.Declaration()
+	if declaration.Cgroup == nil || declaration.Cgroup.CgroupID != "100" {
+		t.Fatal("kernel identity omitted from immutable declaration")
+	}
+	declaration.Cgroup.CgroupID = "101"
+	if source.Declaration().Cgroup.CgroupID != "100" {
+		t.Fatal("declaration leaked mutable kernel identity")
+	}
+}

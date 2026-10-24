@@ -4982,6 +4982,40 @@ definitions:
       user_agent:
         type: string
     type: object
+  models.CgroupIdentity:
+    properties:
+      cgroup_id:
+        type: string
+      kernel_boot_id:
+        type: string
+      pid_namespace_id:
+        type: string
+    type: object
+  models.ContainerProof:
+    properties:
+      container_id:
+        type: string
+      cpu_cores:
+        type: number
+      docker_engine_id:
+        type: string
+      hierarchy_digest:
+        type: string
+      identity:
+        $ref: '#/definitions/models.CgroupIdentity'
+      memory_bytes:
+        type: integer
+      module_name:
+        type: string
+      observed_at:
+        type: string
+      role:
+        type: string
+      stable_since:
+        type: string
+      started_at:
+        type: string
+    type: object
   models.ObservabilityEngineIdentity:
     properties:
       deployment_id:
@@ -5027,6 +5061,8 @@ definitions:
     type: object
   models.ObservabilityModuleIdentity:
     properties:
+      container:
+        $ref: '#/definitions/models.ContainerProof'
       instance_id:
         type: string
       lease_expires_at:
@@ -5062,6 +5098,8 @@ definitions:
     type: object
   models.ProcessMetricsDeclaration:
     properties:
+      cgroup:
+        $ref: '#/definitions/models.CgroupIdentity'
       endpoint:
         type: string
       schema_version:

@@ -83,3 +83,5 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 容器/专业引擎、Python 进程指标、Agent/Copilot 同步 HTTP 之外的追踪和面向用户的采集生效回执按[后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md)分别推进；节点登记不自动证明承载关联。
 - 180 天概览清理、专业运行时历史及其他 Owner 阶段事件沿任务规范；已落地的 30 天过程事件清理不代替这些范围。
 - 生产安装权限、物理身份、HA、规模和 T5 均需对应独立验收。历史失败、排队或部分通过仍按[证据专题](../docs/spec/testing/evidence/Monitor历史证据.md)记录，不合并为当前工作区通过。
+
+服务实例详情的容器／资源组观测使用 `/platform/container_resource_observations?instance_ids=<单个当前实例>`，复用原 Resource Observation Permission、System 当前 User 实例读取、私有身份／受限来源和预算。四项固定组指标与进程 CPU/RSS 分开；利用率只使用当前匹配的部署硬上界，在证明时点评估，完成时重读投影，拒绝变化／过期／共享边界，不改变原批量摘要、告警和趋势目录。Linux 组 CPU 完整窗口与原进程查询共享同一公式；原生 Mac 无组样本。前端只展示无私有身份的结果，在卡片旁解释未知证明、无有限上界、CPU 稳定记录不足及缺样。标准门禁 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source` 覆盖真实 SDK/mTLS/Prometheus 组读取，不能将共享夹具计为独立容器证明或 Hosted 通过。

@@ -127,6 +127,8 @@ PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，�
 - 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；另含启用且有效主机绑定的平台引擎部署 UUID/版本、Infra/Business 作用域、引擎类型及 Docker 引擎／项目／服务来源键，不含名称、地址、端口、业务 URL、Metadata、Engine Connection、租户引擎或凭据。不持久化新副本，不续租，不参与业务 Ready。
 - 节点上限 1,000、带节点声明的当前候选实例上限 10,000、启用引擎部署候选上限 1,000、响应上限 4 MiB、总超时 5 秒。超限/控制面失败返回 503，超时 504；无成功空快照兜底或截断。真实空数组为 200，所有投影响应禁止缓存。Common 的唯一服务 Client 校验完整性、时间、重复身份、节点引用与响应体预算。
 
+部署容器证明沿相同受管文件目录只读消费，不调用 Docker。迁移 000240 只扩展进程声明的严格 JSONB CHECK，允许选中的真实 cgroup 内核身份；不变更不可变触发器、既有数据或 IAM。当前实例的不可变声明附带真实 cgroup 内核身份；仅与标准单应用容器的完整层级证明、module／role、启动边界及有效租约精确匹配时，向既有 Monitor 后台投影增加私有 ContainerProof。重复证明、共享边界、缺失／过期／不可读证明均不关联，不推断承载主机、不进入浏览器实例 DTO，也不新增权限。证明字段与时限见平台运行观测规范 6.1；System T1／既有进程登记 PostgreSQL 门禁覆盖。
+
 ## 平台本体机器发布核验
 
 - `POST /api/v1/system/runtime/platform-definition-publication-checks` 复用 IAM 认证、Service 凭据、Platform、固定 `addp-ontology` Client 和 `ontology.platform_definition.publish` 守卫；Permission 由 Ontology Manifest 拥有，迁移 `000201` 仅扩展 `platform.ontology_runtime`，不扩张管理员或 Tenant Role。
