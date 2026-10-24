@@ -1119,3 +1119,23 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 证据目录`/tmp/addp-p19-formal-local-20261024-window9/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`build-diagnostics-runner.log`／`build-diagnostics-inputs.json`、`source-admission-conflicts.json`、`gateway-base-manifest-readonly.json`、`function-row-mapping.json`、`receipt.json`及`cleanup-audit.json`。只保留脱敏证据；页面回执接收端在第1次结束后退出，未观察到页面回执。
 
 截至本次记录，准备角色／真实MFA／普通User权限、成功／受控失败查询、真实阶段检查点、自然尾采样、精确Trace／Link／日志、平台无权限及正式退出负例、真实Console页面均未在本窗口运行，不得沿用第八窗口的局部通过冒充本次通过。功能清单第19行（B18，接口管理总述）、第45行（B44，实时耗时接口追踪）仍为部分实现；已向维护会话发送阶段回报，M列未据此升级。下一步先恢复已提交源码准入并取得实际构建失败分类，再补完整正式身份闭环。
+
+
+### System依赖准入恢复与Gateway单项构建复现（2026-10-24）
+
+用户要求先核对共享System依赖、恢复准入并调查Gateway构建，再在条件具备后另开原上限60分钟正式身份本地窗口。首次核对时`system/backend/go.mod`／`go.sum`仍有其他会话未提交的Avro间接依赖；未覆盖或代为提交。随后该依赖随`be747a4a2d914d67696a675b1ceea0cac732b087`落到main，两个文件干净，直接复用标准`committed_inputs`函数逐项核对通过，保留准确输入哈希。共享准入阻断已解除，但这项只读结果不代替环境运行验收。
+
+独立调查限定2026-10-24 23:29:55–23:49:55（Asia/Shanghai）最多20分钟，仍守8 CPU／12 GiB、4 GiB停止线，第二次沿原绝对截止时间计算剩余预算，不续时。本次只从已提交源码经根`make build`编译System／Gateway／runtime-log，再用`make build-images IMAGE_BUILD_ARGS="--verify --jobs 1 --services <owner> ..."`复现原System镜像→当次BuildKit全缓存清理→Gateway镜像顺序；复用既有隔离构建器／只读卷测量／资源守卫及退出清理，不启动业务后端、数据库、身份或页面，不计完整`make test-monitor-traces-local`通过。一次性诊断脚本和报告仅在系统临时目录，不新增仓库公共验收入口。
+
+| 单项尝试 | 实际源码 | 结果 |
+| --- | --- | --- |
+| 1 | `133d9c0121630fb7f0a987e74f092c667721b431` | `product_compile`期间完整测量4.059秒超过原4秒预算，守卫停止；未进入镜像构建，不计Gateway失败重现或编译通过。 |
+| 2 | `be747a4a2d914d67696a675b1ceea0cac732b087` | 3个源码二进制均重新编译，System产品镜像、当次缓存清理及Gateway产品镜像全部通过；23:42:27结束。System镜像ID为`sha256:aaf46c29ca32cfad6782cdc55197f2671300b0875e3a780c3eeb197a80a787f6`，Gateway为`sha256:01b85677d78e85902c1aebf0e7adb8131e8ae882f567c13b2b7bf518f708e7de`，当次标签与资源随后全部删除。 |
+
+两次共有153次成功资源测量，合计硬配额峰值2.25 CPU／3288334336字节（3.0625 GiB），卷及私有目录实际分配峰值2579521536字节（约2.40 GiB），成功测量最长3.345秒；第一次失败的4.059秒另列。没有OOM／4 GiB停止线触发；标准清理与独立审计均确认当次容器、网络、卷、构建器容器／状态卷、镜像标签和私有源码目录零残留，既有MinIO镜像保持。诊断第2次记录只读测量分步骤耗时，不改变四秒预算；空闲时3次本专项容器列表读取约0.029–0.032秒，仅作当时参考，不推定编译时测量超时的唯一根因。
+
+只读读取Gateway基础镜像`localhost:5001/debian-slim:bookworm`的OCI清单、配置和全部层：配置468字节、压缩层28117255字节的HEAD／完整GET与清单大小及SHA-256均匹配。只证明检查当时仓库内容完整，不证明过去失败时的BuildKit缓存、导出或网络状态。历史窗口只保留`failed to solve`／`not found`及哈希，已清理原始错误；本次相同构建顺序成功，不能确定历史唯一根因，也不宣称修复了Gateway间歇构建故障。
+
+为避免再丢失原因，`20a9efcc6e49743bd3846b3caafa7e8ab87b1b5c`给同一标准本地入口的`product_image_*`失败补封闭诊断：仅固定原因／失败步骤、已知产物输入名、Dockerfile行号、最多8项HTTP状态／进程退出码，未知原因明确未分类；不保存任意正文、URL、内容摘要值、凭据或SQL，不对身份／业务命令开启该分类。规范同步同次完成，原构建路线、资源及验收断言不变。先以缺失函数验证测试失败，再实现；`make test-monitor-traces-local-runner`通过79项、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`），现有路径自动发现命中，未新增Makefile／workflow。成功复现发生在该诊断提交前，准确源码如表；这项纯失败报告变化不改变成功构建路径，也不把单测当成实际失败重现。
+
+证据目录`/tmp/addp-p19-gateway-investigation-20261024/`：`window.json`、`attempt-{1,2}-report.json`／日志、`current-source-admission.json`、`base-blobs.json`／`base-blob-integrity.json`、`idle-daemon-readonly-timing.json`、`structured-diagnostics-runner.log`／`structured-diagnostics-inputs.json`、`receipt.json`及`cleanup-audit.json`。正式60分钟窗口尚未启动：当前构建已通过，但历史原因未定，已向用户确认是否接受这一前提作为新窗口准入。正式身份执行→Trace→日志→真实页面仍待运行，不运行Hosted、不重跑容量、不设置定时；功能清单第19、45行保持部分实现。
