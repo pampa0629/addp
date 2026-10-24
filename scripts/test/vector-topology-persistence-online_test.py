@@ -135,6 +135,50 @@ class TopologyOnlineTest(unittest.TestCase):
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
+    def test_all_output_map_type_counts_require_exact_port_registration(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source=readFileSync(process.argv[1],'utf8')
+const golden={faces:['Polygon',4],diagnostics:['LineString',4],repaired:['MultiPolygon',2],snapped:['LineString',5],
+ overlaps:['MultiPolygon',7],gaps:['Polygon',8],dangling:['Point',17],line_overlaps:['MultiLineString',9],
+ line_self_overlaps:['MultiLineString',8],line_intersections:['Point',10],line_self_intersections:['Point',15],
+ split_lines:['LineString',20],line_components:['LineString',15]}
+const helperStart=source.indexOf('const expectedOutputGeometry =')
+const helperEnd=source.indexOf("test('同一普通User核对",helperStart)
+assert.ok(helperStart>0 && helperEnd>helperStart)
+const expectedFor=new Function('port',source.slice(helperStart,helperEnd)+'\nreturn expectedGeometryTypes(port)')
+for(const [port,[type,count]] of Object.entries(golden))assert.deepEqual(expectedFor(port),Array(count).fill(type))
+assert.throws(()=>expectedFor('unknown'),/Unregistered topology output port/)
+assert.throws(()=>expectedFor('constructor'),/Unregistered topology output port/)
+assert.ok(source.includes('const expectedTypes = expectedGeometryTypes(output.port)'))
+assert.ok(source.includes(".toEqual([expectedTypes.length, 3857, 'EPSG:3857'"))
+const start=source.indexOf('    await expect.poll(async () => renderer.evaluate(element => {',source.indexOf('const renderer = table.locator'))
+const end=source.indexOf("    if (['dangling','line_intersections','line_self_intersections'].includes(output.port))",start)
+assert.ok(start>0 && end>start)
+const check=new (Object.getPrototypeOf(async function(){}).constructor)('renderer','expect','output','expectedTypes',source.slice(start,end))
+const expect={poll:fn=>({async toEqual(expected){assert.deepEqual(await fn(),expected)}})}
+async function run(port,types){
+ const features=types.map(type=>({getGeometry:()=>({getType:()=>type})}))
+ const map={getView:()=>({getAnimating:()=>false}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})}
+ const renderer={evaluate:async fn=>fn({__vueParentComponent:{setupState:{mapInstance:map}}})}
+ const [type,count]=golden[port]
+ await check(renderer,expect,{port},expectedFor(port))
+}
+for(const [port,[type,count]] of Object.entries(golden)){
+ const correct=Array(count).fill(type)
+ await run(port,correct)
+ await assert.rejects(run(port,correct.slice(1)),{code:'ERR_ASSERTION'})
+ await assert.rejects(run(port,[...correct,type]),{code:'ERR_ASSERTION'})
+ await assert.rejects(run(port,['GeometryCollection',...correct.slice(1)]),{code:'ERR_ASSERTION'})
+}
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,
+            str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_original_parts_rendered_oracle_rejects_wrong_attributes_order_direction_and_coordinates(self):
         import subprocess
         repository=Path(__file__).resolve().parents[2]
