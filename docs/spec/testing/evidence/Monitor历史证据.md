@@ -1213,6 +1213,13 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 修正版真实验收 [Run40140020076／Job121009605836](https://github.com/pampa0629/addp/actions/runs/40140020076/job/121009605836) 绑定 `86f58b3764c4c3e47af1a141d81e21f94109150c`，已完成且独立审查通过：Run／Job、真实运行步骤均 success，attempt 1；前述排队状态现由实际结果闭合，首轮失败仍保留。验收要求 16 条合成历史形成 14 棵执行树、5 棵时间候选，核对完整超期树、年轻子执行、running／pending、有效 lease、完成时间缺失、缺父／跨 Tenant／自指及树外 retry／recovery 引用；全部树始终保留 Owner 释放和消费者引用未核验原因。维护前后执行完整行与 30 天内事件的数据库摘要必须一致，报告仅保留安全批次事实，退出还须核验独占应用／Infra／卷／凭据清理。该证据不代表用户执行读取权限、Owner 释放、专业结果生命周期、30 天事件物理维护、小时周期、概览删除、容量／HA 或生产 T5 验收；清单实际第327／328／329行继续部分实现。
 
+修正版官方报告实际为 10 项唯一断言通过：16 个种子、14 棵完整树、5 棵时间候选，本批读取 24 行、20 次查询，游标16、无后页、未超预算。保留原因为 Owner 释放未核验14、消费者引用未核验14、活动执行2、完成时间缺失3、有效lease2、未超期1、关系异常4、树外执行引用2；时间候选并非允许删除。执行完整行和保留期内事件不变均为 true，汇总多余字段数为0。System／Gateway 的正式 preflight 均为同一固定源码与独立 Build ID／源码指纹，工作区干净、网络仅回环；普通 Tenant User 的唯一角色为 `online.execution_retention_readonly`，所验证 Permission 仅 `monitor.execution.read`。
+
+Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚保留合成历史；独立核对最终 Host `summary.txt`，结果和清理均 passed、Infra为 zero_residuals，应用停止、测试卷／网络和凭据销毁均已完成。该销毁不计180天概览物理删除。官方 Artifact `12579077155` 的5个文件仅为既有安全报告及生命周期日志，不含凭据目录或原始 System 进程日志；ZIP已下载，SHA-256独立匹配上传声明 `eaa740d8a10f7a767b66f266b2dc51cb3b2c2f2d0f08457cadc2a4b2807c7c2c`。证据：`/tmp/addp-retention-t4-40140020076.zip`、同名提取目录及 `.log`、`/tmp/addp-retention-t4-40140020076-run.json`、`/tmp/addp-retention-readonly-t4-rerun-receipt-20261025.json`。已实际比较固定源码至后续证据提交：Common execution、System维护与身份夹具、测试驱动、Hosted路径及workflow均无变化；后续仅证据记录与Make中Go结果显式输出，不重复有效T4。
+
+截至2026-10-25 07:17（Asia/Shanghai），同修正提交的 [Platform CI Run40139997741](https://github.com/pampa0629/addp/actions/runs/40139997741) 仍queued，未计为通过；该聚合CI不能由本批T4替代。当前闭合的范围仅为本地28项回归／Go T1与固定版本真实System首轮只读维护；5项既有PG专项的跳过、未运行的更广生命周期及首次失败均继续保留。Excel实际327／328／329行仍为部分实现，已向维护会话同步；Owner引用／释放、专业结果生命周期与物理删除不进入本轮开发。
+
+
 
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
@@ -1240,9 +1247,3 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 证据目录`/tmp/addp-p19-formal-local-20261025-window10/`：`window.json`、`attempt-{1,2}-source.json`／报告／日志、`attempt-2-browser-receipt.json`、`receipt.json`、`cleanup-audit.json`、`evidence-review.json`、`function-row-mapping.json`及初次审计读取未完成记录。第二次run_id为`addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58`，第一次为`addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4`。交叉复核原始脱敏报告、12＋6断言、六模块SHA、原截止时间与全部资源边界，`git diff --check`通过；本次仅更新已有证据，不重复未变代码的T0/T1门禁，不调查／触发其他专项CI或Hosted。
 
 清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
-
-修正版官方报告实际为 10 项唯一断言通过：16 个种子、14 棵完整树、5 棵时间候选，本批读取 24 行、20 次查询，游标16、无后页、未超预算。保留原因为 Owner 释放未核验14、消费者引用未核验14、活动执行2、完成时间缺失3、有效lease2、未超期1、关系异常4、树外执行引用2；时间候选并非允许删除。执行完整行和保留期内事件不变均为 true，汇总多余字段数为0。System／Gateway 的正式 preflight 均为同一固定源码与独立 Build ID／源码指纹，工作区干净、网络仅回环；普通 Tenant User 的唯一角色为 `online.execution_retention_readonly`，所验证 Permission 仅 `monitor.execution.read`。
-
-Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚保留合成历史；独立核对最终 Host `summary.txt`，结果和清理均 passed、Infra为 zero_residuals，应用停止、测试卷／网络和凭据销毁均已完成。该销毁不计180天概览物理删除。官方 Artifact `12579077155` 的5个文件仅为既有安全报告及生命周期日志，不含凭据目录或原始 System 进程日志；ZIP已下载，SHA-256独立匹配上传声明 `eaa740d8a10f7a767b66f266b2dc51cb3b2c2f2d0f08457cadc2a4b2807c7c2c`。证据：`/tmp/addp-retention-t4-40140020076.zip`、同名提取目录及 `.log`、`/tmp/addp-retention-t4-40140020076-run.json`、`/tmp/addp-retention-readonly-t4-rerun-receipt-20261025.json`。已实际比较固定源码至后续证据提交：Common execution、System维护与身份夹具、测试驱动、Hosted路径及workflow均无变化；后续仅证据记录与Make中Go结果显式输出，不重复有效T4。
-
-截至2026-10-25 07:17（Asia/Shanghai），同修正提交的 [Platform CI Run40139997741](https://github.com/pampa0629/addp/actions/runs/40139997741) 仍queued，未计为通过；该聚合CI不能由本批T4替代。当前闭合的范围仅为本地28项回归／Go T1与固定版本真实System首轮只读维护；5项既有PG专项的跳过、未运行的更广生命周期及首次失败均继续保留。Excel实际327／328／329行仍为部分实现，已向维护会话同步；Owner引用／释放、专业结果生命周期与物理删除不进入本轮开发。
