@@ -18,8 +18,8 @@ SUITE = 'execution-retention-readonly'
 MESSAGE = '执行概览只读保留评估完成'
 EXPECTED_REASONS = {
     'owner_release_unverified': 14, 'consumer_references_unverified': 14,
-    'not_expired': 1, 'active_execution': 1, 'completion_missing': 2,
-    'lease_active': 2, 'status_unknown': 1, 'relationship_anomaly': 4,
+    'not_expired': 1, 'active_execution': 2, 'completion_missing': 3,
+    'lease_active': 2, 'relationship_anomaly': 4,
     'execution_reference': 2,
 }
 SUMMARY_FIELDS = {'read_only', 'retention_days', 'seeds_evaluated', 'trees_observed',
@@ -28,6 +28,12 @@ SUMMARY_FIELDS = {'read_only', 'retention_days', 'seeds_evaluated', 'trees_obser
 ENVELOPE_FIELDS = {'time', 'level', 'msg', 'module', 'service', 'instance_id', 'stream',
                    'schema_version', 'timestamp', 'sequence', 'trace_id', 'span_id',
                    'host', 'pid', 'request_id', 'build_id', 'git_commit'}
+
+
+class FixtureSQLFailure(RuntimeError):
+    def __init__(self, sqlstate):
+        self.sqlstate = sqlstate
+        super().__init__('fixture_sql_failed')
 
 
 def require(condition, message):
@@ -77,8 +83,11 @@ def sql(statement):
     container, = json.loads(inspected.stdout)
     user = validate_container(container, os.environ.get('ADDP_ONLINE_RETENTION_POSTGRES_ID'), os.environ)
     result = subprocess.run(['docker', 'exec', '-i', container['Id'], 'psql', '-X', '-qAt',
-                             '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', 'addp_online'],
-                            input=statement, check=True, capture_output=True, text=True, timeout=20)
+                             '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online'],
+                            input=statement, capture_output=True, text=True, timeout=20)
+    if result.returncode:
+        match = re.search(r'ERROR:\s+([0-9A-Z]{5})\b', result.stderr)
+        raise FixtureSQLFailure(match.group(1) if match else 'unavailable')
     return result.stdout.strip()
 
 
@@ -128,7 +137,7 @@ def fixture_rows(tenant, foreign):
     rows[3].update(parent=ids[2], age=1)        # young child retains its old parent
     rows[4].update(status='running', age=None, lease=True)
     rows[5]['lease'] = True                    # terminal but still leased
-    rows[6]['status'] = 'unknown_fixture'
+    rows[6].update(status='pending', age=None)    # legal pending work, never dispatch it
     rows[7]['age'] = None                      # missing completion
     rows[8]['parent'] = str(uuid.uuid4())      # absent parent
     rows[9]['tenant'] = foreign
@@ -146,7 +155,7 @@ def seed_statement(rows, marker):
         return 'NULL' if value is None else "'" + str(uuid.UUID(value)) + "'"
     for row in rows:
         require(type(row['tenant']) is int and row['tenant'] > 1, 'invalid fixture Tenant')
-        require(row['status'] in {'success', 'running', 'unknown_fixture'}, 'invalid fixture status')
+        require(row['status'] in {'success', 'running', 'pending'}, 'invalid fixture status')
         require(row['age'] in {None, 1, 200}, 'invalid fixture completion')
         completed = 'NULL' if row['age'] is None else f"CURRENT_TIMESTAMP - INTERVAL '{row['age']} days'"
         lease = "CURRENT_TIMESTAMP + INTERVAL '2 days'" if row['lease'] else 'NULL'
@@ -248,6 +257,13 @@ def observe():
                 break
             require(time.monotonic() < deadline, 'real System did not finish its startup assessment')
             time.sleep(.2)
+        # Keep bounded diagnostic counters even on an assertion failure. Never
+        # copy unknown keys, private values or raw process records into evidence.
+        report['observed_counts'] = {key: value for key, value in fresh[0].items()
+                                     if key in SUMMARY_FIELDS and type(value) in (int, bool)}
+        report['observed_reasons'] = {key: value for key, value in fresh[0].get('reason_counts', {}).items()
+                                      if key in EXPECTED_REASONS and type(value) is int}
+        report['unexpected_summary_field_count'] = len(set(fresh[0]) - SUMMARY_FIELDS - ENVELOPE_FIELDS)
         report['assessment'] = assert_summary(fresh[0], state['before']['max_id'])
         raw = json.dumps(list(log_records()), ensure_ascii=False)
         require(state['marker'] not in raw and not any(identity in json.dumps(fresh) for identity in state['identities']),
@@ -255,7 +271,7 @@ def observe():
         require(snapshot() == state['before'], 'read-only maintenance changed execution or event rows')
         report.update(result='passed', complete_history_unchanged=True, retained_events_unchanged=True,
                       checks=['real_system_startup_maintenance', 'expired_complete_tree', 'young_child_retains_parent',
-                              'active_and_leased', 'unknown_and_missing_completion', 'cross_tenant_missing_self_parent',
+                              'active_and_leased', 'pending_and_missing_completion', 'cross_tenant_missing_self_parent',
                               'retry_recovery_references', 'owner_and_consumer_unknown', 'summary_closed_fields',
                               'full_history_and_events_unchanged'])
     except Exception:
@@ -279,7 +295,8 @@ def main():
             observe()
     except Exception as error:
         # Never echo SQL, subprocess output, private paths or sensitive fixtures.
-        print(f'execution_retention_readonly_failed:{action}:{type(error).__name__}', file=sys.stderr)
+        print(f'execution_retention_readonly_failed:{action}:{type(error).__name__}:'
+              f'{error.sqlstate if isinstance(error, FixtureSQLFailure) else "unavailable"}', file=sys.stderr)
         return 1
     return 0
 

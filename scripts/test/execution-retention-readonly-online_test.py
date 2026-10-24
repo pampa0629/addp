@@ -2,6 +2,7 @@ import copy
 import importlib
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +51,26 @@ class ExecutionRetentionReadonlyTest(unittest.TestCase):
             with self.assertRaises((ValueError, M.API.SuiteError)):
                 M.seed_statement(bad, 'a'*32)
 
+    def test_fixture_statuses_obey_current_store_constraint(self):
+        migration = (M.ROOT/'common/execution/migrations/004_normalize_execution_status.sql').read_text()
+        allowed = set(re.findall(r"'([^']+)'", re.search(r"CHECK \(status IN \((.*?)\)\)", migration).group(1)))
+        self.assertLessEqual({row['status'] for row in M.fixture_rows(2, 3)}, allowed)
+        rows = M.fixture_rows(2, 3);rows[0]['status'] = 'unknown_fixture'
+        with self.assertRaises(M.API.SuiteError):
+            M.seed_statement(rows, 'a'*32)
+
+    def test_fixture_sql_failure_reports_only_sqlstate(self):
+        inspected = type('Result', (), {'stdout': '[{}]'})()
+        failed = type('Result', (), {'returncode': 1, 'stderr': 'ERROR: 23514 private-fixture-secret', 'stdout': ''})()
+        with patch.object(M, 'boundary'), patch.object(M, 'validate_container', return_value='owned'), \
+                patch.dict(os.environ, ADDP_ONLINE_RETENTION_POSTGRES_ID='owned'), \
+                patch.object(M.subprocess, 'run', side_effect=[inspected, failed]):
+            inspected.stdout = json.dumps([{'Id': 'owned'}])
+            with self.assertRaises(M.FixtureSQLFailure) as error:
+                M.sql('private SQL statement')
+            self.assertEqual(error.exception.sqlstate, '23514')
+            self.assertNotIn('private', str(error.exception))
+
     def test_container_identity_refuses_personal_replaced_and_nononline_database(self):
         environment = dict(POSTGRES_USER='owned', POSTGRES_PASSWORD='private')
         container = {'Id': 'container-id', 'State': {'Running': True}, 'Config': {
@@ -97,6 +118,24 @@ class ExecutionRetentionReadonlyTest(unittest.TestCase):
                     with patch.object(M, 'snapshot', return_value=after), self.assertRaises(M.API.SuiteError):
                         M.observe()
                     self.assertEqual(json.loads((artifact/f'{M.SUITE}.json').read_text())['result'], 'failed')
+
+    def test_failed_summary_keeps_only_closed_observed_counters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            secret = Path(tmp)/'secret';secret.mkdir()
+            artifact = Path(tmp)/'artifact';artifact.mkdir()
+            before = dict(max_id=16)
+            (secret/'retention-state.json').write_text(json.dumps(dict(before=before, marker='private-marker', identities=[], previous_records=[])))
+            corrupt = self.summary();corrupt['tenant_id'] = 999;corrupt['execution_config'] = {'secret': 'never-archive'}
+            corrupt['reason_counts']['private_reason'] = 'never-archive'
+            with patch.object(M, 'boundary', return_value=(secret, artifact)), patch.object(M, 'user_identity', return_value={}), \
+                    patch.object(M, 'maintenance_records', return_value=[corrupt]), patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='test-run'), \
+                    self.assertRaises(M.API.SuiteError):
+                M.observe()
+            raw = (artifact/f'{M.SUITE}.json').read_text();report = json.loads(raw)
+            self.assertEqual(report['unexpected_summary_field_count'], 2)
+            self.assertEqual(report['observed_counts']['seeds_evaluated'], 16)
+            for private in ('999', 'never-archive', 'private_reason', 'execution_config'):
+                self.assertNotIn(private, raw)
 
     def test_no_runtime_api_or_owner_lifecycle_route(self):
         source = Path(M.__file__).read_text()
