@@ -1158,3 +1158,13 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 首轮Go构建因两处旧测试夹具返回类型未同步而失败，修订为实际列表投影后通过，原失败 `/tmp/addp-alert-name-go.log` 保留。首轮完整前端为422通过／2失败，失败是名称框只绑定已提交路由值、未保留输入草稿，键入被控件还原；逐字键入专项也复现，两份原失败 `/tmp/addp-alert-name-frontend.log`、`/tmp/addp-alert-name-typing-final.log` 不计通过。改为独立 `v-model` 草稿并沿路由／身份同步后，最终上述117／424完整门禁通过，没有加定时查询或自动重载兜底。
 
 30个任务实现／测试／契约文件收据 `/tmp/addp-alert-name-inputs.json` SHA-256 `c6a539735647b78d7716ef188435fe4f7680a7ed559f28072728adf9ea8438b0`，最终内容摘要核对无漂移；本节只追加证据。现有Monitor、Console路径选择、PostgreSQL自动发现和前端标准入口已命中新用例，无新增依赖、测试入口或workflow。以上是本地共享工作区T1/T2及受控API的T3，不代表固定提交CI、个人Safari、正式身份T4／Hosted或生产T5。没有重启个人服务、修改个人配置、创建正式告警或运行CI／Hosted，也没有设置定时任务；正式结果继续等专门会话回传。
+
+
+### 名称检索固定提交 CI：PG通过，前端浏览器被取消（2026-10-25）
+
+专门CI会话回传后，本会话仅核对已落地的原始日志与Job元数据，没有查询、重跑或触发CI。两份日志checkout均为 `a6048b9e71b0689893a3cf90db5a0ef4822d8866`：
+
+- [Release/T2 Run 40110942812／Monitor PostgreSQL Job 120933711310](https://github.com/pampa0629/addp/actions/runs/40110942812/job/120933711310)：真实 `Run Monitor PostgreSQL gate` 步骤及Job均为success，原始日志实际有38项顶层测试通过，含名称检索16子场景、三个规则评估器和旧名称不回填；无FAIL或SKIP。该证据可计为此固定提交的PostgreSQL T2通过。
+- [Platform Run 40110942794／Monitor frontend Job 120922337484](https://github.com/pampa0629/addp/actions/runs/40110942794/job/120922337484)：117项单测实际通过，424项浏览器只出现至363项进度即 `The operation was canceled`；真实测试步骤及Job为cancelled，没有整套浏览器通过或Vite构建记录。后续summary步骤的success只表示摘要写入成功，不能作为产品门禁通过。不能将“363项进度”当作363项已通过，也不能把本地424项或旧时间筛选的421项结果替代本次CI全套。
+
+证据目录 `/tmp/addp-ci-20261024-180033/`，原始日志 `job-120933711310.log` SHA-256 `8754ba1551e3fc6738e372ef2dc60b14c583bad53eb2ee5123d457ea0d4973f8`、`job-120922337484.log` SHA-256 `d2f1dc03e6a0b1c54afc6df56f383db885822659e1d2146b94af555060cfdeb0` 均独立核对一致；同时读取 `jobs-40110942812.json`、`jobs-40110942794.json` 的实际步骤终态及协调审计 `Monitor-a604-actual-CI-audit.json`。后继Platform仍由专门CI会话跟进，复用前须证明名称功能及共享输入等价。本会话不接管其他owner的失败，不另派验收、不设置定时任务；本地、个人Safari、正式身份／Hosted和CI范围继续分别记录，功能清单第51行仍为部分实现。
