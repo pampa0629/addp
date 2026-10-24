@@ -1441,13 +1441,20 @@ class MetaCollectionScenario:
         admitted = report['meta_collection']['scheduled']['executions']['approved_repeat']['items_scanned']
         require(type(admitted) is int and admitted > 0, 'missing prior successful source enumeration count')
         evidence['executions']['inflight'] = self.observe_execution(task['id'], execution, False, attempt, admitted_items=admitted)
+        # Keep bounded observations before assertions: an incomplete report
+        # must distinguish transport, reset and unexpected native source I/O.
+        evidence['source_counter_stage'] = 'query'
+        evidence['source_counter_baseline'] = barrier.baseline
         counts = barrier.counts()
-        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during in-flight denial')
+        evidence['source_counter_observed'] = counts
         delta = {key: counts['calls'].get(key, 0) - barrier.baseline['calls'].get(key, 0)
                  for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
+        evidence.update(source_counter_stage='reset_check', source_call_delta=delta)
+        require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during in-flight denial')
+        evidence['source_counter_stage'] = 'delta_check'
         require(delta == {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 0},
                 'source opened another Catalog read beyond the admitted enumeration')
-        evidence.update(source_call_delta=delta, next_catalog_denied=True, admitted_enumeration_finished=True)
+        evidence.update(source_counter_stage='verified', next_catalog_denied=True, admitted_enumeration_finished=True)
         report['checks'].append(checks[0])
         if natural_expiry:
             replay = self.life.operator.request('POST', self.route, (201,), body).payload

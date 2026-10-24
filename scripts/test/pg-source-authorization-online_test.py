@@ -2227,6 +2227,28 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         self.scenario.cleanup()
         self.assertFalse(self.tasks)
 
+    def test_inflight_counter_failures_retain_bounded_diagnostics_without_marking_passed(self):
+        for fault, stage in [('statistics_reset', 'reset_check'), ('another_catalog', 'delta_check'),
+                             ('counter_transport', 'query')]:
+            with self.subTest(fault=fault):
+                self.setUp()
+                barrier = self.inflight_fixture(fault, natural_expiry=True)
+                if fault == 'counter_transport':
+                    barrier.counts = Mock(side_effect=ONLINE.SuiteError('private SQL and credential text'))
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_inflight_expiry(self.report)
+                evidence = self.report['meta_collection']['inflight_expiry']
+                self.assertEqual(evidence['source_counter_stage'], stage)
+                self.assertNotIn('next_catalog_denied', evidence)
+                self.assertFalse(self.report['checks'])
+                self.assertNotIn('private SQL', json.dumps(evidence))
+                if fault != 'counter_transport':
+                    self.assertEqual(set(evidence['source_call_delta']),
+                                     {'namespaces', 'tables', 'workspace_detection', 'other'})
+                    self.assertEqual(set(evidence['source_counter_observed']), {'calls', 'reset_at'})
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+
     def test_inflight_expiry_unknown_responses_and_source_cleanup_fail_closed(self):
         for operation in ('approve', 'trigger', 'replay', 'source_residual'):
             with self.subTest(operation=operation):
