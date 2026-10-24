@@ -1090,3 +1090,22 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 证据目录`/tmp/addp-p19-formal-local-20261024-window8/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`preparation-evidence.json`／`preparation-lifecycle.log`、`execution-diagnostics-lifecycle.log`、`readiness-final-lifecycle.log`、`receipt.json`及`cleanup-audit.json`。另有初始准备冻结的输入清单／原日志，路径见`preparation-evidence.json`及`/tmp/addp-p19-mfa-preparation-path`，只保留脱敏文件，源码副本已移除。
 
 21:52:18独立只读核对三次全部当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO镜像保留；页面回执读取器亦已退出。684次成功资源测量的合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3649245184字节（约3.40 GiB），成功测量最长2.769秒；没有OOM、资源采样失败或磁盘停止线触发。窗口结束后没有新增真实运行。当前状态仍部分实现；下一次完整运行必须另行确认本地窗口，重点先验证当次Owner初始化，再验证成功／受控失败查询与Trace／日志／页面，不能把本次MFA及引擎准备通过替代完整闭环。
+
+
+### 正式身份本地第九窗口：构建失败、资源守卫停止与源码准入阻断（2026-10-24）
+
+用户另行授权22:48:15–23:48:15（Asia/Shanghai）的本地窗口，8 CPU／12 GiB、当次卷及私有目录4 GiB停止线保持；不运行Hosted、容量或定时，不接管个人服务及共享数据库。原保护就绪修正`8c2a83abe`已在本次实际重建源码中，但三次尝试均未进入正式身份阶段，不能宣称当次Tenant初始化或执行闭环已运行通过。
+
+| 尝试 | 实际源码 | 结果与实际覆盖 |
+| --- | --- | --- |
+| 1 | `752da6994bd72001d3cb08a7e67303f51e7830b2` | 独占依赖准备及7个源码二进制编译通过；`product_image_gateway`退出2，仍仅有`failed to solve`／`not found`固定标记，未取得可确定唯一构建根因的证据。 |
+| 2 | `0569a8c72ff4060b74a1de93ce9aec2feddbd062` | 独占依赖准备通过；`product_compile`期间卷测量耗时4.105秒，超过原4秒单次预算，`resource_sample_deadline_exceeded`停止。没有放宽守卫、借用旧业务镜像或将终止算通过。 |
+| 3 | `abeb0272e916a325898724c5135108a2e0a1286f` | `source_snapshot`以`commit_all_local_inputs_before_acceptance`拒绝，尚未启动环境。共享工作区`system/backend/go.mod`、`go.sum`有其他会话未提交依赖修改；保留这些改动，不代为提交、不跳过私有Owner输入一致性检查。 |
+
+`0569a8c72`仅为原入口补充固定脱敏构建分类，包括缓存键／校验和、镜像内容摘要、匿名令牌／HEAD请求等；不导出任意错误正文、路径、SQL或秘密，不改变产品构建、资源上限及验收口径。最小充分标准门禁`make test-monitor-traces-local-runner`通过76项入口检查、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`）。未修改Makefile或workflow，现有路径登记实际命中。先用3类含私密哨兵的样本确认分类缺失，再补实现通过；该诊断增强不代表实际Gateway构建故障已修复。只读`docker manifest inspect --insecure localhost:5001/debian-slim:bookworm`当前返回0及OCI清单，只证明当时清单可读，不证明失败时的BuildKit路径、内容或网络正常。
+
+三次运行均走`make test-monitor-traces-local`及当次剩余绝对时间，不另开或重置60分钟。报告与独立审计确认每次当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有源码目录零残留；既有MinIO镜像保持原不可变ID。181次成功测量的合计硬配额峰值7.45 CPU／8992587776字节（8.375 GiB），卷及私有目录实际分配峰值3608891392字节（约3.36 GiB），成功测量最长2.547秒；第二次失败测量另列4.105秒，不能混入成功峰值掩盖失败。没有OOM或4 GiB磁盘停止线触发。
+
+证据目录`/tmp/addp-p19-formal-local-20261024-window9/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`build-diagnostics-runner.log`／`build-diagnostics-inputs.json`、`source-admission-conflicts.json`、`gateway-base-manifest-readonly.json`、`function-row-mapping.json`、`receipt.json`及`cleanup-audit.json`。只保留脱敏证据；页面回执接收端在第1次结束后退出，未观察到页面回执。
+
+截至本次记录，准备角色／真实MFA／普通User权限、成功／受控失败查询、真实阶段检查点、自然尾采样、精确Trace／Link／日志、平台无权限及正式退出负例、真实Console页面均未在本窗口运行，不得沿用第八窗口的局部通过冒充本次通过。功能清单第19行（B18，接口管理总述）、第45行（B44，实时耗时接口追踪）仍为部分实现；已向维护会话发送阶段回报，M列未据此升级。下一步先恢复已提交源码准入并取得实际构建失败分类，再补完整正式身份闭环。
