@@ -99,6 +99,8 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 
 启动、访问地址和重启入口沿[模块 README](README.md)及[模块选择指南](../scripts/docs/模块选择启动指南.md)。实际地址以标准启动输出和 `.dev-state/ports.env` 为准，不固定请求 localhost:8086；需要启动或重启时按根 AGENTS.md 由用户操作，仅测试或构建无需重启。
 
+启动迁移顺序与账本归属见[迁移说明](docs/migrations/README.md#当前入口)，错误排查见[启动迁移失败](docs/testing/验收方法与排查.md#失败定位)，断言范围见[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)。各阶段没有共同事务，后续失败不代表此前已落库变更已回滚；结构迁移、数据迁移与接口验收分别记录，未运行或未覆盖不计通过。
+
 从项目根目录运行标准模块门禁：
 
 ```bash
