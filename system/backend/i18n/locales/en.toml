@@ -504,7 +504,7 @@ other = "No committed recovery was observed. This is not proof of rollback. Conf
 other = "Emergency request state, version or authorization changed. Recheck the request; resolve an unknown result using its original ID first."
 
 [system.audit_archive.failed]
-other = "Audit archive could not be verified or persisted. No result is confirmed. Check the independent audit deployment."
+other = "Audit archive could not be verified or persisted. No result is confirmed. Check the platform audit storage configuration and dedicated credentials."
 [system.meta_collection.unavailable]
 other = "Collection task facts are temporarily unavailable; try again later"
 [system.meta_collection.changed]
