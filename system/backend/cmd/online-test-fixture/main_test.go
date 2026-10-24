@@ -24,11 +24,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func TestOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T) {
+func TestGraphProtectionAndOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T) {
 	for _, id := range []int64{1, 2, 3} {
 		t.Run(fmt.Sprintf("tenant_%d", id), func(t *testing.T) {
 			calls := 0
-			tenant, err := createOrchestratorForeignTenant(t.Context(), func(ctx context.Context, input iam.CreateTenantInput) (*iam.ManagedTenant, error) {
+			tenant, err := createOnlineForeignTenant(t.Context(), func(ctx context.Context, input iam.CreateTenantInput) (*iam.ManagedTenant, error) {
 				calls++
 				if input.Code != "external-online-foreign" || input.InitialAdministratorPrincipalID != 7 || input.ActorPrincipalID != 7 {
 					t.Fatalf("foreign Tenant creation lost its dedicated identity: %#v", input)
@@ -48,7 +48,7 @@ func TestOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T
 		})
 	}
 	failure := errors.New("creation failed")
-	tenant, err := createOrchestratorForeignTenant(t.Context(), func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error) {
+	tenant, err := createOnlineForeignTenant(t.Context(), func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error) {
 		return nil, failure
 	}, 7, 2)
 	if tenant != nil || !errors.Is(err, failure) {
@@ -405,12 +405,14 @@ func TestGraphProtectionReviewerCredentialsReachChildEnvironment(t *testing.T) {
 	const username = "external-online-graph-reviewer"
 	const password = "synthetic-review'quoted-password"
 	if err := writeEnvironmentFile(path, map[string]string{
-		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN":  token,
-		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME":      username,
-		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD":      password,
-		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN": token,
-		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME":     username,
-		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD":     password,
+		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN":          token,
+		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME":              username,
+		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD":              password,
+		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN":         token,
+		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME":             username,
+		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD":             password,
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN": "synthetic-foreign-token",
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID":    "3",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -432,6 +434,8 @@ source "$1"
 [ "${ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN:?}" = "$2" ]
 [ "${ADDP_ONLINE_GRAPH_SERVICE_USERNAME:?}" = "$3" ]
 [ "${ADDP_ONLINE_GRAPH_SERVICE_PASSWORD:?}" = "$4" ]
+[ "${ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN:?}" = "synthetic-foreign-token" ]
+[ "${ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID:?}" = "3" ]
 `, "graph-review-environment", path, token, username, password)
 	command.Env = []string{"PATH=" + os.Getenv("PATH")}
 	if err := command.Run(); err != nil {

@@ -628,7 +628,7 @@ func run(args []string, environment []string) error {
 			peerPermissions = transferContinuousPeerPermissions
 			foreignPermissions = []string{"monitor.execution.read", "transfer.task.read"}
 		}
-		foreignTenant, err := createOrchestratorForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
+		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
 		if err != nil {
 			return err
 		}
@@ -709,6 +709,19 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN"] = serviceReader.AccessToken
 		values["ADDP_ONLINE_GRAPH_SERVICE_USERNAME"] = "external-online-graph-service-reader"
 		values["ADDP_ONLINE_GRAPH_SERVICE_PASSWORD"] = servicePassword
+		if os.Getenv("ADDP_ONLINE_GRAPH_ENGINE") == "neo4j" {
+			foreignTenant, fixtureErr := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
+			if fixtureErr != nil {
+				return fixtureErr
+			}
+			foreignReader, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+				foreignTenant.ID, reserve.PrincipalID, "external-online-graph-service-foreign-reader", graphServiceReaderPermissions)
+			if fixtureErr != nil {
+				return fixtureErr
+			}
+			values["ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN"] = foreignReader.AccessToken
+			values["ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID"] = fmt.Sprintf("%d", foreignTenant.ID)
+		}
 	}
 	if *suite == "security-plaintext-access" {
 		approver, _, approverPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -854,7 +867,7 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 
 // The reserve Tenant occupies ID 1 on a fresh database; it cannot serve as
 // the nondefault foreign Tenant required by execution isolation acceptance.
-func createOrchestratorForeignTenant(ctx context.Context, create func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error), administratorID, consumerTenantID int64) (*iam.ManagedTenant, error) {
+func createOnlineForeignTenant(ctx context.Context, create func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error), administratorID, consumerTenantID int64) (*iam.ManagedTenant, error) {
 	tenant, err := create(ctx, iam.CreateTenantInput{
 		Code: "external-online-foreign", Name: "External Online Foreign",
 		InitialAdministratorPrincipalID: administratorID,
@@ -1166,6 +1179,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME",
 		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD",
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME",
 		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD",

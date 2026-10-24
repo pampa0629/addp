@@ -50,6 +50,33 @@ def verify_service_graph_denial(payload):
             "Service graph protection must refuse the unresolved read without output")
 
 
+def verify_service_graph_foreign(report, definition, tenant_id, body, public_access):
+    env = SUPPORT.required_environment
+    foreign_tenant = SUPPORT.positive_int(env("ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID"), "foreign Service Tenant")
+    require(foreign_tenant > 1 and foreign_tenant != tenant_id, "Foreign Service Tenant must be distinct and nondefault")
+    token = env("ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN")
+    foreign = Client(env("GATEWAY_URL"), token, 30)
+    user = identity(foreign, foreign_tenant, SERVICE_READER_PERMISSIONS)
+    user["tenant_id"] = str(foreign_tenant)
+    others = {entry["principal_id"] for name, entry in report["identities"].items() if name != "service_foreign"}
+    require(user["principal_id"] not in others, "Foreign Service reader must be a separate ordinary User")
+    require(report["identities"].get("service_foreign", user) == user, "Foreign Service identity changed between checks")
+    report["identities"]["service_foreign"] = user
+    path = "/api/gquery/" + definition["service_name"]
+    checks = []
+    for entry, origin in (("dto_gateway", env("GATEWAY_URL")), ("console_http", env("CONSOLE_URL"))):
+        client = Client(origin, token, 30)
+        management = client.request("GET", f"/api/v1/service/graph/{definition['id']}", (404,))
+        require(management.status == 404 and management.payload == {"error": "Service not found"},
+                "Foreign Service detail must be absent without exposing its DTO")
+        execution = client.request("POST", path, (404,), body)
+        require(execution.status == 404 and execution.payload == {"error": f"service '{definition['service_name']}' not found"},
+                "Foreign Service execution must return only the Tenant-scoped not-found error")
+        checks.append({"entry": entry, "public_access": public_access, "management_status": 404,
+                       "execution_status": 404, "result_absent": True})
+    return checks
+
+
 def run_service_graph_browser(report, definition, tenant_id, phase):
     env = SUPPORT.required_environment
     reader = Client(env("GATEWAY_URL"), env("ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN"), 30)
@@ -94,10 +121,12 @@ def run_service_graph_phase(preparer, anonymous, report, definition, tenant_id, 
     endpoint = dto["endpoints"]["execute"]
     require(endpoint == env("GATEWAY_URL").rstrip("/") + path, "DTO must preserve the configured Gateway address and canonical path")
     require(dto["id"] == definition["id"] and dto["service_name"] == definition["service_name"], "Service definition identity changed")
+    require(dto.get("public_access") is False, "Service phase must begin with the saved private access state")
     body = {"parameters": {}, "page": 1, "page_size": 20}
     expected_status = 200 if phase == "unmanaged" else 500
     check = verify_service_graph_result if phase == "unmanaged" else verify_service_graph_denial
     check(reader.request("POST", path, (expected_status,), body).payload)
+    foreign_checks = verify_service_graph_foreign(report, dto, tenant_id, body, False)
     if phase == "unmanaged":
         anonymous.request("POST", path, (401,), body)
         Client(env("GATEWAY_URL"), "invalid-service-graph-token", 30).request("POST", path, (401,), body)
@@ -106,13 +135,19 @@ def run_service_graph_phase(preparer, anonymous, report, definition, tenant_id, 
         preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"status": "inactive"})
         reader.request("POST", path, (400,), body)
         preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"status": "active"})
-    preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": True})
+    enabled = preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": True}).payload
+    require(enabled.get("public_access") is True, "Service public access state was not saved")
     check(anonymous.request("POST", path, (expected_status,), body).payload)
-    preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": False})
+    foreign_checks.extend(verify_service_graph_foreign(report, dto, tenant_id, body, True))
+    require(len(foreign_checks) == 4 and {(item["entry"], item["public_access"]) for item in foreign_checks} ==
+            {(entry, public) for entry in ("dto_gateway", "console_http") for public in (False, True)},
+            "Foreign Service checks must cover both HTTP entries in private and public states")
+    disabled = preparer.request("PUT", f"/api/v1/service/graph/{dto['id']}", (200,), {"public_access": False}).payload
+    require(disabled.get("public_access") is False, "Service private access state was not restored")
     browser = run_service_graph_browser(report, dto, tenant_id, phase)
     return {"http_status": expected_status, "dto_endpoint": endpoint, "private_user": True, "public_anonymous": True,
             "native_rows_verified": phase == "unmanaged", "protection_refused_without_output": phase == "protected", "browser": browser,
-            "cross_tenant_runtime_verified": False, "public_https_verified": False}
+            "cross_tenant_runtime_verified": True, "foreign_checks": foreign_checks, "public_https_verified": False}
 
 
 def require(condition, message):
@@ -710,7 +745,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v11", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v12", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

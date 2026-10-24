@@ -92,6 +92,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             export ADDP_ONLINE_TEST_USER_PASSWORD=private-password
             export ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN=graph-preparer
             export ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN=graph-outsider
+            export ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN=graph-foreign-reader
+            export ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID=3
             EOF
                 exit 0
               fi
@@ -144,6 +146,8 @@ class HostedSecurityGateTest(unittest.TestCase):
               if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
                 [ "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" = 31 ]
                 [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" = 32 ]
+                [ "$ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN" = graph-foreign-reader ]
+                [ "$ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID" = 3 ]
               fi
               [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
               [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]

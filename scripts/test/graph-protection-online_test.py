@@ -123,7 +123,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         else: self.assertTrue(SUITE.run_service_graph_browser(report, definition, 2, phase)['user_bearer'])
 
     def test_service_graph_phase_checks_auth_state_aliases_and_unmodified_dto_address(self):
-        definition = {'id': 31, 'service_name': 'service_graph_run', 'endpoints': {'execute': 'http://127.0.0.1:8000/api/gquery/service_graph_run'}}
+        definition = {'id': 31, 'service_name': 'service_graph_run', 'public_access': False, 'endpoints': {'execute': 'http://127.0.0.1:8000/api/gquery/service_graph_run'}}
         rows = {'rows_count': 3, 'columns': ['id', 'name'], 'rows': [
             {'id': 'p1', 'name': 'Fixture one'}, {'id': 'p2', 'name': 'Fixture two'}, {'id': 'p3', 'name': 'Fixture three'}]}
         for phase in ('unmanaged', 'protected'):
@@ -133,19 +133,75 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 def request(self, method, path, expected, body=None, **kwargs):
                     calls.append((method, path, expected, body, kwargs))
                     value = definition if method == 'GET' else {}
+                    if method == 'PUT': value = dict(definition, public_access=body.get('public_access', False))
                     if method == 'POST' and expected in ((200,), (500,)):
                         value = rows if phase == 'unmanaged' else {'error': 'service data protection gate is required: protected resource read set is unresolved'}
                     return SUITE.SUPPORT.Response(expected[0], value)
             environment = {'GATEWAY_URL': 'http://127.0.0.1:8000', 'SERVICE_URL': 'http://127.0.0.1:8086',
                            'ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN': 'service-secret'}
-            with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'Client', Client), patch.object(SUITE, 'run_service_graph_browser', return_value={}):
+            def foreign(report, dto, tenant, body, public):
+                return [dict(entry=entry, public_access=public, management_status=404, execution_status=404, result_absent=True)
+                        for entry in ('dto_gateway', 'console_http')]
+            with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'Client', Client), patch.object(SUITE, 'run_service_graph_browser', return_value={}), \
+                 patch.object(SUITE, 'verify_service_graph_foreign', side_effect=foreign) as cross_tenant:
                 result = SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
                 self.assertEqual(result['http_status'], 200 if phase == 'unmanaged' else 500)
+                self.assertIs(result['cross_tenant_runtime_verified'], True)
+                self.assertEqual(len(result['foreign_checks']), 4)
+                self.assertEqual([call.args[-1] for call in cross_tenant.call_args_list], [False, True])
                 if phase == 'unmanaged':
                     self.assertEqual([call[2][0] for call in calls if call[0] == 'POST'], [200, 401, 401, 404, 404, 400, 200])
                     self.assertTrue(all(call[4].get('raw_response') for call in calls if call[2] == (404,)))
                 with patch.dict(definition['endpoints'], execute='http://wrong.test/api/gquery/service_graph_run'), self.assertRaises(SUITE.SuiteError):
                     SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
+                with patch.object(SUITE, 'verify_service_graph_foreign', return_value=[]), self.assertRaises(SUITE.SuiteError):
+                    SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
+                with patch.dict(definition, public_access=True), self.assertRaises(SUITE.SuiteError):
+                    SUITE.run_service_graph_phase(Client(), Client(), {}, definition, 2, phase)
+
+    def test_service_foreign_checks_require_valid_separate_identity_and_both_exact_http_boundaries(self):
+        definition = {'id': 31, 'service_name': 'service_graph_run'}
+        environment = {'GATEWAY_URL': 'http://127.0.0.1:8000', 'CONSOLE_URL': 'http://127.0.0.1:18080',
+                       'ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID': '3', 'ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN': 'foreign-token'}
+        user = {'principal_id': '6', 'permissions': ['service.definition.read'], 'administrator': False}
+        for public in (False, True):
+            for mutation in ('none', '200', '401', '403', '500', 'rows', 'dto', 'unrelated-error'):
+                calls = []
+                class Client:
+                    def __init__(self, origin, token, timeout): self.origin, self.token = origin, token
+                    def request(self, method, path, expected, body=None):
+                        calls.append((self.origin, self.token, method, path, expected, body))
+                        payload = {'error': 'Service not found' if method == 'GET' else "service 'service_graph_run' not found"}
+                        if mutation == 'rows': payload['rows'] = []
+                        if mutation == 'dto': payload['endpoints'] = {'execute': '/api/gquery/service_graph_run'}
+                        if mutation == 'unrelated-error': payload['error'] = 'proxy target not found'
+                        return SUITE.SUPPORT.Response(int(mutation) if mutation.isdigit() else 404, payload)
+                report = {'identities': {'service': {'principal_id': '5'}}}
+                with self.subTest(public=public, mutation=mutation), patch.dict(SUITE.os.environ, environment), \
+                     patch.object(SUITE, 'Client', Client), patch.object(SUITE, 'identity', return_value=dict(user)) as identity:
+                    if mutation != 'none':
+                        with self.assertRaises(SUITE.SuiteError): SUITE.verify_service_graph_foreign(report, definition, 2, {'parameters': {}}, public)
+                    else:
+                        result = SUITE.verify_service_graph_foreign(report, definition, 2, {'parameters': {}}, public)
+                        self.assertEqual(identity.call_args.args[1:], (3, SUITE.SERVICE_READER_PERMISSIONS))
+                        self.assertEqual([r['entry'] for r in result], ['dto_gateway', 'console_http'])
+                        self.assertTrue(all(r['public_access'] is public and r['result_absent'] is True for r in result))
+                        self.assertEqual([c[:5] for c in calls], [
+                            (origin, 'foreign-token', method, path, (404,))
+                            for origin in ('http://127.0.0.1:8000', 'http://127.0.0.1:18080')
+                            for method, path in [('GET', '/api/v1/service/graph/31'), ('POST', '/api/gquery/service_graph_run')]])
+                        self.assertEqual(report['identities']['service_foreign']['tenant_id'], '3')
+        for value in ('1', '2', '0', 'invalid'):
+            with patch.dict(SUITE.os.environ, dict(environment, ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID=value)), patch.object(SUITE, 'Client') as client:
+                with self.assertRaises(SUITE.SuiteError): SUITE.verify_service_graph_foreign({'identities': {}}, definition, 2, {}, False)
+                client.assert_not_called()
+        for principal, previous in [('5', None), ('7', dict(user, tenant_id='3'))]:
+            report = {'identities': {'service': {'principal_id': '5'}}}
+            if previous: report['identities']['service_foreign'] = previous
+            with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'Client') as client, \
+                 patch.object(SUITE, 'identity', return_value=dict(user, principal_id=principal)):
+                with self.assertRaises(SUITE.SuiteError): SUITE.verify_service_graph_foreign(report, definition, 2, {}, False)
+                client.return_value.request.assert_not_called()
 
     def test_service_browser_failure_still_deletes_the_service_definition(self):
         deleted = []

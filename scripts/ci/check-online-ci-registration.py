@@ -3420,7 +3420,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v11", "verify_dense", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v12", "verify_dense", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -3428,6 +3428,8 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
             'report["service_graph_unmanaged"] = run_service_graph_phase(',
             'report["service_graph_protected"] = run_service_graph_phase(',
             'verify_service_graph_denial', 'delete synthetic Service graph definition',
+            'verify_service_graph_foreign', 'len(foreign_checks) == 4',
+            '"cross_tenant_runtime_verified": True', 'ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID',
         ),
         "console/frontend/e2e/online/graph-protection.spec.js": (
             "addp.graph-protection-browser/v7", "browserAPIFromResponse", "login(",
