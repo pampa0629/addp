@@ -1060,6 +1060,15 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 现有 owner／路径自动发现、PostgreSQL `TestIntegrationPostgres` 与前端标准入口已实际命中新用例，不新增 Makefile／workflow。T3 使用受控 API，不代替正式身份、个人 Safari 或 Hosted；没有重启个人服务、修改个人业务库或 IAM，没有查询／重跑 CI／Hosted或设置定时任务，相关结果继续等专门会话回传。
 
 
+### 发现时间查询：个人 Safari 重启后只读复验（2026-10-24）
+
+用户完成重启后，`curl --silent --show-error --max-time 10 -w '\nHTTP %{http_code}\n' http://localhost:8100/health/ready` 返回 HTTP 200，Monitor 已登记、本地依赖与 System 登记均 ready。运行源码为 `f651ad550fa41a942d40dccbf782ae4d02c51f10`，已用 `git merge-base --is-ancestor` 确认包含本功能提交 `ea320ab686f9fe40c36ee628284e4de0049ae547`。
+
+在个人 Safari 现有平台系统管理员会话，通过真实 Console `/monitor/platform-alerts` 只读复验：截图可见发现时间控件和就近说明；结束时间单边界可查到现有告警；相等时间草稿提示无效并禁用搜索；查询 10 月 24 日至 25 日后现有 10 月 23 日告警被排除，整页刷新后日期与空结果保留；扩大起始日期至 23 日后该告警重新显示；组合警告级别后，清除时间保留 `severity=warning` 及现有告警。日期框使用本地时间，URL 使用对应 UTC。未创建、确认、抑制或删除任何告警。
+
+操作记录 `/tmp/addp-alert-time-safari-result.json`，最终 AX 状态 `/tmp/addp-alert-time-safari-state.txt`，截图 `/tmp/addp-alert-time-safari.png`，摘要内记录两份文件的 SHA-256。当前只有一条现有告警，本次不证明多页或微秒边界；这些范围仍分别依赖上文 PostgreSQL T2／受控浏览器 T3。个人 Safari 结果不升级为正式隔离身份 T4、Hosted 或生产证据；CI／Hosted 继续等专门会话回传，本次未查询或触发，也未设置定时任务。
+
+
 ### 正式身份本地第八窗口：真实MFA与准备角色通过，成功查询被保护链拒绝（2026-10-24）
 
 用户确认准备User仅在当次隔离环境，经真实密码／TOTP与正式IAM API取得既有`tenant.infrastructure_administrator`；普通执行User的原11项权限保持。先修规范和入口，`558cb372659a9b863d14ae78fdbe7ba1014870bf`删除不可租户定制的自定义准备角色，夹具不预授准备角色、不制造会话或AAL2。实际入口核对内置角色当前11项权限及同一Membership，自助TOTP登记替换Cookie／Access Token、验证旧令牌401；真实AAL2和有效step-up后分配限于窗口期限的角色，再经正式Refresh重读同一身份及准确授权。普通User权限在准备后再次核对。
