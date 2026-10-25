@@ -315,6 +315,22 @@ def write_document(directory, name, value):
             temporary.unlink(missing_ok=True)
 
 
+def service_intent_time():
+    return datetime.now(timezone.utc).isoformat(timespec='microseconds').replace('+00:00', 'Z')
+
+
+def change_service_intent(row, changes, stamp):
+    # A group change must not reuse a confirmation boundary. Do not synthesize
+    # a future clock value if the real deployment clock has not advanced.
+    if all(row[key] == value for key, value in changes.items()):
+        return
+    old = datetime.fromisoformat(row['changed_at'].replace('Z', '+00:00'))
+    current = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+    if current <= old:
+        raise InventoryError('服务部署意图时间未前进，请核对系统时钟后重试')
+    row.update(changes, changed_at=stamp)
+
+
 def service_expectations(directory, groups, *, stop_modules=None, stop_all=False, replace_running=False):
     """Persist deployment intent, never infer it from surviving processes."""
     directory = Path(directory)
@@ -338,14 +354,14 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
             raise InventoryError('服务部署意图不属于当前工作区')
         current = {tuple(row[k] for k in ('module_name', 'role', 'runtime_name')): dict(row)
                    for row in previous['groups']} if previous else {}
-        now = observed_at()
+        now = service_intent_time()
         if stop_all or stop_modules is not None:
             if groups or not isinstance(stop_all, bool) or (stop_modules is not None and
                     (not isinstance(stop_modules, list) or not all(service_intent_name(x) for x in stop_modules))):
                 raise InventoryError('服务停止范围无效')
             for row in current.values():
                 if (stop_all or row['module_name'] in stop_modules) and row['desired_state'] != 'planned_stopped':
-                    row.update(desired_state='planned_stopped', changed_at=now)
+                    change_service_intent(row, {'desired_state': 'planned_stopped'}, now)
         else:
             if not isinstance(groups, list) or (not groups and not replace_running) or len(groups) > 1000:
                 raise InventoryError('服务启动范围无效')
@@ -360,7 +376,8 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
                     raise InventoryError('服务启动声明重复')
                 seen.add(key)
                 old = current.get(key)
-                if old and all(old[k] == row[k] for k in group) and old['desired_state'] == 'running':
+                if old:
+                    change_service_intent(old, dict(group, desired_state='running'), now)
                     row = old
                 current[key] = row
         if replace_running:
@@ -368,7 +385,7 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
                 raise InventoryError('服务部署声明范围无效')
             for key, row in current.items():
                 if key not in seen and row['desired_state'] != 'planned_stopped':
-                    row.update(desired_state='planned_stopped', changed_at=now)
+                    change_service_intent(row, {'desired_state': 'planned_stopped'}, now)
         rows = [current[k] for k in sorted(current)]
         if previous and rows == previous['groups']:
             return previous

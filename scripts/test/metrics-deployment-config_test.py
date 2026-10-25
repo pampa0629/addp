@@ -1339,6 +1339,45 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
         self.assertTrue(all(x['desired_state'] == 'planned_stopped' for x in
                             inventory.service_expectations(self.directory, [], stop_all=True)['groups']))
 
+    def test_same_second_stop_restart_and_resize_have_distinct_real_group_change_times(self):
+        stamps = ['2020-01-01T00:00:00.000001Z', '2020-01-01T00:00:00.000002Z',
+                  '2020-01-01T00:00:00.000003Z', '2020-01-01T00:00:00.000004Z']
+        with mock.patch.object(inventory, 'observed_at', return_value='2020-01-01T00:00:00Z'), \
+             mock.patch.object(inventory, 'service_intent_time', side_effect=stamps, create=True):
+            started = inventory.service_expectations(self.directory, [self.group()])
+            stopped = inventory.service_expectations(self.directory, [], stop_modules=['meta'])
+            restarted = inventory.service_expectations(self.directory, [self.group()])
+            resized = inventory.service_expectations(self.directory, [self.group(count=1)])
+        documents = [started, stopped, restarted, resized]
+        self.assertEqual([d['groups'][0]['changed_at'] for d in documents], stamps)
+        self.assertEqual([d['revision'] for d in documents], [1,2,3,4])
+        self.assertEqual(started['groups'][0]['expected_replicas'], restarted['groups'][0]['expected_replicas'])
+        self.assertEqual(started['groups'][0]['desired_state'], restarted['groups'][0]['desired_state'])
+
+    def test_non_advancing_clock_cannot_mutate_intent_or_manufacture_future_time(self):
+        first_time = '2020-01-01T00:00:00.000002Z'
+        with mock.patch.object(inventory, 'service_intent_time', return_value=first_time, create=True):
+            first = inventory.service_expectations(self.directory, [self.group()])
+        before = self.path.read_bytes()
+        for stamp in [first_time, '2020-01-01T00:00:00.000001Z']:
+            with self.subTest(stamp=stamp), mock.patch.object(inventory, 'service_intent_time', return_value=stamp, create=True):
+                for operation in [lambda: inventory.service_expectations(self.directory, [], stop_all=True),
+                                  lambda: inventory.service_expectations(self.directory, [self.group(count=1)]),
+                                  lambda: inventory.service_expectations(self.directory, [], replace_running=True)]:
+                    with self.assertRaises(inventory.InventoryError): operation()
+                    self.assertEqual(self.path.read_bytes(), before)
+        with mock.patch.object(inventory, 'service_intent_time', return_value=first_time, create=True):
+            self.assertEqual(inventory.service_expectations(self.directory, [self.group()]), first)
+        self.assertFalse(list(self.directory.glob('.service-expectations.json-*')))
+
+    def test_unrelated_group_change_does_not_erase_the_original_group_change_marker(self):
+        with mock.patch.object(inventory, 'service_intent_time', return_value='2020-01-01T00:00:00.000001Z', create=True):
+            first = inventory.service_expectations(self.directory, [self.group(), self.group('transfer', 'sync')])
+        with mock.patch.object(inventory, 'service_intent_time', return_value='2020-01-01T00:00:00.000002Z', create=True):
+            next_document = inventory.service_expectations(self.directory, [self.group('transfer', 'sync', count=1)])
+        self.assertEqual(next_document['groups'][0], first['groups'][0])
+        self.assertNotEqual(next_document['groups'][1]['changed_at'], first['groups'][1]['changed_at'])
+
     def test_invalid_batch_never_partially_publishes_or_replaces_prior_intent(self):
         inventory.service_expectations(self.directory, [self.group()])
         before = self.path.read_bytes()
