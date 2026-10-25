@@ -72,7 +72,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 指标查询沿[版本、并发与消费绑定](docs/architecture/指标来源与版本.md#版本并发与消费绑定)逐次复核精确修订、依赖与 `CompilerIdentity`；撤回、漂移或实现不匹配须拒绝，不自动选最新版。验证范围沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，夹具不代替真实执行，未运行或未覆盖不计通过。
 - 指标结果筛选与分页沿[统一执行契约](docs/architecture/查询发布与执行.md#统一执行契约)：Service 形成中立 ResultRequest，Common 包装计划根节点交引擎编译；参数单次绑定，不改变原指标分母、不裁剪计划断言，不回到旧 SQL 包装或全量补算。验证沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，原生单表续页证据不替代指标查询验收，未运行或未覆盖不计通过。
 - Query Cursor 与 Feature ID 统一沿[不透明查询令牌](../docs/concepts/addp共享模块介绍.md#不透明查询令牌)复用 `common/opaquetoken` JSON AES-GCM，不保留私有加密实现；Service 保留发布版本、查询指纹与领域载荷校验。AEAD 令牌不得暴露稳定键或排序值，解密成功不代替授权。共享验证沿既有 Service Go T1、PostgreSQL T2 和 Common Go 门禁。
-- analytical 来源的可筛选字段唯一来自冻结计划的输出字段，Consumer Descriptor 与执行校验共用此投影，操作符沿用中立结果筛选支持的类型规则；不保存 `filterable_fields` 副本、不将来源表字段开放给消费端。该投影适用于汇总和明细，消费者契约指纹变化后应用需显式更新绑定。验证纳入现有 Service Go T1、PostgreSQL T2 及模块门禁。
+- 指标可筛选字段沿[统一执行契约](docs/architecture/查询发布与执行.md#统一执行契约)从冻结输出派生，Consumer Descriptor 与执行校验共用投影，不保存 `filterable_fields` 副本、不开放来源表字段。消费契约指纹变化须显式更新应用绑定；验证沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，投影声明或夹具不代表真实执行已验收，未运行或未覆盖不计通过。
 - 指标只读编译预览的接口、依赖复核与返回字段统一见[执行查询预览](docs/architecture/指标来源与版本.md#执行查询预览)。须校验当前 Tenant 和 `service.definition.read`；仅编译、不执行业务查询，不返回连接配置或保存 SQL 副本。编译成功不证明执行权限或真实取数通过，验证沿专题标准入口，未运行或未覆盖不计通过。
 - TiDB 指标绑定、结果编译由 Service T1 覆盖；发布持久化沿 `make test-service-postgres` 覆盖 PG/MySQL/TiDB 包；TiDB 实库执行沿 `make test-common-tidb` 覆盖来源解析、参数绑定、结果筛选及保护拒绝。后者的 Model/System HTTP 响应为受控夹具，不代替 `metric-service-revision-lifecycle` Hosted T4 的完整发布链路验收。
 - 指标执行经既有 QueryRuntimeProvider.PrepareQuery、完整 ReadSet/OutputLineage 和 Service 数据保护门禁。编译期 SourceBindings 不是权限证明；受保护聚合来源不能证明允许输出时仍拒绝。新发布计划包和 Consumer Descriptor 必须同步验证，Workbench 不解析引擎、计划或原生查询。
