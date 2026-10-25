@@ -1157,7 +1157,12 @@ def _profile_environment():
 
 def _raster_profile_worker(source, targets, scratch, connection, profile_case, execution_mode):
     """Measure one process independently of the parent's pixel oracle."""
+    import faulthandler
     import traceback
+    # Native aborts bypass Python exceptions. Keep all thread stacks outside the pipe.
+    # The OS owns this child-only descriptor until process exit, including teardown.
+    fault_fd = os.open(scratch / 'native-fault.log', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    faulthandler.enable(file=fault_fd, all_threads=True)
     # Set the process-wide temporary root once, before starting any threads.
     tempfile.tempdir = str(scratch)
     try:
@@ -1174,7 +1179,8 @@ def _raster_profile_worker(source, targets, scratch, connection, profile_case, e
                          'elapsed_seconds': time.perf_counter() - started, **_profile_process_usage(),
                          'mosaic_vrts_removed': not any(name.startswith('addp-raster-mosaic-')
                                                        for name in gdal.ReadDir('/vsimem') or []),
-                         'environment': _profile_environment()})
+                         'environment': _profile_environment(),
+                         'native_fault_handler_enabled': faulthandler.is_enabled()})
     except BaseException:
         connection.send({'error': traceback.format_exc()})
     finally:
@@ -1190,11 +1196,22 @@ def _run_raster_profile(source, targets, tmp_path, profile_case, execution_mode)
                                   args=(source, targets, Path(scratch), sender, profile_case, execution_mode))
         process.start()
         sender.close()
+
+        def failure(reason):
+            fault_log = Path(scratch) / 'native-fault.log'
+            diagnostic = fault_log.read_text(errors='replace') if fault_log.exists() else ''
+            return (f'{reason}: case={profile_case} mode={execution_mode} '
+                    f'pid={process.pid} exitcode={process.exitcode}\n{diagnostic}')
+
         try:
-            assert receiver.poll(300), 'Raster profile worker exceeded 300 seconds'
-            report = receiver.recv()
+            assert receiver.poll(300), failure('Raster profile worker exceeded 300 seconds')
+            try:
+                report = receiver.recv()
+            except EOFError as exc:
+                process.join(10)
+                raise AssertionError(failure('Raster profile worker closed its pipe without a report')) from exc
             process.join(10)
-            assert process.exitcode == 0
+            assert process.exitcode == 0, failure('Raster profile worker did not exit successfully')
         finally:
             if process.is_alive():
                 process.terminate()
@@ -1202,6 +1219,66 @@ def _run_raster_profile(source, targets, tmp_path, profile_case, execution_mode)
             receiver.close()
     assert 'error' not in report, report.get('error')
     return report
+
+
+def _raster_profile_abnormal_exit(source, targets, scratch, connection, profile_case, execution_mode):
+    # Exit without Python unwinding, as a native failure does, without crashing the test host.
+    (scratch / 'native-fault.log').write_text('native fault diagnostic sentinel\n')
+    if execution_mode == 'after_report':
+        connection.send({'tasks': []})
+    os._exit(29)
+
+
+@pytest.mark.parametrize('execution_mode', ['before_report', 'after_report'])
+def test_raster_profile_rejects_abnormal_child_exit_with_diagnostics(tmp_path, monkeypatch, execution_mode):
+    monkeypatch.setattr(__import__(__name__), '_raster_profile_worker', _raster_profile_abnormal_exit)
+    with pytest.raises(AssertionError) as error:
+        _run_raster_profile(tmp_path, [], tmp_path, 'directory_mosaic', execution_mode)
+    message = str(error.value)
+    assert 'exitcode=29' in message
+    assert 'case=directory_mosaic' in message and 'mode=' + execution_mode in message
+    assert 'native fault diagnostic sentinel' in message
+    assert not list(tmp_path.glob('profile-worker-*'))
+
+
+def _raster_profile_teardown_probe(source, targets, scratch, connection, profile_case, execution_mode):
+    # spawn imports the unpatched worker in the child; probe the period after its return.
+    import faulthandler
+    enable = faulthandler.enable
+    destinations = []
+
+    def record_destination(*, file, all_threads):
+        destinations.append(file)
+        enable(file=file, all_threads=all_threads)
+
+    faulthandler.enable = record_destination
+    try:
+        _raster_profile_worker(source, targets, scratch, connection, profile_case, 'serial')
+    finally:
+        faulthandler.enable = enable
+    if not faulthandler.is_enabled():
+        os._exit(30)
+    # Exercise the very same still-open descriptor without raising a fatal signal.
+    faulthandler.dump_traceback(file=destinations[0], all_threads=True)
+    os._exit(29)
+
+
+def test_raster_profile_keeps_native_diagnostics_through_child_teardown(tmp_path, monkeypatch):
+    monkeypatch.setattr(__import__(__name__), '_raster_profile_worker', _raster_profile_teardown_probe)
+    with pytest.raises(AssertionError) as error:
+        _run_raster_profile(tmp_path, [], tmp_path, 'directory_mosaic', 'serial')
+    message = str(error.value)
+    assert 'exitcode=29' in message
+    assert '_raster_profile_teardown_probe' in message
+    assert not list(tmp_path.glob('profile-worker-*'))
+
+
+def test_raster_profile_preserves_python_failure_and_cleans_scratch(tmp_path):
+    with pytest.raises(AssertionError, match='no source TIFF files were discovered'):
+        _run_raster_profile(tmp_path, [tmp_path / 'output'], tmp_path,
+                            'directory_mosaic', 'serial')
+    assert not list(tmp_path.glob('profile-worker-*'))
+    assert not (tmp_path / 'output').exists()
 
 
 def _profile_values(original, y, height):
@@ -1660,6 +1737,7 @@ def test_same_process_raster_pair_profile(tmp_path, execution_mode):
 
 
 def _profile_pair_metrics(report):
+    assert report['native_fault_handler_enabled']
     first, second = report['tasks']
     overlap = min(task['finished_seconds'] for task in report['tasks']) - max(
         task['started_seconds'] for task in report['tasks'])
