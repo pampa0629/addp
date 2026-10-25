@@ -10,7 +10,9 @@
     <template v-if="!nodeID">
       <el-form class="resource-search" @submit.prevent="search">
         <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" />
+        <HostNodeFilters :node-kind="state.nodeKind" :enabled="state.enabled" @change="changeFilter" />
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
+        <el-button @click="resetFilters" data-testid="resource-reset">{{ t('common.reset') }}</el-button>
       </el-form>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
       <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
@@ -23,7 +25,7 @@
         <el-table-column :label="t('monitor.resources.nodeState')" width="120"><template #default="{ row }">{{ t(row.enabled ? 'common.enabled' : 'common.disabled') }}</template></el-table-column>
         <el-table-column width="150" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
       </el-table>
-      <div class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
+      <div v-if="total !== null" class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
     </template>
     <template v-else-if="node">
       <section class="node-header">
@@ -166,6 +168,7 @@
 </template>
 
 <script setup>
+import HostNodeFilters from '../../../../common-frontend/basic/src/components/HostNodeFilters.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -194,7 +197,7 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
 const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
-const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
+const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref('')
@@ -268,6 +271,8 @@ function configureCollection() {
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
+function changeFilter(key, value) { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, [key]: value || undefined, page: undefined }, 'replace') }
+function resetFilters() { searchText.value = ''; return navigate('/node-resources', { page_size: state.value.query.page_size, refresh: state.value.query.refresh }, 'replace') }
 function selectTrend(key, value) {
   const query = { ...state.value.query, [key]: value }
   if (key === 'metric' && !value.startsWith('node.filesystem.') && !value.startsWith('node.disk.') && !value.startsWith('node.network.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
@@ -291,10 +296,11 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
+  total.value = null
   comparison.value = null
   if (state.value.compare) trend.value = null
   if (!automatic) { summaries.value = new Map(); summaryErrorKey.value = '' }
-  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
+  if (!automatic) { nodes.value = []; total.value = null; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
   errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
@@ -306,7 +312,7 @@ async function reload({ automatic = false } = {}) {
   loading.value = true
   try {
     if (!id) {
-      const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}) }, config))
+      const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}), ...(state.value.nodeKind ? { node_kind: state.value.nodeKind } : {}), ...(state.value.enabled ? { enabled: state.value.enabled } : {}) }, config))
       if (!requestScope.current(ticket)) return
       let nextSummaries = new Map(), nextSummaryError = ''
       if (value.data.length) {
@@ -398,8 +404,8 @@ async function reload({ automatic = false } = {}) {
     if (!requestScope.current(ticket)) return
     instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
-    if (!id) { nodes.value = []; total.value = 0; summaries.value = new Map() }
-    if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
+    if (!id) { nodes.value = []; total.value = null; summaries.value = new Map() }
+    if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = null; summaries.value = new Map() }
   } finally { if (requestScope.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
 watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
@@ -414,7 +420,8 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .resource-toolbar h2, .resource-toolbar h3 { flex: 1; }
 .resource-toolbar .el-select { width: 220px; max-width: 100%; }
-.resource-search { display: flex; gap: 8px; margin: 16px 0; max-width: 520px; }
+.resource-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
+.resource-search > .el-input { width: 320px; max-width: 100%; }
 .resource-pagination { margin-top: 16px; overflow-x: auto; }
 .resource-node-list :deep(.el-table__header .cell) { white-space: normal; text-overflow: clip; }
 .node-header { margin: 16px 0; overflow-wrap: anywhere; }

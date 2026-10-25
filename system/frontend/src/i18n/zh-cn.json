@@ -2172,8 +2172,6 @@
       "quotaExceeds": "已保存额度高于当前平台上限，有效值已收敛；重新保存前请降低额度或恢复继承。"
     },
     "hostNodes": {
-      "allKinds": "全部主机类型",
-      "allStates": "全部纳管状态",
       "modulesDenied": "当前身份不能读取服务模块候选；已保存的关联设置保持不变。",
       "modulesFailed": "无法读取服务模块，请重试",
       "monitor": "查看主机监控",

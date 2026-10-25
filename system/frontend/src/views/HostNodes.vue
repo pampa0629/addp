@@ -7,15 +7,7 @@
     </header>
     <form class="node-toolbar" @submit.prevent="search">
       <el-input ref="searchInput" v-model="searchDraft" :placeholder="t('system.hostNodes.search')" :aria-label="t('system.hostNodes.search')" clearable maxlength="255" />
-      <el-select :model-value="state.nodeKind" :empty-values="[null, undefined]" :aria-label="t('system.hostNodes.kind')" class="node-filter" @update:model-value="value => changeFilter('node_kind', value)">
-        <el-option :value="''" :label="t('system.hostNodes.allKinds')" />
-        <el-option v-for="kind in ['physical', 'virtual']" :key="kind" :value="kind" :label="t(`system.hostNodes.kinds.${kind}`)" />
-      </el-select>
-      <el-select :model-value="state.enabled" :empty-values="[null, undefined]" :aria-label="t('system.hostNodes.state')" class="node-filter" @update:model-value="value => changeFilter('enabled', value)">
-        <el-option :value="''" :label="t('system.hostNodes.allStates')" />
-        <el-option value="true" :label="t('system.hostNodes.enabled')" />
-        <el-option value="false" :label="t('system.hostNodes.disabled')" />
-      </el-select>
+      <HostNodeFilters :node-kind="state.nodeKind" :enabled="state.enabled" @change="changeFilter" />
       <el-button native-type="submit">{{ t('common.search') }}</el-button>
       <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
       <el-button :loading="listLoading" @click="loadList">{{ t('system.module.refresh') }}</el-button>
@@ -98,6 +90,7 @@
 </template>
 
 <script setup>
+import HostNodeFilters from '../../../../common-frontend/basic/src/components/HostNodeFilters.vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -271,7 +264,6 @@ onBeforeUnmount(() => { generation++ })
 .node-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .node-toolbar h2 { flex: 1; margin: 0; }
 .node-toolbar .el-input { max-width: 420px; }
-.node-filter { width: 150px; flex-shrink: 0; }
 .node-table { margin-top: 16px; }
 .node-pagination { margin-top: 16px; overflow-x: auto; }
 .node-bindings { width: 100%; }
@@ -282,7 +274,6 @@ onBeforeUnmount(() => { generation++ })
   .host-nodes { padding: 12px; }
   .node-toolbar { flex-wrap: wrap; }
   .node-toolbar .el-input { max-width: none; flex-basis: 100%; }
-  .node-filter { flex: 1; min-width: 130px; }
   .node-binding-row { grid-template-columns: minmax(0, 1fr) auto; }
   .node-client { grid-column: 1; grid-row: 2; }
 }

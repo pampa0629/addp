@@ -2172,8 +2172,6 @@
       "quotaExceeds": "The saved quota exceeds the current platform limit and its effective value is capped. Lower it or restore inheritance before saving."
     },
     "hostNodes": {
-      "allKinds": "All host types",
-      "allStates": "All management states",
       "modulesDenied": "Your identity cannot read service module candidates. Saved associations are preserved.",
       "modulesFailed": "Unable to load service modules. Retry.",
       "monitor": "View host monitoring",

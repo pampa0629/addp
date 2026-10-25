@@ -1,3 +1,4 @@
+import { resolveHostNodeFilters } from '../../../../common-frontend/basic/src/utils/hostNodeFilters.mjs'
 import { compareEvaluationPeriods } from '../../../../common-frontend/basic/src/utils/evaluationPeriodComparison.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resolveTargetRoute } from './monitoringTargets.js'
@@ -70,6 +71,7 @@ export function supportsResourceComparison(metric, range) {
   return pressureMetrics.some(item => item.key === metric) && ['5m', '1h', '24h'].includes(range)
 }
 export function resolveResourceRoute(query = {}, detail = false) {
+  const filters = resolveHostNodeFilters(query)
   const pagination = resolveTargetRoute({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.page_size === undefined ? {} : { page_size: query.page_size }) })
   const search = typeof query.search === 'string' ? query.search.trim().slice(0, 200) : ''
   const range = detail && typeof query.range === 'string' && Object.hasOwn(resourceRanges, query.range) ? query.range : '1h'
@@ -95,8 +97,8 @@ export function resolveResourceRoute(query = {}, detail = false) {
   const invalidEnd = hasEnd && !validEnd
   const refresh = hasEnd ? 'off' : typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
   const compare = detail && query.compare === 'previous' && supportsResourceComparison(metric, range)
-  const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(compare ? { compare: 'previous' } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
-  return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, compare, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
+  const canonical = { ...pagination.query, ...canonicalDimensions, ...filters.query, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(compare ? { compare: 'previous' } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
+  return { page: pagination.page, pageSize: pagination.pageSize, nodeKind: filters.nodeKind, enabled: filters.enabled, search, range, metric, compare, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
 export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {}, compare = false) {

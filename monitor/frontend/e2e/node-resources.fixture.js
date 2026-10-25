@@ -22,7 +22,11 @@ export async function resourceBackend(page, options = {}) {
     else if (path.startsWith('/api/v1/system/platform/host_nodes')) {
       state.reads.push({ path, query: Object.fromEntries(url.searchParams) })
       const nodes = (state.listNodes || [node, secondNode].map((node_id, index) => ({ node_id, display_name: index ? '节点乙' : '节点甲', addresses: ['127.0.0.1'], enabled: true, version: 1 })))
-      if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')) }
+      if (path.endsWith('/host_nodes')) {
+        const matches = options.filterNodes ? nodes.filter(row => (!url.searchParams.has('node_kind') || row.node_kind === url.searchParams.get('node_kind')) && (!url.searchParams.has('enabled') || String(row.enabled) === url.searchParams.get('enabled')) && (!url.searchParams.has('search') || row.display_name.includes(url.searchParams.get('search')))) : nodes
+        const number = Number(url.searchParams.get('page')), size = Number(url.searchParams.get('page_size'))
+        body = { data: options.filterNodes ? matches.slice((number - 1) * size, number * size) : matches, total: options.filterNodes ? matches.length : 45, page: number, page_size: size }
+      }
       else { body = nodes.find(item => path.endsWith(item.node_id)); if (!body) { status = 404; body = { error: 'not found' } } }
     } else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets') && req.method() === 'GET') {
       state.reads.push({ path, method: req.method() })

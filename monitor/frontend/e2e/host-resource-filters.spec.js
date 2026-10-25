@@ -1,0 +1,139 @@
+import { expect, test } from '@playwright/test'
+import { hostListMetrics } from '../src/utils/nodeResources'
+import { node, secondNode, resourceBackend, identity, resourcePermissions, setIdentity } from './node-resources.fixture'
+const hostReads = state => state.reads.filter(row => row.path.endsWith('/host_nodes'))
+const summaryReads = state => state.reads.filter(row => row.path.endsWith('/resource_summaries'))
+const rows = [
+  { node_id: node, display_name: 'Node A', node_kind: 'virtual', addresses: [], enabled: true, version: 1 },
+  { node_id: secondNode, display_name: 'Node B', node_kind: 'physical', addresses: [], enabled: false, version: 1 }
+]
+
+for (const locale of ['zh-cn', 'en']) test(`host filters use owner pagination and survive detail, refresh and reset (${locale})`, async ({ page }) => {
+  const state = await resourceBackend(page, { locale, nodes: rows, filterNodes: true })
+  const english = locale === 'en'
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.goto('/node-resources?page=2&page_size=10&refresh=off')
+  await expect(page.getByTestId('resource-search')).toBeVisible()
+  await page.getByTestId('resource-search').fill(' Node ')
+  await page.getByRole('combobox', { name: english ? 'Host type' : '主机类型', exact: true }).press('Enter')
+  await page.getByRole('option', { name: english ? 'Physical host' : '物理主机', exact: true }).click()
+  await page.getByRole('combobox', { name: english ? 'Management state' : '纳管状态', exact: true }).press('Enter')
+  await page.getByRole('option', { name: english ? 'Disabled' : '停用', exact: true }).click()
+  await expect.poll(() => hostReads(state).at(-1)?.query).toEqual({ page: '1', page_size: '10', search: 'Node', node_kind: 'physical', enabled: 'false' })
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+  await expect(page.getByTestId('resource-node-list')).not.toContainText('Node A')
+  await expect.poll(() => summaryReads(state).at(-1)?.query.node_ids).toBe(secondNode)
+  expect(summaryReads(state).at(-1).query.metrics).toBe(hostListMetrics.map(metric => metric.key).join(','))
+  const view = english ? 'View resources' : '查看资源'
+  await page.getByRole('button', { name: view, exact: true }).click()
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect(page).toHaveURL(url => url.pathname.endsWith(secondNode) && url.searchParams.get('node_kind') === 'physical' && url.searchParams.get('enabled') === 'false')
+  for (const read of state.reads.filter(row => /resource_(observations|trends)$/.test(row.path))) {
+    expect(read.query).not.toHaveProperty('node_kind'); expect(read.query).not.toHaveProperty('enabled'); expect(read.query).not.toHaveProperty('search')
+  }
+  await page.reload()
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await page.getByRole('button', { name: english ? 'Back to hosts' : '返回主机列表', exact: true }).click()
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+  await expect(page.locator('.host-node-filters')).toContainText(english ? 'Physical host' : '物理主机')
+  await expect(page.getByTestId('resource-search')).toHaveValue('Node')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByTestId('resource-reset').click()
+  await expect(page).toHaveURL(url => url.search === '?page_size=10&refresh=off')
+  await expect.poll(() => hostReads(state).at(-1)?.query).toEqual({ page: '1', page_size: '10' })
+  await expect(page.getByTestId('resource-search')).toHaveValue('')
+  expect(state.reads.every(read => !read.method || read.method === 'GET')).toBe(true)
+})
+
+test('empty owner matches do not query metrics and owner failures clear the old filtered rows', async ({ page }) => {
+  const state = await resourceBackend(page, { nodes: rows, filterNodes: true })
+  await page.goto('/node-resources?node_kind=virtual&enabled=false&refresh=off')
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(0)
+  await expect.poll(() => hostReads(state).length).toBe(1)
+  expect(summaryReads(state)).toEqual([])
+  await page.getByTestId('resource-reset').click()
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(2)
+  await page.route('**/api/v1/system/platform/host_nodes?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable' } }))
+  await page.getByRole('combobox', { name: '主机类型', exact: true }).press('Enter')
+  await page.getByRole('option', { name: '物理主机', exact: true }).click()
+  await expect(page.getByTestId('resource-error')).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(0)
+  await expect(page).toHaveURL(url => url.searchParams.get('node_kind') === 'physical')
+  expect(summaryReads(state)).toHaveLength(1)
+})
+
+test('new host filters and identity changes discard the previous page summaries', async ({ page }) => {
+  const state = await resourceBackend(page, { nodes: rows, filterNodes: true })
+  let release, held = false
+  await page.route('**/api/v1/monitor/platform/resource_summaries?**', async route => {
+    if (held) return route.fallback()
+    held = true
+    await new Promise(resolve => { release = resolve })
+    await route.fulfill({ status: 503, json: { error: 'Old page failed' } })
+  })
+  await page.goto('/node-resources?refresh=off')
+  await expect.poll(() => typeof release).toBe('function')
+  await page.getByRole('combobox', { name: '主机类型', exact: true }).press('Enter')
+  await page.getByRole('option', { name: '物理主机', exact: true }).click()
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+  release()
+  await expect(page.getByTestId('resource-node-list')).not.toContainText('Node A')
+  await expect(page.getByTestId('resource-summary-error')).toHaveCount(0)
+  expect(summaryReads(state).at(-1).query.node_ids).toBe(secondNode)
+  await setIdentity(page, identity(resourcePermissions, { type: 'tenant', tenant_id: '8' }))
+  await expect(page.getByTestId('node-resources')).toHaveCount(0)
+})
+
+test('automatic refresh keeps committed host filters and does not submit the name draft', async ({ page }) => {
+  const state = await resourceBackend(page, { nodes: rows, filterNodes: true })
+  await page.clock.install()
+  await page.goto('/node-resources?node_kind=physical&enabled=false&search=Node')
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+  await page.getByTestId('resource-search').fill('Unsubmitted')
+  await page.clock.fastForward(15001)
+  await expect.poll(() => hostReads(state).length).toBe(2)
+  expect(hostReads(state).at(-1).query).toEqual({ page: '1', page_size: '20', search: 'Node', node_kind: 'physical', enabled: 'false' })
+  await expect(page.getByTestId('resource-search')).toHaveValue('Unsubmitted')
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+})
+
+
+test('host filter pagination reads only the selected owner page and keeps filters on size changes', async ({ page }) => {
+  const nodes = Array.from({ length: 12 }, (_, index) => ({ ...rows[1], node_id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, display_name: `Node ${index + 1}` }))
+  const state = await resourceBackend(page, { nodes, filterNodes: true })
+  await page.goto('/node-resources?node_kind=physical&enabled=false&page_size=10&refresh=off')
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(10)
+  await page.locator('.resource-pagination .btn-next').click()
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(2)
+  expect(hostReads(state).map(read => read.query.page)).toEqual(['1', '2'])
+  expect(summaryReads(state).at(-1).query.node_ids).toBe(nodes.slice(10).map(row => row.node_id).join(','))
+  expect(hostReads(state).at(-1).query).toEqual({ page: '2', page_size: '10', node_kind: 'physical', enabled: 'false' })
+  await page.locator('.resource-pagination .el-select').click()
+  await page.getByRole('option', { name: '20条/页', exact: true }).click()
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(12)
+  await expect(page).toHaveURL(url => url.searchParams.get('node_kind') === 'physical' && url.searchParams.get('enabled') === 'false' && !url.searchParams.has('page') && !url.searchParams.has('page_size'))
+  expect(state.reads.filter(read => read.path.endsWith('/resource_observations') || read.path.endsWith('/resource_trends'))).toEqual([])
+})
+
+for (const outcome of ['empty', 'failed']) test(`a second-page ${outcome} refresh never rewrites the route or requests page one`, async ({ page }) => {
+  const nodes = Array.from({ length: 12 }, (_, index) => ({ ...rows[1], node_id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, display_name: `Node ${index + 1}` }))
+  const state = await resourceBackend(page, { nodes, filterNodes: true })
+  const pages = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/host_nodes')) pages.push(url.searchParams.get('page'))
+  })
+  await page.goto('/node-resources?node_kind=physical&enabled=false&page_size=10&page=2&refresh=off')
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(2)
+  if (outcome === 'empty') state.listNodes = []
+  else await page.route('**/api/v1/system/platform/host_nodes?**', route => route.fulfill({ status: 503, json: { error: 'Unavailable' } }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  if (outcome === 'failed') {
+    await expect(page.getByTestId('resource-error')).toBeVisible()
+    await expect(page.locator('.resource-pagination')).toHaveCount(0)
+  } else await expect(page.getByTestId('resource-node-list')).toContainText('没有符合条件的主机')
+  await expect(page.getByRole('button', { name: '查看资源', exact: true })).toHaveCount(0)
+  await expect(page).toHaveURL(url => url.searchParams.get('page') === '2' && url.searchParams.get('enabled') === 'false')
+  expect(pages).toEqual(['2', '2'])
+  expect(summaryReads(state)).toHaveLength(1)
+})

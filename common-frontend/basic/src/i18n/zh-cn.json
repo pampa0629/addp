@@ -115,6 +115,18 @@
     }
   },
   "common": {
+    "hostNodeFilters": {
+      "kind": "主机类型",
+      "state": "纳管状态",
+      "allKinds": "全部主机类型",
+      "allStates": "全部纳管状态",
+      "kinds": {
+        "physical": "物理主机",
+        "virtual": "虚拟机"
+      },
+      "enabled": "启用",
+      "disabled": "停用"
+    },
     "plaintextAccess": {
       "noFields": "该资源暂无可申请原值的正式敏感字段，请先完成安全复核。",
       "protectionDeadline": "申请期限不能超过资源保护截止时间：{at}",

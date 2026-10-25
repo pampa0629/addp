@@ -167,6 +167,8 @@ export { createModelMetricAPI, publishedMetricSources } from './api/modelMetrics
 export { default as ProtectionAccessRequestDialog } from './components/ProtectionAccessRequestDialog.vue'
 
 export { createNavigationDraftSlot, takeConsoleNavigationDraft } from './utils/navigationDraft.mjs'
+export { default as HostNodeFilters } from './components/HostNodeFilters.vue'
+export { resolveHostNodeFilters, hostNodeKinds } from './utils/hostNodeFilters.mjs'
 export { default as HostNodeSelect } from './components/HostNodeSelect.vue'
 
 export { resolveRoleName, resolveRoleDescription } from './utils/rolePresentation.mjs'

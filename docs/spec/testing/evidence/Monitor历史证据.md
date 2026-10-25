@@ -1350,3 +1350,25 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 标准清理和独立只读审计均确认当次容器、网络、卷、构建器容器／状态卷、十个精确产品镜像reference及私有工作目录零残留；固定MinIO镜像按已核验不可变ID保留。证据目录`/tmp/addp-p19-resource-busy-20261025/`包含window、单轮日志／report、原始分步统计、`receipt.json`、`cleanup-audit.json`、`timing-analysis.json`、`docker-log-correlation.json`、确定性门禁日志及只读`function-row-mapping.json`。报告SHA-256为`631c0fa5d60244bb97920fa939d8f666e2c686da4066a73519b0f79daa809697`，清理审计为`ce51424b732708961c518bc4e15e2ed70f7e72f2a450ed4e3c75f7c52cfa7b06`。
 
 本次仅证明已确认繁忙模型通过，历史尖峰唯一根因仍未定；不改变既有正式身份闭环结论，不计新正式身份／页面、Hosted、容量、72小时或生产T5通过，没有设置定时。只读核对清单实际第19行／B18（存算引擎管理／服务管理／接口管理／总述）、第45行／B44（实时耗时接口追踪）及现有M列，维持部分实现；工作簿未编辑，临时解密依赖已删除。下一步优先讨论Docker CLI到daemon等待的分层取证，未经确认不再启动负载或调整四秒口径。
+
+
+### 主机监控类型／纳管状态筛选与分页回跳修正（2026-10-25）
+
+Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地址交集查询，类型／状态选择同时提交名称草稿并回首页；重置保留每页数量及刷新偏好。详情、返回、刷新和 Console 单历史保留已提交条件，指标请求仍只有匹配当前页的五项摘要，空页不请求指标。共享前端唯一 `HostNodeFilters`／`resolveHostNodeFilters` 替换 System 原控件及类型／状态解析分支，删除迁出的“全部类型／状态”词条；不新增后端接口、权限、指标、数据库或部署依赖，System API／Swagger 契约不变。
+
+新增真实分页用例暴露原页面缺陷：切第二页后重读立即将未知总数设为零，Element Plus 的页数监听自动回写第一页。诊断实际记录 `1 → 2 → 1` 三次 System 列表请求，见 `/tmp/addp-host-list-pagination-diagnostic.log`；没有将其归因为查询慢或来源异常。修正为未知总数使用 `null`、只用成功返回的总数发布分页；不加重试、延迟或改写服务端分页。最终八项专项覆盖中英文390px组合筛选、停用字符串false、翻页与每页数量、当前页唯一摘要、空结果无指标读取、失败／旧响应／身份变化清除、自动刷新不提交草稿，以及第二页空结果／失败不回写第一页。
+
+本轮最终命令显式将已核验的 Node `24.19.0` 加入当次 PATH（路径 `/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin`），不更改个人运行环境。实际结果：
+
+| 标准入口 | 结果及范围 |
+| --- | --- |
+| `make test-common-frontend` | 277项共享T1通过，无失败／跳过，含规范值、双语和唯一所有权；原System重复路径已删除。 |
+| `make test-system-frontend` | 172项单测、240项受控API浏览器回归及构建通过；保留原主机管理的检索、编辑、权限与响应隔离契约。 |
+| `make test-monitor-frontend` | 119项单测、436项受控API浏览器回归（16.6分钟）及构建通过；新增八项含上述分页红灯的最终回归。 |
+| `make test-console-frontend` | 195项单测、222项受控iframe浏览器回归（10.1分钟）及构建通过。 |
+| Console标准browser launcher，`e2e/node-resource-navigation.spec.js e2e/host-node-navigation.spec.js` | 最终六项通过，模块内导航保持文档，浏览器历史按Console既有机制恢复当前iframe和条件，不要求跨外层历史永久保持原Frame对象。 |
+| `make test-frontend-ci-registration`；`changed-gate.py --dry-run` | 22项登记回归通过，21个前端登记完整；现有共享／System／Monitor／Console路径已命中，无新Make入口或workflow。干跑包含共享工作区其他owner，仅计路径发现，不计实际门禁通过。 |
+
+保留先前失败：Select内部输入值及空态文案的测试断言错误；Console新增用例错误要求浏览器历史后原Frame不卸载，纠正为已有单历史契约后六项专项和上述完整门禁均通过。分页回跳是真实产品缺陷，已由真实请求序列定位并通过最终回归。首轮误用系统Node25的结果及主动中断轮次不计标准通过；该版本下Console曾有Vite退出缓存未清零失败，未证实根因、不因Node24后继通过宣称修复。所有旧轮均不由局部成功覆盖。
+
+关键16项实现／测试摘要及日志摘要在 `/tmp/addp-host-list-final-receipt.json`，SHA-256 `ec59a5a6613d572360515e95daac332ab8109bef3b52b3d6ec4e9bb10f38f48c`；最终日志为 `/tmp/addp-host-list-{common-node24-final,system-node24,monitor-node24-final,console-node24-corrected-full,console-navigation-node24-corrected,frontend-registration}.log`。这些是本地共享工作区T1／受控T3／构建证据，不代表固定提交CI、个人Safari、真实System身份T4／Hosted、多真实主机或生产T5；本批未运行后端T2（后端未变）。未重启个人服务、操作个人数据库、轮询／派发／重跑CI或Hosted，也未设置定时任务。功能清单第36行仍部分实现，数据库／任务／角色／网卡关联筛选及真实运行验收保留；第37行的其他总览列与健康评分缺口不变。

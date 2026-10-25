@@ -115,6 +115,18 @@
     }
   },
   "common": {
+    "hostNodeFilters": {
+      "kind": "Host type",
+      "state": "Management state",
+      "allKinds": "All host types",
+      "allStates": "All management states",
+      "kinds": {
+        "physical": "Physical host",
+        "virtual": "Virtual host"
+      },
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "plaintextAccess": {
       "noFields": "This resource has no formally assessed fields available for plaintext requests. Complete the security review first.",
       "protectionDeadline": "The request must not exceed the resource protection deadline: {at}",

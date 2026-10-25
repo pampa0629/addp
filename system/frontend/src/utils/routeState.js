@@ -1,3 +1,4 @@
+import { resolveHostNodeFilters } from '../../../../common-frontend/basic/src/utils/hostNodeFilters.mjs'
 import { normalizeRuntimeInstanceStopReason } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { resolveRuntimeInstanceTime, normalizeQueryTimestamp } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import { resolveCanonicalTabRouteState } from '@common-ui'
@@ -107,8 +108,7 @@ export function resolveEngineDeploymentsRouteState(routeQuery = {}) {
 export function resolveHostNodesRouteState(routeQuery = {}) {
   const state = resolvePagedSearchRouteState(routeQuery), query = {}
   if (state.query.search) query.search = state.query.search
-  if (typeof routeQuery.node_kind === 'string' && ['physical', 'virtual'].includes(routeQuery.node_kind)) query.node_kind = routeQuery.node_kind
-  if (typeof routeQuery.enabled === 'string' && ['true', 'false'].includes(routeQuery.enabled)) query.enabled = routeQuery.enabled
+  Object.assign(query, resolveHostNodeFilters(routeQuery).query)
   if (state.query.page) query.page = state.query.page
   if (state.query.page_size) query.page_size = state.query.page_size
   return {...state, query, changed: !queriesEqual(routeQuery, query), nodeKind: query.node_kind || '', enabled: query.enabled || ''}

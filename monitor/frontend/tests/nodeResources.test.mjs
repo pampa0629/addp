@@ -410,3 +410,25 @@ test('TCP is a bounded integer host gauge, separate from device network rates an
   assert.equal(state.compare, false)
   assert.deepEqual(resourceTrendMetrics(metric.key).map(item => item.key), [metric.key])
 })
+
+
+test('host list filters retain System enums across detail without widening the metric query', () => {
+  const query = { page: '2', page_size: '10', search: 'Node_%', node_kind: 'virtual', enabled: 'false', refresh: 'off' }
+  for (const detail of [false, true]) {
+    const state = resolveResourceRoute(query, detail)
+    assert.deepEqual(state.query, query)
+    assert.equal(state.nodeKind, 'virtual')
+    assert.equal(state.enabled, 'false')
+    assert.equal(state.changed, false)
+  }
+  for (const value of [null, ['virtual'], 'all', 'VIRTUAL', true]) {
+    const state = resolveResourceRoute({ node_kind: value, enabled: value })
+    assert.equal(state.nodeKind, '')
+    assert.equal(state.enabled, '')
+    assert.deepEqual(state.query, {})
+    assert.equal(state.changed, true)
+  }
+  const params = trendParameters('host', 'node.cpu.busy_percent', '5m', '2026-10-07T00:00:00Z')
+  assert.equal('node_kind' in params, false)
+  assert.equal('enabled' in params, false)
+})
