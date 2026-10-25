@@ -1330,7 +1330,7 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 
 运行前在已提交`435c1aeae677030329e9f9a40863d5b12c24f3ba`的仓库外临时副本仅叠加本专项四文件，输入SHA-256核对无漂移。`make test-infra-runtime-log-lifecycle`退出0，内含99项本地入口／诊断确定性检查、JS语法／CI登记、System ExecutionTrace／ProtectionReadiness Go专项（0.911秒），另61项生命周期检查通过（44.018秒）。覆盖阶段绝对截止、三组及六次检查、120／300秒观察、样本不足与时间边界拒绝、失败立即传播且恢复包装、无身份调用。`make test-changed`仍因缺少`ADDP_TEST_POSTGRES_PORT`／`ADDP_TEST_POSTGRES_PASSWORD`在准入停止，Monitor整套T0–T3未运行、不计通过；现有Platform consistency及Monitor PostgreSQL CI负责相应独立复验，没有据此声称本次CI已通过。验证副本运行前已删除，共享未提交改动未混入运行。
 
-实际命令`python3 /tmp/addp-p19-resource-busy-20261025/run-once.py`，只调用`run_resource_guard_diagnostic`及原根`make build`／`make build-images --verify --jobs 1`，未调用正式身份主入口。窗口为2026-10-25 11:36:18–12:16:18 Asia/Shanghai，run_id=`addp-trace-local-c20f1a664e4b4858861db41f91b80180`；准备／构建约820秒结束，七个二进制与十个产品镜像成功，空闲120秒、三组启动及六次前后检查、稳态300秒均完成。六个真实Backend的live构建SHA全部为上述`8d391306b...`。执行阶段约1269.118秒，含标准清理1283.831秒，于11:57:42结束，独立审计11:57:50完成，均在原截止前；只有这一轮。内部沿既有60分钟计数器扣除1200秒以落实40分钟，原始`elapsed_seconds`含此偏移，实际时间以window及原始单调时钟交叉核对。
+实际命令`python3 /tmp/addp-p19-resource-busy-20261025/run-once.py`，只调用`run_resource_guard_diagnostic`及原根`make build`／`make build-images`（由`IMAGE_BUILD_ARGS`传入`--verify --jobs 1`等固定参数），未调用正式身份主入口。窗口为2026-10-25 11:36:18–12:16:18 Asia/Shanghai，run_id=`addp-trace-local-c20f1a664e4b4858861db41f91b80180`；准备／构建约820秒结束，七个二进制与十个产品镜像成功，空闲120秒、三组启动及六次前后检查、稳态300秒均完成。六个真实Backend的live构建SHA全部为上述`8d391306b...`。执行阶段约1269.118秒，含标准清理1283.831秒，于11:57:42结束，独立审计11:57:50完成，均在原截止前；只有这一轮。内部沿既有60分钟计数器扣除1200秒以落实40分钟，原始`elapsed_seconds`含此偏移，实际时间以window及原始单调时钟交叉核对。
 
 全部323个完整资源样本通过，按阶段汇总如下（秒，最近秩分位数；启动14个含六次明确检查）：
 
