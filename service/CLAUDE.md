@@ -67,7 +67,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 指标来源计划采用数据库无关契约，规范见 [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 和 [Model 约束](../model/docs/model概念与数据约束规范.md#数据库无关计划与修订)。冻结 SQL 路径已删除。参数选项的多语言标签由 Model 的 `parameter_labels` 冻结，值域以 Plan 参数声明为准，Service 校验两者一致。
 - 指标来源引用可显式选择 `result_kind=details`，只接受 Model 同修订声明的去重明细计划，省略为汇总。每个服务固定一种结果；消费字段、保护血缘、游标和依赖 hash 全部由选定的冻结包导出，Workbench 不重算或直接访问 Model。
 - 指标来源的创建与依赖复核统一见[来源选择与发布](docs/architecture/指标来源与版本.md#来源选择与发布)：`config_type=analytical` 只绑定 Model 精确实现修订，不取最新版、不接受调用方 Plan，与 SQL/table、`runtime_engine_id` 及参数／输出覆盖互斥，仍复用 PreparedQuery 授权与执行。冻结包、owner 修订引用、依赖摘要与只读投影沿[来源与发布快照](docs/tables/query_services表.md#来源与发布快照)维护，不另存可编辑契约，不把指标包拷贝到 SqlQuery 或强制原生语言为 SQL。
-- 旧指标 SQL 发布记录迁移为停用的 analytical 来源，清除 SQL、重复引擎、参数、输出及稳定键副本，仅保留 owner 修订引用用于显式重新绑定；禁止自动生成或批准新修订。历史 Model 修订缺少计划包时须重新发布。
+- 旧指标 SQL 的停用 analytical 迁移、旧字段清理和 owner 修订引用保留统一见[当前迁移入口](docs/migrations/README.md#当前入口)；须显式重绑，禁止自动生成或批准新修订，历史 Model 修订缺少计划包时须重新发布。断言与未覆盖项见[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)；迁移成功不代表完整升级或业务执行已验收，未运行或未覆盖不计通过。
 - 指标重绑与版本规则统一见[版本、并发与消费绑定](docs/architecture/指标来源与版本.md#版本并发与消费绑定)：唯一重绑命令携带精确修订与正整数 `version`，在当前 Tenant 的行锁事务中校验、原子替换来源与消费契约并递增版本；保留服务身份、访问与启停，清除旧来源字段。管理 `version` 与消费 `service_version` 分别维护，冲突不自动重试；消费方须显式更新绑定并发布应用新修订。断言范围见[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)，受控夹具不代替真实引擎或并发部署验收，未运行或未覆盖不计通过。
 - 每次指标查询先向 Model 验证指定修订与依赖，再校验当前引擎能力、本地 CompilerIdentity、请求参数和服务消费版本；撤回、漂移或实现版本不匹配即拒绝，不选最新版。MODEL_URL 与现有 Tenant Service Token 路径保留。
 - 指标的结果筛选、选择、排序及 keyset 分页由 Service 校验后形成中立 ResultRequest，Common 包装计划根节点再交给引擎编译；结果筛选不能改变原指标分母，分页不能裁剪原计划断言。参数值（包括结果过滤及 keyset 值）继续单次绑定；cursor 加密、limit+1、保护门禁及输出格式仍沿既有契约。不得进入旧指标 SQL 包装或拉回全量数据后在 Service 中补算。
