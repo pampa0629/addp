@@ -11,6 +11,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import G6 from '@antv/g6'
 import { getContrastingTextColor, readGraphTheme, graphNodeItemId as nodeItemId, graphEdgeItemId as edgeItemId } from '@addp/common-frontend/graph'
 import { placeIncrementalNodes } from '../utils/incrementalGraphLayout'
+import { nearestGraphEdge } from '../utils/graphEdgeHit'
 import { createGraphLayoutConfig } from '../utils/graphLayoutPolicy'
 
 const SEMANTIC_EDGE_TYPE = 'addp-semantic-quadratic'
@@ -283,8 +284,9 @@ function initGraph() {
   })
 
   graphInstance.on('edge:click', event => {
-    const model = event.item.getModel()
-    if (model._meta) emit('edge-select', model._meta)
+    const annotation = ['text-shape', 'direction-marker'].includes(event.target?.get('name'))
+    const edge = annotation ? event.item : nearestGraphEdge(graphInstance.getEdges(), { x: event.canvasX, y: event.canvasY }, event.item)
+    if (edge) emit('edge-select', edge.getModel()._meta)
   })
 
   graphInstance.on('canvas:click', () => emit('canvas-click'))

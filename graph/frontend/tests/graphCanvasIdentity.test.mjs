@@ -20,8 +20,8 @@ vi.mock('@antv/g6', async () => ({ default: {
       this.model = data
       this.items = new Map([...data.nodes, ...data.edges].map(model => [model.id, {
         getModel: () => model,
-        getContainer: () => ({ find: () => null, show() {}, hide() {} }),
-        getKeyShape: () => ({ attr: vi.fn() }),
+        getContainer: () => ({ find: () => null, show() {}, hide() {}, get: () => true }),
+        getKeyShape: () => ({ attr: vi.fn(), isVisible: () => true, get: () => true, getTotalMatrix: () => null, isInShape: () => true, getPoint: () => ({x:0,y:0}) }),
         hasState: () => false,
       }]))
     }
@@ -62,7 +62,7 @@ it('keeps overlapping native node and relationship IDs distinct through renderin
   expect(graph.states).toContainEqual([firstNode.id, 'selected'])
   expect(graph.states).toContainEqual([edge.id, 'path'])
   graph.handlers['node:click']({ item: graph.items.get(firstNode.id) })
-  graph.handlers['edge:click']({ item: graph.items.get(edge.id) })
+  graph.handlers['edge:click']({ item: graph.items.get(edge.id), canvasX: 0, canvasY: 0 })
   expect(wrapper.emitted('node-click')).toEqual([['0']])
   expect(wrapper.emitted('node-select')[0][0].id).toBe('0')
   expect(wrapper.emitted('edge-select')[0][0].id).toBe('0')
@@ -201,5 +201,32 @@ it('keeps dense relationship hit areas close to the visible stroke instead of ma
   const wrapper = mount(GraphCanvas, { props: { nodes, edges }, global: { directives: { loading: {} } } })
   await nextTick()
   expect(instances[0].model.edges.every(edge => edge.style.lineAppendWidth === 2)).toBe(true)
+  wrapper.unmount()
+})
+
+it('selects the nearest painted curve when another relationship hit area overlaps the mouse', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const nodes = [{ id: '0' }, { id: '1' }, { id: '4' }]
+  const edges = [{ id: '3', source: '0', target: '4', type: 'Link' }, { id: '66', source: '1', target: '0', type: 'Link' }]
+  const wrapper = mount(GraphCanvas, { props: { nodes, edges }, global: { directives: { loading: {} } } })
+  await nextTick()
+  const graph = instances[0], [wanted, overlapping] = graph.model.edges.map(model => graph.items.get(model.id))
+  // Native Hosted r04, transformed into Canvas CSS pixels. Both strokes admit the
+  // integer mouse point, but the later overlapping stroke is farther away.
+  const native = [['M', 495.02350382842013, 484.8057522096755], ['Q', 535.9033649001326, 459.46953851326833, 540.1623105860343, 411.563921438054]]
+  function shape(offset) {
+    return { isVisible: () => true, get: () => true, getTotalMatrix: () => null,
+      isInShape: () => true, getPoint(t) {
+        const q = 1-t, [x,y] = native[0].slice(1), [,cx,cy,ex,ey] = native[1]
+        return { x:q*q*x+2*q*t*cx+t*t*ex+offset, y:q*q*y+2*q*t*cy+t*t*ey }
+      } }
+  }
+  wanted.getKeyShape = () => shape(0)
+  overlapping.getKeyShape = () => shape(2)
+  for (const item of [wanted,overlapping]) item.getContainer = () => ({ get: () => true })
+  graph.handlers['edge:click']({ item: overlapping, canvasX: 536, canvasY: 430 })
+  expect(wrapper.emitted('edge-select').at(-1)[0].id).toBe('3')
+  graph.handlers['edge:click']({ item: overlapping, target: { get: () => 'text-shape' } })
+  expect(wrapper.emitted('edge-select').at(-1)[0].id).toBe('66')
   wrapper.unmount()
 })

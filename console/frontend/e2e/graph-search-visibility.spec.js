@@ -89,7 +89,8 @@ for (const replace of [false, true]) {
 }
 
 
-test('Graph multi-label dense search, filter and four layouts preserve every native identity', async ({ page }, testInfo) => {
+for (const opaque of [false, true]) {
+test(`Graph multi-label dense search, filter and four layouts preserve every native identity (${opaque ? 'opaque' : 'named'} IDs)`, async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.addInitScript(installGraphRelationshipPaint)
   const diagnostics = []
@@ -99,20 +100,21 @@ test('Graph multi-label dense search, filter and four layouts preserve every nat
   const labelSets = [['Person'], ['Employee', 'Person'], ['Organization'], ['Organization', 'Partner']]
   const nodes = Array.from({ length: 12 }, (_, index) => {
     const key = 'n' + String(index + 1).padStart(2, '0')
-    return { id: 'native-' + key, labels: labelSets[Math.floor(index / 3)], display_name: 'Dense ' + key.slice(1), properties: { id: key, name: 'Dense ' + key.slice(1) } }
+    return { id: opaque ? 'opaque:node:' + index : 'native-' + key, labels: labelSets[Math.floor(index / 3)], display_name: 'Dense ' + key.slice(1), properties: { id: key, name: 'Dense ' + key.slice(1) } }
   })
   const edges = nodes.flatMap((source, index) => nodes.slice(index + 1).map(target => ({ source: source.id, target: target.id, type: 'Link' })))
   edges.push({ source: nodes[1].id, target: nodes[0].id, type: 'Link' }, { source: nodes[0].id, target: nodes[1].id, type: 'Parallel' }, { source: nodes[11].id, target: nodes[11].id, type: 'Link' })
   edges.push({ source: nodes[0].id, target: nodes[11].id, type: 'Parallel' }, { source: nodes[3].id, target: nodes[8].id, type: 'Parallel' }, { source: nodes[4].id, target: nodes[7].id, type: 'Parallel' })
-  edges.forEach((edge, index) => Object.assign(edge, { id: 'relationship-' + index, directed: true, properties: { fixture_id: 'r' + String(index + 1).padStart(2, '0'), source_key: edge.source.slice(7), target_key: edge.target.slice(7), ordinal: index, score: (index + 1) / 4, active: index % 2 === 0 } }))
+  edges.forEach((edge, index) => Object.assign(edge, { id: opaque ? 'opaque:relationship:' + index : 'relationship-' + index, directed: true, properties: { fixture_id: 'r' + String(index + 1).padStart(2, '0'), source_key: nodes.find(node => node.id === edge.source).properties.id, target_key: nodes.find(node => node.id === edge.target).properties.id, ordinal: index, score: (index + 1) / 4, active: index % 2 === 0 } }))
+  const returnedNodes = opaque ? [...nodes].sort((a, b) => a.id.localeCompare(b.id)) : nodes
   const shapes = labelSets.map(labels => ({ name: [...labels].sort().join('+'), labels })).sort((a, b) => a.name.localeCompare(b.name))
   const unexpected = await mockGraph(page, { permissions: ['graph.graph.read'], responses: {
     '/api/v1/graph/graphs/7': { id: 7, name: '多标签密集关系隔离图' },
     '/api/v1/graph/graphs/7/browse-snapshot': { schema: { node_shapes: shapes, relationship_shapes: [{ type: 'Link', directed: true }, { type: 'Parallel', directed: true }] },
       stats: { node_count: 12, relationship_count: 72 }, overview: { nodes: labelSets.map((labels, index) => ({ id: 'aggregate-' + index, labels, kind: 'aggregate', display_name: labels.join('+'), member_count: 3 })), edges: [] } }
   } })
-  await page.route('**/api/v1/graph/graphs/7/search', route => route.fulfill({ json: { nodes, edges: [] } }))
-  await page.route('**/api/v1/graph/graphs/7/expand', route => route.fulfill({ json: { nodes, edges } }))
+  await page.route('**/api/v1/graph/graphs/7/search', route => route.fulfill({ json: { nodes: returnedNodes, edges: [] } }))
+  await page.route('**/api/v1/graph/graphs/7/expand', route => route.fulfill({ json: { nodes: returnedNodes, edges } }))
   await page.goto('/graph/graphs/7/browse')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   // Native KG evidence contains identity/labels/properties, not the browser display DTO.
@@ -128,3 +130,4 @@ test('Graph multi-label dense search, filter and four layouts preserve every nat
   expect(unexpected).toEqual([])
   expect(diagnostics).toEqual([])
 })
+}
