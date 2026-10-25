@@ -12,10 +12,12 @@ import copy
 import hashlib
 import importlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
 import re
+import resource
 import secrets
 import shutil
 import signal
@@ -196,6 +198,173 @@ def attribute_apiproxy_requests(commands, pairs, offset):
         used.add(candidates[0])
     require(len(used) == len(pairs), 'unassigned_owned_api_request')
     return result
+
+
+HOST_CLI_BUFFER_LIMIT = 16 * 1024**2
+HOST_CLI_OUTPUT_LIMIT = 5 * 1024**2
+
+
+def readonly_docker_endpoint(environment, docker_home):
+    """Resolve the same CLI context without spending an extra Docker invocation."""
+    def read(path):
+        require(path.is_file() and path.stat().st_size <= 65536, 'host_cli_context_file_invalid')
+        with path.open('rb') as stream:
+            raw = stream.read(65537)
+        require(len(raw) <= 65536, 'host_cli_context_file_invalid')
+        result = json.loads(raw)
+        require(isinstance(result, dict), 'host_cli_context_file_invalid')
+        return result
+    def context(name):
+        if name is None:
+            config = docker_home/'config.json'
+            name = read(config).get('currentContext', 'default') if config.exists() else 'default'
+        require(isinstance(name, str) and bool(name), 'host_cli_context_file_invalid')
+        if name == 'default':
+            return 'unix:///var/run/docker.sock'
+        key = hashlib.sha256(name.encode()).hexdigest()
+        metadata = read(docker_home/'contexts/meta'/key/'meta.json')
+        require(metadata.get('Name') == name, 'host_cli_context_identity_mismatch')
+        return metadata.get('Endpoints', {}).get('docker', {}).get('Host')
+    return effective_docker_endpoint(environment, context)
+
+
+def host_cli_usage():
+    parent = resource.getrusage(resource.RUSAGE_SELF)
+    children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    # getrusage RSS is bytes on Darwin, KiB on Linux. This is a cumulative
+    # high-water mark, not a per-command RSS delta or a sum of simultaneous RSS.
+    require(sys.platform in ('darwin', 'linux'), 'host_cli_platform_unsupported')
+    scale = 1 if sys.platform == 'darwin' else 1024
+    return {'parent_user_seconds': parent.ru_utime, 'parent_system_seconds': parent.ru_stime,
+            'children_user_seconds': children.ru_utime, 'children_system_seconds': children.ru_stime,
+            'parent_rss_high_water_bytes': int(parent.ru_maxrss)*scale,
+            'children_rss_high_water_bytes': int(children.ru_maxrss)*scale}
+
+
+def require_no_child_processes():
+    try:
+        os.waitpid(-1, os.WNOHANG)
+    except ChildProcessError:
+        return
+    raise GateError('host_cli_extra_child')
+
+
+def host_cli_cpu_delta(before, after, role):
+    result = {}
+    for mode in ('user', 'system'):
+        key = role+'_'+mode+'_seconds'
+        require(all(type(n) in (int, float) and math.isfinite(n) for n in (before[key], after[key])) and
+                0 <= before[key] <= after[key], 'host_cli_cpu_counter_invalid')
+        result[mode] = after[key]-before[key]
+    return result
+
+
+def check_host_cli_usage(origin, usage, report):
+    parent = host_cli_cpu_delta(origin, usage, 'parent')
+    children = host_cli_cpu_delta(origin, usage, 'children')
+    peak = report.setdefault('resource_peak', {})
+    total = sum(parent.values())+sum(children.values())
+    peak['total_cpu_seconds'] = max(peak.get('total_cpu_seconds', 0), total)
+    for key in ('parent_rss_high_water_bytes', 'children_rss_high_water_bytes'):
+        require(type(usage[key]) is int and usage[key] >= 0, 'host_cli_rss_invalid')
+        peak[key] = max(peak.get(key, 0), usage[key])
+    require(total < 30, 'host_cli_cpu_limit')
+    require(max(usage['parent_rss_high_water_bytes'], usage['children_rss_high_water_bytes']) < 256*1024**2,
+            'host_cli_rss_limit')
+
+
+def check_host_cli_buffers(life, report):
+    seen = set()
+    def size(value):
+        if id(value) in seen:
+            return 0
+        seen.add(id(value))
+        amount = sys.getsizeof(value)
+        if isinstance(value, dict):
+            amount += sum(size(k)+size(v) for k, v in value.items())
+        elif isinstance(value, (list, tuple)):
+            amount += sum(size(v) for v in value)
+        return amount
+    # Reserve bounded config decode and command output/decoding buffers, while
+    # measuring the live report/environment graph and JSON serialization space.
+    buffers = size((report, life.env))+1024**2+3*65536
+    require(buffers <= HOST_CLI_BUFFER_LIMIT, 'host_cli_buffer_limit')
+    raw = json.dumps(report, separators=(',', ':')).encode()
+    require(len(raw) <= HOST_CLI_OUTPUT_LIMIT, 'host_cli_output_limit')
+    buffers += 2*len(raw)
+    require(buffers <= HOST_CLI_BUFFER_LIMIT, 'host_cli_buffer_limit')
+    peak = report.setdefault('resource_peak', {})
+    peak['application_buffer_accounted_bytes'] = max(peak.get('application_buffer_accounted_bytes', 0), buffers)
+
+
+def run_host_cli_comparison(life, report, window_started_ns, usage_origin):
+    """One serial, empty-selector host measurement; never starts a deployment.
+
+    The outside driver owns an exclusive attempt receipt and private-file cleanup.
+    No VM logs, calibration, resource monitor, sibling subprocesses, or retries.
+    """
+    report.update(measurement_result='failed', groups=[], commands=life.command_evidence.records)
+    require(life.thread is None and life.sample_thread_id is None and threading.active_count() == 1 and
+            not life.command_evidence.records, 'host_cli_independent_process_required')
+    life.phase = 'host_cli_readonly'
+    request_deadline = window_started_ns+118*10**9
+    last_start = None
+
+    def check(deadline=request_deadline):
+        require(time.monotonic_ns() < request_deadline, 'host_cli_request_deadline_exceeded')
+        require(time.monotonic_ns() < deadline, 'host_cli_group_deadline_exceeded')
+        check_host_cli_usage(usage_origin, host_cli_usage(), report)
+        check_host_cli_buffers(life, report)
+
+    try:
+        check()
+        for index in range(20):
+            group = {'index': index+1, 'started_monotonic_ns': time.monotonic_ns(), 'result': 'failed', 'command_ids': []}
+            report['groups'].append(group)
+            group_deadline = min(group['started_monotonic_ns']+4*10**9, request_deadline)
+            try:
+                for kind in ('container', 'volume'):
+                    check(group_deadline)
+                    if last_start is not None:
+                        target = last_start+10**9
+                        while time.monotonic_ns() < target:
+                            check(group_deadline)
+                            time.sleep(min(.05, max(0, (min(target, group_deadline)-time.monotonic_ns())/1e9)))
+                    require_no_child_processes()
+                    before = host_cli_usage()
+                    count = len(life.command_evidence.records)
+                    require(count < 40, 'host_cli_command_limit')
+                    check(group_deadline)
+                    try:
+                        objects = life.owned(kind, timeout=(group_deadline-time.monotonic_ns())/1e9, output_limit=65536)
+                    finally:
+                        after = host_cli_usage()
+                        require_no_child_processes()
+                        require(len(life.command_evidence.records) == count+1, 'host_cli_command_record_missing')
+                        record = life.command_evidence.records[-1]
+                        delta = host_cli_cpu_delta(before, after, 'children')
+                        record.update(child_user_cpu_seconds=delta['user'], child_system_cpu_seconds=delta['system'],
+                                      children_rss_high_water_bytes=after['children_rss_high_water_bytes'])
+                        group['command_ids'].append(record['command_id'])
+                        last_start = record['spawn_started_monotonic_ns']
+                        check_host_cli_usage(usage_origin, after, report)
+                    require(not objects, 'host_cli_unexpected_objects')
+                    check(group_deadline)
+            finally:
+                group['finished_monotonic_ns'] = time.monotonic_ns()
+                group['duration_seconds'] = (group['finished_monotonic_ns']-group['started_monotonic_ns'])/1e9
+            require(group['duration_seconds'] < 4, 'host_cli_group_deadline_exceeded')
+            group['result'] = 'passed'
+        starts = [r['spawn_started_monotonic_ns'] for r in report['commands']]
+        require(len(report['groups']) == 20 and len(starts) == 40 and
+                all(b-a >= 10**9 for a, b in zip(starts, starts[1:])) and
+                all(r['result'] == 'passed' and r['record_complete'] for r in report['commands']),
+                'host_cli_samples_incomplete')
+        check()
+        report['measurement_result'] = 'passed'
+    except BaseException:
+        report['measurement_result'] = 'failed'
+        raise
 
 
 def diagnostic_markers(raw):
@@ -441,7 +610,7 @@ class Lifecycle:
             self.check()
             time.sleep(min(.1, max(0, deadline-time.monotonic())))
 
-    def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True):
+    def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True, output_limit=None):
         entered_ns = time.monotonic_ns()
         began = entered_ns / 1e9
         deadline = began + timeout
@@ -489,6 +658,8 @@ class Lifecycle:
                             p.stdin.close()
                         while True:
                             check_deadline()
+                            if output_limit is not None:
+                                require(os.fstat(output.fileno()).st_size <= output_limit, 'command_output_limit_exceeded')
                             try:
                                 p.wait(timeout=min(.05, deadline-time.monotonic()))
                                 timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
@@ -518,7 +689,8 @@ class Lifecycle:
                 timing['output_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     output.seek(0)
-                    raw = output.read()
+                    raw = output.read() if output_limit is None else output.read(output_limit+1)
+                    require(output_limit is None or len(raw) <= output_limit, 'command_output_limit_exceeded')
                     text = raw.decode(errors='replace')
                 finally:
                     timing['output_finished_monotonic_ns'] = time.monotonic_ns()

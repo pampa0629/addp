@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 import urllib.parse
+from types import SimpleNamespace
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('monitor_traces_local_gate', Path(__file__).with_name('monitor-traces-local-gate.py'))
@@ -870,6 +871,136 @@ class ResourceDiagnosticContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(m.GateError,'diagnostic_sample_cadence_exceeded'):
                     m.run_resource_guard_diagnostic(life,{},0)
             built.assert_called_once();setup.assert_not_called();self.assertIs(life.sample,original_sample)
+
+
+class HostCLIComparisonTests(unittest.TestCase):
+    def fixture(self, directory, *, command_seconds=.01, cpu_seconds=.02):
+        life=bare_lifecycle(directory);clock=[0.0];cpu=[0.0]
+        process=mock.Mock(pid=1234,returncode=0);process.poll.return_value=0
+        def wait(**kwargs):clock[0]+=command_seconds;cpu[0]+=cpu_seconds
+        process.wait.side_effect=wait
+        def usage():
+            return {'parent_user_seconds':0.0,'parent_system_seconds':0.0,
+                'children_user_seconds':cpu[0],'children_system_seconds':0.0,
+                'parent_rss_high_water_bytes':1024**2,'children_rss_high_water_bytes':2*1024**2}
+        return life,clock,cpu,process,usage
+
+    def invoke(self, life, clock, process, usage, report):
+        def sleep(seconds):clock[0]+=seconds
+        with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+             mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)), \
+             mock.patch.object(m.time,'sleep',side_effect=sleep), \
+             mock.patch.object(m.subprocess,'Popen',return_value=process), \
+             mock.patch.object(m,'host_cli_usage',side_effect=usage), \
+             mock.patch.object(m,'require_no_child_processes'):
+            m.run_host_cli_comparison(life,report,0,usage())
+
+    def test_twenty_serial_groups_preserve_spacing_and_allow_multithread_cpu_above_wall(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,process,usage=self.fixture(directory);report={}
+            self.invoke(life,clock,process,usage,report)
+            self.assertEqual(report['measurement_result'],'passed')
+            self.assertEqual(len(report['groups']),20)
+            self.assertEqual(len(report['commands']),40)
+            starts=[r['spawn_started_monotonic_ns'] for r in report['commands']]
+            self.assertTrue(all(b-a>=10**9 for a,b in zip(starts,starts[1:])))
+            self.assertTrue(all(r['child_user_cpu_seconds']>r['duration_seconds'] for r in report['commands']))
+            self.assertTrue(all(g['duration_seconds']<4 for g in report['groups']))
+            self.assertFalse(any('wait_estimate' in k for r in report['commands'] for k in r))
+
+    def test_first_query_failure_stops_without_retry_and_keeps_cpu_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,process,usage=self.fixture(directory);process.returncode=17;report={}
+            with self.assertRaisesRegex(m.GateError,'command_failed_17'):
+                self.invoke(life,clock,process,usage,report)
+            self.assertEqual(len(report['commands']),1)
+            self.assertIn('child_user_cpu_seconds',report['commands'][0])
+            self.assertEqual(report['measurement_result'],'failed')
+
+    def test_group_records_and_waiting_count_towards_four_seconds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,process,usage=self.fixture(directory,command_seconds=2.1);report={}
+            with self.assertRaisesRegex(m.GateError,'command_deadline_exceeded'):
+                self.invoke(life,clock,process,usage,report)
+            self.assertEqual(len(report['commands']),2)
+            self.assertLess(len(report['groups']),20)
+
+    def test_expired_request_budget_does_not_spawn_any_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,process,usage=self.fixture(directory);clock[0]=118;report={}
+            with self.assertRaisesRegex(m.GateError,'host_cli_request_deadline_exceeded'):
+                self.invoke(life,clock,process,usage,report)
+            process.wait.assert_not_called()
+            self.assertEqual(report['commands'],[])
+
+    def test_cpu_and_rss_stop_lines_use_totals_and_high_water_not_rss_delta(self):
+        origin={'parent_user_seconds':0.,'parent_system_seconds':0.,'children_user_seconds':0.,
+                'children_system_seconds':0.,'parent_rss_high_water_bytes':200*1024**2,'children_rss_high_water_bytes':0}
+        for changes,code in (({'children_user_seconds':30.},'host_cli_cpu_limit'),
+                             ({'parent_rss_high_water_bytes':256*1024**2},'host_cli_rss_limit'),
+                             ({'children_system_seconds':-1.},'host_cli_cpu_counter_invalid')):
+            with self.subTest(changes=changes),self.assertRaisesRegex(m.GateError,code):
+                m.check_host_cli_usage(origin,{**origin,**changes},{})
+
+    def test_extra_or_unreaped_children_refuse_cpu_attribution(self):
+        with mock.patch.object(m.os,'waitpid',side_effect=ChildProcessError):m.require_no_child_processes()
+        for result in ((0,0),(1234,0)):
+            with mock.patch.object(m.os,'waitpid',return_value=result),self.assertRaisesRegex(m.GateError,'host_cli_extra_child'):
+                m.require_no_child_processes()
+
+    def test_cpu_usage_normalizes_platform_rss_units(self):
+        row=SimpleNamespace(ru_utime=.1,ru_stime=.2,ru_maxrss=123)
+        with mock.patch.object(m.resource,'getrusage',return_value=row):
+            with mock.patch.object(m.sys,'platform','darwin'):self.assertEqual(m.host_cli_usage()['parent_rss_high_water_bytes'],123)
+            with mock.patch.object(m.sys,'platform','linux'):self.assertEqual(m.host_cli_usage()['parent_rss_high_water_bytes'],123*1024)
+
+    def test_unexpected_objects_stop_without_exporting_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,process,usage=self.fixture(directory);report={}
+            def start(*args,**kwargs):kwargs['stdout'].write(b'PRIVATE-OBJECT\n');return process
+            # invoke owns its mock; return a process whose wait writes the output.
+            def wait(**kwargs):clock[0]+=.01
+            def owned(kind,**kwargs):
+                with mock.patch.object(m.subprocess,'Popen',side_effect=start):
+                    return m.Lifecycle.owned(life,kind,**kwargs)
+            life.owned=owned;process.wait.side_effect=wait
+            with self.assertRaisesRegex(m.GateError,'host_cli_unexpected_objects'):
+                self.invoke(life,clock,process,usage,report)
+            self.assertNotIn('PRIVATE',json.dumps(report))
+
+    def test_buffer_and_output_stop_lines_are_checked_without_truncating(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            with mock.patch.object(m,'HOST_CLI_OUTPUT_LIMIT',100),self.assertRaisesRegex(m.GateError,'host_cli_output_limit'):
+                m.check_host_cli_buffers(life,{'large':'x'*200})
+            with mock.patch.object(m,'HOST_CLI_BUFFER_LIMIT',100),self.assertRaisesRegex(m.GateError,'host_cli_buffer_limit'):
+                m.check_host_cli_buffers(life,{})
+
+    def test_context_resolution_respects_precedence_and_does_not_copy_auth(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);name='synthetic-context'
+            (root/'config.json').write_text(json.dumps({'currentContext':name,'auths':{'PRIVATE':'PRIVATE-TOKEN'}}))
+            metadata=root/'contexts/meta'/m.hashlib.sha256(name.encode()).hexdigest()/'meta.json'
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(json.dumps({'Name':name,'Endpoints':{'docker':{'Host':'unix:///synthetic'}}}))
+            self.assertEqual(m.readonly_docker_endpoint({},root),'unix:///synthetic')
+            self.assertEqual(m.readonly_docker_endpoint({'DOCKER_HOST':'unix:///explicit'},root),'unix:///explicit')
+            self.assertEqual(m.readonly_docker_endpoint({'DOCKER_CONTEXT':name,'DOCKER_HOST':'unix:///ignored'},root),'unix:///synthetic')
+            metadata.write_text(json.dumps({'Name':'wrong'}))
+            with self.assertRaisesRegex(m.GateError,'host_cli_context_identity_mismatch'):m.readonly_docker_endpoint({},root)
+            (root/'config.json').write_text('x'*65537)
+            with self.assertRaisesRegex(m.GateError,'host_cli_context_file_invalid'):m.readonly_docker_endpoint({},root)
+
+    def test_bounded_output_failure_preserves_diagnostic_and_never_passes_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);process=mock.Mock(pid=1234,returncode=0);process.poll.return_value=0
+            def start(*args,**kwargs):kwargs['stdout'].write(b'PRIVATE-SENTINEL'*100);return process
+            with mock.patch.object(m.subprocess,'Popen',side_effect=start),self.assertRaisesRegex(m.GateError,'command_output_limit_exceeded'):
+                life.owned('container',timeout=4,output_limit=100)
+            record=life.command_evidence.snapshot()[0]
+            self.assertEqual(record['result'],'failed')
+            self.assertTrue(record['record_complete'])
+            self.assertNotIn('PRIVATE',json.dumps(record))
 
 
 class CommandBoundaryEvidenceTests(unittest.TestCase):
