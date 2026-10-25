@@ -169,7 +169,7 @@
 
 <script setup>
 import { BusinessDomainSelect, businessDomainReferenceOptions } from '@common-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { listReferenceCandidates } from '../api/catalog'
@@ -213,6 +213,7 @@ watch(() => props.entry, entry => {
   resetCandidateOptions(entry)
 }, { deep: true })
 
+onBeforeUnmount(invalidateCandidateSearches)
 resetCandidateOptions(props.entry)
 
 function buildEditorForm(entry) {
@@ -225,6 +226,7 @@ function buildEditorForm(entry) {
 const visibilityOptions = ['inventory', 'department', 'tenant']
 
 function resetCandidateOptions(entry) {
+  invalidateCandidateSearches()
   for (const type of candidateTypes) {
     candidateState[type].options = []
     candidateState[type].loaded = false
@@ -238,6 +240,13 @@ function resetCandidateOptions(entry) {
     if (item.status === 'active' && (item.subject_type === 'department' || item.subject_type === 'user')) {
       mergeCandidate(item.subject_type, historicalCandidate(item.subject_type, item.subject_id, item.observed_snapshot))
     }
+  }
+}
+
+function invalidateCandidateSearches() {
+  for (const type of candidateTypes) {
+    candidateState[type].version++
+    candidateState[type].loading = false
   }
 }
 
