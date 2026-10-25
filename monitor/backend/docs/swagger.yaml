@@ -368,6 +368,8 @@ definitions:
         type: string
       acknowledged_by:
         type: integer
+      availability_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ServiceAvailabilityEvidence'
       category:
         type: string
       http_evidence:
@@ -578,6 +580,89 @@ definitions:
         type: number
       trigger_seconds:
         type: integer
+    type: object
+  github_com_addp_monitor_internal_models.ServiceAvailabilityEvidence:
+    properties:
+      confirmed_at:
+        type: string
+      deployment_id:
+        type: string
+      expected_replicas:
+        type: integer
+      intent_changed_at:
+        type: string
+      module_name:
+        type: string
+      observed_from:
+        type: string
+      observed_to:
+        type: string
+      online_replicas:
+        type: integer
+      policy:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ServiceAvailabilityPolicy'
+      role:
+        type: string
+      rule_id:
+        type: string
+      rule_name:
+        type: string
+      rule_version:
+        type: integer
+      runtime_name:
+        type: string
+      samples:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.ServiceAvailabilityPolicy:
+    properties:
+      recovery_seconds:
+        type: integer
+      trigger_seconds:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.ServiceAvailabilityRule:
+    properties:
+      confirmed_at:
+        type: string
+      created_at:
+        type: string
+      deployment_id:
+        type: string
+      enabled:
+        type: boolean
+      group_id:
+        type: string
+      id:
+        type: string
+      last_error:
+        type: string
+      last_evaluated_at:
+        type: string
+      last_observed_at:
+        type: string
+      last_verdict:
+        type: string
+      module_name:
+        type: string
+      name:
+        type: string
+      online_replicas:
+        type: integer
+      recovery_seconds:
+        type: integer
+      role:
+        type: string
+      runtime_name:
+        type: string
+      trigger_seconds:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+      window_since:
+        type: string
     type: object
   github_com_addp_monitor_internal_models.WebhookDelivery:
     properties:
@@ -1211,6 +1296,7 @@ definitions:
           - resource
           - http_quality
           - process_resource
+          - service_availability
           type: string
         type: array
       channel:
@@ -1265,6 +1351,8 @@ definitions:
         type: string
       acknowledged_by:
         type: integer
+      availability_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ServiceAvailabilityEvidence'
       category:
         type: string
       http_evidence:
@@ -1815,6 +1903,74 @@ definitions:
       username:
         type: string
       version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ServiceAvailabilityGroup:
+    properties:
+      deployment_id:
+        type: string
+      desired_state:
+        type: string
+      expected_replicas:
+        type: integer
+      id:
+        type: string
+      module_name:
+        type: string
+      online_replicas:
+        type: integer
+      reason:
+        type: string
+      role:
+        type: string
+      runtime_name:
+        type: string
+      state:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ServiceAvailabilityGroupPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceAvailabilityGroup'
+        type: array
+      total:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ServiceAvailabilityRuleInput:
+    properties:
+      enabled:
+        type: boolean
+      group_id:
+        type: string
+      name:
+        type: string
+      recovery_seconds:
+        type: integer
+      trigger_seconds:
+        type: integer
+      version:
+        type: integer
+    required:
+    - enabled
+    - group_id
+    - name
+    - recovery_seconds
+    - trigger_seconds
+    type: object
+  github_com_addp_monitor_internal_service.ServiceAvailabilityRulePage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.ServiceAvailabilityRule'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
         type: integer
     type: object
   github_com_addp_monitor_internal_service.TraceResponse:
@@ -2467,6 +2623,56 @@ definitions:
         type: string
     type: object
   internal_api.ResourceAlertRuleVersion:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  internal_api.ServiceAvailabilityRuleResponse:
+    properties:
+      confirmed_at:
+        type: string
+      created_at:
+        type: string
+      deployment_id:
+        type: string
+      enabled:
+        type: boolean
+      group_id:
+        type: string
+      id:
+        type: string
+      last_error:
+        type: string
+      last_evaluated_at:
+        type: string
+      last_observed_at:
+        type: string
+      last_verdict:
+        type: string
+      module_name:
+        type: string
+      name:
+        type: string
+      online_replicas:
+        type: integer
+      recovery_seconds:
+        type: integer
+      role:
+        type: string
+      runtime_name:
+        type: string
+      trigger_seconds:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+      window_since:
+        type: string
+    type: object
+  internal_api.ServiceAvailabilityRuleVersion:
     properties:
       version:
         type: integer
@@ -6251,6 +6457,251 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.resource_observation.read
+  /platform/service-availability-alert-rules:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceAvailabilityRulePage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询服务组失联告警规则 | List service group availability alert rules
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_service_availability_rule.read
+      - platform.module.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceAvailabilityRuleInput'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.ServiceAvailabilityRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_service_availability_rule.read
+      - monitor.platform_service_availability_rule.create
+      - platform.module.read
+  /platform/service-availability-alert-rules/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ServiceAvailabilityRuleVersion'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除服务组失联告警规则 | Delete service group availability alert rule
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_service_availability_rule.read
+      - monitor.platform_service_availability_rule.delete
+      - platform.module.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceAvailabilityRuleInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ServiceAvailabilityRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 修改服务组失联告警规则 | Update service group availability alert rule
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_service_availability_rule.read
+      - monitor.platform_service_availability_rule.update
+      - platform.module.read
+  /platform/service-availability-alert-rules/groups:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceAvailabilityGroupPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前授权服务组 | List current authorized service groups
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_service_availability_rule.read
+      - platform.module.read
   /platform/traces:
     get:
       description: 非委托Platform User；System逐请求裁决所有参与实例及因果Link目标；仅有界固定查询，采样结果不代表全量或完整调用关系
