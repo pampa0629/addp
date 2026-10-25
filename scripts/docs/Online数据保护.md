@@ -35,6 +35,14 @@
 
 运行报告仅保留游标 SHA256／长度、定义及策略修订、同步回执、HTTP 矩阵和独立结果断言，不归档游标、令牌或源值。成功、失败和中断均撤销本轮捕获的 Policy 并核对 revoked，删除本轮 Service 并确认 404，已有默认规则保持不变。新增场景是正式 HTTP T4，既有 Console 浏览器 v9 验收保持原范围；不新增浏览器通过声明。确定性回归仍经 `make test-security-online-runner`，真实隔离运行仍归现有 suite 和专门 CI 会话，未实际运行前不得记为 Hosted T4 通过。
 
+## 用户角色资格撤销
+
+领域报告 v27 的 `service_role_membership_revocation` 与上述方式撤销独立执行。System-owned 初始化夹具只在该隔离 suite 另建普通 Service 用户，功能权限放在其主角色，脱敏选择资格放在第二个仅重复已有服务定义读取权限的业务角色；角色管理 Permission 不可租户自定义，因此仅复用初始化时已有的隔离 Tenant 管理员，限定读取/撤销精确 Assignment，不进入数据消费路径。业务阶段经正式 IAM API 精确撤销第二个 Assignment，不修改主角色、Policy、Assessment、Service 选择或保护投影，不使用管理员消费身份或直接 SQL。
+
+先证明所选方式及同一游标的两页 JSON/CSV 正常。撤销后，旧令牌必须 401，但这只计认证失效；随后通过正式密码登录签发同一用户的新会话，确认 Tenant/Membership/功能 Permission 不变、授权版本前进，本人角色自查只减少该业务角色。保持 Policy 修订、Service 定义、保护投影不变，旧游标 JSON/CSV 及无游标对照必须精确返回 403／`query_protection_roles_unavailable` 且无结果，不接受 401、409 或通用保护错误替代。显式移除选择后，默认脱敏五行两页仍可用；不重新授予业务角色。成功、失败和中断均核对目标 Assignment 已撤销，并精确清理本轮 Policy/Service，审计事实随隔离 Infra 销毁。
+
+普通测试用户与隔离 IAM 控制身份的凭据只进入当轮 owner-only Secret 环境文件，不写入报告或传给浏览器；报告只记录身份、Assignment、当前角色与 Permission 边界、令牌失效状态、查询游标摘要和精确拒绝/恢复事实。复用 `make test-security-online-runner` 与既有 Hosted suite，不增加新部署、产品接口或 CI 路线。新增确定性通过不等于真实 Hosted T4 通过；CI 继续由专门会话跟进，角色自然到期和其他出口仍单列未验范围。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

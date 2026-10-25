@@ -865,6 +865,102 @@ func TestTransferPrecheckFixtureKeepsConsumerSeparateAndReissuesSession(t *testi
 	}
 }
 
+type securityMaskingRolesFixture struct {
+	fault    string
+	created  *iam.CreateTenantRoleInput
+	assigned *iam.CreateTenantRoleAssignmentsInput
+}
+
+func (f *securityMaskingRolesFixture) GetAssignment(context.Context, int64, int64) (*iam.ManagedTenantRoleAssignment, error) {
+	value := &iam.ManagedTenantRoleAssignment{RoleAssignment: iam.RoleAssignment{ID: 10, PrincipalID: 7},
+		MembershipID: 8, RoleKey: "online.external_online_security_role_reader", PrincipalType: iam.PrincipalTypeUser}
+	if f.fault == "foreign_user" {
+		value.MembershipID = 9
+	}
+	return value, nil
+}
+func (f *securityMaskingRolesFixture) CreateRole(_ context.Context, input iam.CreateTenantRoleInput) (*iam.TenantRole, error) {
+	f.created = &input
+	value := &iam.TenantRole{Role: iam.Role{ID: 20, RoleKey: securityMaskingEligibilityRoleKey}}
+	if f.fault == "role" {
+		value.RoleKey = "online.other"
+	}
+	return value, nil
+}
+func (f *securityMaskingRolesFixture) CreateAssignments(_ context.Context, input iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error) {
+	f.assigned = &input
+	value := []iam.ManagedTenantRoleAssignment{{RoleAssignment: iam.RoleAssignment{ID: 30, PrincipalID: 7}, MembershipID: 8}}
+	if f.fault == "assignment" {
+		value[0].ID = 10
+	}
+	return value, nil
+}
+
+func TestSecurityMaskingEligibilityKeepsFunctionalPermissionsAndReissuesSession(t *testing.T) {
+	tenant, membership := int64(2), int64(8)
+	original := &iam.IssuedBrowserSession{AccessToken: "old", Context: iam.ResolvedSessionContext{
+		Type: iam.ContextTypeTenant, TenantID: &tenant, TenantMembershipID: &membership}}
+	for _, fault := range []string{"", "foreign_user", "role", "assignment", "issue"} {
+		t.Run(fault, func(t *testing.T) {
+			fixture := &securityMaskingRolesFixture{fault: fault}
+			issued := 0
+			fresh, assignment, err := grantSecurityMaskingEligibility(t.Context(), fixture, func(principal int64) (*iam.IssuedBrowserSession, error) {
+				issued++
+				if principal != 7 || fixture.assigned == nil {
+					t.Fatal("session issued before exact second assignment")
+				}
+				if fault == "issue" {
+					return nil, errors.New("session blocked")
+				}
+				return &iam.IssuedBrowserSession{AccessToken: "fresh", Context: original.Context}, nil
+			}, original, tenant, 3, 10)
+			if fault != "" {
+				if err == nil || fresh != nil {
+					t.Fatal("invalid isolated eligibility fixture accepted")
+				}
+				return
+			}
+			if err != nil || assignment != 30 || issued != 1 || fresh.AccessToken != "fresh" {
+				t.Fatal(assignment, issued, err)
+			}
+			if fixture.created.RoleKey != securityMaskingEligibilityRoleKey || !slices.Equal(fixture.created.PermissionKeys, []string{"service.definition.read"}) ||
+				!slices.Contains(securityRoleReaderPermissions, "service.definition.read") || fixture.assigned.MembershipID != membership ||
+				!slices.Equal(fixture.assigned.RoleIDs, []int64{20}) {
+				t.Fatal("eligibility role must duplicate an existing read in a separate assignment")
+			}
+		})
+	}
+	if len(securityRoleReaderPermissions) != 6 {
+		t.Fatal("Security role reader qualifications expanded")
+	}
+	for _, key := range securityRoleReaderPermissions {
+		if strings.HasPrefix(key, "iam.") || strings.HasPrefix(key, "security.") {
+			t.Fatal("reader gained governance rights")
+		}
+	}
+	values := map[string]string{}
+	for _, key := range []string{"ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME", "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID", "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"} {
+		values[key] = "private-fixture-value"
+	}
+	path := filepath.Join(t.TempDir(), "security-role.env")
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range values {
+		if !strings.Contains(string(data), key+"='private-fixture-value'") {
+			t.Fatal("missing owner-only credential export", key)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("fixture credentials must remain owner-only")
+	}
+}
+
 func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	permissions, err := suitePermissions("security-mysql-owner-protection")
 	if err != nil {

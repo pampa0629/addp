@@ -1551,6 +1551,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             'ADDP_ONLINE_TEST_RUN_ID': 'run-42', 'GATEWAY_URL': 'http://127.0.0.1:8000',
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'fixture-token',
         }
+        environment.update({key: "private-role-fixture" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
         for unavailable in (False, True):
             scenario_report = FourOutletReasonMatrixTest().report()
             mongo_report = scenario_report.pop('mongodb_algorithms')
@@ -1592,6 +1593,9 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                     browser.assert_not_called()
                 else:
                     def launch(*args):
+                        self.assertTrue(all(key not in os.environ for key in ONLINE.SERVICE_ROLE_ENVIRONMENT))
+                        self.assertEqual(scenario.call_args.kwargs["role_environment"],
+                                         {key: "private-role-fixture" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
                         readiness.assert_called_once()
                         self.assertEqual(scenario_report['protection_reason_matrix']['coverage_counts'], {'runtime': 20, 'protocol_only': 8})
                         context = args[3]
@@ -1776,6 +1780,7 @@ for (const data of [
                 ADDP_ONLINE_TEST_USER_USERNAME="test-user", ADDP_ONLINE_TEST_USER_PASSWORD="test-password",
                 ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="29",
                 GATEWAY_URL="http://127.0.0.1:8000", CONSOLE_URL="http://127.0.0.1:5170")
+            environment.update({key: "role-fixture-private" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
             for exit_code in (1, 0):
                 path.write_text(json.dumps(self.report()))
                 with patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=exit_code, stdout="", stderr="")):
@@ -1783,6 +1788,7 @@ for (const data of [
                         ONLINE.run_export_browser(artifact, environment, "source", {"enrollment_id": "fixture"})
                 self.assertFalse(path.exists())
             def browser(command, **kwargs):
+                self.assertTrue(all(key not in kwargs["env"] for key in ONLINE.SERVICE_ROLE_ENVIRONMENT))
                 self.assertIn("e2e/online/security-manager-export.spec.js", command)
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT"]),
@@ -2373,6 +2379,7 @@ class ServiceRoleCursorClient:
         if path == "/api/v1/service/query/701":
             if method == "DELETE":
                 self.deleted = True
+                return response(200, {"message": "deleted"})
             if method == "PUT":
                 assert body["version"] == self.service["version"]
                 self.service.update(copy.deepcopy({key: value for key, value in body.items() if key != "data_config"}))
@@ -2507,6 +2514,171 @@ class ServiceRoleCursorRevocationTest(unittest.TestCase):
                 ONLINE.wait_service_role_projection(None, "enrollment", previous, 1)
         with patch.object(ONLINE, "service_projection", return_value=dict(valid, projection_id="other")), self.assertRaises(ONLINE.SuiteError):
             ONLINE.wait_service_role_projection(None, "enrollment", previous, time.monotonic() + 1)
+
+
+class MembershipClient:
+    def __init__(self, backend, token):
+        self.backend, self.token, self.base_url, self.timeout = backend, token, "http://127.0.0.1:8000", 1
+
+    def request(self, method, path, expected, body=None, **kwargs):
+        response = self.backend.for_user(self.token, method, path, expected, body, **kwargs)
+        if response.status not in expected:
+            raise ONLINE.SuiteError("controlled fixture HTTP status differs")
+        return response
+
+
+class MembershipBackend(ServiceRoleCursorClient):
+    def __init__(self, fault=None):
+        super().__init__()
+        self.member_fault = fault
+        self.revoked = False
+        self.events = []
+        self.assignment = {"id": "42", "principal_id": "7", "membership_id": "8", "principal_type": "user",
+            "role_key": ONLINE.SERVICE_ELIGIBILITY_ROLE, "scope_type": "tenant", "username": "external-online-security-role-reader", "status": "active"}
+
+    def for_user(self, token, method, path, expected, body=None, **kwargs):
+        self.events.append((token, method, path, copy.deepcopy(body)))
+        response = ONLINE.SUPPORT.Response
+        fault = self.member_fault
+        if path == "/api/v1/system/auth/context":
+            if token == "reader-old" and self.revoked and fault != "stale_session_live":
+                return response(401, {"error": "old session revoked", "error_code": "unauthorized"})
+            permissions = (ONLINE.SERVICE_ROLE_CONTROLLER_PERMISSIONS if token == "controller"
+                           else ONLINE.SERVICE_ROLE_READER_PERMISSIONS)
+            principal_id = "8" if token == "controller" else "7"
+            if fault == "foreign_relogin" and token == "reader-fresh":
+                principal_id = "10"
+            if fault == "controller_is_reader" and token == "controller":
+                principal_id = "7"
+            granted = sorted(permissions)
+            if fault == "permission_lost" and token == "reader-fresh":
+                granted.remove("service.data_read.execute")
+            return response(200, {"principal": {"id": principal_id, "type": "user"},
+                "context": {"type": "tenant", "tenant_id": "2", "tenant_membership_id": "8" if token != "controller" else "9"},
+                "token": {"type": "first_party_access_token"},
+                "authorization": {"authorization_version": "2" if token == "reader-fresh" else "1",
+                    "role_assignments": [{"role_key": "tenant.administrator" if token == "controller" else "online.functional", "permissions": granted}]}})
+        if path == "/api/v1/system/auth/subject-roles":
+            original = super().request(method, path, expected, body)
+            original.payload["role_keys"] = ["online.functional"]
+            if not self.revoked or fault == "kept_role":
+                original.payload["role_keys"].append(ONLINE.SERVICE_ELIGIBILITY_ROLE)
+            return original
+        if path == "/api/v1/system/tenant/role_assignments/42/revoke":
+            assert token == "controller" and method == "POST"
+            self.revoked = True
+            self.assignment["status"] = "revoked"
+            return response(200, copy.deepcopy(self.assignment))
+        if path == "/api/v1/system/tenant/role_assignments/42":
+            assert token == "controller"
+            if self.revoked and fault == "cleanup_iam":
+                raise ONLINE.SuiteError("controlled IAM cleanup failure")
+            assignment = copy.deepcopy(self.assignment)
+            if fault == "wrong_assignment":
+                assignment["principal_id"] = "17"
+            return response(200, assignment)
+        if path == "/api/v1/system/login":
+            assert token == "" and body == {"username": "external-online-security-role-reader", "password": "private-password"}
+            return response(200, {"next_action": "session_issued", "session": {"access_token": "reader-fresh"}})
+        if path.startswith("/api/v1/service/query-protection-options?") and self.revoked:
+            return response(200, {"fields": []})
+        if path.startswith("/api/query/"):
+            assert token in {"reader-old", "reader-fresh"}, "controller/owner must never consume role results"
+            if fault == "interrupt":
+                raise KeyboardInterrupt("controlled role acceptance interruption")
+            if self.revoked and self.service["data_config"].get("protection_choices"):
+                assert token == "reader-fresh"
+                status = {"denial_401": 401, "denial_409": 409}.get(fault, 403)
+                payload = {"error": "Current signed-in user is ineligible", "error_code": "query_protection_roles_unavailable"}
+                if fault == "wrong_code":
+                    payload["error_code"] = "data_protection_required"
+                if fault == "denial_rows":
+                    payload["data"] = []
+                return response(status, payload)
+        value = super().request(method, path, expected, body, **kwargs)
+        if self.revoked and path == "/api/v1/security/protection-policies/owned-policy" and method == "GET" and fault == "policy_changed":
+            value.payload["current_revision"] += 1
+        if self.revoked and path.startswith("/api/v1/security/protection-enrollments/") and fault == "projection_changed":
+            value.payload["owner_progress"][0]["revision"] = "00000000000000000003"
+        if self.revoked and path == "/api/v1/service/query/701" and method == "GET" and fault == "silent_clear":
+            value.payload["data_config"]["protection_choices"] = []
+        return value
+
+
+class ServiceRoleMembershipRevocationTest(unittest.TestCase):
+    def run_case(self, backend):
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
+            ("reader-old", "external-online-security-role-reader", "private-password", "42", "controller")))
+        factory = lambda base, token, timeout: MembershipClient(backend, token)
+        with (patch.object(ONLINE, "GatewayClient", side_effect=factory),
+              patch.object(ONLINE, "find_item", return_value=source), patch.object(ONLINE, "list_pages", return_value=[])):
+            return ONLINE.exercise_service_role_membership_revocation(MembershipClient(backend, "governor"), 23, "fixture",
+                {"enrollment_id": "enrollment", "assessment_id": "assessment"}, {"principal_id": "9", "tenant_id": "2"},
+                "run-42", time.monotonic() + 30, environment)
+
+    def test_401_is_separate_from_fresh_user_exact_403_and_default_recovery(self):
+        backend = MembershipBackend()
+        report = self.run_case(backend)
+        self.assertEqual(report["old_session_http_status"], 401)
+        self.assertEqual(report["identity_before"]["permissions"], report["identity_after"]["permissions"])
+        self.assertEqual(report["role_keys_after"], ["online.functional"])
+        self.assertEqual(report["assignment_after"]["status"], "revoked")
+        self.assertEqual(set(report["fresh_user_refusals"]), {"json", "csv", "no_cursor"})
+        for refusal in report["fresh_user_refusals"].values():
+            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True})
+        self.assertTrue(report["policy_projection_and_saved_choice_unchanged_at_refusal"])
+        self.assertEqual(report["explicit_default_recovery"]["total_rows"], 5)
+        self.assertTrue(backend.deleted and backend.revoked and report["eligibility_assignment_revoked"])
+        self.assertEqual(backend.policy["state"], "revoked")
+        self.assertEqual(sum(path.endswith("/42/revoke") for _, _, path, _ in backend.events), 1)
+        outputs = [(token, body["page"].get("cursor")) for token, _, path, body in backend.events if path.startswith("/api/query/")]
+        self.assertEqual([cursor for _, cursor in outputs[2:6]], [backend.cursor] * 4)
+        self.assertEqual([token for token, _ in outputs[4:7]], ["reader-fresh"] * 3)
+        for secret in ("private-password", "reader-old", "reader-fresh", "controller", backend.cursor):
+            self.assertNotIn('"'+secret+'"', json.dumps(report))
+
+    def test_wrong_status_permissions_roles_or_mutated_protection_cannot_pass(self):
+        for fault in ("stale_session_live", "foreign_relogin", "permission_lost", "kept_role", "policy_changed",
+                      "projection_changed", "silent_clear", "denial_401", "denial_409", "wrong_code", "denial_rows"):
+            backend = MembershipBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(backend)
+            self.assertTrue(backend.revoked and backend.deleted)
+            self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_wrong_assignment_or_controller_never_mutates_identity(self):
+        for fault in ("controller_is_reader", "wrong_assignment"):
+            backend = MembershipBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(backend)
+            self.assertFalse(backend.revoked)
+            self.assertIsNone(backend.policy)
+
+    def test_interruption_revokes_only_owned_assignment_and_cleans_service(self):
+        backend = MembershipBackend("interrupt")
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_case(backend)
+        self.assertTrue(backend.revoked and backend.deleted)
+
+    def test_iam_cleanup_failure_does_not_skip_policy_and_service_cleanup(self):
+        backend = MembershipBackend("cleanup_iam")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "cleanup failed"):
+            self.run_case(backend)
+        self.assertTrue(backend.deleted)
+        self.assertEqual(backend.policy["state"], "revoked")
+
+    def test_revoked_policy_is_reactivated_by_versioned_update_not_duplicate_create(self):
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {"id": "previous", "current_revision": 3})
+        previous = {"id": "previous", "version": 2, "state": "revoked", "assessment_id": "assessment",
+                    "consumer_owner": "service", "action": "service_execute"}
+        with patch.object(ONLINE, "list_pages", return_value=[previous]):
+            ONLINE.create_service_role_policy(client, "assessment", [ONLINE.SERVICE_ELIGIBILITY_ROLE])
+        method, path, expected, body = client.request.call_args.args
+        self.assertEqual((method, path, expected, body["version"]), ("PUT", "/api/v1/security/protection-policies/previous", (200,), 2))
+        self.assertNotIn("assessment_id", body)
+        self.assertNotIn("id", body["role_options"][0])
 
 
 class ResourceValiditySnapshotTest(unittest.TestCase):

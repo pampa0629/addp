@@ -2482,26 +2482,121 @@ def assert_service_role_refusal(response: SUPPORT.Response) -> dict[str, object]
     return {"http_status": response.status, "error_code": payload["error_code"], "result_absent": True}
 
 
+def service_subject_roles(client: GatewayClient, identity: Mapping[str, object]) -> dict[str, object]:
+    roles = _object(client.request("GET", "/api/v1/system/auth/subject-roles", (200,)).payload, "own roles")
+    keys = roles.get("role_keys")
+    now = datetime.now(timezone.utc)
+    if (roles.get("tenant_id") != identity["tenant_id"] or roles.get("actor_principal_id") != identity["principal_id"]
+            or not isinstance(keys, list) or not keys or not all(isinstance(key, str) for key in keys)
+            or keys != sorted(set(keys)) or any(key in FORBIDDEN_ADMIN_ROLES for key in keys)
+            or utc_timestamp(roles.get("expires_at"), "own roles expiry") <= now
+            or utc_timestamp(roles.get("observed_at"), "own roles observation") > now + timedelta(minutes=1)):
+        raise SuiteError("role cursor requires the same ordinary current Tenant User")
+    return {key: roles.get(key) for key in ("tenant_id", "actor_principal_id", "role_keys")}
+
+
+def create_service_role_policy(client: GatewayClient, assessment_id: str, role_keys: list[str]) -> dict[str, object]:
+    previous = [policy for policy in list_pages(client, "/api/v1/security/protection-policies")
+                if policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == "service"
+                and policy.get("action") == "service_execute"]
+    if len(previous) > 1 or any(policy.get("state") != "revoked" for policy in previous):
+        raise SuiteError("role fixture must not take over an active Service Policy")
+    body = {
+        "effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+        "parameters": {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"},
+        "invalid_value_effect": "suppress", "rationale": "Disposable Service old cursor role option acceptance",
+        "role_options": [{"name": "Online cursor full mask", "role_keys": role_keys,
+                          "decision": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+                                       "parameters": {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"},
+                                       "invalid_value_effect": "suppress"}}],
+    }
+    if previous:
+        return _object(client.request("PUT", "/api/v1/security/protection-policies/" + str(previous[0]["id"]),
+            (200,), dict(body, version=previous[0]["version"])).payload, "role Policy reactivation")
+    return _object(client.request("POST", "/api/v1/security/protection-policies", (201,),
+        dict(body, assessment_id=assessment_id, consumer_owner="service", action="service_execute")).payload, "role cursor Policy")
+
+def service_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object]) -> dict[str, object]:
+    policy_id = str(policy["id"])
+    saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
+    if len(saved_options) != 1:
+        raise SuiteError("role cursor Policy did not create exactly one server-owned option")
+    option_id = _object(saved_options[0], "saved role option").get("id")
+    try:
+        if str(uuid.UUID(str(option_id))) != option_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
+    options = _object(client.request("GET", "/api/v1/service/query-protection-options?" +
+        urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "Service role options")
+    matches = [field for field in _array(options.get("fields"), "Service role fields")
+               if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
+    if len(matches) != 1:
+        raise SuiteError("role cursor requires exactly one eligible bank-card field")
+    field = matches[0]
+    target = {"owner_module": "meta", "resource_type": "data_item", "resource_identity": source["fingerprint"]}
+    if (field.get("target") != target or field.get("policy_id") != policy_id
+            or positive_int(field.get("policy_revision"), "role policy revision") != positive_int(policy.get("current_revision"), "Policy revision")
+            or field.get("options") != [{"id": option_id, "name": "Online cursor full mask"}]):
+        raise SuiteError("role cursor available choice does not bind this source and Policy revision")
+    choice = {"target": target, "component_key": BANK_FIELD, "selection": {
+        "policy_id": policy_id, "assessment_revision": positive_int(field.get("assessment_revision"), "Assessment revision"),
+        "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
+    return choice
+
+
+def restore_service_default(client: GatewayClient, service_path: str, query_path: str, choice: Mapping[str, object], retained: Mapping[str, object]) -> tuple[dict[str, object], str]:
+    def definition():
+        return _object(client.request("GET", service_path, (200,)).payload, "role cursor saved Service")
+    client.request("PUT", service_path, (200,), {"version": retained["version"], "status": "inactive"})
+    stopped = definition()
+    if stopped.get("status") != "inactive" or stopped["data_config"].get("protection_choices") != [choice]:
+        raise SuiteError("role cursor pure stop must retain the invalid choice")
+    client.request("PUT", service_path, (200,), {"version": stopped["version"],
+        "data_config": {"protection_choices": []}})
+    cleared = definition()
+    if cleared["data_config"].get("protection_choices") != [] or cleared.get("status") != "inactive":
+        raise SuiteError("role cursor explicit removal did not persist")
+    client.request("PUT", service_path, (200,), {"version": cleared["version"], "status": "active"})
+    recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False)
+    recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor)
+    recovery.update(continuation=recovered_last, total_rows=5)
+    if last_version != recovered_version:
+        raise SuiteError("default recovery pagination changed its Service version")
+    return recovery, recovered_version
+
+
+def cleanup_service_role_resources(client: GatewayClient, policy_id: str | None, service_id: int | None, cause: BaseException | None = None) -> dict[str, object]:
+    final_policy = {}
+    cleanup_errors = []
+    if policy_id is not None:
+        try:
+            path = "/api/v1/security/protection-policies/" + policy_id
+            current = _object(client.request("GET", path, (200,)).payload, "role Policy cleanup")
+            if current.get("state") == "active":
+                client.request("DELETE", path, (200,), {"version": current["version"], "rationale": "Disposable role cursor cleanup"})
+            final_policy = _object(client.request("GET", path, (200,)).payload, "revoked role Policy")
+            if final_policy.get("state") != "revoked":
+                raise SuiteError("role cursor Policy cleanup left an active option")
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+    try:
+        cleanup_service(client, service_id)
+    except BaseException as error:
+        cleanup_errors.append(str(error))
+    if cleanup_errors:
+        raise SuiteError("role cursor cleanup failed: " + "; ".join(cleanup_errors)) from cause
+    return final_policy
+
+
 def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: int, database: str,
         bank: Mapping[str, object], identity: Mapping[str, object], run_id: str, deadline: float) -> dict[str, object]:
     """Real User HTTP only; synthetic data and policy owned by this disposable run."""
-    def own_roles():
-        roles = _object(client.request("GET", "/api/v1/system/auth/subject-roles", (200,)).payload, "own roles")
-        keys = roles.get("role_keys")
-        now = datetime.now(timezone.utc)
-        if (roles.get("tenant_id") != identity["tenant_id"] or roles.get("actor_principal_id") != identity["principal_id"]
-                or not isinstance(keys, list) or not keys or not all(isinstance(key, str) for key in keys)
-                or keys != sorted(set(keys)) or any(key in FORBIDDEN_ADMIN_ROLES for key in keys)
-                or utc_timestamp(roles.get("expires_at"), "own roles expiry") <= now
-                or utc_timestamp(roles.get("observed_at"), "own roles observation") > now + timedelta(minutes=1)):
-            raise SuiteError("role cursor requires the same ordinary current Tenant User")
-        return {key: roles.get(key) for key in ("tenant_id", "actor_principal_id", "role_keys")}
-
     source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
     locator = build_item_locator(engine_id, source)
     enrollment_id, assessment_id = str(bank["enrollment_id"]), str(bank["assessment_id"])
     previous = service_projection(client, enrollment_id)
-    roles = own_roles()
+    roles = service_subject_roles(client, identity)
     policies = list_pages(client, "/api/v1/security/protection-policies")
     if any(policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == "service"
            and policy.get("action") == "service_execute" and policy.get("state") == "active" for policy in policies):
@@ -2512,42 +2607,10 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
     failure = None
     result = {}
     try:
-        policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
-            "assessment_id": assessment_id, "consumer_owner": "service", "action": "service_execute",
-            "effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
-            "parameters": {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"},
-            "invalid_value_effect": "suppress", "rationale": "Disposable Service old cursor role option acceptance",
-            "role_options": [{"name": "Online cursor full mask", "role_keys": roles["role_keys"],
-                              "decision": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
-                                           "parameters": {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"},
-                                           "invalid_value_effect": "suppress"}}],
-        }).payload, "role cursor Policy")
+        policy = create_service_role_policy(client, assessment_id, roles["role_keys"])
         policy_id = str(policy["id"])
-        saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
-        if len(saved_options) != 1:
-            raise SuiteError("role cursor Policy did not create exactly one server-owned option")
-        option_id = _object(saved_options[0], "saved role option").get("id")
-        try:
-            if str(uuid.UUID(str(option_id))) != option_id:
-                raise ValueError
-        except (ValueError, TypeError, AttributeError) as error:
-            raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
         installed = wait_service_role_projection(client, enrollment_id, previous, deadline)
-        options = _object(client.request("GET", "/api/v1/service/query-protection-options?" +
-            urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "Service role options")
-        matches = [field for field in _array(options.get("fields"), "Service role fields")
-                   if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
-        if len(matches) != 1:
-            raise SuiteError("role cursor requires exactly one eligible bank-card field")
-        field = matches[0]
-        target = {"owner_module": "meta", "resource_type": "data_item", "resource_identity": source["fingerprint"]}
-        if (field.get("target") != target or field.get("policy_id") != policy_id
-                or positive_int(field.get("policy_revision"), "role policy revision") != positive_int(policy.get("current_revision"), "Policy revision")
-                or field.get("options") != [{"id": option_id, "name": "Online cursor full mask"}]):
-            raise SuiteError("role cursor available choice does not bind this source and Policy revision")
-        choice = {"target": target, "component_key": BANK_FIELD, "selection": {
-            "policy_id": policy_id, "assessment_revision": positive_int(field.get("assessment_revision"), "Assessment revision"),
-            "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
+        choice = service_role_choice(client, locator, source, policy)
         name = ("online-security-role-cursor-" + run_suffix(run_id, "-"))[:120].rstrip("-")
         body = service_payload(name, engine_id, locator, BANK_FIELDS)
         body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
@@ -2581,20 +2644,8 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
         request["page"] = {"limit": 4}
         request["format"] = "json"
         control = assert_service_role_refusal(client.request("POST", query_path, (409,), request))
-        client.request("PUT", service_path, (200,), {"version": retained["version"], "status": "inactive"})
-        stopped = definition()
-        if stopped.get("status") != "inactive" or stopped["data_config"].get("protection_choices") != [choice]:
-            raise SuiteError("role cursor pure stop must retain the invalid choice")
-        client.request("PUT", service_path, (200,), {"version": stopped["version"],
-            "data_config": {"protection_choices": []}})
-        cleared = definition()
-        if cleared["data_config"].get("protection_choices") != [] or cleared.get("status") != "inactive":
-            raise SuiteError("role cursor explicit removal did not persist")
-        client.request("PUT", service_path, (200,), {"version": cleared["version"], "status": "active"})
-        recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False)
-        recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor)
-        recovery.update(continuation=recovered_last, total_rows=5)
-        if recovered_version == version or last_version != recovered_version or own_roles() != roles:
+        recovery, recovered_version = restore_service_default(client, service_path, query_path, choice, retained)
+        if recovered_version == version or service_subject_roles(client, identity) != roles:
             raise SuiteError("role cursor recovery must change the choice version without changing User roles")
         if definition_array(client, "/api/v1/security/protection-baselines") != baseline_before:
             raise SuiteError("role cursor acceptance changed a default Baseline")
@@ -2608,24 +2659,7 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
                   "explicit_removal_default_recovery": recovery, "user_roles_unchanged": True, "baselines_unchanged": True}
     except BaseException as error:
         failure = error
-    cleanup_errors = []
-    if policy_id is not None:
-        try:
-            path = "/api/v1/security/protection-policies/" + policy_id
-            current = _object(client.request("GET", path, (200,)).payload, "role Policy cleanup")
-            if current.get("state") == "active":
-                client.request("DELETE", path, (200,), {"version": current["version"], "rationale": "Disposable role cursor cleanup"})
-            final_policy = _object(client.request("GET", path, (200,)).payload, "revoked role Policy")
-            if final_policy.get("state") != "revoked":
-                raise SuiteError("role cursor Policy cleanup left an active option")
-        except BaseException as error:
-            cleanup_errors.append(str(error))
-    try:
-        cleanup_service(client, service_id)
-    except BaseException as error:
-        cleanup_errors.append(str(error))
-    if cleanup_errors:
-        raise SuiteError("role cursor cleanup failed: " + "; ".join(cleanup_errors)) from failure
+    final_policy = cleanup_service_role_resources(client, policy_id, service_id, failure)
     if failure:
         raise failure
     # Policy revisions remain audit facts until the disposable Infra is destroyed.
@@ -2633,6 +2667,185 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
                 created_policies=1, revoked_policies=1, policy_revoked=True,
                 final_policy_revision=positive_int(final_policy["current_revision"], "revoked Policy revision"),
                 service_deleted=True)
+
+
+SERVICE_ELIGIBILITY_ROLE = "online.security_masking_eligible"
+SERVICE_ROLE_READER_PERMISSIONS = {"service.definition.read", "service.definition.create", "service.definition.update",
+                                   "service.definition.delete", "service.data_read.execute", "meta.catalog.read"}
+SERVICE_ROLE_CONTROLLER_PERMISSIONS = {"iam.tenant_role_assignment.read", "iam.tenant_role_assignment.revoke"}
+SERVICE_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME",
+                           "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID",
+                           "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN")
+
+
+def service_role_user_identity(client: GatewayClient, tenant_id: str, required: set[str], *, iam_controller: bool = False) -> dict[str, object]:
+    context = _object(client.request("GET", "/api/v1/system/auth/context", (200,)).payload, "role User AuthContext")
+    principal = _object(context.get("principal"), "role User principal")
+    tenant = _object(context.get("context"), "role User Tenant")
+    token = _object(context.get("token"), "role User credential")
+    authorization = _object(context.get("authorization"), "role User authorization")
+    if (principal.get("type") != "user" or tenant.get("type") != "tenant" or tenant.get("tenant_id") != tenant_id
+            or token.get("type") != "first_party_access_token" or context.get("delegation") is not None):
+        raise SuiteError("role revocation must use a first-party User in the same Tenant")
+    roles, permissions = set(), set()
+    for item in _array(authorization.get("role_assignments"), "role User assignments"):
+        assignment = _object(item, "role User assignment")
+        key = assignment.get("role_key")
+        granted = assignment.get("permissions")
+        if not isinstance(key, str) or not isinstance(granted, list) or not all(isinstance(p, str) for p in granted):
+            raise SuiteError("role User permissions are incomplete")
+        roles.add(key)
+        permissions.update(granted)
+    if ((not iam_controller and (roles & FORBIDDEN_ADMIN_ROLES or permissions != required))
+            or (iam_controller and (roles != {"tenant.administrator"} or not required <= permissions))):
+        raise SuiteError("role revocation User must have exactly its ordinary fixture permissions")
+    return {"principal_id": str(positive_int(principal.get("id"), "role User ID")), "tenant_id": tenant_id,
+            "membership_id": str(positive_int(tenant.get("tenant_membership_id"), "role User membership")),
+            "authorization_version": str(positive_int(authorization.get("authorization_version"), "role User authorization version")),
+            "permissions": sorted(permissions)}
+
+
+def assert_service_eligibility_assignment(payload: object, identity: Mapping[str, object], assignment_id: str, status: str) -> dict[str, object]:
+    assignment = _object(payload, "masking eligibility Assignment")
+    if (assignment.get("id") != assignment_id or assignment.get("principal_type") != "user"
+            or assignment.get("principal_id") != identity["principal_id"]
+            or assignment.get("membership_id") != identity["membership_id"]
+            or assignment.get("role_key") != SERVICE_ELIGIBILITY_ROLE or assignment.get("scope_type") != "tenant"
+            or assignment.get("username") != "external-online-security-role-reader" or assignment.get("status") != status):
+        raise SuiteError("role revocation target differs from the dedicated eligibility Assignment")
+    return {key: assignment[key] for key in ("id", "principal_id", "membership_id", "role_key", "status")}
+
+
+def exercise_service_role_membership_revocation(client: GatewayClient, engine_id: int, database: str,
+        bank: Mapping[str, object], owner_identity: Mapping[str, object], run_id: str, deadline: float,
+        environment: Mapping[str, str] | None = None) -> dict[str, object]:
+    env = os.environ if environment is None else environment
+    if any(not isinstance(env.get(key), str) or not env[key] for key in SERVICE_ROLE_ENVIRONMENT):
+        raise SuiteError("role revocation requires dedicated owner-only fixture credentials")
+    if env["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"] != "external-online-security-role-reader":
+        raise SuiteError("role revocation must not use a personal username")
+    reader = GatewayClient(client.base_url, env["ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN"], client.timeout)
+    controller = GatewayClient(client.base_url, env["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"], client.timeout)
+    public = GatewayClient(client.base_url, "", client.timeout)
+    identity = service_role_user_identity(reader, str(owner_identity["tenant_id"]), SERVICE_ROLE_READER_PERMISSIONS)
+    operator = service_role_user_identity(controller, identity["tenant_id"], SERVICE_ROLE_CONTROLLER_PERMISSIONS, iam_controller=True)
+    if len({identity["principal_id"], operator["principal_id"], owner_identity["principal_id"]}) != 3:
+        raise SuiteError("role consumer, controller and governance owner must be distinct Users")
+    roles = service_subject_roles(reader, identity)
+    if SERVICE_ELIGIBILITY_ROLE not in roles["role_keys"]:
+        raise SuiteError("dedicated Service User lacks the masking eligibility role")
+    assignment_id = str(positive_int(env["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"], "eligibility Assignment ID"))
+    assignment_path = "/api/v1/system/tenant/role_assignments/" + assignment_id
+    target = assert_service_eligibility_assignment(controller.request("GET", assignment_path, (200,)).payload, identity, assignment_id, "active")
+    policy_id = service_id = None
+    failure = None
+    result = {}
+    try:
+        source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+        locator = build_item_locator(engine_id, source)
+        enrollment_id = str(bank["enrollment_id"])
+        before_projection = service_projection(client, enrollment_id)
+        baseline = definition_array(client, "/api/v1/security/protection-baselines")
+        policy = create_service_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
+        policy_id = str(policy["id"])
+        installed = wait_service_role_projection(client, enrollment_id, before_projection, deadline)
+        policy_path = "/api/v1/security/protection-policies/" + policy_id
+        published_policy = _object(client.request("GET", policy_path, (200,)).payload, "published eligibility Policy")
+        choice = service_role_choice(reader, locator, source, policy)
+        name = ("online-security-membership-" + run_suffix(run_id, "-"))[:120].rstrip("-")
+        body = service_payload(name, engine_id, locator, BANK_FIELDS)
+        body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+        body["data_config"]["protection_choices"] = [choice]
+        created = _object(reader.request("POST", "/api/v1/service/query", (201,), body).payload, "membership Service")
+        service_id = positive_int(created.get("id"), "membership Service ID")
+        service_path = f"/api/v1/service/query/{service_id}"
+        selected = _object(reader.request("GET", service_path, (200,)).payload, "membership Service definition")
+        if (selected.get("status") != "active" or selected.get("public_access") is not False
+                or _object(selected.get("data_config"), "membership Service config").get("protection_choices") != [choice]):
+            raise SuiteError("membership Service must preserve the private explicit role choice")
+        query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
+        first, cursor, version = assert_service_role_page(reader, query_path, ["1", "2", "3", "4"], True)
+        continuation, _, last_version = assert_service_role_page(reader, query_path, ["5"], True, cursor)
+        if last_version != version:
+            raise SuiteError("membership Service version changed before role revocation")
+        revoked = assert_service_eligibility_assignment(controller.request("POST", assignment_path + "/revoke", (200,),
+            {"reason": "Disposable masking eligibility revocation; keep functional permissions and Policy unchanged"}).payload,
+            identity, assignment_id, "revoked")
+        old_session = reader.request("GET", "/api/v1/system/auth/context", (401,))
+        if old_session.status != 401 or not set(_object(old_session.payload, "old session refusal")) <= {"error", "error_code"}:
+            raise SuiteError("revoked eligibility must invalidate the old session without returning identity")
+        issued = _object(public.request("POST", "/api/v1/system/login", (200,), {
+            "username": env["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"],
+            "password": env["ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD"]}).payload, "formal role User login")
+        new_token = _object(issued.get("session"), "role User new session").get("access_token")
+        if issued.get("next_action") != "session_issued" or not isinstance(new_token, str) or not new_token or new_token == reader.token:
+            raise SuiteError("role revocation must formally issue a fresh User session")
+        fresh = GatewayClient(reader.base_url, new_token, reader.timeout)
+        current = service_role_user_identity(fresh, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS)
+        if ({k: v for k, v in current.items() if k != "authorization_version"} !=
+                {k: v for k, v in identity.items() if k != "authorization_version"}
+                or int(current["authorization_version"]) <= int(identity["authorization_version"])):
+            raise SuiteError("fresh role User identity or functional permissions changed")
+        current_roles = service_subject_roles(fresh, current)
+        if current_roles["role_keys"] != [key for key in roles["role_keys"] if key != SERVICE_ELIGIBILITY_ROLE]:
+            raise SuiteError("role revocation must remove only the dedicated eligibility role")
+        if (client.request("GET", policy_path, (200,)).payload != published_policy
+                or service_projection(client, enrollment_id) != installed
+                or fresh.request("GET", service_path, (200,)).payload != selected):
+            raise SuiteError("membership revocation must not change Policy, protection projection or Service definition")
+        options = _object(fresh.request("GET", "/api/v1/service/query-protection-options?" +
+            urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "revoked role options")
+        if any(_object(field, "revoked role field").get("options") for field in _array(options.get("fields"), "revoked role fields")):
+            raise SuiteError("revoked User still observes eligible masking options")
+        denials = {}
+        for format_name in ("json", "csv", "no_cursor"):
+            request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
+                       "page": {"limit": 4, **({"cursor": cursor} if format_name != "no_cursor" else {})},
+                       "format": "json" if format_name == "no_cursor" else format_name}
+            refusal = fresh.request("POST", query_path, (403,), request)
+            payload = _object(refusal.payload, "role eligibility refusal")
+            if (refusal.status != 403 or set(payload) != {"error", "error_code"}
+                    or payload.get("error_code") != "query_protection_roles_unavailable"
+                    or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+                raise SuiteError("membership refusal must be exact 403 roles-unavailable with no result")
+            denials[format_name] = {"http_status": refusal.status, "error_code": payload["error_code"], "result_absent": True}
+        recovery, recovered_version = restore_service_default(fresh, service_path, query_path, choice, selected)
+        if (recovered_version == version or client.request("GET", policy_path, (200,)).payload != published_policy
+                or service_projection(client, enrollment_id) != installed
+                or definition_array(client, "/api/v1/security/protection-baselines") != baseline):
+            raise SuiteError("membership default recovery must not alter protection facts")
+        result = {"identity_before": identity, "identity_after": current, "role_keys_before": roles["role_keys"],
+            "role_keys_after": current_roles["role_keys"], "assignment_before": target, "assignment_after": revoked,
+            "controller_principal_id": operator["principal_id"], "choice": choice, "service_id": service_id,
+            "policy_revision": policy["current_revision"], "installed_projection": installed,
+            "policy_projection_and_saved_choice_unchanged_at_refusal": True, "functional_permissions_unchanged": True,
+            "old_session_http_status": 401, "formal_same_user_login_verified": True,
+            "first_page": first, "valid_cursor_continuation": continuation,
+            "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
+            "fresh_user_refusals": denials, "explicit_default_recovery": recovery}
+    except BaseException as error:
+        failure = error
+    errors = []
+    try:
+        assignment = controller.request("GET", assignment_path, (200,)).payload
+        state = _object(assignment, "eligibility cleanup").get("status")
+        assert_service_eligibility_assignment(assignment, identity, assignment_id, state)
+        if state == "active":
+            assignment = controller.request("POST", assignment_path + "/revoke", (200,),
+                {"reason": "Disposable masking eligibility cleanup"}).payload
+        assert_service_eligibility_assignment(assignment, identity, assignment_id, "revoked")
+    except BaseException as error:
+        errors.append(str(error))
+    try:
+        cleanup_service_role_resources(client, policy_id, service_id, failure)
+    except BaseException as error:
+        errors.append(str(error))
+    if errors:
+        raise SuiteError("membership revocation cleanup failed: " + "; ".join(errors)) from failure
+    if failure:
+        raise failure
+    return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
+                eligibility_assignment_revoked=True, policy_revoked=True, service_deleted=True)
 
 
 def validity_snapshot(enrollment: Mapping[str, object], mode: str,
@@ -2795,6 +3008,7 @@ def run_scenario(
     source_database: str,
     run_id: str,
     timeout: float,
+    *, role_environment: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     identity = validate_user_identity(client, tenant_id)
@@ -2815,6 +3029,8 @@ def run_scenario(
         client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
     service_role_cursor_revocation = exercise_service_role_cursor_revocation(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
+    service_role_membership_revocation = exercise_service_role_membership_revocation(
+        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -2898,7 +3114,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v26",
+            "schema_version": "addp.security-mysql-owner-protection-online/v27",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2906,6 +3122,7 @@ def run_scenario(
             "spatial_algorithms": spatial_algorithms,
             "bank_card_metadata": bank_card_metadata,
             "service_role_cursor_revocation": service_role_cursor_revocation,
+            "service_role_membership_revocation": service_role_membership_revocation,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -2931,8 +3148,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 6 + len(task_ids),
-            "deleted_resources": 6 + len(task_ids),
+            "created_resources": 7 + len(task_ids),
+            "deleted_resources": 7 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:
@@ -3109,6 +3326,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator,
                                ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT=json.dumps(
                                    dict(output_context, required_owners=list(PROTECTION_OWNERS)), ensure_ascii=False))
+    for key in SERVICE_ROLE_ENVIRONMENT:
+        browser_environment.pop(key, None)
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
          "e2e/online/security-manager-export.spec.js"],
@@ -3153,6 +3372,11 @@ def main() -> int:
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
     SUPPORT.require_hosted_security_lifecycle(Path(__file__).resolve().parents[2])
+    # Keep the IAM controller and dedicated reader out of every lifecycle and
+    # browser subprocess; only the bounded membership scenario receives them.
+    role_environment = {key: required_environment(key) for key in SERVICE_ROLE_ENVIRONMENT}
+    for key in SERVICE_ROLE_ENVIRONMENT:
+        os.environ.pop(key, None)
     tenant_id = positive_int(
         required_environment("ADDP_ONLINE_TEST_TENANT_ID"),
         "ADDP_ONLINE_TEST_TENANT_ID",
@@ -3188,6 +3412,7 @@ def main() -> int:
         required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,
+        role_environment=role_environment,
     )
     report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
         mongodb_transfer_targets, time.monotonic() + timeout, timeout)

@@ -29,6 +29,12 @@ const onlineDatabase = "addp_online"
 
 const engineProvisionerRoleKey = "tenant.infrastructure_administrator"
 const pgAuthorizationWorkspaceRoleKey = "tenant.source_data_authorizer"
+const securityMaskingEligibilityRoleKey = "online.security_masking_eligible"
+
+var securityRoleReaderPermissions = []string{
+	"service.definition.read", "service.definition.create", "service.definition.update", "service.definition.delete",
+	"service.data_read.execute", "meta.catalog.read",
+}
 
 var consumerPermissions = []string{
 	"develop.data_read.execute",
@@ -529,6 +535,30 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
+	if *suite == "security-mysql-owner-protection" {
+		reader, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-security-role-reader", securityRoleReaderPermissions)
+		if err != nil {
+			return err
+		}
+		reader, eligibilityID, err := grantSecurityMaskingEligibility(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+			return issueSession(ctx, repository, selectionService, principalID, "external-online-security-role-reader-complete-session")
+		}, reader, tenant.ID, administrator.PrincipalID, assignmentID)
+		if err != nil {
+			return err
+		}
+		// IAM role management is not tenant-customizable. Reuse the existing
+		// disposable Tenant administrator only for the exact assignment command.
+		controller, err := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-security-role-controller-session")
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN"] = reader.AccessToken
+		values["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"] = "external-online-security-role-reader"
+		values["ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD"] = password
+		values["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"] = fmt.Sprint(eligibilityID)
+		values["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"] = controller.AccessToken
+	}
 	if *suite == "pg-source-authorization" {
 		for key, value := range pgRecipients {
 			values[key] = value
@@ -1050,6 +1080,47 @@ type transferConfigCheckRoles interface {
 	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
 }
 
+func grantSecurityMaskingEligibility(ctx context.Context, roles executionReaderRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, baseAssignmentID int64) (*iam.IssuedBrowserSession, int64, error) {
+	if original == nil || original.Context.Type != iam.ContextTypeTenant || original.Context.TenantID == nil || *original.Context.TenantID != tenantID ||
+		original.Context.TenantMembershipID == nil || tenantID <= 1 || baseAssignmentID <= 0 {
+		return nil, 0, errors.New("Security role reader requires its dedicated Tenant session")
+	}
+	base, err := roles.GetAssignment(ctx, tenantID, baseAssignmentID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if base == nil || base.ID != baseAssignmentID || base.PrincipalID <= 0 || base.MembershipID != *original.Context.TenantMembershipID ||
+		base.RoleKey != "online.external_online_security_role_reader" || base.PrincipalType != iam.PrincipalTypeUser {
+		return nil, 0, errors.New("Security role reader assignment does not match its User")
+	}
+	// Custom roles require a Permission. Duplicate an existing read instead of
+	// granting a new functional capability; its union remains after revocation.
+	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
+		TenantID: tenantID, RoleKey: securityMaskingEligibilityRoleKey, Name: "Online masking eligibility",
+		PermissionKeys: []string{"service.definition.read"}, ActorPrincipalID: actorID,
+		Audit: audit("external-online-security-masking-role"),
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if role == nil || role.ID <= 0 || role.RoleKey != securityMaskingEligibilityRoleKey {
+		return nil, 0, errors.New("Security masking eligibility role was not persisted")
+	}
+	grants, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenantID, MembershipID: base.MembershipID, RoleIDs: []int64{role.ID},
+		Reason: "Disposable masking role eligibility acceptance", ActorPrincipalID: actorID,
+		Audit: audit("external-online-security-masking-assignment"),
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(grants) != 1 || grants[0].ID <= 0 || grants[0].ID == baseAssignmentID || grants[0].PrincipalID != base.PrincipalID || grants[0].MembershipID != base.MembershipID {
+		return nil, 0, errors.New("Security masking eligibility assignment was not persisted separately")
+	}
+	fresh, err := issue(base.PrincipalID)
+	return fresh, grants[0].ID, err
+}
+
 func grantTransferConfigCheckEngineReader(ctx context.Context, roles transferConfigCheckRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, assignmentID, builtinRoleID int64) (*iam.IssuedBrowserSession, error) {
 	if original == nil || original.Context.Type != iam.ContextTypeTenant || original.Context.TenantID == nil || *original.Context.TenantID != tenantID ||
 		original.Context.TenantMembershipID == nil || *original.Context.TenantMembershipID <= 0 || tenantID <= 1 || assignmentID <= 0 || builtinRoleID <= 0 {
@@ -1191,6 +1262,11 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+		"ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN",
+		"ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME",
+		"ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD",
+		"ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID",
+		"ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN",
 		"ADDP_ONLINE_PG_OPERATOR_USERNAME",
 		"ADDP_ONLINE_PG_OPERATOR_PASSWORD",
 		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN",
