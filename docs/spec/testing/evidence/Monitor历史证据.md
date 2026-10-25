@@ -1222,6 +1222,18 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 证据 `/tmp/addp-alert-host-name-{go,go-final,postgres,frontend,alerts-final,build,console,console-full,swagger,swagger-coverage}.log`，授权覆盖及影响选择回执同前缀；`/tmp/addp-alert-host-name-inputs.json`记录22项实现／测试／契约摘要、唯一测试导入修正与全部日志SHA-256。真实Safari尚未加载本批后端，当前主机名称筛选的个人运行／正式隔离身份／Hosted未验，不沿用前一批“告警名称”Safari证据代替。Excel第51行仍为部分实现，高等级置顶、拓扑／影响范围及根因分析等缺口保留。
 
+### 持续部署发现 Linux 退出失败调查：仅补诊断，根因未证实（2026-10-25）
+
+专门CI会话回传后，只读核对 [Platform Run40150409107／Job121040604338](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604338) 原始日志的checkout与实际失败步骤，源码为 `994db320ae7147cb0e566db4960eb256306cc9e1`。`make test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle` 的61项中，`test_logs_failure_does_not_prevent_selected_metrics_start` 在 `addCleanup/stop_discovery_observer` 收到“部署发现进程尚未退出，不删除运行记录”；Job实际失败，后续摘要写入成功不能覆盖。日志没有当时的进程状态／等待／信号／子进程证据，不能断言是僵尸、锁、Docker子进程或预算不足，更没有证据把它归因于新增告警 `host_name` 逻辑。
+
+本机基线 `make test-deployment-discovery` 的34项发现＋5项容器证明，以及 `make test-infra-runtime-log-lifecycle` 的79项前置、61项生命周期、登记／Go夹具均通过，未复现原Linux退出失败；macOS通过不能替代该Linux问题的根因证据。没有对同一未变输入反复加压运行、放宽原100次、50ms间隔的退出观察循环、增加信号／sleep／重试、强删记录或跳过断言。
+
+本批只在现有“无法确认退出”失败分支追加即时有界诊断。Linux从同UID普通proc文件读取状态、固定等待类型、SIGTERM挂起／屏蔽／忽略／处理位及直接子进程数量；每个文件最多8192字节，拒绝符号链接／非UTF8／超量，读取失败明确未知，其他平台明确不可用。只输出固定键、枚举、布尔及数量，不输出命令行、路径、PID清单、任意wait文本或随机运行标识。字段依据为 [Linux proc状态手册](https://man7.org/linux/man-pages/man5/proc_pid_status.5.html)及[内核proc文档](https://docs.kernel.org/filesystems/proc.html)；瞬时诊断不参与归属或清理裁决。原SIGTERM只发一次、foreign拒绝、确认退出前保留记录、退出后由控制流程清空来源等主路径不变，无新配置、接口或权限。
+
+先补三项诊断回归，标准发现入口因缺失诊断函数产生3个错误，保留红灯日志；实现后再补真实文件读取的大小／编码／符号链接拒绝，最终 `make test-deployment-discovery` 为38项发现＋5项容器证明全部通过。`make test-dev-lifecycle` 最终退出0，132项原生生命周期、79项前置、61项Infra生命周期、Online登记／Go夹具、端口／缓存／锁／原子构建及现有共享包检查通过；末尾Worker命令的“无测试”仅计编译覆盖，不外推为Worker功能验收。标准影响选择继续命中Platform；原Make与CI登记已覆盖，无新增入口或workflow。`git diff --check`通过。
+
+原始失败 `/tmp/addp-ci-20261025-013034/job-121040604338.log`；本机 `/tmp/addp-discovery-exit-{baseline,diagnostics-red,diagnostics-final,dev-final}.log`、`/tmp/addp-discovery-infra-baseline.log`及`/tmp/addp-discovery-exit-selection.txt`。本批不宣称原CI退出故障已修复，Linux实测与新诊断尚待专门CI会话回传；没有轮询、手工派发或重跑CI／Hosted，也没有操作个人服务、keepalive、数据库或数据卷，不设置定时任务。已只读核对功能清单第28／30／34行的主机管理内容，本次诊断不等于新增主机注册、远程初始化或批量运维，不据此升级功能完成程度。
+
 ### 执行概览只读维护真实进程验收（2026-10-25）
 
 本批仅补第一期只读候选评估的真实 System 维护首轮，人工 Hosted Linux `execution-retention-readonly`，独占 System／Gateway／Infra；不启用 180 天概览物理删除，不改变任何 Owner 专业结果期限、业务实现或现有读取授权。System-owned helper 通过正式 Tenant Service 建立两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`；实际 AuthContext 校验后，由受限 Common 历史 helper 准备合成旧记录，标准生命周期停止／启动的仅是本轮独占 System。维护使用产品既有首轮与周期，不直接调用评估函数代替真实进程，不增加测试 API 或产品调度参数。

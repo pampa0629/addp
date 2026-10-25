@@ -343,6 +343,57 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class ObserverLifecycleTests(unittest.TestCase):
+    def test_proc_read_rejects_oversized_non_utf8_and_symlink_sources(self):
+        target=self.root/'proc-fixture'
+        real_open=inventory.os.open
+        with patch.object(inventory.os,'open',side_effect=lambda path,flags:real_open(target,flags)):
+            target.write_text('safe')
+            self.assertEqual(inventory.observer_proc_text(123,'state'),'safe')
+            for content in (b'x'*8193,b'\xff'):
+                target.write_bytes(content)
+                self.assertIsNone(inventory.observer_proc_text(123,'state'))
+            target.unlink()
+            victim=self.root/'private-sentinel'
+            victim.write_text('private-sentinel')
+            target.symlink_to(victim)
+            self.assertIsNone(inventory.observer_proc_text(123,'state'))
+
+    def test_exit_diagnostic_redacts_proc_text_and_uses_only_fixed_fields(self):
+        files = {
+            'state': '123 (private-command ) --observer-token private-sentinel) S 1 2 3',
+            'wait': 'private-sentinel-wait',
+            'signals': 'Name: private-sentinel\nSigPnd:\t0000000000004000\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000004000\nSigIgn:\t0000000000000000\nSigCgt:\t0000000000004000\n',
+            'children': '1234 5678\n',
+        }
+        with patch.object(inventory.platform, 'system', return_value='Linux'), \
+                patch.object(inventory, 'observer_proc_text', side_effect=lambda pid, name: files[name]):
+            result=inventory.observer_exit_diagnostic({'pid':123}, 'owned')
+        self.assertEqual(result, {'last_identity':'owned', 'proc_state':'S', 'wait':'other',
+                                 'term_pending':True,'term_blocked':True,'term_ignored':False,'term_caught':True,'children':2})
+        self.assertNotIn('private-sentinel', json.dumps(result))
+        self.assertNotIn('1234', json.dumps(result))
+
+    def test_exit_diagnostic_known_wait_and_malformed_sources(self):
+        for channel in ['do_wait','wait_for_vfork_done','pipe_read','futex_wait_queue','io_schedule']:
+            with patch.object(inventory.platform, 'system', return_value='Linux'), \
+                    patch.object(inventory,'observer_proc_text',side_effect=lambda pid,name:channel if name=='wait' else None):
+                result=inventory.observer_exit_diagnostic({'pid':123},'foreign')
+            self.assertEqual(result['wait'],channel)
+            self.assertEqual(result['proc_state'],'unknown')
+            self.assertEqual(result['term_blocked'],'unknown')
+            self.assertEqual(result['children'],'unknown')
+        with patch.object(inventory.platform,'system',return_value='Darwin'):
+            self.assertEqual(inventory.observer_exit_diagnostic({'pid':123},'owned'),{'last_identity':'owned','proc_state':'unavailable'})
+
+    def test_exit_diagnostic_does_not_turn_failed_cleanup_into_success(self):
+        record={'pid':2147483647}
+        with patch.object(inventory,'observer_state',return_value='owned'), \
+                patch.object(inventory.os,'kill') as kill,patch.object(inventory.time,'sleep'), \
+                patch.object(inventory,'observer_exit_diagnostic',return_value={'last_identity':'owned','proc_state':'S','wait':'do_wait'}):
+            with self.assertRaisesRegex(ValueError,'尚未退出.*do_wait'):
+                inventory.terminate_observer(record)
+        kill.assert_called_once_with(record['pid'],inventory.signal.SIGTERM)
+
     def test_signal_exit_waits_through_transient_foreign_observation_without_another_signal(self):
         record = {'pid': 2147483647}
         with patch.object(inventory, 'observer_state', side_effect=['owned', 'foreign', 'absent']), \

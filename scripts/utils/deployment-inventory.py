@@ -419,6 +419,49 @@ def observer_configuration(env):
     return hashlib.sha256(Path(__file__).read_bytes()+helper.read_bytes()+json.dumps(env, sort_keys=True).encode()).hexdigest()
 
 
+def observer_proc_text(pid, name):
+    """Bounded Linux diagnostics only; never read command lines or environment."""
+    paths = {'state': 'stat', 'wait': 'wchan', 'signals': 'status', 'children': f'task/{pid}/children'}
+    try:
+        fd = os.open(f'/proc/{pid}/{paths[name]}', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                return None
+            value = source.read(8193)
+        return value.decode('utf-8') if len(value) <= 8192 else None
+    except (OSError, UnicodeError):
+        return None
+
+
+def observer_exit_diagnostic(record, last_state):
+    result = {'last_identity': last_state if last_state in ('owned', 'foreign', 'absent') else 'unknown'}
+    if platform.system() != 'Linux':
+        return dict(result, proc_state='unavailable')
+    pid = record['pid']
+    # /proc/stat comm is arbitrary text, including parentheses; discard it all.
+    fields = (observer_proc_text(pid, 'state') or '').rpartition(')')[2].split()
+    result['proc_state'] = fields[0] if fields and fields[0] in ('R', 'S', 'D', 'T', 't', 'Z', 'X', 'I') else 'unknown'
+    channel = (observer_proc_text(pid, 'wait') or '').strip()
+    known = ('do_wait', 'wait_for_vfork_done', 'pipe_read', 'futex_wait_queue', 'futex_wait_queue_me',
+             'hrtimer_nanosleep', 'locks_lock_inode_wait', 'io_schedule', 'wait_on_page_bit_common', '0')
+    result['wait'] = channel if channel in known else 'other' if channel else 'unknown'
+    masks = {}
+    for line in (observer_proc_text(pid, 'signals') or '').splitlines():
+        key, _, value = line.partition(':')
+        if key in ('SigPnd', 'ShdPnd', 'SigBlk', 'SigIgn', 'SigCgt') and re.fullmatch(r'[0-9a-fA-F]{1,16}', value.strip()):
+            masks[key] = int(value.strip(), 16)
+    term = 1 << (signal.SIGTERM - 1)
+    for output, keys in (('term_pending', ('SigPnd', 'ShdPnd')), ('term_blocked', ('SigBlk',)),
+                         ('term_ignored', ('SigIgn',)), ('term_caught', ('SigCgt',))):
+        result[output] = any(masks[key] & term for key in keys) if all(key in masks for key in keys) else 'unknown'
+    children = observer_proc_text(pid, 'children')
+    children = children.strip() if children is not None else None
+    result['children'] = (len(children.split()) if children and re.fullmatch(r'[0-9]+(?:\s+[0-9]+)*', children)
+                          else 0 if children == '' else 'unknown')
+    return result
+
+
 def terminate_observer(record):
     state = observer_state(record)
     if state == 'foreign':
@@ -436,7 +479,8 @@ def terminate_observer(record):
                 break
             time.sleep(0.05)
         if state != 'absent':
-            raise InventoryError('部署发现进程尚未退出，不删除运行记录')
+            diagnostic = observer_exit_diagnostic(record, state)
+            raise InventoryError('部署发现进程尚未退出，不删除运行记录；退出诊断=' + json.dumps(diagnostic, sort_keys=True, separators=(',', ':')))
     child = _observer_children.pop(record['pid'], None)
     if child is not None:
         child.wait(timeout=3)
