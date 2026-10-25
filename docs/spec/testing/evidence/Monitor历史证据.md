@@ -1406,7 +1406,7 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 
 后续只读核验（2026-10-25）：`git ls-remote origin refs/heads/main`返回`17209f23f738acaab040d6f42f3b36fc8ce5dcab`，本地对应提交对象的祖先关系确认已包含本专项`9904726a0ff85296574266dc844165941a6f2d9e`。因此，上次“两次HTTPS推送失败、当时尚未同步”是历史状态，当前已确认该专项提交在远端main中，不需要重复推送；不由远端存在推定CI通过。本专项入口和测试SHA-256与最终确定性门禁回执一致，未改产品或重跑门禁，不据此宣称后续main整套检查通过。
 
-安装包元数据仍为Docker Desktop 4.49.0（208700）；补查[官方组件源码说明](https://docs.docker.com/subscription-billing/desktop-license/)只承诺部分GPL组件源码，不能充当当前apiproxy事件时间契约。对本机安装包进行定向文件名检索及OSS-LICENSES内apiproxy／pinata检索，未找到对应源码；公开issue示例日志也不能证明当前版本时间戳生成位置。没有解包573 MiB的VM镜像、逆向二进制或替换当前日志组件，未获得新的版本绑定语义依据，校时准入仍未满足。120秒自检未开启、未重复准入、Docker CLI／探针新增调用0，无Hosted、容量或定时。本次补查回执位于`/tmp/addp-p19-command-boundaries-20261025/source-audit-followup.json`。后续若改作主机同一时钟的CLI墙钟／子进程CPU对照，只能区分计算和非计算用时，不能把余量命名为daemon故障；该目标变化仅作为讨论建议，尚未修订验收标准或实施。
+安装包元数据仍为Docker Desktop 4.49.0（208700）；补查[官方组件源码说明](https://docs.docker.com/subscription-billing/desktop-license/)只承诺部分GPL组件源码，不能充当当前apiproxy事件时间契约。对本机安装包进行定向文件名检索及OSS-LICENSES内apiproxy／pinata检索，未找到对应源码；公开issue示例日志也不能证明当前版本时间戳生成位置。没有解包573 MiB的VM镜像、逆向二进制或替换当前日志组件，未获得新的版本绑定语义依据，校时准入仍未满足。120秒自检未开启、未重复准入、Docker CLI／探针新增调用0，无Hosted、容量或定时。本次补查回执位于`/tmp/addp-p19-command-boundaries-20261025/source-audit-followup.json`。后续若改作主机同一时钟的CLI墙钟／子进程CPU对照，只同时报告单调墙钟与用户／系统CPU用量，不能将多线程CPU累计时间与墙钟相减构造等待时长，也不能由CPU较少证明I/O或daemon阻塞。该独立对照不替代原跨VM可靠关联验收；目标变化仅作为讨论建议，尚未修订验收标准或实施。
 
 
 ### 主机监控类型／纳管状态筛选与分页回跳修正（2026-10-25）
