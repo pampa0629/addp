@@ -164,3 +164,5 @@ make test-geopython-workflow
 - [矢量算子契约](../../../docs/spec/workflow/矢量算子契约.md)
 - [栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md)
 - [ADDP 开发原则](../../../docs/spec/addp开发原则.md)
+
+`raster_hand_d8` 提供显式D8方向／河网／DEM的到河网相对高程：全图下游高程不升高、允许平坦，逆坡失败；相对首次河网高程差统一米制，河网与等高非河网0、未到达NoData。三波段及高程单位必填，复用原COG主路径；完整输入／数值／失败边界见平台栅格算子契约。

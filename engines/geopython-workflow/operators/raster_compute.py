@@ -2369,8 +2369,8 @@ def _fill_error(code):
     return ValueError(_FILL_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
-    # Share DEM admission and normalization; callers can supply localized diagnostics.
+def _dem_admission(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
+    # One DEM admission path; preserve native values for consumers needing exact comparisons.
     def invalid(code, message):
         return diagnostic(code) if diagnostic is not None else ValueError(message)
     dataset = _open(input_raster)
@@ -2404,6 +2404,13 @@ def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=
         if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
             raise invalid('complex', 'DEM complex alpha bands are not supported')
     candidate = None
+    return dataset, horizontal_metres
+
+
+def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
+    dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size, diagnostic=diagnostic)
+    def invalid(code, message):
+        return diagnostic(code) if diagnostic is not None else ValueError(message)
     normalized = _numeric_output(dataset, 1)
     path = Path(normalized.GetDescription())
     destination = None
@@ -3340,6 +3347,99 @@ def raster_distance_to_stream_d8(input_raster, stream_raster, band, stream_band)
     return _d8_output(source, values, 'metre')
 
 
+_D8_HAND_MESSAGES = {
+    key: (zh.replace('D8 Strahler 河流分级', 'D8 到河网相对高程（HAND）'),
+          en.replace('D8 Strahler stream order', 'D8 height above nearest drainage (HAND)'))
+    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items()
+    if key not in ('overflow', 'method', 'measure', 'area', 'area_overflow')
+}
+_D8_HAND_MESSAGES.update({
+    'dem_' + key: (zh.replace('DEM 填洼', 'D8 HAND'),
+                   en.replace('DEM depression filling', 'D8 HAND'))
+    for key, (zh, en) in _FILL_MESSAGES.items()
+})
+_D8_HAND_MESSAGES.update({
+    'dem_alignment': ('D8 HAND的DEM必须与方向具有相同尺寸、完整网格和CRS',
+                      'D8 HAND elevation must match direction dimensions, full grid and CRS'),
+    'dem_coverage': ('D8 HAND的DEM有效覆盖必须与方向完全相同',
+                     'D8 HAND elevation valid coverage must exactly match directions'),
+    'uphill': ('D8 HAND的全图下游高程不得升高，允许平坦；逆坡使整个工作流失败',
+               'D8 HAND downstream elevation must not increase anywhere; flats are allowed and uphill edges fail the entire workflow'),
+    'range': ('D8 HAND的米制高程差必须有限，正高程差不能下溢为零',
+              'D8 HAND elevation difference in metres must be finite; a positive difference must not underflow to zero'),
+})
+
+
+def _d8_hand_error(code):
+    return ValueError(_D8_HAND_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_hand(directions, streams, elevations, elevation_factor):
+    """Propagate the first drain identity; subtract original elevations only once."""
+    _, downstream, order = _d8_stream_graph(directions, streams, _d8_hand_error)
+    heights = elevations.ravel()
+    edges = np.flatnonzero(downstream >= 0)
+    # Do not convert integer heights before comparison: adjacent UInt64 values
+    # can have the same Float64 representation. Equal stored heights are flats.
+    if np.any(heights[downstream[edges]] > heights[edges]):
+        raise _d8_hand_error('uphill')
+    drains = np.full(directions.size, -1, dtype=np.int64)
+    result = np.full(directions.size, np.nan)
+    river = streams.ravel()
+    integer = np.issubdtype(elevations.dtype, np.integer)
+    for cell in order[::-1]:
+        target = int(downstream[cell])
+        drain = int(cell) if river[cell] else int(drains[target]) if target >= 0 else -1
+        drains[cell] = drain
+        if drain < 0:
+            continue
+        current, reference = (int(heights[cell]), int(heights[drain])) if integer else (float(heights[cell]), float(heights[drain]))
+        delta = current - reference
+        if not integer and not math.isfinite(delta):
+            # A finite foot-valued result can have an unrepresentable unscaled
+            # subtraction. Compute this rare case without intermediate overflow.
+            try:
+                value = float((Fraction(current) - Fraction(reference)) * Fraction(elevation_factor))
+            except OverflowError as cause:
+                raise _d8_hand_error('range') from cause
+        else:
+            value = delta * elevation_factor
+        if not math.isfinite(value) or (delta > 0 and value == 0):
+            raise _d8_hand_error('range')
+        result[cell] = value
+    return result.reshape(directions.shape)
+
+
+def raster_hand_d8(input_raster, stream_raster, elevation_raster, band, stream_band, elevation_band, elevation_unit):
+    """Metres above the first downstream stream, with strict full-graph elevation consistency."""
+    source, directions, streams = _d8_stream_sources(
+        input_raster, stream_raster, band, stream_band, _d8_hand_error)
+    dem, _ = _dem_admission(elevation_raster, elevation_unit, elevation_band, 1,
+                            diagnostic=lambda code: _d8_hand_error('dem_' + code))
+    try:
+        _require_same_grid(source, dem)
+    except ValueError as cause:
+        raise _d8_hand_error('dem_alignment') from cause
+    elevations = None
+    valid = np.zeros(directions.shape, dtype=bool)
+    factor = _ELEVATION_METRES[elevation_unit]
+    for x, y, arrays, masks in _blocks(dem, [elevation_band], native=True):
+        values, covered = arrays[0], masks[0]
+        if elevations is None:
+            elevations = np.empty(directions.shape, dtype=values.dtype)
+        with np.errstate(over='ignore', invalid='ignore'):
+            metres = values.astype(np.float64) * factor
+        if np.any(covered & ~np.isfinite(metres)):
+            raise _d8_hand_error('dem_overflow')
+        height, width = values.shape
+        elevations[y:y+height, x:x+width] = values
+        valid[y:y+height, x:x+width] = covered
+    dem = None
+    if not np.array_equal(valid, np.isfinite(directions)):
+        raise _d8_hand_error('dem_coverage')
+    return _d8_output(source, _d8_hand(directions, streams, elevations, factor), 'metre')
+
+
 _D8_STREAM_LINK_MESSAGES = {
     key: (zh.replace('D8 Strahler 河流分级', 'D8 河段编号'),
           en.replace('D8 Strahler stream order', 'D8 stream link'))
@@ -3614,6 +3714,7 @@ _SPECS = [
     (raster_subcatchments_d8, OperatorCategory.RASTER_CELL, 'D8 增量子汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身；允许嵌套，按下游第一个指定点划分互斥增量范围')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
     (raster_distance_to_stream_d8, OperatorCategory.RASTER_CELL, 'D8 到河网沿流距离', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；河网自身0、未到达NoData、断流失败', role='input'), _param('band', 'int', '显式方向数据波段；完整非法路线或循环失败'), _param('stream_band', 'int', '显式河网数据波段；到首次河网中心的米制沿流距离')], 'raster', ['read']),
+    (raster_hand_d8, OperatorCategory.RASTER_CELL, 'D8 到河网相对高程（HAND）', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；完整非法路线及断流失败', role='input'), _param('elevation_raster', 'raster', '同网格、同有效覆盖的DEM；全图下游不升高，允许平坦、逆坡失败', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式二值河网数据波段'), _param('elevation_band', 'int', '显式高程数据波段；相对首次河网高程差，河网0、未到达NoData'), _param('elevation_unit', 'str', '显式高程单位，结果统一米制', enum=['metre', 'foot', 'us_survey_foot'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
@@ -3648,6 +3749,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'measure': 'count'})
     if name in ('raster_stream_order_d8', 'raster_stream_link_d8', 'raster_stream_to_vector_d8', 'raster_distance_to_stream_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
+    if name == 'raster_hand_d8':
+        examples.update({'stream_raster': {'$ref': 'streams'}, 'elevation_raster': {'$ref': 'elevation'}, 'band': 1, 'stream_band': 1, 'elevation_band': 1, 'elevation_unit': 'metre'})
     if name == 'raster_stream_order_d8':
         examples.update({'method': 'strahler'})
     if name == 'raster_snap_pour_points':

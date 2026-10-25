@@ -9949,3 +9949,407 @@ def test_d8_stream_distance_real_async_two_input_compositions_and_failure_cleanu
         assert band.GetUnitType()=='metre';band=ds=None
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+
+
+def _hand_walk_oracle(directions, streams, heights, factor=1.):
+    """Independent per-source walking, with no product graph or propagation helper."""
+    from fractions import Fraction
+    result = np.full(directions.shape, np.nan)
+    offsets = {1:(0,1),2:(1,1),4:(1,0),8:(1,-1),16:(0,-1),32:(-1,-1),64:(-1,0),128:(-1,1)}
+    for origin in np.argwhere(np.isfinite(directions)):
+        row, col = map(int, origin); seen = set()
+        while True:
+            assert (row,col) not in seen; seen.add((row,col))
+            if streams[row,col] == 1:
+                a, b = heights[tuple(origin)].item(), heights[row,col].item()
+                result[tuple(origin)] = float((Fraction(a)-Fraction(b))*Fraction(factor))
+                break
+            code = directions[row,col]
+            if code == 0: break
+            dy, dx = offsets[code]; row, col = row+dy, col+dx
+    return result
+
+
+def _hand_files(tmp_path, directions=None, streams=None, heights=None, unit='metre', epsg=3857):
+    directions = np.array([[1.,1.,0.]]) if directions is None else directions
+    streams = np.array([[0.,1.,1.]]) if streams is None else streams
+    heights = np.array([[120.,95.,80.]]) if heights is None else heights
+    grid = (500000.,2.,0.,3000000.,0.,-3.)
+    paths = tuple(create_raster(tmp_path/(name+'.tif'), values, grid, 'EPSG:'+str(epsg)) for name,values in zip(('directions','streams','elevation'), (directions, streams, heights)))
+    ds = gdal.Open(str(paths[2]), gdal.GA_Update); ds.GetRasterBand(1).SetUnitType(unit); ds=None
+    return paths
+
+
+@pytest.mark.parametrize('seed',range(24))
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_d8_hand_random_forests_first_hit_flats_negative_heights_and_no_hit(seed,unit,factor):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed); rows,cols=np.indices((9,11));rank=np.minimum.reduce((rows,cols,8-rows,10-cols))
+    directions=np.zeros(rank.shape);directions[4,5]=np.nan
+    for row,col in np.argwhere((rank>0)&np.isfinite(directions)):
+        choices=[code for code,(dy,dx) in _STRAHLER_STEPS.items() if rank[row+dy,col+dx]<rank[row,col] and np.isfinite(directions[row+dy,col+dx])]
+        directions[row,col]=rng.choice(choices)
+    # All heights depend only on descending rank; duplicate ranks force exact flats.
+    heights=(rank//2).astype(float)*7-80
+    counts=_accumulation_walk_oracle(directions);streams=np.where(np.isfinite(directions),(counts>=seed%5).astype(float),np.nan)
+    expected=_hand_walk_oracle(directions,streams,heights,factor)
+    actual=compute._d8_hand(directions,streams==1,heights,factor)
+    np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+    np.testing.assert_array_equal(np.isfinite(actual),np.isfinite(expected))
+    assert np.all(actual[streams==1]==0)
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_d8_hand_vertical_units_independent_of_horizontal_crs_and_output_facts(tmp_path,epsg,unit,factor):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.],[1.,1.,0.],[1.,1.,0.]])
+    streams=np.array([[0.,1.,1.],[0.,0.,0.],[0.,1.,1.]])
+    heights=np.array([[120.,95.,80.],[-10.,-11.,-12.],[5.,5.,0.]])
+    paths=_hand_files(tmp_path,directions,streams,heights,unit,epsg);before=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        result=compute.raster_hand_d8(*inputs,1,1,1,unit);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        expected=_hand_walk_oracle(directions,streams,heights,factor)
+        np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert band.GetUnitType()=='metre' and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.) and ds.GetSpatialRef().GetAuthorityCode(None)==str(epsg)
+        assert read_band_values(band)[2,0]==0 and np.isnan(read_band_values(band)[1]).all()
+        assert set(inputs[0].workspace.iterdir())==prior|{result.path};band=ds=None
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('code,dy,dx',[(k,*v) for k,v in _STRAHLER_STEPS.items()])
+def test_d8_hand_all_eight_routes_and_diagonal_crossings(code,dy,dx):
+    import operators.raster_compute as compute
+    directions=np.full((3,3),np.nan);directions[1,1]=code;directions[1+dy,1+dx]=0
+    streams=np.zeros((3,3),bool);streams[1+dy,1+dx]=True
+    heights=np.full((3,3),-99.);heights[1,1]=23.;heights[1+dy,1+dx]=3.
+    expected=_hand_walk_oracle(directions,streams,heights)
+    np.testing.assert_array_equal(compute._d8_hand(directions,streams,heights,1.),expected)
+    directions=np.array([[2.,8.],[0.,0.]]);streams=np.array([[0.,0.],[1.,1.]]);heights=np.array([[100.,50.],[10.,20.]])
+    np.testing.assert_array_equal(compute._d8_hand(directions,streams==1,heights,1.),np.array([[80.,40.],[0.,0.]]))
+
+
+@pytest.mark.parametrize('case',['single-river','single-no-river','empty','invalid','row','column'])
+def test_d8_hand_single_axes_empty_and_all_invalid(tmp_path,case):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]]);heights=np.array([[3.,2.,1.]]);streams=np.array([[0.,1.,1.]])
+    if case.startswith('single'):directions=np.zeros((1,1));heights=np.full((1,1),-100.);streams=np.full((1,1),case=='single-river')
+    if case=='empty':streams[:]=0
+    if case=='invalid':directions[:]=heights[:]=streams[:]=np.nan
+    if case=='column':directions=np.array([[4.],[4.],[0.]]);heights=heights.T;streams=streams.T
+    paths=_hand_files(tmp_path,directions,streams,heights)
+    with raster_workspace():
+        result=compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,'metre')
+        ds=gdal.Open(str(result.path));actual=read_band_values(ds.GetRasterBand(1));ds=None
+        np.testing.assert_array_equal(actual,_hand_walk_oracle(directions,streams,heights))
+
+
+@pytest.mark.parametrize('case',['code','terminal','outside','invalid','cycle','break'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_full_graph_and_break_strict_bilingual(tmp_path,case,language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,1.,0.]])
+    if case=='code':directions[0,0]=3
+    if case=='terminal':directions=np.zeros((3,3))
+    if case=='outside':directions[0,-1]=1
+    if case=='invalid':directions[0,1]=np.nan
+    if case=='cycle':directions=np.array([[1.,16.]])
+    streams=np.where(np.isfinite(directions),0.,np.nan);heights=np.where(np.isfinite(directions),0.,np.nan)
+    if case=='break':streams=np.array([[1.,0.,1.]])
+    paths=_hand_files(tmp_path,directions,streams,heights);key={'outside':'target','invalid':'target'}.get(case,case)
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*inputs,1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES[key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('location',['before-hit','after-hit','off-network','empty-network','tiny-uphill'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_uphill_rejected_on_every_edge_without_tolerance(tmp_path,location,language):
+    import operators.raster_compute as compute
+    directions=np.tile([1.,1.,0.],(2,1));heights=np.tile([3.,2.,1.],(2,1));streams=np.tile([0.,1.,1.],(2,1))
+    if location=='before-hit':heights[0,0]=0
+    if location=='after-hit':heights[0,2]=2.01
+    if location in ('off-network','empty-network'):streams[1,:]=0;heights[1,1]=4
+    if location=='empty-network':streams[:]=0
+    if location=='tiny-uphill':heights[0,1]=3.;heights[0,2]=np.nextafter(3.,np.inf)
+    paths=_hand_files(tmp_path,directions,streams,heights)
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*inputs,1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES['uphill'][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('role',range(3))
+@pytest.mark.parametrize('bad',[True,False,0,-1,2,1.5,'1',None])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_three_explicit_band_parameters(tmp_path,role,bad,language):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path);bands=[1,1,1];bands[role]=bad;key=('band','mask_band','dem_band')[role]
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*inputs,*bands,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES[key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('unit',[None,True,1,'','meter','Metre','feet'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_requires_explicit_vertical_unit(tmp_path,unit,language):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path)
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,unit)
+        assert str(error.value)==compute._D8_HAND_MESSAGES['dem_unit'][language=='en']
+
+
+@pytest.mark.parametrize('role',range(3))
+@pytest.mark.parametrize('case',['scale','offset','alpha','complex','complex-alpha','rotated','geographic','no-crs','south-up'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_all_roles_encoding_and_grid_admission(tmp_path,role,case,language):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path)
+    ds=gdal.GetDriverByName('GTiff').Create(str(paths[role]),3,1,2 if case=='complex-alpha' else 1,gdal.GDT_CFloat64 if case in ('complex','complex-alpha') else gdal.GDT_Float64)
+    ds.SetGeoTransform((500000,2,.1 if case=='rotated' else 0,3000000,0,3 if case=='south-up' else -3))
+    if case!='no-crs':
+        crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if case=='geographic' else 3857);ds.SetSpatialRef(crs)
+    ds.GetRasterBand(1).WriteArray(np.array([[1,1,0]]) if role==0 else np.array([[0,1,1]]) if role==1 else np.array([[3,2,1]]))
+    if case=='scale':ds.GetRasterBand(1).SetScale(2)
+    if case=='offset':ds.GetRasterBand(1).SetOffset(1)
+    if case=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds=None
+    key={'offset':'scale','complex-alpha':'complex'}.get(case,case)
+    if case in ('rotated','geographic','no-crs','south-up'):key='grid'
+    if role==1:key='alignment' if key=='grid' else 'mask_'+key
+    if role==2:key='dem_'+key
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*inputs,1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES[key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('role',[1,2])
+@pytest.mark.parametrize('case',['dimensions','origin','resolution','crs','mask','nonfinite','nodata'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_alignment_and_effective_coverage_are_exact(tmp_path,role,case,language):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path);ds=gdal.Open(str(paths[role]),gdal.GA_Update)
+    if case=='dimensions':
+        ds=None;create_raster(paths[role],np.ones((2,3)),(500000,2,0,3000000,0,-3),'EPSG:3857')
+    elif case in ('origin','resolution'):
+        grid=list(ds.GetGeoTransform());grid[0 if case=='origin' else 1]+=1;ds.SetGeoTransform(grid)
+    elif case=='crs':crs=osr.SpatialReference();crs.ImportFromEPSG(32650);ds.SetSpatialRef(crs)
+    elif case=='mask':
+        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET);ds.GetRasterBand(1).GetMaskBand().WriteArray(np.array([[255,0,255]],np.uint8))
+    else:
+        values=np.array([[0,1,1.]]) if role==1 else np.array([[3,2,1.]])
+        values[0,1]=np.inf if case=='nonfinite' else -9999;ds.GetRasterBand(1).WriteArray(values)
+    ds=None
+    key=('alignment' if role==1 else 'dem_alignment') if case in ('dimensions','origin','resolution','crs') else ('coverage' if role==1 else 'dem_coverage')
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES[key][language=='en']
+
+
+@pytest.mark.parametrize('bad',[-1,2,.5,2**53,np.nan,np.inf])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_binary_stream_mask_strict(tmp_path,bad,language):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path,streams=np.array([[bad,1.,1.]]));key='mask_values' if math.isfinite(bad) else 'coverage'
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES[key][language=='en']
+
+
+@pytest.mark.parametrize('unit,declared',[('', 'metre'),('m','metre'),('ft','foot'),('us survey foot','us_survey_foot'),('foot','metre'),('unknown','metre')])
+def test_d8_hand_elevation_band_unit_conflict_and_aliases(tmp_path,unit,declared):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path,unit=unit)
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths]
+        if unit in ('foot','unknown'):
+            with pytest.raises(ValueError,match='单位'):compute.raster_hand_d8(*inputs,1,1,1,declared)
+        else:
+            result=compute.raster_hand_d8(*inputs,1,1,1,declared);ds=gdal.Open(str(result.path))
+            assert read_band_values(ds.GetRasterBand(1))[0,0]==pytest.approx(25*{'metre':1,'foot':.3048,'us_survey_foot':1200/3937}[declared]);ds=None
+
+
+@pytest.mark.parametrize('dtype',[np.int64,np.uint64])
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_d8_hand_original_64bit_elevations_difference_and_nodata_neighbour(tmp_path,dtype,unit,factor):
+    import operators.raster_compute as compute
+    from osgeo import gdal_array
+    paths=_hand_files(tmp_path,directions=np.array([[1.,0.,np.nan]]),streams=np.array([[0.,1.,np.nan]]))
+    base=2**63 if dtype==np.uint64 else -2**63
+    nodata=base+8;heights=np.array([[base+10,base+9,nodata]],dtype=dtype)
+    ds=gdal.GetDriverByName('GTiff').Create(str(paths[2]),3,1,1,gdal_array.NumericTypeCodeToGDALTypeCode(dtype));ds.SetGeoTransform((500000,2,0,3000000,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs)
+    ds.GetRasterBand(1).WriteArray(heights);ds.GetRasterBand(1).SetNoDataValue(int(nodata));ds=None
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];result=compute.raster_hand_d8(*inputs,1,1,1,unit)
+        ds=gdal.Open(str(result.path));np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),np.array([[factor,0,np.nan]]),rtol=1e-12,atol=1e-9,equal_nan=True);ds=None
+    # Swap adjacent native heights; Float64 would falsely treat this as flat.
+    ds=gdal.Open(str(paths[2]),gdal.GA_Update);ds.GetRasterBand(1).WriteArray(heights[:,[1,0,2]]);ds=None
+    with raster_workspace(),raster_error_language('en'):
+        with pytest.raises(ValueError,match='uphill'):compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,unit)
+
+
+@pytest.mark.parametrize('role',[0,1])
+def test_d8_hand_raw_64bit_direction_and_mask_illegal_nodata_neighbour(tmp_path,role):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path);ds=gdal.GetDriverByName('GTiff').Create(str(paths[role]),3,1,1,gdal.GDT_UInt64)
+    ds.SetGeoTransform((500000,2,0,3000000,0,-3));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs)
+    ds.GetRasterBand(1).SetNoDataValue(2**53);ds.GetRasterBand(1).WriteArray(np.array([[2**53+1,1,0 if role==0 else 1]],np.uint64));ds=None
+    with raster_workspace(),raster_error_language('en'):
+        with pytest.raises(ValueError) as error:compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,'metre')
+        assert str(error.value)==compute._D8_HAND_MESSAGES['code' if role==0 else 'mask_values'][1]
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_float_range_overflow_underflow_and_finite_scaled_difference(language):
+    import operators.raster_compute as compute
+    directions=np.array([[1.,0.]]);streams=np.array([[False,True]])
+    with raster_error_language(language):
+        for heights,factor in ((np.array([[1.7e308,-1.7e308]]),1.),(np.array([[np.nextafter(0.,1.),0.]]),.3048)):
+            with pytest.raises(ValueError) as error:compute._d8_hand(directions,streams,heights,factor)
+            assert str(error.value)==compute._D8_HAND_MESSAGES['range'][language=='en']
+        heights=np.array([[1.7e308,-1.7e308]])
+        expected=_hand_walk_oracle(directions,streams,heights,.3048)
+        np.testing.assert_allclose(compute._d8_hand(directions,streams,heights,.3048),expected,rtol=1e-15,atol=0)
+        # Close high elevations must be subtracted before conversion, not two rounded metre values.
+        heights=np.array([[np.nextafter(1e20,np.inf),1e20]])
+        np.testing.assert_array_equal(compute._d8_hand(directions,streams,heights,.3048),_hand_walk_oracle(directions,streams,heights,.3048))
+
+
+def test_d8_hand_long_path_no_recursion_and_first_hit_not_final_outlet():
+    import operators.raster_compute as compute
+    size=100001;directions=np.ones((1,size));directions[0,-1]=0
+    streams=np.zeros((1,size),bool);streams[0,50000:]=True
+    heights=np.arange(size,0,-1,dtype=np.int64).reshape(1,size)
+    actual=compute._d8_hand(directions,streams,heights,.3048)
+    expected=np.zeros((1,size));expected[0,:50000]=np.arange(50000,0,-1)*.3048
+    np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9)
+
+
+def test_d8_hand_cross_block_three_roles_masks_alpha_nodata_full_cog_and_prior_unchanged(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    h,w=519,515;rows,cols=np.indices((h,w));directions=np.ones((h,w));directions[:,-1]=0
+    # Each row is independent; valid coverage begins/ends at distinct original holes.
+    directions[10,30]=np.nan;directions[10,29]=0
+    streams=np.where(np.isfinite(directions),(cols>=512).astype(float),np.nan)
+    heights=np.where(np.isfinite(directions),-cols.astype(float),np.nan)
+    paths=_hand_files(tmp_path,directions,streams,heights,unit='foot')
+    for path,values in zip(paths,(directions,streams,heights)):
+        cube=np.stack((np.full((h,w),.25),values,np.ones((h,w))))
+        cube[2,20,:]=0;cube[2,21,:]=.5
+        create_raster(path,cube,(500000,2,0,3000000,0,-3),'EPSG:3857')
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET);mask=np.full((h,w),255,np.uint8);mask[22,:]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+        if path==paths[2]:ds.GetRasterBand(2).SetUnitType('foot')
+        ds=None
+    directions[20,:]=directions[22,:]=np.nan;streams[20,:]=streams[22,:]=np.nan
+    before=[p.read_bytes() for p in paths];target=tmp_path/'hand.cog.tif';previous=tmp_path/'prior.bin';previous.write_bytes(b'prior output')
+    reads=[];blocks=compute._blocks
+    def capture(ds,indices,**kw):
+        for block in blocks(ds,indices,**kw):reads.append(block[:2]);yield block
+    monkeypatch.setattr(compute,'_blocks',capture)
+    expected=_hand_walk_oracle(directions,streams,heights,.3048)
+    with raster_workspace():
+        result=compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],2,2,2,'foot')
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+    np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+    np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+    assert band.GetUnitType()=='metre' and ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.)
+    assert ds.GetSpatialRef().GetAuthorityCode(None)=='3857' and band.GetOverviewCount()>0
+    assert not validate(ds,full_check=True)[1]
+    previous_level=expected
+    for i in range(band.GetOverviewCount()):
+        overview=band.GetOverview(i);oh,ow=overview.YSize,overview.XSize
+        ys=np.floor(.5+np.arange(oh)*(previous_level.shape[0]/oh)).astype(int);xs=np.floor(.5+np.arange(ow)*(previous_level.shape[1]/ow)).astype(int)
+        wanted=previous_level[np.ix_(ys,xs)]
+        np.testing.assert_allclose(overview.ReadAsArray(),wanted,rtol=1e-12,atol=1e-9,equal_nan=True)
+        np.testing.assert_array_equal(overview.GetMaskBand().ReadAsArray()!=0,np.isfinite(wanted));previous_level=wanted
+    band=ds=None
+    assert [p.read_bytes() for p in paths]==before and previous.read_bytes()==b'prior output' and (512,512) in reads
+
+
+def test_d8_hand_injected_compute_failure_leaves_only_inputs(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    paths=_hand_files(tmp_path);before=[p.read_bytes() for p in paths]
+    def fail(*args):raise RuntimeError('injected HAND failure')
+    monkeypatch.setattr(compute,'_d8_hand',fail)
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(RuntimeError,match='injected HAND failure'):compute.raster_hand_d8(*inputs,1,1,1,'metre')
+        assert set(inputs[0].workspace.iterdir())==prior
+    assert [p.read_bytes() for p in paths]==before
+
+
+@pytest.mark.parametrize('case',['saved','threshold','dem','filled','empty','invalid','uphill','mixed-original','break','cycle'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_d8_hand_real_async_three_input_compositions_frozen_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    heights=np.tile(np.arange(11,0,-1,dtype=float),(9,1));directions=np.ones(heights.shape);directions[:,-1]=0
+    if case in ('filled','mixed-original'):heights[:]=10;heights[1:-1,1:-1]=-2
+    if case=='uphill':heights[0,1]=20
+    if case=='cycle':directions[0,1]=16
+    if case=='invalid':directions[:]=heights[:]=np.nan
+    streams=np.where(np.isfinite(directions),0.,np.nan);streams[:,5:]=np.where(np.isfinite(directions[:,5:]),1.,np.nan)
+    if case=='empty':streams[:]=0
+    if case=='break':streams[2,6]=0
+    paths=_hand_files(tmp_path,directions,streams,heights);before=[p.read_bytes() for p in paths];target=tmp_path/'hand.cog.tif'
+    tasks=[{'id':name,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}} for name,path in zip(('direction','streams','elevation'),paths)]
+    route='direction';dem='elevation'
+    if case in ('filled','mixed-original'):
+        tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[dem],'params':{'input_raster':{'$ref':dem},'band':1,'elevation_unit':'metre'}})
+        dem='fill'
+    if case in ('dem','filled','mixed-original'):
+        tasks.append({'id':'flow','operator':'raster_flow_direction_d8','depends_on':[dem],'params':{'input_raster':{'$ref':dem},'band':1,'elevation_unit':'metre'}});route='flow'
+        heights_used=_fill_level_reachability_oracle(heights) if dem=='fill' else heights
+        directions=_d8_bellman_ford_oracle(heights_used)
+    if case in ('threshold','dem','filled','mixed-original'):
+        tasks=[t for t in tasks if t['id']!='streams']
+        tasks.extend([{'id':'acc','operator':'raster_flow_accumulation_d8','depends_on':[route],'params':{'input_raster':{'$ref':route},'band':1}},
+            {'id':'streams','operator':'raster_reclassify','depends_on':['acc'],'params':{'input_raster':{'$ref':'acc'},'band':1,'rules':[{'min':None,'max':2,'class':0},{'min':2,'max':None,'class':1}]}}])
+        streams=np.where(_accumulation_walk_oracle(directions)>=2,1.,0.)
+    if case=='mixed-original':dem='elevation'
+    tasks.extend([{'id':'hand','operator':'raster_hand_d8','depends_on':[route,'streams',dem],'params':{'input_raster':{'$ref':route},'stream_raster':{'$ref':'streams'},'elevation_raster':{'$ref':dem},'band':1,'stream_band':1,'elevation_band':1,'elevation_unit':'metre'}},
+        {'id':'save','operator':'raster_save','depends_on':['hand'],'params':{'input_raster':{'$ref':'hand'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_hand_d8':workspaces.extend(params[n].workspace for n in ('input_raster','stream_raster','elevation_raster'))
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_hand_d8/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('uphill','mixed-original','break','cycle')
+    assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and [p.read_bytes() for p in paths]==before
+    if failed:
+        assert not target.exists()
+        phrase=('逆坡' if case in ('uphill','mixed-original') else '河网断流' if case=='break' else '方向循环') if language=='zh-cn' else ('uphill' if case in ('uphill','mixed-original') else 'stream break' if case=='break' else 'direction cycle')
+        assert phrase in status['error']
+        original_error=status['error'];assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==original_error
+    else:
+        expected=_hand_walk_oracle(directions,streams,heights_used if case in ('dem','filled') else heights)
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-12,atol=1e-9,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));assert band.GetUnitType()=='metre';band=ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
