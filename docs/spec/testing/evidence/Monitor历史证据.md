@@ -1624,3 +1624,5 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 该Job最终失败在 `test-system-iam-runner`：旧精确选择断言未纳入标准入口已选择的`PlatformServiceAvailabilityRulesForwardMigration`。本地先用 `make test-system-iam-runner`复现30项中同一失败，再仅同步该测试：精确比较实际迁移选择器，核对新增失联迁移、原告警／HTTP／Trace及Runner五个测试都命中，无关迁移、伪发布名、前后缀扩展及缺少后缀不命中；原错误package选择拒绝保持。没有修改迁移入口、SQL、权限、真实数据库或产品。
 
 修复后同一标准入口30项退出0，`git diff --check`通过；沿原Make／Platform T0自动发现，无需新增登记。日志 `/tmp/addp-service-availability-selector-{red,green}.log`，原CI证据 `/tmp/addp-ci-20261025-180006/job-121231972455.log`，Job为 https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455 。未将原失败改写为整轮通过，未重跑已有有效实库／Hosted，未查询或重跑远程CI、设置定时任务或操作个人服务；修复后的自然CI等专门会话回传。
+
+后续专门CI会话回传，本会话只读复核原始日志 `/tmp/addp-ci-20261025-200006/job-121248639865.log`：固定源码 `1fb051a50e7c46975411542a0e9340f7fcb97929` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/40219785488/job/121248639865) 实际执行到末尾，`ADDP_CI_SELECTED=true`、`ADDP_CI_STATUS=success`；其中停止流程相关61项及迁移runner契约30项均Ran/OK。停止流程、发现挂载证明及精确迁移选择三项修复已具备该固定源码的Linux标准T0证据。旧失败与本地Dev聚合超时保留；本结论仅覆盖该Job，不代表整个workflow、当前共享HEAD、Safari弹窗与规则写入、真实失联触发／恢复／通知或Hosted通过。本次仅归档回传证据，未触发／重跑／轮询CI或操作个人服务，清单相关功能仍部分实现。
