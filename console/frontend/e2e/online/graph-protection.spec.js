@@ -243,14 +243,15 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
 })
 
 
-for (const geometry of [false, true]) {
-test(geometry ? 'ordinary reader proves fixed nearby endpoint geometry through Console' : 'ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
+for (const variant of ['dense','endpoint-geometry','same-color']) {
+const geometry = variant !== 'dense', sameColor = variant === 'same-color'
+test(sameColor ? 'ordinary reader proves same-color nearby endpoint geometry through Console' : geometry ? 'ordinary reader proves fixed nearby endpoint geometry through Console' : 'ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
   test.setTimeout(540000)
   await page.addInitScript(installGraphRelationshipPaint)
   const expected = JSON.parse(required(geometry ? 'ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS' : 'ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], development = [], releaseScripts = new Set()
   const credentials = new Set(Object.entries(process.env).filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|USERNAME)$/.test(key) && value).map(([, value]) => value))
-  const diagnostics = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), geometry ? 'graph-endpoint-geometry-diagnostics.json' : 'graph-dense-browser-diagnostics.json')
+  const diagnostics = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sameColor ? 'graph-same-color-geometry-diagnostics.json' : geometry ? 'graph-endpoint-geometry-diagnostics.json' : 'graph-dense-browser-diagnostics.json')
   const persist = () => writeFileSync(diagnostics, JSON.stringify({ schema_version: 'addp.graph-browser-diagnostics/v1', entries: errors }, null, 2))
   const recordDiagnostic = message => { errors.push(graphBrowserDiagnostic(message, 'dense', credentials)); persist() }
   persist()
@@ -290,18 +291,21 @@ test(geometry ? 'ordinary reader proves fixed nearby endpoint geometry through C
   const canvas = frame.locator('.graph-canvas')
   const visual = await (geometry ? graphEndpointGeometry : denseGraphStages)(page, frame, canvas, expected, async (phase, stage) => {
     if (geometry) {
-      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-' + phase + '-frame.json'), JSON.stringify({ ...expected, schema_version: 'addp.graph-endpoint-geometry-frame/v1', stage }, null, 2))
-      if (!stage.relationships) return
+      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-' + phase + '-frame.json'), JSON.stringify({ ...expected, schema_version: sameColor ? 'addp.graph-same-color-frame/v1' : 'addp.graph-endpoint-geometry-frame/v1', stage }, null, 2))
+      if (!stage.relationships) {
+        if (sameColor && stage.overlap) await page.screenshot({path:resolve(required('ADDP_ONLINE_ARTIFACT_DIR'),phase+'-hit-console.png')})
+        return
+      }
     }
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), phase + '-console.png') })
-  })
+  }, sameColor ? 'same-color' : 'different-color')
   expect(errors).toEqual([])
   expect(failed).toEqual([])
   expect(writes).toEqual([])
   expect(development).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   if (geometry) {
-    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-endpoint-geometry.json'), JSON.stringify({ ...expected, schema_version: 'addp.graph-endpoint-geometry/v1', ...visual }, null, 2))
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sameColor ? 'graph-same-color-geometry.json' : 'graph-endpoint-geometry.json'), JSON.stringify({ ...expected, schema_version: sameColor ? 'addp.graph-same-color-geometry/v1' : 'addp.graph-endpoint-geometry/v1', ...visual }, null, 2))
     return
   }
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-stable-frame.json'), JSON.stringify({

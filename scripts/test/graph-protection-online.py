@@ -459,15 +459,18 @@ def verify_dense_reference(nodes, edges):
     return ids
 
 
-def verify_dense_frame(stage, members, edges, shapes, search=False):
-    require(stage["nodes"] == members and stage["edges"] == edges, "Dense frame native membership differs")
-    relation_pixels = stage["relationship_pixels"]
+def verify_relationship_pixels(relation_pixels, edges):
     require(type(relation_pixels) is list and [item.get("type") for item in relation_pixels] == sorted({edge["type"] for edge in edges}), "Dense visible relationship types missing")
     for sample in relation_pixels:
         require(set(sample) == {"type", "color", "pixelCount", "stableFrames"} and type(sample["pixelCount"]) is int and sample["pixelCount"] >= 40 and
                 type(sample["stableFrames"]) is int and sample["stableFrames"] >= 10 and type(sample["color"]) is list and len(sample["color"]) == 3 and
                 all(type(value) is int and 0 <= value <= 255 for value in sample["color"]), "Dense relation strokes not visibly stable")
     require(len({tuple(sample["color"]) for sample in relation_pixels}) == len(relation_pixels), "Dense relation colors collide")
+
+
+def verify_dense_frame(stage, members, edges, shapes, search=False):
+    require(stage["nodes"] == members and stage["edges"] == edges, "Dense frame native membership differs")
+    verify_relationship_pixels(stage["relationship_pixels"], edges)
     groups = stage["groups"]
     wanted_shapes = [shape for shape in shapes if any(sorted(node["labels"]) == sorted(shape["labels"]) for node in members)]
     require(type(groups) is list and len(groups) == len(wanted_shapes), "Dense color group missing")
@@ -539,6 +542,7 @@ def verify_relationship_frame(layout, native_edges, stage):
     centers = {hit["native_id"]: (hit["x"], hit["y"], pixel["box"]) for group in stage["groups"] for pixel, hit in zip(group["frame"]["nodes"], group["hits"])}
     require(all((group["frame"]["width"], group["frame"]["height"]) == (layout["width"], layout["height"]) for group in stage["groups"]), "Relationship viewport differs")
     colors = {hit["native_id"]: group["frame"]["fillColor"] for group in stage["groups"] for hit in group["hits"]}
+    exposed = {h["native_id"]: pixel["geometry"] for group in stage["groups"] if group["frame"].get("schema_version") == "addp.graph-exposed-pixels/v1" for h,pixel in zip(group["hits"],group["frame"]["nodes"])}
     geometry = layout["node_geometry"]
     require(type(geometry) is list and len(geometry) == len(centers) and {node.get("native_id") for node in geometry} == set(centers), "Painted node geometry identity missing/duplicated")
     for node in geometry:
@@ -548,7 +552,7 @@ def verify_relationship_frame(layout, native_edges, stage):
         x, y, box = centers[node["native_id"]]
         extent = max(box[2]-box[0],box[3]-box[1])/2
         require(node["rx"] > 0 and node["ry"] > 0 and math.hypot((node["x"]-x)/node["rx"],(node["y"]-y)/node["ry"]) < 1 and abs(node["rx"]-node["ry"]) < .1 and
-                extent-1 <= node["rx"] <= extent+4 and node["rx"] > 0 and node["ry"] > 0 and
+                (all(node[k] == exposed[node["native_id"]][k] for k in ("x","y","rx","ry","color","alpha")) if node["native_id"] in exposed else extent-1 <= node["rx"] <= extent+4) and
                 1 < node["x"]-node["rx"] <= box[0]+1 and box[2]-1 <= node["x"]+node["rx"] < layout["width"]-1 and
                 1 < node["y"]-node["ry"] <= box[1]+1 and box[3]-1 <= node["y"]+node["ry"] < layout["height"]-1,
                 "Painted circle differs from visible pixel core or viewport")
@@ -569,12 +573,17 @@ def verify_relationship_frame(layout, native_edges, stage):
         path = hit["path"]
         require(type(path) is list and len(path) == 2 and path[0][0] == "M" and len(path[0]) == 3 and path[1][0] in ("L", "Q", "C") and
                 len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
-        for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
-            def boundary_distance(key):
-                node = painted[key]
-                return abs(math.hypot((endpoint[0]-node["x"])/node["rx"], (endpoint[1]-node["y"])/node["ry"])-1)*min(node["rx"], node["ry"])
-            nearest = min(painted, key=boundary_distance)
-            require(nearest == identifier, "Relationship painted/native endpoint identity differs")
+        head, tail = path[0][1:], path[1][-2:]
+        first, last = path[1][1:3], head if len(path[1]) == 3 else path[1][-4:-2]
+        for endpoint, tangent, leaving, identifier in ((head,[first[i]-head[i] for i in (0,1)],True,hit['path_source']),(tail,[tail[i]-last[i] for i in (0,1)],False,hit['path_target'])):
+            candidates=[]
+            for key,node in painted.items():
+                boundary=abs(math.hypot((endpoint[0]-node['x'])/node['rx'],(endpoint[1]-node['y'])/node['ry'])-1)*min(node['rx'],node['ry'])
+                direction=((endpoint[0]-node['x'])*tangent[0]+(endpoint[1]-node['y'])*tangent[1])*(1 if leaving else -1)
+                if boundary <= 2 and direction > 0: candidates.append(key)
+            require(candidates == [identifier], 'Relationship painted/native endpoint identity or outward/inward direction differs')
+        if exposed:
+            require(all((math.hypot((hit['x']-n['x'])/n['rx'],(hit['y']-n['y'])/n['ry'])-1)*min(n['rx'],n['ry']) > 2 for n in painted.values()), 'Exposed relationship click overlaps an actual circle')
         t, q = hit["t"], 1-hit["t"]
         start, segment = path[0][1:], path[1]
         if segment[0] == "L": point = [q*start[i]+t*segment[i+1] for i in (0, 1)]
@@ -673,8 +682,9 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         shapes = sorted([{"name": shape["name"], "labels": sorted(shape["labels"])} for shape in snapshot["schema"]["node_shapes"]], key=lambda shape: shape["name"])
         expected = {"run_id": SUPPORT.required_environment("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id), "principal_id": context["principal_id"],
             "engine_type": engine_type(), "engine_id": target_path["engine_id"], "graph_id": graph_id, "nodes": nodes, "edges": edges, "shapes": shapes}
-        if case == "endpoint-geometry":
-            report["endpoint_geometry"] = run_endpoint_browser(expected)
+        if case in {"endpoint-geometry", "endpoint-same-color"}:
+            if case == "endpoint-same-color": expected["geometry_case"] = "same-color"
+            report["same_color_geometry" if case == "endpoint-same-color" else "endpoint_geometry"] = run_endpoint_browser(expected)
             return
         require(case == "full", "Unknown Graph dense acceptance case")
         artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
@@ -906,7 +916,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 def graph_case(environment):
     value = environment.get("ADDP_ONLINE_GRAPH_CASE", "full")
-    require(type(value) is str and value in {"full", "endpoint-geometry"}, "Unknown Graph acceptance case")
+    require(type(value) is str and value in {"full", "endpoint-geometry", "endpoint-same-color"}, "Unknown Graph acceptance case")
     return value
 
 
@@ -970,29 +980,172 @@ def verify_endpoint_geometry(visual, expected):
         "Endpoint geometry issued unexpected API requests")
 
 
+def verify_exposed_frame(stage, expected, edges):
+    require(stage['nodes'] == expected['nodes'] and stage['edges'] == edges, 'Exposed native membership differs')
+    verify_relationship_pixels(stage['relationship_pixels'], edges)
+    number = lambda value: type(value) in (int, float) and math.isfinite(value)
+    groups = stage['groups']; shapes = expected['shapes']
+    require(type(groups) is list and len(groups) == len(shapes), 'Exposed label groups incomplete')
+    native = {node['properties']['id']: node for node in expected['nodes']}
+    observed = {}; snapshots = set(); colors = set()
+    for group, shape in zip(groups, shapes):
+        require(set(group) == {'name','labels','frame','hits'} and group['name'] == shape['name'] and group['labels'] == shape['labels'], 'Exposed label identity differs')
+        frame = group['frame']; hits = group['hits']
+        require(type(frame) is dict and set(frame) == {'schema_version','width','height','color','fillColor','margin','nodes','stableFrames'} and
+                frame['schema_version'] == 'addp.graph-exposed-pixels/v1' and type(frame['margin']) is int and frame['margin'] == 3 and
+                all(number(frame[key]) and frame[key] > 0 for key in ('width','height')) and type(frame['stableFrames']) is int and frame['stableFrames'] >= 10,
+                'Exposed pixel frame not stable')
+        color = frame['color']
+        require(type(color) is list and len(color) == 3 and all(type(v) is int and 0 <= v <= 255 for v in color) and frame['fillColor'] == color, 'Exposed fill color differs')
+        snapshots.add((frame['width'],frame['height'],frame['stableFrames'])); colors.add(tuple(color))
+        members = {key:node for key,node in native.items() if node['labels'] == shape['labels']}
+        require(type(hits) is list and type(frame['nodes']) is list and len(hits) == len(frame['nodes']) == len(members), 'Exposed visible nodes missing')
+        require({h.get('source_id') for h in hits} == set(members), 'Exposed source identities incomplete')
+        for pixel, hit in zip(frame['nodes'],hits):
+            require(type(hit) is dict and set(hit) == {'source_id','native_id','x','y'} and hit['source_id'] in members and hit['native_id'] == members[hit['source_id']]['id'], 'Exposed actual click native identity differs')
+            require(type(pixel) is dict and set(pixel) == {'x','y','box','pixelCount','geometry','samples','pixel'} and all(number(pixel[k]) for k in ('x','y')) and
+                    pixel['x'] == hit['x'] and pixel['y'] == hit['y'] and type(pixel['pixelCount']) is int and pixel['pixelCount'] >= 40, 'Exposed click/pixel count differs')
+            box = pixel['box']; geometry = pixel['geometry']
+            require(type(box) is list and len(box) == 4 and all(number(v) for v in box) and 1 < box[0] <= hit['x'] <= box[2] < frame['width']-1 and
+                    1 < box[1] <= hit['y'] <= box[3] < frame['height']-1 and box[2]-box[0] >= 3 and box[3]-box[1] >= 3, 'Exposed pixel bounds invalid')
+            require(type(geometry) is dict and set(geometry) == {'x','y','rx','ry','color','alpha','order'} and all(number(geometry[k]) for k in ('x','y','rx','ry','alpha')) and
+                    geometry['alpha'] == 1 and type(geometry['order']) is int and geometry['order'] >= 0 and geometry['color'] == color and
+                    geometry['rx'] > 3 and geometry['ry'] > 3 and abs(geometry['rx']-geometry['ry']) < .1 and
+                    1 < geometry['x']-geometry['rx'] <= box[0] and box[2] <= geometry['x']+geometry['rx'] < frame['width']-1 and
+                    1 < geometry['y']-geometry['ry'] <= box[1] and box[3] <= geometry['y']+geometry['ry'] < frame['height']-1, 'Exposed drawn circle differs')
+            samples = pixel['samples']
+            require(type(samples) is list and len(samples) == 5 and len({(point['x'],point['y']) for point in samples}) == 5, 'Exposed raw pixel samples missing')
+            for point in [dict(x=hit['x'],y=hit['y'],pixel=pixel['pixel']),*samples]:
+                require(type(point) is dict and set(point) == {'x','y','pixel'} and all(number(point[k]) for k in ('x','y')) and
+                        box[0] <= point['x'] <= box[2] and box[1] <= point['y'] <= box[3], 'Exposed raw pixel coordinate differs')
+                rgba = point['pixel']
+                require(type(rgba) is list and len(rgba) == 4 and all(type(v) is int and 0 <= v <= 255 for v in rgba) and rgba[3] > 200 and
+                        all(abs(rgba[i]-color[i]) <= 12 for i in range(3)), 'Exposed sample is not actual node fill')
+            require(hit['native_id'] not in observed, 'Exposed duplicate native identity')
+            observed[hit['native_id']] = dict(geometry=geometry,hit=hit,pixel=pixel,width=frame['width'],height=frame['height'])
+    require(len(snapshots) == 1 and len(colors) == len(shapes) and set(observed) == {n['id'] for n in expected['nodes']} and
+            {v['geometry']['order'] for v in observed.values()} == set(range(len(observed))), 'Exposed global frame/paint circle identity differs')
+    for key, entry in observed.items():
+        own = entry['geometry']
+        for point in [entry['hit'],*entry['pixel']['samples']]:
+            for other_key, other_entry in observed.items():
+                circle = other_entry['geometry']
+                distance = math.hypot((point['x']-circle['x'])/circle['rx'],(point['y']-circle['y'])/circle['ry'])
+                clearance = ((1-distance) if other_key == key else (distance-1))*min(circle['rx'],circle['ry'])
+                require(clearance > 3, 'Exposed point lies inside another circle or unsafe border')
+    return observed
+
+
+def verify_overlap_paint(overlap, entries, owner, nearby):
+    number = lambda v: type(v) in (int,float) and math.isfinite(v)
+    require(type(overlap) is dict and set(overlap) == {'point','pixel','cleared_at','fills','stable_frames','hit'} and
+            type(overlap['stable_frames']) is int and overlap['stable_frames'] >= 10 and type(overlap['cleared_at']) is int and overlap['cleared_at'] > 0, 'Overlap paint origin/frame missing')
+    point = overlap['point']; color = entries[owner]['geometry']['color']
+    require(type(point) is dict and set(point) == {'x','y'} and all(number(v) for v in point.values()), 'Overlap point invalid')
+    for key in (owner,nearby):
+        circle=entries[key]['geometry']
+        require((1-math.hypot((point['x']-circle['x'])/circle['rx'],(point['y']-circle['y'])/circle['ry']))*min(circle['rx'],circle['ry']) > 3, 'Overlap sample not inside both circles')
+    rgba=overlap['pixel']
+    require(type(rgba) is list and len(rgba) == 4 and all(type(v) is int and 0 <= v <= 255 for v in rgba) and rgba[3] > 200 and all(abs(rgba[i]-color[i]) <= 12 for i in range(3)), 'Overlap actual pixel is not shared fill')
+    fills=overlap['fills']; previous=overlap['cleared_at']
+    require(type(fills) is list and bool(fills), 'Overlap paint operations missing')
+    for fill in fills:
+        require(type(fill) is dict and set(fill) == {'native_id','sequence','x','y','rx','ry','color','alpha','clip'} and fill['native_id'] in entries and
+                type(fill['sequence']) is int and fill['sequence'] > previous, 'Overlap paint sequence/native identity invalid')
+        previous=fill['sequence']; circle=entries[fill['native_id']]['geometry']
+        require(all(type(fill[k]) is type(circle[k]) and fill[k] == circle[k] for k in ('x','y','rx','ry','color','alpha')), 'Overlap paint geometry differs')
+        require(math.hypot((point['x']-fill['x'])/fill['rx'],(point['y']-fill['y'])/fill['ry']) < 1, 'Overlap paint misses the point')
+        clip=fill['clip']
+        require(clip is None or (type(clip) is list and len(clip) == 4 and all(number(v) for v in clip) and clip[0] <= point['x'] < clip[2] and clip[1] <= point['y'] < clip[3]), 'Overlap repaint was clipped away from the sampled point')
+    top=fills[-1]['native_id']; hit=overlap['hit']
+    require(top in (owner,nearby) and type(hit) is dict and set(hit) == {'source_id','native_id','x','y'} and hit == dict(entries[top]['hit'],x=point['x'],y=point['y']), 'Overlap real mouse selection differs from last visible paint')
+
+
+def verify_same_color_geometry(visual, expected):
+    require(type(visual) is dict and set(visual) == set(expected) | {'schema_version','parking','drags','before_drag','baseline','phases','requests','target_edge_id'} and
+            visual['schema_version'] == 'addp.graph-same-color-geometry/v1' and all(type(visual.get(k)) is type(v) and visual[k] == v for k,v in expected.items()) and
+            expected.get('geometry_case') == 'same-color', 'Same-color evidence header differs')
+    ids=verify_dense_reference(expected['nodes'],expected['edges']); source,target=ids['n01'],ids['n12']
+    edge=next(e for e in expected['edges'] if e['source'] == source and e['target'] == target and e['type'] == 'Parallel')
+    edges=[e for e in expected['edges'] if e['type'] == 'Parallel']
+    require(visual['target_edge_id'] == edge['id'], 'Same-color target native relationship differs')
+    before=visual['before_drag']; require(set(before) == {'nodes','edges','groups','relationship_pixels'}, 'Same-color initial frame fields differ')
+    previous=verify_exposed_frame(before,expected,edges)
+    baseline=visual['baseline']; require(set(baseline) == set(before) | {'phase','layout','relationships'} and baseline['phase'] == 'same-color-baseline' and baseline['layout'] == 'force', 'Same-color baseline fields differ')
+    base_entries=verify_exposed_frame(baseline,expected,edges); verify_relationship_frame(baseline['relationships'],[edge],baseline)
+    require(all((entry['width'],entry['height']) == (base_entries[key]['width'],base_entries[key]['height']) and all(entry['geometry'][k] == base_entries[key]['geometry'][k] for k in ('rx','ry','color')) for key,entry in previous.items()), 'Same-color initial circle style/viewport differs')
+    parking=[dict(native_id=ids[key],x=70+i%6*115,y=90 if i<6 else 680) for i,key in enumerate(sorted(ids))]
+    require(visual['parking'] == parking, 'Same-color fixed parking differs')
+    planned=[dict(native_id=p['native_id'],point={k:p[k] for k in ('x','y')}) for p in parking]+[dict(native_id=source,point=dict(x=200,y=330)),dict(native_id=target,point=dict(x=550,y=330))]
+    phases=visual['phases']; require(type(phases) is list and len(phases) == 6, 'Same-color near/overlap/restoration stages missing')
+    for phase,(side,state) in zip(phases,[(side,state) for side in ('source','target') for state in ('near','overlap','restored')]):
+        owner=source if side == 'source' else target; nearby=ids['n02' if side == 'source' else 'n11']
+        require(set(phase) == set(baseline) | {'side','state','owner','nearby','planned_center'} | ({'overlap'} if state == 'overlap' else set()) and
+                phase['phase'] == 'same-color-'+side+'-'+state and phase['layout'] == 'force' and phase['side'] == side and phase['state'] == state and phase['owner'] == owner and phase['nearby'] == nearby,
+                'Same-color stage identity differs')
+        entries=verify_exposed_frame(phase,expected,edges); verify_relationship_frame(phase['relationships'],[edge],phase)
+        require(all((entry['width'],entry['height']) == (base_entries[key]['width'],base_entries[key]['height']) and all(entry['geometry'][k] == base_entries[key]['geometry'][k] for k in ('rx','ry','color')) for key,entry in entries.items()), 'Same-color circle style/viewport changed across stages')
+        require(entries[owner]['geometry']['color'] == entries[nearby]['geometry']['color'] and next(n['labels'] for n in expected['nodes'] if n['id'] == owner) == next(n['labels'] for n in expected['nodes'] if n['id'] == nearby), 'Same-color nearby node has different labels/fill')
+        hit=baseline['relationships']['hits'][0]; anchor=hit['path'][0][1:] if hit['path_source'] == owner else hit['path'][1][-2:]
+        circle=base_entries[owner]['geometry']; delta=[anchor[0]-circle['x'],anchor[1]-circle['y']]
+        factor=(circle['rx']+base_entries[nearby]['geometry']['rx']+2)/math.hypot(*delta) if state == 'near' else .8
+        parked=next(p for p in parking if p['native_id'] == nearby)
+        destination={k:parked[k] for k in ('x','y')} if state == 'restored' else {k:circle[k]+delta[i]*factor for i,k in enumerate(('x','y'))}
+        require(phase['planned_center'] == destination and phase['relationships']['hits'][0]['path'] == hit['path'], 'Same-color fixed target or relationship path changed')
+        planned.append(dict(native_id=nearby,point=destination))
+        actual=entries[nearby]['geometry']; distance=math.hypot(actual['x']-entries[owner]['geometry']['x'],actual['y']-entries[owner]['geometry']['y'])
+        if state == 'near': require(distance > actual['rx']+entries[owner]['geometry']['rx'], 'Near circles unexpectedly overlap')
+        elif state == 'overlap':
+            require(0 < distance < min(actual['rx'],entries[owner]['geometry']['rx']), 'Partial occlusion must cover both centers without coincidence')
+            verify_overlap_paint(phase['overlap'],entries,owner,nearby)
+        else:
+            require(all(math.hypot(entries[k]['geometry']['x']-base_entries[k]['geometry']['x'],entries[k]['geometry']['y']-base_entries[k]['geometry']['y']) < 2 for k in entries), 'Native circle identities did not restore to baseline positions')
+    drags=visual['drags']; require(type(drags) is list and len(drags) == 20, 'Same-color real drag sequence incomplete')
+    centers={key:dict(x=v['geometry']['x'],y=v['geometry']['y']) for key,v in previous.items()}
+    number=lambda v:type(v) in (int,float) and math.isfinite(v)
+    for index,(drag,wanted) in enumerate(zip(drags,planned)):
+        require(type(drag) is dict and set(drag) == {'native_id','from','to','center_before','center_after','planned_center'} and drag['native_id'] == wanted['native_id'] and drag['planned_center'] == wanted['point'] and
+                all(type(drag[k]) is dict and set(drag[k]) == {'x','y'} and all(number(v) for v in drag[k].values()) for k in ('from','to','center_before','center_after','planned_center')), 'Same-color mouse drag fields differ')
+        key=drag['native_id']; radius=previous[key]['geometry']['rx']
+        require(math.hypot(*(drag['center_before'][k]-centers[key][k] for k in ('x','y'))) < .01 and math.hypot(*(drag['from'][k]-drag['center_before'][k] for k in ('x','y'))) < radius-3 and
+                all(abs(drag['to'][k]-drag['from'][k]-(wanted['point'][k]-drag['center_before'][k])) < .00001 for k in ('x','y')) and
+                math.hypot(*(drag['center_after'][k]-wanted['point'][k] for k in ('x','y'))) < 2, 'Same-color drag did not preserve exposed grab offset/native geometry')
+        centers[key]=drag['center_after']
+        if index >= 13:
+            stage=baseline if index == 13 else phases[index-14]
+            actual=verify_exposed_frame(stage,expected,edges)
+            require(all(math.hypot(actual[k]['geometry']['x']-v['x'],actual[k]['geometry']['y']-v['y']) < .01 for k,v in centers.items()), 'Same-color actual drawn circles differ after drag')
+    root=f"/api/v1/graph/graphs/{expected['graph_id']}"
+    require(visual['requests'] == [dict(method='POST',path=root+'/search',body=dict(query='Dense',limit=30)),dict(method='POST',path=root+'/expand',body=dict(target=dict(kind='entity',id=source),depth=2,node_limit=200,relationship_limit=400))], 'Same-color geometry issued unexpected requests')
+
+
 def run_endpoint_browser(expected):
     artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
-    raw = artifact / "graph-endpoint-geometry.json"
-    for pattern in ("graph-endpoint-geometry*.json", "endpoint-*-console.png"):
+    same_color = expected.get("geometry_case") == "same-color"
+    prefix = "graph-same-color-geometry" if same_color else "graph-endpoint-geometry"
+    raw = artifact / (prefix + ".json")
+    for pattern in (prefix+"*.json", ("same-color" if same_color else "endpoint")+"-*-console.png"):
         for path in artifact.glob(pattern): path.unlink()
     environment = {k: v for k,v in os.environ.items() if not k.endswith(("_ACCESS_TOKEN", "_USERNAME", "_PASSWORD"))}
     for key in ("ADDP_ONLINE_TEST_USER_USERNAME", "ADDP_ONLINE_TEST_USER_PASSWORD"):
         environment[key] = SUPPORT.required_environment(key)
     environment["ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS"] = json.dumps(expected)
-    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js", "--config=playwright.online.config.js", "--grep", "fixed nearby endpoint geometry", "--reporter=line"],
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js", "--config=playwright.online.config.js", "--grep", "same-color nearby endpoint geometry" if same_color else "fixed nearby endpoint geometry", "--reporter=line"],
         cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=300)
     require(result.returncode == 0 and raw.is_file(), "Endpoint real Console evidence missing or failed")
     visual = json.loads(raw.read_text())
-    verify_endpoint_geometry(visual, expected)
+    (verify_same_color_geometry if same_color else verify_endpoint_geometry)(visual, expected)
     for stage in [visual["baseline"], *visual["phases"]]:
         require((artifact / (stage["phase"] + "-console.png")).is_file(), "Endpoint screenshot missing")
         require(json.loads((artifact / ("graph-" + stage["phase"] + "-frame.json")).read_text()) ==
-                {**expected, "schema_version": "addp.graph-endpoint-geometry-frame/v1", "stage": stage}, "Independent endpoint frame differs")
-    require(json.loads((artifact / "graph-endpoint-geometry-diagnostics.json").read_text()) == {"schema_version": "addp.graph-browser-diagnostics/v1", "entries": []}, "Endpoint browser diagnostics not clean")
+                {**expected, "schema_version": "addp.graph-same-color-frame/v1" if same_color else "addp.graph-endpoint-geometry-frame/v1", "stage": stage}, "Independent endpoint frame differs")
+        if "overlap" in stage: require((artifact / (stage["phase"]+"-hit-console.png")).is_file(), "Overlap native selection screenshot missing")
+    require(json.loads((artifact / (prefix+"-diagnostics.json")).read_text()) == {"schema_version": "addp.graph-browser-diagnostics/v1", "entries": []}, "Endpoint browser diagnostics not clean")
     return visual
 
 
-def run_endpoint_case(preparer, reader, engine_id, tenant_id, report):
+def run_endpoint_case(preparer, reader, engine_id, tenant_id, report, *, case="endpoint-geometry"):
+    require(case in {"endpoint-geometry","endpoint-same-color"}, "Unknown endpoint preparation case")
     report["engine_type"] = engine_type()
     report["identities"] = {"reader": identity(reader, tenant_id, READER_PERMISSIONS), "preparer": identity(preparer, tenant_id, PREPARER_PERMISSIONS)}
     require(len({v["principal_id"] for v in report["identities"].values()}) == 2, "Endpoint identities must remain distinct")
@@ -1016,7 +1169,7 @@ def run_endpoint_case(preparer, reader, engine_id, tenant_id, report):
         preparer.request("DELETE", f"/api/v1/graph/graphs/{control_id}", (200,))
         preparer.request("GET", f"/api/v1/graph/graphs/{control_id}", (404,))
         control_id = None
-        run_dense(preparer, reader, tenant_id, target, report, previous, case="endpoint-geometry")
+        run_dense(preparer, reader, tenant_id, target, report, previous, case=case)
     except Exception:
         failed = True
         raise
@@ -1040,10 +1193,10 @@ def main():
         env = SUPPORT.required_environment
         gateway, graph = env("GATEWAY_URL"), env("GRAPH_URL")
         case = graph_case(os.environ)
-        if case == "endpoint-geometry":
-            report.update(schema_version="addp.graph-endpoint-geometry-online/v1", case=case)
+        if case in {"endpoint-geometry", "endpoint-same-color"}:
+            report.update(schema_version="addp.graph-same-color-online/v1" if case == "endpoint-same-color" else "addp.graph-endpoint-geometry-online/v1", case=case)
             run_endpoint_case(Client(gateway, env("ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"), 30), Client(gateway, env("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
-                SUPPORT.positive_int(env("ADDP_ONLINE_TEST_ENGINE_ID"), "engine id"), SUPPORT.positive_int(env("ADDP_ONLINE_TEST_TENANT_ID"), "tenant id"), report)
+                SUPPORT.positive_int(env("ADDP_ONLINE_TEST_ENGINE_ID"), "engine id"), SUPPORT.positive_int(env("ADDP_ONLINE_TEST_TENANT_ID"), "tenant id"), report, case=case)
             report["passed"] = True
             return 0
         reader, outsider = env("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), env("ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN")

@@ -1,4 +1,4 @@
-import { graphRelationshipHits } from './graph-relationship.fixture.js'
+import { graphRelationshipHits, stableRelationshipPaths, graphOverlapPaint } from './graph-relationship.fixture.js'
 import { expect } from '@playwright/test'
 
 // Shared browser observations for synthetic T3 and native Hosted production builds.
@@ -102,6 +102,58 @@ export async function stableGraphPixels(element, { groups, timeout = 10_000 }) {
       nodes: nodes.filter(node => node.group === index).map(({ group, ...node }) => node), stableFrames: stable }))
   }
   throw new Error(`Graph pixels did not reach a visible stable frame: ${JSON.stringify(last)}`)
+}
+
+// A separate visibility contract for deliberately occluded circles: safe exposed
+// fill cores, actual draw order and mouse identity; not a relaxed full-node frame.
+export async function stableExposedGraphPixels(element, { groups, timeout = 10_000 }) {
+  const canvas = element.querySelector('canvas'), probe = document.createElement('canvas').getContext('2d',{willReadFrequently:true}),copy=document.createElement('canvas')
+  const rgb = color => { probe.clearRect(0,0,1,1);probe.fillStyle=color;probe.fillRect(0,0,1,1);return [...probe.getImageData(0,0,1,1).data].slice(0,3) }
+  const palette=groups.map(group => rgb(group.fillColor)), context=copy.getContext('2d', { willReadFrequently:true })
+  if (!context || !groups.length || groups.some(group => !Number.isInteger(group.count) || group.count<=0)) throw new Error('Invalid exposed circle observation')
+  const margin=3,deadline=performance.now()+timeout
+  let previous='',stable=0,last=[]
+  while (performance.now()<deadline) {
+    await new Promise(requestAnimationFrame)
+    const rect=canvas.getBoundingClientRect()
+    if (element.querySelector('.el-loading-mask') || !canvas.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) || !rect.width || !rect.height) { stable=0;previous='';continue }
+    const drawn=new Map()
+    for (const circle of window.__graphNodePaint?.get(canvas)||[]) {
+      const color=rgb(circle.color),group=palette.findIndex(value => value.every((channel,index) => channel===color[index]))
+      if (group<0 || circle.alpha!==1 || !['x','y','rx','ry'].every(key => Number.isFinite(circle[key])) || circle.rx<=margin || circle.ry<=margin) continue
+      const key=JSON.stringify([circle.x,circle.y,circle.rx,circle.ry,color]);drawn.delete(key);drawn.set(key,{...circle,color,group})
+    }
+    const circles=[...drawn.values()].map((circle,order)=>({...circle,order}))
+    if (groups.some((group,index)=>circles.filter(circle=>circle.group===index).length!==group.count)) { last={circles,palette,counts:groups.map(g=>g.count)};stable=0;previous='';continue }
+    copy.width=canvas.width;copy.height=canvas.height;context.drawImage(canvas,0,0)
+    const sx=rect.width/canvas.width,sy=rect.height/canvas.height,pixels=context.getImageData(0,0,canvas.width,canvas.height).data
+    const nodes=[]
+    for (const circle of circles) {
+      const points=[]
+      let best=null,bestClearance=-Infinity,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity
+      for (let y=Math.max(0,Math.floor((circle.y-circle.ry)/sy));y<Math.min(canvas.height,Math.ceil((circle.y+circle.ry)/sy));y++) {
+        for (let x=Math.max(0,Math.floor((circle.x-circle.rx)/sx));x<Math.min(canvas.width,Math.ceil((circle.x+circle.rx)/sx));x++) {
+          const px=(x+.5)*sx,py=(y+.5)*sy,offset=(y*canvas.width+x)*4
+          const distance=other=>Math.hypot((px-other.x)/other.rx,(py-other.y)/other.ry)
+          const clearance=Math.min((1-distance(circle))*Math.min(circle.rx,circle.ry)-margin,
+            ...circles.filter(other=>other!==circle).map(other=>(distance(other)-1)*Math.min(other.rx,other.ry)-margin))
+          if (clearance<=0 || pixels[offset+3]<=200 || !circle.color.every((value,index)=>Math.abs(pixels[offset+index]-value)<=12)) continue
+          const point={x:px,y:py,pixel:[...pixels.slice(offset,offset+4)]}
+          points.push(point);minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py)
+          if (clearance>bestClearance) { bestClearance=clearance;best=point }
+        }
+      }
+      if (points.length<40 || !best || !(circle.x-circle.rx>1 && circle.y-circle.ry>1 && circle.x+circle.rx<rect.width-1 && circle.y+circle.ry<rect.height-1)) continue
+      nodes.push({group:circle.group,x:best.x,y:best.y,box:[minX,minY,maxX,maxY],pixelCount:points.length,
+        geometry:{x:circle.x,y:circle.y,rx:circle.rx,ry:circle.ry,color:circle.color,alpha:circle.alpha,order:circle.order},
+        samples:Array.from({length:5},(_,index)=>points[Math.floor(index*(points.length-1)/4)]),pixel:best.pixel})
+    }
+    const signature=JSON.stringify(nodes),valid=nodes.length===circles.length
+    stable=valid && signature===previous?stable+1:0;previous=signature;last={nodes,circles,palette}
+    if (stable>=10) return groups.map((_,group)=>({schema_version:'addp.graph-exposed-pixels/v1',width:rect.width,height:rect.height,color:palette[group],fillColor:palette[group],margin,
+      nodes:nodes.filter(node=>node.group===group).map(({group,...node})=>node).sort((a,b)=>a.geometry.x-b.geometry.x||a.geometry.y-b.geometry.y),stableFrames:stable}))
+  }
+  throw new Error('Exposed circle pixels did not settle: '+JSON.stringify(last))
 }
 
 export async function stableEmptyReviewSelection(element, { timeout = 10_000 } = {}) {
@@ -236,7 +288,9 @@ export async function exploreGraphLayouts(page, frame, canvas, root, nodes, edge
   } finally { page.off('request', record) }
 }
 
-export async function observeDenseGraph(frame, canvas, shapes, nodes, edges, search = false) {
+export async function observeDenseGraph(frame, canvas, shapes, nodes, edges, search = false, visibility = 'full') {
+  expect(['full','exposed']).toContain(visibility)
+  expect(search && visibility === 'exposed').toBe(false)
   const nodeFacts = values => values.map(({ id, labels, properties }) => ({ id, labels: [...labels].sort(), properties })).sort((a, b) => a.id.localeCompare(b.id))
   const normalize = values => values.map(({ id, source, target, type, properties }) => ({ id, source, target, type, properties })).sort((a, b) => a.id.localeCompare(b.id))
   await clearGraphSelection(frame)
@@ -249,7 +303,7 @@ export async function observeDenseGraph(frame, canvas, shapes, nodes, edges, sea
     entries.push({ shape, members, count: members.length, fillColor, color: search ? await graphObservationColor(frame, canvas) : fillColor })
   }
   expect(entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(nodes.length)
-  const frames = await canvas.evaluate(stableGraphPixels, { groups: entries.map(({ count, color, fillColor }) => ({ count, color, fillColor })) })
+  const frames = await canvas.evaluate(visibility === 'exposed' ? stableExposedGraphPixels : stableGraphPixels, { groups: entries.map(({ count, color, fillColor }) => ({ count, color, fillColor })) })
   const groups = []
   for (const [index, entry] of entries.entries()) groups.push({ name: entry.shape.name, labels: [...entry.shape.labels].sort(),
     frame: frames[index], hits: await graphNodeHits(frame, canvas, frames[index], entry.members) })
@@ -458,12 +512,15 @@ export async function stableGraphColorPixels(element, { colors, boxes, absent = 
 }
 
 // Fixed geometry is established only with real mouse dragging in the Graph page.
-export async function graphEndpointGeometry(page, frame, canvas, expected, capture) {
+export async function graphEndpointGeometry(page, frame, canvas, expected, capture, scenario = 'different-color') {
+  expect(['different-color','same-color']).toContain(scenario)
+  const sameColor = scenario === 'same-color'
+  const observe = (...args) => observeDenseGraph(...args, false, sameColor ? 'exposed' : 'full')
   const root = `/api/v1/graph/graphs/${expected.graph_id}`
   const reference = expected.nodes.map(node => ({ ...node, display_name: node.properties.name }))
   const source = reference.find(node => node.properties.id === 'n01')
   const target = reference.find(node => node.properties.id === 'n12')
-  const nearby = reference.find(node => node.properties.id === 'n04')
+  const differentNearby = reference.find(node => node.properties.id === 'n04')
   const edge = expected.edges.find(edge => edge.source === source.id && edge.target === target.id && edge.type === 'Parallel')
   expect(edge).toBeTruthy()
   const requests = [], drags = []
@@ -484,7 +541,7 @@ export async function graphEndpointGeometry(page, frame, canvas, expected, captu
   await expect(frame.locator('.toolbar-left .el-tag').nth(1)).toHaveText('画布: 12 节点 / 0 关系')
   await frame.locator('.search-input').hover()
   await frame.locator('.search-input .el-input__clear').click()
-  const initial = await observeDenseGraph(frame, canvas, expected.shapes, reference, [])
+  const initial = await observe(frame, canvas, expected.shapes, reference, [])
   await clickGraphNode(frame, canvas, initial.groups.flatMap(group => group.hits).find(hit => hit.native_id === source.id), [source])
   const expand = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === root + '/expand')
   await frame.getByRole('radio', { name: '2 跳', exact: true }).locator('..').click()
@@ -496,58 +553,87 @@ export async function graphEndpointGeometry(page, frame, canvas, expected, captu
   await expect(link.getByRole('checkbox')).not.toBeChecked()
   await expect(frame.locator('.toolbar-left .el-tag').nth(1)).toHaveText('画布: 12 节点 / 4 关系')
   const edges = expected.edges.filter(edge => edge.type === 'Parallel')
-  let observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
+  let observed = await observe(frame, canvas, expected.shapes, reference, edges)
   const before_drag = observed
-  const positions = new Map(observed.groups.flatMap(group => group.hits).map(hit => [hit.native_id, { x: hit.x, y: hit.y }]))
+  const positions = new Map(), centers = new Map()
+  function refreshPositions(stage) {
+    for (const group of stage.groups) for (const [index,hit] of group.hits.entries()) {
+      positions.set(hit.native_id,{x:hit.x,y:hit.y})
+      if (sameColor) centers.set(hit.native_id,group.frame.nodes[index].geometry)
+    }
+  }
+  refreshPositions(observed)
   async function drag(node, to) {
     await clearGraphSelection(frame)
-    const from = positions.get(node.id), box = await canvas.locator('canvas').boundingBox()
+    const from = positions.get(node.id), center=centers.get(node.id), planned=to
+    if (sameColor) to={x:from.x+planned.x-center.x,y:from.y+planned.y-center.y}
+    const box = await canvas.locator('canvas').boundingBox()
     await page.mouse.move(box.x + from.x, box.y + from.y)
     await page.mouse.down()
     await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 16 })
     await page.mouse.up()
     await canvas.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    drags.push({ native_id: node.id, from, to });positions.set(node.id, to)
+    let after
+    if (sameColor) {
+      const matches=await canvas.evaluate((element,point)=>(window.__graphNodePaint?.get(element.querySelector('canvas'))||[]).filter(circle=>Math.hypot(circle.x-point.x,circle.y-point.y)<2),planned)
+      expect(matches).toHaveLength(1);after=matches[0];centers.set(node.id,after)
+    }
+    drags.push({ native_id: node.id, from, to, ...(sameColor ? {center_before:{x:center.x,y:center.y},center_after:{x:after.x,y:after.y},planned_center:planned} : {}) });positions.set(node.id, to)
   }
   const ordered = [...reference].sort((a, b) => a.properties.id.localeCompare(b.properties.id))
   const parking = ordered.map((node, index) => ({ native_id: node.id, x: 70 + index % 6 * 115, y: index < 6 ? 90 : 680 }))
   for (const [index, node] of ordered.entries()) await drag(node, { x: parking[index].x, y: parking[index].y })
   await drag(source, { x: 200, y: 330 });await drag(target, { x: 550, y: 330 })
-  observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
-  const baseline = { phase: 'endpoint-baseline', layout: 'force', ...observed }
+  observed = await observe(frame, canvas, expected.shapes, reference, edges)
+  if (sameColor) refreshPositions(observed)
+  const baseline = { phase: sameColor ? 'same-color-baseline' : 'endpoint-baseline', layout: 'force', ...observed }
   await capture(baseline.phase, baseline)
   baseline.relationships = await graphRelationshipHits(page, frame, canvas, [edge], baseline)
   await capture(baseline.phase, baseline)
   const phases = []
-  for (const side of ['source', 'target']) {
+  const steps = sameColor ? ['source','target'].flatMap(side => ['near','overlap','restored'].map(state => ({side,state}))) : ['source','target'].map(side => ({side}))
+  for (const {side,state} of steps) {
     const owner = side === 'source' ? source : target
+    const nearby = sameColor ? reference.find(node => node.properties.id === (side === 'source' ? 'n02' : 'n11')) : differentNearby
     const hit = baseline.relationships.hits[0]
     const anchor = hit.path_source === owner.id ? hit.path[0].slice(1) : hit.path[1].slice(-2)
     const center = baseline.relationships.node_geometry.find(node => node.native_id === owner.id)
     const dx = anchor[0] - center.x, dy = anchor[1] - center.y
-    const destination = { x: anchor[0] + dx * .8, y: anchor[1] + dy * .8 }
+    const parked=parking.find(node => node.native_id===nearby.id), nearRadius=baseline.relationships.node_geometry.find(node => node.native_id===nearby.id).rx
+    const factor=state==='near'?(center.rx+nearRadius+2)/Math.hypot(dx,dy):.8
+    const destination = sameColor ? (state==='restored' ? {x:parked.x,y:parked.y} : {x:center.x+dx*factor,y:center.y+dy*factor}) : {x:anchor[0]+dx*.8,y:anchor[1]+dy*.8}
     await drag(nearby, destination)
-    observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
-    const phase = { phase: 'endpoint-near-' + side, layout: 'force', side, owner: owner.id, nearby: nearby.id, planned_center: destination, ...observed }
+    observed = await observe(frame, canvas, expected.shapes, reference, edges)
+    if (sameColor) refreshPositions(observed)
+    const phase = { phase: sameColor ? `same-color-${side}-${state}` : 'endpoint-near-' + side, layout: 'force', side, ...(sameColor?{state}:{}), owner: owner.id, nearby: nearby.id, planned_center: destination, ...observed }
+    if (state==='overlap') {
+      const painted=await canvas.evaluate(stableRelationshipPaths,{nodes:phase.groups})
+      const trace=await canvas.evaluate(graphOverlapPaint,{geometry:painted.node_geometry,owner:owner.id,nearby:nearby.id})
+      const front=reference.find(node=>node.id===trace.fills.at(-1).native_id)
+      phase.overlap={...trace,stable_frames:painted.stable_frames,hit:await clickGraphNode(frame,canvas,trace.point,[front])}
+    }
     await capture(phase.phase, phase)
+    await clearGraphSelection(frame)
     phase.relationships = await graphRelationshipHits(page, frame, canvas, [edge], phase)
     const current = phase.relationships.hits[0]
     const endpoint = current.path_source === owner.id ? current.path[0].slice(1) : current.path[1].slice(-2)
     const centers = phase.groups.flatMap(group => group.hits)
     const nearest = [...centers].sort((a, b) => Math.hypot(a.x - endpoint[0], a.y - endpoint[1]) - Math.hypot(b.x - endpoint[0], b.y - endpoint[1]))[0]
-    expect(nearest.native_id, 'Fixed geometry must expose the old nearest-center error').toBe(nearby.id)
-    phase.old_nearest = nearest.native_id
+    if (!sameColor) expect(nearest.native_id, 'Fixed geometry must expose the old nearest-center error').toBe(nearby.id)
+    if (!sameColor) phase.old_nearest = nearest.native_id
     const pixelNodes = phase.groups.flatMap(group => group.hits.map((hit, index) => ({ ...hit, box: group.frame.nodes[index].box })))
     const oldDistance = node => {
       const rx = (node.box[2]-node.box[0])/2, ry = (node.box[3]-node.box[1])/2
       return Math.abs(Math.hypot((endpoint[0]-node.x)/rx,(endpoint[1]-node.y)/ry)-1)*Math.min(rx,ry)
     }
-    phase.old_pixel_boundary = [...pixelNodes].sort((a,b) => oldDistance(a)-oldDistance(b))[0].native_id
-    expect(phase.old_pixel_boundary, 'Fixed geometry must expose the clipped pixel-boundary error').toBe(nearby.id)
+    if (!sameColor) {
+      phase.old_pixel_boundary = [...pixelNodes].sort((a,b) => oldDistance(a)-oldDistance(b))[0].native_id
+      expect(phase.old_pixel_boundary, 'Fixed geometry must expose the clipped pixel-boundary error').toBe(nearby.id)
+    }
     phases.push(phase)
     await capture(phase.phase, phase)
   }
   expect(requests).toEqual([{ method: 'POST', path: root + '/search', body: { query: 'Dense', limit: 30 } }, { method: 'POST', path: root + '/expand', body: { target: { kind: 'entity', id: source.id }, depth: 2, node_limit: 200, relationship_limit: 400 } }])
-  return { parking, drags, before_drag, baseline, phases, requests, target_edge_id: edge.id }
+  return { ...(sameColor?{geometry_case:'same-color'}:{}), parking, drags, before_drag, baseline, phases, requests, target_edge_id: edge.id }
   } finally { page.off('request', record) }
 }

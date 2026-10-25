@@ -22,7 +22,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   esac
   export ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}
   case "$ADDP_ONLINE_GRAPH_CASE" in
-    full|endpoint-geometry) ;;
+    full|endpoint-geometry|endpoint-same-color) ;;
     *) echo 'Unsupported Graph acceptance case' >&2; exit 1 ;;
   esac
   HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-review-extractor addp-graph-online-neo4j-review addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend service-frontend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)

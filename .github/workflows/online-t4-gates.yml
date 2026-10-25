@@ -104,6 +104,7 @@ on:
         options:
           - full
           - endpoint-geometry
+          - endpoint-same-color
       graph_engine:
         description: Native engine for graph-protection
         required: true

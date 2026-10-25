@@ -77,6 +77,12 @@ def dense_evidence():
         for edge in edges:
             start,end = centers[edge['source']][:2],centers[edge['target']][:2]
             point = next((x,y) for y in range(30,570,35) for x in range(30,770,35) if not any(box[0]-10 <= x <= box[2]+10 and box[1]-10 <= y <= box[3]+10 for _,_,box in centers.values()))
+            def anchor(center,turn=0):
+                import math
+                dx,dy=point[0]-center[0],point[1]-center[1];length=math.hypot(dx,dy);ux,uy=dx/length,dy/length
+                if turn:ux,uy=(ux-turn*uy)/2**.5,(uy+turn*ux)/2**.5
+                return (center[0]+12*ux,center[1]+12*uy)
+            start,end=anchor(start,1 if edge['source']==edge['target'] else 0),anchor(end,-1 if edge['source']==edge['target'] else 0)
             control = [2*point[i]-.5*(start[i]+end[i]) for i in (0,1)]
             display = lambda value: str(value).lower() if type(value) is bool else format(value,'g') if type(value) in (float,int) else str(value)
             hits.append(dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type=edge['type'],
@@ -160,6 +166,59 @@ def endpoint_evidence():
     return expected,dict(expected,schema_version='addp.graph-endpoint-geometry/v1',parking=parking,drags=drags,before_drag=before,baseline=baseline,phases=phases,requests=requests,target_edge_id=edge['id'])
 
 
+def same_color_evidence():
+    import math
+    expected,_=dense_evidence(); expected['geometry_case']='same-color'
+    nodes,shapes=expected['nodes'],expected['shapes']; ids={n['properties']['id']:n['id'] for n in nodes}
+    edges=[e for e in expected['edges'] if e['type']=='Parallel']; edge=next(e for e in edges if e['source']==ids['n01'] and e['target']==ids['n12'])
+    positions={ids[key]:dict(x=90+i%6*110,y=130 if i<6 else 630) for i,key in enumerate(sorted(ids))}
+    parking=[dict(native_id=ids[key],x=70+i%6*115,y=90 if i<6 else 680) for i,key in enumerate(sorted(ids))]
+    def geometries():
+        return {n['id']:dict(**positions[n['id']],rx=28,ry=28,color=[60+next(i for i,s in enumerate(shapes) if s['labels']==n['labels'])*40,30,50],alpha=1,order=i) for i,n in enumerate(nodes)}
+    def exposed(key,all_geometry):
+        c=all_geometry[key];near=min((other for k,other in all_geometry.items() if k!=key),key=lambda o:math.hypot(o['x']-c['x'],o['y']-c['y']))
+        dx,dy=c['x']-near['x'],c['y']-near['y'];d=math.hypot(dx,dy)
+        return dict(x=c['x']+(14*dx/d if d<62 else 0),y=c['y']+(14*dy/d if d<62 else 0))
+    def frame():
+        all_geometry=geometries();groups=[]
+        for index,shape in enumerate(shapes):
+            color=[60+index*40,30,50];pixels=[];hits=[]
+            for n in nodes:
+                if n['labels']!=shape['labels']:continue
+                point=exposed(n['id'],all_geometry);x,y=point['x'],point['y'];rgba=color+[255]
+                pixels.append(dict(**point,box=[x-3,y-3,x+3,y+3],pixelCount=49,geometry=all_geometry[n['id']],samples=[dict(x=x+dx,y=y+dy,pixel=rgba) for dx,dy in [(0,0),(-2,0),(2,0),(0,-2),(0,2)]],pixel=rgba))
+                hits.append(dict(source_id=n['properties']['id'],native_id=n['id'],**point))
+            groups.append(dict(name=shape['name'],labels=shape['labels'],frame=dict(schema_version='addp.graph-exposed-pixels/v1',width=800,height=775,color=color,fillColor=color,margin=3,nodes=pixels,stableFrames=10),hits=hits))
+        return dict(nodes=nodes,edges=edges,groups=groups,relationship_pixels=[dict(type='Parallel',color=[10,30,80],pixelCount=100,stableFrames=10)])
+    def relationship():
+        display=lambda v:str(v).lower() if type(v)is bool else format(v,'g') if type(v)in(int,float) else str(v)
+        geometry=[dict(native_id=key,**{k:v for k,v in c.items() if k!='order'}) for key,c in geometries().items()]
+        hit=dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type='Parallel',properties={k:display(v) for k,v in edge['properties'].items()},path=[['M',228,330],['Q',375,420,522,330]],path_source=ids['n01'],path_target=ids['n12'],x=375,y=375,t=.5,pixel=[10,30,80,255])
+        return dict(layout='force',width=800,height=775,stable_frames=10,node_geometry=geometry,attempts=1,hits=[hit])
+    before=frame();drags=[]
+    def drag(key,to):
+        current=dict(positions[key]);point=exposed(key,geometries());cursor={k:point[k]+to[k]-current[k] for k in ('x','y')}
+        drags.append(dict(native_id=key,**{'from':point,'to':cursor},center_before=current,center_after=to,planned_center=to));positions[key]=to
+    for p in parking:drag(p['native_id'],{k:p[k] for k in ('x','y')})
+    drag(ids['n01'],dict(x=200,y=330));drag(ids['n12'],dict(x=550,y=330))
+    baseline=dict(phase='same-color-baseline',layout='force',**frame(),relationships=relationship());phases=[]
+    for side,owner_key,nearby_key in [('source','n01','n02'),('target','n12','n11')]:
+        for state in ('near','overlap','restored'):
+            owner,nearby=ids[owner_key],ids[nearby_key];c=positions[owner];direction=1 if side=='source' else -1
+            p=next(p for p in parking if p['native_id']==nearby)
+            to={k:p[k] for k in ('x','y')} if state=='restored' else dict(x=c['x']+direction*(58 if state=='near' else 22.4),y=c['y'])
+            drag(nearby,to);stage=dict(phase='same-color-'+side+'-'+state,layout='force',side=side,state=state,owner=owner,nearby=nearby,planned_center=to,**frame(),relationships=relationship())
+            if state=='overlap':
+                all_geometry=geometries();pair=sorted([owner,nearby],key=lambda k:all_geometry[k]['order']);point=dict(x=(positions[owner]['x']+to['x'])/2,y=c['y']);fills=[]
+                for index,key in enumerate(pair):fills.append(dict(native_id=key,sequence=10+index,clip=None,**{k:v for k,v in all_geometry[key].items() if k!='order'}))
+                top=pair[-1];n=next(n for n in nodes if n['id']==top)
+                stage['overlap']=dict(point=point,pixel=all_geometry[top]['color']+[255],cleared_at=1,fills=fills,stable_frames=10,hit=dict(source_id=n['properties']['id'],native_id=top,**point))
+            phases.append(stage)
+    root='/api/v1/graph/graphs/'+str(expected['graph_id'])
+    requests=[dict(method='POST',path=root+'/search',body=dict(query='Dense',limit=30)),dict(method='POST',path=root+'/expand',body=dict(target=dict(kind='entity',id=ids['n01']),depth=2,node_limit=200,relationship_limit=400))]
+    return expected,dict(expected,schema_version='addp.graph-same-color-geometry/v1',parking=parking,drags=drags,before_drag=before,baseline=baseline,phases=phases,requests=requests,target_edge_id=edge['id'])
+
+
 class GraphProtectionOnlineTest(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
@@ -192,6 +251,34 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         for name,change in changes.items():
             candidate=copy.deepcopy(raw);change(candidate)
             with self.subTest(name=name),self.assertRaises(SUITE.SuiteError):SUITE.verify_endpoint_geometry(candidate,expected)
+
+    def test_same_color_native_geometry_requires_exposed_pixels_real_overlap_paint_and_restore(self):
+        expected,raw=same_color_evidence()
+        SUITE.verify_same_color_geometry(raw,expected)
+        changes={
+            'old-evidence':lambda r:r.update(schema_version='addp.graph-endpoint-geometry/v1'),
+            'foreign-user':lambda r:r.update(principal_id='foreign'),
+            'missing-state':lambda r:r['phases'].pop(),
+            'foreign-neighbor':lambda r:r['phases'][0].update(nearby='foreign'),
+            'not-same-label':lambda r:r['phases'][1]['groups'][0].update(labels=['Person']),
+            'pixel-type':lambda r:r['phases'][1]['groups'][0]['frame']['nodes'][0].update(pixelCount=True),
+            'missing-samples':lambda r:r['phases'][1]['groups'][0]['frame']['nodes'][0]['samples'].pop(),
+            'wrong-rgb':lambda r:r['phases'][1]['groups'][0]['frame']['nodes'][0]['samples'][0].update(pixel=[255,255,255,255]),
+            'hidden-circle':lambda r:r['phases'][1]['groups'][0]['frame']['nodes'][0]['geometry'].update(alpha=0),
+            'missing-overlap':lambda r:r['phases'][1].pop('overlap'),
+            'wrong-overlap-user-click':lambda r:r['phases'][1]['overlap']['hit'].update(native_id='foreign'),
+            'clipped-away-fill':lambda r:r['phases'][1]['overlap']['fills'][-1].update(clip=[0,0,10,10]),
+            'stale-paint-sequence':lambda r:r['phases'][1]['overlap']['fills'][-1].update(sequence=1),
+            'transparent-overlap':lambda r:r['phases'][1]['overlap'].update(pixel=[0,0,0,0]),
+            'wrong-radius':lambda r:r['phases'][1]['relationships']['node_geometry'][0].update(rx=100),
+            'missing-drag':lambda r:r['drags'].pop(),
+            'grab-offset':lambda r:r['drags'][-1]['to'].update(x=0),
+            'not-restored':lambda r:r['phases'][-1]['planned_center'].update(x=0),
+            'write-request':lambda r:r['requests'].append(dict(method='POST',path='/write',body={})),
+        }
+        for name,change in changes.items():
+            candidate=copy.deepcopy(raw);change(candidate)
+            with self.subTest(name=name),self.assertRaises(SUITE.SuiteError):SUITE.verify_same_color_geometry(candidate,expected)
 
     def test_endpoint_case_prepares_only_owned_control_and_cleans_after_failure(self):
         for fail in (False,True):
@@ -242,13 +329,38 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_graph_case_dispatch_is_bounded_and_keeps_full_as_the_default(self):
         self.assertEqual(SUITE.graph_case({}),'full')
-        for value in ('full','endpoint-geometry'):self.assertEqual(SUITE.graph_case({'ADDP_ONLINE_GRAPH_CASE':value}),value)
+        for value in ('full','endpoint-geometry','endpoint-same-color'):self.assertEqual(SUITE.graph_case({'ADDP_ONLINE_GRAPH_CASE':value}),value)
         for value in ('','review','all',None,True):
             with self.assertRaises(SUITE.SuiteError):SUITE.graph_case({'ADDP_ONLINE_GRAPH_CASE':value})
         with tempfile.TemporaryDirectory() as folder,patch.dict(SUITE.os.environ,dict(GITHUB_ACTIONS='true',ADDP_ONLINE_HOSTED='1',ADDP_ONLINE_GRAPH_CASE='endpoint-geometry',ADDP_ONLINE_ARTIFACT_DIR=folder,GATEWAY_URL='http://127.0.0.1:8000',GRAPH_URL='http://127.0.0.1:8186',ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='preparer',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='reader',ADDP_ONLINE_TEST_ENGINE_ID='13',ADDP_ONLINE_TEST_TENANT_ID='2')),patch.object(SUITE,'run') as full,patch.object(SUITE,'run_endpoint_case') as geometry,redirect_stdout(StringIO()):
             self.assertEqual(SUITE.main(),0);geometry.assert_called_once();full.assert_not_called()
             report=json.loads(Path(folder,'graph-protection.json').read_text())
             self.assertEqual(report['schema_version'],'addp.graph-endpoint-geometry-online/v1');self.assertEqual(report['case'],'endpoint-geometry');self.assertTrue(report['passed'])
+
+    def test_same_color_dispatch_and_browser_require_seven_independent_frames_nine_pngs(self):
+        expected,raw=same_color_evidence()
+        for failure in ('none','browser','raw','phase','png','overlap-png','diagnostics'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as folder:
+                def browser(command,**kwargs):
+                    self.assertIn('same-color nearby endpoint geometry',command)
+                    self.assertEqual(json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS']),expected)
+                    self.assertFalse(any(k.endswith('_ACCESS_TOKEN') for k in kwargs['env']))
+                    if failure!='raw':Path(folder,'graph-same-color-geometry.json').write_text(json.dumps(raw))
+                    Path(folder,'graph-same-color-geometry-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=['error'] if failure=='diagnostics' else [])))
+                    for stage in [raw['baseline'],*raw['phases']]:
+                        if failure!='phase':Path(folder,'graph-'+stage['phase']+'-frame.json').write_text(json.dumps(dict(expected,schema_version='addp.graph-same-color-frame/v1',stage=stage)))
+                        if failure!='png':Path(folder,stage['phase']+'-console.png').write_bytes(b'unit')
+                        if 'overlap' in stage and failure!='overlap-png':Path(folder,stage['phase']+'-hit-console.png').write_bytes(b'unit')
+                    return type('Result',(),{'returncode':1 if failure=='browser' else 0})()
+                with patch.dict(SUITE.os.environ,dict(ADDP_ONLINE_ARTIFACT_DIR=folder,ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='private',ADDP_ONLINE_TEST_USER_USERNAME='reader',ADDP_ONLINE_TEST_USER_PASSWORD='password')),patch.object(SUITE.subprocess,'run',side_effect=browser):
+                    if failure=='none':self.assertEqual(SUITE.run_endpoint_browser(expected),raw)
+                    else:
+                        with self.assertRaises((SUITE.SuiteError,FileNotFoundError)):SUITE.run_endpoint_browser(expected)
+        with tempfile.TemporaryDirectory() as folder,patch.dict(SUITE.os.environ,dict(GITHUB_ACTIONS='true',ADDP_ONLINE_HOSTED='1',ADDP_ONLINE_GRAPH_CASE='endpoint-same-color',ADDP_ONLINE_ARTIFACT_DIR=folder,GATEWAY_URL='http://127.0.0.1:8000',GRAPH_URL='http://127.0.0.1:8186',ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='preparer',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='reader',ADDP_ONLINE_TEST_ENGINE_ID='13',ADDP_ONLINE_TEST_TENANT_ID='2')),patch.object(SUITE,'run') as full,patch.object(SUITE,'run_endpoint_case') as same,redirect_stdout(StringIO()):
+            self.assertEqual(SUITE.main(),0);same.assert_called_once();full.assert_not_called()
+            self.assertEqual(same.call_args.kwargs,dict(case='endpoint-same-color'))
+            report=json.loads(Path(folder,'graph-protection.json').read_text())
+            self.assertEqual(report['schema_version'],'addp.graph-same-color-online/v1');self.assertEqual(report['case'],'endpoint-same-color');self.assertTrue(report['passed'])
 
     def test_endpoint_browser_checks_independent_phase_files_and_keeps_preparation_tokens_out(self):
         expected,raw=endpoint_evidence()

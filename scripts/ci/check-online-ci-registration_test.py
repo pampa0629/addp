@@ -859,7 +859,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_graph_protection_profile(self.repository, {'graph-protection'})
-        for relative, fragment in ((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[2], 'full|endpoint-geometry)'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
+        for relative, fragment in ((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[0], '- endpoint-same-color'), (paths[2], 'full|endpoint-geometry|endpoint-same-color)'), (paths[3], 'verify_same_color_geometry'), (paths[17], 'graphOverlapPaint'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'stableExposedGraphPixels'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
                                    (paths[1], 'graph-protection-online_test.py'), (paths[1], 'graph-review-online_test.py'),
                                    (paths[1], 'console/frontend/e2e/online/graph-review.spec.js'),
                                    (paths[2], 'develop,graph,manager,service,transfer'),

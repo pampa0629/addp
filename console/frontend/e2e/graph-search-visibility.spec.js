@@ -1,7 +1,7 @@
-import { installGraphRelationshipPaint, stableRelationshipPaths } from './graph-relationship.fixture.js'
+import { installGraphRelationshipPaint, stableRelationshipPaths, graphOverlapPaint } from './graph-relationship.fixture.js'
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, graphEndpointGeometry, stableGraphColorPixels } from './graph-visual.fixture.js'
+import { stableGraphPixels, stableExposedGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, graphEndpointGeometry, stableGraphColorPixels } from './graph-visual.fixture.js'
 
 test('Graph pixel observer excludes disconnected same-color relationship strokes from node bounds', async ({ page }) => {
   await page.setContent('<div id="graph"><canvas width="280" height="150"></canvas></div>')
@@ -48,6 +48,70 @@ test('Graph relationship endpoint observer binds circle boundary beside a nearer
   expect(observed.stable_frames).toBeGreaterThanOrEqual(10)
   expect(observed.candidates.length).toBeGreaterThan(0)
   expect([...new Set(observed.candidates.map(item => item.source + '->' + item.target))]).toEqual(['source->target'])
+})
+
+test('Graph endpoint observer uses path direction when two circle borders are equally close', async ({ page }) => {
+  await page.setContent('<div class="graph-canvas"><canvas width="280" height="150"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const canvas=page.locator('.graph-canvas')
+  await canvas.locator('canvas').evaluate(element=>{
+    const c=element.getContext('2d');c.clearRect(0,0,280,150);c.strokeStyle='#0f766e';c.lineWidth=3
+    c.beginPath();c.moveTo(80.8,75);c.lineTo(199.2,75);c.stroke();c.fillStyle='#ff0000'
+    for (const x of [60,100.4,179.6,220]) {c.beginPath();c.arc(x,75,20,0,Math.PI*2);c.fill()}
+  })
+  const nodes=[{hits:[60,100.4,179.6,220].map((x,index)=>({native_id:['source','near-source','near-target','target'][index],x,y:75})),
+    frame:{fillColor:[255,0,0],nodes:[60,100.4,179.6,220].map(x=>({box:[x-20,55,x+20,95]}))}}]
+  const observed=await canvas.evaluate(stableRelationshipPaths,{nodes})
+  expect(observed.candidates.length).toBeGreaterThan(0)
+  expect([...new Set(observed.candidates.map(p=>p.source+'->'+p.target))]).toEqual(['source->target'])
+})
+
+test('Graph circle paint cache preserves untouched nodes through dirty rectangle redraws', async ({page})=>{
+  await page.setContent('<div class="graph-canvas"><canvas width="300" height="150"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const result=await page.locator('canvas').evaluate(element=>{
+    const c=element.getContext('2d');c.clearRect(0,0,300,150);c.fillStyle='#ff0000'
+    const draw=x=>{c.beginPath();c.arc(x,75,20,0,Math.PI*2);c.fill()}
+    for(const x of [40,140,260])draw(x)
+    c.clearRect(115,50,70,50);c.save();c.beginPath();c.rect(115,50,70,50);c.clip();draw(160);c.restore()
+    return {circles:window.__graphNodePaint.get(element).map(n=>n.x).sort((a,b)=>a-b),oldPixel:[...c.getImageData(120,75,1,1).data],newPixel:[...c.getImageData(160,75,1,1).data]}
+  })
+  expect(result.circles).toEqual([40,160,260]);expect(result.oldPixel[3]).toBe(0);expect(result.newPixel).toEqual([255,0,0,255])
+})
+
+test('Graph overlap paint trace preserves point ownership across clipped redraws elsewhere', async ({page})=>{
+  await page.setContent('<div class="graph-canvas"><canvas width="180" height="150"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const canvas=page.locator('.graph-canvas')
+  await canvas.locator('canvas').evaluate(element=>{
+    const c=element.getContext('2d');c.clearRect(0,0,180,150);c.fillStyle='#ff0000'
+    const draw=x=>{c.beginPath();c.arc(x,75,22,0,Math.PI*2);c.fill()}
+    draw(60);draw(90)
+    c.clearRect(35,55,10,10);c.save();c.beginPath();c.rect(35,55,10,10);c.clip();draw(60);c.restore()
+  })
+  const geometry=[60,90].map((x,index)=>({native_id:index?'front':'back',x,y:75,rx:22,ry:22,color:[255,0,0],alpha:1}))
+  const trace=await canvas.evaluate(graphOverlapPaint,{geometry,owner:'back',nearby:'front'})
+  expect(trace.fills.map(fill=>fill.native_id)).toEqual(['back','front'])
+  expect(trace.pixel).toEqual([255,0,0,255])
+  expect(await canvas.locator('canvas').evaluate(element=>window.__graphNodePaint.get(element).map(circle=>circle.x))).toEqual([90,60])
+})
+
+test('Graph exposed circle observer requires actual safe fill pixels for both occluded nodes',async({page})=>{
+  await page.setContent('<div class="graph-canvas"><canvas width="220" height="150"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const canvas=page.locator('.graph-canvas'),color='rgb(80,120,180)'
+  await canvas.locator('canvas').evaluate((element,color)=>{
+    const c=element.getContext('2d');c.clearRect(0,0,220,150);c.fillStyle=color
+    for(const x of [80,105]){c.beginPath();c.arc(x,75,22,0,Math.PI*2);c.fill()}
+  },color)
+  const [observed]=await canvas.evaluate(stableExposedGraphPixels,{groups:[{count:2,fillColor:color}]})
+  expect(observed.stableFrames).toBeGreaterThanOrEqual(10)
+  expect(observed.nodes.map(n=>n.geometry.x)).toEqual([80,105])
+  expect(observed.nodes[0].x).toBeLessThan(80);expect(observed.nodes[1].x).toBeGreaterThan(105)
+  await canvas.locator('canvas').evaluate(element=>{element.style.opacity='0'})
+  await expect(canvas.evaluate(stableExposedGraphPixels,{groups:[{count:2,fillColor:color}],timeout:200})).rejects.toThrow('did not settle')
+  await canvas.locator('canvas').evaluate(element=>{element.style.opacity='';element.getContext('2d').clearRect(0,0,220,150)})
+  await expect(canvas.evaluate(stableExposedGraphPixels,{groups:[{count:2,fillColor:color}],timeout:200})).rejects.toThrow('did not settle')
 })
 
 test('Graph node/relationship absence observer rejects residual fill, strokes and hidden Canvas', async ({ page }) => {
@@ -131,11 +195,12 @@ for (const replace of [false, true]) {
 }
 
 
-for (const identityMode of ['named', 'opaque', 'numeric', 'nearby-numeric', 'nearby-opaque']) {
+for (const identityMode of ['named', 'opaque', 'numeric', 'nearby-numeric', 'nearby-opaque', 'same-color-numeric', 'same-color-opaque']) {
 const opaque = identityMode.endsWith('opaque')
-const geometry = identityMode.startsWith('nearby-')
+const sameColor = identityMode.startsWith('same-color-')
+const geometry = identityMode.startsWith('nearby-') || sameColor
 const numeric = identityMode.endsWith('numeric')
-test(`${geometry ? 'Graph fixed nearby endpoint geometry' : 'Graph multi-label dense search, filter and four layouts preserve every native identity'} (${identityMode} IDs)`, async ({ page }, testInfo) => {
+test(`${sameColor ? 'Graph same-color nearby endpoint geometry' : geometry ? 'Graph fixed nearby endpoint geometry' : 'Graph multi-label dense search, filter and four layouts preserve every native identity'} (${identityMode} IDs)`, async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.addInitScript(installGraphRelationshipPaint)
   const diagnostics = []
@@ -165,10 +230,14 @@ test(`${geometry ? 'Graph fixed nearby endpoint geometry' : 'Graph multi-label d
   // Native KG evidence contains identity/labels/properties, not the browser display DTO.
   const nativeNodes = nodes.map(({ id, labels, properties }) => ({ id, labels, properties }))
   const result = await (geometry ? graphEndpointGeometry : denseGraphStages)(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes: nativeNodes, edges, shapes }, async (phase, progress) => {
-    if (geometry && !progress.relationships) return
+    if (sameColor) await testInfo.attach(phase+'-frame.json',{body:JSON.stringify(progress,null,2),contentType:'application/json'})
+    if (geometry && !progress.relationships) {
+      if (sameColor && progress.overlap) await testInfo.attach(phase+'-hit.png',{body:await page.screenshot(),contentType:'image/png'})
+      return
+    }
     await testInfo.attach(phase + '.png', { body: await page.screenshot(), contentType: 'image/png' })
-  })
-  await testInfo.attach(geometry ? 'graph-endpoint-geometry.json' : 'graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  }, sameColor ? 'same-color' : 'different-color')
+  await testInfo.attach(sameColor ? 'graph-same-color-geometry.json' : geometry ? 'graph-endpoint-geometry.json' : 'graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
   if (geometry) { expect(unexpected).toEqual([]);expect(diagnostics).toEqual([]);return }
   const nativeCanvas = frame.locator('.graph-canvas canvas')
   await nativeCanvas.evaluate(element => { element.style.opacity = '0' })
