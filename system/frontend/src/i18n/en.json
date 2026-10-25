@@ -837,6 +837,7 @@
           "resource_observation": "Resource observations",
           "metrics_discovery": "Metrics discovery",
           "platform_resource_rule": "Host resource alert rules",
+          "platform_service_availability_rule": "Service group availability alert rules",
           "engine_deployment": "Platform engine deployment",
           "emergency_session_revocation": "Emergency session revocation",
           "platform_administrator_change": "Platform administrator change",

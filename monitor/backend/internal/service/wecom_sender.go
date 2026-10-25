@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/monitor/internal/models"
 	"io"
 	"net/http"
 	"net/url"
@@ -80,18 +81,19 @@ func checkWeComResponse(reader io.Reader) error {
 }
 
 type platformAlertMessage struct {
-	Schema      string    `json:"schema"`
-	EventID     string    `json:"event_id"`
-	EventType   string    `json:"event_type"`
-	IncidentID  uint      `json:"incident_id"`
-	Node        string    `json:"node"`
-	Signal      string    `json:"signal"`
-	InstanceID  string    `json:"instance_id"`
-	Severity    string    `json:"severity"`
-	OccurredAt  time.Time `json:"occurred_at"`
-	SubjectKind string    `json:"subject_kind"`
-	SubjectID   string    `json:"subject_id"`
-	Test        bool      `json:"test"`
+	Schema      string                              `json:"schema"`
+	EventID     string                              `json:"event_id"`
+	EventType   string                              `json:"event_type"`
+	IncidentID  uint                                `json:"incident_id"`
+	Node        string                              `json:"node"`
+	Signal      string                              `json:"signal"`
+	InstanceID  string                              `json:"instance_id"`
+	Severity    string                              `json:"severity"`
+	OccurredAt  time.Time                           `json:"occurred_at"`
+	SubjectKind string                              `json:"subject_kind"`
+	SubjectID   string                              `json:"subject_id"`
+	Test        bool                                `json:"test"`
+	Evidence    *models.ServiceAvailabilityEvidence `json:"evidence"`
 }
 
 func wecomPlatformAlertPayload(raw, deliveryID string) (any, error) {
@@ -129,6 +131,13 @@ func wecomPlatformAlertPayload(raw, deliveryID string) (any, error) {
 			return nil, ErrLogInvalid
 		}
 		content = fmt.Sprintf("**ADDP 服务实例：%s**\n> 实例：%s\n> 登记 ID：%s\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(event.InstanceID), wecomText(event.SubjectID), event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
+	} else if event.Schema == "addp.platform-service-availability-alert/v1" && event.SubjectKind == "service_group" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
+		label := map[string]string{"opened": "服务组失联告警", "resolved": "服务组恢复"}[event.EventType]
+		if label == "" || event.Severity != "warning" || !validAvailabilityEvidence(event.Evidence, event.SubjectID, event.Signal) {
+			return nil, ErrLogInvalid
+		}
+		e := event.Evidence
+		content = fmt.Sprintf("**ADDP 服务组：%s**\n> 规则：%s\n> 模块：%s\n> 角色／用途：%s / %s\n> 在线副本：%d\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(e.RuleName), wecomText(e.ModuleName), wecomText(e.Role), wecomText(e.RuntimeName), e.OnlineReplicas, event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
 	} else if event.Schema == "addp.platform-http-alert/v1" && event.SubjectKind == "module" && event.SubjectID != "" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
 		label := map[string]string{"opened": "接口质量告警", "resolved": "接口质量恢复"}[event.EventType]
 		if label == "" || event.Severity != "warning" {

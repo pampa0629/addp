@@ -103,7 +103,7 @@ test('resource overview requires both platform owners and never becomes a Tenant
 })
 
 test('platform alerts and notification administration have independent entry reads', () => {
- for (const permission of ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'monitor.platform_resource_rule.read']) {
+ for (const permission of ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'monitor.platform_resource_rule.read', 'monitor.platform_service_availability_rule.read']) {
   assert.equal(allowsConsoleRoute('/monitor/platform-alerts?tab=notifications', 'platform', [permission]), true)
   assert.equal(allowsConsoleRoute('/monitor/platform-alerts', 'tenant', [permission]), false)
  }

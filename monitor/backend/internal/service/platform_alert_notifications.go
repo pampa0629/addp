@@ -40,7 +40,7 @@ func NewPlatformAlertService(db *gorm.DB, key []byte, allowPrivate bool, webhook
 }
 
 type PlatformAlertDestinationInput struct {
-	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource,http_quality,process_resource"`
+	Categories []string `json:"categories" binding:"required" enums:"log_pipeline,resource,http_quality,process_resource,service_availability"`
 	Version    uint64   `json:"version"`
 	Name       string   `json:"name" binding:"required"`
 	Channel    string   `json:"channel" binding:"required" enums:"webhook,email,wecom"`
@@ -55,7 +55,7 @@ func (n *PlatformAlertService) validate(ctx context.Context, input PlatformAlert
 	if d.Name == "" || len(d.Name) > 100 {
 		return d, ErrLogInvalid
 	}
-	if len(input.Categories) < 1 || len(input.Categories) > 4 {
+	if len(input.Categories) < 1 || len(input.Categories) > 5 {
 		return d, ErrLogInvalid
 	}
 	for _, category := range input.Categories {
@@ -250,7 +250,7 @@ func (n *PlatformAlertService) Status(ctx context.Context) (string, error) {
 	return "unconfigured", nil
 }
 func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertEvent, incident models.PlatformAlertIncident, now time.Time) error {
-	if !(PlatformAlertEvaluation{Category: incident.Category, SubjectKind: incident.SubjectKind, SubjectID: incident.SubjectID, Signal: incident.Signal, InstanceID: incident.InstanceID, Severity: incident.Severity, Verdict: PlatformAlertRisk}).valid() || event.IncidentID != incident.ID || (event.Type != "opened" && event.Type != "resolved") {
+	if !(PlatformAlertEvaluation{Category: incident.Category, SubjectKind: incident.SubjectKind, SubjectID: incident.SubjectID, Signal: incident.Signal, InstanceID: incident.InstanceID, Severity: incident.Severity, Verdict: PlatformAlertRisk, AvailabilityEvidence: event.AvailabilityEvidence}).valid() || event.IncidentID != incident.ID || (event.Type != "opened" && event.Type != "resolved") {
 		return ErrLogInvalid
 	}
 	if incident.Category == models.PlatformAlertCategoryResource && (incident.Severity != "warning" || (incident.Signal != "node.cpu.busy_percent" && incident.Signal != "node.memory.used_percent")) {
@@ -283,6 +283,13 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 			return ErrLogInvalid
 		}
 		payload = map[string]any{"schema": "addp.platform-process-resource-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "instance_id": incident.InstanceID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now, "evidence": e}
+	}
+	if incident.Category == models.PlatformAlertCategoryAvailability {
+		e := event.AvailabilityEvidence
+		if incident.Severity != "warning" || incident.SubjectKind != models.PlatformAlertSubjectGroup || !validAvailabilityEvidence(e, incident.SubjectID, incident.Signal) {
+			return ErrLogInvalid
+		}
+		payload = map[string]any{"schema": "addp.platform-service-availability-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now, "evidence": e}
 	}
 	body, _ := json.Marshal(payload)
 	for _, d := range destinations {
@@ -364,6 +371,9 @@ func (n *PlatformAlertService) send(ctx context.Context, d models.PlatformAlertD
 	}
 	if message.Schema == "addp.platform-process-resource-alert/v1" {
 		subject = "ADDP service instance resource alert"
+	}
+	if message.Schema == "addp.platform-service-availability-alert/v1" {
+		subject = "ADDP service availability alert"
 	}
 	if message.Schema == "addp.platform-http-alert/v1" {
 		subject = "ADDP platform HTTP quality alert"

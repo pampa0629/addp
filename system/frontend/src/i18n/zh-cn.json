@@ -837,6 +837,7 @@
           "resource_observation": "资源观测",
           "metrics_discovery": "指标发现",
           "platform_resource_rule": "主机资源告警规则",
+          "platform_service_availability_rule": "服务组失联告警规则",
           "engine_deployment": "平台引擎部署",
           "emergency_session_revocation": "紧急会话撤销",
           "platform_administrator_change": "平台管理员变更",

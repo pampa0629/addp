@@ -39,6 +39,7 @@ func SetupRouter(
 	httpRules *service.HTTPAlertRuleService,
 	traceService *service.TraceService,
 	processRules *service.ProcessAlertRuleService,
+	availabilityRules *service.ServiceAvailabilityRuleService,
 ) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 
@@ -128,6 +129,13 @@ func SetupRouter(
 	platform.POST("/platform/resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleCreate), platformObservationIdentity(false), ruleHandler.Create)
 	platform.PUT("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleUpdate), platformObservationIdentity(false), ruleHandler.Update)
 	platform.DELETE("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleDelete), platformObservationIdentity(false), ruleHandler.Delete)
+
+	availabilityHandler := &ServiceAvailabilityRuleHandler{service: availabilityRules}
+	platform.GET("/platform/service-availability-alert-rules/groups", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleRead, "platform.module.read"), platformObservationIdentity(false), availabilityHandler.Groups)
+	platform.GET("/platform/service-availability-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleRead, "platform.module.read"), platformObservationIdentity(false), availabilityHandler.List)
+	platform.POST("/platform/service-availability-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleRead, monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleCreate, "platform.module.read"), platformObservationIdentity(false), availabilityHandler.Create)
+	platform.PUT("/platform/service-availability-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleRead, monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleUpdate, "platform.module.read"), platformObservationIdentity(false), availabilityHandler.Update)
+	platform.DELETE("/platform/service-availability-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleRead, monitorauthorization.PermissionMonitorPlatformServiceAvailabilityRuleDelete, "platform.module.read"), platformObservationIdentity(false), availabilityHandler.Delete)
 
 	processRuleHandler := &ProcessAlertRuleHandler{service: processRules}
 	platform.GET("/platform/process-resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead), platformObservationIdentity(false), processRuleHandler.List)

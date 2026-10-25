@@ -322,6 +322,10 @@ roles:
       - monitor.platform_resource_rule.delete
       - monitor.platform_resource_rule.read
       - monitor.platform_resource_rule.update
+      - monitor.platform_service_availability_rule.create
+      - monitor.platform_service_availability_rule.delete
+      - monitor.platform_service_availability_rule.read
+      - monitor.platform_service_availability_rule.update
       - monitor.resource_observation.read
       - monitor.trace.read
       - ontology.platform_definition.read

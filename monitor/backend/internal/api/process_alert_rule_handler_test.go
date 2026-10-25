@@ -74,7 +74,7 @@ func TestProcessAlertRulePermissionsAndStrictInput(t *testing.T) {
 			}))
 			defer owner.Close()
 			rules := service.NewProcessAlertRuleService(nil, nil, nil, nil)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, owner.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, nil, rules)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, owner.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, nil, rules, nil)
 			var body *bytes.Buffer
 			if tc.body != "" {
 				body = bytes.NewBufferString(tc.body)

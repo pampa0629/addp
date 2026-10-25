@@ -1521,3 +1521,22 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 验证：新增三项回归先在原实现中复现失败（五处断言，87项全体退出1）；修复后 `python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0。同秒停用／重启／缩容逐次区分；时钟停滞／回退时启动修改、计划停用及完整计划退役均不写入，幂等重发仍成功，临时文件零残留；其他组标记不受影响。`make test-dev-lifecycle`最终退出0（164／112／61项聚合、局部生命周期、共享包及Worker命令编译）；T2登记22／12／9／2通过。新用例沿原配置聚合与Metrics输入自动发现，无需改Make或workflow。日志 `/tmp/addp-service-intent-confirmation-{red,green,lifecycle,registration}.log`，收据同前缀 `-receipt.json`。
 
 本批不重跑既有无关全量T0失败，不计其通过；没有查询／触发CI或Hosted、重启个人服务、修改个人数据库或设置定时任务。仍未验收个人真实启停发布→System→Monitor链路，也未实现服务组确认运行的持久状态、规则管理或告警／通知闭环；原第15／49行保持部分实现，不能把前置标记修复计为失联告警完成。
+
+## 2026-10-25 服务组失联规则与持久确认
+
+用户确认完整首期范围后，实现唯一 `/platform/service-availability-alert-rules` 及 `/groups`，创建停用、15—300秒且15秒倍数，界面初始60／30秒、warning。新增四项Platform权限仅发布给既有平台系统管理员，当前User仍须System模块读取权，候选不使用后台身份代授权。System私有组投影沿既有协议；Monitor单独持久保存当前预期的运行确认，历史登记不代替有效在线副本。组意图变更或重新启用重新确认，其他组变更不影响本组；重启保留资格，连续窗口重积。来源前后变化、观测超过五秒未更新、重复／倒退／超过16秒间隔均不据此打开或恢复；计划停用不结束活动事件。
+
+告警沿原open／acknowledged／resolved、opened／resolved、CAS、抑制及事务outbox。新增 `service_availability` 显式订阅，旧目标保持原类别。打开时名称与恢复条件冻结，历史名称检索不读当前规则。Webhook、邮件及企业微信识别独立服务组通知协议；不新增退出结束状态，不改Tenant、其他角色或IAM内核。
+
+本批标准验证：
+
+- `make test-module MODULE=common GO_ONLY=1`：通过。新增当前User完整有界模块投影测试、拒绝坏页及机器身份回退；权限目录总数及仅系统管理员授权不变量同步。`make test-authorization` 通过目录、生成常量、SQL seed、覆盖及Swagger检查。
+- `make test-module MODULE=monitor GO_ONLY=1`：通过。六项新增状态／通道测试，含首次确认、60／30秒完整窗口、重启、同秒预期变化、未知／暂停、重复观测与纳秒边界、损坏确认不误授资格及企业微信识别；新API权限矩阵验证当前System读取权、动作权限、非委托User、严格输入。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test platform-alert-management"`：通过。242前后真实迁移比较，仅新增四权限及系统管理员绑定，其他角色、授权事实与OAuth客户端不变；既有触发器推进授权版本、旧refresh family撤销，重复Runner幂等。标准selector补入新测试，默认CI仍按原真实PG测试命名自动发现。
+- `make test-monitor-postgres`：通过。新增真实数据库、受控System组投影与受控时钟闭环：旧登记99但无在线仍等待，至少一个副本确认，全副本失联60秒仅一个事件，双评估并发不重复事件／outbox；确认／抑制后在线30秒恢复同事件，规则改名及恢复改为15秒不改历史冻结30秒；前后源变化、System失败、重启确认及新预期重新确认，活动事件禁止删、来源故障可停用、删除保留历史。新类别只投给显式目标，旧日志目标不扩订阅，恢复投递被原抑制机制抑制。夹具按唯一主体／目标清理并逐项计数零残留。
+- `make test-module MODULE=system GO_ONLY=1`：通过；迁移目录版本同步为242，前向迁移不修改已应用SQL摘要。
+- `make test-common-frontend`：277项通过；`npm --prefix system/frontend test`：30文件／172项通过。Monitor新增组候选、分页、时长、证据与URL单测沿原通配发现；新六项页面专项覆盖候选可读名称／默认停用／CAS保留草稿、英文等待说明、撤权丢弃迟到候选、缺System读权不发管理请求、显式通知类别与无当前规则读取权的冻结依据。
+- `make test-monitor-frontend`：完整聚合退出0，122项单测、444项受控浏览器T3及生产构建通过；专项六项包含在该444项中，不另计总数。
+- `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：通过，96个公开路由方法。`python3 scripts/ci/check-t2-ci-registration.py --repository "$PWD"`：22／12／9／2登记通过。沿原Monitor PostgreSQL、System IAM PostgreSQL、Go及前端自动发现，无第二条测试或部署路线。
+
+日志：`/tmp/addp-service-availability-{common-final,monitor-final,system-go,system-pg,monitor-pg,authorization-final,common-frontend,system-frontend,browser,monitor-frontend-final,swagger,route-coverage,registration}.log`。真实数据库T2使用受控组投影与时钟，不等于真实部署停机／租约超时或真实渠道送达；页面为受控HTTP T3，不等于Safari个人会话、Console正式身份或Hosted。没有执行个人重启／数据库迁移、创建个人规则／通知、查询／触发CI或Hosted，也未设置定时任务。个人真实链路和正式身份验收仍待应用代码后复验及专门会话安排；清单第15／49／52行保持部分实现。

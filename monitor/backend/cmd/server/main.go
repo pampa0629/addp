@@ -164,6 +164,8 @@ func main() {
 	go httpRules.Run(runtimeContext)
 	processRules := service.NewProcessAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go processRules.Run(runtimeContext)
+	availabilityRules := service.NewServiceAvailabilityRuleService(db, systemServiceClient, systemServiceClient, platformAlerts)
+	go availabilityRules.Run(runtimeContext)
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
 	traceService := service.NewTraceService(systemServiceClient, tracequery.FromEnvironment())
@@ -185,7 +187,7 @@ func main() {
 		runtimeHealthService,
 		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
 		resourceObservations, resourceRules, httpRules,
-		traceService, processRules)
+		traceService, processRules, availabilityRules)
 
 	go func() {
 		ticker := time.NewTicker(cfg.AlertEvaluationInterval)

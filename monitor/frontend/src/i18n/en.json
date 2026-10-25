@@ -1116,7 +1116,8 @@
         "log_pipeline": "Log pipeline",
         "resource": "Host resources",
         "http_quality": "HTTP quality",
-        "process_resource": "Service instance resources"
+        "process_resource": "Service instance resources",
+        "service_availability": "Service availability"
       },
       "refresh": "Refresh",
       "active": "Active",
@@ -1398,6 +1399,45 @@
         "memoryRatio": "Whole cgroup memory divided by its verified hard bound; not process RSS utilization."
       },
       "notConnected": "Cgroup sampling is not connected. Native macOS does not provide it; process CPU and RSS trends remain available below."
+    },
+    "availability": {
+      "title": "Service availability rules",
+      "create": "Create service availability rule",
+      "edit": "Edit service availability rule",
+      "group": "Service group",
+      "trigger": "All replicas disconnected for {seconds} seconds",
+      "recovery": "At least one replica online for {seconds} seconds",
+      "lastEvaluation": "Last evaluation",
+      "waiting": "Awaiting confirmed operation",
+      "confirmed": "Operation confirmed at",
+      "observedWindow": "Continuous observation window",
+      "scope": "A group shares a module, role and purpose; any valid online replica makes the group online.",
+      "enableHint": "New rules start disabled. Each enabled intent must first be observed running; initial waiting does not trigger a disconnection alert.",
+      "invalid": "Enter a name, select a group, and set durations from 15 to 300 seconds in steps of 15.",
+      "purposes": {
+        "scan": "Metadata scanning",
+        "sync": "Bounded transfer",
+        "continuous_sync": "Continuous synchronization",
+        "quality-bounded": "Quality checks"
+      },
+      "reasons": {
+        "waiting_confirmation": "No valid online replica has been confirmed for this intent",
+        "warming_up": "Accumulating continuous observations",
+        "source_changed": "Intent or observations changed; awaiting verification",
+        "identity_unavailable": "Current service group facts are unavailable",
+        "observation_not_advanced": "Observation did not advance; timing restarted",
+        "planned_stopped": "Planned stop; evaluation paused",
+        "module_disabled": "Module disabled; evaluation paused",
+        "module_unregistered": "Module not registered",
+        "runtime_name_unavailable": "Worker purpose is unconfirmed"
+      },
+      "conflict": "The rule version changed or this service group already has a rule. Your draft is retained; close and refresh before retrying.",
+      "verdicts": {
+        "unknown": "Not yet determined",
+        "paused": "Paused",
+        "normal": "Service group online",
+        "risk": "Service group disconnected"
+      }
     }
   }
 }

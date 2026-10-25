@@ -1116,7 +1116,8 @@
         "log_pipeline": "日志链路",
         "resource": "主机资源",
         "http_quality": "HTTP 接口质量",
-        "process_resource": "服务实例资源"
+        "process_resource": "服务实例资源",
+        "service_availability": "服务组失联"
       },
       "refresh": "刷新",
       "active": "未恢复",
@@ -1398,6 +1399,45 @@
         "memoryRatio": "资源组整体内存 ÷ 已核验内存硬上界。不是进程 RSS 占比。"
       },
       "notConnected": "未接入资源组采集。原生 macOS 不提供此项，仍可查看下方的进程 CPU 与 RSS 趋势。"
+    },
+    "availability": {
+      "title": "服务失联规则",
+      "create": "创建服务失联规则",
+      "edit": "编辑服务失联规则",
+      "group": "服务组",
+      "trigger": "全部副本失联持续 {seconds} 秒",
+      "recovery": "至少一个副本在线持续 {seconds} 秒",
+      "lastEvaluation": "最近一次评估",
+      "waiting": "等待确认运行",
+      "confirmed": "确认运行时间",
+      "observedWindow": "连续观测时段",
+      "scope": "同一模块、角色和用途构成服务组；任一有效副本在线即视为组在线。",
+      "enableHint": "新建规则默认停用。启用后须先确认本轮运行，首次等待不触发失联告警。",
+      "invalid": "请填写规则名称、选择服务组，并设置15—300秒且为15倍数的时长。",
+      "purposes": {
+        "scan": "元数据扫描",
+        "sync": "批量传输",
+        "continuous_sync": "持续同步",
+        "quality-bounded": "质量检测"
+      },
+      "reasons": {
+        "waiting_confirmation": "当前预期尚未确认到有效在线副本",
+        "warming_up": "正在积累连续观测",
+        "source_changed": "部署预期或观测发生变化，等待重新核验",
+        "identity_unavailable": "当前服务组事实不可用",
+        "observation_not_advanced": "观测未推进，连续计时已重建",
+        "planned_stopped": "计划停用，暂停评估",
+        "module_disabled": "模块已停用，暂停评估",
+        "module_unregistered": "模块尚未登记",
+        "runtime_name_unavailable": "Worker用途尚未确认"
+      },
+      "conflict": "规则版本已变化，或此服务组已有规则。当前输入已保留，请关闭并刷新列表后核对。",
+      "verdicts": {
+        "unknown": "尚不能判断",
+        "paused": "已暂停",
+        "normal": "服务组在线",
+        "risk": "服务组失联"
+      }
     }
   }
 }

@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 527 {
-		t.Fatalf("descriptor count = %d, want 527", len(descriptors))
+	if len(descriptors) != 531 {
+		t.Fatalf("descriptor count = %d, want 531", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -104,7 +104,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if strings.HasPrefix(key, "platform.engine_deployment.") && role.Key != "platform.system_administrator" {
 				t.Fatalf("unexpected engine deployment role %q", role.Key)
 			}
-			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") || strings.HasPrefix(key, "monitor.platform_resource_rule.") || strings.HasPrefix(key, "monitor.platform_http_rule.") {
+			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") || strings.HasPrefix(key, "monitor.platform_resource_rule.") || strings.HasPrefix(key, "monitor.platform_http_rule.") || strings.HasPrefix(key, "monitor.platform_service_availability_rule.") {
 				if role.Key != "platform.system_administrator" {
 					t.Fatalf("built-in role %q unexpectedly grants platform alert permission %q", role.Key, key)
 				}

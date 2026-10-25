@@ -67,7 +67,7 @@ func TestTracePermissionIdentityAndBoundedQuery(t *testing.T) {
 			}))
 			defer owner.Close()
 			traces := service.NewTraceService(nil, nil)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, owner.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, traces, nil)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, owner.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, traces, nil, nil)
 			var body *bytes.Buffer
 			if tc.body != "" {
 				body = bytes.NewBufferString(tc.body)

@@ -1,6 +1,11 @@
 import client from './client'
 const base = '/monitor/platform'
 export const platformAlertsAPI = {
+  availabilityRules: (page, signal) => client.get(`${base}/service-availability-alert-rules`, { params: { page, page_size: 20 }, signal }),
+  availabilityGroups: signal => client.get(`${base}/service-availability-alert-rules/groups`, { signal }),
+  createAvailabilityRule: data => client.post(`${base}/service-availability-alert-rules`, data),
+  updateAvailabilityRule: (id, data) => client.put(`${base}/service-availability-alert-rules/${id}`, data),
+  deleteAvailabilityRule: row => client.delete(`${base}/service-availability-alert-rules/${row.id}`, { data: { version: row.version } }),
   processRules: (page, signal) => client.get(`${base}/process-resource-alert-rules`, { params: { page, page_size: 20 }, signal }),
   createProcessRule: data => client.post(`${base}/process-resource-alert-rules`, data),
   updateProcessRule: (id, data) => client.put(`${base}/process-resource-alert-rules/${id}`, data),

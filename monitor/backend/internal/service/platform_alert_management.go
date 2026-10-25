@@ -20,7 +20,7 @@ import (
 )
 
 func validPlatformAlertCategory(category string) bool {
-	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource || category == models.PlatformAlertCategoryHTTP || category == models.PlatformAlertCategoryProcess
+	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource || category == models.PlatformAlertCategoryHTTP || category == models.PlatformAlertCategoryProcess || category == models.PlatformAlertCategoryAvailability
 }
 
 type PlatformAlertView struct {
@@ -116,7 +116,7 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 	}
 	if filter.Search != "" {
 		pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(filter.Search) + "%"
-		const ruleNameSQL = `(CASE category WHEN 'resource' THEN resource_evidence->>'rule_name' WHEN 'http_quality' THEN http_evidence->>'rule_name' WHEN 'process_resource' THEN process_evidence->>'rule_name' END) ILIKE ? ESCAPE '\'`
+		const ruleNameSQL = `(CASE category WHEN 'resource' THEN resource_evidence->>'rule_name' WHEN 'http_quality' THEN http_evidence->>'rule_name' WHEN 'process_resource' THEN process_evidence->>'rule_name' WHEN 'service_availability' THEN availability_evidence->>'rule_name' END) ILIKE ? ESCAPE '\'`
 		logSignals := []string{}
 		for _, signal := range platformLogNameSignals {
 			if strings.Contains(strings.ToLower(platformLogAlertName(signal, filter.Language)), strings.ToLower(filter.Search)) {
@@ -209,6 +209,10 @@ func platformAlertName(row models.PlatformAlertIncident, lang string) string {
 	case models.PlatformAlertCategoryHTTP:
 		if row.HTTPEvidence != nil {
 			return row.HTTPEvidence.RuleName
+		}
+	case models.PlatformAlertCategoryAvailability:
+		if row.AvailabilityEvidence != nil {
+			return row.AvailabilityEvidence.RuleName
 		}
 	case models.PlatformAlertCategoryProcess:
 		if row.ProcessEvidence != nil {

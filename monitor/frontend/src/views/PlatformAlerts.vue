@@ -7,14 +7,15 @@
       <el-button v-if="canReadRules" :type="state.tab === 'rules' ? 'primary' : ''" @click="change({ tab: 'rules' })">{{ t('monitor.resourceRules.title') }}</el-button>
       <el-button v-if="canReadRules" :type="state.tab === 'process-rules' ? 'primary' : ''" @click="change({ tab: 'process-rules' })">{{ t('monitor.processRules.title') }}</el-button>
       <el-button v-if="canReadHTTPRules" :type="state.tab === 'http-rules' ? 'primary' : ''" @click="change({ tab: 'http-rules' })">{{ t('monitor.httpRules.title') }}</el-button>
+      <el-button v-if="canReadAvailability" :type="state.tab === 'availability-rules' ? 'primary' : ''" @click="change({ tab: 'availability-rules' })">{{ t('monitor.availability.title') }}</el-button>
       <el-button :loading="loading" @click="refresh">{{ t('monitor.platformAlerts.refresh') }}</el-button>
     </div>
-    <el-alert v-if="!canRead && !canReadNotifications && !canReadRules && !canReadHTTPRules" :title="t('monitor.platformAlerts.denied')" type="warning" :closable="false" />
+    <el-alert v-if="!canRead && !canReadNotifications && !canReadRules && !canReadHTTPRules && !canReadAvailability" :title="t('monitor.platformAlerts.denied')" type="warning" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="state.tab === 'incidents' && canRead">
       <div class="alert-toolbar">
         <el-select :model-value="state.category" :empty-values="[null, undefined]" @update:model-value="value => change({ category: value, page: 1 })" :aria-label="t('monitor.platformAlerts.category')">
-          <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality','process_resource']" :key="category" :label="categoryLabel(category)" :value="category" />
+          <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality','process_resource','service_availability']" :key="category" :label="categoryLabel(category)" :value="category" />
         </el-select>
         <el-select :model-value="state.status" :empty-values="[null, undefined]" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
           <el-option :label="t('monitor.platformAlerts.active')" value="active" /><el-option :label="t('monitor.platformAlerts.allStatuses')" value="" /><el-option v-for="status in ['open','acknowledged','resolved']" :key="status" :label="t(`monitor.platformAlerts.statuses.${status}`)" :value="status" />
@@ -41,9 +42,9 @@
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.alertName')" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.name || t('monitor.platformAlerts.nameMissing') }}</template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'process_resource' ? processSignal(row) : row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ processSubject(row) || hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
-        <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row) || ['http_quality','process_resource'].includes(row.category)" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ row.category === 'service_availability' ? t('monitor.availability.title') : row.category === 'process_resource' ? processSignal(row) : row.category === 'http_quality' ? httpSignal(row) : signalLabel(row.signal) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ availabilitySubject(row) || processSubject(row) || hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row) || ['http_quality','process_resource','service_availability'].includes(row.category)" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.severity')" width="100"><template #default="{ row }"><el-tag :type="row.severity === 'critical' ? 'danger' : 'warning'">{{ t(`monitor.platformAlerts.severities.${row.severity}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.status')" width="130"><template #default="{ row }">{{ t(`monitor.platformAlerts.statuses.${row.status}`) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.openedAt')" min-width="160"><template #default="{ row }">{{ date(row.opened_at) }}</template></el-table-column>
@@ -106,8 +107,8 @@
     <el-dialog :model-value="Boolean(selectedIncident)" :title="t('monitor.platformAlerts.evidence.title')" width="min(720px, calc(100vw - 32px))" @close="selectedIncident = null">
       <section v-if="selectedIncident" data-testid="resource-alert-evidence">
         <h3>{{ selectedIncident.name || t('monitor.platformAlerts.nameMissing') }}</h3>
-        <h3 class="alert-subject">{{ processSubject(selectedIncident) || hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
-        <p>{{ selectedIncident.category === 'process_resource' ? processSignal(selectedIncident) : selectedIncident.category === 'http_quality' ? httpSignal(selectedIncident) : signalLabel(selectedIncident.signal) }}</p>
+        <h3 class="alert-subject">{{ availabilitySubject(selectedIncident) || processSubject(selectedIncident) || hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
+        <p>{{ selectedIncident.category === 'service_availability' ? t('monitor.availability.title') : selectedIncident.category === 'process_resource' ? processSignal(selectedIncident) : selectedIncident.category === 'http_quality' ? httpSignal(selectedIncident) : signalLabel(selectedIncident.signal) }}</p>
         <p v-if="resourceAlertHostID(selectedIncident) && canReadHosts && !hosts[selectedIncident.subject_id]">{{ t('monitor.platformAlerts.evidence.hostUnavailable') }}</p>
         <template v-if="selectedEvidence">
           <p>{{ t('monitor.platformAlerts.evidence.frozen') }}</p>
@@ -136,6 +137,13 @@
             <el-descriptions-item :label="t('monitor.platformAlerts.evidence.evaluatedAt')">{{ evidenceDate(selectedThresholdEvidence.evaluated_at) }}</el-descriptions-item>
           </el-descriptions>
         </template>
+        <el-descriptions v-else-if="selectedAvailabilityEvidence" :column="1" border data-testid="availability-evidence">
+          <el-descriptions-item :label="t('monitor.availability.group')">{{ availabilitySubject(selectedIncident) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.resourceRules.trigger')">{{ t('monitor.availability.trigger', { seconds: selectedAvailabilityEvidence.policy.trigger_seconds }) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.resourceRules.recovery')">{{ t('monitor.availability.recovery', { seconds: selectedAvailabilityEvidence.policy.recovery_seconds }) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.availability.confirmed')">{{ evidenceDate(selectedAvailabilityEvidence.confirmed_at) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.availability.observedWindow')">{{ evidenceDate(selectedAvailabilityEvidence.observed_from) }} — {{ evidenceDate(selectedAvailabilityEvidence.observed_to) }}</el-descriptions-item>
+        </el-descriptions>
         <el-alert v-else :title="t('monitor.platformAlerts.evidence.unavailable')" type="warning" :closable="false" />
         <div class="alert-toolbar" v-if="canObserveHost(selectedIncident)">
           <el-button v-if="selectedEvidence" type="primary" @click="openHost(selectedIncident, true)">{{ t('monitor.platformAlerts.evidence.trend') }}</el-button>
@@ -145,6 +153,7 @@
     </el-dialog>
     <InstanceAlertRules kind="process" v-if="state.tab === 'process-rules' && canReadRules" :key="ruleIdentity" ref="processRulesPanel" :page="state.process_rule_page" @page="change({ process_rule_page: $event })" />
     <InstanceAlertRules kind="http" v-if="state.tab === 'http-rules' && canReadHTTPRules" :key="ruleIdentity" ref="httpRulesPanel" :page="state.http_rule_page" @page="change({ http_rule_page: $event })" />
+    <ServiceAvailabilityRules v-if="state.tab === 'availability-rules' && canReadAvailability" :key="ruleIdentity" ref="availabilityPanel" :page="state.availability_rule_page" @page="change({ availability_rule_page: $event })" />
     <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :page="state.rule_page" @page="change({ rule_page: $event })" />
     <el-dialog v-model="destinationOpen" :title="t('monitor.platformAlerts.destination')" width="min(640px, 95vw)" :close-on-click-modal="false">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
@@ -154,7 +163,7 @@
         <el-form-item v-if="destinationDraft.channel === 'webhook'" :label="t('monitor.platformAlerts.url')"><el-input v-model="destinationDraft.url" maxlength="2048" /></el-form-item>
         <el-form-item v-else-if="destinationDraft.channel === 'email'" :label="t('monitor.platformAlerts.recipients')"><el-input v-model="recipientsText" /></el-form-item>
         <el-form-item v-if="destinationDraft.channel !== 'email'" :label="t(destinationDraft.channel === 'wecom' ? 'monitor.platformAlerts.wecomCredential' : 'monitor.platformAlerts.secret')"><el-input v-model="secret" type="password" show-password autocomplete="new-password" /></el-form-item>
-        <el-form-item :label="t('monitor.platformAlerts.sourceCategories')"><el-checkbox-group v-model="destinationDraft.categories"><el-checkbox v-for="category in ['log_pipeline','resource','http_quality','process_resource']" :key="category" :value="category">{{ t(`monitor.platformAlerts.categories.${category}`) }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item :label="t('monitor.platformAlerts.sourceCategories')"><el-checkbox-group v-model="destinationDraft.categories"><el-checkbox v-for="category in ['log_pipeline','resource','http_quality','process_resource','service_availability']" :key="category" :value="category">{{ t(`monitor.platformAlerts.categories.${category}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('monitor.platformAlerts.events')"><el-checkbox-group v-model="destinationDraft.event_types"><el-checkbox v-for="event in ['opened','resolved']" :key="event" :value="event">{{ t(`monitor.platformAlerts.eventsLabel.${event}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('monitor.platformAlerts.enabled')"><el-switch v-model="destinationDraft.enabled" /></el-form-item>
       </el-form>
@@ -178,6 +187,8 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import ResourceAlertRules from '../components/ResourceAlertRules.vue'
 import InstanceAlertRules from '../components/InstanceAlertRules.vue'
 import { processAlertEvidence, processRuleMetrics, processRuleScale } from '../utils/processRules'
+import ServiceAvailabilityRules from '../components/ServiceAvailabilityRules.vue'
+import { availabilityEvidence } from '../utils/serviceAvailability'
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
@@ -195,6 +206,7 @@ const canUpdate = computed(() => canRead.value && auth.hasPermission('monitor.pl
 const canReadNotifications = computed(() => platformUser.value && auth.hasPermission('monitor.platform_alert_notification.read'))
 const canUpdateNotifications = computed(() => canReadNotifications.value && auth.hasPermission('monitor.platform_alert_notification.update'))
 const canReadRules = computed(() => platformUser.value && auth.hasPermission('monitor.platform_resource_rule.read'))
+const canReadAvailability = computed(() => platformUser.value && auth.hasPermission('monitor.platform_service_availability_rule.read') && auth.hasPermission('platform.module.read'))
 const canReadHTTPRules = computed(() => platformUser.value && auth.hasPermission('monitor.platform_http_rule.read'))
 const canReadHosts = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
 const hosts = ref({}), selectedIncident = ref(null)
@@ -209,8 +221,11 @@ function openHost(row, historical = false) {
   const target = historical ? resourceAlertTrendRoute(row) : { path: `/node-resources/${row.subject_id}`, query: {} }
   if (target) navigateMonitorRoute(router, target)
 }
+const availabilityPanel = ref(null)
+const selectedAvailabilityEvidence = computed(() => availabilityEvidence(selectedIncident.value))
+function availabilitySubject(row) { const e = availabilityEvidence(row); return e ? `${e.module_name} · ${t(`monitor.process.roles.${e.role}`)}${e.runtime_name ? ` · ${t(`monitor.availability.purposes.${e.runtime_name}`, e.runtime_name)}` : ''}` : '' }
 const rulesPanel = ref(null), httpRulesPanel = ref(null), processRulesPanel = ref(null)
-function refresh() { if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'process-rules') processRulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
+function refresh() { if (state.value.tab === 'availability-rules') availabilityPanel.value?.load(); else if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'process-rules') processRulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
 const selectedProcessEvidence = computed(() => processAlertEvidence(selectedIncident.value))
 const selectedThresholdEvidence = computed(() => selectedProcessEvidence.value || httpAlertEvidence(selectedIncident.value))
 const thresholdValue = value => selectedProcessEvidence.value ? processValue(value,selectedProcessEvidence.value.metric_key) : number(value)
@@ -224,7 +239,7 @@ const destinations = ref([]), deliveries = ref({ data: [], total: 0 }), notifica
 const deliveryPage = computed(() => state.value.delivery_page)
 const destinationOpen = ref(false), destinationDraft = ref({ categories: [], recipients: [], event_types: [] }), editingID = ref(0), recipientsText = ref(''), secret = ref(''), editError = ref('')
 const date = value => value ? new Date(value).toLocaleString() : '—'
-const categoryLabel = value => ['log_pipeline', 'resource', 'http_quality', 'process_resource'].includes(value) ? t(`monitor.platformAlerts.categories.${value}`) : '—'
+const categoryLabel = value => ['log_pipeline', 'resource', 'http_quality', 'process_resource', 'service_availability'].includes(value) ? t(`monitor.platformAlerts.categories.${value}`) : '—'
 const channelLabel = value => value === 'wecom' ? t('monitor.platformAlerts.wecom') : value === 'email' ? t('monitor.platformAlerts.email') : 'Webhook'
 const destinationLabel = row => row.destination_name || t('monitor.platformAlerts.unavailableTarget', { id: row.destination_id })
 const fact = value => t(`monitor.platformAlerts.facts.${value ? 'yes' : 'no'}`)
@@ -249,7 +264,7 @@ function change(patch) {
 }
 function changeDeliveryPage(page) { change({ delivery_page: page }) }
 async function load() {
-  if (['rules','http-rules','process-rules'].includes(state.value.tab)) return
+  if (['rules','http-rules','process-rules','availability-rules'].includes(state.value.tab)) return
   controller?.abort(); controller = new AbortController(); const own = ++request, lease = epoch
   if (state.value.tab === 'notifications' ? !canReadNotifications.value : !canRead.value) return
   loading.value = true; error.value = ''; notificationError.value = ''; hosts.value = {}; selectedIncident.value = null; incidents.value = []
@@ -345,7 +360,7 @@ watch(() => [state.value.time_from, state.value.time_to, ruleIdentity.value], ()
 }, { immediate: true })
 watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions), locale.value], () => {
   clear()
-  const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'rules' && !canReadRules.value) || (state.value.tab === 'http-rules' && !canReadHTTPRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : canReadHTTPRules.value ? 'http-rules' : 'incidents' } : {}) })
+  const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'availability-rules' && !canReadAvailability.value) || (state.value.tab === 'rules' && !canReadRules.value) || (state.value.tab === 'http-rules' && !canReadHTTPRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : canReadHTTPRules.value ? 'http-rules' : canReadAvailability.value ? 'availability-rules' : 'incidents' } : {}) })
   if (JSON.stringify(route.query) !== JSON.stringify(next)) { navigateMonitorRoute(router, { path: '/platform-alerts', query: next }, { history: 'replace' }); return }
   load()
 }, { immediate: true })

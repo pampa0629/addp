@@ -338,6 +338,38 @@ permissions:
     status: active
     name_i18n_key: permissions.monitor.platform_resource_rule.update.name
     description_i18n_key: permissions.monitor.platform_resource_rule.update.description
+  - key: monitor.platform_service_availability_rule.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.platform_service_availability_rule.create.name
+    description_i18n_key: permissions.monitor.platform_service_availability_rule.create.description
+  - key: monitor.platform_service_availability_rule.delete
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.platform_service_availability_rule.delete.name
+    description_i18n_key: permissions.monitor.platform_service_availability_rule.delete.description
+  - key: monitor.platform_service_availability_rule.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.platform_service_availability_rule.read.name
+    description_i18n_key: permissions.monitor.platform_service_availability_rule.read.description
+  - key: monitor.platform_service_availability_rule.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.platform_service_availability_rule.update.name
+    description_i18n_key: permissions.monitor.platform_service_availability_rule.update.description
   - key: monitor.resource_observation.read
     allowed_scope_types: [platform]
     risk_level: low
