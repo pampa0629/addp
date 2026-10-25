@@ -770,7 +770,7 @@ class PGCollectionReadBarrier:
         require(result.returncode == 0 and len(result.stdout) <= 65536, 'source barrier query failed')
         return json.loads(result.stdout)
 
-    def open(self):
+    def admit(self):
         require(all(os.environ.get(k) == v for k, v in {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
             'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
             'POSTGRES_DB': 'addp_online', 'ONLINE_SUITE': SUITE}.items()) and sys.platform == 'linux'
@@ -783,6 +783,9 @@ class PGCollectionReadBarrier:
                 and owner['NetworkSettings']['Ports'].get('5432/tcp') == [{'HostIp': '127.0.0.1', 'HostPort': '55433'}],
                 'refusing a foreign source barrier container')
         self.container = owner['Id']
+
+    def open(self):
+        self.admit()
         prior = self.query(f"SELECT json_build_object('exists',to_regnamespace('{self.schema}') IS NOT NULL);")
         require(prior == {'exists': False}, 'source barrier schema already exists')
         self.schema_owned = True  # Own the unique target before an unknown CREATE outcome.
@@ -1408,6 +1411,76 @@ class MetaCollectionScenario:
 
     def run_inflight_expiry(self, report):
         self._run_inflight(report, natural_expiry=True)
+
+    def run_probe_control(self, report, controller):
+        report['phase'] = 'pg_connection_probe_control'
+        evidence = report['meta_collection']['connection_probe_control'] = {'stage': 'identity'}
+        API.validate_user_identity(controller, self.life.tenant, {'system.engine.execute', 'system.engine.read'})
+        context = controller.request('GET', '/api/v1/system/auth/context', (200,)).payload
+        roles = tenant_functional_assignments(context, self.life.tenant)
+        principal = context['principal']['id']
+        require(context['principal']['type'] == 'user' and context['token']['type'] == 'first_party_access_token'
+                and context['context'].get('type') == 'tenant'
+                and context['context'].get('tenant_id') == str(self.life.tenant)
+                and {role['role_key'] for role in roles} == {'tenant.infrastructure_administrator'}
+                and str(principal) not in {str(value) for value in report['principals'].values()},
+                'connection probe requires the separate existing fixture infrastructure User')
+        credential = controller.token
+        path = f'/api/v1/system/engines/{self.life.engine}'
+        engine = controller.request('GET', path, (200,)).payload
+        connection = engine.get('connection_info')
+        require(engine.get('id') == self.life.engine and engine.get('tenant_id') == self.life.tenant
+                and engine.get('engine_type') == 'postgresql' and type(engine.get('version')) is int
+                and engine['version'] > 0 and isinstance(connection, dict)
+                and all(connection.get(key) == value for key, value in {'host': '127.0.0.1', 'port': 55433,
+                    'database': 'metric_fixture', 'user': 'metric_reader'}.items()),
+                'connection probe target differs from the registered disposable PG source')
+        fields = ('id', 'tenant_id', 'engine_type', 'version', 'connection_info', 'capabilities', 'lifecycle_state')
+        binding = {key: engine.get(key) for key in fields}
+        rules = self.source_snapshot()
+        evidence.update(principal_id=str(principal), tenant_id=str(self.life.tenant), engine_id=self.life.engine,
+                        engine_version=engine['version'], role='tenant.infrastructure_administrator')
+        barrier = PGCollectionReadBarrier()
+        self.source_barriers.append(barrier)
+        barrier.admit()  # Observe only: do not create a schema or hold a source lock.
+        baseline = evidence['source_counter_baseline'] = barrier.counts()
+        evidence.update(stage='probe_request', started_at=datetime.now(timezone.utc).isoformat())
+        try:
+            response = controller.request('POST', path + '/test', (200,))
+            evidence.update(http_status=response.status, success=response.payload.get('success') is True)
+        finally:
+            evidence['completed_at'] = datetime.now(timezone.utc).isoformat()
+            observed = evidence['source_counter_observed'] = barrier.counts()
+        require(response.payload.get('success') is True, 'formal connection probe did not succeed')
+        delta = {key: observed['calls'].get(key, 0) - baseline['calls'].get(key, 0)
+                 for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
+        evidence.update(stage='delta_check', source_call_delta=delta)
+        before = {(row['query_id'], row['top_level']): row for row in baseline['other_statements']}
+        after = {(row['query_id'], row['top_level']): row for row in observed['other_statements']}
+        increments = []
+        require(before.keys() <= after.keys(), 'connection probe statistics lost a prior statement')
+        for key, row in after.items():
+            prior = before.get(key)
+            change = row['calls'] - (prior['calls'] if prior else 0)
+            require(change >= 0 and (prior is None or prior['kind'] == row['kind']),
+                    'connection probe statement counters or classification changed')
+            if change:
+                increments.append(dict(row, calls=change))
+        evidence['statement_increments'] = increments
+        require(observed['reset_at'] == baseline['reset_at']
+                and delta == {'namespaces': 0, 'tables': 0, 'workspace_detection': 0, 'other': 1}
+                and len(increments) == 1 and increments[0]['kind'] == 'version_probe'
+                and increments[0]['top_level'] is True and increments[0]['calls'] == 1,
+                'connection probe did not uniquely produce one version-probe other increment')
+        current = controller.request('GET', path, (200,)).payload
+        require({key: current.get(key) for key in fields} == binding
+                and controller.request('GET', '/api/v1/system/auth/context', (200,)).payload == context
+                and controller.token == credential and self.source_snapshot() == rules,
+                'connection probe changed engine configuration, identity or source rules')
+        barrier.close()
+        evidence.update(stage='verified', source_rules_unchanged=True, engine_unchanged=True,
+                        identity_unchanged=True, source_fixture_cleanup='zero_source_locks_and_schema')
+        report['checks'].append('pg_connection_probe_other_increment_identified')
 
     def _run_inflight(self, report, *, natural_expiry):
         key = 'inflight_expiry' if natural_expiry else 'inflight'
@@ -2817,6 +2890,9 @@ def main():
         lifecycle.collection.run_browser(report)
         lifecycle.collection.run_expiry(report)
         lifecycle.collection.run_scheduled(report)
+        controller = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ.pop('ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN'), timeout)
+        lifecycle.collection.run_probe_control(report, controller)
+        del controller
         lifecycle.collection.run_inflight(report)
         lifecycle.collection.run_inflight_expiry(report)
         report['result'] = 'passed'

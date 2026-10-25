@@ -3025,5 +3025,135 @@ class PGCollectionBarrierTest(unittest.TestCase):
                 self.barrier.counts()
 
 
+
+class PGConnectionProbeControlTest(unittest.TestCase):
+    def setUp(self):
+        self.context = {'principal': {'id': '91', 'type': 'user'},
+            'context': {'type': 'tenant', 'tenant_id': '3'},
+            'token': {'type': 'first_party_access_token'},
+            'authorization': {'role_assignments': [{'role_key': 'tenant.infrastructure_administrator',
+                'scope': {'type': 'tenant', 'tenant_id': '3'},
+                'permissions': ['system.engine.read', 'system.engine.execute']}]}}
+        self.engine = {'id': 2, 'tenant_id': 3, 'engine_type': 'postgresql', 'version': 1,
+                       'connection_info': {'host': '127.0.0.1', 'port': 55433, 'database': 'metric_fixture', 'user': 'metric_reader'}}
+        self.before = {'reset_at': 'same', 'calls': {'other': 9}, 'other_statement_count': 2,
+            'other_statements': [{'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 8},
+                                 {'query_id': '456', 'top_level': True, 'kind': 'unclassified', 'calls': 1}]}
+        self.after = deepcopy(self.before)
+        self.after['calls']['other'] += 1
+        self.after['other_statements'][0]['calls'] += 1
+        self.calls, self.response, self.fault = [], {'success': True}, None
+        self.client = SimpleNamespace(token='provisioner-private-token', request=self.request)
+        self.life = SimpleNamespace(tenant=3, engine=2, base='/api/v1/system/engines/2')
+        self.scenario = ONLINE.MetaCollectionScenario(self.life, '31', 'probe-fixture')
+        self.scenario.source_snapshot = Mock(return_value='unchanged source rules')
+        self.barrier = Mock()
+        self.barrier.counts.side_effect = lambda: deepcopy(self.before if not self.calls else self.after)
+        self.report = {'checks': [], 'principals': {'operator': '31', 'reader': '33'}, 'meta_collection': {}}
+
+    def request(self, method, path, expected, body=None):
+        if path.endswith('/auth/context'): return SimpleNamespace(payload=deepcopy(self.context))
+        if path.endswith('/test'):
+            self.calls.append((method, path, body))
+            if self.fault == 'transport': raise ONLINE.SuiteError('unknown probe response')
+            return SimpleNamespace(status=200, payload=self.response)
+        self.assertEqual((method, path), ('GET', '/api/v1/system/engines/2'))
+        return SimpleNamespace(payload=deepcopy(self.engine))
+
+    def run_control(self):
+        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=self.barrier):
+            self.scenario.run_probe_control(self.report, self.client)
+
+    def test_one_formal_probe_is_a_separate_control_and_keeps_unknown_other_counted(self):
+        self.run_control()
+        self.assertEqual(self.calls, [('POST', '/api/v1/system/engines/2/test', None)])
+        self.barrier.admit.assert_called_once_with()
+        self.barrier.open.assert_not_called()
+        self.barrier.close.assert_called_once_with()
+        self.assertIn(self.barrier, self.scenario.source_barriers)
+        self.assertEqual(self.report['checks'], ['pg_connection_probe_other_increment_identified'])
+        evidence = self.report['meta_collection']['connection_probe_control']
+        self.assertEqual(evidence['source_call_delta'], {'namespaces': 0, 'tables': 0, 'workspace_detection': 0, 'other': 1})
+        self.assertEqual(evidence['statement_increments'], [{'query_id': '-123', 'top_level': True,
+                                                            'kind': 'version_probe', 'calls': 1}])
+        self.assertTrue(evidence['source_rules_unchanged'] and evidence['identity_unchanged'])
+        self.assertNotIn('private-token', json.dumps(self.report))
+        self.assertNotIn('connection_info', json.dumps(self.report))
+
+    def test_wrong_identity_or_engine_refused_before_probe_and_statistics(self):
+        mutations = [lambda: self.context['context'].update(tenant_id='9'),
+            lambda: self.context['principal'].update(type='service_principal'),
+            lambda: self.context['principal'].update(id='33'),
+            lambda: self.context['authorization']['role_assignments'][0].update(role_key='custom.operator'),
+            lambda: self.context['authorization']['role_assignments'][0].update(permissions=['system.engine.read']),
+            lambda: self.engine.update(id=99), lambda: self.engine.update(engine_type='mysql'),
+            lambda: self.engine.update(tenant_id=9), lambda: self.engine.update(version=0),
+            lambda: self.engine['connection_info'].update(database='personal')]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.setUp(); mutate()
+                with self.assertRaises(ONLINE.SuiteError): self.run_control()
+                self.assertFalse(self.calls)
+                self.barrier.counts.assert_not_called()
+
+    def test_no_call_extra_unknown_reset_and_counter_replacement_never_pass(self):
+        mutations = [lambda: self.after.update(reset_at='reset'),
+            lambda: self.after.update(calls={'other': 9}),
+            lambda: self.after['calls'].update(other=11),
+            lambda: self.after['calls'].update(tables=1),
+            lambda: self.after['other_statements'][1].update(calls=2),
+            lambda: self.after['other_statements'][0].update(kind='unclassified'),
+            lambda: self.after['other_statements'][0].update(top_level=False),
+            lambda: self.after['other_statements'].pop()]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.setUp(); mutate()
+                with self.assertRaises(ONLINE.SuiteError): self.run_control()
+                self.assertEqual(len(self.calls), 1)
+                self.assertFalse(self.report['checks'])
+                self.assertIn(self.barrier, self.scenario.source_barriers)
+                self.assertIn('source_counter_observed', self.report['meta_collection']['connection_probe_control'])
+
+    def test_unknown_or_failed_response_is_not_retried_and_remains_owned(self):
+        for fault in ('transport', 'false', 'wrong_shape'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                if fault == 'transport': self.fault = fault
+                else: self.response = {'success': False} if fault == 'false' else {'data': {'success': True}}
+                with self.assertRaises(ONLINE.SuiteError): self.run_control()
+                self.assertEqual(len(self.calls), 1)
+                self.assertFalse(self.report['checks'])
+                self.assertIn(self.barrier, self.scenario.source_barriers)
+                self.assertIn('source_counter_observed', self.report['meta_collection']['connection_probe_control'])
+
+    def test_failed_control_uses_original_cleanup_without_native_creation_or_rule_writes(self):
+        self.fault = 'transport'
+        with self.assertRaises(ONLINE.SuiteError): self.run_control()
+        self.scenario.recover_tasks = Mock(return_value=[])
+        self.scenario.cleanup()
+        self.barrier.release.assert_called_once_with()
+        self.barrier.close.assert_called_once_with()
+        self.barrier.open.assert_not_called()
+        self.assertEqual(self.calls, [('POST', '/api/v1/system/engines/2/test', None)])
+        self.assertFalse(self.scenario.tasks or self.scenario.commands)
+
+    def test_rules_identity_and_engine_drift_are_not_passing_controls(self):
+        for kind in ('rules', 'identity', 'engine'):
+            with self.subTest(kind=kind):
+                self.setUp()
+                original = self.request
+                def request(method, path, expected, body=None):
+                    result = original(method, path, expected, body)
+                    if path.endswith('/test'):
+                        if kind == 'rules': self.scenario.source_snapshot.return_value = 'changed'
+                        if kind == 'identity': self.context['authorization']['authorization_version'] = '2'
+                        if kind == 'engine': self.engine['version'] = 2
+                    return result
+                self.client.request = request
+                with self.assertRaises(ONLINE.SuiteError): self.run_control()
+                self.assertFalse(self.report['checks'])
+                self.assertEqual(len(self.calls), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

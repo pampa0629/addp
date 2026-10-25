@@ -80,6 +80,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.host._executable('make', '''
             #!/usr/bin/env bash
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 9
+            [ "${ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN:-}" = provisioner-token ] || exit 10
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')

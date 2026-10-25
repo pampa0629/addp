@@ -40,6 +40,8 @@ source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
+# Reuse the existing registration User only for one exact source-statistics control.
+export ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN="$ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 export ADDP_ONLINE_CONSUMER_ENGINE_ID
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
