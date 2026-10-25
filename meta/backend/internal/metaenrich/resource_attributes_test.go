@@ -1141,10 +1141,8 @@ func TestResolveAndEnrichMultiGLTFUsesPrimaryManifest(t *testing.T) {
 		]
 	}`)
 	result, err := metaitem.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
-		ContentReader: pathContentReader{content: map[string][]byte{
-			"models/building/scene.gltf": content,
-		}},
-		DirPath: "models/building",
+		StructureReader: rangeBytesContentReader{content: content},
+		DirPath:         "models/building",
 		Files: []metaitem.StorageFileRef{
 			{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: int64(len(content))},
 			{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 256},

@@ -3,6 +3,7 @@ package metaitem
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -11,13 +12,22 @@ import (
 
 type gltfManifestReadSpy struct {
 	refMapContentReader
-	raw    []byte
-	opened []string
+	raw        []byte
+	opened     []string
+	sequential int
 }
 
-func (s *gltfManifestReadSpy) OpenContent(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+func (s *gltfManifestReadSpy) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	s.sequential++
+	return nil, fmt.Errorf("basic identification must not use deep content")
+}
+
+func (s *gltfManifestReadSpy) OpenRange(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	s.opened = append(s.opened, p.StringPath())
-	return io.NopCloser(bytes.NewReader(s.raw)), nil
+	if opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(s.raw)) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	return io.NopCloser(bytes.NewReader(s.raw[opts.Offset : opts.Offset+opts.Length])), nil
 }
 
 func TestGLTFBasicClaimsOnlyExactObservedDecodedNames(t *testing.T) {
@@ -44,8 +54,8 @@ func TestGLTFBasicClaimsOnlyExactObservedDecodedNames(t *testing.T) {
 				raw = []byte(`{"asset":{"version":"2.0"}}`)
 			}
 			spy := &gltfManifestReadSpy{raw: raw}
-			items := resolveGLTFManifestItems(t.Context(), DirectoryResolveInput{EngineID: 33, ContentReader: spy, ModelReferenceFiles: observed}, []StorageFileRef{{Name: " scene %.gltf", Path: main, Size: int64(len(raw))}})
-			if len(items) != 1 || len(spy.opened) != 1 || spy.opened[0] != main {
+			items := resolveGLTFManifestItems(t.Context(), DirectoryResolveInput{EngineID: 33, StructureReader: spy, ModelReferenceFiles: observed}, []StorageFileRef{{Name: " scene %.gltf", Path: main, Size: int64(len(raw))}})
+			if len(items) != 1 || len(spy.opened) != 1 || spy.opened[0] != main || spy.sequential != 0 {
 				t.Fatal("scan read beyond exact primary", spy.opened)
 			}
 			item := items[0]
@@ -72,8 +82,18 @@ func TestGLTFBasicClaimsOnlyExactObservedDecodedNames(t *testing.T) {
 
 func TestGLTFBasicRejectsAProviderMappingToAnotherPrimaryBeforeIO(t *testing.T) {
 	spy := &gltfManifestReadSpy{raw: []byte(`{"asset":{"version":"2.0"}}`)}
-	items := resolveGLTFManifestItems(t.Context(), DirectoryResolveInput{EngineID: 33, ContentReader: spy, EngineCatalogPathFor: func(string) plugin.EngineCatalogPath { return plugin.FileItemPath(33, "other/scene.gltf") }}, []StorageFileRef{{Name: "scene.gltf", Path: "models/scene.gltf", Size: int64(len(spy.raw))}})
+	items := resolveGLTFManifestItems(t.Context(), DirectoryResolveInput{EngineID: 33, StructureReader: spy, EngineCatalogPathFor: func(string) plugin.EngineCatalogPath { return plugin.FileItemPath(33, "other/scene.gltf") }}, []StorageFileRef{{Name: "scene.gltf", Path: "models/scene.gltf", Size: int64(len(spy.raw))}})
 	if len(spy.opened) != 0 || len(items) != 1 || items[0].Attributes["format_info"].(map[string]interface{})["gltf"].(map[string]interface{})["composition_complete"] != false {
 		t.Fatal("wrong native mapping opened content or produced complete facts")
+	}
+}
+
+func TestGLTFBasicNeverFallsBackToDeepContent(t *testing.T) {
+	for _, size := range []int64{0, 27, 16*1024*1024 + 1} {
+		spy := &gltfManifestReadSpy{raw: []byte(`{"asset":{"version":"2.0"}}`)}
+		items := resolveGLTFManifestItems(t.Context(), DirectoryResolveInput{EngineID: 33, ContentReader: spy}, []StorageFileRef{{Name: "scene.gltf", Path: "models/scene.gltf", Size: size}})
+		if len(items) != 1 || items[0].Attributes["format_info"].(map[string]interface{})["gltf"].(map[string]interface{})["composition_complete"] != false || spy.sequential != 0 || len(spy.opened) != 0 {
+			t.Fatal("missing structure route used deep fallback or admitted composition", items)
+		}
 	}
 }

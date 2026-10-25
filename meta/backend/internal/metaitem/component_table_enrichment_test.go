@@ -380,8 +380,13 @@ func TestCommonDataItemResolverKeepsInvalidOSGBManifestAsStandaloneXML(t *testin
 
 func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 	d := &commonDataItemResolver{}
+	raw := []byte(`{
+				"asset":{"version":"2.0","generator":"ADDP test"},
+				"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
+				"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.png"}]
+			}`)
 	files := []StorageFileRef{
-		{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: 10},
+		{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: int64(len(raw))},
 		{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 256},
 		{Name: "baseColor.png", Path: "models/building/textures/baseColor.png", Size: 30},
 		{Name: "normal.png", Path: "models/building/textures/normal.png", Size: 40},
@@ -389,13 +394,9 @@ func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader: refMapContentReader{content: map[string][]byte{
-			"models/building/scene.gltf": []byte(`{
-				"asset":{"version":"2.0","generator":"ADDP test"},
-				"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
-				"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.png"}]
-			}`),
-		}},
+		StructureReader: &objStructureFixture{refMapContentReader: refMapContentReader{content: map[string][]byte{
+			"models/building/scene.gltf": raw,
+		}}},
 		DirPath: "models/building",
 		Files:   files,
 		Options: ResolveOptions{IncludeSingleResources: true},
@@ -444,14 +445,15 @@ func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 
 func TestCommonDataItemResolverRejectsIncompleteGLTFRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
+	raw := []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":256}]}`)
 	files := []StorageFileRef{
-		{Name: "scene.gltf", Path: "models/incomplete/scene.gltf", Size: 10},
+		{Name: "scene.gltf", Path: "models/incomplete/scene.gltf", Size: int64(len(raw))},
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader: refMapContentReader{content: map[string][]byte{
-			"models/incomplete/scene.gltf": []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"missing.bin","byteLength":256}]}`),
-		}},
+		StructureReader: &objStructureFixture{refMapContentReader: refMapContentReader{content: map[string][]byte{
+			"models/incomplete/scene.gltf": raw,
+		}}},
 		DirPath: "models/incomplete",
 		Files:   files,
 		Options: ResolveOptions{IncludeSingleResources: true},

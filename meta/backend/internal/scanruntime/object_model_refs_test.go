@@ -340,6 +340,7 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 	dae := []byte(objectDAEForTest("texture%20A.PNG"))
 	reader := &nestedBasicModelProvider{objectModelStructureSpy: &objectModelStructureSpy{primary: plugin.ObjectItemPath(9, "addp", "discover/3ds/model.3ds"), data: data}, dae: dae}
 	reader.obj = map[string][]byte{
+		"addp/discover/gltf/model.gltf":    hostedGLTFManifest(t),
 		"addp/discover/obj/model.obj":      []byte("mtllib paint red.mtl\nmtllib paint blue.mtl\nv 0 0 0\n"),
 		"addp/discover/obj/paint red.mtl":  []byte("newmtl red\nmap_Kd red/color.png\n"),
 		"addp/discover/obj/paint blue.mtl": []byte("newmtl blue\nmap_Kd blue/color.png\n"),
@@ -358,8 +359,11 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 		key := strings.TrimPrefix(full, "addp/")
 		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: key[strings.LastIndex(key, "/")+1:], Path: plugin.ObjectItemPath(9, "addp", key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: full, SizeBytes: &size}})
 	}
-	for _, key := range []string{"discover/obj/red/color.png", "discover/obj/blue/color.png"} {
+	for _, key := range []string{"discover/obj/red/color.png", "discover/obj/blue/color.png", "discover/gltf/red/color.png", "discover/gltf/blue/color.png", "discover/gltf/buffers/ geometry%20.mesh"} {
 		size := int64(73)
+		if strings.HasSuffix(key, ".mesh") {
+			size = 132
+		}
 		reader.entries = append(reader.entries, plugin.EngineCatalogEntry{Name: "color.png", Path: plugin.ObjectItemPath(9, "addp", key), Role: plugin.EngineCatalogRoleLeaf, Term: "object", Kind: "object", Storage: &plugin.EngineCatalogStorageFacts{Path: "addp/" + key, SizeBytes: &size}})
 	}
 	original, err := plugin.Get("minio")
@@ -375,13 +379,13 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 	})
 	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), metaRepo.NewScanRepository(db), nil)
 	result, err := runtime.ScanPaths(t.Context(), &commonModels.Engine{ID: 9, Name: "MinIO", EngineType: "minio"}, 1, []string{"addp/discover"}, nil, models.ScannedDepthBasic, false, nil)
-	if err != nil || result.Items != 4 {
+	if err != nil || result.Items != 5 {
 		t.Fatalf("basic nested model discovery: items=%d err=%v", result.Items, err)
 	}
 	if len(reader.listed) != 1 || reader.listed[0].StringPath() != "addp/discover" || reader.ranges < 5 || reader.contentCalls != 0 {
 		t.Fatal("discovery scope or structural read missing")
 	}
-	for _, format := range []string{"ifc", "3ds", "dae", "obj"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "gltf"} {
 		var item models.MetaItem
 		if err := db.Where("engine_id=? AND tenant_id=? AND full_name=?", 9, 1, "addp/discover/"+format+"/model."+format).First(&item).Error; err != nil {
 			t.Fatal(err)
@@ -392,6 +396,12 @@ func testBasicObjectModelDiscovery(t *testing.T, db *gorm.DB) {
 		expectedRefs, completeKey := 2, "scan_complete"
 		if format == "obj" {
 			expectedRefs, completeKey = 5, "composition_complete"
+		}
+		if format == "gltf" {
+			expectedRefs, completeKey = 4, "composition_complete"
+			if commonJSON.String(item.Attributes, "item", "layout") != "multi" {
+				t.Fatal("glTF basic discovery lost multi identity")
+			}
 		}
 		if format != "ifc" && (commonJSON.Section(item.Attributes, "format_info."+format)[completeKey] != true || len(commonJSON.InterfaceSlice(commonJSON.Section(item.Attributes, "item")["refs"])) != expectedRefs) {
 			t.Fatal("basic lost exact object composition")

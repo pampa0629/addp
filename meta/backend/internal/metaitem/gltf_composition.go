@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
 
@@ -28,17 +27,12 @@ func resolveGLTFManifestItems(ctx context.Context, input DirectoryResolveInput, 
 		}
 		refs := []dataitem.ItemRef{{Path: file.Path, Role: "manifest", Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
 		complete := false
-		target, targetErr := modelPrimaryCatalogPath(input, file)
-		if input.ContentReader != nil && targetErr == nil && file.Size > 0 && file.Size <= format.MaxGLTFManifestBytes {
-			reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, target, plugin.ReadOptions{Length: format.MaxGLTFManifestBytes + 1})
-			if err != nil && reader != nil {
-				_ = reader.Close()
-			}
-			if err == nil && reader != nil {
-				raw, readErr := io.ReadAll(io.LimitReader(reader, format.MaxGLTFManifestBytes+1))
-				closeErr := reader.Close()
+		if file.Size > 0 && file.Size <= format.MaxGLTFManifestBytes {
+			reader, err := modelStructureReaderAt(ctx, input, file)
+			if err == nil {
+				raw, readErr := io.ReadAll(io.NewSectionReader(reader, 0, file.Size))
 				parsed, parseErr := format.ParseGLTFComposition(ctx, raw)
-				if readErr == nil && parseErr == nil && closeErr == nil {
+				if readErr == nil && int64(len(raw)) == file.Size && parseErr == nil {
 					expected, refErr := dataitem.GLTFCompositionRefs(file.Path, parsed.Resources)
 					if refErr == nil {
 						complete = true

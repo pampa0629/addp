@@ -173,12 +173,15 @@ func TestNestedLogicalItemsAreProcessedOnceByCanonicalParent(t *testing.T) {
 			repo := metaRepo.NewScanRepository(db)
 			indexer := &boundaryIndexer{}
 			runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, indexer)
-			provider := &countingFileCatalog{calls: map[string]int{}, filesystemScanTestProvider: filesystemScanTestProvider{
+			provider := &gltfFileStructureFixture{primary: "3d/gltf/model/scene.gltf", allowContent: true, filesystemScanTestProvider: filesystemScanTestProvider{
 				entriesByPath: map[string][]plugin.EngineCatalogEntry{
 					"3d":            {progressDirectory("3d/gltf")},
 					"3d/gltf":       {progressDirectory("3d/gltf/model")},
 					"3d/gltf/model": {progressFile("3d/gltf/model/scene.gltf"), progressFile("3d/gltf/model/mesh.bin"), progressFile("3d/gltf/model/readme.txt")},
 				}, contentByPath: map[string]string{"3d/gltf/model/scene.gltf": `{"asset":{"version":"2.0"},"buffers":[{"uri":"mesh.bin","byteLength":4}]}`, "3d/gltf/model/mesh.bin": "0000", "3d/gltf/model/readme.txt": "independent"}}}
+			provider.raw = []byte(provider.contentByPath[provider.primary])
+			*provider.entriesByPath["3d/gltf/model"][0].Storage.SizeBytes = int64(len(provider.raw))
+			*provider.entriesByPath["3d/gltf/model"][1].Storage.SizeBytes = 4
 			plugin.Register(provider)
 			t.Cleanup(func() { plugin.Unregister(provider.Type()) })
 			// Existing primary identity must be retained, and old claimed component removed.
@@ -194,10 +197,7 @@ func TestNestedLogicalItemsAreProcessedOnceByCanonicalParent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantItems, wantRemoved := int64(3), 0
-			if depth == "deep" {
-				wantItems, wantRemoved = 2, 1
-			}
+			wantItems, wantRemoved := int64(2), 1
 			for pass := 0; pass < 2; pass++ {
 				recorder := &recursiveScanReporter{}
 				result, err := runtime.ScanPaths(context.Background(), &commonModels.Engine{ID: 26, EngineType: provider.Type()}, 1, []string{"3d"}, depth, true, recorder)
