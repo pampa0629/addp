@@ -134,7 +134,7 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 	}
 	result.TotalPages = int((result.Total + int64(filter.PageSize) - 1) / int64(filter.PageSize))
 	var rows []models.PlatformAlertIncident
-	err := q.Order("opened_at DESC,id DESC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&rows).Error
+	err := q.Order("CASE WHEN severity='critical' AND status IN ('open','acknowledged') THEN 0 ELSE 1 END").Order("opened_at DESC,id DESC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&rows).Error
 	if err != nil {
 		return result, err
 	}

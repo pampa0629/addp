@@ -304,7 +304,7 @@ func TestIntegrationPostgresPlatformAlertSeverityBeforePagination(t *testing.T) 
 		{"resource", "active", "critical", 2, []uint{rows[3].ID, rows[1].ID}},
 		{"resource", "resolved", "warning", 1, []uint{rows[4].ID}},
 		{"process_resource", "active", "warning", 1, []uint{rows[5].ID}},
-		{"resource", "active", "", 4, []uint{rows[3].ID, rows[2].ID, rows[1].ID, rows[0].ID}},
+		{"resource", "active", "", 4, []uint{rows[3].ID, rows[1].ID, rows[2].ID, rows[0].ID}},
 	} {
 		for page, id := range tc.ids {
 			list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: page + 1, PageSize: 1, Category: tc.category, Status: tc.status, SubjectID: subject, Severity: tc.severity}, "")

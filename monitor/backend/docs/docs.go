@@ -1852,6 +1852,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "严重且未恢复事件优先（含已确认或抑制）；两组各按首次发现时间和ID倒序，分页前排序 | Unresolved critical incidents first (including acknowledged or suppressed); each group ordered by opening time and ID descending before pagination",
                 "produces": [
                     "application/json"
                 ],

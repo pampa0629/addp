@@ -1372,3 +1372,16 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 保留先前失败：Select内部输入值及空态文案的测试断言错误；Console新增用例错误要求浏览器历史后原Frame不卸载，纠正为已有单历史契约后六项专项和上述完整门禁均通过。分页回跳是真实产品缺陷，已由真实请求序列定位并通过最终回归。首轮误用系统Node25的结果及主动中断轮次不计标准通过；该版本下Console曾有Vite退出缓存未清零失败，未证实根因、不因Node24后继通过宣称修复。所有旧轮均不由局部成功覆盖。
 
 关键16项实现／测试摘要及日志摘要在 `/tmp/addp-host-list-final-receipt.json`，SHA-256 `ec59a5a6613d572360515e95daac332ab8109bef3b52b3d6ec4e9bb10f38f48c`；最终日志为 `/tmp/addp-host-list-{common-node24-final,system-node24,monitor-node24-final,console-node24-corrected-full,console-navigation-node24-corrected,frontend-registration}.log`。这些是本地共享工作区T1／受控T3／构建证据，不代表固定提交CI、个人Safari、真实System身份T4／Hosted、多真实主机或生产T5；本批未运行后端T2（后端未变）。未重启个人服务、操作个人数据库、轮询／派发／重跑CI或Hosted，也未设置定时任务。功能清单第36行仍部分实现，数据库／任务／角色／网卡关联筛选及真实运行验收保留；第37行的其他总览列与健康评分缺口不变。
+
+
+### 平台告警：严重且未恢复事件优先排序（2026-10-25）
+
+用户确认后先修订正式规范7.1及API专题，再在唯一 `GET /platform/alerts` 的服务端查询中按 `critical AND status IN (open,acknowledged)` 优先、两组各按 `opened_at DESC,id DESC` 排序，均在OFFSET／LIMIT之前。确认和限时抑制不降低优先级，已恢复严重事件进入普通组，普通组仅按时间及ID排列；不依据最近观测时间、不增加置顶字段／配置／参数／权限，不改变过滤、总数或事件／通知生命周期。前端现有 `incidents = result.data` 保留接口顺序，没有第二套页面排序。双语Swagger说明及三个生成产物同步。
+
+新增35条合成历史的真实PostgreSQL回归，明确列出预期ID顺序，覆盖1／7／20条分页、跨类别、同时间ID倒序、严重／警告／活动／已确认／已恢复筛选、当前主机名与告警名称交集、时间范围排除旧优先事件；调用已有确认／抑制管理及reconciler恢复后重新分页核对。旧实现下新增用例确实失败，日志 `/tmp/addp-alert-priority-pg-red.log` 保留。已有严重级别分页用例中混合级别的预期顺序同批按新契约修订，其余单级别断言保留；没有删测、放宽断言或增加兼容排序。
+
+最终实际通过：`make test-module MODULE=monitor GO_ONLY=1` 的7个Go测试包（无测试包仅计编译）；`make test-monitor-postgres` 的40项顶层集成测试，无失败／跳过，含新增12个排序子场景；标准 `gen-swagger.sh monitor` 生成成功，`check-route-coverage.sh monitor` 的91条公开路由方法一致；`git diff --check`通过。运行前Infra标准状态确认实际PostgreSQL映射25432，标准T2只使用 `addp_test`，新夹具退出核对自身incident／event／delivery均零行。主机Owner为受控Reader，恢复使用合成评估调用既有协调器；不计正式System身份、真实指标实采触发／恢复或真实通知渠道验收。
+
+`changed-gate.py --dry-run`已命中Monitor Go与原PostgreSQL入口，新 `TestIntegrationPostgres*` 沿既有标准入口实际自动发现，无新Make／workflow。干跑包含其他会话WIP，只计选择检查，不计执行通过；指标来源、Trace和前端产品代码未变，不重复其既有门禁。新排序个人Safari、正式身份／Hosted及容量／生产T5未验，CI／Hosted继续等专门会话回传；没有轮询、派发、重跑CI／Hosted、重启个人服务、修改个人开发库或设置定时任务。
+
+原始最终日志 `/tmp/addp-alert-priority-{pg-final,go,swagger,swagger-coverage,selection}.log`；十项输入与日志摘要收据 `/tmp/addp-alert-priority-receipt.json` SHA-256 `3b22232e15112b2c14eb30ec21d79d18f7d142ab73d868fcfea935e79e2a3eca`。证据仅为本地共享工作区T0／T1／真实SQL T2，非固定提交CI全绿。清单实际第49行／B48与第51行／B50仍部分实现；本次仅补唯一事件列表的优先顺序，不计大屏滚动、拓扑／影响范围或根因分析完成。
