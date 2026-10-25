@@ -55,7 +55,13 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
     return { x: q*x + t*segment[1], y: q*y + t*segment[2] }
   }
   const visible = nodes.flatMap(group => group.hits.map((hit, index) => ({ ...hit, box: group.frame.nodes[index].box })))
-  const nearest = (x, y) => [...visible].sort((a, b) => Math.hypot(a.x-x, a.y-y) - Math.hypot(b.x-x, b.y-y))[0]
+  // G6 paths terminate at the circle outline. A nearby node's center may be
+  // closer to that anchor than its owner; bind against the observed outline.
+  const boundaryDistance = (node, x, y) => {
+    const rx = (node.box[2] - node.box[0]) / 2, ry = (node.box[3] - node.box[1]) / 2
+    return Math.abs(Math.hypot((x - node.x) / rx, (y - node.y) / ry) - 1) * Math.min(rx, ry)
+  }
+  const nearest = (x, y) => [...visible].sort((a, b) => boundaryDistance(a, x, y) - boundaryDistance(b, x, y))[0]
   const copy = document.createElement('canvas')
   copy.width = canvas.width; copy.height = canvas.height
   const context = copy.getContext('2d', { willReadFrequently: true }), ratio = canvas.width / rect.width
@@ -80,7 +86,7 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
     candidate.clearance = Math.min(100, ...all.filter(other => other.index !== candidate.index).map(other => Math.hypot(other.x-candidate.x, other.y-candidate.y)))
   }
   all.sort((a, b) => b.clearance-a.clearance)
-  return { width: rect.width, height: rect.height, stable_frames: stable, candidates: all }
+  return { width: rect.width, height: rect.height, stable_frames: stable, candidates: all, paths: strokes }
 }
 
 export async function graphRelationshipHits(page, frame, canvas, edges, stage) {
@@ -112,7 +118,7 @@ export async function graphRelationshipHits(page, frame, canvas, edges, stage) {
       properties: raw, path: candidate.path, path_source: candidate.source, path_target: candidate.target,
       x: candidate.x, y: candidate.y, t: candidate.t, pixel: candidate.pixel })
   }
-  if (hits.size !== edges.length) console.log('RELATIONSHIP_MISSES', JSON.stringify({ layout: stage.layout, missing: edges.filter(edge => !hits.has(edge.id)), candidates: observed.candidates.filter(candidate => edges.some(edge => !hits.has(edge.id) && edge.source === candidate.source && edge.target === candidate.target)), unsuccessful }))
+  if (hits.size !== edges.length) console.log('RELATIONSHIP_MISSES', JSON.stringify({ layout: stage.layout, missing: edges.filter(edge => !hits.has(edge.id)), node_bounds: stage.groups, observed_paths: observed.paths, candidates: observed.candidates.filter(candidate => edges.some(edge => !hits.has(edge.id) && edge.source === candidate.source && edge.target === candidate.target)), unsuccessful }))
   expect([...hits.keys()].sort(), `${stage.layout} relationships not mouse-reachable after ${attempts} clicks`).toEqual(edges.map(edge => edge.id).sort())
   return { layout: stage.layout, width: observed.width, height: observed.height, stable_frames: observed.stable_frames, attempts, hits: [...hits.values()].sort((a, b) => a.native_id.localeCompare(b.native_id)) }
 }

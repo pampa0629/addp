@@ -117,6 +117,20 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_relationship_endpoint_uses_visible_circle_boundary_not_nearer_unrelated_center(self):
+        edge = dict(id='edge',source='source',target='target',type='Parallel',properties=dict(fixture_id='proof'))
+        stage = dict(groups=[dict(hits=[dict(native_id=k,x=x,y=75) for k,x in [('source',60),('nearby',90),('target',220)]],
+            frame=dict(width=280,height=150,nodes=[dict(box=b) for b in ([40,55,80,95],[72,57,108,93],[200,55,240,95])]))],
+            relationship_pixels=[dict(type='Parallel',color=[15,118,110])])
+        hit = dict(fixture_id='proof',native_id='edge',source='source',target='target',type='Parallel',properties=dict(fixture_id='proof'),
+            path=[['M',80,75],['L',200,75]],path_source='source',path_target='target',x=140,y=75,t=.5,pixel=[15,118,110,255])
+        frame = dict(layout='force',width=280,height=150,stable_frames=10,attempts=1,hits=[hit])
+        SUITE.verify_relationship_frame(frame,[edge],stage)
+        # A painted endpoint on the unrelated circle must still be rejected.
+        hit.update(path=[['M',108,75],['L',200,75]],x=154)
+        with self.assertRaisesRegex(SUITE.SuiteError, 'endpoint identity'):
+            SUITE.verify_relationship_frame(frame,[edge],stage)
+
     def test_dense_refuses_missing_node_filter_roundtrip(self):
         expected, visual = dense_evidence()
         del visual['node_filters']

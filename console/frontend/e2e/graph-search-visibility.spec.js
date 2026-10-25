@@ -27,6 +27,29 @@ test('Graph pixel observer excludes disconnected same-color relationship strokes
   }
 })
 
+test('Graph relationship endpoint observer binds circle boundary beside a nearer unrelated center', async ({ page }) => {
+  await page.setContent('<div class="graph-canvas"><canvas width="280" height="150"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const canvas = page.locator('.graph-canvas')
+  await canvas.locator('canvas').evaluate(element => {
+    const context = element.getContext('2d')
+    context.clearRect(0, 0, 280, 150)
+    context.fillStyle = 'white';context.fillRect(0, 0, 280, 150)
+    context.strokeStyle = '#0f766e';context.lineWidth = 3
+    context.beginPath();context.moveTo(80, 75);context.lineTo(200, 75);context.stroke()
+    context.fillStyle = '#ff0000'
+    for (const [x, radius] of [[60, 20], [90, 18], [220, 20]]) {
+      context.beginPath();context.arc(x, 75, radius, 0, Math.PI * 2);context.fill()
+    }
+  })
+  const nodes = [{ hits: [{ native_id: 'source', x: 60, y: 75 }, { native_id: 'nearby', x: 90, y: 75 }, { native_id: 'target', x: 220, y: 75 }],
+    frame: { nodes: [{ box: [40, 55, 80, 95] }, { box: [72, 57, 108, 93] }, { box: [200, 55, 240, 95] }] } }]
+  const observed = await canvas.evaluate(stableRelationshipPaths, { nodes })
+  expect(observed.stable_frames).toBeGreaterThanOrEqual(10)
+  expect(observed.candidates.length).toBeGreaterThan(0)
+  expect([...new Set(observed.candidates.map(item => item.source + '->' + item.target))]).toEqual(['source->target'])
+})
+
 test('Graph node/relationship absence observer rejects residual fill, strokes and hidden Canvas', async ({ page }) => {
   await page.setContent('<div id="graph"><canvas width="200" height="100"></canvas></div>')
   const canvas = page.locator('#graph'), colors = [{ type: 'Link', color: 'rgb(15,118,110)' }]
@@ -108,8 +131,10 @@ for (const replace of [false, true]) {
 }
 
 
-for (const opaque of [false, true]) {
-test(`Graph multi-label dense search, filter and four layouts preserve every native identity (${opaque ? 'opaque' : 'named'} IDs)`, async ({ page }, testInfo) => {
+for (const identityMode of ['named', 'opaque', 'numeric']) {
+const opaque = identityMode === 'opaque'
+const numeric = identityMode === 'numeric'
+test(`Graph multi-label dense search, filter and four layouts preserve every native identity (${identityMode} IDs)`, async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.addInitScript(installGraphRelationshipPaint)
   const diagnostics = []
@@ -119,13 +144,13 @@ test(`Graph multi-label dense search, filter and four layouts preserve every nat
   const labelSets = [['Person'], ['Employee', 'Person'], ['Organization'], ['Organization', 'Partner']]
   const nodes = Array.from({ length: 12 }, (_, index) => {
     const key = 'n' + String(index + 1).padStart(2, '0')
-    return { id: opaque ? 'opaque:node:' + index : 'native-' + key, labels: labelSets[Math.floor(index / 3)], display_name: 'Dense ' + key.slice(1), properties: { id: key, name: 'Dense ' + key.slice(1) } }
+    return { id: numeric ? String(index) : opaque ? 'opaque:node:' + index : 'native-' + key, labels: labelSets[Math.floor(index / 3)], display_name: 'Dense ' + key.slice(1), properties: { id: key, name: 'Dense ' + key.slice(1) } }
   })
   const edges = nodes.flatMap((source, index) => nodes.slice(index + 1).map(target => ({ source: source.id, target: target.id, type: 'Link' })))
   edges.push({ source: nodes[1].id, target: nodes[0].id, type: 'Link' }, { source: nodes[0].id, target: nodes[1].id, type: 'Parallel' }, { source: nodes[11].id, target: nodes[11].id, type: 'Link' })
   edges.push({ source: nodes[0].id, target: nodes[11].id, type: 'Parallel' }, { source: nodes[3].id, target: nodes[8].id, type: 'Parallel' }, { source: nodes[4].id, target: nodes[7].id, type: 'Parallel' })
-  edges.forEach((edge, index) => Object.assign(edge, { id: opaque ? 'opaque:relationship:' + index : 'relationship-' + index, directed: true, properties: { fixture_id: 'r' + String(index + 1).padStart(2, '0'), source_key: nodes.find(node => node.id === edge.source).properties.id, target_key: nodes.find(node => node.id === edge.target).properties.id, ordinal: index, score: (index + 1) / 4, active: index % 2 === 0 } }))
-  const returnedNodes = opaque ? [...nodes].sort((a, b) => a.id.localeCompare(b.id)) : nodes
+  edges.forEach((edge, index) => Object.assign(edge, { id: numeric ? String(index) : opaque ? 'opaque:relationship:' + index : 'relationship-' + index, directed: true, properties: { fixture_id: 'r' + String(index + 1).padStart(2, '0'), source_key: nodes.find(node => node.id === edge.source).properties.id, target_key: nodes.find(node => node.id === edge.target).properties.id, ordinal: index, score: (index + 1) / 4, active: index % 2 === 0 } }))
+  const returnedNodes = opaque || numeric ? [...nodes].sort((a, b) => a.id.localeCompare(b.id)) : nodes
   const shapes = labelSets.map(labels => ({ name: [...labels].sort().join('+'), labels })).sort((a, b) => a.name.localeCompare(b.name))
   const unexpected = await mockGraph(page, { permissions: ['graph.graph.read'], responses: {
     '/api/v1/graph/graphs/7': { id: 7, name: '多标签密集关系隔离图' },

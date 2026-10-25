@@ -555,7 +555,11 @@ def verify_relationship_frame(layout, native_edges, stage):
         require(type(path) is list and len(path) == 2 and path[0][0] == "M" and len(path[0]) == 3 and path[1][0] in ("L", "Q", "C") and
                 len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
         for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
-            nearest = min(centers, key=lambda key: math.hypot(centers[key][0]-endpoint[0], centers[key][1]-endpoint[1]))
+            def boundary_distance(key):
+                x, y, box = centers[key]
+                rx, ry = (box[2]-box[0])/2, (box[3]-box[1])/2
+                return abs(math.hypot((endpoint[0]-x)/rx, (endpoint[1]-y)/ry)-1)*min(rx, ry)
+            nearest = min(centers, key=boundary_distance)
             require(nearest == identifier, "Relationship painted/native endpoint identity differs")
         t, q = hit["t"], 1-hit["t"]
         start, segment = path[0][1:], path[1]
