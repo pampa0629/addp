@@ -27,9 +27,17 @@
 `protection_not_yet_valid` 是现有协议防御状态，产品没有保护开始时间的设置入口，不为验收新增该配置或更改宿主机／进程时钟。通过既有 `make test-common-postgres` 自动发现的真实 PostgreSQL 用例，用协议显式时间参数安装未来投影、重新 Open 后在当前时间拒绝准备，并验证执行诊断持久化／安全观察和无结果，再由正常的新修订恢复掩码输出；仅记 T2，不冒称完整 HTTP／浏览器 T4。上述扩展实际运行前均不得计为通过，原 v23 的通过范围保持。
 
 
+## Service 角色方式撤销后的旧游标
+
+同一 `security-mysql-owner-protection` 领域报告 v26 增加 `service_role_cursor_revocation` HTTP 验收，复用当轮 MySQL 银行卡合成表、正式 Assessment 和普通 User。通过本人角色自查与 Service 可选方式接口取得当前资格及引用；临时 Policy 只作用于 `service/service_execute`，默认前后保留 1/1，角色全遮盖 0/0，不新增或撤销用户角色、原值授权及源授权。只为该套件的一次性账号补已有 `service.definition.update`，其他套件权限不变。
+
+先保存角色方式并发布私有原生表服务，JSON 与 CSV 实际读取 4 行及同一 JSON 游标的最后 1 行，独立核对五个唯一 ID、非敏感字段、全星号、Unicode、null 与 CSV 空单元格。撤销临时 Policy 后，必须等待 Service 同一投影 ID 的更高 revision、新发布 cursor 和 acknowledged 回执；保持服务定义及失效选择不变，用原游标分别请求 JSON、CSV，二者以及无游标对照必须精确返回 409／`query_protection_choice_invalid`，仅有安全错误、没有结果。随后验证可以保留失效选择直接停用，明确清除选择并保存、启用后恢复默认脱敏；不把选择撤销当作用户角色成员撤销。
+
+运行报告仅保留游标 SHA256／长度、定义及策略修订、同步回执、HTTP 矩阵和独立结果断言，不归档游标、令牌或源值。成功、失败和中断均撤销本轮捕获的 Policy 并核对 revoked，删除本轮 Service 并确认 404，已有默认规则保持不变。新增场景是正式 HTTP T4，既有 Console 浏览器 v9 验收保持原范围；不新增浏览器通过声明。确定性回归仍经 `make test-security-online-runner`，真实隔离运行仍归现有 suite 和专门 CI 会话，未实际运行前不得记为 Hosted T4 通过。
+
 ## 四出口逐原因矩阵
 
-领域报告 v25 在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。
+领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。
 
 | 原因 | Manager | Develop | Service | Transfer |
 | --- | --- | --- | --- | --- |

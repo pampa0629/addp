@@ -1320,6 +1320,7 @@ test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保
 
 .PHONY: test-security-online-runner
 test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消费者回执及已有出口验收断言
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run TestSecurityFixtureSeparatesPreparationFromOwnerPermissions -count=1
 	@$(MAKE) test-protection-deployment-runner
 	@$(MAKE) test-graph-online-runner
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py scripts.test.online-host-gate_test.OnlineHostGateTest.test_runs_security_transfer_suite_with_composite_fixture

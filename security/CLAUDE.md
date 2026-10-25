@@ -2,6 +2,8 @@ Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` �
 
 # Security 模块说明
 
+2026-10-25，既有 `security-mysql-owner-protection` 隔离套件的领域报告 v26 新增 Service 角色方式撤销后的旧游标 JSON/CSV 精确拒绝、保留失效选择直接停用、显式移除后的五行默认恢复及精确清理。复用当轮 MySQL 合成表和普通 User，不撤销用户角色、不改变原值或源授权；[场景与证据边界](../scripts/docs/Online数据保护.md#service-角色方式撤销后的旧游标)区分已通过的本地限定验收与尚未运行的新增 Hosted T4。`make test-security-online-runner` 的 38/49/28/254 项 Python 回归、相关 Go 夹具及登记检查通过；最后清理计数修改由新增六项 Runner 回归复核通过。既有浏览器 v9 范围保持，CI 由专门会话跟进，本会话不派发、轮询或设置定时。
+
 Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档、邮箱、身份证件号码和银行卡号元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译、显式重新发现和资源级有效期设置。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。当前用户从 Manager 或 Develop 复用共享交互发起 ProtectionAccessRequest，显式选择 Manager 预览、Develop 查询或两者；另一名有审批权限的用户一次审批，原子形成各精确出口的 ProtectionExemption。授权仍按用户、按字段、最长 30 天，已有 Manager 授权不扩大。Projection v5 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
 
 ## 边界

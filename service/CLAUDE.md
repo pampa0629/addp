@@ -113,6 +113,8 @@ API 样例先完成[公共准备](docs/API测试指南.md#公共准备)，再进
 
 Service 临时角色方式撤销同步后的旧游标 JSON/CSV 拒绝、显式移除后的默认恢复及清理见[旧游标撤销本地验收证据](docs/testing/查询与要素协议.md#角色方式撤销后的旧游标本地验收)，核对 `409/query_protection_choice_invalid` 与无数据响应；不等于角色成员资格撤销、自然到期或其他来源/身份/协议、Hosted 已验收。
 
+同一场景已纳入既有 Security 隔离 suite 的 v26 领域报告，确定性入口 `make test-security-online-runner`；[接入范围与未运行边界](docs/testing/查询与要素协议.md#旧游标场景的隔离套件接入)区分本地证据、Runner 回归与真实 Hosted，不另建 CI 路线。
+
 历史构建证据（2026-10-24，源码 `3bcc59158`）：`make build BUILD_ARGS="--local --services service-backend"` 在 darwin/arm64 实际编译 Service 及配套 runtime-log，编译产物 2 个、缓存复用 0 个，退出码 0；证据目录 `/tmp/p145-service-stable-build-20261024/`。该记录仅证明对应版本的本机构建，不代表当前版本、服务启动或业务输出已验收。
 
 运行日志按实例可信来源和权限查询，沿[失败定位](docs/testing/验收方法与排查.md#失败定位)与[运行日志规范](../docs/spec/addp模块服务运行日志规范.md)核对，不将固定模块文件当作所有部署的日志来源。

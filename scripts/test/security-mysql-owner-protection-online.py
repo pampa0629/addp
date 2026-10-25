@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
+import io
 from datetime import datetime, timezone, timedelta
 import importlib.util
 import json
@@ -136,6 +139,7 @@ REQUIRED_PERMISSIONS = {
     "service.definition.create",
     "service.definition.delete",
     "service.definition.read",
+    "service.definition.update",
     "transfer.task.create",
     "transfer.task.delete",
     "transfer.task.execute",
@@ -2390,6 +2394,247 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
 
 
 
+def service_projection(client: GatewayClient, enrollment_id: str) -> dict[str, object]:
+    enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
+                                        (200,)).payload, "role cursor Enrollment")
+    matches = [item for item in _array(enrollment.get("owner_progress"), "role cursor owner progress")
+               if isinstance(item, dict) and item.get("consumer_owner") == "service"]
+    if enrollment.get("state") != "active" or len(matches) != 1:
+        raise SuiteError("role cursor requires one active Service projection")
+    progress = matches[0]
+    if (progress.get("projection_state") != "active"
+            or not isinstance(progress.get("revision"), str)
+            or re.fullmatch(r"[0-9]{20}", progress["revision"]) is None
+            or int(progress["revision"]) <= 0
+            or any(not isinstance(progress.get(key), str) or not progress[key]
+                   for key in ("projection_id", "published_cursor"))):
+        raise SuiteError("role cursor Service projection identity is incomplete")
+    return {key: progress.get(key) for key in ("projection_id", "revision", "published_cursor", "acknowledged")}
+
+
+def wait_service_role_projection(client: GatewayClient, enrollment_id: str,
+                                 previous: Mapping[str, object], deadline: float) -> dict[str, object]:
+    while time.monotonic() < deadline:
+        current = service_projection(client, enrollment_id)
+        if current["projection_id"] != previous["projection_id"]:
+            raise SuiteError("role cursor Service projection identity changed")
+        if (int(current["revision"]) > int(previous["revision"])
+                and current["published_cursor"] != previous["published_cursor"]
+                and current["acknowledged"] is True):
+            return current
+        time.sleep(1)
+    raise SuiteError("role cursor Service projection did not acknowledge a new revision")
+
+
+def assert_service_role_page(client: GatewayClient, path: str, expected_ids: list[str],
+                             role_selected: bool, cursor: str = "") -> tuple[dict[str, object], str, str]:
+    request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
+               "page": {"limit": 4, **({"cursor": cursor} if cursor else {})}, "format": "json"}
+    response = client.request("POST", path, (200,), request)
+    payload = _object(response.payload, "role cursor JSON page")
+    rows = [_object(row, "role cursor row") for row in _array(payload.get("data"), "role cursor data")]
+    if [normalize_id(row.get("id")) for row in rows] != expected_ids:
+        raise SuiteError("role cursor page lost, duplicated or reordered rows")
+    page = _object(payload.get("page"), "role cursor page")
+    more = expected_ids[-1] != "5"
+    next_cursor = page.get("next_cursor", "")
+    version = payload.get("service_version")
+    if (page.get("has_more") is not more or not isinstance(next_cursor, str)
+            or bool(next_cursor) != more or (more and next_cursor == cursor)
+            or not isinstance(version, str) or not version):
+        raise SuiteError("role cursor pagination or service version is invalid")
+    for key, row in zip(expected_ids, rows):
+        source_value = BANK_SOURCE_VALUES[key]
+        expected = ("*" * len(source_value) if source_value else None) if role_selected else BANK_MASKED[key]
+        allowed = [set(BANK_FIELDS)]
+        if key == "5":
+            allowed.append(set(BANK_FIELDS) - {BANK_FIELD})
+        if (set(row) not in allowed or row.get(BANK_FIELD) != expected
+                or row.get("customer_code") != "CUST-1000" + key
+                or row.get("bank_account_no") != "account-" + key
+                or row.get("card_id") != "card-" + key
+                or row.get("bank_card_verified") != "verified-" + key
+                or normalize_id(row.get("credit_card_number")) != str(100 + int(key))):
+            raise SuiteError("role cursor protected or adjacent field differs from the independent fixture")
+    csv_response = client.request("POST", path, (200,), dict(request, format="csv"), raw_response=True)
+    if not isinstance(csv_response.payload, bytes):
+        raise SuiteError("role cursor CSV response must be bytes")
+    try:
+        reader = csv.DictReader(io.StringIO(csv_response.payload.decode("utf-8-sig")))
+        csv_rows = list(reader)
+    except (UnicodeError, csv.Error) as error:
+        raise SuiteError("role cursor CSV is malformed") from error
+    expected_csv = [{field: "" if row.get(field) is None else str(row[field]) for field in BANK_FIELDS} for row in rows]
+    if reader.fieldnames != BANK_FIELDS or csv_rows != expected_csv:
+        raise SuiteError("role cursor CSV fields, protected values or empty cells differ from JSON")
+    return ({"json_http_status": response.status, "csv_http_status": csv_response.status,
+             "rows": len(rows), "ids": expected_ids, "protected_values_verified": True,
+             "non_sensitive_fields_preserved": True, "csv_empty_cells_verified": True,
+             "has_more": more, "service_version": version}, next_cursor, version)
+
+
+def assert_service_role_refusal(response: SUPPORT.Response) -> dict[str, object]:
+    payload = _object(response.payload, "role cursor refusal")
+    if (response.status != 409 or set(payload) != {"error", "error_code"}
+            or payload.get("error_code") != "query_protection_choice_invalid"
+            or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+        raise SuiteError("role cursor must refuse with exact 409 choice-invalid and no result")
+    return {"http_status": response.status, "error_code": payload["error_code"], "result_absent": True}
+
+
+def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: int, database: str,
+        bank: Mapping[str, object], identity: Mapping[str, object], run_id: str, deadline: float) -> dict[str, object]:
+    """Real User HTTP only; synthetic data and policy owned by this disposable run."""
+    def own_roles():
+        roles = _object(client.request("GET", "/api/v1/system/auth/subject-roles", (200,)).payload, "own roles")
+        keys = roles.get("role_keys")
+        now = datetime.now(timezone.utc)
+        if (roles.get("tenant_id") != identity["tenant_id"] or roles.get("actor_principal_id") != identity["principal_id"]
+                or not isinstance(keys, list) or not keys or not all(isinstance(key, str) for key in keys)
+                or keys != sorted(set(keys)) or any(key in FORBIDDEN_ADMIN_ROLES for key in keys)
+                or utc_timestamp(roles.get("expires_at"), "own roles expiry") <= now
+                or utc_timestamp(roles.get("observed_at"), "own roles observation") > now + timedelta(minutes=1)):
+            raise SuiteError("role cursor requires the same ordinary current Tenant User")
+        return {key: roles.get(key) for key in ("tenant_id", "actor_principal_id", "role_keys")}
+
+    source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+    locator = build_item_locator(engine_id, source)
+    enrollment_id, assessment_id = str(bank["enrollment_id"]), str(bank["assessment_id"])
+    previous = service_projection(client, enrollment_id)
+    roles = own_roles()
+    policies = list_pages(client, "/api/v1/security/protection-policies")
+    if any(policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == "service"
+           and policy.get("action") == "service_execute" and policy.get("state") == "active" for policy in policies):
+        raise SuiteError("role cursor fixture already has an active Service Policy")
+    baseline_before = definition_array(client, "/api/v1/security/protection-baselines")
+    policy_id = None
+    service_id = None
+    failure = None
+    result = {}
+    try:
+        policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
+            "assessment_id": assessment_id, "consumer_owner": "service", "action": "service_execute",
+            "effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+            "parameters": {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"},
+            "invalid_value_effect": "suppress", "rationale": "Disposable Service old cursor role option acceptance",
+            "role_options": [{"name": "Online cursor full mask", "role_keys": roles["role_keys"],
+                              "decision": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+                                           "parameters": {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"},
+                                           "invalid_value_effect": "suppress"}}],
+        }).payload, "role cursor Policy")
+        policy_id = str(policy["id"])
+        saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
+        if len(saved_options) != 1:
+            raise SuiteError("role cursor Policy did not create exactly one server-owned option")
+        option_id = _object(saved_options[0], "saved role option").get("id")
+        try:
+            if str(uuid.UUID(str(option_id))) != option_id:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError) as error:
+            raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
+        installed = wait_service_role_projection(client, enrollment_id, previous, deadline)
+        options = _object(client.request("GET", "/api/v1/service/query-protection-options?" +
+            urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "Service role options")
+        matches = [field for field in _array(options.get("fields"), "Service role fields")
+                   if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
+        if len(matches) != 1:
+            raise SuiteError("role cursor requires exactly one eligible bank-card field")
+        field = matches[0]
+        target = {"owner_module": "meta", "resource_type": "data_item", "resource_identity": source["fingerprint"]}
+        if (field.get("target") != target or field.get("policy_id") != policy_id
+                or positive_int(field.get("policy_revision"), "role policy revision") != positive_int(policy.get("current_revision"), "Policy revision")
+                or field.get("options") != [{"id": option_id, "name": "Online cursor full mask"}]):
+            raise SuiteError("role cursor available choice does not bind this source and Policy revision")
+        choice = {"target": target, "component_key": BANK_FIELD, "selection": {
+            "policy_id": policy_id, "assessment_revision": positive_int(field.get("assessment_revision"), "Assessment revision"),
+            "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
+        name = ("online-security-role-cursor-" + run_suffix(run_id, "-"))[:120].rstrip("-")
+        body = service_payload(name, engine_id, locator, BANK_FIELDS)
+        body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+        body["data_config"]["protection_choices"] = [choice]
+        created = _object(client.request("POST", "/api/v1/service/query", (201,), body).payload, "role cursor Service")
+        service_id = positive_int(created.get("id"), "role Service ID")
+        service_path = f"/api/v1/service/query/{service_id}"
+        def definition():
+            return _object(client.request("GET", service_path, (200,)).payload, "role cursor saved Service")
+        selected = definition()
+        if (selected.get("status") != "active" or selected.get("public_access") is not False
+                or _object(selected.get("data_config"), "saved role config").get("protection_choices") != [choice]):
+            raise SuiteError("role cursor Service must persist the explicit choice and stay private")
+        query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
+        first, cursor, version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], True)
+        continuation, _, continued_version = assert_service_role_page(client, query_path, ["5"], True, cursor)
+        if continued_version != version:
+            raise SuiteError("role cursor version changed before revocation")
+        current = _object(client.request("GET", "/api/v1/security/protection-policies/" + policy_id, (200,)).payload, "role Policy version")
+        client.request("DELETE", "/api/v1/security/protection-policies/" + policy_id, (200,),
+                       {"version": current["version"], "rationale": "Revoke only this run's role option; retain saved Service choice"})
+        revoked = wait_service_role_projection(client, enrollment_id, installed, deadline)
+        retained = definition()
+        if retained != selected:
+            raise SuiteError("role cursor Service definition changed before the old cursor probes")
+        denials = {}
+        for format_name in ("json", "csv"):
+            request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
+                       "page": {"limit": 4, "cursor": cursor}, "format": format_name}
+            denials[format_name] = assert_service_role_refusal(client.request("POST", query_path, (409,), request))
+        request["page"] = {"limit": 4}
+        request["format"] = "json"
+        control = assert_service_role_refusal(client.request("POST", query_path, (409,), request))
+        client.request("PUT", service_path, (200,), {"version": retained["version"], "status": "inactive"})
+        stopped = definition()
+        if stopped.get("status") != "inactive" or stopped["data_config"].get("protection_choices") != [choice]:
+            raise SuiteError("role cursor pure stop must retain the invalid choice")
+        client.request("PUT", service_path, (200,), {"version": stopped["version"],
+            "data_config": {"protection_choices": []}})
+        cleared = definition()
+        if cleared["data_config"].get("protection_choices") != [] or cleared.get("status") != "inactive":
+            raise SuiteError("role cursor explicit removal did not persist")
+        client.request("PUT", service_path, (200,), {"version": cleared["version"], "status": "active"})
+        recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False)
+        recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor)
+        recovery.update(continuation=recovered_last, total_rows=5)
+        if recovered_version == version or last_version != recovered_version or own_roles() != roles:
+            raise SuiteError("role cursor recovery must change the choice version without changing User roles")
+        if definition_array(client, "/api/v1/security/protection-baselines") != baseline_before:
+            raise SuiteError("role cursor acceptance changed a default Baseline")
+        result = {"source_locator": locator, "service_id": service_id, "policy_id": policy_id,
+                  "principal_id": identity["principal_id"], "tenant_id": identity["tenant_id"],
+                  "choice": choice, "installed_projection": installed, "revoked_projection": revoked,
+                  "first_page": first, "valid_old_cursor_continuation": continuation,
+                  "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
+                  "old_cursor_refusals": denials, "no_cursor_control": control,
+                  "saved_choice_retained_until_explicit_removal": True, "pure_stop_retained_invalid_choice": True,
+                  "explicit_removal_default_recovery": recovery, "user_roles_unchanged": True, "baselines_unchanged": True}
+    except BaseException as error:
+        failure = error
+    cleanup_errors = []
+    if policy_id is not None:
+        try:
+            path = "/api/v1/security/protection-policies/" + policy_id
+            current = _object(client.request("GET", path, (200,)).payload, "role Policy cleanup")
+            if current.get("state") == "active":
+                client.request("DELETE", path, (200,), {"version": current["version"], "rationale": "Disposable role cursor cleanup"})
+            final_policy = _object(client.request("GET", path, (200,)).payload, "revoked role Policy")
+            if final_policy.get("state") != "revoked":
+                raise SuiteError("role cursor Policy cleanup left an active option")
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+    try:
+        cleanup_service(client, service_id)
+    except BaseException as error:
+        cleanup_errors.append(str(error))
+    if cleanup_errors:
+        raise SuiteError("role cursor cleanup failed: " + "; ".join(cleanup_errors)) from failure
+    if failure:
+        raise failure
+    # Policy revisions remain audit facts until the disposable Infra is destroyed.
+    return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
+                created_policies=1, revoked_policies=1, policy_revoked=True,
+                final_policy_revision=positive_int(final_policy["current_revision"], "revoked Policy revision"),
+                service_deleted=True)
+
+
 def validity_snapshot(enrollment: Mapping[str, object], mode: str,
                       expected_deadline: datetime | None, *, expired: bool = False) -> dict[str, object]:
     if mode not in {"permanent", "until"} or (mode == "permanent") != (expected_deadline is None) or (expired and mode == "permanent"):
@@ -2568,6 +2813,8 @@ def run_scenario(
     spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
     bank_card_metadata = exercise_bank_card_metadata(
         client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
+    service_role_cursor_revocation = exercise_service_role_cursor_revocation(
+        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -2651,13 +2898,14 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v25",
+            "schema_version": "addp.security-mysql-owner-protection-online/v26",
             "result": "passed",
             "identity": identity,
             "governance": governance,
             "default_protection_transaction": default_protection_transaction,
             "spatial_algorithms": spatial_algorithms,
             "bank_card_metadata": bank_card_metadata,
+            "service_role_cursor_revocation": service_role_cursor_revocation,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -2683,8 +2931,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 5 + len(task_ids),
-            "deleted_resources": 5 + len(task_ids),
+            "created_resources": 6 + len(task_ids),
+            "deleted_resources": 6 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:

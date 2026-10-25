@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import copy
+import csv
+import io
 import struct
 import subprocess
 import time
@@ -2304,6 +2306,207 @@ class RequiredOwnerConvergenceTest(unittest.TestCase):
             with self.subTest(mutation=mutation), patch.object(ONLINE.time, "monotonic", side_effect=[1, 3]), patch.object(ONLINE.time, "sleep"):
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.wait_for_algorithm_projections(client, "resource", 2)
+
+
+class ServiceRoleCursorClient:
+    """Stateful formal-API fixture; no product masking/cursor implementation."""
+    def __init__(self, fault=None):
+        self.fault = fault
+        self.calls = []
+        self.policy = None
+        self.service = None
+        self.deleted = False
+        self.cursor = "synthetic-owned-cursor-do-not-archive"
+        self.target = {"owner_module": "meta", "resource_type": "data_item", "resource_identity": "sha256:bank-fixture"}
+        self.baseline = [{"id": "1", "version": "1", "algorithm": ONLINE.STRUCTURED_MASK_ALGORITHM}]
+        self.option = None
+
+    def request(self, method, path, expected, body=None, *, raw_response=False):
+        self.calls.append((method, path, copy.deepcopy(body)))
+        response = ONLINE.SUPPORT.Response
+        if path == "/api/v1/system/auth/subject-roles":
+            now = ONLINE.datetime.now(ONLINE.timezone.utc)
+            roles = {"tenant_id": "2", "actor_principal_id": "7", "role_keys": ["online.security_mysql_owner_protection"],
+                     "observed_at": now.isoformat(), "expires_at": (now + ONLINE.timedelta(minutes=1)).isoformat()}
+            if self.fault == "foreign_user":
+                roles["actor_principal_id"] = "8"
+            if self.fault == "expired_roles":
+                roles["expires_at"] = (now - ONLINE.timedelta(seconds=1)).isoformat()
+            if self.fault == "role_changed" and self.policy and self.policy["state"] == "revoked":
+                roles["role_keys"] = ["online.other"]
+            return response(200, roles)
+        if path.startswith("/api/v1/security/protection-enrollments/"):
+            revision = 1 if not self.policy else (2 if self.policy["state"] == "active" else 3)
+            if self.fault == "stale_projection" and revision == 3:
+                revision = 2
+            return response(200, {"state": "active", "owner_progress": [{"consumer_owner": "service",
+                "projection_state": "active", "projection_id": "service-projection", "revision": f"{revision:020}",
+                "published_cursor": "projection-" + str(revision), "acknowledged": True}]})
+        if path == "/api/v1/security/protection-baselines":
+            value = copy.deepcopy(self.baseline)
+            if self.fault == "baseline_changed" and self.policy and self.policy["state"] == "revoked":
+                value[0]["version"] = "2"
+            return response(200, value)
+        if path == "/api/v1/security/protection-policies":
+            assert "id" not in body["role_options"][0], "new role option identities belong to Security"
+            self.option = dict(body["role_options"][0], id="11111111-1111-4111-8111-111111111111")
+            self.policy = {**copy.deepcopy(body), "id": "owned-policy", "version": 1, "current_revision": 1, "state": "active"}
+            self.policy["current"] = {"role_options": [copy.deepcopy(self.option)]}
+            return response(201, copy.deepcopy(self.policy))
+        if path == "/api/v1/security/protection-policies/owned-policy":
+            if method == "DELETE":
+                self.policy.update(state="revoked", version=2, current_revision=2)
+            current = copy.deepcopy(self.policy)
+            if self.fault == "cleanup_policy" and method == "GET" and self.policy["state"] == "revoked":
+                current["state"] = "active"
+            return response(200, current)
+        if path.startswith("/api/v1/service/query-protection-options?"):
+            field = {"target": self.target, "component_key": ONLINE.BANK_FIELD, "policy_id": "owned-policy",
+                     "policy_revision": 1, "assessment_revision": 4,
+                     "options": [{"id": self.option["id"], "name": self.option["name"]}]}
+            if self.fault == "foreign_source":
+                field["target"] = dict(self.target, resource_identity="sha256:other")
+            return response(200, {"fields": [field]})
+        if path == "/api/v1/service/query":
+            self.service = {**copy.deepcopy(body), "id": 701, "version": 1, "service_version": "chosen-version", "status": "active"}
+            return response(201, copy.deepcopy(self.service))
+        if path == "/api/v1/service/query/701":
+            if method == "DELETE":
+                self.deleted = True
+            if method == "PUT":
+                assert body["version"] == self.service["version"]
+                self.service.update(copy.deepcopy({key: value for key, value in body.items() if key != "data_config"}))
+                self.service["version"] += 1
+                if "data_config" in body:
+                    assert set(body["data_config"]) == {"protection_choices"}, "published source facts are read-only"
+                    self.service["data_config"].update(copy.deepcopy(body["data_config"]))
+                    self.service["service_version"] = "default-version"
+            result = copy.deepcopy(self.service)
+            if self.fault == "silent_clear" and self.policy["state"] == "revoked" and method == "GET":
+                result["data_config"]["protection_choices"] = []
+            if self.fault == "retained_version_changed" and self.policy["state"] == "revoked" and method == "GET":
+                result["version"] += 1
+            return response(404 if self.deleted else 200, result)
+        if path.startswith("/api/query/"):
+            if self.fault == "interrupt":
+                raise KeyboardInterrupt("interrupted owned scenario")
+            chosen = bool(self.service["data_config"].get("protection_choices"))
+            if chosen and self.policy["state"] == "revoked":
+                error = {"error": "Selected masking method is no longer available", "error_code": "query_protection_choice_invalid"}
+                status = 409
+                if self.fault == "wrong_error":
+                    error["error_code"] = "invalid_query_cursor"
+                if self.fault == "wrong_status":
+                    status = 403
+                if self.fault == "denial_rows":
+                    error["data"] = []
+                return response(status, error)
+            cursor = body["page"].get("cursor")
+            if cursor:
+                assert cursor == self.cursor
+            ids = ["5"] if cursor else ["1", "2", "3", "4"]
+            if self.fault == "duplicate_rows":
+                ids = ["1", "1", "3", "4"]
+            rows = []
+            for key in ids:
+                original = ONLINE.BANK_SOURCE_VALUES[key]
+                value = ("*" * len(original) if original else None) if chosen else ONLINE.BANK_MASKED[key]
+                if self.fault == "plaintext":
+                    value = original
+                rows.append({"id": int(key), "customer_code": "CUST-1000" + key, ONLINE.BANK_FIELD: value,
+                             "bank_account_no": "account-" + key, "card_id": "card-" + key,
+                             "bank_card_verified": "verified-" + key, "credit_card_number": 100 + int(key)})
+            if raw_response:
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=ONLINE.BANK_FIELDS)
+                writer.writeheader()
+                if self.fault == "csv_nil":
+                    for row in rows:
+                        if row[ONLINE.BANK_FIELD] is None:
+                            row[ONLINE.BANK_FIELD] = "<nil>"
+                writer.writerows(rows)
+                return response(200, output.getvalue().encode())
+            return response(200, {"data": rows, "service_version": "chosen-version" if chosen else "default-version",
+                "page": {"has_more": not bool(cursor), "next_cursor": self.cursor if not cursor else ""}})
+        raise AssertionError((method, path, expected))
+
+
+class ServiceRoleCursorRevocationTest(unittest.TestCase):
+    def run_case(self, client):
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        with (patch.object(ONLINE, "find_item", return_value=source),
+              patch.object(ONLINE, "list_pages", return_value=[])):
+            return ONLINE.exercise_service_role_cursor_revocation(client, 23, "fixture",
+                {"enrollment_id": "enrollment", "assessment_id": "assessment"},
+                {"principal_id": "7", "tenant_id": "2"}, "run-42", time.monotonic() + 30)
+
+    def test_same_cursor_valid_before_revoke_both_formats_refuse_and_explicit_default_recovers(self):
+        client = ServiceRoleCursorClient()
+        report = self.run_case(client)
+        self.assertEqual(report["first_page"]["rows"], 4)
+        self.assertEqual(report["valid_old_cursor_continuation"]["ids"], ["5"])
+        self.assertEqual(report["old_cursor_refusals"], {format_name: {
+            "http_status": 409, "error_code": "query_protection_choice_invalid", "result_absent": True}
+            for format_name in ("json", "csv")})
+        queries = [body for method, path, body in client.calls if path.startswith("/api/query/")]
+        self.assertEqual([body["page"].get("cursor") for body in queries[2:6]], [client.cursor] * 4)
+        self.assertEqual([body["format"] for body in queries[2:6]], ["json", "csv", "json", "csv"])
+        self.assertNotIn("cursor", queries[6]["page"])
+        self.assertEqual(report["explicit_removal_default_recovery"]["service_version"], "default-version")
+        self.assertEqual(report["explicit_removal_default_recovery"]["total_rows"], 5)
+        self.assertTrue(report["user_roles_unchanged"] and report["pure_stop_retained_invalid_choice"])
+        self.assertTrue(client.deleted and report["service_deleted"] and report["policy_revoked"])
+        self.assertEqual(report["residual_resources"], 0)
+        self.assertEqual((report["created_resources"], report["deleted_resources"]), (1, 1))
+        self.assertEqual((report["created_policies"], report["revoked_policies"], report["final_policy_revision"]), (1, 1, 2))
+        encoded = json.dumps(report)
+        self.assertNotIn(client.cursor, encoded)
+        for value in ONLINE.BANK_SOURCE_VALUES.values():
+            if value:
+                self.assertNotIn(value, encoded)
+        self.assertEqual(client.policy["parameters"], {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"})
+        self.assertEqual(client.option["decision"]["parameters"], {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"})
+
+    def test_corrupt_results_wrong_denial_and_silent_fallback_fail_and_clean_owned_resources(self):
+        for fault in ("foreign_source", "duplicate_rows", "plaintext", "csv_nil", "wrong_error", "wrong_status",
+                      "denial_rows", "silent_clear", "retained_version_changed", "role_changed", "baseline_changed"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(client)
+            self.assertEqual(client.policy["state"], "revoked")
+            if client.service:
+                self.assertTrue(client.deleted)
+
+    def test_current_user_role_binding_and_expiry_fail_before_mutation(self):
+        for fault in ("foreign_user", "expired_roles"):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(client)
+            self.assertIsNone(client.policy)
+
+    def test_interruption_cleans_and_propagates_without_success(self):
+        client = ServiceRoleCursorClient("interrupt")
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_case(client)
+        self.assertTrue(client.deleted)
+        self.assertEqual(client.policy["state"], "revoked")
+
+    def test_policy_cleanup_failure_still_deletes_service_and_fails(self):
+        client = ServiceRoleCursorClient("cleanup_policy")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "cleanup failed"):
+            self.run_case(client)
+        self.assertTrue(client.deleted)
+
+    def test_new_ack_requires_same_projection_new_revision_and_new_cursor(self):
+        previous = {"projection_id": "id", "revision": "00000000000000000001", "published_cursor": "one"}
+        valid = dict(previous, revision="00000000000000000002", published_cursor="two", acknowledged=True)
+        for changes in ({"acknowledged": False}, {"published_cursor": "one"}, {"revision": previous["revision"]}):
+            with self.subTest(changes=changes), patch.object(ONLINE, "service_projection", return_value=dict(valid, **changes)), \
+                    patch.object(ONLINE.time, "monotonic", side_effect=[0, 2]), patch.object(ONLINE.time, "sleep"), \
+                    self.assertRaises(ONLINE.SuiteError):
+                ONLINE.wait_service_role_projection(None, "enrollment", previous, 1)
+        with patch.object(ONLINE, "service_projection", return_value=dict(valid, projection_id="other")), self.assertRaises(ONLINE.SuiteError):
+            ONLINE.wait_service_role_projection(None, "enrollment", previous, time.monotonic() + 1)
 
 
 class ResourceValiditySnapshotTest(unittest.TestCase):

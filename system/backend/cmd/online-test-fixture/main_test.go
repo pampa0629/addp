@@ -873,7 +873,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	if !needsEngineProvisioner("security-mysql-owner-protection") {
 		t.Fatal("missing provisioner")
 	}
-	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "security.enrollment.update", "system.execution_authorization.create", "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"} {
+	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "security.enrollment.update", "system.execution_authorization.create", "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read", "service.definition.update"} {
 		if !contains(permissions, key) {
 			t.Fatalf("missing owner permission %s", key)
 		}
@@ -888,6 +888,9 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 		}
 		if contains(otherPermissions, "security.enrollment.update") {
 			t.Fatalf("rediscovery qualification leaked into another suite: %s", suite)
+		}
+		if contains(otherPermissions, "service.definition.update") {
+			t.Fatalf("role cursor update qualification leaked into another suite: %s", suite)
 		}
 	}
 	for _, key := range []string{"security.classification.create", "security.grade.create", "security.detector.create", "system.engine.create"} {
