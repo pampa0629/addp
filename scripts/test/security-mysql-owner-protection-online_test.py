@@ -1551,7 +1551,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             'ADDP_ONLINE_TEST_RUN_ID': 'run-42', 'GATEWAY_URL': 'http://127.0.0.1:8000',
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'fixture-token',
         }
-        environment.update({key: "private-role-fixture" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
+        environment.update({key: "private-role-fixture" for key in ONLINE.ROLE_ENVIRONMENT})
         for unavailable in (False, True):
             scenario_report = FourOutletReasonMatrixTest().report()
             mongo_report = scenario_report.pop('mongodb_algorithms')
@@ -1593,9 +1593,9 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                     browser.assert_not_called()
                 else:
                     def launch(*args):
-                        self.assertTrue(all(key not in os.environ for key in ONLINE.SERVICE_ROLE_ENVIRONMENT))
+                        self.assertTrue(all(key not in os.environ for key in ONLINE.ROLE_ENVIRONMENT))
                         self.assertEqual(scenario.call_args.kwargs["role_environment"],
-                                         {key: "private-role-fixture" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
+                                         {key: "private-role-fixture" for key in ONLINE.ROLE_ENVIRONMENT})
                         readiness.assert_called_once()
                         self.assertEqual(scenario_report['protection_reason_matrix']['coverage_counts'], {'runtime': 20, 'protocol_only': 8})
                         context = args[3]
@@ -1780,7 +1780,7 @@ for (const data of [
                 ADDP_ONLINE_TEST_USER_USERNAME="test-user", ADDP_ONLINE_TEST_USER_PASSWORD="test-password",
                 ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="29",
                 GATEWAY_URL="http://127.0.0.1:8000", CONSOLE_URL="http://127.0.0.1:5170")
-            environment.update({key: "role-fixture-private" for key in ONLINE.SERVICE_ROLE_ENVIRONMENT})
+            environment.update({key: "role-fixture-private" for key in ONLINE.ROLE_ENVIRONMENT})
             for exit_code in (1, 0):
                 path.write_text(json.dumps(self.report()))
                 with patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=exit_code, stdout="", stderr="")):
@@ -1788,7 +1788,7 @@ for (const data of [
                         ONLINE.run_export_browser(artifact, environment, "source", {"enrollment_id": "fixture"})
                 self.assertFalse(path.exists())
             def browser(command, **kwargs):
-                self.assertTrue(all(key not in kwargs["env"] for key in ONLINE.SERVICE_ROLE_ENVIRONMENT))
+                self.assertTrue(all(key not in kwargs["env"] for key in ONLINE.ROLE_ENVIRONMENT))
                 self.assertIn("e2e/online/security-manager-export.spec.js", command)
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT"]),
@@ -2508,12 +2508,12 @@ class ServiceRoleCursorRevocationTest(unittest.TestCase):
         previous = {"projection_id": "id", "revision": "00000000000000000001", "published_cursor": "one"}
         valid = dict(previous, revision="00000000000000000002", published_cursor="two", acknowledged=True)
         for changes in ({"acknowledged": False}, {"published_cursor": "one"}, {"revision": previous["revision"]}):
-            with self.subTest(changes=changes), patch.object(ONLINE, "service_projection", return_value=dict(valid, **changes)), \
+            with self.subTest(changes=changes), patch.object(ONLINE, "role_projection", return_value=dict(valid, **changes)), \
                     patch.object(ONLINE.time, "monotonic", side_effect=[0, 2]), patch.object(ONLINE.time, "sleep"), \
                     self.assertRaises(ONLINE.SuiteError):
-                ONLINE.wait_service_role_projection(None, "enrollment", previous, 1)
-        with patch.object(ONLINE, "service_projection", return_value=dict(valid, projection_id="other")), self.assertRaises(ONLINE.SuiteError):
-            ONLINE.wait_service_role_projection(None, "enrollment", previous, time.monotonic() + 1)
+                ONLINE.wait_role_projection(None, "enrollment", previous, 1)
+        with patch.object(ONLINE, "role_projection", return_value=dict(valid, projection_id="other")), self.assertRaises(ONLINE.SuiteError):
+            ONLINE.wait_role_projection(None, "enrollment", previous, time.monotonic() + 1)
 
 
 class MembershipClient:
@@ -2674,7 +2674,7 @@ class ServiceRoleMembershipRevocationTest(unittest.TestCase):
         previous = {"id": "previous", "version": 2, "state": "revoked", "assessment_id": "assessment",
                     "consumer_owner": "service", "action": "service_execute"}
         with patch.object(ONLINE, "list_pages", return_value=[previous]):
-            ONLINE.create_service_role_policy(client, "assessment", [ONLINE.SERVICE_ELIGIBILITY_ROLE])
+            ONLINE.create_role_policy(client, "assessment", [ONLINE.SERVICE_ELIGIBILITY_ROLE])
         method, path, expected, body = client.request.call_args.args
         self.assertEqual((method, path, expected, body["version"]), ("PUT", "/api/v1/security/protection-policies/previous", (200,), 2))
         self.assertNotIn("assessment_id", body)
@@ -2834,6 +2834,136 @@ class ServiceRoleNaturalExpiryTest(unittest.TestCase):
             else:
                 with self.assertRaises(ONLINE.SuiteError): ONLINE.cleanup_timed_service_assignment(client, identity, "43", "20", expiry)
             self.assertEqual(sum(call.args[0] == "POST" for call in client.request.call_args_list), 1)
+
+
+class DevelopRoleExpiryBackend(RoleExpiryBackend):
+    def __init__(self, fault=None):
+        super().__init__(fault)
+        self.previous.update(principal_id="11", membership_id="12")
+        self.executions = {}
+
+    def for_user(self, token, method, path, expected, body=None, **kwargs):
+        response = ONLINE.SUPPORT.Response
+        if path.startswith("/api/v1/develop/executions"):
+            self.events.append((token, method, path, copy.deepcopy(body)))
+            assert token == "reader-active", "Develop must use the exact same ordinary session"
+            if method == "POST":
+                assert body["execution_config"] == {"engine_id": 23}
+                assert body["content"]["query_type"] == "sql"
+                assert body["content"]["query"] == "SELECT " + ",".join(ONLINE.BANK_FIELDS) + " FROM bank_card_accounts ORDER BY id"
+                selected = bool(body["content"].get("protection_choices"))
+                execution_id = str(ONLINE.uuid.UUID(int=len(self.executions) + 1))
+                value = {"execution_id": execution_id, "status": "success",
+                    "execution_config": {"content": copy.deepcopy(body["content"])}, "metadata": {}}
+                if selected and self.expired:
+                    value.update(status="failed", error_details={"category": "protection", "code": "develop.query.protection_required",
+                        "diagnostic": {"schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "protection_role_choice_unavailable"}})
+                    if self.expiry_fault == "wrong_reason": value["error_details"]["diagnostic"]["reason"] = "protection_expired"
+                    if self.expiry_fault == "failed_data": value["metadata"]["result"] = {}
+                else:
+                    rows = []
+                    for key in ("1", "2", "3", "4", "5"):
+                        rows.append({"id": key, "customer_code": "CUST-1000"+key, ONLINE.BANK_FIELD: ONLINE.BANK_MASKED[key],
+                            "bank_account_no": "account-"+key, "card_id": "card-"+key, "bank_card_verified": "verified-"+key,
+                            "credit_card_number": str(100+int(key))})
+                    value["metadata"]["result"] = {"columns": ONLINE.BANK_FIELDS, "summary": {"preview_rows": rows}}
+                self.executions[execution_id] = value
+                return response(200, {"execution_id": execution_id})
+            execution_id = path.split("/")[5]
+            value = copy.deepcopy(self.executions[execution_id])
+            selected = bool(value["execution_config"]["content"].get("protection_choices"))
+            if path.endswith("/result") and selected:
+                if self.expired:
+                    error = {"error": "role eligibility expired", "error_code": "query_protection_roles_unavailable"}
+                    if self.expiry_fault == "wrong_delivery_code": error["error_code"] = "query_protection_choice_invalid"
+                    if self.expiry_fault == "delivery_data": error["metadata"] = {}
+                    return response(401 if self.expiry_fault == "delivery401" else 409, error)
+                for key, row in zip(("1", "2", "3", "4", "5"), value["metadata"]["result"]["summary"]["preview_rows"]):
+                    raw = ONLINE.BANK_SOURCE_VALUES[key]
+                    row[ONLINE.BANK_FIELD] = "*"*len(raw) if raw else None
+                if self.expiry_fault == "selected_missing_field": value["metadata"]["result"]["summary"]["preview_rows"][3].pop(ONLINE.BANK_FIELD)
+                if self.expiry_fault == "default_instead": value["metadata"]["result"]["summary"]["preview_rows"][0][ONLINE.BANK_FIELD] = ONLINE.BANK_MASKED["1"]
+            if self.expired and self.expiry_fault == "history_raw" and value["status"] == "success":
+                value["metadata"]["result"]["summary"]["preview_rows"][0][ONLINE.BANK_FIELD] = ONLINE.BANK_SOURCE_VALUES["1"]
+            if self.expired and self.expiry_fault == "snapshot_cleared": value["execution_config"]["content"]["protection_choices"] = []
+            if self.expired and self.expiry_fault == "history_reason_changed" and value["status"] == "failed":
+                value["error_details"]["diagnostic"]["stage"] = "result"
+            if self.expiry_fault == "missing_columns": value["metadata"]["result"].pop("columns")
+            return response(200, value)
+        original_path = path
+        if path.startswith("/api/v1/develop/query-protection-options?"):
+            assert ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)["engine_id"] == ["23"]
+            path = path.replace("/develop/", "/service/")
+        if path == "/api/v1/system/login":
+            assert body["username"] == ONLINE.DEVELOP_ROLE_USERNAME
+            body = dict(body, username="external-online-security-role-reader")
+        value = super().for_user(token, method, path, expected, body, **kwargs)
+        if original_path == "/api/v1/system/auth/context" and token != "controller" and value.status == 200:
+            permissions = set(ONLINE.DEVELOP_ROLE_READER_PERMISSIONS)
+            if self.expired and self.expiry_fault == "permission_lost": permissions.remove("develop.data_read.execute")
+            value.payload["authorization"]["role_assignments"][0]["permissions"] = sorted(permissions)
+        if original_path == "/api/v1/system/tenant/role_assignments":
+            self.timed.update(principal_id="7", membership_id="8", username=ONLINE.DEVELOP_ROLE_USERNAME)
+            value.payload = [copy.deepcopy(self.timed)]
+        if original_path.startswith("/api/v1/security/protection-enrollments/"):
+            value.payload["owner_progress"][0]["consumer_owner"] = "develop"
+        return value
+
+
+class DevelopRoleNaturalExpiryTest(unittest.TestCase):
+    def run_case(self, backend):
+        class Clock(ONLINE.datetime):
+            @classmethod
+            def now(cls, tz=None): return backend.now
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
+            ("unused", "external-online-security-role-reader", "private-password", "42", "controller")))
+        environment.update(ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME=ONLINE.DEVELOP_ROLE_USERNAME,
+                           ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD="private-develop-password")
+        with (patch.object(ONLINE, "GatewayClient", side_effect=lambda base, token, timeout: MembershipClient(backend, token)),
+              patch.object(ONLINE, "datetime", Clock), patch.object(ONLINE, "wait_protection_deadline", side_effect=backend.wait),
+              patch.object(ONLINE, "find_item", return_value=source), patch.object(ONLINE, "list_pages", return_value=[])):
+            return ONLINE.exercise_develop_role_membership_expiry(MembershipClient(backend, "governor"), 23, "fixture",
+                {"enrollment_id": "enrollment", "assessment_id": "assessment"}, {"principal_id": "9", "tenant_id": "2"},
+                time.monotonic()+300, environment)
+
+    def test_same_session_old_live_delivery_and_new_execution_refuse_history_remains_default(self):
+        backend = DevelopRoleExpiryBackend()
+        report = self.run_case(backend)
+        self.assertEqual(report["identity_before"], report["identity_after"])
+        self.assertEqual(report["old_live_result_refusal"], {"http_status":409,"error_code":"query_protection_roles_unavailable","result_absent":True})
+        self.assertEqual(report["new_query_refusal"]["diagnostic_reason"], "protection_role_choice_unavailable")
+        self.assertTrue(report["history_before"]["default_mask"] and report["history_after"]["default_mask"])
+        self.assertTrue(report["selected_live_result"]["selected_full_mask"])
+        self.assertTrue(report["explicit_default_recovery"]["live"]["default_mask"])
+        self.assertEqual(report["assignment_after"]["effective_state"], "expired")
+        self.assertEqual(report["timed_assignment_cleanup"], "expired")
+        self.assertEqual(len(backend.executions),3)
+        self.assertFalse(any(str(path).endswith("/revoke") for _,_,path,_ in backend.events))
+        self.assertEqual(sum(path=="/api/v1/system/login" for _,_,path,_ in backend.events),2)
+        wait = next(i for i,event in enumerate(backend.events) if event[0]=="wait")
+        self.assertFalse(any(path=="/api/v1/system/login" for _,_,path,_ in backend.events[wait+1:]))
+        for secret in ("private-develop-password", "reader-active", "reader-initial", *filter(None, ONLINE.BANK_SOURCE_VALUES.values())):
+            self.assertNotIn('"'+secret+'"',json.dumps(report,ensure_ascii=False))
+        self.assertEqual(backend.policy["state"],"revoked")
+        self.assertFalse(backend.service)
+
+    def test_auth_role_protection_diagnostic_history_and_silent_fallback_cannot_fake_expiry(self):
+        for fault in ("session401","version_changed","permission_lost","role_survived","premature_wait","revoked_instead",
+                      "extended_deadline","short_session","policy_changed","projection_changed","default_instead",
+                      "wrong_delivery_code","delivery_data","delivery401","wrong_reason","failed_data","history_raw",
+                      "snapshot_cleared","history_reason_changed","missing_columns","selected_missing_field"):
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(DevelopRoleExpiryBackend(fault))
+
+    def test_interruption_revokes_only_own_live_assignment_and_policy(self):
+        backend = DevelopRoleExpiryBackend("interrupt_wait")
+        with self.assertRaises(KeyboardInterrupt): self.run_case(backend)
+        self.assertEqual(backend.timed["status"],"revoked")
+        self.assertEqual(backend.previous["status"],"revoked")
+        self.assertEqual(backend.policy["state"],"revoked")
+        self.assertEqual([path for _,_,path,_ in backend.events if str(path).endswith("/revoke")],
+                         ["/api/v1/system/tenant/role_assignments/43/revoke"])
 
 
 class ResourceValiditySnapshotTest(unittest.TestCase):

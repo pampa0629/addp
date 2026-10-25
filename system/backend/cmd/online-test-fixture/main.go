@@ -36,6 +36,11 @@ var securityRoleReaderPermissions = []string{
 	"service.data_read.execute", "meta.catalog.read",
 }
 
+var securityDevelopRoleReaderPermissions = []string{
+	"develop.task.execute", "develop.task.read", "develop.data_read.execute",
+	"system.execution_authorization.create", "meta.catalog.read", "service.definition.read",
+}
+
 var consumerPermissions = []string{
 	"develop.data_read.execute",
 	"develop.task.execute",
@@ -554,6 +559,15 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return err
 		}
+		// A separate consumer prevents the Service expiry audit facts from being
+		// changed or reactivated for Develop's independent deadline probe.
+		_, _, developPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-security-develop-reader", securityDevelopRoleReaderPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME"] = "external-online-security-develop-reader"
+		values["ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD"] = developPassword
 		values["ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN"] = reader.AccessToken
 		values["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"] = "external-online-security-role-reader"
 		values["ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD"] = password
@@ -1263,6 +1277,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+		"ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME",
+		"ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD",
 		"ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME",
 		"ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD",

@@ -715,7 +715,7 @@ def assert_mysql_customer_rows(rows: Iterable[Mapping[str, object]], owner: str,
 
 def develop_execution(
     client: GatewayClient, engine_id: int, source_locator: str, deadline: float,
-    query: str, query_type: str,
+    query: str, query_type: str, *, choices: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     started = _object(
         client.request(
@@ -730,6 +730,7 @@ def develop_execution(
                     "query_type": query_type,
                     "target_locator": source_locator,
                     "query_parameters": [],
+                    **({"protection_choices": choices} if choices is not None else {}),
                 },
                 "execution_config": {"engine_id": engine_id},
                 "parameters": {},
@@ -2394,13 +2395,13 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
 
 
 
-def service_projection(client: GatewayClient, enrollment_id: str) -> dict[str, object]:
+def role_projection(client: GatewayClient, enrollment_id: str, owner: str = "service") -> dict[str, object]:
     enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
                                         (200,)).payload, "role cursor Enrollment")
     matches = [item for item in _array(enrollment.get("owner_progress"), "role cursor owner progress")
-               if isinstance(item, dict) and item.get("consumer_owner") == "service"]
+               if isinstance(item, dict) and item.get("consumer_owner") == owner]
     if enrollment.get("state") != "active" or len(matches) != 1:
-        raise SuiteError("role cursor requires one active Service projection")
+        raise SuiteError("role cursor requires one active Owner projection")
     progress = matches[0]
     if (progress.get("projection_state") != "active"
             or not isinstance(progress.get("revision"), str)
@@ -2408,22 +2409,22 @@ def service_projection(client: GatewayClient, enrollment_id: str) -> dict[str, o
             or int(progress["revision"]) <= 0
             or any(not isinstance(progress.get(key), str) or not progress[key]
                    for key in ("projection_id", "published_cursor"))):
-        raise SuiteError("role cursor Service projection identity is incomplete")
+        raise SuiteError("role cursor Owner projection identity is incomplete")
     return {key: progress.get(key) for key in ("projection_id", "revision", "published_cursor", "acknowledged")}
 
 
-def wait_service_role_projection(client: GatewayClient, enrollment_id: str,
-                                 previous: Mapping[str, object], deadline: float) -> dict[str, object]:
+def wait_role_projection(client: GatewayClient, enrollment_id: str,
+                                 previous: Mapping[str, object], deadline: float, owner: str = "service") -> dict[str, object]:
     while time.monotonic() < deadline:
-        current = service_projection(client, enrollment_id)
+        current = role_projection(client, enrollment_id, owner)
         if current["projection_id"] != previous["projection_id"]:
-            raise SuiteError("role cursor Service projection identity changed")
+            raise SuiteError("role cursor Owner projection identity changed")
         if (int(current["revision"]) > int(previous["revision"])
                 and current["published_cursor"] != previous["published_cursor"]
                 and current["acknowledged"] is True):
             return current
         time.sleep(1)
-    raise SuiteError("role cursor Service projection did not acknowledge a new revision")
+    raise SuiteError("role cursor Owner projection did not acknowledge a new revision")
 
 
 def assert_service_role_page(client: GatewayClient, path: str, expected_ids: list[str],
@@ -2500,16 +2501,17 @@ def service_subject_roles(client: GatewayClient, identity: Mapping[str, object])
     return {key: roles.get(key) for key in ("tenant_id", "actor_principal_id", "role_keys")}
 
 
-def create_service_role_policy(client: GatewayClient, assessment_id: str, role_keys: list[str]) -> dict[str, object]:
+def create_role_policy(client: GatewayClient, assessment_id: str, role_keys: list[str], owner: str = "service") -> dict[str, object]:
+    action = {"service": "service_execute", "develop": "query"}[owner]
     previous = [policy for policy in list_pages(client, "/api/v1/security/protection-policies")
-                if policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == "service"
-                and policy.get("action") == "service_execute"]
+                if policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == owner
+                and policy.get("action") == action]
     if len(previous) > 1 or any(policy.get("state") != "revoked" for policy in previous):
-        raise SuiteError("role fixture must not take over an active Service Policy")
+        raise SuiteError("role fixture must not take over an active Owner Policy")
     body = {
         "effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
         "parameters": {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"},
-        "invalid_value_effect": "suppress", "rationale": "Disposable Service old cursor role option acceptance",
+        "invalid_value_effect": "suppress", "rationale": "Disposable Owner role option acceptance",
         "role_options": [{"name": "Online cursor full mask", "role_keys": role_keys,
                           "decision": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
                                        "parameters": {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"},
@@ -2519,9 +2521,9 @@ def create_service_role_policy(client: GatewayClient, assessment_id: str, role_k
         return _object(client.request("PUT", "/api/v1/security/protection-policies/" + str(previous[0]["id"]),
             (200,), dict(body, version=previous[0]["version"])).payload, "role Policy reactivation")
     return _object(client.request("POST", "/api/v1/security/protection-policies", (201,),
-        dict(body, assessment_id=assessment_id, consumer_owner="service", action="service_execute")).payload, "role cursor Policy")
+        dict(body, assessment_id=assessment_id, consumer_owner=owner, action=action)).payload, "role cursor Policy")
 
-def service_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object]) -> dict[str, object]:
+def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None) -> dict[str, object]:
     policy_id = str(policy["id"])
     saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
     if len(saved_options) != 1:
@@ -2532,9 +2534,9 @@ def service_role_choice(client: GatewayClient, locator: str, source: Mapping[str
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
         raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
-    options = _object(client.request("GET", "/api/v1/service/query-protection-options?" +
-        urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "Service role options")
-    matches = [field for field in _array(options.get("fields"), "Service role fields")
+    options = _object(client.request("GET", "/api/v1/" + owner + "/query-protection-options?" +
+        urllib.parse.urlencode({"target_locator": locator, **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
+    matches = [field for field in _array(options.get("fields"), "Owner role fields")
                if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
     if len(matches) != 1:
         raise SuiteError("role cursor requires exactly one eligible bank-card field")
@@ -2600,7 +2602,7 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
     source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
     locator = build_item_locator(engine_id, source)
     enrollment_id, assessment_id = str(bank["enrollment_id"]), str(bank["assessment_id"])
-    previous = service_projection(client, enrollment_id)
+    previous = role_projection(client, enrollment_id)
     roles = service_subject_roles(client, identity)
     policies = list_pages(client, "/api/v1/security/protection-policies")
     if any(policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == "service"
@@ -2612,10 +2614,10 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
     failure = None
     result = {}
     try:
-        policy = create_service_role_policy(client, assessment_id, roles["role_keys"])
+        policy = create_role_policy(client, assessment_id, roles["role_keys"])
         policy_id = str(policy["id"])
-        installed = wait_service_role_projection(client, enrollment_id, previous, deadline)
-        choice = service_role_choice(client, locator, source, policy)
+        installed = wait_role_projection(client, enrollment_id, previous, deadline)
+        choice = owner_role_choice(client, locator, source, policy)
         name = ("online-security-role-cursor-" + run_suffix(run_id, "-"))[:120].rstrip("-")
         body = service_payload(name, engine_id, locator, BANK_FIELDS)
         body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
@@ -2637,7 +2639,7 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
         current = _object(client.request("GET", "/api/v1/security/protection-policies/" + policy_id, (200,)).payload, "role Policy version")
         client.request("DELETE", "/api/v1/security/protection-policies/" + policy_id, (200,),
                        {"version": current["version"], "rationale": "Revoke only this run's role option; retain saved Service choice"})
-        revoked = wait_service_role_projection(client, enrollment_id, installed, deadline)
+        revoked = wait_role_projection(client, enrollment_id, installed, deadline)
         retained = definition()
         if retained != selected:
             raise SuiteError("role cursor Service definition changed before the old cursor probes")
@@ -2684,6 +2686,9 @@ SERVICE_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP
                            "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID",
                            "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN")
 
+DEVELOP_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD")
+ROLE_ENVIRONMENT = SERVICE_ROLE_ENVIRONMENT + DEVELOP_ROLE_ENVIRONMENT
+
 
 def service_role_user_identity(client: GatewayClient, tenant_id: str, required: set[str], *, iam_controller: bool = False) -> dict[str, object]:
     context = _object(client.request("GET", "/api/v1/system/auth/context", (200,)).payload, "role User AuthContext")
@@ -2712,13 +2717,13 @@ def service_role_user_identity(client: GatewayClient, tenant_id: str, required: 
             "permissions": sorted(permissions)}
 
 
-def assert_service_eligibility_assignment(payload: object, identity: Mapping[str, object], assignment_id: str, status: str) -> dict[str, object]:
+def assert_service_eligibility_assignment(payload: object, identity: Mapping[str, object], assignment_id: str, status: str, username: str = "external-online-security-role-reader") -> dict[str, object]:
     assignment = _object(payload, "masking eligibility Assignment")
     if (assignment.get("id") != assignment_id or assignment.get("principal_type") != "user"
             or assignment.get("principal_id") != identity["principal_id"]
             or assignment.get("membership_id") != identity["membership_id"]
             or assignment.get("role_key") != SERVICE_ELIGIBILITY_ROLE or assignment.get("scope_type") != "tenant"
-            or assignment.get("username") != "external-online-security-role-reader" or assignment.get("status") != status):
+            or assignment.get("username") != username or assignment.get("status") != status):
         raise SuiteError("role revocation target differs from the dedicated eligibility Assignment")
     return {key: assignment[key] for key in ("id", "principal_id", "membership_id", "role_key", "status")}
 
@@ -2777,14 +2782,14 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
         locator = build_item_locator(engine_id, source)
         enrollment_id = str(bank["enrollment_id"])
-        before_projection = service_projection(client, enrollment_id)
+        before_projection = role_projection(client, enrollment_id)
         baseline = definition_array(client, "/api/v1/security/protection-baselines")
-        policy = create_service_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
+        policy = create_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
         policy_id = str(policy["id"])
-        installed = wait_service_role_projection(client, enrollment_id, before_projection, deadline)
+        installed = wait_role_projection(client, enrollment_id, before_projection, deadline)
         policy_path = "/api/v1/security/protection-policies/" + policy_id
         published_policy = _object(client.request("GET", policy_path, (200,)).payload, "published eligibility Policy")
-        choice = service_role_choice(reader, locator, source, policy)
+        choice = owner_role_choice(reader, locator, source, policy)
         name = ("online-security-membership-" + run_suffix(run_id, "-"))[:120].rstrip("-")
         body = service_payload(name, engine_id, locator, BANK_FIELDS)
         body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
@@ -2819,7 +2824,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         if current_roles["role_keys"] != [key for key in roles["role_keys"] if key != SERVICE_ELIGIBILITY_ROLE]:
             raise SuiteError("role revocation must remove only the dedicated eligibility role")
         if (client.request("GET", policy_path, (200,)).payload != published_policy
-                or service_projection(client, enrollment_id) != installed
+                or role_projection(client, enrollment_id) != installed
                 or fresh.request("GET", service_path, (200,)).payload != selected):
             raise SuiteError("membership revocation must not change Policy, protection projection or Service definition")
         options = _object(fresh.request("GET", "/api/v1/service/query-protection-options?" +
@@ -2829,7 +2834,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         denials = assert_service_eligibility_denials(fresh, query_path, cursor)
         recovery, recovered_version = restore_service_default(fresh, service_path, query_path, choice, selected)
         if (recovered_version == version or client.request("GET", policy_path, (200,)).payload != published_policy
-                or service_projection(client, enrollment_id) != installed
+                or role_projection(client, enrollment_id) != installed
                 or definition_array(client, "/api/v1/security/protection-baselines") != baseline):
             raise SuiteError("membership default recovery must not alter protection facts")
         result = {"identity_before": identity, "identity_after": current, "role_keys_before": roles["role_keys"],
@@ -2867,9 +2872,9 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
 
 
 def assert_timed_service_assignment(payload: object, identity: Mapping[str, object], assignment_id: str,
-        role_id: str, expires_at: datetime, effective_state: str) -> dict[str, object]:
+        role_id: str, expires_at: datetime, effective_state: str, username: str = "external-online-security-role-reader") -> dict[str, object]:
     assignment = _object(payload, "timed Service eligibility Assignment")
-    binding = assert_service_eligibility_assignment(assignment, identity, assignment_id, "active")
+    binding = assert_service_eligibility_assignment(assignment, identity, assignment_id, "active", username)
     if (assignment.get("role_id") != role_id or assignment.get("effective_state") != effective_state
             or utc_timestamp(assignment.get("valid_until"), "eligibility valid_until") != expires_at
             or any(assignment.get(key) is not None for key in ("revoked_at", "revoked_by", "revoked_reason"))):
@@ -2878,28 +2883,28 @@ def assert_timed_service_assignment(payload: object, identity: Mapping[str, obje
 
 
 def cleanup_timed_service_assignment(controller: GatewayClient, identity: Mapping[str, object], assignment_id: str,
-        role_id: str, expires_at: datetime) -> str:
+        role_id: str, expires_at: datetime, username: str = "external-online-security-role-reader") -> str:
     path = "/api/v1/system/tenant/role_assignments/" + assignment_id
     assignment = _object(controller.request("GET", path, (200,)).payload, "timed eligibility cleanup")
     if assignment.get("status") == "revoked":
-        assert_service_eligibility_assignment(assignment, identity, assignment_id, "revoked")
+        assert_service_eligibility_assignment(assignment, identity, assignment_id, "revoked", username)
         return "revoked"
     state = assignment.get("effective_state")
     if state not in {"effective", "expired"}:
         raise SuiteError("timed eligibility cleanup cannot identify its effective state")
-    assert_timed_service_assignment(assignment, identity, assignment_id, role_id, expires_at, state)
+    assert_timed_service_assignment(assignment, identity, assignment_id, role_id, expires_at, state, username)
     if state == "expired":
         return "expired"
     # A cleanup command may cross the real deadline. Never retry the mutation;
     # a typed expired conflict is resolved by one authoritative read.
     response = controller.request("POST", path + "/revoke", (200, 409), {"reason": "Disposable timed masking eligibility cleanup"})
     if response.status == 200:
-        assert_service_eligibility_assignment(response.payload, identity, assignment_id, "revoked")
+        assert_service_eligibility_assignment(response.payload, identity, assignment_id, "revoked", username)
         return "revoked"
     if _object(response.payload, "timed cleanup conflict").get("error_code") != "role_assignment_expired":
         raise SuiteError("timed eligibility cleanup returned an unrelated conflict")
     assert_timed_service_assignment(controller.request("GET", path, (200,)).payload,
-                                    identity, assignment_id, role_id, expires_at, "expired")
+                                    identity, assignment_id, role_id, expires_at, "expired", username)
     return "expired"
 
 
@@ -2935,10 +2940,10 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         locator = build_item_locator(engine_id, source)
         enrollment_id = str(bank["enrollment_id"])
         baseline = definition_array(client, "/api/v1/security/protection-baselines")
-        previous_projection = service_projection(client, enrollment_id)
-        policy = create_service_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
+        previous_projection = role_projection(client, enrollment_id)
+        policy = create_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
         policy_id = str(policy["id"])
-        installed = wait_service_role_projection(client, enrollment_id, previous_projection, deadline)
+        installed = wait_role_projection(client, enrollment_id, previous_projection, deadline)
         policy_path = "/api/v1/security/protection-policies/" + policy_id
         published_policy = client.request("GET", policy_path, (200,)).payload
         if deadline - time.monotonic() < SERVICE_ROLE_EXPIRY_SECONDS + 15:
@@ -2970,7 +2975,7 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         context = _object(active_reader.request("GET", "/api/v1/system/auth/context", (200,)).payload, "timed User session")
         if utc_timestamp(_object(context.get("token"), "timed User credential").get("expires_at"), "Access Token expiry") <= expires_at + timedelta(seconds=15):
             raise SuiteError("User credential must outlive the role deadline and refusal probes")
-        choice = service_role_choice(active_reader, locator, source, policy)
+        choice = owner_role_choice(active_reader, locator, source, policy)
         name = ("online-security-role-expiry-" + run_suffix(run_id, "-"))[:120].rstrip("-")
         body = service_payload(name, engine_id, locator, BANK_FIELDS)
         body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
@@ -2999,14 +3004,14 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         expired_assignment = assert_timed_service_assignment(controller.request("GET", assignment_path, (200,)).payload,
                                                             active, assignment_id, role_id, expires_at, "expired")
         if (client.request("GET", policy_path, (200,)).payload != published_policy
-                or service_projection(client, enrollment_id) != installed
+                or role_projection(client, enrollment_id) != installed
                 or active_reader.request("GET", service_path, (200,)).payload != selected):
             raise SuiteError("natural role expiry changed Policy, protection projection or saved Service choice")
         denials = assert_service_eligibility_denials(active_reader, query_path, cursor)
         recovery, recovered_version = restore_service_default(active_reader, service_path, query_path, choice, selected)
         if (recovered_version == version or service_role_user_identity(active_reader, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS) != active
                 or client.request("GET", policy_path, (200,)).payload != published_policy
-                or service_projection(client, enrollment_id) != installed
+                or role_projection(client, enrollment_id) != installed
                 or definition_array(client, "/api/v1/security/protection-baselines") != baseline
                 or controller.request("GET", previous_path, (200,)).payload != previous_assignment):
             raise SuiteError("natural expiry recovery changed protection or previous revocation facts")
@@ -3041,6 +3046,204 @@ def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: in
         raise SuiteError("natural role expiry cannot pass by revoking eligibility")
     return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
                 timed_assignment_cleanup="expired", policy_revoked=True, service_deleted=True)
+
+
+DEVELOP_ROLE_USERNAME = "external-online-security-develop-reader"
+DEVELOP_ROLE_READER_PERMISSIONS = {"develop.task.execute", "develop.task.read", "develop.data_read.execute",
+    "system.execution_authorization.create", "meta.catalog.read", "service.definition.read"}
+
+
+def assert_develop_role_result(execution: Mapping[str, object], selected: bool) -> dict[str, object]:
+    if execution.get("status") != "success":
+        raise SuiteError("Develop role positive control must succeed")
+    result = _object(_object(execution.get("metadata"), "Develop role metadata").get("result"), "Develop role result")
+    columns = _array(result.get("columns"), "Develop role columns")
+    rows = [_object(row, "Develop role row") for row in _array(
+        _object(result.get("summary"), "Develop role summary").get("preview_rows"), "Develop role preview")]
+    if [normalize_id(row.get("id")) for row in rows] != ["1", "2", "3", "4", "5"]:
+        raise SuiteError("Develop role control lost, duplicated or reordered five rows")
+    if selected:
+        # Reuse the full adjacent-field oracle while checking the selected mask
+        # independently; never infer the expected mask from the returned data.
+        for index, row in enumerate(rows, 1):
+            allowed = [set(BANK_FIELDS)]
+            if index == 5:
+                allowed.append(set(BANK_FIELDS) - {BANK_FIELD})
+            if set(row) not in allowed:
+                raise SuiteError("Develop selected result changed the field schema")
+        default_rows = [dict(row, **{BANK_FIELD: BANK_MASKED[str(index)]}) for index, row in enumerate(rows, 1)]
+        assert_bank_card_rows(default_rows, "Develop selected adjacent fields", columns)
+        for index, row in enumerate(rows, 1):
+            value = BANK_SOURCE_VALUES[str(index)]
+            if row.get(BANK_FIELD) != ("*" * len(value) if value else None):
+                raise SuiteError("Develop selected result did not apply the full role mask")
+    else:
+        assert_bank_card_rows(rows, "Develop default history", columns)
+    return {"rows": 5, "selected_full_mask": selected, "default_mask": not selected,
+            "non_sensitive_fields_preserved": True, "null_and_empty_verified": True}
+
+
+def develop_role_snapshot(execution: Mapping[str, object], choice: Mapping[str, object]) -> dict[str, object]:
+    value = _object(_object(execution.get("execution_config"), "Develop execution snapshot").get("content"), "Develop content snapshot")
+    if value.get("protection_choices") != [choice]:
+        raise SuiteError("Develop immutable execution snapshot lost the explicit role choice")
+    execution_id = execution.get("execution_id")
+    try:
+        if not isinstance(execution_id, str) or str(uuid.UUID(execution_id)) != execution_id or uuid.UUID(execution_id).int == 0:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("Develop role scenario requires a real execution UUID") from error
+    return value
+
+
+def exercise_develop_role_membership_expiry(client: GatewayClient, engine_id: int, database: str,
+        bank: Mapping[str, object], owner_identity: Mapping[str, object], deadline: float,
+        environment: Mapping[str, str] | None = None) -> dict[str, object]:
+    env = os.environ if environment is None else environment
+    username = env.get("ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME")
+    password = env.get("ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD")
+    if username != DEVELOP_ROLE_USERNAME or not isinstance(password, str) or not password:
+        raise SuiteError("Develop expiry requires its independent disposable reader credentials")
+    # The existing formal login mechanism is shared; only this in-memory mapping
+    # selects the independent Develop user. Credentials never enter evidence.
+    login_env = {"ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME": username, "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD": password}
+    public = GatewayClient(client.base_url, "", client.timeout)
+    controller = GatewayClient(client.base_url, env["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"], client.timeout)
+    reader = formal_service_role_login(public, login_env)
+    identity = service_role_user_identity(reader, str(owner_identity["tenant_id"]), DEVELOP_ROLE_READER_PERMISSIONS)
+    operator = service_role_user_identity(controller, identity["tenant_id"], SERVICE_ROLE_EXPIRY_CONTROLLER_PERMISSIONS, iam_controller=True)
+    if len({identity["principal_id"], operator["principal_id"], owner_identity["principal_id"]}) != 3:
+        raise SuiteError("Develop consumer, governor and IAM controller must be distinct")
+    initial = service_subject_role_observation(reader, identity)
+    if SERVICE_ELIGIBILITY_ROLE in initial["role_keys"]:
+        raise SuiteError("Develop reader must start without masking eligibility")
+    previous_id = str(positive_int(env["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"], "Service revoked Assignment ID"))
+    previous_path = "/api/v1/system/tenant/role_assignments/" + previous_id
+    previous = _object(controller.request("GET", previous_path, (200,)).payload, "Service qualification audit")
+    if (previous.get("status") != "revoked" or previous.get("role_key") != SERVICE_ELIGIBILITY_ROLE or previous.get("principal_id") == identity["principal_id"]
+            or previous.get("username") != "external-online-security-role-reader"):
+        raise SuiteError("Develop must reuse only the role definition, preserving the other user's revoked Assignment")
+    role_id = str(positive_int(previous.get("role_id"), "eligibility Role ID"))
+    policy_id = assignment_id = None
+    expires_at = None
+    failure = None
+    result = {}
+    try:
+        source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+        locator = build_item_locator(engine_id, source)
+        enrollment_id = str(bank["enrollment_id"])
+        baselines = definition_array(client, "/api/v1/security/protection-baselines")
+        old_projection = role_projection(client, enrollment_id, "develop")
+        policy = create_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE], "develop")
+        policy_id = str(policy["id"])
+        installed = wait_role_projection(client, enrollment_id, old_projection, deadline, "develop")
+        policy_path = "/api/v1/security/protection-policies/" + policy_id
+        published = client.request("GET", policy_path, (200,)).payload
+        observed = service_subject_role_observation(reader, identity)
+        expires_at = utc_timestamp(observed.get("observed_at"), "Develop System database time") + timedelta(seconds=SERVICE_ROLE_EXPIRY_SECONDS)
+        if deadline - time.monotonic() < SERVICE_ROLE_EXPIRY_SECONDS + 15:
+            raise SuiteError("Develop role expiry has insufficient remaining suite budget")
+        created = _array(controller.request("POST", "/api/v1/system/tenant/role_assignments", (201,), {
+            "membership_id": identity["membership_id"], "role_ids": [role_id], "valid_until": expires_at.isoformat(),
+            "reason": "Disposable Develop masking eligibility natural expiry"}).payload, "Develop timed Assignment")
+        if len(created) != 1:
+            raise SuiteError("Develop expiry must create exactly one Assignment")
+        assignment_id = str(positive_int(_object(created[0], "Develop Assignment").get("id"), "Develop Assignment ID"))
+        if assignment_id == previous_id:
+            raise SuiteError("Develop cannot overwrite Service Assignment audit")
+        before_assignment = assert_timed_service_assignment(created[0], identity, assignment_id, role_id, expires_at, "effective", username)
+        active_reader = formal_service_role_login(public, login_env)
+        active = service_role_user_identity(active_reader, identity["tenant_id"], DEVELOP_ROLE_READER_PERMISSIONS)
+        if ({k:v for k,v in active.items() if k != "authorization_version"} != {k:v for k,v in identity.items() if k != "authorization_version"}
+                or int(active["authorization_version"]) <= int(identity["authorization_version"])):
+            raise SuiteError("Develop timed grant changed identity or functional permissions")
+        roles_before = service_subject_role_observation(active_reader, active)
+        context = _object(active_reader.request("GET", "/api/v1/system/auth/context", (200,)).payload, "Develop same session")
+        if (roles_before["role_keys"] != sorted(initial["role_keys"] + [SERVICE_ELIGIBILITY_ROLE])
+                or utc_timestamp(roles_before.get("expires_at"), "Develop observation deadline") != expires_at
+                or utc_timestamp(_object(context.get("token"), "Develop credential").get("expires_at"), "Develop token expiry") <= expires_at + timedelta(seconds=15)):
+            raise SuiteError("Develop requires the exact qualification deadline and a longer-lived session")
+        choice = owner_role_choice(active_reader, locator, source, policy, "develop", engine_id)
+        query = "SELECT " + ",".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id"
+        success = develop_execution(active_reader, engine_id, locator, deadline, query, "sql", choices=[choice])
+        snapshot = develop_role_snapshot(success, choice)
+        successful_id = success["execution_id"]
+        path = "/api/v1/develop/executions/" + successful_id
+        history_before = assert_develop_role_result(success, False)
+        live_before = assert_develop_role_result(_object(active_reader.request("GET", path + "/result", (200,)).payload, "Develop live result"), True)
+        before_wait = service_subject_role_observation(active_reader, active)
+        if (SERVICE_ELIGIBILITY_ROLE not in before_wait["role_keys"]
+                or utc_timestamp(before_wait.get("observed_at"), "Develop baseline database time") >= expires_at):
+            raise SuiteError("Develop positive control must finish before eligibility expires")
+        wait_protection_deadline(expires_at, deadline)
+        after = service_role_user_identity(active_reader, identity["tenant_id"], DEVELOP_ROLE_READER_PERMISSIONS)
+        roles_after = service_subject_role_observation(active_reader, after)
+        if (after != active or roles_after["role_keys"] != initial["role_keys"]
+                or utc_timestamp(roles_after.get("observed_at"), "Develop expired database time") < expires_at):
+            raise SuiteError("Develop natural expiry must preserve the exact session, authorization version and permissions")
+        assignment_after = assert_timed_service_assignment(controller.request("GET", "/api/v1/system/tenant/role_assignments/" + assignment_id, (200,)).payload,
+            active, assignment_id, role_id, expires_at, "expired", username)
+        history = _object(active_reader.request("GET", path, (200,)).payload, "Develop history after expiry")
+        if (develop_role_snapshot(history, choice) != snapshot or client.request("GET", policy_path, (200,)).payload != published
+                or role_projection(client, enrollment_id, "develop") != installed):
+            raise SuiteError("Develop role expiry changed Policy, projection or saved execution choice")
+        history_after = assert_develop_role_result(history, False)
+        denied = active_reader.request("GET", path + "/result", (409,))
+        error = _object(denied.payload, "Develop expired role delivery refusal")
+        if (set(error) != {"error", "error_code"} or error.get("error_code") != "query_protection_roles_unavailable"
+                or not isinstance(error.get("error"), str) or not error["error"].strip()):
+            raise SuiteError("Develop live delivery requires exact role-unavailable 409 with no result")
+        failed = develop_execution(active_reader, engine_id, locator, deadline, query, "sql", choices=[choice])
+        develop_role_snapshot(failed, choice)
+        refusal = validate_develop_protection_refusal(failed, "preparation", "protection_role_choice_unavailable")
+        failed_history = _object(active_reader.request("GET", "/api/v1/develop/executions/" + failed["execution_id"], (200,)).payload, "Develop refused history")
+        if failed_history.get("execution_id") != failed["execution_id"] or failed_history.get("error_details") != failed.get("error_details"):
+            raise SuiteError("Develop role refusal must persist on the same execution")
+        validate_develop_protection_refusal(failed_history, "preparation", "protection_role_choice_unavailable")
+        recovery = develop_execution(active_reader, engine_id, locator, deadline, query, "sql", choices=[])
+        recovery_evidence = assert_develop_role_result(recovery, False)
+        recovery_live = assert_develop_role_result(_object(active_reader.request("GET", "/api/v1/develop/executions/" + recovery["execution_id"] + "/result", (200,)).payload, "Develop default recovery"), False)
+        ids = [successful_id, failed["execution_id"], recovery["execution_id"]]
+        if (len(set(ids)) != 3 or any(str(uuid.UUID(value)) != value or uuid.UUID(value).int == 0 for value in ids)
+                or _object(recovery.get("execution_config"), "recovery snapshot").get("content", {}).get("protection_choices") != []
+                or service_role_user_identity(active_reader, identity["tenant_id"], DEVELOP_ROLE_READER_PERMISSIONS) != active
+                or client.request("GET", policy_path, (200,)).payload != published
+                or role_projection(client, enrollment_id, "develop") != installed
+                or definition_array(client, "/api/v1/security/protection-baselines") != baselines
+                or controller.request("GET", previous_path, (200,)).payload != previous):
+            raise SuiteError("Develop recovery changed immutable protection, identity or Service audit facts")
+        result = {"identity_before": active, "identity_after": after, "same_access_session_valid": True,
+            "functional_permissions_and_authorization_version_unchanged": True, "natural_expiry_verified": True,
+            "role_keys_before": roles_before["role_keys"], "role_keys_after": roles_after["role_keys"],
+            "assignment_before": before_assignment, "assignment_after": assignment_after,
+            "database_observed_before": before_wait["observed_at"], "database_observed_after": roles_after["observed_at"],
+            "policy_projection_and_execution_choice_unchanged": True, "choice": choice, "installed_projection": installed,
+            "successful_execution_id": successful_id, "selected_live_result": live_before,
+            "history_before": history_before, "history_after": history_after,
+            "old_live_result_refusal": {"http_status": denied.status, "error_code": error["error_code"], "result_absent": True},
+            "new_query_refusal": {**refusal, "execution_id": failed["execution_id"], "same_history_result_absent": True},
+            "explicit_default_recovery": {**recovery_evidence, "execution_id": recovery["execution_id"], "live": recovery_live}}
+    except BaseException as error:
+        failure = error
+    errors = []
+    assignment_cleanup = None
+    if assignment_id is not None:
+        try:
+            assignment_cleanup = cleanup_timed_service_assignment(controller, identity, assignment_id, role_id, expires_at, username)
+        except BaseException as error:
+            errors.append(str(error))
+    try:
+        cleanup_service_role_resources(client, policy_id, None, failure)
+    except BaseException as error:
+        errors.append(str(error))
+    if errors:
+        raise SuiteError("Develop natural eligibility expiry cleanup failed: " + "; ".join(errors)) from failure
+    if failure:
+        raise failure
+    if assignment_cleanup != "expired":
+        raise SuiteError("Develop natural eligibility cannot pass by revoking its Assignment")
+    return dict(result, timed_assignment_cleanup="expired", policy_revoked=True,
+                temporary_definitions_created=0, residual_resources=0)
 
 
 def validity_snapshot(enrollment: Mapping[str, object], mode: str,
@@ -3228,6 +3431,8 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     service_role_membership_expiry = exercise_service_role_membership_expiry(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    develop_role_membership_expiry = exercise_develop_role_membership_expiry(
+        client, source_engine_id, source_database, bank_card_metadata, identity, deadline, role_environment)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -3311,7 +3516,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v28",
+            "schema_version": "addp.security-mysql-owner-protection-online/v29",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -3321,6 +3526,7 @@ def run_scenario(
             "service_role_cursor_revocation": service_role_cursor_revocation,
             "service_role_membership_revocation": service_role_membership_revocation,
             "service_role_membership_expiry": service_role_membership_expiry,
+            "develop_role_membership_expiry": develop_role_membership_expiry,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -3524,7 +3730,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator,
                                ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT=json.dumps(
                                    dict(output_context, required_owners=list(PROTECTION_OWNERS)), ensure_ascii=False))
-    for key in SERVICE_ROLE_ENVIRONMENT:
+    for key in ROLE_ENVIRONMENT:
         browser_environment.pop(key, None)
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
@@ -3572,8 +3778,8 @@ def main() -> int:
     SUPPORT.require_hosted_security_lifecycle(Path(__file__).resolve().parents[2])
     # Keep the IAM controller and dedicated reader out of every lifecycle and
     # browser subprocess; only the bounded membership scenario receives them.
-    role_environment = {key: required_environment(key) for key in SERVICE_ROLE_ENVIRONMENT}
-    for key in SERVICE_ROLE_ENVIRONMENT:
+    role_environment = {key: required_environment(key) for key in ROLE_ENVIRONMENT}
+    for key in ROLE_ENVIRONMENT:
         os.environ.pop(key, None)
     tenant_id = positive_int(
         required_environment("ADDP_ONLINE_TEST_TENANT_ID"),

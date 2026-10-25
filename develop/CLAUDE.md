@@ -513,4 +513,6 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 
 同日用户重启后的本地 Develop／Security ready/registered，运行构建 `53be389c5e434b8e1f045796b7f892dd9aef7b1b` 已包含本次实现。只读数据库核对迁移 `2026101701` 已安装、Develop Query 旧私有历史键剩余零条；旧执行 `a812f451-4f09-4d11-862e-86c351ae6675` 与旧获批执行 `00adf789-ec22-4f01-9875-add997566ebd` 均保留成功状态和十行默认预览，完整手机号行数为零。Chrome 管理员真实打开前一执行的历史详情，十行预览保持掩码／NULL。本地未新增原值授权或重跑源查询；旧获批执行的移除事实来自只读数据库核对。结合已通过的 Common／Develop Go、全仓 Go、真实 PostgreSQL、Develop 前端、授权／Swagger 和 Online 夹具门禁，本切片已验收；不外推为 SQL 自动重写或透明加密已实现。
 
+2026-10-25，角色资格自然到期已纳入既有隔离 suite 的领域 v29：独立普通 Develop 测试用户的主功能角色保持有效，仅第二个脱敏选择资格 Assignment 自然到期。场景分别检查旧实时结果 409/query_protection_roles_unavailable、新执行 preparation/protection_role_choice_unavailable 且同一历史无结果、旧成功历史始终默认脱敏，以及显式清空选择后同一会话默认五行恢复；不以会话或功能权限失效替代资格拒绝。测试使用真实 IAM/Develop HTTP 主路径，配置先同步再开始 90 秒期限，成功不 revoke/重登/续期，失败或中断精确清理；详见 [Online 场景](../scripts/docs/Online数据保护.md#develop-角色资格自然到期)。`make test-security-online-runner` 的 38/50/28/268 项 Python、相关 Go 夹具及登记检查通过（T0/T1）；新 HTTP T4 尚未运行，CI 归专门会话，本轮不变更产品协议或本地服务生命周期。
+
 2026-10-22 角色方式选择阶段验证：本人自查、选择保存／重载、绑定执行角色复核、同次实时／默认历史以及有界交付已落地。Common／Develop／System Go T1、既有 IAM／Common PG query-read-set／Common MySQL／Develop PG T2 及 Develop 92 项浏览器／构建、Monitor 289+2 项浏览器和共享前端 259 项通过；详见 `security/CLAUDE.md` 同日记录。当前特殊选择仅限已证明的 SQL／MQL 普通查询；其他 Owner 业务选择、受选查询全量导出与本地真实账号／Hosted T4 尚未完成，不以此阶段记录宣称整体数据保护清单已完成。

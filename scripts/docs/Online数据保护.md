@@ -51,6 +51,14 @@
 
 自然到期路径不调用 revoke，不重新登录或续期。失败/中断时仅处理本轮捕获的精确 Assignment：仍有效时撤销，已自然到期时核对 expired 后保留审计事实；清理跨越到期点产生的冲突须重读核实，不重试角色写命令。Policy/Service 仍沿现有精确清理；报告只保留身份、期限、数据库观察、查询游标摘要与拒绝/恢复事实，凭据隔离沿 v27。确定性回归沿 `make test-security-online-runner`，实际 Hosted 尚待专门 CI 会话运行，不新增部署或 CI 路线。
 
+## Develop 角色资格自然到期
+
+领域报告 v29 的 `develop_role_membership_expiry` 使用独立普通 Develop 用户。主角色保留查询执行、数据读取、执行授权创建、本人历史读取及 Meta 读取；资格角色只重复主角色已有的服务定义读取 Permission，不增加功能权限。复用隔离 IAM 管理员及既有资格角色定义，正式 API 新建该用户的 90 秒 Assignment；不变更 Service 用户或其已到期审计记录。先发布 Develop/query 专用 Policy 并等待同步，再基于 System 数据库观察时间建立期限并登录一次。
+
+到期前同一次真实查询必须得到角色全遮盖实时结果，而同一 UUID 的历史始终默认脱敏；保存的执行快照保留原选择。等待真实时间后，同一 Access Token、主体、Membership、授权版本和功能权限仍有效，Assignment active/expired 且没有撤销事实。保持 Policy、Assessment、投影及执行快照不变，复读旧实时结果必须精确 409/query_protection_roles_unavailable；保留选择重新查询必须形成新的真实 UUID，在 preparation 阶段以 protection_role_choice_unavailable 拒绝，同一历史无结果。旧成功历史仍默认脱敏；显式提交空选择的新查询恢复五行默认结果。新查询的执行授权期限必须仍有效，不能把会话、功能权限、执行授权或保护投影到期冒充资格拒绝。
+
+仅失败或中断时清理尚有效的本轮 Assignment；成功不撤销、不重新登录、不续期。沿用精确 Policy 撤销、凭据隔离和 existing suite/Makefile 门禁，新增查询执行与审计事实随隔离 Infra 销毁，不新增产品接口或浏览器专项。确定性 T0/T1 与实际 HTTP T4 分别记录，CI 由专门会话跟进。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

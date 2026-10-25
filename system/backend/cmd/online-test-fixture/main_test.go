@@ -939,7 +939,7 @@ func TestSecurityMaskingEligibilityKeepsFunctionalPermissionsAndReissuesSession(
 		}
 	}
 	values := map[string]string{}
-	for _, key := range []string{"ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME", "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID", "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"} {
+	for _, key := range []string{"ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME", "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID", "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"} {
 		values[key] = "private-fixture-value"
 	}
 	path := filepath.Join(t.TempDir(), "security-role.env")
@@ -1522,5 +1522,12 @@ func TestExecutionRetentionFixtureHasOnlyMonitorReadPermission(t *testing.T) {
 	permissions, err := suitePermissions("execution-retention-readonly")
 	if err != nil || len(permissions) != 1 || permissions[0] != "monitor.execution.read" || needsEngineProvisioner("execution-retention-readonly") {
 		t.Fatalf("retention fixture must not grant Owner, IAM, engine or platform capabilities: %v %v", permissions, err)
+	}
+}
+
+func TestSecurityMaskingDevelopReaderHasOnlyStableFunctionalPermissions(t *testing.T) {
+	want := []string{"develop.task.execute", "develop.task.read", "develop.data_read.execute", "system.execution_authorization.create", "meta.catalog.read", "service.definition.read"}
+	if !slices.Equal(securityDevelopRoleReaderPermissions, want) {
+		t.Fatal("Develop expiry must preserve the minimal functional role and duplicate eligibility read", securityDevelopRoleReaderPermissions)
 	}
 }
