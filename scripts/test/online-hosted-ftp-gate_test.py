@@ -46,6 +46,7 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
             if [ "$1" = test-common-nfs-integration ]; then
               [ -n "$ADDP_NFS_TEST_EXPORT" ] && [ "${ADDP_TEST_NFS_PROTOCOL_FAIL:-0}" != 1 ]; exit $?
             fi
+            [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ] || exit 1
             [ "${ADDP_ONLINE_CONSUMER_ENGINE_ID:-17}" = 17 ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&

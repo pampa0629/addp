@@ -31,6 +31,10 @@ stop_online_fixture() {
   return "$cleanup_status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# Three sources exercise 21 models, including full grant/deny/revocation and
+# task/result cleanup. Keep this suite's measured budget separate from the
+# shared default and from every product/request execution timeout.
+export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
 export ADDP_ONLINE_TEST_RUN_ID="ftp-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MODEL3D_DOCKER_PLATFORM=linux/amd64
