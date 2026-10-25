@@ -60,7 +60,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 ## 开发规则
 
 - 存储引擎连接信息必须从 System 获取，Service 不管理连接配置。
-- 查询服务执行目标必须显式且互斥：普通 SQL 和关系表只使用 `engine_id`；联邦 SQL 只使用 `runtime_engine_id`；Parquet 对象表同时保存 Source `engine_id` 与 DuckDB `runtime_engine_id`。不得通过 `engine_id IS NULL` 或 SQL 内容猜测执行模式。
+- 查询执行目标按[执行绑定与依赖快照](docs/architecture/查询发布与执行.md#执行绑定与依赖快照)校验显式绑定及互斥条件：普通 SQL 和关系表仅绑定 Source Engine，联邦 SQL 仅绑定 DuckDB Runtime，Parquet 对象表同时绑定两者；不按空字段或 SQL 内容猜测执行模式。验证沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，绑定／快照夹具不代替各来源真实执行与消费链路验收，未运行或未覆盖不计通过。
 - SQL 样例沿[引擎发现与可用性](docs/architecture/查询发布与执行.md#发布时的引擎发现与可用性)：按 capability 发现，以当前用户权限完成最多 10 行真实非空验证，只返回不含分页的基础 SQL，不回退硬编码样例。验证沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，样例验证不代替发布后真实消费验收，未运行或未覆盖不计通过。
 - 查询来源与协议沿[唯一结构化查询内核](docs/architecture/查询发布与执行.md#统一执行契约)，协议层不拼接 SQL；发布契约须有非空唯一稳定排序键，采用 cursor/keyset 与 `limit + 1`，不保留 `page/offset`、原始 `filter/orderBy` 或兼容双轨。WFS 尚未挂载发布路由，其共享内核要求与待验范围见[WFS 边界](docs/testing/查询与要素协议.md#wfs-边界)；REST/Features 或第三方 WFS 注册解析成功不证明 WFS 发布可用，未运行或未覆盖不计通过。
 - SQL 命名参数沿[命名参数展示与固定选项](docs/architecture/查询发布与执行.md#命名参数展示与固定选项)：仅接受强类型标量，定义与 `:name` 引用一致，请求按定义校验，由共享查询运行层绑定；禁止字符串替换及关系、表名、字段名或 SQL 片段参数。请求与验收沿[REST Query](docs/testing/查询与要素协议.md#rest-query)，类型／绑定夹具不代替实际数据库与身份链路验收，未运行或未覆盖不计通过。
