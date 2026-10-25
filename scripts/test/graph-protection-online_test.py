@@ -68,10 +68,10 @@ def dense_evidence():
         if index >= 5:
             stage.update(layout=['dagre','circular','radial','force'][index-5], selected_label=['分层','环形','辐射','力导向'][index-5])
         stages.append(stage)
-    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v2', stages=stages,
+    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v3', stages=stages,
         requests=[dict(method='POST',path='/api/v1/graph/graphs/8/'+operation,body=stages[index]['request']) for operation,index in [('search',0),('expand',2)]])
     visual['relationships'] = []
-    for stage in stages[-4:]:
+    for stage in [stages[4], *stages[-4:]]:
         centers = {hit['native_id']: (hit['x'],hit['y'],pixel['box']) for group in stage['groups'] for pixel,hit in zip(group['frame']['nodes'],group['hits'])}
         hits = []
         for edge in edges:
@@ -81,7 +81,23 @@ def dense_evidence():
             display = lambda value: str(value).lower() if type(value) is bool else format(value,'g') if type(value) in (float,int) else str(value)
             hits.append(dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type=edge['type'],
                 properties={key:display(value) for key,value in edge['properties'].items()},path=[['M',*start],['Q',*control,*end]],path_source=edge['source'],path_target=edge['target'],x=point[0],y=point[1],t=.5,pixel=[*next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"]),255]))
-        visual['relationships'].append(dict(layout=stage['layout'],width=800,height=600,stable_frames=10,attempts=72,hits=hits))
+        visual['relationships'].append(dict(layout=stage.get('layout','force'),width=800,height=600,stable_frames=10,attempts=72,hits=hits))
+    baseline = visual['relationships'].pop(0)
+    filter_stages = []
+    for index, selected in enumerate([['Parallel'], [], ['Link'], ['Link','Parallel']]):
+        stage = copy.deepcopy(stages[4]);stage.pop('selected_shapes');stage['layout'] = 'force'
+        stage.update(phase='relation-filter-'+str(index), selected_types=selected)
+        stage['edges'] = [edge for edge in edges if edge['type'] in selected]
+        stage['relationship_pixels'] = [sample for sample in stage['relationship_pixels'] if sample['type'] in selected]
+        stage['absent_pixels'] = [dict(sample,pixelCount=0) for sample in stages[-1]['relationship_pixels'] if sample['type'] not in selected]
+        stage['relationships'] = None
+        if index in (0,2):
+            stage['relationships'] = copy.deepcopy(baseline)
+            stage['relationships']['hits'] = [hit for hit in baseline['hits'] if hit['type'] in selected]
+            stage['relationships']['attempts'] = len(stage['edges'])
+        stage['probes'] = [{key:hit[key] for key in ('native_id','x','y')} | dict(relation_selected=False) for hit in baseline['hits']] if index==1 else []
+        filter_stages.append(stage)
+    visual['relation_filters'] = dict(baseline=baseline,stages=filter_stages)
     return expected, visual
 
 
@@ -90,6 +106,11 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
         environment.start()
         self.addCleanup(environment.stop)
+
+    def test_dense_refuses_missing_relationship_filter_roundtrip(self):
+        expected, visual = dense_evidence()
+        del visual['relation_filters']
+        with self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(visual, expected)
 
     def test_dense_report_refuses_missing_relationship_mouse_and_property_evidence(self):
         expected, visual = dense_evidence()
@@ -121,6 +142,29 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         for name, change in changes.items():
             candidate=copy.deepcopy(visual);change(candidate)
             with self.subTest(name=name), self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(candidate,expected)
+
+    def test_relationship_filter_evidence_rejects_wrong_selection_hidden_strokes_hits_and_probes(self):
+        expected, visual = dense_evidence()
+        SUITE.verify_dense(visual,expected)
+        changes = {
+            'missing-stage': lambda f:f['stages'].pop(),
+            'selection': lambda f:f['stages'][1].update(selected_types=['Link','Parallel']),
+            'hidden-edge': lambda f:f['stages'][1]['edges'].append(expected['edges'][0]),
+            'pixel': lambda f:f['stages'][1]['absent_pixels'][0].update(pixelCount=1),
+            'pixel-type': lambda f:f['stages'][1]['absent_pixels'][0].update(pixelCount=False),
+            'frame': lambda f:f['stages'][1]['absent_pixels'][0].update(stableFrames=9),
+            'color': lambda f:f['stages'][1]['absent_pixels'][0].update(color=[1,2,3]),
+            'mouse-missing': lambda f:f['stages'][0]['relationships']['hits'].pop(),
+            'mouse-property': lambda f:f['stages'][2]['relationships']['hits'][0]['properties'].update(active='wrong'),
+            'probe-missing': lambda f:f['stages'][1]['probes'].pop(),
+            'probe-selected': lambda f:f['stages'][1]['probes'][0].update(relation_selected=True),
+            'probe-type': lambda f:f['stages'][1]['probes'][0].update(relation_selected=0),
+            'probe-coordinate': lambda f:f['stages'][1]['probes'][0].update(x=0),
+            'restore-edge': lambda f:f['stages'][3]['edges'].pop(),
+        }
+        for name,change in changes.items():
+            raw=copy.deepcopy(visual);change(raw['relation_filters'])
+            with self.subTest(name=name),self.assertRaises(SUITE.SuiteError):SUITE.verify_dense(raw,expected)
 
     def test_service_graph_requires_exact_native_rows_and_no_output_on_protection_failure(self):
         good = {'rows_count': 3, 'columns': ['id', 'name'], 'rows': [
@@ -305,7 +349,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_dense_phase_uses_reader_browser_and_cleans_after_success_or_failure(self):
         expected, visual = dense_evidence()
-        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png"):
+        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png", "filter-missing", "filter-identity", "filter-png"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
                 deleted = []
                 class Client:
@@ -334,6 +378,12 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     for layout in visual['relationships']:
                         if failure != 'relationship-png' or layout['layout'] != 'force':
                             Path(folder,'relationship-'+layout['layout']+'-console.png').write_bytes(b'unit-test')
+                    if failure != 'filter-missing':
+                        filters = dict(expected,schema_version='addp.graph-relationship-filter-frame/v1',**visual['relation_filters'])
+                        if failure == 'filter-identity': filters['principal_id'] = 'foreign'
+                        Path(folder,'graph-relationship-filter-frame.json').write_text(json.dumps(filters))
+                    for stage in visual['relation_filters']['stages']:
+                        if failure != 'filter-png' or stage['phase'] != 'relation-filter-3': Path(folder,stage['phase']+'-console.png').write_bytes(b'unit-test')
                     Path(folder, 'graph-dense-browser-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=[])))
                     for stage in visual['stages']: Path(folder, stage['phase']+'-console.png').write_bytes(b'unit-test')
                     return type('Result', (), {'returncode': 1 if failure == "browser" else 0})()
@@ -346,7 +396,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     elif failure == "browser":
                         with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
-                    elif failure.startswith("relationship-"):
+                    elif failure.startswith(("relationship-", "filter-")):
                         with self.assertRaises(SUITE.SuiteError): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     else:
                         SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)

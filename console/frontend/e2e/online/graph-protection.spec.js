@@ -296,9 +296,12 @@ test('ordinary reader proves multi-label dense native graph through Console', as
   expect(development).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-stable-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-dense-stable-frame/v2', ...visual
+    ...expected, schema_version: 'addp.graph-dense-stable-frame/v3', ...visual
   }, null, 2))
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-relationship-hit-frame.json'), JSON.stringify({
     ...expected, schema_version: 'addp.graph-relationship-hit-frame/v1', layouts: visual.relationships
+  }, null, 2))
+  writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-relationship-filter-frame.json'), JSON.stringify({
+    ...expected, schema_version: 'addp.graph-relationship-filter-frame/v1', ...visual.relation_filters
   }, null, 2))
 })

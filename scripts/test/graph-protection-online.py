@@ -459,10 +459,35 @@ def verify_dense_reference(nodes, edges):
     return ids
 
 
+def verify_dense_frame(stage, members, edges, shapes, search=False):
+    require(stage["nodes"] == members and stage["edges"] == edges, "Dense frame native membership differs")
+    relation_pixels = stage["relationship_pixels"]
+    require(type(relation_pixels) is list and [item.get("type") for item in relation_pixels] == sorted({edge["type"] for edge in edges}), "Dense visible relationship types missing")
+    for sample in relation_pixels:
+        require(set(sample) == {"type", "color", "pixelCount", "stableFrames"} and type(sample["pixelCount"]) is int and sample["pixelCount"] >= 40 and
+                type(sample["stableFrames"]) is int and sample["stableFrames"] >= 10 and type(sample["color"]) is list and len(sample["color"]) == 3 and
+                all(type(value) is int and 0 <= value <= 255 for value in sample["color"]), "Dense relation strokes not visibly stable")
+    require(len({tuple(sample["color"]) for sample in relation_pixels}) == len(relation_pixels), "Dense relation colors collide")
+    groups = stage["groups"]
+    wanted_shapes = [shape for shape in shapes if any(sorted(node["labels"]) == sorted(shape["labels"]) for node in members)]
+    require(type(groups) is list and len(groups) == len(wanted_shapes), "Dense color group missing")
+    positions = []
+    require(len({(group["frame"]["width"], group["frame"]["height"], group["frame"]["stableFrames"]) for group in groups}) == 1, "Dense groups did not settle simultaneously")
+    for group, shape in zip(groups, wanted_shapes):
+        require(set(group) == {"name", "labels", "frame", "hits"} and group["name"] == shape["name"] and group["labels"] == sorted(shape["labels"]), "Dense color shape differs")
+        group_ids = {node["properties"]["id"]: node["id"] for node in members if sorted(node["labels"]) == sorted(shape["labels"])}
+        verify_pixel_frame(group["frame"], group["hits"], group_ids)
+        require((group["frame"]["color"] != group["frame"]["fillColor"]) if search else (group["frame"]["color"] == group["frame"]["fillColor"]), "Dense search/ordinary color evidence differs")
+        positions.extend((hit["native_id"], hit["x"], hit["y"]) for hit in group["hits"])
+    require(len({tuple(group["frame"]["fillColor"]) for group in groups}) == len(groups), "Dense label colors collide")
+    require(len({(x, y) for _, x, y in positions}) == len(members), "Dense color groups duplicate visible nodes")
+    return positions
+
+
 def verify_dense(visual, expected):
-    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships"} and
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships", "relation_filters"} and
             all(visual.get(key) == value for key, value in expected.items()) and
-            visual["schema_version"] == "addp.graph-dense-stable-frame/v2", "Dense evidence identity differs")
+            visual["schema_version"] == "addp.graph-dense-stable-frame/v3", "Dense evidence identity differs")
     ids = verify_dense_reference(expected["nodes"], expected["edges"])
     shapes = expected["shapes"]
     label_sets = {tuple(sorted(labels)) for labels in dense_fixture_contract()[0].values()}
@@ -479,38 +504,20 @@ def verify_dense(visual, expected):
         extra = {"request", "http_status"} if index in (0, 2) else {"selected_shapes"} if index in (3, 4) else {"layout", "selected_label"} if index >= 5 else set()
         require(set(stage) == {"phase", "nodes", "edges", "groups", "relationship_pixels"} | extra and
                 stage["nodes"] == members and stage["edges"] == edges, "Dense stage native membership differs")
-        relation_pixels = stage["relationship_pixels"]
-        require(type(relation_pixels) is list and [item.get("type") for item in relation_pixels] == sorted({edge["type"] for edge in edges}), "Dense visible relationship types missing")
-        for sample in relation_pixels:
-            require(set(sample) == {"type", "color", "pixelCount", "stableFrames"} and type(sample["pixelCount"]) is int and sample["pixelCount"] >= 40 and
-                    type(sample["stableFrames"]) is int and sample["stableFrames"] >= 10 and type(sample["color"]) is list and len(sample["color"]) == 3 and
-                    all(type(value) is int and 0 <= value <= 255 for value in sample["color"]), "Dense relation strokes not visibly stable")
-        require(len({tuple(sample["color"]) for sample in relation_pixels}) == len(relation_pixels), "Dense relation colors collide")
-        groups = stage["groups"]
-        wanted_shapes = [shape for shape in shapes if any(sorted(node["labels"]) == sorted(shape["labels"]) for node in members)]
-        require(type(groups) is list and len(groups) == len(wanted_shapes), "Dense color group missing")
-        positions = []
-        require(len({(group["frame"]["width"], group["frame"]["height"], group["frame"]["stableFrames"]) for group in groups}) == 1, "Dense groups did not settle simultaneously")
-        for group, shape in zip(groups, wanted_shapes):
-            require(set(group) == {"name", "labels", "frame", "hits"} and group["name"] == shape["name"] and group["labels"] == sorted(shape["labels"]), "Dense color shape differs")
-            group_ids = {node["properties"]["id"]: node["id"] for node in members if sorted(node["labels"]) == sorted(shape["labels"])}
-            verify_pixel_frame(group["frame"], group["hits"], group_ids)
-            require((group["frame"]["color"] != group["frame"]["fillColor"]) if index == 0 else (group["frame"]["color"] == group["frame"]["fillColor"]), "Dense search/ordinary color evidence differs")
-            positions.extend((hit["native_id"], hit["x"], hit["y"]) for hit in group["hits"])
-        require(len({tuple(group["frame"]["fillColor"]) for group in groups}) == len(groups), "Dense label colors collide")
-        require(len({(x, y) for _, x, y in positions}) == len(members), "Dense color groups duplicate visible nodes")
+        positions = verify_dense_frame(stage, members, edges, shapes, index == 0)
         if index == 0:
             require(stage["http_status"] == 200 and stage["request"] == {"query": "Dense", "limit": 30}, "Dense search request differs")
         if index == 2:
             require(stage["http_status"] == 200 and stage["request"] == {"target": {"kind": "entity", "id": ids["n01"]}, "depth": 2, "node_limit": 200, "relationship_limit": 400}, "Dense expansion request differs")
         if index in (3, 4):
-            wanted = [shape["name"] for shape in wanted_shapes]
+            wanted = [group["name"] for group in stage["groups"]]
             require(stage["selected_shapes"] == sorted(wanted), "Dense filter selection differs")
         if index >= 5:
             layout, label = [("dagre", "分层"), ("circular", "环形"), ("radial", "辐射"), ("force", "力导向")][index-5]
             require(stage["layout"] == layout and stage["selected_label"] == label and sorted(positions) != previous_positions, "Dense layout did not visibly change")
         previous_positions = sorted(positions)
     verify_relationships(visual["relationships"], expected, stages[-4:])
+    verify_dense_filters(visual["relation_filters"], expected, stages[4])
     root = f"/api/v1/graph/graphs/{expected['graph_id']}"
     require(visual["requests"] == [{"method": "POST", "path": root + "/search", "body": stages[0]["request"]},
         {"method": "POST", "path": root + "/expand", "body": stages[2]["request"]}], "Dense filter/layout made unexpected requests")
@@ -518,39 +525,72 @@ def verify_dense(visual, expected):
 
 def verify_relationships(layouts, expected, stages):
     require(type(layouts) is list and [layout.get("layout") for layout in layouts] == ["dagre", "circular", "radial", "force"], "Relationship layouts incomplete")
-    edges = {edge["id"]: edge for edge in expected["edges"]}
+    for layout, stage in zip(layouts, stages):
+        verify_relationship_frame(layout, expected["edges"], stage)
+
+
+def verify_relationship_frame(layout, native_edges, stage):
+    edges = {edge["id"]: edge for edge in native_edges}
     number = lambda value: type(value) in (int, float) and math.isfinite(value)
     display = lambda value: str(value).lower() if type(value) is bool else format(value, 'g') if type(value) in (int, float) else str(value)
-    for layout, stage in zip(layouts, stages):
-        require(set(layout) == {"layout", "width", "height", "stable_frames", "attempts", "hits"} and type(layout["stable_frames"]) is int and layout["stable_frames"] >= 10 and
-                type(layout["attempts"]) is int and layout["attempts"] >= len(edges) and all(number(layout[key]) and layout[key] > 0 for key in ("width", "height")), "Relationship frame is invalid")
-        centers = {hit["native_id"]: (hit["x"], hit["y"], pixel["box"]) for group in stage["groups"] for pixel, hit in zip(group["frame"]["nodes"], group["hits"])}
-        require(all((group["frame"]["width"], group["frame"]["height"]) == (layout["width"], layout["height"]) for group in stage["groups"]), "Relationship viewport differs")
-        hits = layout["hits"]
-        require(type(hits) is list and len(hits) == len(edges) and {hit.get("native_id") for hit in hits} == set(edges), "Relationship mouse identities incomplete/duplicated")
-        for hit in hits:
-            require(set(hit) == {"fixture_id", "native_id", "source", "target", "type", "properties", "path", "path_source", "path_target", "x", "y", "t", "pixel"}, "Relationship hit fields differ")
-            edge = edges[hit["native_id"]]
-            require(all(hit[key] == edge[key] for key in ("source", "target", "type")) and hit["fixture_id"] == edge["properties"]["fixture_id"] and
-                    hit["properties"] == {key: display(value) for key, value in edge["properties"].items()}, "Relationship DOM type/properties/native binding differs")
-            require({hit["path_source"], hit["path_target"]} == {edge["source"], edge["target"]}, "Relationship painted endpoints differ")
-            require(all(number(hit[key]) for key in ("x", "y", "t")) and 0 < hit["t"] < 1 and 1 < hit["x"] < layout["width"]-1 and 1 < hit["y"] < layout["height"]-1, "Relationship click outside viewport")
-            require(not any(box[0]-2 <= hit["x"] <= box[2]+2 and box[1]-2 <= hit["y"] <= box[3]+2 for _, _, box in centers.values()), "Relationship click overlaps node")
-            pixel = hit["pixel"]
-            require(type(pixel) is list and len(pixel) == 4 and all(type(channel) is int and 0 <= channel <= 255 for channel in pixel) and pixel[3] > 0 and
-                    all(abs(pixel[channel] - next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"])[channel]) <= 16 for channel in range(3)), "Relationship click has no matching relation pixel")
-            path = hit["path"]
-            require(type(path) is list and len(path) == 2 and path[0][0] == "M" and len(path[0]) == 3 and path[1][0] in ("L", "Q", "C") and
-                    len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
-            for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
-                nearest = min(centers, key=lambda key: math.hypot(centers[key][0]-endpoint[0], centers[key][1]-endpoint[1]))
-                require(nearest == identifier, "Relationship painted/native endpoint identity differs")
-            t, q = hit["t"], 1-hit["t"]
-            start, segment = path[0][1:], path[1]
-            if segment[0] == "L": point = [q*start[i]+t*segment[i+1] for i in (0, 1)]
-            elif segment[0] == "Q": point = [q*q*start[i]+2*q*t*segment[i+1]+t*t*segment[i+3] for i in (0, 1)]
-            else: point = [q*q*q*start[i]+3*q*q*t*segment[i+1]+3*q*t*t*segment[i+3]+t*t*t*segment[i+5] for i in (0, 1)]
-            require(math.hypot(point[0]-hit["x"], point[1]-hit["y"]) < .05, "Relationship click is not on painted curve")
+    require(set(layout) == {"layout", "width", "height", "stable_frames", "attempts", "hits"} and type(layout["stable_frames"]) is int and layout["stable_frames"] >= 10 and
+            type(layout["attempts"]) is int and layout["attempts"] >= len(edges) and all(number(layout[key]) and layout[key] > 0 for key in ("width", "height")), "Relationship frame is invalid")
+    centers = {hit["native_id"]: (hit["x"], hit["y"], pixel["box"]) for group in stage["groups"] for pixel, hit in zip(group["frame"]["nodes"], group["hits"])}
+    require(all((group["frame"]["width"], group["frame"]["height"]) == (layout["width"], layout["height"]) for group in stage["groups"]), "Relationship viewport differs")
+    hits = layout["hits"]
+    require(type(hits) is list and len(hits) == len(edges) and {hit.get("native_id") for hit in hits} == set(edges), "Relationship mouse identities incomplete/duplicated")
+    for hit in hits:
+        require(set(hit) == {"fixture_id", "native_id", "source", "target", "type", "properties", "path", "path_source", "path_target", "x", "y", "t", "pixel"}, "Relationship hit fields differ")
+        edge = edges[hit["native_id"]]
+        require(all(hit[key] == edge[key] for key in ("source", "target", "type")) and hit["fixture_id"] == edge["properties"]["fixture_id"] and
+                hit["properties"] == {key: display(value) for key, value in edge["properties"].items()}, "Relationship DOM type/properties/native binding differs")
+        require({hit["path_source"], hit["path_target"]} == {edge["source"], edge["target"]}, "Relationship painted endpoints differ")
+        require(all(number(hit[key]) for key in ("x", "y", "t")) and 0 < hit["t"] < 1 and 1 < hit["x"] < layout["width"]-1 and 1 < hit["y"] < layout["height"]-1, "Relationship click outside viewport")
+        require(not any(box[0]-2 <= hit["x"] <= box[2]+2 and box[1]-2 <= hit["y"] <= box[3]+2 for _, _, box in centers.values()), "Relationship click overlaps node")
+        pixel = hit["pixel"]
+        require(type(pixel) is list and len(pixel) == 4 and all(type(channel) is int and 0 <= channel <= 255 for channel in pixel) and pixel[3] > 0 and
+                all(abs(pixel[channel] - next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"])[channel]) <= 16 for channel in range(3)), "Relationship click has no matching relation pixel")
+        path = hit["path"]
+        require(type(path) is list and len(path) == 2 and path[0][0] == "M" and len(path[0]) == 3 and path[1][0] in ("L", "Q", "C") and
+                len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
+        for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
+            nearest = min(centers, key=lambda key: math.hypot(centers[key][0]-endpoint[0], centers[key][1]-endpoint[1]))
+            require(nearest == identifier, "Relationship painted/native endpoint identity differs")
+        t, q = hit["t"], 1-hit["t"]
+        start, segment = path[0][1:], path[1]
+        if segment[0] == "L": point = [q*start[i]+t*segment[i+1] for i in (0, 1)]
+        elif segment[0] == "Q": point = [q*q*start[i]+2*q*t*segment[i+1]+t*t*segment[i+3] for i in (0, 1)]
+        else: point = [q*q*q*start[i]+3*q*q*t*segment[i+1]+3*q*t*t*segment[i+3]+t*t*t*segment[i+5] for i in (0, 1)]
+        require(math.hypot(point[0]-hit["x"], point[1]-hit["y"]) < .05, "Relationship click is not on painted curve")
+
+
+def verify_dense_filters(filters, expected, baseline_stage):
+    require(type(filters) is dict and set(filters) == {"baseline", "stages"}, "Relationship filter evidence missing")
+    baseline = filters["baseline"]
+    require(type(baseline) is dict and baseline.get("layout") == "force", "Filter baseline layout differs")
+    verify_relationship_frame(baseline, expected["edges"], baseline_stage)
+    stages = filters["stages"]
+    require(type(stages) is list and len(stages) == 4, "Relationship filter roundtrip incomplete")
+    palette = {sample["type"]: sample["color"] for sample in baseline_stage["relationship_pixels"]}
+    modes = [["Parallel"], [], ["Link"], ["Link", "Parallel"]]
+    for index, (stage, selected) in enumerate(zip(stages, modes)):
+        require(type(stage) is dict and set(stage) == {"phase", "layout", "selected_types", "nodes", "edges", "groups", "relationship_pixels", "absent_pixels", "relationships", "probes"} and
+                stage["phase"] == "relation-filter-" + str(index) and stage["layout"] == "force" and stage["selected_types"] == selected, "Relationship filter selection differs")
+        edges = [edge for edge in expected["edges"] if edge["type"] in selected]
+        verify_dense_frame(stage, expected["nodes"], edges, expected["shapes"])
+        absent = stage["absent_pixels"]
+        require(type(absent) is list and [sample.get("type") for sample in absent] == sorted(set(palette)-set(selected)), "Filtered relationship absence missing")
+        for sample in absent:
+            require(set(sample) == {"type", "color", "pixelCount", "stableFrames"} and sample["color"] == palette[sample["type"]] and
+                    type(sample["pixelCount"]) is int and sample["pixelCount"] == 0 and type(sample["stableFrames"]) is int and sample["stableFrames"] >= 10, "Filtered relationship stroke remains visible")
+        if index in (0, 2):
+            require(type(stage["relationships"]) is dict and stage["relationships"].get("layout") == "force", "Filtered mouse report missing")
+            verify_relationship_frame(stage["relationships"], edges, stage)
+        else: require(stage["relationships"] is None, "Unexpected filtered mouse report")
+        if index == 1:
+            wanted = [{key: hit[key] for key in ("native_id", "x", "y")} | {"relation_selected": False} for hit in baseline["hits"]]
+            require(stage["probes"] == wanted and all(probe["relation_selected"] is False for probe in stage["probes"]), "Hidden relationships remain clickable or probes missing")
+        else: require(stage["probes"] == [], "Unexpected hidden relationship probes")
 
 
 def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id):
@@ -588,7 +628,9 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         raw = artifact / "graph-dense-stable-frame.json"
         raw.unlink(missing_ok=True)
         (artifact / "graph-relationship-hit-frame.json").unlink(missing_ok=True)
-        for path in artifact.glob("relationship-*-console.png"): path.unlink()
+        (artifact / "graph-relationship-filter-frame.json").unlink(missing_ok=True)
+        for pattern in ("relationship-*-console.png", "relation-filter-*-console.png"):
+            for path in artifact.glob(pattern): path.unlink()
         diagnostics = artifact / "graph-dense-browser-diagnostics.json"
         diagnostics.unlink(missing_ok=True)
         for path in artifact.glob("dense-*-console.png"): path.unlink()
@@ -604,11 +646,16 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         interaction_file = artifact / "graph-relationship-hit-frame.json"
         require(interaction_file.is_file(), "Relationship mouse/property evidence missing")
         require(json.loads(interaction_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-hit-frame/v1", "layouts": visual["relationships"]}, "Independent relationship evidence differs")
+        filter_file = artifact / "graph-relationship-filter-frame.json"
+        require(filter_file.is_file(), "Independent relationship filter evidence missing")
+        require(json.loads(filter_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-filter-frame/v1", **visual["relation_filters"]}, "Independent relationship filter evidence differs")
+        for stage in visual["relation_filters"]["stages"]:
+            require((artifact / (stage["phase"] + "-console.png")).is_file(), "Relationship filter screenshot missing")
         for layout in ("dagre", "circular", "radial", "force"):
             require((artifact / ("relationship-" + layout + "-console.png")).is_file(), "Relationship screenshot missing")
         for stage in visual["stages"]:
             require((artifact / (stage["phase"] + "-console.png")).is_file(), "Dense screenshot missing")
-        report["dense"] = {"schema_version": "addp.graph-dense-online/v2", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"]}
+        report["dense"] = {"schema_version": "addp.graph-dense-online/v3", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"], "relation_filters": visual["relation_filters"]}
     except Exception:
         failed = True
         raise
@@ -799,7 +846,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v13", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v14", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

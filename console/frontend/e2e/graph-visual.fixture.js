@@ -245,7 +245,7 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
   // The independent KG reference intentionally contains no browser display DTO.
   const reference = expected.nodes.map(node => ({ ...node, display_name: node.properties.name }))
   const shapes = expected.shapes
-  const requests = [], stages = [], relationships = []
+  const requests = [], stages = [], relationships = [], relation_filters = []
   const record = request => {
     if (new URL(request.url()).pathname.startsWith(root)) requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.method() === 'POST' ? request.postDataJSON() : null })
   }
@@ -253,7 +253,7 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
   await expect(frame.locator('.filter-section').first().locator('.filter-item')).toHaveCount(shapes.length)
   await expect(canvas.locator('.el-loading-mask')).toHaveCount(0)
   page.on('request', record)
-  async function observe(phase, nodes, edges, extra = {}, search = false) {
+  async function observe(phase, nodes, edges, extra = {}, search = false, collection = stages) {
     await clearGraphSelection(frame)
     const entries = []
     for (const shape of shapes) {
@@ -275,9 +275,9 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
       colors.push({ type, color: await item.locator('.edge-swatch').evaluate(element => getComputedStyle(element).color) })
     }
     const relationship_pixels = colors.length ? await canvas.evaluate(stableRelationshipPixels, { colors, boxes: frames.flatMap(frame => frame.nodes.map(node => node.box)) }) : []
-    stages.push({ phase, relationship_pixels, nodes: nodeFacts(nodes), edges: normalize(edges), groups, ...extra })
+    collection.push({ phase, relationship_pixels, nodes: nodeFacts(nodes), edges: normalize(edges), groups, ...extra })
     await clearGraphSelection(frame)
-    await capture(phase)
+    if (collection === stages) await capture(phase)
     return groups.flatMap(group => group.hits)
   }
   try {
@@ -324,6 +324,40 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
     await observe('dense-filter', members, expected.edges.filter(edge => visible.has(edge.source) && visible.has(edge.target)), { selected_shapes: [selected.name] })
     for (const shape of shapes) await setShape(shape, true)
     await observe('dense-filter-restored', reference, expected.edges, { selected_shapes: shapes.map(shape => shape.name).sort() })
+    await expect(frame.locator('.layout-select')).toHaveText('力导向')
+    const baseline = await graphRelationshipHits(page, frame, canvas, expected.edges, { ...stages.at(-1), layout: 'force' })
+    const types = [...new Set(expected.edges.map(edge => edge.type))].sort()
+    for (const [index, selected_types] of [[types[1]], [], [types[0]], types].entries()) {
+      for (const type of types) {
+        const item = frame.locator('.filter-section').nth(1).locator('.filter-item').filter({ has: frame.locator('input.el-checkbox__original[value=' + JSON.stringify(type) + ']') })
+        const input = item.getByRole('checkbox')
+        if (await input.isChecked() !== selected_types.includes(type)) await item.locator('.el-checkbox').click()
+        await expect(input).toBeChecked({ checked: selected_types.includes(type) })
+      }
+      const edges = expected.edges.filter(edge => selected_types.includes(edge.type))
+      await expect(frame.locator('.toolbar-left .el-tag').nth(1)).toHaveText(`画布: 12 节点 / ${edges.length} 关系`)
+      await observe('relation-filter-' + index, reference, edges, { layout: 'force', selected_types: await frame.locator('.filter-section').nth(1).locator('input:checked').evaluateAll(inputs => inputs.map(input => input.value).sort()) }, false, relation_filters)
+      const stage = relation_filters.at(-1), colors = []
+      for (const type of types.filter(type => !selected_types.includes(type))) {
+        const item = frame.locator('.filter-section').nth(1).locator('.filter-item').filter({ has: frame.locator('input.el-checkbox__original[value=' + JSON.stringify(type) + ']') })
+        colors.push({ type, color: await item.locator('.edge-swatch').evaluate(element => getComputedStyle(element).color) })
+      }
+      stage.absent_pixels = colors.length ? await canvas.evaluate(stableRelationshipPixels, { colors, absent: true, boxes: stage.groups.flatMap(group => group.frame.nodes.map(node => node.box)) }) : []
+      stage.relationships = edges.length && index < 3 ? await graphRelationshipHits(page, frame, canvas, edges, stage) : null
+      stage.probes = []
+      if (!edges.length) {
+        const box = await canvas.locator('canvas').boundingBox()
+        for (const hit of baseline.hits) {
+          await clearGraphSelection(frame)
+          await page.mouse.click(box.x + hit.x, box.y + hit.y)
+          await canvas.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+          await expect(frame.locator('.node-panel .panel-title .el-tag').filter({ hasText: /^关系$/ })).toHaveCount(0)
+          stage.probes.push({ native_id: hit.native_id, x: hit.x, y: hit.y, relation_selected: false })
+        }
+      }
+      await clearGraphSelection(frame)
+      await capture(stage.phase)
+    }
     for (const [layout, label] of [['dagre', '分层'], ['circular', '环形'], ['radial', '辐射'], ['force', '力导向']]) {
       const select = frame.locator('.layout-select')
       await select.click()
@@ -338,11 +372,11 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
       { method: 'POST', path: root + '/search', body: stages[0].request },
       { method: 'POST', path: root + '/expand', body: stages[2].request }
     ])
-    return { stages, requests, relationships }
+    return { stages, requests, relationships, relation_filters: { baseline, stages: relation_filters } }
   } finally { page.off('request', record) }
 }
 
-export async function stableRelationshipPixels(element, { colors, boxes, timeout = 10_000 }) {
+export async function stableRelationshipPixels(element, { colors, boxes, absent = false, timeout = 10_000 }) {
   const canvas = element.querySelector('canvas'), copy = document.createElement('canvas')
   const context = copy.getContext('2d', { willReadFrequently: true })
   const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
@@ -368,7 +402,7 @@ export async function stableRelationshipPixels(element, { colors, boxes, timeout
       for (const sample of samples) if (sample.color.every((value, channel) => Math.abs(pixels[offset+channel]-value) <= 12)) sample.pixelCount++
     }
     const signature = JSON.stringify(samples)
-    const valid = canvas.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !element.querySelector('.el-loading-mask') && samples.every(sample => sample.pixelCount >= 40)
+    const valid = canvas.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && !element.querySelector('.el-loading-mask') && samples.every(sample => absent ? sample.pixelCount === 0 : sample.pixelCount >= 40)
     stable = valid && signature === previous ? stable+1 : 0
     previous = signature
     if (stable >= 10) return samples.map(sample => ({ ...sample, stableFrames: stable }))

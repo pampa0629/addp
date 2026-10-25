@@ -3567,7 +3567,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v13", "verify_dense", "verify_relationships", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v14", "verify_dense", "verify_relationships", "verify_dense_filters", "graph-relationship-filter-frame.json", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -3579,7 +3579,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
             '"cross_tenant_runtime_verified": True', 'ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID',
         ),
         "console/frontend/e2e/online/graph-protection.spec.js": (
-            "addp.graph-protection-browser/v7", "graph-relationship-hit-frame.json", "installGraphRelationshipPaint", "browserAPIFromResponse", "login(",
+            "addp.graph-protection-browser/v7", "graph-relationship-hit-frame.json", "graph-relationship-filter-frame.json", "installGraphRelationshipPaint", "browserAPIFromResponse", "login(",
             'addp.service-graph-browser/v1', 'api.post(definition.endpoints.execute',
             'dto_address_unchanged: true', 'public_https_verified: false',
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",

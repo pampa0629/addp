@@ -341,7 +341,7 @@ const filteredNodes = computed(() => {
 const filteredEdges = computed(() => {
   const nodeIds = new Set(filteredNodes.value.map(n => n.id))
   return visuallyEncodedEdges.value.filter(e => {
-    if (visibleRelTypes.value.length > 0 && !visibleRelTypes.value.includes(e.type)) return false
+    if (!visibleRelTypes.value.includes(e.type)) return false
     return nodeIds.has(e.source) && nodeIds.has(e.target)
   })
 })
