@@ -66,10 +66,9 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - SQL 模式 Query Service 可以声明强类型标量命名参数，SQL 只用 `:name` 引用；参数定义、SQL 引用和执行请求必须完全一致，并通过 `common` 查询运行层绑定，禁止字符串替换。表模式继续使用输出字段结构化筛选，不接受命名参数；Service 不接受关系、字段名、表名或 SQL 片段参数。
 - 指标来源计划采用数据库无关契约，规范见 [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 和 [Model 约束](../model/docs/model概念与数据约束规范.md#数据库无关计划与修订)。冻结 SQL 路径已删除。参数选项的多语言标签由 Model 的 `parameter_labels` 冻结，值域以 Plan 参数声明为准，Service 校验两者一致。
 - 指标来源引用可显式选择 `result_kind=details`，只接受 Model 同修订声明的去重明细计划，省略为汇总。每个服务固定一种结果；消费字段、保护血缘、游标和依赖 hash 全部由选定的冻结包导出，Workbench 不重算或直接访问 Model。
-- 指标来源使用显式 `config_type=analytical`，这是来源表达，不是新的执行通道；首期只能由 `metric_source.implementation_id/revision_id` 解析受信任 Model 发布包，客户端不得直接提交 Plan。不得与 sql/table 来源字段、runtime_engine_id 或调用方参数／输出覆盖并存。既有 SQL/table 查询来源继续各自规范，最终共用 PreparedQuery 授权与执行边界。
-- Service 冻结确定修订的 owner 引用、dependency_hash 和唯一 AnalyticalPlanPackage；命名参数、输出字段和稳定键作为该包的只读投影供 DTO、校验与 Consumer Descriptor 使用，不能另存可编辑副本。不把指标包拷贝到 SqlQuery，不要求原生 language 必须为 sql。
+- 指标来源的创建与依赖复核统一见[来源选择与发布](docs/architecture/指标来源与版本.md#来源选择与发布)：`config_type=analytical` 只绑定 Model 精确实现修订，不取最新版、不接受调用方 Plan，与 SQL/table、`runtime_engine_id` 及参数／输出覆盖互斥，仍复用 PreparedQuery 授权与执行。冻结包、owner 修订引用、依赖摘要与只读投影沿[来源与发布快照](docs/tables/query_services表.md#来源与发布快照)维护，不另存可编辑契约，不把指标包拷贝到 SqlQuery 或强制原生语言为 SQL。
 - 旧指标 SQL 发布记录迁移为停用的 analytical 来源，清除 SQL、重复引擎、参数、输出及稳定键副本，仅保留 owner 修订引用用于显式重新绑定；禁止自动生成或批准新修订。历史 Model 修订缺少计划包时须重新发布。
-- 已有服务切换指标来源继续只走 `PUT /query/:id/metric-source`：携带精确实现修订和 正整数 version（查询服务聚合根版本，不依赖可执行快照），在行锁事务内核对后原子替换来源与消费契约；保留服务身份、访问设置和当前版本规则，清除旧来源专用字段。旧冻结 SQL 不能与新包并行执行，消费方仍须显式应用新契约。
+- 指标重绑与版本规则统一见[版本、并发与消费绑定](docs/architecture/指标来源与版本.md#版本并发与消费绑定)：唯一重绑命令携带精确修订与正整数 `version`，在当前 Tenant 的行锁事务中校验、原子替换来源与消费契约并递增版本；保留服务身份、访问与启停，清除旧来源字段。管理 `version` 与消费 `service_version` 分别维护，冲突不自动重试；消费方须显式更新绑定并发布应用新修订。断言范围见[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)，受控夹具不代替真实引擎或并发部署验收，未运行或未覆盖不计通过。
 - 每次指标查询先向 Model 验证指定修订与依赖，再校验当前引擎能力、本地 CompilerIdentity、请求参数和服务消费版本；撤回、漂移或实现版本不匹配即拒绝，不选最新版。MODEL_URL 与现有 Tenant Service Token 路径保留。
 - 指标的结果筛选、选择、排序及 keyset 分页由 Service 校验后形成中立 ResultRequest，Common 包装计划根节点再交给引擎编译；结果筛选不能改变原指标分母，分页不能裁剪原计划断言。参数值（包括结果过滤及 keyset 值）继续单次绑定；cursor 加密、limit+1、保护门禁及输出格式仍沿既有契约。不得进入旧指标 SQL 包装或拉回全量数据后在 Service 中补算。
 - Query Cursor 与 Feature ID 统一沿[不透明查询令牌](../docs/concepts/addp共享模块介绍.md#不透明查询令牌)复用 `common/opaquetoken` JSON AES-GCM，不保留私有加密实现；Service 保留发布版本、查询指纹与领域载荷校验。AEAD 令牌不得暴露稳定键或排序值，解密成功不代替授权。共享验证沿既有 Service Go T1、PostgreSQL T2 和 Common Go 门禁。
