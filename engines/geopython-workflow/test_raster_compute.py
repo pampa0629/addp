@@ -10579,7 +10579,8 @@ def test_dem_curvature_full_nine_effective_samples_and_explicit_second_band(tmp_
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
 @pytest.mark.parametrize('fault',['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','complex','complex-alpha'])
-def test_dem_curvature_bilingual_admission_no_private_output(tmp_path,language,fault):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_bilingual_admission_no_private_output(tmp_path,language,fault,method):
     import operators.raster_compute as compute
     path=tmp_path/'bad.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,5,2 if fault=='complex-alpha' else 1,gdal.GDT_CFloat64 if fault in ('complex','complex-alpha') else gdal.GDT_Float64)
     if fault!='missing-grid':ds.SetGeoTransform((0,1,.2 if fault=='rotated' else 0,5,0,1 if fault=='south-up' else -1))
@@ -10594,8 +10595,9 @@ def test_dem_curvature_bilingual_admission_no_private_output(tmp_path,language,f
     key={'unit-unknown':'unit-conflict','offset':'scale','missing-grid':'grid','missing-crs':'grid','geographic':'grid','rotated':'grid','south-up':'grid','complex-alpha':'complex'}.get(fault,fault)
     with raster_workspace(),raster_error_language(language):
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:compute.raster_curvature(source,True if fault=='band' else 1,'bad' if fault=='unit' else 'metre')
-        assert str(error.value)==compute._CURVATURE_MESSAGES[key][language=='en']
+        with pytest.raises(ValueError) as error:compute.raster_curvature(source,True if fault=='band' else 1,'bad' if fault=='unit' else 'metre',method=method)
+        assert str(error.value)==str(compute._curvature_error(key,method))
+        assert ('DEM profile curvature' if language=='en' else 'DEM 剖面曲率') in str(error.value) if method=='profile' else True
         assert set(source.workspace.iterdir())==prior
 
 
@@ -10651,7 +10653,8 @@ def test_dem_curvature_stable_geometric_formula_against_decimal_native_extremes(
 
 @pytest.mark.parametrize('dx,dy',[(math.inf,1.),(0.,1.),(1.,math.inf)])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_dem_curvature_unrepresentable_physical_step_rejects_before_output(tmp_path,monkeypatch,dx,dy,language):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_unrepresentable_physical_step_rejects_before_output(tmp_path,monkeypatch,dx,dy,language,method):
     import operators.raster_compute as compute
     path=_curvature_file(tmp_path,np.zeros((5,5)))
     with raster_workspace(),raster_error_language(language):
@@ -10660,24 +10663,26 @@ def test_dem_curvature_unrepresentable_physical_step_rejects_before_output(tmp_p
             def GetGeoTransform(self):return (0,dx,0,0,0,-dy)
         monkeypatch.setattr(compute,'_dem_admission',lambda *a,**k:(Grid(),1.))
         prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre')
-        assert str(error.value)==compute._CURVATURE_MESSAGES['step'][language=='en'];assert set(source.workspace.iterdir())==prior
+        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method=method)
+        assert str(error.value)==str(compute._curvature_error('step',method));assert set(source.workspace.iterdir())==prior
 
 
 @pytest.mark.parametrize('kind',['difference','derivative'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_dem_curvature_nonfinite_intermediate_fails_not_nodata(tmp_path,kind,language):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_nonfinite_intermediate_fails_not_nodata(tmp_path,kind,language,method):
     import operators.raster_compute as compute
     values=np.full((3,3),1.7e308);values[1,1]=-1.7e308
     if kind=='derivative':values=np.array([[1.,2.,1.],[2.,3.,2.],[1.,2.,1.]])
     path=_curvature_file(tmp_path,values,dx=1e-200 if kind=='derivative' else 1.,dy=1.)
     with raster_workspace(),raster_error_language(language):
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre')
-        assert str(error.value)==compute._CURVATURE_MESSAGES['numeric'][language=='en'];assert set(source.workspace.iterdir())==prior
+        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method=method)
+        assert str(error.value)==str(compute._curvature_error('numeric',method));assert set(source.workspace.iterdir())==prior
 
 
-def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_prior_unchanged(tmp_path,monkeypatch):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_prior_unchanged(tmp_path,monkeypatch,method):
     import operators.raster_compute as compute
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
     rows,cols=np.indices((519,515));x=cols*2.;y=-rows*3.
@@ -10688,13 +10693,13 @@ def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_
     with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     mask=np.full(values.shape,255,np.uint8);mask[512,510]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
     values[100,100]=values[510,512]=values[512,510]=np.nan
-    expected=_curvature_lstsq_oracle(values,2,3);before=path.read_bytes();prior=tmp_path/'prior.bin';prior.write_bytes(b'old output');target=tmp_path/'curvature.cog.tif'
+    expected=(_curvature_lstsq_oracle if method=='mean' else _profile_curvature_lstsq_oracle)(values,2,3);before=path.read_bytes();prior=tmp_path/'prior.bin';prior.write_bytes(b'old output');target=tmp_path/'curvature.cog.tif'
     reads=[];blocks=compute._blocks
     def capture(*args,**kwargs):
         for block in blocks(*args,**kwargs):assert max(block[2][0].shape)<=512;reads.append(block[:2]);yield block
     monkeypatch.setattr(compute,'_blocks',capture)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),2,'metre');artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        result=compute.raster_curvature(raster_load(source_plan(path)),2,'metre',method=method);artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
         assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
     ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
     np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-10,atol=1e-11,equal_nan=True)
@@ -10711,7 +10716,8 @@ def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_
 
 
 @pytest.mark.parametrize('stage',['read','compute','write'])
-def test_dem_curvature_injected_failure_cleans_private_output(tmp_path,monkeypatch,stage):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_injected_failure_cleans_private_output(tmp_path,monkeypatch,stage,method):
     import operators.raster_compute as compute
     path=_curvature_file(tmp_path,np.ones((519,515)));windows=compute._neighbourhood_windows;block=compute._curvature_block;calls=0
     def fail_windows(*a,**k):
@@ -10725,13 +10731,14 @@ def test_dem_curvature_injected_failure_cleans_private_output(tmp_path,monkeypat
     monkeypatch.setattr(compute,'_neighbourhood_windows',fail_windows);monkeypatch.setattr(compute,'_curvature_block',fail_block)
     with raster_workspace():
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
-        with pytest.raises(RuntimeError,match='injected curvature failure'):compute.raster_curvature(source,1,'metre')
+        with pytest.raises(RuntimeError,match='injected curvature failure'):compute.raster_curvature(source,1,'metre',method=method)
         assert set(source.workspace.iterdir())==prior
 
 
-@pytest.mark.parametrize('case',['direct','feet','filled','reclassified','invalid','empty-neighbourhood','bad-unit'])
+@pytest.mark.parametrize('case',['direct','feet','filled','reclassified','invalid','empty-neighbourhood','bad-unit','bad-method'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language(tmp_path,monkeypatch,case,language):
+@pytest.mark.parametrize('method',['mean','profile'])
+def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language(tmp_path,monkeypatch,case,language,method):
     import api_server,workflow_engine
     rows,cols=np.indices((9,11));values=.02*(cols-5)**2+.03*(rows-4)**2-20
     if case=='invalid':values[:]=np.nan
@@ -10742,7 +10749,7 @@ def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language
         tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='fill';values=_fill_level_reachability_oracle(values)
     if case=='reclassified':
         tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'rules':[{'min':None,'max':-19.5,'class':0},{'min':-19.5,'max':None,'class':1}]}});prior='classes';values=np.where(values<-19.5,0.,1.)
-    tasks.extend([{'id':'curvature','operator':'raster_curvature','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'yard' if case=='bad-unit' else band_unit}},
+    tasks.extend([{'id':'curvature','operator':'raster_curvature','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'yard' if case=='bad-unit' else band_unit,'method':'bad' if case=='bad-method' else method}},
         {'id':'save','operator':'raster_save','depends_on':['curvature'],'params':{'input_raster':{'$ref':'curvature'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}])
     workspaces=[];execute=workflow_engine._execute_operator
     def capture(name,params):
@@ -10756,14 +10763,203 @@ def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language
         status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
         if status['status'] in ('success','failed'):break
         time.sleep(.01)
-    assert status['status']==('failed' if case=='bad-unit' else 'success'),status
+    assert status['status']==('failed' if case in ('bad-unit','bad-method') else 'success'),status
     assert workspaces and all(not p.exists() for p in workspaces) and path.read_bytes()==before
-    if case=='bad-unit':
-        assert not target.exists();phrase='高程单位' if language=='zh-cn' else 'elevation_unit';assert phrase in status['error']
+    if case in ('bad-unit','bad-method'):
+        assert not target.exists();phrase='method' if case=='bad-method' else ('高程单位' if language=='zh-cn' else 'elevation_unit');assert phrase in status['error']
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     else:
         ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
-        np.testing.assert_allclose(read_band_values(band),_curvature_lstsq_oracle(values/factor,2,3,factor),rtol=1e-11,atol=1e-11,equal_nan=True)
+        np.testing.assert_allclose(read_band_values(band),(_curvature_lstsq_oracle if method=='mean' else _profile_curvature_lstsq_oracle)(values/factor,2,3,factor),rtol=1e-11,atol=1e-11,equal_nan=True)
         assert band.GetUnitType()=='1/metre';band=ds=None
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+
+
+def _profile_curvature_lstsq_oracle(values, dx, dy, factor=1.):
+    """Independent least squares and directional first/second fundamental forms."""
+    result=np.full(values.shape,np.nan)
+    if min(values.shape)<3:return result
+    samples=np.lib.stride_tricks.sliding_window_view(values,(3,3))
+    valid=np.isfinite(samples).all(axis=(-2,-1))
+    if not valid.any():return result
+    windows=samples[valid].reshape(-1,9)
+    x=np.tile(np.arange(-1,2),3);y=np.repeat(np.arange(1,-2,-1),3)
+    design=np.column_stack((x*x,x*y,y*y,x,y,np.ones(9)))
+    relative=((windows.astype(object)-windows[:,4:5].astype(object)).astype(float)
+              if np.issubdtype(values.dtype,np.integer) else windows-windows[:,4:5])*factor
+    coefficients=np.linalg.lstsq(design,relative.T,rcond=None)[0].T
+    a,b,c,p,q,_=coefficients.T;p=p/dx;q=q/dy;r=2*a/dx**2;s=b/dx/dy;t=2*c/dy**2
+    flat=(windows==windows[:,4:5]).all(axis=1)
+    # Odd design columns are orthogonal; exact symmetric moments classify stationary samples.
+    stationary=np.array([math.fsum(row*x)==0 and math.fsum(row*y)==0 for row in relative])
+    active=~stationary
+    answer=np.full(len(p),np.nan);answer[flat]=0
+    if active.any():
+        p,q,r,s,t=[v[active] for v in (p,q,r,s,t)]
+        first=np.empty((len(p),2,2));second=np.empty_like(first)
+        first[:,0,0]=1+p*p;first[:,1,1]=1+q*q;first[:,0,1]=first[:,1,0]=p*q
+        norm=np.sqrt(1+p*p+q*q)
+        second[:,0,0]=-r/norm;second[:,1,1]=-t/norm;second[:,0,1]=second[:,1,0]=-s/norm
+        tangent=np.column_stack((p,q))
+        answer[active]=np.einsum('bi,bij,bj->b',tangent,second,tangent)/np.einsum('bi,bij,bj->b',tangent,first,tangent)
+    result[1:-1,1:-1][valid]=answer
+    return result
+
+
+@pytest.mark.parametrize('coefficients',[(0,0,0,0,0),(0,0,0,2,-3),(1,0,2,0,0),(-1,0,-2,0,0),(1,0,-1,0,0),(.125,.25,-.5,2,-3)])
+@pytest.mark.parametrize('dx,dy',[(1.,1.),(2.,3.),(.25,4.)])
+def test_dem_profile_curvature_analytic_directional_form_and_mean_unchanged(tmp_path,coefficients,dx,dy):
+    import operators.raster_compute as compute
+    a,b,c,d,e=coefficients;rows,cols=np.indices((9,11));x=(cols-5)*dx;y=(4-rows)*dy
+    values=a*x*x+b*x*y+c*y*y+d*x+e*y+100
+    path=_curvature_file(tmp_path,values,dx,dy);before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_curvature(source,1,'metre',method='profile')
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=read_band_values(band)
+        expected=_profile_curvature_lstsq_oracle(values,dx,dy)
+        np.testing.assert_allclose(actual,expected,rtol=1e-11,atol=1e-12,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert band.GetUnitType()=='1/metre' and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        band=ds=None
+        if d==e==0 and (a!=0 or b!=0 or c!=0):assert np.isnan(actual[4,5])
+        if a==b==c==0:np.testing.assert_array_equal(actual[1:-1,1:-1],np.zeros((7,9)))
+        default=compute.raster_curvature(source,1,'metre');explicit=compute.raster_curvature(source,1,'metre',method='mean')
+        left=gdal.Open(str(default.path));right=gdal.Open(str(explicit.path))
+        assert left.GetRasterBand(1).ReadRaster()==right.GetRasterBand(1).ReadRaster()
+        np.testing.assert_allclose(read_band_values(left.GetRasterBand(1)),_curvature_lstsq_oracle(values,dx,dy),rtol=1e-12,atol=1e-12,equal_nan=True)
+        left=right=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('kind',['flat','hill','bowl','saddle','horizontal-fit-residual'])
+def test_dem_profile_curvature_stationary_centres_only_true_flat_is_zero(tmp_path,kind):
+    import operators.raster_compute as compute
+    y,x=np.indices((3,3));x=x-1;y=1-y
+    values={'flat':np.full((3,3),42.),'hill':42-x*x-2*y*y,'bowl':x*x+2*y*y,
+            'saddle':x*x-y*y,'horizontal-fit-residual':np.outer([1,-2,1],[1,-2,1])}[kind]
+    path=_curvature_file(tmp_path,values)
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        actual=read_band_values(band);expected=_profile_curvature_lstsq_oracle(values,2,3)
+        np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
+    assert actual[1,1]==0 if kind=='flat' else np.isnan(actual[1,1])
+
+
+@pytest.mark.parametrize('seed',range(8))
+def test_dem_profile_curvature_random_nine_point_lstsq(tmp_path,seed):
+    import operators.raster_compute as compute
+    values=np.random.default_rng(seed).normal(size=(9,11))*7+100
+    path=_curvature_file(tmp_path,values)
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),_profile_curvature_lstsq_oracle(values,2,3),rtol=1e-11,atol=1e-12,equal_nan=True);ds=None
+
+
+@pytest.mark.parametrize('epsg',[3857,2222,2277])
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_dem_profile_curvature_units_and_height_translation(tmp_path,epsg,unit,factor):
+    import operators.raster_compute as compute
+    rows,cols=np.indices((7,9));x=(cols-4)*2.;y=(3-rows)*3.
+    values=(.125*x*x+.25*x*y-.5*y*y+20*x-30*y-100)/factor
+    path=_curvature_file(tmp_path,values,epsg=epsg,unit=unit)
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,unit,method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band),_profile_curvature_lstsq_oracle(values,2,3,factor),rtol=1e-11,atol=1e-12,equal_nan=True)
+        assert band.GetUnitType()=='1/metre' and ds.GetSpatialRef().GetAuthorityCode(None)==str(epsg);band=ds=None
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,8),(7,1),(2,5),(5,2),(3,3),(5,7)])
+@pytest.mark.parametrize('empty',[False,True])
+def test_dem_profile_curvature_empty_small_and_horizontal_flat(tmp_path,shape,empty):
+    import operators.raster_compute as compute
+    values=np.full(shape,np.nan if empty else 7.);path=_curvature_file(tmp_path,values)
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        expected=_profile_curvature_lstsq_oracle(values,2,3);np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
+
+
+@pytest.mark.parametrize('fault',['nan','inf','nodata','mask','alpha-zero','alpha-nan','partial-alpha'])
+def test_dem_profile_curvature_full_neighbourhood_explicit_band_and_mask(tmp_path,fault):
+    import operators.raster_compute as compute
+    rows,cols=np.indices((7,9));values=(cols-4.)**2+(rows-3.)**2+20*cols
+    cube=np.stack((np.full(values.shape,.25),values,np.full(values.shape,-9999.),np.full(values.shape,255.)))
+    if fault in ('nan','inf','nodata'):cube[1,3,4]={'nan':np.nan,'inf':np.inf,'nodata':-9999.}[fault]
+    if fault.startswith('alpha-'):cube[3,3,4]=0 if fault=='alpha-zero' else np.nan
+    if fault=='partial-alpha':cube[3,3,4]=128
+    path=_curvature_file(tmp_path,cube,unit='');ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType('metre');ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(values.shape,255,np.uint8);mask[3,4]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+    ds=None;wanted=values.copy()
+    if fault!='partial-alpha':wanted[3,4]=np.nan
+    before=path.read_bytes()
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),2,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_profile_curvature_lstsq_oracle(wanted,2,3)
+        np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-11,atol=1e-12,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('method',[None,True,1,'','MEAN','plan',[],{}])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_profile_curvature_rejects_invalid_method_before_output(tmp_path,method,language):
+    import operators.raster_compute as compute
+    path=_curvature_file(tmp_path,np.ones((5,5)))
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='method'):compute.raster_curvature(source,1,'metre',method=method)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('dtype',[np.int64,np.uint64])
+def test_dem_profile_curvature_native_64bit_differences_nodata_and_stationary(tmp_path,dtype):
+    import operators.raster_compute as compute
+    from osgeo import gdal_array
+    rows,cols=np.indices((7,7));small=(rows-3)**2+(cols-3)**2+100;base=2**63 if dtype==np.uint64 else -2**63
+    values=np.array([[base+int(n) for n in line] for line in small],dtype=dtype);nodata=base+99;values[0,0]=nodata
+    path=tmp_path/'profile-integer.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),7,7,1,gdal_array.NumericTypeCodeToGDALTypeCode(dtype));ds.SetGeoTransform((500000,1,0,3000000,0,-1));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs)
+    band=ds.GetRasterBand(1);band.WriteArray(values)
+    if dtype==np.uint64:band.SetNoDataValueAsUInt64(nodata)
+    else:band.SetNoDataValueAsInt64(nodata)
+    band=ds=None;wanted=small.astype(float);wanted[0,0]=np.nan;before=path.read_bytes()
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_profile_curvature_lstsq_oracle(wanted,1,1)
+        np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-12,atol=1e-12,equal_nan=True)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
+    assert path.read_bytes()==before and np.isnan(expected[3,3])
+
+
+@pytest.mark.parametrize('p,q,r,s,t',[(1e-200,0.,2.,0.,0.),(1e-200,-2e-200,2.,.5,-3.),(1e200,0.,1e308,0.,0.),(1.7e308,1.7e308,1.6e308,0.,1.6e308),(1e100,-1e100,1e250,3e249,-2e250),(.2,.3,1.7e308,-1e308,1.7e308)])
+def test_dem_profile_curvature_stable_extremes_against_decimal(p,q,r,s,t):
+    import operators.raster_compute as compute
+    from decimal import Decimal,localcontext
+    with localcontext() as ctx:
+        ctx.prec=120;P,Q,R,S,T=map(Decimal.from_float,(p,q,r,s,t));slope=P*P+Q*Q;norm=1+slope
+        expected=float(-(R*P*P+2*S*P*Q+T*Q*Q)/(slope*norm*norm.sqrt()))
+    actual=float(compute._profile_curvature(*[np.array([n]) for n in (p,q,r,s,t)])[0])
+    assert math.isfinite(actual) and actual==pytest.approx(expected,rel=3e-14,abs=0)
+
+
+@pytest.mark.parametrize('slope',[1e-200,1e-300])
+def test_dem_profile_curvature_tiny_nonzero_slope_remains_valid_zero(tmp_path,slope):
+    import operators.raster_compute as compute
+    values=np.tile(np.array([-slope,0.,slope]),(3,1));path=_curvature_file(tmp_path,values,1,1)
+    with raster_workspace():
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        actual=read_band_values(band);assert actual[1,1]==0 and band.GetMaskBand().ReadAsArray()[1,1]==255;band=ds=None
+
+
+@pytest.mark.parametrize('number',[np.inf,np.nan])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_profile_curvature_numerical_nonfinite_is_failure_not_stationary_nodata(tmp_path,monkeypatch,number,language):
+    import operators.raster_compute as compute
+    values=np.tile(np.arange(5.),(5,1));path=_curvature_file(tmp_path,values)
+    monkeypatch.setattr(compute,'_profile_curvature',lambda p,q,r,s,t:np.full(p.shape,number))
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method='profile')
+        assert ('DEM profile curvature' if language=='en' else 'DEM 剖面曲率') in str(error.value)
+        assert set(source.workspace.iterdir())==prior

@@ -1166,15 +1166,19 @@ def test_d8_hand_explicit_three_inputs_bands_unit_and_workflow_only_metadata():
     assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'stream_raster': {'$ref': 'streams'}, 'elevation_raster': {'$ref': 'elevation'}, 'band': 1, 'stream_band': 1, 'elevation_band': 1, 'elevation_unit': 'metre'}
 
 
-def test_dem_curvature_single_workflow_explicit_band_unit_and_mean_definition_metadata():
+def test_dem_curvature_single_workflow_explicit_band_unit_and_mean_profile_metadata():
     spec = next(item for item in list_operators() if item['id'] == 'raster_curvature')
-    assert spec['description'] == 'DEM 平均曲率'
+    assert spec['description'] == 'DEM 曲率'
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
     assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '像元计算']
     params = {p['name']: p for p in spec['parameters']}
-    assert set(params) == {'input_raster', 'band', 'elevation_unit'} and all(p['required'] for p in params.values())
+    assert set(params) == {'input_raster', 'band', 'elevation_unit', 'method'}
+    assert all(params[n]['required'] for n in ('input_raster', 'band', 'elevation_unit'))
+    assert not params['method']['required'] and params['method']['default'] == 'mean'
+    assert params['method']['enum'] == ['mean', 'profile']
+    assert '其他零梯度NoData' in params['method']['description']
     assert params['input_raster']['param_type'] == 'input' and params['input_raster']['type'] == 'raster'
     assert params['band']['param_type'] == 'param' and params['band']['type'] == 'integer'
     assert params['elevation_unit']['enum'] == ['metre', 'foot', 'us_survey_foot']
     assert len(spec['output_ports']) == 1 and spec['output_ports'][0]['type'] == 'raster'
-    assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'elevation_unit': 'metre', 'band': 1}
+    assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'elevation_unit': 'metre', 'band': 1, 'method': 'mean'}

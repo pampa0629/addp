@@ -342,6 +342,13 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 ### DEM 平均曲率首期
 
-已实现`raster_curvature(input_raster, band, elevation_unit)`：固定完整有效3×3九点等权二次曲面拟合，保留自由常数项，以曲面平均曲率输出凸正凹负，单位`1/metre`。显式数据波段与三种高程单位，水平单位独立换算；复用DEM准入、原网格／CRS和既有COG。边缘及任一无效邻域NoData，无完整邻域成功全NoData；米制步长不可表示或高程差／导数／结果非有限明确失败。原生64位整数先作精确相对差值，唯一halo路径单次读取不超过512×512；不新增权限、依赖或跨模块逻辑。完整定义见[算子契约](workflow/栅格算子契约.md)。
+已实现`raster_curvature(input_raster, band, elevation_unit, method='mean')`：默认mean保留原平均曲率结果；固定完整有效3×3九点等权二次曲面拟合，保留自由常数项，以曲面平均曲率输出凸正凹负，单位`1/metre`。显式数据波段与三种高程单位，水平单位独立换算；复用DEM准入、原网格／CRS和既有COG。边缘及任一无效邻域NoData，无完整邻域成功全NoData；米制步长不可表示或高程差／导数／结果非有限明确失败。原生64位整数先作精确相对差值，唯一halo路径单次读取不超过512×512；不新增权限、依赖或跨模块逻辑。完整定义见[算子契约](workflow/栅格算子契约.md)。
 
-本地标准`make test-geopython-workflow`全量 **6271 passed／21 warnings／5353.66秒**，0失败／跳过／筛除；含151项平均曲率用例，独立最小二乘／解析曲面、完整像元mask、单位／原生64位、跨块COG及真实异步保存／双语失败／清理均覆盖。固定候选树`b5aab7222f5ce61f83fe60d47101d94befae8284`，原始日志SHA-256：`b1ebc6193e7b96f9aa004b36d967564649c6f6253a3e6b6ad078089aae9e1ca4`。Native输入无漂移、无新增Python原生崩溃报告；本地异步接口不计真实平台Hosted、扫描血缘、普通用户、UI或容量。现有自动发现与Native／CI登记覆盖，无新入口；Linux全量及既有Hosted仍等专门CI会话回传，平均曲率独立Hosted尚未新增或运行。
+本地标准`make test-geopython-workflow`全量 **6271 passed／21 warnings／5353.66秒**，0失败／跳过／筛除；含151项平均曲率用例，独立最小二乘／解析曲面、完整像元mask、单位／原生64位、跨块COG及真实异步保存／双语失败／清理均覆盖。固定候选树`b5aab7222f5ce61f83fe60d47101d94befae8284`，原始日志SHA-256：`b1ebc6193e7b96f9aa004b36d967564649c6f6253a3e6b6ad078089aae9e1ca4`。Native输入无漂移、无新增Python原生崩溃报告；本地异步接口不计真实平台Hosted、扫描血缘、普通用户、UI或容量。现有自动发现与Native／CI登记覆盖，无新入口。后继固定`3fe8aa81c`的原平均曲率及独立保存夹具已通过正式Linux Native全量6394项，完整日志审计见专题；其独立Hosted入口与夹具已准备，实际运行仍由CI会话协调。该旧固定证据不外推为下述剖面扩展的Linux或Hosted证明。
+
+
+### DEM 剖面曲率扩展
+
+既有`raster_curvature`增加`method=profile`，与默认mean共用完整有效3×3九点等权六系数二次曲面拟合和唯一带halo分块／COG路径。profile为沿最大坡降方向的竖直剖面曲率，凸正凹负、单位`1/metre`；九个有效原始高程严格全相等的水平平地为0，其他拟合梯度同时为零的点为NaN NoData，包括山顶／洼底／鞍点及非平地残差。不设置近零阈值，极小非零坡度继续计算；没有可计算点仍成功全NoData。原mean公式与结果保持，方向未定义的NoData不掩盖非有限数值失败。
+
+显式波段及三种高程单位、水平单位独立换算、北向无旋转矩形投影网格、原始64位差值、完整九点有效性、原网格／CRS及源旧保护规则保持。仅新增method枚举与双语诊断，不新增算子、权限、依赖或跨模块逻辑。独立最小二乘／基本形式方向商、解析曲面及Decimal极值验证沿既有Native入口自动发现；本地结果见[专题](../next/栅格算子体系后续专题.md)。Linux全量和Hosted分别等CI会话回传；本轮没有新增或运行剖面独立Hosted，不计真实平台扫描／血缘／Monitor、UI或容量。
