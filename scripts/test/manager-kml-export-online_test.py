@@ -189,7 +189,9 @@ class KMLCaseRoutingTest(unittest.TestCase):
             self.assertEqual(report['result'], 'failed')
             self.assertNotIn('source_unchanged', report)
 
-    def test_kml_identity_is_seven_permissions_not_the_full_case_ten(self):
+    def test_kml_identity_is_eight_permissions_not_the_full_case_ten(self):
+        self.assertEqual(len(KML.PERMISSIONS), 8)
+        self.assertIn('transfer.task.read', KML.PERMISSIONS)
         old = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online_test')
         context = old.FakeGatewayClient().request('GET', '/api/v1/system/auth/context', (200,)).payload
         for assignment in context['authorization']['role_assignments']:
@@ -201,3 +203,8 @@ class KMLCaseRoutingTest(unittest.TestCase):
         self.assertEqual(identity['permissions_verified'], sorted(KML.PERMISSIONS))
         with self.assertRaises(MANAGER.SuiteError):
             MANAGER.validate_user_identity(client, tenant)
+
+        for assignment in context['authorization']['role_assignments']:
+            assignment['permissions'].remove('transfer.task.read')
+        with self.assertRaises(MANAGER.SuiteError):
+            MANAGER.validate_user_identity(client, tenant, KML.PERMISSIONS)

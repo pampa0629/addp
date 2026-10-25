@@ -14,6 +14,7 @@ from pathlib import Path
 PERMISSIONS = {
     'manager.data_item.read', 'manager.derived_artifact.create', 'manager.derived_artifact.read',
     'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read',
+    'transfer.task.read',
 }
 NAMESPACE = 'http://www.opengis.net/kml/2.2'
 NS = {'k': NAMESPACE}

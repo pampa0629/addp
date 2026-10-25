@@ -13,7 +13,8 @@ test('ordinary user exports WGS84 and projected PostGIS tables as KML through re
   expect(context.cases.map(source => source.source_srid)).toEqual([4326, 3857])
   const expected = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id,
     permissions: new Set(context.identity.permissions_verified) }
-  expect(expected.permissions.size).toBe(7)
+  expect(expected.permissions.size).toBe(8)
+  expect(expected.permissions.has('transfer.task.read')).toBe(true)
   const diagnostics = createBrowserGpuDiagnostics('kml-export')
   const warnings = []
   const failedResponses = []

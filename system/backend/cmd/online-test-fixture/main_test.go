@@ -753,7 +753,7 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "kml-export")
 	actual, err := suitePermissions("manager-internal-artifact-lineage")
-	want := []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+	want := []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read", "transfer.task.read"}
 	if err != nil || !slices.Equal(actual, want) {
 		t.Fatalf("KML export consumer permissions: %v %v", actual, err)
 	}

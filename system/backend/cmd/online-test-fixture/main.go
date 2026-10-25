@@ -202,6 +202,7 @@ var managerArtifactPermissions = []string{
 var managerKMLExportPermissions = []string{
 	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+	"transfer.task.read",
 }
 
 var catalogConsumerPermissions = []string{
