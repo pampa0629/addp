@@ -24,8 +24,8 @@ HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.
 stop_online_fixture() {
   local cleanup_status=0 image
   if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
-    run_logged bash business/scripts/online-metric-postgres-fixture.sh stop
-    return
+    run_logged bash business/scripts/online-metric-postgres-fixture.sh stop || cleanup_status=1
+    return "$cleanup_status"
   fi
   run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
   if docker container inspect addp-manager-raster-verifier >/dev/null 2>&1; then

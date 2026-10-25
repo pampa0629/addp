@@ -173,7 +173,7 @@ def run(repository, environment, helpers):
         registration = importlib.import_module('scripts.test.online-engine-registration')
         grants = registration.initialize_exact_record_read_grants(initializer, client, tenant,
                      [(engine, 'schema', 'public', case['table']) for case in cases])
-        report['source_grants'] = [{'id': grant['id'], 'item_fingerprint': grant['item_fingerprint'],
+        report['source_grants'] = [{'request_id': grant['request_id'], 'item_fingerprint': grant['item_fingerprint'],
                                     'boundary_hash': grant['boundary_hash']} for grant in grants]
         context = {'run_id': report['run_id'], 'identity': identity, 'cases': cases}
         browser_env = dict(environment, ADDP_ONLINE_MANAGER_KML_JSON=json.dumps(context, ensure_ascii=False))

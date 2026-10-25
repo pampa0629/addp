@@ -22,11 +22,11 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 `kml-export` 是同一 `manager-internal-artifact-lineage` suite 内独立的 Manager 导出 case，仅使用本轮隔离 PostgreSQL/PostGIS 源、Manager→Transfer 标准导出会话和 Infra 暂存区；不运行或放宽原模型／媒体栅格断言。标准入口为 `ADDP_ONLINE_MANAGER_CASE=kml-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，既有 Hosted workflow 使用同名 `manager_case`。选择、Job／Artifact 名称和根报告必须明确包含 case，不将本 case 的通过记为完整 Manager suite 通过。
 
-复用仓库 PostgreSQL 产品镜像和既有 disposable 源生命周期，数据库只读角色仅访问合成样例；不连接开发数据库。普通 User 只具备七项既有权限：`manager.data_item.read`、`manager.derived_artifact.create`、`manager.derived_artifact.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`。独立源初始化 User 沿既有四项初始化权限和 System 正式命令，为扫描后确认的精确表办理读取 Grant，不给消费者引擎级范围或管理员权限。其他 case 的十项普通权限和模型初始化身份保持原边界。全部参与服务（含 Transfer）的 Build ID 与 ready 前置检查须先通过。
+复用仓库 PostgreSQL 产品镜像和既有 disposable 源生命周期，数据库只读角色仅访问合成样例；不连接开发数据库。普通 User 只具备七项既有权限：`manager.data_item.read`、`manager.derived_artifact.create`、`manager.derived_artifact.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`。独立源初始化 User 沿既有四项初始化权限和 System 正式命令，为扫描后确认的精确表办理读取 Grant，不给消费者引擎级范围或管理员权限。报告沿正式回执记录 `request_id`、`item_fingerprint`、`boundary_hash`，不假设存在 `id`；本地调用链回归须实际经过精确 Grant 初始化 helper、拒绝→签发→允许检查，再进入浏览器阶段。其他 case 的十项普通权限和模型初始化身份保持原边界。全部参与服务（含 Transfer）的 Build ID 与 ready 前置检查须先通过。
 
 源表分别声明 EPSG:4326 与 EPSG:3857，覆盖七类二维非空几何、内洞和 null 几何，以及 int32、bool、double、中文／XML 特殊字符、空字符串和 null。同一普通用户在真实 Console iframe 查看表，打开共享导出弹窗，选择 KML 并修改文件名，经真实按钮建立导出会话、等待 Transfer 完成和接收浏览器下载；不以 API 下载替代按钮。独立 XML oracle 核对完整 Placemark、几何／坐标、Folder、Schema／标量、null／空字符串及数值布尔，保留文件名、文件哈希、截图和同一用户／无任务定义的执行归属。EPSG:3857 输出须恢复已知 WGS84 坐标，源数据、结构和行数前后不变。原生 LIBKML 跨版本读取仍沿已登记 GeoPython 门禁验证，XML oracle 不冒充产品 KML 读侧增强。
 
-新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
+新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
 
 ### IMG 原生扫描与 COG 快显
 

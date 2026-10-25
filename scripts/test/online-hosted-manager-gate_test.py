@@ -16,6 +16,10 @@ class HostedManagerGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        # Lifecycle fakes only check these admission dependencies exist. Fail
+        # unexpected execution instead of depending on the host's installed tools.
+        for command in ('lsof', 'node', 'sudo'):
+            self.host._executable(command, '#!/usr/bin/env bash\nexit 125\n')
         go = self.host.bin / "go"
         go.write_text(go.read_text().replace("previous=", '''echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
             echo "security-url:${SECURITY_URL:-}" >> "$ADDP_TEST_GATE_TRACE"
@@ -174,6 +178,10 @@ class HostedManagerGateTest(unittest.TestCase):
             with self.subTest(failure=failure):
                 result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='kml-export', **({failure:'1'} if failure else {}))
                 self.assertEqual(result.returncode == 0, not failure, result.stdout + result.stderr)
+                summary = dict(line.split('=', 1) for line in (self.host.artifacts / 'summary.txt').read_text().splitlines())
+                self.assertEqual(summary['result'], 'failed' if failure else 'passed')
+                self.assertEqual(summary['cleanup'], 'failed' if failure == 'ADDP_TEST_KML_CLEANUP_FAIL' else 'passed')
+                self.assertEqual(summary['infra_cleanup'], 'zero_residuals')
                 trace = self.host.trace.read_text()
                 for fragment in ('kml-pg-fixture:start', 'kml-pg-fixture:stop', 'infra-down'):
                     self.assertIn(fragment, trace)
