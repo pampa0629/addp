@@ -1222,6 +1222,16 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 证据 `/tmp/addp-alert-host-name-{go,go-final,postgres,frontend,alerts-final,build,console,console-full,swagger,swagger-coverage}.log`，授权覆盖及影响选择回执同前缀；`/tmp/addp-alert-host-name-inputs.json`记录22项实现／测试／契约摘要、唯一测试导入修正与全部日志SHA-256。真实Safari尚未加载本批后端，当前主机名称筛选的个人运行／正式隔离身份／Hosted未验，不沿用前一批“告警名称”Safari证据代替。Excel第51行仍为部分实现，高等级置顶、拓扑／影响范围及根因分析等缺口保留。
 
+### 当前主机名称筛选个人 Safari 只读复验（2026-10-25，排除与恢复）
+
+用户完成重启后，`curl --silent --show-error --max-time 10 -w '\nHTTP %{http_code}\n' http://localhost:8100/health/ready` 实际返回200／ready，Monitor已登记，运行提交 `5f90384a19a06edff2a8a2bc61a65375ea31c857`，包含产品提交 `994db320ae7147cb0e566db4960eb256306cc9e1`（`git merge-base --is-ancestor`退出0）；Build ID为 `20261025T023212Z-monitor-81346-3DgCB9`。使用个人Safari既有平台系统管理员会话，在真实Console完整刷新后复验；没有读取登录凭据或使用受控API代替个人运行数据。
+
+先在“主机监控”读取当前纳管名称 `Docker Desktop Linux VM（Business / Infra）`。告警页“警告＋全部状态”实际显示5条日志链路告警，增加告警名称“源容量”后为2条；主机名称分段输入 `dOcKeR Desktop`，草稿保留，提交后Console与iframe URL均包含 `host_name=dOcKeR+Desktop`，显示空结果且无查询错误，截图可见输入框及旁边“仅查询主机资源告警”的说明。整页刷新、通知管理只读往返后，主机名、告警名、级别及全部状态均恢复；未知名称“不存在的测试主机”同样为空。清空主机名称后URL移除 `host_name`，其余三个条件保留，原2条日志告警恢复。
+
+本次证明个人Safari输入、非主机事件排除、空结果、清除及条件恢复；**该警告／全部状态数据集没有主机资源告警，真实主机告警正向命中及大小写匹配不计Safari已验**。真实多页主机告警、改名／停用、权限变更与正式隔离身份T4／Hosted／生产T5仍未验；已有本地T2／受控T3的覆盖保持独立。未创建、确认、抑制、删除告警或规则，未操作通知发送或更改主机。
+
+原始AX、截图及ready响应位于 `/tmp/addp-alert-host-safari-*`；操作汇总 `/tmp/addp-alert-host-safari-result.json`（SHA-256 `03c55fa2e39f830ab01b2c52e0b836290af992265a0625dbcb1298e82f64278f`）记录各文件摘要，完整过滤状态引用 `refresh.txt`／`return.txt`，不把无变化的差分AX当完整页面。本轮仅追加证据并执行 `git diff --check`，产品未变，不重复有效产品门禁。没有查询、触发或重跑CI／Hosted，也未设置定时任务，继续等专门会话回传。清单第51行仍部分实现；本次只补个人Safari排除与恢复证据。
+
 ### 当前主机名称筛选固定 994 前端 CI：完整门禁通过（2026-10-25）
 
 专门CI会话回传后，本会话独立核对已落地原始日志、Job及实际测试步骤终态与内容摘要，没有轮询、手工派发或重跑CI。[Platform Run40150409107／Monitor frontend Job121040604365](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604365) 为push／attempt1、固定源码 `994db320ae7147cb0e566db4960eb256306cc9e1`；真实 `Run Monitor frontend gate` 和Job均completed／success，日志实际118项单测通过、fail／skip均0，428项浏览器以单Worker全部通过（18.7分钟），Vite构建成功（7.01秒）。包括主机名称规范URL及非法条件保留单测、当前主机名称筛选与分页／刷新／导航恢复的中英文真实页面用例。该固定版本已具备一次完整绿色的前端T1／受控Linux T3／build证据，不再只有上一节的本地组合结果；本地首轮两项测试导入失败仍保留为失败。
