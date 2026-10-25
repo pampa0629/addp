@@ -1,6 +1,7 @@
 """The IAM database must have one destructive gate owner across checkouts."""
 
 import os
+import re
 from pathlib import Path
 import shutil
 import shlex
@@ -201,7 +202,23 @@ elif args[:2] != ["volume", "ls"]:
     def test_platform_alert_publication_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "platform-alert-management"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("./internal/migration -run ^Test(PlatformAlertManagementForwardMigration|PlatformHTTPQualityForwardMigration|PlatformTraceForwardMigration|Runner)AgainstPostgres$", (self.root / "trace-1").read_text())
+        expected = "^Test(PlatformAlertManagementForwardMigration|PlatformServiceAvailabilityRulesForwardMigration|PlatformHTTPQualityForwardMigration|PlatformTraceForwardMigration|Runner)AgainstPostgres$"
+        trace = (self.root / "trace-1").read_text().splitlines()
+        prefix = "test ./internal/migration -run "
+        selected = [line.removeprefix(prefix).split(" ", 1)[0] for line in trace if line.startswith(prefix)]
+        self.assertEqual(selected, [expected])
+        pattern = re.compile(selected[0])
+        for name in ("PlatformAlertManagementForwardMigration", "PlatformServiceAvailabilityRulesForwardMigration",
+                     "PlatformHTTPQualityForwardMigration", "PlatformTraceForwardMigration", "Runner"):
+            with self.subTest(selected=name):
+                self.assertIsNotNone(pattern.search("Test" + name + "AgainstPostgres"))
+        for name in ("TestPlatformResourceAlertRulesForwardMigrationAgainstPostgres",
+                     "TestUnregisteredPublicationAgainstPostgres",
+                     "PrefixTestPlatformServiceAvailabilityRulesForwardMigrationAgainstPostgres",
+                     "TestPlatformServiceAvailabilityRulesForwardMigrationAgainstPostgresExtra",
+                     "TestPlatformServiceAvailabilityRulesForwardMigration"):
+            with self.subTest(rejected=name):
+                self.assertIsNone(pattern.search(name))
         result = self.run_gate(arguments=("--package", "iam", "--test", "platform-alert-management"))
         self.assertEqual(result.returncode, 2)
         self.assertIn("requires --package migration", result.stderr)

@@ -1615,3 +1615,12 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 - 已尝试更广 `make test-dev-lifecycle`，164项聚合出现两项超时：标准停止声明夹具10秒超时、Bounded Worker夹具就绪等待超时。该聚合退出1，不计通过、不放宽时限；前者在上述独立87项重新验证通过，后者运行既有Worker脚本片段，不调用本批修改的部署观察器。本批不扩展修理其他夹具，保留原失败供专门会话核对。
 
 日志：`/tmp/addp-discovery-{finalizer-red,finalizer-green,stop-current,stop-lifecycle-green,stop-metrics-green,stop-infra-green,stop-linux,stop-linux-green}.log`。新用例沿原部署发现标准入口自动发现，相关Python脚本已在原Metrics T2输入清单，Platform沿原标准聚合；不新增Make／workflow或并行技术路线。未自行查询／触发／重跑CI或Hosted、未设置定时任务、未执行个人服务或keepalive生命周期；自然Linux CI等专门会话回传。Safari实际可见性及真实服务失联验收仍保持原缺口。
+
+
+### 原生Linux回传与迁移选择断言同步（2026-10-26）
+
+专门CI会话回传后，本会话只读核对其提供的原始日志：Platform run `40214288480` / job `121231972455`，checkout固定为`2a2afdf482aabcea3ab6dadc2f8aea01c6560f3a`；日志2191—2195行的61项Infra生命周期、2335—2344行的40项部署发现及6项证明均Ran/OK。相关停止／挂载证明门禁已取得该固定源码的原生Linux通过证据，不代替当前HEAD、完整Platform或正式运行验收；原本地Dev聚合两项超时仍保留为失败。
+
+该Job最终失败在 `test-system-iam-runner`：旧精确选择断言未纳入标准入口已选择的`PlatformServiceAvailabilityRulesForwardMigration`。本地先用 `make test-system-iam-runner`复现30项中同一失败，再仅同步该测试：精确比较实际迁移选择器，核对新增失联迁移、原告警／HTTP／Trace及Runner五个测试都命中，无关迁移、伪发布名、前后缀扩展及缺少后缀不命中；原错误package选择拒绝保持。没有修改迁移入口、SQL、权限、真实数据库或产品。
+
+修复后同一标准入口30项退出0，`git diff --check`通过；沿原Make／Platform T0自动发现，无需新增登记。日志 `/tmp/addp-service-availability-selector-{red,green}.log`，原CI证据 `/tmp/addp-ci-20261025-180006/job-121231972455.log`，Job为 https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455 。未将原失败改写为整轮通过，未重跑已有有效实库／Hosted，未查询或重跑远程CI、设置定时任务或操作个人服务；修复后的自然CI等专门会话回传。
