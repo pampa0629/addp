@@ -143,7 +143,7 @@ func (f *httpRuleFixture) evaluate(t *testing.T, seconds int) {
 }
 func (f *httpRuleFixture) active(t *testing.T) []PlatformAlertView {
 	t.Helper()
-	page, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "http_quality", Status: "active", SubjectID: f.module, Severity: ""})
+	page, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "http_quality", Status: "active", SubjectID: f.module, Severity: ""}, "")
 	if e != nil {
 		t.Fatal(e)
 	}

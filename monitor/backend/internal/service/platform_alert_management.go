@@ -8,8 +8,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/addp/common/client"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/monitor/i18n"
+	"github.com/addp/monitor/internal/metricsdiscovery"
+	"github.com/addp/monitor/internal/resourcequery"
 
 	"github.com/addp/monitor/internal/models"
 	"gorm.io/gorm"
@@ -36,15 +39,16 @@ type PlatformAlertList struct {
 type PlatformAlertFilter struct {
 	Page, PageSize                        int
 	Category, Status, SubjectID, Severity string
-	Search, Language                      string
+	Search, HostName, Language            string
 	TimeFrom, TimeTo                      *time.Time
 }
 
-func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAlertFilter) (PlatformAlertList, error) {
-	if !validAlertSearch(filter.Search) {
+func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAlertFilter, userToken string) (PlatformAlertList, error) {
+	if !validAlertSearch(filter.Search) || !validAlertSearch(filter.HostName) {
 		return PlatformAlertList{}, ErrLogInvalid
 	}
 	filter.Search = strings.TrimSpace(filter.Search)
+	filter.HostName = strings.TrimSpace(filter.HostName)
 	result := PlatformAlertList{Data: []PlatformAlertView{}, Page: filter.Page, PageSize: filter.PageSize}
 	if filter.Page < 1 || filter.Page > 10000 || filter.PageSize < 1 || filter.PageSize > 100 || (filter.Category != "" && !validPlatformAlertCategory(filter.Category)) || (filter.Severity != "" && filter.Severity != "critical" && filter.Severity != "warning") || len(filter.SubjectID) > 100 || strings.ContainsAny(filter.SubjectID, "\r\n\x00") || (filter.TimeFrom != nil && filter.TimeTo != nil && !filter.TimeFrom.Before(*filter.TimeTo)) {
 		return result, ErrLogInvalid
@@ -62,7 +66,34 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 	if s == nil || s.db == nil {
 		return result, ErrLogUnconfigured
 	}
+	var hostIDs []string
+	if filter.HostName != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if s.hosts == nil {
+			return result, metricsdiscovery.ErrIdentityUnavailable
+		}
+		hosts, err := s.hosts.HostNodesForUser(ctx, userToken)
+		if errors.Is(err, client.ErrHostNodeScopeBudget) {
+			return result, resourcequery.ErrBudget
+		}
+		if err != nil {
+			return result, errors.Join(metricsdiscovery.ErrIdentityUnavailable, err)
+		}
+		for _, host := range hosts {
+			if strings.Contains(strings.ToLower(host.DisplayName), strings.ToLower(filter.HostName)) {
+				hostIDs = append(hostIDs, host.NodeID)
+			}
+		}
+		if len(hostIDs) == 0 {
+			return result, nil
+		}
+	}
 	q := s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{})
+	if filter.HostName != "" {
+		q = q.Where("category=? AND subject_kind=? AND subject_id IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, hostIDs)
+	}
 	if filter.Category != "" {
 		q = q.Where("category=?", filter.Category)
 	}

@@ -10,7 +10,7 @@ export const deliveryView = {
   event_type: 'opened', occurred_at: '2026-10-01T08:00:00Z', incident_id: 9, incident_status: 'resolved',
   created_at: '2026-10-01T08:00:01Z', last_error: 'notification_attempt_limit'
 }
-export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, rules = [], ruleTotal = rules.length, ruleConflict = false, resources = false, path = '/platform-alerts' } = {}) {
+export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, rules = [], ruleTotal = rules.length, ruleConflict = false, resources = false, hostNames = {}, path = '/platform-alerts' } = {}) {
   const setupBackend = resources ? resourceBackend : mockBase
   const resourceState = await setupBackend(page, { locale, identity: identity(keys || ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', ...(management ? ['monitor.platform_alert.update', 'monitor.platform_alert_notification.update'] : [])]) })
   destinations = destinations.map(row => ({ categories: ['log_pipeline'], recipients: [], event_types: ['opened', 'resolved'], ...row }))
@@ -42,11 +42,13 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
       if (held) await barrier
       const query = new URL(req.url()).searchParams, severity = query.get('severity')
       if (severity && !['critical', 'warning'].includes(severity)) return reply({ error: 'Invalid severity' }, 400)
-      const search = query.get('search') || ''
+      const search = query.get('search') || '', hostName = query.get('host_name') || ''
+      if (hostName && !keys?.includes('platform.host_node.read')) return reply({error:'Host read permission required'},403)
+      if (/[\p{Cc}\p{Cs}]/u.test(hostName) || [...hostName.trim()].length > 100) return reply({error:'Invalid host name'},400)
       if (/[\p{Cc}\p{Cs}]/u.test(search) || [...search.trim()].length > 100) return reply({error:'Invalid alert name'},400)
       const from = query.get('time_from'), to = query.get('time_to')
       if (from && !Number.isFinite(Date.parse(from)) || to && !Number.isFinite(Date.parse(to)) || from && to && Date.parse(from) >= Date.parse(to)) return reply({ error: 'Invalid opening time range' }, 400)
-      const rows = (entries || [{ id: 9, version: 3, category: 'log_pipeline', subject_kind: 'log_observer', subject_id: 'host-a', signal: 'collector_dropped', name: locale === 'en' ? 'Collector dropped entries increased' : '采集器新增丢弃', severity: 'critical', status: acknowledged ? 'acknowledged' : 'open', opened_at: new Date().toISOString(), instance_id: '' }]).filter(row => (!search.trim() || (row.name || '').toLowerCase().includes(search.trim().toLowerCase())) && (!severity || row.severity === severity) && (!from || Date.parse(row.opened_at) >= Date.parse(from)) && (!to || Date.parse(row.opened_at) < Date.parse(to)))
+      const rows = (entries || [{ id: 9, version: 3, category: 'log_pipeline', subject_kind: 'log_observer', subject_id: 'host-a', signal: 'collector_dropped', name: locale === 'en' ? 'Collector dropped entries increased' : '采集器新增丢弃', severity: 'critical', status: acknowledged ? 'acknowledged' : 'open', opened_at: new Date().toISOString(), instance_id: '' }]).filter(row => (!hostName.trim() || row.category === 'resource' && row.subject_kind === 'host_node' && (hostNames[row.subject_id] || '').toLowerCase().includes(hostName.trim().toLowerCase())) && (!search.trim() || (row.name || '').toLowerCase().includes(search.trim().toLowerCase())) && (!severity || row.severity === severity) && (!from || Date.parse(row.opened_at) >= Date.parse(from)) && (!to || Date.parse(row.opened_at) < Date.parse(to)))
       const currentPage = Number(query.get('page') || 1)
       return reply({ data: rows.slice((currentPage - 1) * 20, currentPage * 20), total: rows.length, page: currentPage, page_size: 20 })
     }

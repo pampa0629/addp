@@ -3,7 +3,7 @@ import { mockModuleQueryAPI } from '../../../system/frontend/e2e/module-query.fi
 import { backend, identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
 test('platform alert filters and notifications preserve one Console iframe and restore on reload', async ({ page }) => {
-  await backend(page, { identity: identity(['monitor.platform_alert.read', 'monitor.platform_alert_notification.read']) })
+  await backend(page, { identity: identity(['monitor.platform_alert.read', 'monitor.platform_alert_notification.read','platform.host_node.read']) })
   const reads = [], incidentQueries = []
   const timeFrom = '2026-10-01T00:00:00.000Z', timeTo = '2026-10-02T00:00:00.000Z'
   await page.route('**/api/v1/monitor/platform/**', route => {
@@ -11,14 +11,14 @@ test('platform alert filters and notifications preserve one Console iframe and r
     if (url.pathname.endsWith('/alerts')) incidentQueries.push(Object.fromEntries(url.searchParams))
     return route.fulfill({ json: url.pathname.endsWith('/destinations') ? [] : url.pathname.endsWith('/alert-notification-destinations') ? [] : { data: [], total: 0, page: 1, page_size: 20 } })
   })
-  await page.goto(`/monitor/platform-alerts?category=resource&severity=warning&search=CPU%20%25_&time_from=${encodeURIComponent(timeFrom)}&time_to=${encodeURIComponent(timeTo)}`)
+  await page.goto(`/monitor/platform-alerts?category=resource&severity=warning&search=CPU%20%25_&host_name=Host%20%25_&time_from=${encodeURIComponent(timeFrom)}&time_to=${encodeURIComponent(timeTo)}`)
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByRole('heading', { name: '平台告警', exact: true })).toBeVisible()
   await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('平台告警')
   const frame = page.frames().find(frame => frame.parentFrame())
   const documentID = await frame.evaluate(() => performance.timeOrigin)
   await expect.poll(() => incidentQueries.at(-1)?.severity).toBe('warning')
-  expect(incidentQueries.at(-1)).toMatchObject({search:"CPU %_",time_from:timeFrom,time_to:timeTo})
+  expect(incidentQueries.at(-1)).toMatchObject({search:"CPU %_",host_name:"Host %_",time_from:timeFrom,time_to:timeTo})
   await monitor.locator('.el-select').filter({ has: monitor.getByRole('combobox', { name: '严重级别', exact: true }) }).click()
   await monitor.getByRole('option', { name: '严重', exact: true }).click()
   await expect(page).toHaveURL(/category=resource&severity=critical(?:&|$)/)
@@ -30,10 +30,11 @@ test('platform alert filters and notifications preserve one Console iframe and r
   await page.reload()
   await expect(monitor.getByTestId('platform-notifications')).toBeVisible()
   expect(new URL(page.url()).searchParams.get('search')).toBe("CPU %_")
+  expect(new URL(page.url()).searchParams.get('host_name')).toBe('Host %_')
   expect(new URL(page.url()).searchParams.get('time_from')).toBe(timeFrom)
   expect(new URL(page.url()).searchParams.get('time_to')).toBe(timeTo)
   await monitor.getByRole('button', { name: '告警事件', exact: true }).click()
-  await expect.poll(() => incidentQueries.at(-1)).toMatchObject({search:'CPU %_',severity:'critical',time_from:timeFrom,time_to:timeTo})
+  await expect.poll(() => incidentQueries.at(-1)).toMatchObject({search:'CPU %_',host_name:'Host %_',severity:'critical',time_from:timeFrom,time_to:timeTo})
   expect(reads.some(path => path.includes('/log-'))).toBe(false)
 })
 test('Tenant cannot open platform alerts using a platform permission string', async ({ page }) => {

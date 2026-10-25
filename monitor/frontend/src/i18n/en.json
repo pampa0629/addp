@@ -1039,6 +1039,9 @@
         "no": "No"
       },
       "alertName": "Alert name",
+      "hostName": "Host name",
+      "searchHostName": "Current host name (contains)",
+      "hostNameHint": "Matches current names for host resource alerts only.",
       "searchName": "Opening alert name (contains)",
       "nameMissing": "Name not recorded",
       "clearTime": "Clear time",

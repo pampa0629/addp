@@ -1039,6 +1039,9 @@
         "no": "否"
       },
       "alertName": "告警名称",
+      "hostName": "主机名称",
+      "searchHostName": "当前主机名称（包含匹配）",
+      "hostNameHint": "按当前名称匹配，仅查询主机资源告警。",
       "searchName": "触发时告警名称（包含匹配）",
       "nameMissing": "未记录名称",
       "clearTime": "清除时间",

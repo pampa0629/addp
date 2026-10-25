@@ -122,3 +122,15 @@ test('alert name query keeps literal Unicode search and never drops invalid URL 
  assert.deepEqual(platformAlertQuery(platformAlertState({search:'   '})),{})
  assert.deepEqual(platformAlertQuery(platformAlertState({search:null})),{})
 })
+
+
+test('host name uses the same canonical literal query and never loses invalid URL conditions', () => {
+ for (const host_name of ['主机 CPU %_\\', 'host-a']) {
+  const state=platformAlertState({host_name:` ${host_name} `,search:'memory',severity:'warning',page:'3'})
+  assert.deepEqual(platformAlertQuery(state), {host_name,search:'memory',severity:'warning',page:'3'})
+ }
+ for (const host_name of [['one','two'], 'a'.repeat(101), '\thost', String.fromCharCode(0xd800)]) {
+  assert.equal(platformAlertQuery(platformAlertState({host_name})).host_name,'\u0000')
+ }
+ assert.deepEqual(platformAlertQuery(platformAlertState({host_name:'   '})),{})
+})

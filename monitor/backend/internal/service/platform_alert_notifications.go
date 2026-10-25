@@ -18,6 +18,7 @@ import (
 )
 
 type PlatformAlertService struct {
+	hosts                         UserHostNodeScopeReader
 	db                            *gorm.DB
 	key                           []byte
 	allowPrivate                  bool
@@ -26,6 +27,11 @@ type PlatformAlertService struct {
 	email                         EmailTransport
 	maxAttempts                   int
 	lease, retryInitial, retryMax time.Duration
+}
+
+func (n *PlatformAlertService) WithHostNodes(hosts UserHostNodeScopeReader) *PlatformAlertService {
+	n.hosts = hosts
+	return n
 }
 
 func NewPlatformAlertService(db *gorm.DB, key []byte, allowPrivate bool, webhook WebhookTransport, email EmailTransport, maxAttempts int, lease, retryInitial, retryMax time.Duration) *PlatformAlertService {

@@ -23,6 +23,10 @@
           <el-option :label="t('monitor.platformAlerts.allSeverities')" value="" /><el-option v-for="severity in ['critical','warning']" :key="severity" :label="t(`monitor.platformAlerts.severities.${severity}`)" :value="severity" />
         </el-select>
         <el-input v-model="draftSearch" @change="value => change({ search: value, page: 1 })" :aria-label="t('monitor.platformAlerts.alertName')" :placeholder="t('monitor.platformAlerts.searchName')" maxlength="100" clearable />
+        <div v-if="canReadHosts || state.host_name" class="alert-host-filter">
+          <el-input v-model="draftHostName" :disabled="!canReadHosts" @change="value => change({ host_name: value, page: 1 })" :aria-label="t('monitor.platformAlerts.hostName')" :placeholder="t('monitor.platformAlerts.searchHostName')" maxlength="100" clearable />
+          <small>{{ t('monitor.platformAlerts.hostNameHint') }}</small>
+        </div>
         <el-input :model-value="state.subject_id" @change="value => change({ subject_id: value, page: 1 })" :placeholder="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
       </div>
       <div class="alert-time-filter" data-testid="alert-time-filter" role="group" :aria-label="t('monitor.platformAlerts.openedAt')">
@@ -177,7 +181,7 @@ import { processAlertEvidence, processRuleMetrics, processRuleScale } from '../u
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
-const draftSearch = ref('')
+const draftSearch = ref(''), draftHostName = ref('')
 const draftFrom = ref(null), draftTo = ref(null)
 const timeDraft = computed(() => platformAlertTimeDraft(draftFrom.value, draftTo.value))
 function applyTimeFilter() {
@@ -255,8 +259,8 @@ async function load() {
       check(lease); if (own !== request) return
       destinations.value = targets; deliveries.value = attempts
     } else {
-      const { page, category, status, subject_id, severity, search, time_from, time_to } = state.value
-      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}), ...(search ? { search } : {}), ...(time_from ? { time_from } : {}), ...(time_to ? { time_to } : {}) }, controller.signal)
+      const { page, category, status, subject_id, severity, search, host_name, time_from, time_to } = state.value
+      const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}), ...(severity ? { severity } : {}), ...(search ? { search } : {}), ...(host_name ? { host_name } : {}), ...(time_from ? { time_from } : {}), ...(time_to ? { time_to } : {}) }, controller.signal)
       check(lease); if (own !== request) return
       incidents.value = result.data; total.value = result.total
       if (canReadHosts.value) {
@@ -333,6 +337,7 @@ async function deleteDestination(row) {
   } catch (value) { if (lease === epoch && ![abandoned, 'cancel', 'close'].includes(value)) ElMessage.error(errorText(value)) }
   finally { if (lease === epoch) busy.value = false }
 }
+watch(() => [state.value.host_name, ruleIdentity.value], () => { draftHostName.value = state.value.host_name }, { immediate: true })
 watch(() => [state.value.search, ruleIdentity.value], () => { draftSearch.value = state.value.search }, { immediate: true })
 watch(() => [state.value.time_from, state.value.time_to, ruleIdentity.value], () => {
   draftFrom.value = state.value.time_from && state.value.time_from !== 'invalid' ? new Date(state.value.time_from) : null
@@ -355,7 +360,8 @@ watch(destinationOpen, value => { if (!value) secret.value = '' })
 .alert-time-filter :deep(.el-date-editor) { max-width: 100%; }
 .alert-time-hint { flex-basis: 100%; margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
 .alert-toolbar .el-select { width: 180px; }
-.alert-toolbar .el-input { width: 280px; }
+.alert-toolbar .el-input { width: 280px; max-width: 100%; }
+.alert-host-filter { max-width: 100%; width: 280px; }
 .delivery-diagnostics { margin: 12px; }
 small { display: block; color: var(--addp-text-secondary); margin-top: 6px; }
 </style>

@@ -1884,6 +1884,12 @@
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "System 当前主机名称，字面包含、忽略大小写、最多100字符；仅主机资源告警，额外需要主机读取权 | Current System host name, case-insensitive literal substring, at most 100 characters; host resource alerts only, additionally requires host read permission",
+                        "name": "host_name",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "critical",
                             "warning"
@@ -1951,14 +1957,29 @@
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "platform.host_node.read"
+                ],
                 "x-addp-required-permissions": [
                     "monitor.platform_alert.read"
                 ]

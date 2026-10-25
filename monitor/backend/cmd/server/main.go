@@ -144,7 +144,7 @@ func main() {
 		},
 	)
 
-	platformAlerts := service.NewPlatformAlertService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, webhookSender, platformMail, cfg.WebhookMaxAttempts, cfg.WebhookLeaseDuration, cfg.WebhookRetryInitial, cfg.WebhookRetryMax)
+	platformAlerts := service.NewPlatformAlertService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, webhookSender, platformMail, cfg.WebhookMaxAttempts, cfg.WebhookLeaseDuration, cfg.WebhookRetryInitial, cfg.WebhookRetryMax).WithHostNodes(systemServiceClient)
 	logPipeline := service.NewLogPipelineService(db, cfg.LogObserverNode, systemServiceClient, platformAlerts)
 	if err := logPipeline.Initialize(runtimeContext, time.Now().UTC()); err != nil {
 		log.Fatalf("Failed to initialize platform log pipeline: %v", err)

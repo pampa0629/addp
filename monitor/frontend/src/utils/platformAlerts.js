@@ -22,7 +22,7 @@ export function platformAlertSearch(value) {
 export function platformAlertState(query = {}) {
   const positive = value => typeof value === 'string' && /^[1-9][0-9]*$/u.test(value) && Number(value) <= 10000 ? Number(value) : 1
   return { tab: ['notifications', 'rules', 'http-rules', 'process-rules'].includes(query.tab) ? query.tab : 'incidents',
-    search: platformAlertSearch(query.search),
+    search: platformAlertSearch(query.search), host_name: platformAlertSearch(query.host_name),
     time_from: alertTimeBound(query.time_from), time_to: alertTimeBound(query.time_to),
     severity: query.severity === undefined ? '' : typeof query.severity === 'string' && query.severity.length <= 32 ? query.severity : 'invalid',
     category: ['log_pipeline', 'resource', 'http_quality', 'process_resource'].includes(query.category) ? query.category : '',
@@ -32,7 +32,7 @@ export function platformAlertState(query = {}) {
 }
 export function platformAlertQuery(state) {
   return { ...(['notifications', 'rules', 'http-rules', 'process-rules'].includes(state.tab) ? { tab: state.tab } : {}), ...(state.category ? { category: state.category } : {}), ...(state.severity ? { severity: state.severity } : {}),
-    ...(state.status === 'active' ? {} : { status: state.status || 'all' }), ...(state.subject_id ? { subject_id: state.subject_id } : {}), ...(state.search ? { search: state.search } : {}), ...(state.time_from ? { time_from: state.time_from } : {}), ...(state.time_to ? { time_to: state.time_to } : {}),
+    ...(state.status === 'active' ? {} : { status: state.status || 'all' }), ...(state.subject_id ? { subject_id: state.subject_id } : {}), ...(state.search ? { search: state.search } : {}), ...(state.host_name ? { host_name: state.host_name } : {}), ...(state.time_from ? { time_from: state.time_from } : {}), ...(state.time_to ? { time_to: state.time_to } : {}),
     ...(state.process_rule_page > 1 ? { process_rule_page: String(state.process_rule_page) } : {}), ...(state.http_rule_page > 1 ? { http_rule_page: String(state.http_rule_page) } : {}), ...(state.rule_page > 1 ? { rule_page: String(state.rule_page) } : {}), ...(state.page > 1 ? { page: String(state.page) } : {}), ...(state.delivery_page > 1 ? { delivery_page: String(state.delivery_page) } : {}) }
 }
 

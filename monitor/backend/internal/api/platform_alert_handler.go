@@ -1,16 +1,20 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	monitori18n "github.com/addp/monitor/i18n"
+	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,6 +54,7 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
 // @Param search query string false "触发时告警名称，字面包含、忽略大小写，最多100字符 | Opening alert name, case-insensitive literal substring, at most 100 characters"
+// @Param host_name query string false "System 当前主机名称，字面包含、忽略大小写、最多100字符；仅主机资源告警，额外需要主机读取权 | Current System host name, case-insensitive literal substring, at most 100 characters; host resource alerts only, additionally requires host read permission"
 // @Param severity query string false "级别（省略为全部） | Severity (omitted for all)" Enums(critical,warning)
 // @Param time_from query string false "发现时间下界，RFC3339，含 | Inclusive opening time lower bound, RFC3339"
 // @Param time_to query string false "发现时间上界，RFC3339，不含 | Exclusive opening time upper bound, RFC3339"
@@ -60,9 +65,12 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
 // @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.platform_alert.read"]
+// @x-addp-conditional-permissions ["platform.host_node.read"]
 // @Router /platform/alerts [get]
 func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 	query, parseErr := url.ParseQuery(c.Request.URL.RawQuery)
@@ -72,7 +80,7 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 	}
 	for key, values := range query {
 		switch key {
-		case "page", "page_size", "category", "status", "subject_id", "severity", "time_from", "time_to", "search":
+		case "page", "page_size", "category", "status", "subject_id", "severity", "time_from", "time_to", "search", "host_name":
 		default:
 			platformAlertRespond(c, nil, service.ErrLogInvalid)
 			return
@@ -88,7 +96,7 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 		platformAlertRespond(c, nil, service.ErrLogInvalid)
 		return
 	}
-	filter := service.PlatformAlertFilter{Page: page, PageSize: size, Category: query.Get("category"), Status: query.Get("status"), SubjectID: query.Get("subject_id"), Severity: query.Get("severity"), Search: query.Get("search"), Language: commoni18n.GetLang(c)}
+	filter := service.PlatformAlertFilter{Page: page, PageSize: size, Category: query.Get("category"), Status: query.Get("status"), SubjectID: query.Get("subject_id"), Severity: query.Get("severity"), Search: query.Get("search"), HostName: query.Get("host_name"), Language: commoni18n.GetLang(c)}
 	for _, bound := range []struct {
 		raw    string
 		target **time.Time
@@ -103,13 +111,23 @@ func (h *PlatformAlertHandler) Incidents(c *gin.Context) {
 		}
 		*bound.target = &parsed
 	}
-	result, err := h.service.Incidents(c.Request.Context(), filter)
+	if strings.TrimSpace(filter.HostName) != "" {
+		commonAuth.MustNewPermissionGuard("platform.host_node.read")(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+	result, err := h.service.Incidents(c.Request.Context(), filter, targetToken(c))
 	platformAlertRespond(c, result, err)
 }
 
 // Source capability and transport errors keep their shared codes; management
 // operation errors belong to the platform alert domain.
 func platformAlertRespond(c *gin.Context, v any, err error) {
+	if errors.Is(err, metricsdiscovery.ErrIdentityUnavailable) || errors.Is(err, resourcequery.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
+		resourceError(c, err)
+		return
+	}
 	platformOperationRespond(c, v, err, "platform_alert")
 }
 

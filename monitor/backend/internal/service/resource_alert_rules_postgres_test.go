@@ -148,7 +148,7 @@ func (f *resourceRuleFixture) evaluate(t *testing.T, seconds int) {
 }
 func (f *resourceRuleFixture) active(t *testing.T) []PlatformAlertView {
 	t.Helper()
-	r, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "resource", Status: "active", SubjectID: f.target.NodeID, Severity: ""})
+	r, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, Category: "resource", Status: "active", SubjectID: f.target.NodeID, Severity: ""}, "")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -325,11 +325,11 @@ func TestIntegrationPostgresResourceRuleRecoveryPinsOpenedPolicyAndHistory(t *te
 	if count != 2 {
 		t.Fatal("deleting rule erased history")
 	}
-	list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: f.input.Name})
+	list, err := f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: f.input.Name}, "")
 	if err != nil || list.Total != 1 || list.Data[0].Name != f.input.Name {
 		t.Fatal("deleted rule erased historical name", list, err)
 	}
-	list, err = f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: changed.Name})
+	list, err = f.n.Incidents(ctx, PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: incident.SubjectID, Search: changed.Name}, "")
 	if err != nil || list.Total != 0 {
 		t.Fatal("current rule name rewrote history", list, err)
 	}
@@ -502,7 +502,7 @@ func TestIntegrationPostgresResourceRuleMissingHistoricalNameStaysMissing(t *tes
 		f.evaluate(t, sec)
 	}
 	for _, search := range []string{in.Name, f.input.Name} {
-		list, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: row.SubjectID, Search: search})
+		list, e := f.n.Incidents(context.Background(), PlatformAlertFilter{Page: 1, PageSize: 20, SubjectID: row.SubjectID, Search: search}, "")
 		if e != nil || list.Total != 0 {
 			t.Fatal("live rule substituted for missing history", list, e)
 		}

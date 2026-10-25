@@ -1203,6 +1203,25 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 本机证据：`/tmp/addp-alert-name-safari-result.json`，匹配／刷新／空结果／清除／通知往返的 `addp-alert-name-safari-{match,refresh,empty,clear,return}.txt`，匹配／空结果／最终页面的 `addp-alert-name-safari-{match,empty,final}.png`，均位于 `/tmp/`。本轮只追加本节，执行 `git diff --check`；不重复仍有效的产品门禁，不查询或触发CI／Hosted，不重启服务、不设置定时任务。清单只读核对Excel第51行、B列50“告警信息管理”，由维护会话统一更新M列。
 
+### 当前主机名称筛选：事实来源与本地分层验证（2026-10-25）
+
+只读核对确认 System 的 `HostNode.display_name` 是可编辑的当前纳管名称，主机资源事件以 `resource/host_node` 与 UUID 引用；日志观测器标识、服务登记宿主名／运行环境名、模块名不是这份名称。用户确认首期仅查当前主机名称对应的主机资源告警后，先修订运行观测规范7.1，再在唯一告警列表增加 `host_name`，沿告警名称已有100字符、去首尾空白、忽略大小写的字面包含口径。非空参数复用当前 User Bearer、System 完整有界 `HostNodesForUser` 投影及原主机读取权；最多100台、五秒／四MiB，包含停用主机，失败／超限拒绝，不使用地址搜索、分页首批或后台身份兜底。匹配UUID与现有条件在计数／分页前取交集；改名后按新名查询，不存触发时主机名、不推断其他主体的承载关系。空值不增加System依赖，无数据库迁移、新权限、角色或私有观测字段。
+
+页面在“主机名称”框旁标明仅主机资源告警，沿原独立输入草稿、提交／清空回首页、URL／刷新／通知往返恢复和失败清空。无主机读权时不显示可编辑入口；已有非空URL条件保留并由后端拒绝，不悄悄撤去筛选。已有当页主机引用展示仍由唯一共享解析器负责。
+
+| 标准入口／脚本 | 本次实际结果与范围 |
+| --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1` | 7个Go测试包通过，仅计Go T1；新增主机名称额外权限、空条件不增加权限、重复／非法参数等API守卫用例。 |
+| `make test-monitor-postgres` | 39项顶层T2通过、无失败／跳过。新增名称15个子场景及附加断言覆盖Unicode／大小写、字面百分号／下划线／反斜线、停用主机、多个同名片段主机、准确多页与时间／名称／级别／状态／ID交集、改名后旧名不匹配、同UUID的其他主体不误关联、Owner失败／超限／超时拒绝及空条件无依赖。System读取使用受控Reader，非真实身份T4；新增随机夹具退出清理并核对零行。已先运行Infra状态，实际共享映射25432，仅使用 `addp_test`。 |
+| `make test-monitor-frontend` | 首轮118项T1通过；整套T3为426通过／2失败（15.5分钟），失败均是新增中英文用例缺少 `resourceIncident` 导入，在进入页面前发生ReferenceError。原轮门禁失败，未执行其后构建，不计整套当前源码通过。 |
+| Monitor目录 `node ../../scripts/test/frontend-browser-gate.mjs e2e/platform-alerts.spec.js`；`npm run build` | 仅补齐上述测试导入，产品代码和其余输入未变。最终告警页34项T3全部通过，含原有名称／时间／生命周期及新增中英文680px主机筛选、连续输入、多页／刷新／通知往返、字面字符、空匹配、清除保留其他条件、错误清空与无权／非法URL拒绝；标准构建步骤成功。首轮其余394项与最终该页34项共同覆盖当前428个用例，但不将组合证据冒充一次全量绿色门禁；后继完整CI结果仍待专门会话回传。 |
+| `make test-console-frontend` | 195项T1、220项真实iframe受控T3及构建通过；新增主机名称与告警名称／时间／级别在同一iframe和Console URL恢复。此前同一标准browser launcher的5项导航专项也通过。 |
+| 标准Monitor Swagger生成／覆盖；Common Manifest `--coverage-report` | 生成成功，91条公开路由方法一致；授权覆盖报告 `complete=true`，新增参数及条件主机读取权限已同步，不修改IAM目录或角色。 |
+
+现有路径选择、Monitor PostgreSQL自动发现及前端入口已命中，`changed-gate.py --dry-run`实际选择Monitor和Console；无新增入口、依赖或workflow。Monitor仍沿既有30分钟完整前端预算，CI规范删除易过期的“当前用例数”表述，不改变预算、Worker、断言或重试。没有轮询、手工派发或重跑CI／Hosted，也没有个人数据库写入、服务重启或定时任务；提交后只沿main既有push触发编排。
+
+证据 `/tmp/addp-alert-host-name-{go,go-final,postgres,frontend,alerts-final,build,console,console-full,swagger,swagger-coverage}.log`，授权覆盖及影响选择回执同前缀；`/tmp/addp-alert-host-name-inputs.json`记录22项实现／测试／契约摘要、唯一测试导入修正与全部日志SHA-256。真实Safari尚未加载本批后端，当前主机名称筛选的个人运行／正式隔离身份／Hosted未验，不沿用前一批“告警名称”Safari证据代替。Excel第51行仍为部分实现，高等级置顶、拓扑／影响范围及根因分析等缺口保留。
+
 ### 执行概览只读维护真实进程验收（2026-10-25）
 
 本批仅补第一期只读候选评估的真实 System 维护首轮，人工 Hosted Linux `execution-retention-readonly`，独占 System／Gateway／Infra；不启用 180 天概览物理删除，不改变任何 Owner 专业结果期限、业务实现或现有读取授权。System-owned helper 通过正式 Tenant Service 建立两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`；实际 AuthContext 校验后，由受限 Common 历史 helper 准备合成旧记录，标准生命周期停止／启动的仅是本轮独占 System。维护使用产品既有首轮与周期，不直接调用评估函数代替真实进程，不增加测试 API 或产品调度参数。

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { fixture, deliveryView } from './platform-alerts.fixture'
+import { fixture, deliveryView, resourceIncident } from './platform-alerts.fixture'
 import { identity, setIdentity } from './monitoring-targets.fixture'
 
 test('alert acknowledgement uses current version and failed refresh becomes unknown', async ({ page }) => {
@@ -498,4 +498,62 @@ test('invalid name query is rejected without widening and errors clear named res
  await expect(page.getByText('观测不可用',{exact:true})).toBeVisible()
  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.search).toBe('采集器新增')
+})
+
+
+for (const locale of ['zh-cn','en']) {
+ test(`current host name filters only host alerts and restores on reload ${locale}`,async({page})=>{
+  await page.setViewportSize({width:680,height:900})
+  const node=resourceIncident.subject_id, hostName='主机 Host %_\\'
+  const rows=Array.from({length:25},(_,i)=>({...resourceIncident,id:100+i,status:'open',name:'Memory alert',opened_at:'2026-10-01T00:00:00Z'}))
+  rows.push({...rows[0],id:200,category:'log_pipeline',subject_kind:'log_observer',name:'Observer alert'})
+  const state=await fixture(page,{locale,keys:['monitor.platform_alert.read','monitor.platform_alert_notification.read','platform.host_node.read'],entries:rows,hostNames:{[node]:hostName},path:'/platform-alerts?page=2&severity=warning&search=Memory'})
+  const table=page.getByTestId('pipeline-incidents'),input=page.getByRole('textbox',{name:locale==='en'?'Host name':'主机名称',exact:true})
+  await expect(input).toBeVisible()
+  await expect(page.getByText(locale==='en'?'Matches current names for host resource alerts only.':'按当前名称匹配，仅查询主机资源告警。',{exact:true})).toBeVisible()
+  await input.pressSequentially('hOsT')
+  await expect(input).toHaveValue('hOsT')
+  await input.press('Enter')
+  await expect.poll(()=>state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1)?.query.host_name).toBe('hOsT')
+  expect(new URL(page.url()).searchParams.has('page')).toBe(false)
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  await expect(table).not.toContainText('Observer alert')
+  await page.locator('.el-pagination .btn-next').click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  await page.reload();await expect(input).toHaveValue('hOsT')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
+  await page.getByRole('button',{name:locale==='en'?'Notifications':'通知管理',exact:true}).click()
+  await page.reload();await expect(page.getByTestId('platform-notifications')).toBeVisible()
+  await page.getByRole('button',{name:locale==='en'?'Incidents':'告警事件',exact:true}).click()
+  await expect(input).toHaveValue('hOsT')
+  await input.fill('%_\\');await input.press('Enter')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  await input.fill('unknown host');await input.press('Enter')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+  await input.fill('');await input.press('Enter')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  expect(new URL(page.url()).searchParams.has('host_name')).toBe(false)
+  expect(new URL(page.url()).searchParams.get('search')).toBe('Memory')
+  expect(new URL(page.url()).searchParams.get('severity')).toBe('warning')
+  await input.fill('host');await input.press('Enter')
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
+  state.fail();await page.getByRole('button',{name:locale==='en'?'Refresh':'刷新',exact:true}).click()
+  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(0)
+  await expect(input).toHaveValue('host')
+ })
+}
+
+test('host query without permission is retained and rejects instead of widening',async({page})=>{
+ const state=await fixture(page,{path:'/platform-alerts?host_name=private-host'})
+ await expect(page.getByRole('textbox',{name:'主机名称',exact:true})).toBeDisabled()
+ await expect(page.getByText('Host read permission required',{exact:true})).toBeVisible()
+ expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.host_name).toBe('private-host')
+ expect(new URL(page.url()).searchParams.get('host_name')).toBe('private-host')
+ await expect(page.getByTestId('pipeline-incidents').locator('tbody > tr.el-table__row')).toHaveCount(0)
+})
+
+test('invalid host query stays rejected instead of being discarded',async({page})=>{
+ const state=await fixture(page,{keys:['monitor.platform_alert.read','platform.host_node.read'],path:'/platform-alerts?host_name=one&host_name=two'})
+ await expect(page.getByText('Invalid host name',{exact:true})).toBeVisible()
+ expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.host_name).toBe('\u0000')
 })
