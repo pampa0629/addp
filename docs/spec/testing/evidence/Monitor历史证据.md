@@ -1276,6 +1276,15 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 
 截至2026-10-25 07:17（Asia/Shanghai），同修正提交的 [Platform CI Run40139997741](https://github.com/pampa0629/addp/actions/runs/40139997741) 仍queued，未计为通过；该聚合CI不能由本批T4替代。当前闭合的范围仅为本地28项回归／Go T1与固定版本真实System首轮只读维护；5项既有PG专项的跳过、未运行的更广生命周期及首次失败均继续保留。Excel实际327／328／329行仍为部分实现，已向维护会话同步；Owner引用／释放、专业结果生命周期与物理删除不进入本轮开发。
 
+#### 固定版本 Platform CI 复核（2026-10-25）
+
+2026-10-25 23:58（Asia/Shanghai）仅复核本批既有自动 push [Platform Run40139997741／Platform consistency Job121009537951](https://github.com/pampa0629/addp/actions/runs/40139997741/job/121009537951)，attempt 1、固定源码 `86f58b3764c4c3e47af1a141d81e21f94109150c`。Run、Job及实际 `Run platform consistency gate` 均已 completed／success；真实门禁调用 `make test-platform`，执行时间为当日07:19:06–07:41:06，Job于07:41:09完成。前述截至07:17的排队状态由本次实际结果闭合，不以摘要步骤成功代替真实门禁。
+
+原始日志第2972–2997行与该源码Makefile的 `test-platform → test-online-runner → test-execution-retention-online-runner` 第一子入口对应，明确记录本批28项Python回归通过（失败0、跳过0），随后System `cmd/online-test-fixture` 包返回 `ok`；Online CI登记检查也实际输出 `Online CI registration is consistent`。这补齐了租户日志只读维护runner及唯一人工Hosted profile在干净CI中的登记／执行证据。本地显式日志中5项既有PostgreSQL专项的跳过仍保留，不据CI中Go包的成功补计T2；先前共享未提交工作区的本地全库注册阻断也作为不同输入的历史事实保留。
+
+证据为 `/tmp/addp-retention-platform-40139997741-metadata.json`、`-attempt.json`、`-audit.json`及原始 `.log`，日志SHA-256为 `0ca82b64f5dafd79eba1021c3c1962392b25cf9374f1e81f20662bff27ca1e45`。独立核对了固定head SHA、push事件、attempt、真实步骤、标准入口及28项对应日志；没有重跑CI、T4或未变产品测试，也未跟进其他模块Job。该结论仅针对上述固定版本，不外推当前HEAD、其他Owner、专业结果生命周期、小时周期／30天实际事件维护、180天物理删除或T5。
+
+本批CI核对可收口；功能清单实际327／328／329行仍保持部分实现。Owner释放／消费者引用裁决及删除仍需另行讨论确认，不进入本次开发。本轮仅追加现有证据并运行 `git diff --check`，未改产品、期限、权限或工作簿，不启动／重启服务，不新增定时或验收场景。
 
 
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
