@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { installModelDownloadAttributeObserver, modelDownloadAttributes } from './model-preview-support.js'
 import { managerAuthContext } from './managerAuthContext.js'
 
 const locator = 'addp://engine/2/path/models/model.stl?type=file&item_id=8'
@@ -33,11 +35,14 @@ async function install(page, respond, locale = 'zh-cn') {
   await expect(page.getByRole('button', { name: /^(下载|Download)$/i })).toBeEnabled()
 }
 
-for (const locale of ['zh-cn', 'en']) for (const [header, name] of [
-  ['attachment; filename=model.stl', 'model.stl'],
-  ["attachment; filename*=utf-8''%E6%A8%A1%E5%9E%8B%20%25.stl.zip", '模型 %.stl.zip']
+for (const locale of ['zh-cn', 'en']) for (const [header, name, suggested] of [
+  ['attachment; filename=model.stl', 'model.stl', 'model.stl'],
+  ["attachment; filename*=utf-8''%20%E5%8E%9F%E5%90%8D%20%25.GLB", ' 原名 %.GLB', '_原名 %.GLB'],
+  ["attachment; filename*=utf-8''%E6%A8%A1%E5%9E%8B%20%25.stl.zip", '模型 %.stl.zip', '模型 %.stl.zip']
 ]) {
-  test(`the real model download button saves authenticated bytes as ${name} in ${locale}`, async ({ page }) => {
+  test(`the real model download button saves authenticated bytes as ${name} in ${locale}`, async ({ page }, testInfo) => {
+    const sourceBytes = name.endsWith('.GLB') ? readFileSync(new URL('../../../business/fixtures/manager/addp_online_model_fixture.glb', import.meta.url)) : bytes
+    await installModelDownloadAttributeObserver(page)
     let calls = 0
     await install(page, async route => {
       calls++
@@ -45,12 +50,25 @@ for (const locale of ['zh-cn', 'en']) for (const [header, name] of [
       expect(headers.authorization).toBe('Bearer addp_at_model-download-test')
       expect(headers.cookie).toBeUndefined()
       expect([...new URL(route.request().url()).searchParams.keys()]).toEqual(['locator'])
-      return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': header }, body: bytes })
+      return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': header }, body: sourceBytes })
     }, locale)
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^(下载|Download)$/i }).click()])
+    const [download, response] = await Promise.all([
+      page.waitForEvent('download'),
+      page.waitForResponse(value => new URL(value.url()).pathname.endsWith('/manager/downloads/file')),
+      page.getByRole('button', { name: /^(下载|Download)$/i }).click()
+    ])
     expect(await download.failure()).toBeNull()
-    expect(download.suggestedFilename()).toBe(name)
-    expect(readFileSync(await download.path())).toEqual(bytes)
+    const saved = readFileSync(await download.path())
+    const anchors = await modelDownloadAttributes(page)
+    const proof = { expected_name: name, response_disposition: response.headers()['content-disposition'],
+      anchors, suggested_filename: download.suggestedFilename(), size: saved.length,
+      sha256: createHash('sha256').update(saved).digest('hex'), exact_source_bytes: saved.equals(sourceBytes) }
+    writeFileSync(testInfo.outputPath('filename-boundaries.json'), JSON.stringify(proof, null, 2))
+    await testInfo.attach('model-download-filename-boundaries', { body: JSON.stringify(proof, null, 2), contentType: 'application/json' })
+    expect(response.headers()['content-disposition']).toBe(header)
+    expect(anchors).toEqual([{ name, blob: true }])
+    expect(saved).toEqual(sourceBytes)
+    expect(download.suggestedFilename()).toBe(suggested)
     expect(calls).toBe(1)
     await expect(page.getByText(/^(下载已开始|Download started)$/i)).toBeVisible()
   })

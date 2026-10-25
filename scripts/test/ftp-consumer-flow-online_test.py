@@ -49,7 +49,8 @@ def source_download_proof(source, artifacts, entries=None):
              'content_type': 'application/zip' if bundled else 'application/octet-stream',
              'content_disposition': f'attachment; filename="{Path(source["full_name"]).name}{".zip" if bundled else ""}"'}
     proof['browser_download'] = {'clicked': True, 'current_user': True, 'no_cookie': True,
-                               'suggested_filename': Path(source['full_name']).name + ('.zip' if bundled else ''),
+                               'download_attribute': [{'name':Path(source['full_name']).name + ('.zip' if bundled else ''),'blob':True}],
+                               'suggested_filename': '_原名 %.GLB' if source['format']=='glb' else Path(source['full_name']).name + ('.zip' if bundled else ''),
                                'saved_file_read': True}
     (artifacts / name).write_bytes(raw)
     (artifacts / f"ftp-{source['format']}-source.json").write_text(json.dumps(proof))
@@ -115,6 +116,35 @@ class SourceDownloadButtonProofTests(unittest.TestCase):
             del bad['browser_download']
             with self.assertRaises(M.SuiteError):
                 M.validate_source_download(bad, source, artifacts)
+
+    def test_glb_filename_layers_preserve_original_and_verify_browser_adjustment(self):
+        sample=next(item for item in model_samples() if item['format']=='glb')
+        source={**sample,'full_name':M.model_scope(sample['full_name'])}
+        source['composition']=[{'path':source['full_name']}]
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts=Path(directory)
+            proof=source_download_proof(source,artifacts)
+            M.validate_source_download(proof,source,artifacts)
+            self.assertEqual(proof['browser_download']['download_attribute'],[{'name':' 原名 %.GLB','blob':True}])
+            self.assertEqual(proof['browser_download']['suggested_filename'],'_原名 %.GLB')
+            mutations=[
+                lambda p:p['browser_download'].pop('download_attribute'),
+                lambda p:p['browser_download'].update(download_attribute=[]),
+                lambda p:p['browser_download'].update(download_attribute=[{'name':'_原名 %.GLB','blob':True}]),
+                lambda p:p['browser_download'].update(download_attribute=[{'name':' 原名 %.GLB','blob':False}]),
+                lambda p:p['browser_download'].update(download_attribute=[{'name':' 原名 %.GLB','blob':1}]),
+                lambda p:p['browser_download'].update(suggested_filename='anything.GLB'),
+                lambda p:p['browser_download'].update(suggested_filename=' 原名 %.GLB'),
+                lambda p:p.update(content_disposition='attachment; filename=renamed.GLB')]
+            for mutate in mutations:
+                bad=copy.deepcopy(proof);mutate(bad)
+                (artifacts/'ftp-glb-source.json').write_text(json.dumps(bad))
+                with self.assertRaises(M.SuiteError):M.validate_source_download(bad,source,artifacts)
+            raw=b'wrong bytes with a matching receipt digest'
+            (artifacts/proof['artifact']).write_bytes(raw)
+            bad=copy.deepcopy(proof);bad.update(size=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+            (artifacts/'ftp-glb-source.json').write_text(json.dumps(bad))
+            with self.assertRaises(M.SuiteError):M.validate_source_download(bad,source,artifacts)
 
     def test_saved_file_must_match_the_independent_source_even_with_matching_receipt_hash(self):
         sample = next(item for item in model_samples() if item['format'] == 'stl')

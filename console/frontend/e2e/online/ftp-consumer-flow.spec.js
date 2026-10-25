@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { browserAPIFromNavigation, identity, json, login } from './transfer-browser-support.js'
-import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
+import { modelPixels, installModelDownloadAttributeObserver, modelDownloadAttributes } from '../../../../manager/frontend/e2e/model-preview-support.js'
 import { resolve } from 'node:path'
 
 const required = name => {
@@ -19,6 +19,7 @@ const managerPageResponse = response => response.request().method() === 'GET' &&
 async function downloadModelSource(page, frame, model) {
     const bundled = model.composition.length > 1
     const expectedName = model.full_name.split('/').at(-1) + (bundled ? '.zip' : '')
+    const priorAttributes = await modelDownloadAttributes(frame)
     const [source, download] = await Promise.all([
       page.waitForResponse(response => {
         const url = new URL(response.url())
@@ -35,21 +36,21 @@ async function downloadModelSource(page, frame, model) {
     expect(Object.hasOwn(headers, 'cookie')).toBe(false)
     expect([...new URL(source.url()).searchParams.keys()]).toEqual(['locator'])
     expect(await download.failure()).toBeNull()
-    expect(download.suggestedFilename()).toBe(expectedName)
     // The persisted download is the evidence. Chromium's response observer can
     // expose an empty attachment body even when the page saved the full file.
     // The runner independently compares these saved bytes to every seed member.
     const original = readFileSync(await download.path())
     const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
     const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
       sha256: createHash('sha256').update(original).digest('hex'),
       content_type: source.headers()['content-type'] || '',
       content_disposition: source.headers()['content-disposition'] || '',
       browser_download: { clicked: true, current_user: true, no_cookie: true,
+        download_attribute: (await modelDownloadAttributes(frame)).slice(priorAttributes.length),
         suggested_filename: download.suggestedFilename(), saved_file_read: true } }
     // Preserve the actual saved logical object before checking it. The runner
     // verifies every bundle member against the confirmed composition and seed.
-    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
     writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-source.json`), JSON.stringify(sourceDownload, null, 2))
     if (bundled) {
       expect(sourceDownload.content_type).toBe('application/zip')
@@ -57,6 +58,11 @@ async function downloadModelSource(page, frame, model) {
       expect(original.length).toBe(model.size)
       expect(sourceDownload.sha256).toBe(model.sha256)
     }
+    expect(sourceDownload.browser_download.download_attribute).toEqual([{ name: expectedName, blob: true }])
+    // This is the observed Chromium result for the fixed source corpus, not a
+    // filename normalization rule in the product. Header and DOM remain exact.
+    const expectedSuggestion = expectedName === ' 原名 %.GLB' ? '_原名 %.GLB' : expectedName
+    expect(download.suggestedFilename()).toBe(expectedSuggestion)
     return sourceDownload
 }
 
@@ -330,6 +336,7 @@ async function withdrawnModel(page, expectedIdentity, model, published, latest) 
 
 test('FTP account root, scoped rescan, shared previews and byte-exact downloads through Console', async ({ page }) => {
   test.setTimeout(480_000)
+  await installModelDownloadAttributeObserver(page)
   const expected = JSON.parse(required('ADDP_ONLINE_FTP_EXPECTATIONS'))
   const expectedIdentity = { principalID: expected.principal_id, tenantID: String(expected.tenant_id), permissions }
   const api = await browserAPIFromNavigation(page, required('GATEWAY_URL'), expectedIdentity,

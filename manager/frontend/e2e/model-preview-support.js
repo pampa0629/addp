@@ -79,3 +79,19 @@ export async function modelPixels(page, canvas) {
     return result
   }, png)
 }
+
+// Passive test instrumentation: observe the exact attribute passed to the native
+// Blob download without changing the link or the browser filename decision.
+export async function installModelDownloadAttributeObserver(page) {
+  await page.addInitScript(() => {
+    window.__addpModelDownloadAttributes = []
+    document.addEventListener('click', event => {
+      const link = event.target?.closest?.('a[download]')
+      if (link) window.__addpModelDownloadAttributes.push({ name: link.download, blob: link.href.startsWith('blob:') })
+    }, true)
+  })
+}
+
+export async function modelDownloadAttributes(scope) {
+  return scope.locator('body').evaluate(body => body.ownerDocument.defaultView.__addpModelDownloadAttributes)
+}

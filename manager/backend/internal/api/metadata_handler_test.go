@@ -196,7 +196,7 @@ func TestPhysicalWhitespaceDownloadHeaderPreservesName(t *testing.T) {
 }
 
 func TestAttachmentHeaderPreservesUnicodeNameWithStandardASCIIEncoding(t *testing.T) {
-	for _, name := range []string{"model.stl", " TEST.PNG ", " 模型 示例 %.stl.zip ", `quoted"name.stl`} {
+	for _, name := range []string{"model.stl", " 原名 %.GLB", " TEST.PNG ", " 模型 示例 %.stl.zip ", `quoted"name.stl`} {
 		t.Run(name, func(t *testing.T) {
 			header := attachmentContentDisposition(name)
 			for _, char := range header {
