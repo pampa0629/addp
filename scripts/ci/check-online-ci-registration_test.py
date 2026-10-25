@@ -448,6 +448,23 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_distance_to_stream_d8_profile(self.repository,registered)
             target.write_text(original)
 
+
+    def test_hand_d8_requires_manual_nfs_full_pixels_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-hand-d8-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-hand-d8-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-hand-d8-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'case_inputs(name)', 'stream_raster', 'stream_band', 'elevation_raster', 'elevation_band', 'elevation_unit', 'uphill_before', 'uphill_after', 'uphill_empty', 'mixed_original', 'non_increasing_elevation_verified', 'flat_zero_verified', 'first_hit_verified', 'unreachable_nodata_verified', 'river_zero_verified', 'metre_unit_verified', 'nearest_overviews_verified'), 'business/scripts/online-raster-hand-d8-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'walked_paths', 'hand_evidence', 'SOURCE_UNITS', 'empty.cog.tif', 'invalid.cog.tif', 'feet.cog.tif', 'survey-feet.cog.tif', 'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True'), 'scripts/utils/online_nfs_fixture.py': ('root_squash', 'nfs_export_removed', 'owned_root'), 'engines/geopython-workflow/test_online_hand_d8_fixture.py': ('test_hand_d8_persistence_real_gdal_eight_cog_chains_and_complete_pixels', 'test_hand_d8_persistence_oracle_rejects_corruption', 'test_hand_d8_persistence_forty_two_failures_no_publication'), 'Makefile': ('@$(MAKE) test-raster-hand-d8-online-runner', 'test_online_hand_d8_fixture.py', 'scripts/test/raster-hand-d8-persistence-online_test.py', 'scripts/test/online-raster-hand-d8-fixture_test.py', 'scripts/test/online-hosted-raster-hand-d8-gate_test.py', 'test_hand_d8_requires_manual_nfs_full_pixels_and_regressions')}
+        extras=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py')
+        for relative in (*extras,*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-hand-d8-persistence'}
+        CHECK.validate_raster_hand_d8_profile(self.repository,registered)
+        fragments=[(extras[0],"inputs.suite != 'raster-hand-d8-persistence'"),(extras[0],'nfs-kernel-server nfs-common'),('Makefile','test-geopython-workflow:')]
+        fragments.extend((p,fragment) for p,values in required.items() for fragment in values)
+        for relative,fragment in fragments:
+            target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_hand_d8_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_flow_length_upstream_d8_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
