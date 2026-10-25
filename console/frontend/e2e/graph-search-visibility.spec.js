@@ -1,7 +1,7 @@
 import { installGraphRelationshipPaint, stableRelationshipPaths } from './graph-relationship.fixture.js'
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, stableGraphColorPixels } from './graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, graphEndpointGeometry, stableGraphColorPixels } from './graph-visual.fixture.js'
 
 test('Graph pixel observer excludes disconnected same-color relationship strokes from node bounds', async ({ page }) => {
   await page.setContent('<div id="graph"><canvas width="280" height="150"></canvas></div>')
@@ -43,7 +43,7 @@ test('Graph relationship endpoint observer binds circle boundary beside a nearer
     }
   })
   const nodes = [{ hits: [{ native_id: 'source', x: 60, y: 75 }, { native_id: 'nearby', x: 90, y: 75 }, { native_id: 'target', x: 220, y: 75 }],
-    frame: { nodes: [{ box: [40, 55, 80, 95] }, { box: [72, 57, 108, 93] }, { box: [200, 55, 240, 95] }] } }]
+    frame: { fillColor: [255, 0, 0], nodes: [{ box: [40, 55, 80, 95] }, { box: [72, 57, 108, 93] }, { box: [200, 55, 240, 95] }] } }]
   const observed = await canvas.evaluate(stableRelationshipPaths, { nodes })
   expect(observed.stable_frames).toBeGreaterThanOrEqual(10)
   expect(observed.candidates.length).toBeGreaterThan(0)
@@ -131,10 +131,11 @@ for (const replace of [false, true]) {
 }
 
 
-for (const identityMode of ['named', 'opaque', 'numeric']) {
-const opaque = identityMode === 'opaque'
-const numeric = identityMode === 'numeric'
-test(`Graph multi-label dense search, filter and four layouts preserve every native identity (${identityMode} IDs)`, async ({ page }, testInfo) => {
+for (const identityMode of ['named', 'opaque', 'numeric', 'nearby-numeric', 'nearby-opaque']) {
+const opaque = identityMode.endsWith('opaque')
+const geometry = identityMode.startsWith('nearby-')
+const numeric = identityMode.endsWith('numeric')
+test(`${geometry ? 'Graph fixed nearby endpoint geometry' : 'Graph multi-label dense search, filter and four layouts preserve every native identity'} (${identityMode} IDs)`, async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.addInitScript(installGraphRelationshipPaint)
   const diagnostics = []
@@ -163,10 +164,12 @@ test(`Graph multi-label dense search, filter and four layouts preserve every nat
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   // Native KG evidence contains identity/labels/properties, not the browser display DTO.
   const nativeNodes = nodes.map(({ id, labels, properties }) => ({ id, labels, properties }))
-  const result = await denseGraphStages(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes: nativeNodes, edges, shapes }, async phase => {
+  const result = await (geometry ? graphEndpointGeometry : denseGraphStages)(page, frame, frame.locator('.graph-canvas'), { graph_id: 7, nodes: nativeNodes, edges, shapes }, async (phase, progress) => {
+    if (geometry && !progress.relationships) return
     await testInfo.attach(phase + '.png', { body: await page.screenshot(), contentType: 'image/png' })
   })
-  await testInfo.attach('graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  await testInfo.attach(geometry ? 'graph-endpoint-geometry.json' : 'graph-dense-stable-frame.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  if (geometry) { expect(unexpected).toEqual([]);expect(diagnostics).toEqual([]);return }
   const nativeCanvas = frame.locator('.graph-canvas canvas')
   await nativeCanvas.evaluate(element => { element.style.opacity = '0' })
   await expect(frame.locator('.graph-canvas').evaluate(stableRelationshipPaths, { nodes: result.stages.at(-1).groups, timeout: 1000 })).rejects.toThrow('not visible')

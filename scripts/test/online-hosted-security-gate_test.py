@@ -142,6 +142,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
             if [ "$ONLINE_SUITE_INPUT" = graph-protection ]; then
               [ "$CONSOLE_URL" = http://127.0.0.1:18080 ]
+              case "$ADDP_ONLINE_GRAPH_CASE" in full|endpoint-geometry) ;; *) exit 2 ;; esac
+              echo "graph-case:$ADDP_ONLINE_GRAPH_CASE" >> "$ADDP_TEST_GATE_TRACE"
               [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
               if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
                 [ "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" = 31 ]
@@ -196,6 +198,24 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_graph_case_rejects_invalid_scope_before_any_host_operation(self):
+        for case in ('', 'all', 'review', ' endpoint-geometry'):
+            with self.subTest(case=case):
+                result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_ONLINE_GRAPH_CASE=case)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Unsupported Graph acceptance case', result.stderr)
+                self.assertFalse(self.host.trace.exists())
+                self.assertFalse(self.host.secrets.exists())
+
+    def test_graph_endpoint_case_reaches_only_the_existing_isolated_owner_dispatcher(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='neo4j', ADDP_ONLINE_GRAPH_CASE='endpoint-geometry')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('graph-case:endpoint-geometry', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=graph-protection', trace)
+        self.assertIn('graph-fixture:stop', trace)
+        self.assertNotIn('security-fixture:', trace)
 
     def test_graph_profile_uses_only_its_synthetic_fixture_and_always_cleans(self):
         result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb')

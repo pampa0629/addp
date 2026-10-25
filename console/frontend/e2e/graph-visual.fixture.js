@@ -236,6 +236,33 @@ export async function exploreGraphLayouts(page, frame, canvas, root, nodes, edge
   } finally { page.off('request', record) }
 }
 
+export async function observeDenseGraph(frame, canvas, shapes, nodes, edges, search = false) {
+  const nodeFacts = values => values.map(({ id, labels, properties }) => ({ id, labels: [...labels].sort(), properties })).sort((a, b) => a.id.localeCompare(b.id))
+  const normalize = values => values.map(({ id, source, target, type, properties }) => ({ id, source, target, type, properties })).sort((a, b) => a.id.localeCompare(b.id))
+  await clearGraphSelection(frame)
+  const entries = []
+  for (const shape of shapes) {
+    const members = nodes.filter(node => JSON.stringify([...node.labels].sort()) === JSON.stringify([...shape.labels].sort()))
+    if (!members.length) continue
+    const item = frame.locator('.filter-section').first().locator('.filter-item').filter({ has: frame.getByRole('checkbox', { name: shape.name, exact: true }) })
+    const fillColor = await item.locator('.label-dot').evaluate(element => getComputedStyle(element).backgroundColor)
+    entries.push({ shape, members, count: members.length, fillColor, color: search ? await graphObservationColor(frame, canvas) : fillColor })
+  }
+  expect(entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(nodes.length)
+  const frames = await canvas.evaluate(stableGraphPixels, { groups: entries.map(({ count, color, fillColor }) => ({ count, color, fillColor })) })
+  const groups = []
+  for (const [index, entry] of entries.entries()) groups.push({ name: entry.shape.name, labels: [...entry.shape.labels].sort(),
+    frame: frames[index], hits: await graphNodeHits(frame, canvas, frames[index], entry.members) })
+  await clearGraphSelection(frame)
+  const colors = []
+  for (const type of [...new Set(edges.map(edge => edge.type))].sort()) {
+    const item = frame.locator('.filter-section').nth(1).locator('.filter-item').filter({ has: frame.locator('input.el-checkbox__original[value=' + JSON.stringify(type) + ']') })
+    colors.push({ type, color: await item.locator('.edge-swatch').evaluate(element => getComputedStyle(element).color) })
+  }
+  const relationship_pixels = colors.length ? await canvas.evaluate(stableGraphColorPixels, { colors, boxes: frames.flatMap(frame => frame.nodes.map(node => node.box)) }) : []
+  return { relationship_pixels, nodes: nodeFacts(nodes), edges: normalize(edges), groups }
+}
+
 // Four full label sets share the same pixel observer and settle in one rAF sequence.
 export async function denseGraphStages(page, frame, canvas, expected, capture) {
   const root = `/api/v1/graph/graphs/${expected.graph_id}`
@@ -255,28 +282,9 @@ export async function denseGraphStages(page, frame, canvas, expected, capture) {
   await expect(canvas.locator('.el-loading-mask')).toHaveCount(0)
   page.on('request', record)
   async function observe(phase, nodes, edges, extra = {}, search = false, collection = stages) {
-    await clearGraphSelection(frame)
-    const entries = []
-    for (const shape of shapes) {
-      const members = nodes.filter(node => JSON.stringify([...node.labels].sort()) === JSON.stringify([...shape.labels].sort()))
-      if (!members.length) continue
-      const item = frame.locator('.filter-section').first().locator('.filter-item').filter({ has: frame.getByRole('checkbox', { name: shape.name, exact: true }) })
-      const fillColor = await item.locator('.label-dot').evaluate(element => getComputedStyle(element).backgroundColor)
-      entries.push({ shape, members, count: members.length, fillColor, color: search ? await graphObservationColor(frame, canvas) : fillColor })
-    }
-    expect(entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(nodes.length)
-    const frames = await canvas.evaluate(stableGraphPixels, { groups: entries.map(({ count, color, fillColor }) => ({ count, color, fillColor })) })
-    const groups = []
-    for (const [index, entry] of entries.entries()) groups.push({ name: entry.shape.name, labels: [...entry.shape.labels].sort(),
-      frame: frames[index], hits: await graphNodeHits(frame, canvas, frames[index], entry.members) })
-    await clearGraphSelection(frame)
-    const colors = []
-    for (const type of [...new Set(edges.map(edge => edge.type))].sort()) {
-      const item = frame.locator('.filter-section').nth(1).locator('.filter-item').filter({ has: frame.locator('input.el-checkbox__original[value=' + JSON.stringify(type) + ']') })
-      colors.push({ type, color: await item.locator('.edge-swatch').evaluate(element => getComputedStyle(element).color) })
-    }
-    const relationship_pixels = colors.length ? await canvas.evaluate(stableGraphColorPixels, { colors, boxes: frames.flatMap(frame => frame.nodes.map(node => node.box)) }) : []
-    collection.push({ phase, relationship_pixels, nodes: nodeFacts(nodes), edges: normalize(edges), groups, ...extra })
+    const observed = await observeDenseGraph(frame, canvas, shapes, nodes, edges, search)
+    const { groups } = observed
+    collection.push({ phase, ...observed, ...extra })
     await clearGraphSelection(frame)
     if (collection === stages) await capture(phase)
     return groups.flatMap(group => group.hits)
@@ -447,4 +455,99 @@ export async function stableGraphColorPixels(element, { colors, boxes, absent = 
     if (stable >= 10) return samples.map(sample => ({ ...sample, stableFrames: stable }))
   }
   throw new Error('Graph color pixels did not settle: ' + JSON.stringify(samples))
+}
+
+// Fixed geometry is established only with real mouse dragging in the Graph page.
+export async function graphEndpointGeometry(page, frame, canvas, expected, capture) {
+  const root = `/api/v1/graph/graphs/${expected.graph_id}`
+  const reference = expected.nodes.map(node => ({ ...node, display_name: node.properties.name }))
+  const source = reference.find(node => node.properties.id === 'n01')
+  const target = reference.find(node => node.properties.id === 'n12')
+  const nearby = reference.find(node => node.properties.id === 'n04')
+  const edge = expected.edges.find(edge => edge.source === source.id && edge.target === target.id && edge.type === 'Parallel')
+  expect(edge).toBeTruthy()
+  const requests = [], drags = []
+  const record = request => {
+    if (new URL(request.url()).pathname.startsWith(root)) requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.method() === 'POST' ? request.postDataJSON() : null })
+  }
+  await expect(canvas.locator('canvas')).toBeVisible()
+  await expect(frame.locator('.filter-section').first().locator('.filter-item')).toHaveCount(expected.shapes.length)
+  await expect(canvas.locator('.el-loading-mask')).toHaveCount(0)
+  page.on('request', record)
+  try {
+  const search = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === root + '/search')
+  await frame.locator('.search-input input').fill('Dense')
+  await frame.locator('.search-input input').press('Enter')
+  const found = await search
+  expect(found.status()).toBe(200)
+  expect(found.request().postDataJSON()).toEqual({ query: 'Dense', limit: 30 })
+  await expect(frame.locator('.toolbar-left .el-tag').nth(1)).toHaveText('画布: 12 节点 / 0 关系')
+  await frame.locator('.search-input').hover()
+  await frame.locator('.search-input .el-input__clear').click()
+  const initial = await observeDenseGraph(frame, canvas, expected.shapes, reference, [])
+  await clickGraphNode(frame, canvas, initial.groups.flatMap(group => group.hits).find(hit => hit.native_id === source.id), [source])
+  const expand = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === root + '/expand')
+  await frame.getByRole('radio', { name: '2 跳', exact: true }).locator('..').click()
+  const expanded = await expand
+  expect(expanded.status()).toBe(200)
+  expect(expanded.request().postDataJSON()).toEqual({ target: { kind: 'entity', id: source.id }, depth: 2, node_limit: 200, relationship_limit: 400 })
+  const link = frame.locator('.filter-section').nth(1).locator('.filter-item').filter({ has: frame.locator('input.el-checkbox__original[value="Link"]') })
+  await link.locator('.el-checkbox').click()
+  await expect(link.getByRole('checkbox')).not.toBeChecked()
+  await expect(frame.locator('.toolbar-left .el-tag').nth(1)).toHaveText('画布: 12 节点 / 4 关系')
+  const edges = expected.edges.filter(edge => edge.type === 'Parallel')
+  let observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
+  const before_drag = observed
+  const positions = new Map(observed.groups.flatMap(group => group.hits).map(hit => [hit.native_id, { x: hit.x, y: hit.y }]))
+  async function drag(node, to) {
+    await clearGraphSelection(frame)
+    const from = positions.get(node.id), box = await canvas.locator('canvas').boundingBox()
+    await page.mouse.move(box.x + from.x, box.y + from.y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 16 })
+    await page.mouse.up()
+    await canvas.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    drags.push({ native_id: node.id, from, to });positions.set(node.id, to)
+  }
+  const ordered = [...reference].sort((a, b) => a.properties.id.localeCompare(b.properties.id))
+  const parking = ordered.map((node, index) => ({ native_id: node.id, x: 70 + index % 6 * 115, y: index < 6 ? 90 : 680 }))
+  for (const [index, node] of ordered.entries()) await drag(node, { x: parking[index].x, y: parking[index].y })
+  await drag(source, { x: 200, y: 330 });await drag(target, { x: 550, y: 330 })
+  observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
+  const baseline = { phase: 'endpoint-baseline', layout: 'force', ...observed }
+  await capture(baseline.phase, baseline)
+  baseline.relationships = await graphRelationshipHits(page, frame, canvas, [edge], baseline)
+  await capture(baseline.phase, baseline)
+  const phases = []
+  for (const side of ['source', 'target']) {
+    const owner = side === 'source' ? source : target
+    const hit = baseline.relationships.hits[0]
+    const anchor = hit.path_source === owner.id ? hit.path[0].slice(1) : hit.path[1].slice(-2)
+    const center = baseline.relationships.node_geometry.find(node => node.native_id === owner.id)
+    const dx = anchor[0] - center.x, dy = anchor[1] - center.y
+    const destination = { x: anchor[0] + dx * .8, y: anchor[1] + dy * .8 }
+    await drag(nearby, destination)
+    observed = await observeDenseGraph(frame, canvas, expected.shapes, reference, edges)
+    const phase = { phase: 'endpoint-near-' + side, layout: 'force', side, owner: owner.id, nearby: nearby.id, planned_center: destination, ...observed }
+    await capture(phase.phase, phase)
+    phase.relationships = await graphRelationshipHits(page, frame, canvas, [edge], phase)
+    const current = phase.relationships.hits[0]
+    const endpoint = current.path_source === owner.id ? current.path[0].slice(1) : current.path[1].slice(-2)
+    const centers = phase.groups.flatMap(group => group.hits)
+    const nearest = [...centers].sort((a, b) => Math.hypot(a.x - endpoint[0], a.y - endpoint[1]) - Math.hypot(b.x - endpoint[0], b.y - endpoint[1]))[0]
+    expect(nearest.native_id, 'Fixed geometry must expose the old nearest-center error').toBe(nearby.id)
+    phase.old_nearest = nearest.native_id
+    const pixelNodes = phase.groups.flatMap(group => group.hits.map((hit, index) => ({ ...hit, box: group.frame.nodes[index].box })))
+    const oldDistance = node => {
+      const rx = (node.box[2]-node.box[0])/2, ry = (node.box[3]-node.box[1])/2
+      return Math.abs(Math.hypot((endpoint[0]-node.x)/rx,(endpoint[1]-node.y)/ry)-1)*Math.min(rx,ry)
+    }
+    phase.old_pixel_boundary = [...pixelNodes].sort((a,b) => oldDistance(a)-oldDistance(b))[0].native_id
+    expect(phase.old_pixel_boundary, 'Fixed geometry must expose the clipped pixel-boundary error').toBe(nearby.id)
+    phases.push(phase)
+    await capture(phase.phase, phase)
+  }
+  expect(requests).toEqual([{ method: 'POST', path: root + '/search', body: { query: 'Dense', limit: 30 } }, { method: 'POST', path: root + '/expand', body: { target: { kind: 'entity', id: source.id }, depth: 2, node_limit: 200, relationship_limit: 400 } }])
+  return { parking, drags, before_drag, baseline, phases, requests, target_edge_id: edge.id }
+  } finally { page.off('request', record) }
 }

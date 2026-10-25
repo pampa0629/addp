@@ -487,7 +487,7 @@ def verify_dense_frame(stage, members, edges, shapes, search=False):
 def verify_dense(visual, expected):
     require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships", "relation_filters", "node_filters"} and
             all(visual.get(key) == value for key, value in expected.items()) and
-            visual["schema_version"] == "addp.graph-dense-stable-frame/v4", "Dense evidence identity differs")
+            visual["schema_version"] == "addp.graph-dense-stable-frame/v5", "Dense evidence identity differs")
     ids = verify_dense_reference(expected["nodes"], expected["edges"])
     shapes = expected["shapes"]
     label_sets = {tuple(sorted(labels)) for labels in dense_fixture_contract()[0].values()}
@@ -534,10 +534,25 @@ def verify_relationship_frame(layout, native_edges, stage):
     edges = {edge["id"]: edge for edge in native_edges}
     number = lambda value: type(value) in (int, float) and math.isfinite(value)
     display = lambda value: str(value).lower() if type(value) is bool else format(value, 'g') if type(value) in (int, float) else str(value)
-    require(set(layout) == {"layout", "width", "height", "stable_frames", "attempts", "hits"} and type(layout["stable_frames"]) is int and layout["stable_frames"] >= 10 and
+    require(set(layout) == {"layout", "width", "height", "stable_frames", "node_geometry", "attempts", "hits"} and type(layout["stable_frames"]) is int and layout["stable_frames"] >= 10 and
             type(layout["attempts"]) is int and layout["attempts"] >= len(edges) and all(number(layout[key]) and layout[key] > 0 for key in ("width", "height")), "Relationship frame is invalid")
     centers = {hit["native_id"]: (hit["x"], hit["y"], pixel["box"]) for group in stage["groups"] for pixel, hit in zip(group["frame"]["nodes"], group["hits"])}
     require(all((group["frame"]["width"], group["frame"]["height"]) == (layout["width"], layout["height"]) for group in stage["groups"]), "Relationship viewport differs")
+    colors = {hit["native_id"]: group["frame"]["fillColor"] for group in stage["groups"] for hit in group["hits"]}
+    geometry = layout["node_geometry"]
+    require(type(geometry) is list and len(geometry) == len(centers) and {node.get("native_id") for node in geometry} == set(centers), "Painted node geometry identity missing/duplicated")
+    for node in geometry:
+        require(set(node) == {"native_id", "x", "y", "rx", "ry", "color", "alpha"} and
+                all(number(node[key]) for key in ("x", "y", "rx", "ry", "alpha")) and node["alpha"] == 1 and
+                node["color"] == colors[node["native_id"]] and all(type(v) is int for v in node["color"]), "Painted node geometry types/color differ")
+        x, y, box = centers[node["native_id"]]
+        extent = max(box[2]-box[0],box[3]-box[1])/2
+        require(node["rx"] > 0 and node["ry"] > 0 and math.hypot((node["x"]-x)/node["rx"],(node["y"]-y)/node["ry"]) < 1 and abs(node["rx"]-node["ry"]) < .1 and
+                extent-1 <= node["rx"] <= extent+4 and node["rx"] > 0 and node["ry"] > 0 and
+                1 < node["x"]-node["rx"] <= box[0]+1 and box[2]-1 <= node["x"]+node["rx"] < layout["width"]-1 and
+                1 < node["y"]-node["ry"] <= box[1]+1 and box[3]-1 <= node["y"]+node["ry"] < layout["height"]-1,
+                "Painted circle differs from visible pixel core or viewport")
+    painted = {node["native_id"]:node for node in geometry}
     hits = layout["hits"]
     require(type(hits) is list and len(hits) == len(edges) and {hit.get("native_id") for hit in hits} == set(edges), "Relationship mouse identities incomplete/duplicated")
     for hit in hits:
@@ -556,10 +571,9 @@ def verify_relationship_frame(layout, native_edges, stage):
                 len(path[1]) == {"L": 3, "Q": 5, "C": 7}[path[1][0]] and all(number(value) for segment in path for value in segment[1:]), "Relationship painted path malformed")
         for endpoint, identifier in ((path[0][1:], hit["path_source"]), (path[1][-2:], hit["path_target"])):
             def boundary_distance(key):
-                x, y, box = centers[key]
-                rx, ry = (box[2]-box[0])/2, (box[3]-box[1])/2
-                return abs(math.hypot((endpoint[0]-x)/rx, (endpoint[1]-y)/ry)-1)*min(rx, ry)
-            nearest = min(centers, key=boundary_distance)
+                node = painted[key]
+                return abs(math.hypot((endpoint[0]-node["x"])/node["rx"], (endpoint[1]-node["y"])/node["ry"])-1)*min(node["rx"], node["ry"])
+            nearest = min(painted, key=boundary_distance)
             require(nearest == identifier, "Relationship painted/native endpoint identity differs")
         t, q = hit["t"], 1-hit["t"]
         start, segment = path[0][1:], path[1]
@@ -628,7 +642,7 @@ def verify_node_filters(filters, expected, before):
     require(all(group["frame"][key] == empty[key] for group in restored["groups"] for key in ("width", "height")), "Node restored viewport differs")
 
 
-def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id):
+def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id, *, case="full"):
     ontology_id = graph_id = None
     failed = False
     try:
@@ -659,6 +673,10 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         shapes = sorted([{"name": shape["name"], "labels": sorted(shape["labels"])} for shape in snapshot["schema"]["node_shapes"]], key=lambda shape: shape["name"])
         expected = {"run_id": SUPPORT.required_environment("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id), "principal_id": context["principal_id"],
             "engine_type": engine_type(), "engine_id": target_path["engine_id"], "graph_id": graph_id, "nodes": nodes, "edges": edges, "shapes": shapes}
+        if case == "endpoint-geometry":
+            report["endpoint_geometry"] = run_endpoint_browser(expected)
+            return
+        require(case == "full", "Unknown Graph dense acceptance case")
         artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
         raw = artifact / "graph-dense-stable-frame.json"
         raw.unlink(missing_ok=True)
@@ -681,7 +699,7 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         verify_dense(visual, expected)
         interaction_file = artifact / "graph-relationship-hit-frame.json"
         require(interaction_file.is_file(), "Relationship mouse/property evidence missing")
-        require(json.loads(interaction_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-hit-frame/v1", "layouts": visual["relationships"]}, "Independent relationship evidence differs")
+        require(json.loads(interaction_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-hit-frame/v2", "layouts": visual["relationships"]}, "Independent relationship evidence differs")
         filter_file = artifact / "graph-relationship-filter-frame.json"
         require(filter_file.is_file(), "Independent relationship filter evidence missing")
         require(json.loads(filter_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-filter-frame/v1", **visual["relation_filters"]}, "Independent relationship filter evidence differs")
@@ -696,7 +714,7 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
             require((artifact / ("relationship-" + layout + "-console.png")).is_file(), "Relationship screenshot missing")
         for stage in visual["stages"]:
             require((artifact / (stage["phase"] + "-console.png")).is_file(), "Dense screenshot missing")
-        report["dense"] = {"schema_version": "addp.graph-dense-online/v4", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"], "relation_filters": visual["relation_filters"], "node_filters": visual["node_filters"]}
+        report["dense"] = {"schema_version": "addp.graph-dense-online/v5", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"], "relation_filters": visual["relation_filters"], "node_filters": visual["node_filters"]}
     except Exception:
         failed = True
         raise
@@ -886,13 +904,142 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
     review.run(sys.modules[__name__], preparer, reader, engine_id, tenant_id, ontology_id, control_id, report)
 
 
+def graph_case(environment):
+    value = environment.get("ADDP_ONLINE_GRAPH_CASE", "full")
+    require(type(value) is str and value in {"full", "endpoint-geometry"}, "Unknown Graph acceptance case")
+    return value
+
+
+def verify_endpoint_geometry(visual, expected):
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "parking", "drags", "before_drag", "baseline", "phases", "requests", "target_edge_id"} and
+            visual["schema_version"] == "addp.graph-endpoint-geometry/v1" and all(type(visual.get(k)) is type(v) and visual[k] == v for k, v in expected.items()), "Endpoint geometry evidence identity differs")
+    ids = verify_dense_reference(expected["nodes"], expected["edges"])
+    source, target, nearby = ids["n01"], ids["n12"], ids["n04"]
+    edge = next(e for e in expected["edges"] if e["source"] == source and e["target"] == target and e["type"] == "Parallel")
+    require(visual["target_edge_id"] == edge["id"], "Endpoint target native relationship differs")
+    edges = [e for e in expected["edges"] if e["type"] == "Parallel"]
+    before, baseline, phases = visual["before_drag"], visual["baseline"], visual["phases"]
+    require(set(before) == {"nodes", "edges", "groups", "relationship_pixels"}, "Endpoint initial frame fields differ")
+    verify_dense_frame(before, expected["nodes"], edges, expected["shapes"])
+    require(set(baseline) == set(before) | {"phase", "layout", "relationships"} and baseline["phase"] == "endpoint-baseline" and baseline["layout"] == "force", "Endpoint baseline differs")
+    verify_dense_frame(baseline, expected["nodes"], edges, expected["shapes"])
+    verify_relationship_frame(baseline["relationships"], [edge], baseline)
+    require(type(phases) is list and len(phases) == 2, "Endpoint source/target cases missing")
+    parking = [{"native_id": ids[key], "x": 70 + index % 6 * 115, "y": 90 if index < 6 else 680} for index, key in enumerate(sorted(ids))]
+    require(visual["parking"] == parking, "Endpoint fixed parking geometry differs")
+    positions = {h["native_id"]: {"x": h["x"], "y": h["y"]} for g in before["groups"] for h in g["hits"]}
+    planned = [{"native_id": p["native_id"], "to": {"x": p["x"], "y": p["y"]}} for p in parking] + [
+        {"native_id": source, "to": {"x": 200, "y": 330}}, {"native_id": target, "to": {"x": 550, "y": 330}}]
+    initial_hit = baseline["relationships"]["hits"][0]
+    paint = {n["native_id"]: n for n in baseline["relationships"]["node_geometry"]}
+    def endpoint(hit, owner):
+        return hit["path"][0][1:] if hit["path_source"] == owner else hit["path"][1][-2:]
+    for phase, side, owner in zip(phases, ("source", "target"), (source, target)):
+        require(set(phase) == set(baseline) | {"side", "owner", "nearby", "planned_center", "old_nearest", "old_pixel_boundary"} and
+                phase["phase"] == "endpoint-near-" + side and phase["layout"] == "force" and phase["side"] == side and phase["owner"] == owner and phase["nearby"] == nearby,
+                "Endpoint nearby case identity differs")
+        verify_dense_frame(phase, expected["nodes"], edges, expected["shapes"])
+        verify_relationship_frame(phase["relationships"], [edge], phase)
+        anchor = endpoint(initial_hit, owner)
+        destination = {"x": anchor[0] + (anchor[0]-paint[owner]["x"])*.8, "y": anchor[1] + (anchor[1]-paint[owner]["y"])*.8}
+        require(phase["planned_center"] == destination, "Endpoint nearby position differs from fixed geometry")
+        planned.append({"native_id": nearby, "to": destination})
+        hit = phase["relationships"]["hits"][0]
+        require(hit["path"] == initial_hit["path"], "Unrelated node drag changed the target curve")
+        anchor = endpoint(hit, owner)
+        pixels = {h["native_id"]: (h["x"], h["y"], p["box"]) for g in phase["groups"] for h, p in zip(g["hits"], g["frame"]["nodes"])}
+        center_nearest = min(pixels, key=lambda k: math.hypot(pixels[k][0]-anchor[0], pixels[k][1]-anchor[1]))
+        def pixel_boundary(k):
+            x, y, box = pixels[k]
+            rx, ry = (box[2]-box[0])/2, (box[3]-box[1])/2
+            return abs(math.hypot((anchor[0]-x)/rx, (anchor[1]-y)/ry)-1)*min(rx, ry)
+        require(phase["old_nearest"] == center_nearest == nearby and phase["old_pixel_boundary"] == min(pixels, key=pixel_boundary) == nearby,
+                "Fixed geometry does not expose both previous endpoint assignment errors")
+    drags = visual["drags"]
+    require(type(drags) is list and len(drags) == 16, "Endpoint real mouse drag sequence incomplete")
+    for index, (drag, wanted) in enumerate(zip(drags, planned)):
+        require(set(drag) == {"native_id", "from", "to"} and drag["native_id"] == wanted["native_id"] and drag["to"] == wanted["to"] and drag["from"] == positions[drag["native_id"]], "Endpoint drag coordinates/identity differ")
+        positions[drag["native_id"]] = drag["to"]
+        if index >= 13:
+            stage = baseline if index == 13 else phases[index-14]
+            circles = {n["native_id"]: n for n in stage["relationships"]["node_geometry"]}
+            require(all(math.hypot(circles[k]["x"]-v["x"], circles[k]["y"]-v["y"]) < 2 for k,v in positions.items()), "Real dragged circles do not match fixed target positions")
+    root = f"/api/v1/graph/graphs/{expected['graph_id']}"
+    require(visual["requests"] == [{"method": "POST", "path": root + "/search", "body": {"query": "Dense", "limit": 30}},
+        {"method": "POST", "path": root + "/expand", "body": {"target": {"kind": "entity", "id": source}, "depth": 2, "node_limit": 200, "relationship_limit": 400}}],
+        "Endpoint geometry issued unexpected API requests")
+
+
+def run_endpoint_browser(expected):
+    artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
+    raw = artifact / "graph-endpoint-geometry.json"
+    for pattern in ("graph-endpoint-geometry*.json", "endpoint-*-console.png"):
+        for path in artifact.glob(pattern): path.unlink()
+    environment = {k: v for k,v in os.environ.items() if not k.endswith(("_ACCESS_TOKEN", "_USERNAME", "_PASSWORD"))}
+    for key in ("ADDP_ONLINE_TEST_USER_USERNAME", "ADDP_ONLINE_TEST_USER_PASSWORD"):
+        environment[key] = SUPPORT.required_environment(key)
+    environment["ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS"] = json.dumps(expected)
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-protection.spec.js", "--config=playwright.online.config.js", "--grep", "fixed nearby endpoint geometry", "--reporter=line"],
+        cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=300)
+    require(result.returncode == 0 and raw.is_file(), "Endpoint real Console evidence missing or failed")
+    visual = json.loads(raw.read_text())
+    verify_endpoint_geometry(visual, expected)
+    for stage in [visual["baseline"], *visual["phases"]]:
+        require((artifact / (stage["phase"] + "-console.png")).is_file(), "Endpoint screenshot missing")
+        require(json.loads((artifact / ("graph-" + stage["phase"] + "-frame.json")).read_text()) ==
+                {**expected, "schema_version": "addp.graph-endpoint-geometry-frame/v1", "stage": stage}, "Independent endpoint frame differs")
+    require(json.loads((artifact / "graph-endpoint-geometry-diagnostics.json").read_text()) == {"schema_version": "addp.graph-browser-diagnostics/v1", "entries": []}, "Endpoint browser diagnostics not clean")
+    return visual
+
+
+def run_endpoint_case(preparer, reader, engine_id, tenant_id, report):
+    report["engine_type"] = engine_type()
+    report["identities"] = {"reader": identity(reader, tenant_id, READER_PERMISSIONS), "preparer": identity(preparer, tenant_id, PREPARER_PERMISSIONS)}
+    require(len({v["principal_id"] for v in report["identities"].values()}) == 2, "Endpoint identities must remain distinct")
+    ontology_id = control_id = None
+    failed = False
+    try:
+        ontology_id = create_ontology(preparer)
+        create_schema(preparer, ontology_id)
+        target = target_paths(engine_id)[1]
+        control = preparer.request("POST", "/api/v1/graph/graphs", (201,), {"name": "Hosted endpoint owned control", "ontology_id": ontology_id,
+            "engine_id": target["engine_id"], "index_management": "managed", "catalog_path": target["catalog_path"]}).payload
+        control_id = SUPPORT.positive_int(control.get("id"), "endpoint control graph")
+        require(control.get("is_public") is False, "Endpoint control must remain private")
+        previous = control_id
+        preparer.request("DELETE", f"/api/v1/graph/graphs/{control_id}", (200,))
+        preparer.request("GET", f"/api/v1/graph/graphs/{control_id}", (404,))
+        control_id = None
+        run_dense(preparer, reader, tenant_id, target, report, previous, case="endpoint-geometry")
+    except Exception:
+        failed = True
+        raise
+    finally:
+        errors = []
+        for kind, identifier in (("graphs", control_id), ("ontologies", ontology_id)):
+            if identifier:
+                try:
+                    preparer.request("DELETE", f"/api/v1/graph/{kind}/{identifier}", (200,))
+                    preparer.request("GET", f"/api/v1/graph/{kind}/{identifier}", (404,))
+                except Exception: errors.append("delete endpoint " + kind)
+        report["cleanup"] = {"errors": errors, "domain_resources_remaining": 0 if not errors else None}
+        if not failed: require(not errors, "Endpoint domain cleanup failed")
+
+
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v15", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v16", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")
         env = SUPPORT.required_environment
         gateway, graph = env("GATEWAY_URL"), env("GRAPH_URL")
+        case = graph_case(os.environ)
+        if case == "endpoint-geometry":
+            report.update(schema_version="addp.graph-endpoint-geometry-online/v1", case=case)
+            run_endpoint_case(Client(gateway, env("ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"), 30), Client(gateway, env("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
+                SUPPORT.positive_int(env("ADDP_ONLINE_TEST_ENGINE_ID"), "engine id"), SUPPORT.positive_int(env("ADDP_ONLINE_TEST_TENANT_ID"), "tenant id"), report)
+            report["passed"] = True
+            return 0
         reader, outsider = env("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), env("ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN")
         run(Client(gateway, env("ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"), 30),
             Client(gateway, reader, 30), Client(gateway, outsider, 30), Client(gateway, "", 30),

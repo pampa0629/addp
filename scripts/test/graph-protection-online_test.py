@@ -68,7 +68,7 @@ def dense_evidence():
         if index >= 5:
             stage.update(layout=['dagre','circular','radial','force'][index-5], selected_label=['分层','环形','辐射','力导向'][index-5])
         stages.append(stage)
-    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v4', stages=stages,
+    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v5', stages=stages,
         requests=[dict(method='POST',path='/api/v1/graph/graphs/8/'+operation,body=stages[index]['request']) for operation,index in [('search',0),('expand',2)]])
     visual['relationships'] = []
     for stage in [stages[4], *stages[-4:]]:
@@ -81,7 +81,7 @@ def dense_evidence():
             display = lambda value: str(value).lower() if type(value) is bool else format(value,'g') if type(value) in (float,int) else str(value)
             hits.append(dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type=edge['type'],
                 properties={key:display(value) for key,value in edge['properties'].items()},path=[['M',*start],['Q',*control,*end]],path_source=edge['source'],path_target=edge['target'],x=point[0],y=point[1],t=.5,pixel=[*next(sample["color"] for sample in stage["relationship_pixels"] if sample["type"] == edge["type"]),255]))
-        visual['relationships'].append(dict(layout=stage.get('layout','force'),width=800,height=600,stable_frames=10,attempts=72,hits=hits))
+        visual['relationships'].append(dict(layout=stage.get('layout','force'),width=800,height=600,stable_frames=10,attempts=72,node_geometry=[dict(native_id=key,x=x,y=y,rx=12,ry=12,color=group['frame']['fillColor'],alpha=1) for group in stage['groups'] for key,(x,y,box) in centers.items() if key in {hit['native_id'] for hit in group['hits']}],hits=hits))
     baseline = visual['relationships'].pop(0)
     filter_stages = []
     for index, selected in enumerate([['Parallel'], [], ['Link'], ['Link','Parallel']]):
@@ -111,25 +111,156 @@ def dense_evidence():
     return expected, visual
 
 
+def endpoint_evidence():
+    expected, _ = dense_evidence()
+    nodes, shapes = expected['nodes'], expected['shapes']
+    ids = {n['properties']['id']:n['id'] for n in nodes}
+    edges = [e for e in expected['edges'] if e['type']=='Parallel']
+    edge = next(e for e in edges if e['source']==ids['n01'] and e['target']==ids['n12'])
+    positions = {ids[key]:dict(x=70+i%6*115,y=90 if i<6 else 680) for i,key in enumerate(sorted(ids))}
+    parking = [dict(native_id=key,**point) for key,point in positions.items()]
+    def frame():
+        groups=[]
+        for index,shape in enumerate(shapes):
+            rgb=[60+index*40,30,50];hits=[];pixels=[]
+            for node in nodes:
+                if node['labels']!=shape['labels']:continue
+                x,y=positions[node['id']].values()
+                hits.append(dict(source_id=node['properties']['id'],native_id=node['id'],x=x,y=y))
+                pixels.append(dict(x=x,y=y,box=[x-26,y-26,x+26,y+26],fillBox=[x-26,y-26,x+26,y+26],pixelCount=100,fillPixelCount=100))
+            groups.append(dict(name=shape['name'],labels=shape['labels'],hits=hits,frame=dict(width=800,height=775,color=rgb,fillColor=rgb,nodes=pixels,stableFrames=10)))
+        return dict(nodes=nodes,edges=edges,groups=groups,relationship_pixels=[dict(type='Parallel',color=[10,30,80],pixelCount=100,stableFrames=10)])
+    def relationship(stage):
+        geom=[dict(native_id=h['native_id'],x=h['x'],y=h['y'],rx=28,ry=28,color=g['frame']['fillColor'],alpha=1) for g in stage['groups'] for h in g['hits']]
+        display=lambda v:str(v).lower() if type(v)is bool else format(v,'g') if type(v)in(int,float) else str(v)
+        hit=dict(fixture_id=edge['properties']['fixture_id'],native_id=edge['id'],source=edge['source'],target=edge['target'],type='Parallel',properties={k:display(v) for k,v in edge['properties'].items()},
+            path=[['M',228,330],['Q',375,420,522,330]],path_source=ids['n01'],path_target=ids['n12'],x=375,y=375,t=.5,pixel=[10,30,80,255])
+        return dict(layout='force',width=800,height=775,stable_frames=10,node_geometry=geom,attempts=1,hits=[hit])
+    before=frame();drags=[]
+    def drag(key,to):
+        drags.append(dict(native_id=key,**{'from':dict(positions[key]),'to':to}));positions[key]=to
+    for p in parking:drag(p['native_id'],{k:p[k] for k in ('x','y')})
+    drag(ids['n01'],dict(x=200,y=330));drag(ids['n12'],dict(x=550,y=330))
+    baseline=dict(phase='endpoint-baseline',layout='force',**frame());baseline['relationships']=relationship(baseline)
+    phases=[]
+    for side,key,destination in [('source','n01',dict(x=250.4,y=330)),('target','n12',dict(x=499.6,y=330))]:
+        drag(ids['n04'],destination)
+        stage=dict(phase='endpoint-near-'+side,layout='force',side=side,owner=ids[key],nearby=ids['n04'],planned_center=destination,old_nearest=ids['n04'],old_pixel_boundary=ids['n04'],**frame())
+        # The nearby node clips the visible fill; painted circles remain complete.
+        owner_hit=next(h for g in stage['groups'] for h in g['hits'] if h['native_id']==ids[key])
+        owner_pixel=next(p for g in stage['groups'] for h,p in zip(g['hits'],g['frame']['nodes']) if h['native_id']==ids[key])
+        if side=='source':owner_hit['x']=199;owner_pixel.update(x=199,box=[174,304,224,356],fillBox=[174,304,224,356])
+        else:owner_hit['x']=551;owner_pixel.update(x=551,box=[526,304,576,356],fillBox=[526,304,576,356])
+        stage['relationships']=relationship(stage)
+        for n in stage['relationships']['node_geometry']:
+            if n['native_id']==ids[key]:n['x']=positions[ids[key]]['x']
+        phases.append(stage)
+    root='/api/v1/graph/graphs/8'
+    requests=[dict(method='POST',path=root+'/search',body=dict(query='Dense',limit=30)),dict(method='POST',path=root+'/expand',body=dict(target=dict(kind='entity',id=ids['n01']),depth=2,node_limit=200,relationship_limit=400))]
+    return expected,dict(expected,schema_version='addp.graph-endpoint-geometry/v1',parking=parking,drags=drags,before_drag=before,baseline=baseline,phases=phases,requests=requests,target_edge_id=edge['id'])
+
+
 class GraphProtectionOnlineTest(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_endpoint_fixed_geometry_requires_drawn_circles_real_drags_and_both_old_errors(self):
+        expected,raw=endpoint_evidence()
+        SUITE.verify_endpoint_geometry(raw,expected)
+        changes={
+            'missing-circles':lambda r:r['phases'][0]['relationships'].pop('node_geometry'),
+            'wrong-circle':lambda r:r['phases'][0]['relationships']['node_geometry'][0].update(native_id='foreign'),
+            'circle-type':lambda r:r['phases'][0]['relationships']['node_geometry'][0].update(alpha=True),
+            'circle-color':lambda r:r['phases'][0]['relationships']['node_geometry'][0].update(color=[0,0,0]),
+            'circle-radius':lambda r:r['phases'][0]['relationships']['node_geometry'][0].update(rx=100),
+            'missing-phase':lambda r:r['phases'].pop(),
+            'old-center':lambda r:r['phases'][0].update(old_nearest=r['phases'][0]['owner']),
+            'old-pixel':lambda r:r['phases'][1].update(old_pixel_boundary=r['phases'][1]['owner']),
+            'planned-position':lambda r:r['phases'][0]['planned_center'].update(x=10),
+            'drag-missing':lambda r:r['drags'].pop(),
+            'drag-identity':lambda r:r['drags'][3].update(native_id='foreign'),
+            'drag-from':lambda r:r['drags'][3]['from'].update(x=3),
+            'drag-to':lambda r:r['drags'][3]['to'].update(x=3),
+            'extra-request':lambda r:r['requests'].append(dict(method='POST',path='/write',body={})),
+            'identity':lambda r:r.update(principal_id='foreign'),
+            'version':lambda r:r.update(schema_version='old'),
+            'edge':lambda r:r.update(target_edge_id='foreign'),
+            'frames':lambda r:r['baseline']['relationships'].update(stable_frames=True),
+        }
+        for name,change in changes.items():
+            candidate=copy.deepcopy(raw);change(candidate)
+            with self.subTest(name=name),self.assertRaises(SUITE.SuiteError):SUITE.verify_endpoint_geometry(candidate,expected)
+
+    def test_endpoint_case_prepares_only_owned_control_and_cleans_after_failure(self):
+        for fail in (False,True):
+            calls=[]
+            class Client:
+                def request(self,method,path,status,body=None):
+                    calls.append((method,path,body))
+                    return SUITE.SUPPORT.Response(status[0],dict(id=2,is_public=False) if method=='POST' else {})
+            report={}
+            with self.subTest(failure=fail),patch.object(SUITE,'identity',side_effect=[dict(principal_id='4'),dict(principal_id='5')]),patch.object(SUITE,'create_ontology',return_value=9),patch.object(SUITE,'create_schema'),patch.object(SUITE,'run_dense',side_effect=SUITE.SuiteError('geometry failed') if fail else None) as dense,patch.object(SUITE,'run_review') as review,patch.object(SUITE,'run_develop_browser') as develop:
+                preparer=Client();reader=Client()
+                if fail:
+                    with self.assertRaisesRegex(SUITE.SuiteError,'geometry failed'):SUITE.run_endpoint_case(preparer,reader,13,2,report)
+                else:SUITE.run_endpoint_case(preparer,reader,13,2,report)
+                self.assertEqual(dense.call_args.kwargs,dict(case='endpoint-geometry'))
+                self.assertEqual(dense.call_args.args[-1],2)
+                review.assert_not_called();develop.assert_not_called()
+                self.assertEqual(report['cleanup'],dict(errors=[],domain_resources_remaining=0))
+                self.assertEqual([path for method,path,_ in calls if method=='DELETE'],['/api/v1/graph/graphs/2','/api/v1/graph/ontologies/9'])
+
+    def test_graph_case_dispatch_is_bounded_and_keeps_full_as_the_default(self):
+        self.assertEqual(SUITE.graph_case({}),'full')
+        for value in ('full','endpoint-geometry'):self.assertEqual(SUITE.graph_case({'ADDP_ONLINE_GRAPH_CASE':value}),value)
+        for value in ('','review','all',None,True):
+            with self.assertRaises(SUITE.SuiteError):SUITE.graph_case({'ADDP_ONLINE_GRAPH_CASE':value})
+        with tempfile.TemporaryDirectory() as folder,patch.dict(SUITE.os.environ,dict(GITHUB_ACTIONS='true',ADDP_ONLINE_HOSTED='1',ADDP_ONLINE_GRAPH_CASE='endpoint-geometry',ADDP_ONLINE_ARTIFACT_DIR=folder,GATEWAY_URL='http://127.0.0.1:8000',GRAPH_URL='http://127.0.0.1:8186',ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='preparer',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='reader',ADDP_ONLINE_TEST_ENGINE_ID='13',ADDP_ONLINE_TEST_TENANT_ID='2')),patch.object(SUITE,'run') as full,patch.object(SUITE,'run_endpoint_case') as geometry,redirect_stdout(StringIO()):
+            self.assertEqual(SUITE.main(),0);geometry.assert_called_once();full.assert_not_called()
+            report=json.loads(Path(folder,'graph-protection.json').read_text())
+            self.assertEqual(report['schema_version'],'addp.graph-endpoint-geometry-online/v1');self.assertEqual(report['case'],'endpoint-geometry');self.assertTrue(report['passed'])
+
+    def test_endpoint_browser_checks_independent_phase_files_and_keeps_preparation_tokens_out(self):
+        expected,raw=endpoint_evidence()
+        for failure in ('none','browser','raw','phase','png','diagnostics'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as folder:
+                def browser(command,**kwargs):
+                    self.assertIn('fixed nearby endpoint geometry',command)
+                    self.assertEqual(json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS']),expected)
+                    self.assertFalse(any(k.endswith('_ACCESS_TOKEN') for k in kwargs['env']))
+                    if failure!='raw':Path(folder,'graph-endpoint-geometry.json').write_text(json.dumps(raw))
+                    Path(folder,'graph-endpoint-geometry-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=['error'] if failure=='diagnostics' else [])))
+                    for stage in [raw['baseline'],*raw['phases']]:
+                        if failure!='phase':Path(folder,'graph-'+stage['phase']+'-frame.json').write_text(json.dumps(dict(expected,schema_version='addp.graph-endpoint-geometry-frame/v1',stage=stage)))
+                        if failure!='png':Path(folder,stage['phase']+'-console.png').write_bytes(b'unit')
+                    return type('Result',(),{'returncode':1 if failure=='browser' else 0})()
+                with patch.dict(SUITE.os.environ,dict(ADDP_ONLINE_ARTIFACT_DIR=folder,ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='private',ADDP_ONLINE_TEST_USER_USERNAME='reader',ADDP_ONLINE_TEST_USER_PASSWORD='password')),patch.object(SUITE.subprocess,'run',side_effect=browser):
+                    if failure=='none':self.assertEqual(SUITE.run_endpoint_browser(expected),raw)
+                    else:
+                        with self.assertRaises((SUITE.SuiteError,FileNotFoundError)):SUITE.run_endpoint_browser(expected)
+
     def test_relationship_endpoint_uses_visible_circle_boundary_not_nearer_unrelated_center(self):
         edge = dict(id='edge',source='source',target='target',type='Parallel',properties=dict(fixture_id='proof'))
         stage = dict(groups=[dict(hits=[dict(native_id=k,x=x,y=75) for k,x in [('source',60),('nearby',90),('target',220)]],
-            frame=dict(width=280,height=150,nodes=[dict(box=b) for b in ([40,55,80,95],[72,57,108,93],[200,55,240,95])]))],
+            frame=dict(width=280,height=150,fillColor=[255,0,0],nodes=[dict(box=b) for b in ([40,55,80,95],[72,57,108,93],[200,55,240,95])]))],
             relationship_pixels=[dict(type='Parallel',color=[15,118,110])])
         hit = dict(fixture_id='proof',native_id='edge',source='source',target='target',type='Parallel',properties=dict(fixture_id='proof'),
             path=[['M',80,75],['L',200,75]],path_source='source',path_target='target',x=140,y=75,t=.5,pixel=[15,118,110,255])
-        frame = dict(layout='force',width=280,height=150,stable_frames=10,attempts=1,hits=[hit])
+        frame = dict(layout='force',width=280,height=150,stable_frames=10,attempts=1,node_geometry=[dict(native_id=k,x=x,y=75,rx=r,ry=r,color=[255,0,0],alpha=1) for k,x,r in [('source',60,20),('nearby',90,18),('target',220,20)]],hits=[hit])
         SUITE.verify_relationship_frame(frame,[edge],stage)
         # A painted endpoint on the unrelated circle must still be rejected.
         hit.update(path=[['M',108,75],['L',200,75]],x=154)
         with self.assertRaisesRegex(SUITE.SuiteError, 'endpoint identity'):
             SUITE.verify_relationship_frame(frame,[edge],stage)
+
+    def test_relationship_frame_refuses_missing_painted_node_geometry(self):
+        expected, visual = dense_evidence()
+        frame = visual['relationships'][0]
+        frame.pop('node_geometry', None)
+        with self.assertRaises(SUITE.SuiteError):
+            SUITE.verify_relationship_frame(frame,expected['edges'],visual['stages'][-4])
 
     def test_dense_refuses_missing_node_filter_roundtrip(self):
         expected, visual = dense_evidence()
@@ -408,7 +539,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_dense_phase_uses_reader_browser_and_cleans_after_success_or_failure(self):
         expected, visual = dense_evidence()
-        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png", "filter-missing", "filter-identity", "filter-png", "node-filter-missing", "node-filter-identity", "node-filter-png"):
+        for failure in ("none", "endpoint-only", "endpoint-failure", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png", "filter-missing", "filter-identity", "filter-png", "node-filter-missing", "node-filter-identity", "node-filter-png"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
                 deleted = []
                 class Client:
@@ -431,7 +562,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     self.assertEqual(actual, expected)
                     Path(folder, 'graph-dense-stable-frame.json').write_text(json.dumps(visual))
                     if failure != 'relationship-missing':
-                        interaction = dict(expected,schema_version='addp.graph-relationship-hit-frame/v1',layouts=visual['relationships'])
+                        interaction = dict(expected,schema_version='addp.graph-relationship-hit-frame/v2',layouts=visual['relationships'])
                         if failure == 'relationship-identity': interaction['principal_id'] = 'foreign'
                         Path(folder, 'graph-relationship-hit-frame.json').write_text(json.dumps(interaction))
                     for layout in visual['relationships']:
@@ -455,10 +586,18 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 environment = dict(ADDP_ONLINE_TEST_RUN_ID='run',ADDP_ONLINE_ARTIFACT_DIR=folder,ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN='secret',ADDP_ONLINE_TEST_USER_USERNAME='reader',ADDP_ONLINE_TEST_USER_PASSWORD='reader-password')
                 report = {'identities': {'reader': {'principal_id': '4'}}}
                 if failure == 'relationship-missing':
-                    Path(folder, 'graph-relationship-hit-frame.json').write_text(json.dumps(dict(expected,schema_version='addp.graph-relationship-hit-frame/v1',layouts=visual['relationships'])))
-                with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'identity', return_value=dict(principal_id='5' if failure == 'identity' else '4')), patch.object(SUITE.subprocess, 'run', side_effect=subprocess_run):
+                    Path(folder, 'graph-relationship-hit-frame.json').write_text(json.dumps(dict(expected,schema_version='addp.graph-relationship-hit-frame/v2',layouts=visual['relationships'])))
+                with patch.dict(SUITE.os.environ, environment), patch.object(SUITE, 'identity', return_value=dict(principal_id='5' if failure == 'identity' else '4')), patch.object(SUITE.subprocess, 'run', side_effect=subprocess_run), patch.object(SUITE,'run_endpoint_browser',side_effect=SUITE.SuiteError('geometry failed') if failure=='endpoint-failure' else None,return_value={'bounded':True}) as endpoint_browser:
                     if failure == "identity":
                         with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
+                    elif failure.startswith('endpoint-'):
+                        if failure=='endpoint-failure':
+                            with self.assertRaisesRegex(SUITE.SuiteError,'geometry failed'):SUITE.run_dense(Client(),Client(),2,dict(engine_id=14,catalog_path={}),report,2,case='endpoint-geometry')
+                        else:
+                            SUITE.run_dense(Client(),Client(),2,dict(engine_id=14,catalog_path={}),report,2,case='endpoint-geometry')
+                            self.assertEqual(report['endpoint_geometry'],{'bounded':True})
+                        endpoint_browser.assert_called_once_with(expected)
+                        self.assertNotIn('dense',report)
                     elif failure == "browser":
                         with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     elif failure.startswith(("relationship-", "filter-", "node-filter-")):

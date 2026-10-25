@@ -2,15 +2,26 @@ import { expect } from '@playwright/test'
 
 // Test-only observation of actual Canvas drawing, without application/G6 objects.
 export function installGraphRelationshipPaint() {
-  const frames = new WeakMap(), paths = new WeakMap()
+  const frames = new WeakMap(), paths = new WeakMap(), circles = new WeakMap(), circlePaths = new WeakMap()
   window.__graphRelationshipPaint = frames
+  window.__graphNodePaint = circles
   const prototype = CanvasRenderingContext2D.prototype
-  for (const name of ['clearRect', 'beginPath', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'arc', 'ellipse', 'rect', 'stroke']) {
+  for (const name of ['clearRect', 'beginPath', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'arc', 'ellipse', 'rect', 'stroke', 'fill']) {
     const original = prototype[name]
     prototype[name] = function (...args) {
       if (this.canvas.closest('.graph-canvas')) {
-        if (name === 'clearRect') frames.set(this.canvas, [])
-        if (name === 'beginPath') paths.set(this, [])
+        if (name === 'clearRect') { frames.set(this.canvas, []); circles.set(this.canvas, []) }
+        if (name === 'beginPath') { paths.set(this, []); circlePaths.delete(this) }
+        if (name === 'arc' && Math.abs(args[4] - args[3]) >= Math.PI * 2 - .0001) {
+          const matrix = this.getTransform(), ratio = this.canvas.width / this.canvas.getBoundingClientRect().width
+          circlePaths.set(this, { x: (matrix.a * args[0] + matrix.c * args[1] + matrix.e) / ratio,
+            y: (matrix.b * args[0] + matrix.d * args[1] + matrix.f) / ratio,
+            rx: Math.hypot(matrix.a, matrix.b) * args[2] / ratio, ry: Math.hypot(matrix.c, matrix.d) * args[2] / ratio })
+        }
+        if (name === 'fill' && circlePaths.has(this)) {
+          const list = circles.get(this.canvas)
+          if (list && list.length < 1000) list.push({ ...circlePaths.get(this), color: this.fillStyle, alpha: this.globalAlpha })
+        }
         const path = paths.get(this)
         const command = { moveTo: 'M', lineTo: 'L', quadraticCurveTo: 'Q', bezierCurveTo: 'C' }[name]
         if (path && command) {
@@ -34,7 +45,7 @@ export function installGraphRelationshipPaint() {
 export async function stableRelationshipPaths(element, { nodes, timeout = 10000 }) {
   const canvas = element.querySelector('canvas'), rect = canvas?.getBoundingClientRect()
   if (!canvas || !rect.width || !rect.height || getComputedStyle(canvas).visibility !== 'visible' || getComputedStyle(canvas).display === 'none' || !canvas.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) throw new Error('Relationship Canvas is not visible')
-  let previous = '', stable = 0, strokes = []
+  let previous = '', stable = 0, strokes = [], paintedNodes = []
   const deadline = performance.now() + timeout
   while (performance.now() < deadline) {
     await new Promise(requestAnimationFrame)
@@ -42,7 +53,8 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
     strokes = window.__graphRelationshipPaint?.get(canvas) || []
     strokes = [...new Map(strokes.filter(stroke => stroke.alpha > 0 && stroke.path.every(segment => segment.slice(1).every(Number.isFinite)))
       .map(stroke => [JSON.stringify(stroke.path) + stroke.color, stroke])).values()]
-    const signature = JSON.stringify(strokes)
+    paintedNodes = [...new Map((window.__graphNodePaint?.get(canvas) || []).filter(node => node.alpha > 0).map(node => [JSON.stringify(node), node])).values()]
+    const signature = JSON.stringify([strokes, paintedNodes])
     stable = strokes.length && signature === previous ? stable + 1 : 0
     previous = signature
     if (stable >= 10) break
@@ -54,11 +66,21 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
     if (segment[0] === 'C') return { x: q*q*q*x + 3*q*q*t*segment[1] + 3*q*t*t*segment[3] + t*t*t*segment[5], y: q*q*q*y + 3*q*q*t*segment[2] + 3*q*t*t*segment[4] + t*t*t*segment[6] }
     return { x: q*x + t*segment[1], y: q*y + t*segment[2] }
   }
-  const visible = nodes.flatMap(group => group.hits.map((hit, index) => ({ ...hit, box: group.frame.nodes[index].box })))
+  const visible = nodes.flatMap(group => group.hits.map((hit, index) => {
+    const color = group.frame.fillColor
+    const matches = paintedNodes.filter(node => {
+      const rgb = node.color.match(/^#([0-9a-f]{6})$/i)?.[1]?.match(/../g).map(value => parseInt(value, 16))
+      const box = group.frame.nodes[index].box
+      return rgb && color && rgb.every((value, channel) => value === color[channel]) && Math.hypot((node.x - hit.x) / node.rx, (node.y - hit.y) / node.ry) < 1 &&
+        node.x - node.rx <= box[0] + 1 && box[2] - 1 <= node.x + node.rx && node.y - node.ry <= box[1] + 1 && box[3] - 1 <= node.y + node.ry
+    })
+    if (matches.length !== 1) throw new Error('Visible node has no unique painted circle geometry')
+    return { ...matches[0], color, native_id: hit.native_id, box: group.frame.nodes[index].box }
+  }))
   // G6 paths terminate at the circle outline. A nearby node's center may be
   // closer to that anchor than its owner; bind against the observed outline.
   const boundaryDistance = (node, x, y) => {
-    const rx = (node.box[2] - node.box[0]) / 2, ry = (node.box[3] - node.box[1]) / 2
+    const { rx, ry } = node
     return Math.abs(Math.hypot((x - node.x) / rx, (y - node.y) / ry) - 1) * Math.min(rx, ry)
   }
   const nearest = (x, y) => [...visible].sort((a, b) => boundaryDistance(a, x, y) - boundaryDistance(b, x, y))[0]
@@ -86,7 +108,7 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
     candidate.clearance = Math.min(100, ...all.filter(other => other.index !== candidate.index).map(other => Math.hypot(other.x-candidate.x, other.y-candidate.y)))
   }
   all.sort((a, b) => b.clearance-a.clearance)
-  return { width: rect.width, height: rect.height, stable_frames: stable, candidates: all, paths: strokes }
+  return { width: rect.width, height: rect.height, stable_frames: stable, candidates: all, paths: strokes, paintedNodes, node_geometry: visible.map(({ native_id, x, y, rx, ry, color, alpha }) => ({ native_id, x, y, rx, ry, color, alpha })) }
 }
 
 export async function graphRelationshipHits(page, frame, canvas, edges, stage) {
@@ -118,7 +140,7 @@ export async function graphRelationshipHits(page, frame, canvas, edges, stage) {
       properties: raw, path: candidate.path, path_source: candidate.source, path_target: candidate.target,
       x: candidate.x, y: candidate.y, t: candidate.t, pixel: candidate.pixel })
   }
-  if (hits.size !== edges.length) console.log('RELATIONSHIP_MISSES', JSON.stringify({ layout: stage.layout, missing: edges.filter(edge => !hits.has(edge.id)), node_bounds: stage.groups, observed_paths: observed.paths, candidates: observed.candidates.filter(candidate => edges.some(edge => !hits.has(edge.id) && edge.source === candidate.source && edge.target === candidate.target)), unsuccessful }))
+  if (hits.size !== edges.length) console.log('RELATIONSHIP_MISSES', JSON.stringify({ layout: stage.layout, missing: edges.filter(edge => !hits.has(edge.id)), node_bounds: stage.groups, observed_paths: observed.paths, painted_nodes: observed.paintedNodes, candidates: observed.candidates.filter(candidate => edges.some(edge => !hits.has(edge.id) && edge.source === candidate.source && edge.target === candidate.target)), unsuccessful }))
   expect([...hits.keys()].sort(), `${stage.layout} relationships not mouse-reachable after ${attempts} clicks`).toEqual(edges.map(edge => edge.id).sort())
-  return { layout: stage.layout, width: observed.width, height: observed.height, stable_frames: observed.stable_frames, attempts, hits: [...hits.values()].sort((a, b) => a.native_id.localeCompare(b.native_id)) }
+  return { layout: stage.layout, width: observed.width, height: observed.height, stable_frames: observed.stable_frames, node_geometry: observed.node_geometry, attempts, hits: [...hits.values()].sort((a, b) => a.native_id.localeCompare(b.native_id)) }
 }

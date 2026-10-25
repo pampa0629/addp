@@ -95,6 +95,14 @@ on:
           - full
           - native-raster-media
           - kml-export
+      graph_case:
+        description: Graph acceptance scope
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - endpoint-geometry
       graph_engine:
         description: Native engine for graph-protection
         required: true
@@ -467,6 +475,7 @@ jobs:
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: ${{ inputs.suite }}
       ADDP_ONLINE_GRAPH_ENGINE: ${{ inputs.graph_engine }}
+      ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

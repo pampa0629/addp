@@ -3819,12 +3819,12 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "scripts/test/graph-review-online.py": ("verify_selection", "graph-review-stable-selection.json", "verify_items", "reader_403=True", "cross_graph_404=True", "domain_resources_remaining", "real_model=False"),
         "scripts/test/graph-review-extractor.py": ("ADDP_ONLINE_HOSTED", "MATERIAL", "bad-native"),
         "console/frontend/e2e/online/graph-review.spec.js": ("addp.graph-review-browser/v2", "browserAPIFromResponse", "login(", "batch_status: 500", "selection_cleared: true", "selection_stable_visible: true", "stableEmptyReviewSelection)", "graph-review-stable-selection.json"),
-        "console/frontend/e2e/graph-relationship.fixture.js": ("installGraphRelationshipPaint", "stableRelationshipPaths", "graphRelationshipHits", "page.mouse.click", "fixture_id", "prop-row", "getImageData"),
-        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "denseGraphStages", "stableGraphColorPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
+        "console/frontend/e2e/graph-relationship.fixture.js": ("installGraphRelationshipPaint", "stableRelationshipPaths", "graphRelationshipHits", "node_geometry", "circlePaths", "page.mouse.click", "fixture_id", "prop-row", "getImageData"),
+        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "denseGraphStages", "graphEndpointGeometry", "page.mouse.down", "page.mouse.up", "stableGraphColorPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v15", "verify_dense", "verify_relationships", "verify_dense_filters", "verify_node_filters", "graph-node-filter-frame.json", "graph-relationship-filter-frame.json", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v16", "verify_dense", "verify_relationships", "verify_dense_filters", "verify_node_filters", "node_geometry", "verify_endpoint_geometry", "run_endpoint_case", "graph-endpoint-geometry.json", "graph-node-filter-frame.json", "graph-relationship-filter-frame.json", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -3863,6 +3863,14 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
     # though normal browser traffic only enters through production Nginx.
     lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
     environment = (repository / "scripts/utils/hosted-online.sh").read_text() + "\n" + lifecycle
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    case_selector = re.search(r"(?ms)^      graph_case:\n(?P<body>.*?)(?=^      [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if (case_selector is None or any(token not in case_selector.group('body') for token in ('type: choice', 'default: full', '- full', '- endpoint-geometry'))
+            or 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}' not in workflow
+            or any(token not in lifecycle for token in ('ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}', 'full|endpoint-geometry)'))):
+        raise RegistrationError('Graph endpoint geometry requires explicit bounded case selection')
+    if lifecycle.index('full|endpoint-geometry)') > lifecycle.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+        raise RegistrationError('Graph case validation must precede Hosted lifecycle')
     overlay = (repository / "scripts/test/docker-compose.graph-protection-t4.yml").read_text()
     suite = load_suite_registry(repository)["graph-protection"]
     for owner, variable in suite.services:

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages } from '../graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, graphEndpointGeometry } from '../graph-visual.fixture.js'
 import { installGraphRelationshipPaint } from '../graph-relationship.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -243,13 +243,14 @@ test('ordinary Graph reader browses private native graph data and searches Knowl
 })
 
 
-test('ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
+for (const geometry of [false, true]) {
+test(geometry ? 'ordinary reader proves fixed nearby endpoint geometry through Console' : 'ordinary reader proves multi-label dense native graph through Console', async ({ page }) => {
   test.setTimeout(540000)
   await page.addInitScript(installGraphRelationshipPaint)
-  const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'))
+  const expected = JSON.parse(required(geometry ? 'ADDP_ONLINE_GRAPH_GEOMETRY_EXPECTATIONS' : 'ADDP_ONLINE_GRAPH_DENSE_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], development = [], releaseScripts = new Set()
   const credentials = new Set(Object.entries(process.env).filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|USERNAME)$/.test(key) && value).map(([, value]) => value))
-  const diagnostics = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-browser-diagnostics.json')
+  const diagnostics = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), geometry ? 'graph-endpoint-geometry-diagnostics.json' : 'graph-dense-browser-diagnostics.json')
   const persist = () => writeFileSync(diagnostics, JSON.stringify({ schema_version: 'addp.graph-browser-diagnostics/v1', entries: errors }, null, 2))
   const recordDiagnostic = message => { errors.push(graphBrowserDiagnostic(message, 'dense', credentials)); persist() }
   persist()
@@ -287,7 +288,11 @@ test('ordinary reader proves multi-label dense native graph through Console', as
   expect(snapshot.schema.node_shapes.map(({ name, labels }) => ({ name, labels: [...labels].sort() })).sort((a, b) => a.name.localeCompare(b.name))).toEqual(expected.shapes)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const canvas = frame.locator('.graph-canvas')
-  const visual = await denseGraphStages(page, frame, canvas, expected, async phase => {
+  const visual = await (geometry ? graphEndpointGeometry : denseGraphStages)(page, frame, canvas, expected, async (phase, stage) => {
+    if (geometry) {
+      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-' + phase + '-frame.json'), JSON.stringify({ ...expected, schema_version: 'addp.graph-endpoint-geometry-frame/v1', stage }, null, 2))
+      if (!stage.relationships) return
+    }
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), phase + '-console.png') })
   })
   expect(errors).toEqual([])
@@ -295,11 +300,15 @@ test('ordinary reader proves multi-label dense native graph through Console', as
   expect(writes).toEqual([])
   expect(development).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
+  if (geometry) {
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-endpoint-geometry.json'), JSON.stringify({ ...expected, schema_version: 'addp.graph-endpoint-geometry/v1', ...visual }, null, 2))
+    return
+  }
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-dense-stable-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-dense-stable-frame/v4', ...visual
+    ...expected, schema_version: 'addp.graph-dense-stable-frame/v5', ...visual
   }, null, 2))
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-relationship-hit-frame.json'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-relationship-hit-frame/v1', layouts: visual.relationships
+    ...expected, schema_version: 'addp.graph-relationship-hit-frame/v2', layouts: visual.relationships
   }, null, 2))
   writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-relationship-filter-frame.json'), JSON.stringify({
     ...expected, schema_version: 'addp.graph-relationship-filter-frame/v1', ...visual.relation_filters
@@ -308,3 +317,4 @@ test('ordinary reader proves multi-label dense native graph through Console', as
     ...expected, schema_version: 'addp.graph-node-filter-frame/v1', ...visual.node_filters
   }, null, 2))
 })
+}
