@@ -41,6 +41,14 @@ if [ "$STOP_ALL" = false ] && [[ " $* " == *" -all "* ]]; then
   exit 1
 fi
 
+# Commit the planned stop before any launchd/process/container stop action.
+intent_args=(--all)
+if [ "$STOP_ALL" = false ]; then intent_args=(--modules "${STOP_MODULES[@]}"); fi
+(
+  if [ -f .env ]; then set -a; source .env || exit 1; set +a; fi
+  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" service-expectations --state planned_stopped "${intent_args[@]}"
+) || { echo '无法发布计划停用，尚未停止服务；请修复部署意图目录后重试' >&2; exit 1; }
+
 stop_process_selected() {
   [ "$STOP_ALL" = true ] && return 0
   local module

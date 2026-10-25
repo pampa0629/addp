@@ -27,7 +27,6 @@ def private_directory(raw, *, outside=False):
 
 def render():
     directory = private_directory(os.environ['ADDP_METRICS_DEPLOYMENT_DIR'], outside=True)
-    discovery = private_directory(os.environ['ADDP_DEPLOYMENT_DISCOVERY_DIR'])
     raw = os.environ.get('ADDP_PROCESS_METRICS_DEPLOYMENTS', '') or '[]'
     if len(raw.encode()) > 256 << 10:
         raise ValueError('process deployment budget')
@@ -35,8 +34,7 @@ def render():
     if not isinstance(deployments, list) or len(deployments) > 64:
         raise ValueError('process deployment list required')
     known = set(re.findall(r'^  ([a-z][a-z0-9-]+):$', (ROOT/'docker-compose.yml').read_text(), re.M))
-    services = {'system-backend': {'environment': {'ADDP_DEPLOYMENT_DISCOVERY_DIR': '/etc/addp/deployment-discovery'},
-                 'volumes': [{'type':'bind','source':str(discovery),'target':'/etc/addp/deployment-discovery','read_only':True,'bind':{'create_host_path':False}}]}}
+    services = {}
     seen, endpoints = set(), set()
     fields = {'module_name','role','listen','endpoint','tls_dir'}
     for item in deployments:

@@ -1410,6 +1410,186 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
         self.assertNotEqual(invalid.returncode, 0)
         self.assertNotIn('private-invalid-body', invalid.stdout+invalid.stderr)
 
+    def test_native_launch_units_count_replicas_without_mixing_purposes(self):
+        groups = inventory.service_groups_from_units(['meta-backend', 'meta-worker-1', 'meta-worker-2',
+                 'transfer-bounded-worker-1', 'transfer-continuous-worker-1', 'quality-worker-1'])
+        self.assertEqual({(x['module_name'], x['runtime_name']): x['expected_replicas'] for x in groups},
+                         {('meta', ''): 1, ('meta', 'scan'): 2, ('transfer', 'sync'): 1,
+                          ('transfer', 'continuous_sync'): 1, ('quality', 'quality-bounded'): 1})
+        for bad in [[], ['meta-worker-1', 'meta-worker-1'], ['meta-worker'], ['security-worker'], ['meta-worker-3'], ['meta-frontend']]:
+            with self.subTest(units=bad), self.assertRaises(inventory.InventoryError):
+                inventory.service_groups_from_units(bad)
+
+    def test_compose_intent_uses_declared_replicas_profiles_and_retires_unselected_groups(self):
+        inventory.service_expectations(self.directory, [self.group(), self.group('transfer', 'sync'), self.group('quality', 'quality-bounded')])
+        document = {'services': {'meta-worker': {'deploy': {'replicas': 2}},
+                    'transfer-bounded-worker': {'deploy': {'replicas': 0}},
+                    'quality-worker': {'profiles': ['optional']}, 'security-worker': {}, 'nginx': {}}}
+        groups = inventory.service_groups_from_compose(document, set())
+        result = inventory.service_expectations(self.directory, groups, replace_running=True)
+        self.assertEqual([(x['module_name'], x['desired_state']) for x in result['groups']],
+                         [('meta', 'running'), ('quality', 'planned_stopped'), ('transfer', 'planned_stopped')])
+        self.assertEqual(len(inventory.service_groups_from_compose(document, {'optional'})), 2)
+        self.assertEqual(len(inventory.service_groups_from_compose(document, {'*'})), 2)
+        empty = inventory.service_expectations(self.directory, [], replace_running=True)
+        self.assertTrue(all(x['desired_state'] == 'planned_stopped' for x in empty['groups']))
+        for count in [-1, 1001, True, '2']:
+            with self.subTest(count=count), self.assertRaises(inventory.InventoryError):
+                inventory.service_groups_from_compose({'services': {'meta-worker': {'deploy': {'replicas': count}}}}, set())
+
+    def test_production_overlay_is_readonly_independent_of_metrics_and_does_not_copy_secrets(self):
+        compose = self.directory/'platform.yml'
+        compose.write_text('services: {}')
+        raw = json.dumps({'services': {'meta-backend': {'environment': {'PASSWORD': 'never-copy-secret'}},
+                         'meta-worker': {'deploy': {'replicas': 2}}}}).encode()
+        with mock.patch.object(inventory.subprocess, 'run', return_value=mock.Mock(stdout=raw)) as reader:
+            first = inventory.publish_platform_service_expectations(self.directory, [str(compose)])
+            self.assertEqual(inventory.publish_platform_service_expectations(self.directory, [str(compose)]), first)
+        self.assertEqual(reader.call_args.args[0], ['docker', 'compose', '-f', str(compose), 'config', '--format', 'json'])
+        overlay = json.loads((self.directory/'platform-service-expectations.json').read_text())
+        system = overlay['services']['system-backend']
+        self.assertEqual(system['environment'], {'ADDP_DEPLOYMENT_DISCOVERY_DIR': '/etc/addp/deployment-discovery'})
+        self.assertEqual(system['volumes'], [{'type': 'bind', 'source': str(self.directory),
+                         'target': '/etc/addp/deployment-discovery', 'read_only': True, 'bind': {'create_host_path': False}}])
+        for path in (self.path, self.directory/'platform-service-expectations.json'):
+            self.assertNotIn('never-copy-secret', path.read_text())
+        # The metrics renderer no longer owns a second copy of the System mount.
+        source = (ROOT/'scripts/prod/generate-process-metrics-platform.py').read_text()
+        self.assertNotIn('/etc/addp/deployment-discovery', source)
+
+    def test_real_compose_configuration_projects_only_declared_groups_and_replicas(self):
+        compose = self.directory/'actual-compose.yml'
+        compose.write_text("services:\n  meta-backend:\n    image: busybox\n  meta-worker:\n    image: busybox\n    deploy:\n      replicas: 2\n  quality-worker:\n    image: busybox\n    profiles: [optional]\n")
+        with mock.patch.dict(os.environ, {'COMPOSE_PROFILES': '', 'ADDP_OBSERVABILITY_METRICS_ENABLED': 'false'}):
+            document = inventory.publish_platform_service_expectations(self.directory, [str(compose)])
+        self.assertEqual([(row['module_name'],row['runtime_name'],row['expected_replicas']) for row in document['groups']],
+                         [('meta','',1),('meta','scan',2)])
+        self.assertTrue((self.directory/'platform-service-expectations.json').is_file())
+
+    def test_metrics_renderer_only_owns_sdk_mounts_and_has_no_discovery_dependency(self):
+        spec = importlib.util.spec_from_file_location('service_intent_metrics_render', ROOT/'scripts/prod/generate-process-metrics-platform.py')
+        renderer = importlib.util.module_from_spec(spec); spec.loader.exec_module(renderer)
+        directory = self.directory/'sdk'; directory.mkdir(mode=0o700)
+        with mock.patch.dict(os.environ, {'ADDP_METRICS_DEPLOYMENT_DIR':str(directory), 'ADDP_PROCESS_METRICS_DEPLOYMENTS':'[]'}):
+            renderer.render()
+        self.assertEqual(json.loads((directory/'platform-process-metrics.json').read_text()), {'services':{}})
+
+    def test_standard_production_start_adds_the_single_overlay_only_after_success(self):
+        import shlex
+        source = (ROOT/'scripts/prod/start.sh').read_text()
+        phase = source[source.index('# Publish desired services'):source.index('# 第二步：System')]
+        self.assertLess(source.index('addp_acquire_lifecycle_lock prod-start'), source.index('bash scripts/prod/setup-env.sh'))
+        root = self.directory/'start-prod'
+        (root/'scripts/utils').mkdir(parents=True)
+        import shutil
+        shutil.copy2(ROOT/'scripts/utils/deployment-inventory.py', root/'scripts/utils/deployment-inventory.py')
+        compose = root/'platform.yml'; compose.write_text('services:\n  meta-worker:\n    image: busybox\n')
+        target = root/'private-intent'
+        env = dict(os.environ, ADDP_DEPLOYMENT_DISCOVERY_DIR=str(target), ADDP_OBSERVABILITY_METRICS_ENABLED='false')
+        script = 'set -euo pipefail\ninfra_result=0\nPLATFORM_COMPOSE_FILES=(-f '+shlex.quote(str(compose))+')\n'+phase+'\nprintf "result=%s\\n" "$infra_result"\nprintf "%s\\n" "${PLATFORM_COMPOSE_FILES[@]}"\n'
+        result = subprocess.run(['bash','-c',script], cwd=root, env=env, capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('result=0',result.stdout)
+        self.assertIn(str(target/'platform-service-expectations.json'),result.stdout)
+        path = target/'service-expectations.json'
+        path.write_text('{"invalid":"must-not-echo"}')
+        result = subprocess.run(['bash','-c',script], cwd=root, env=env, capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('result=1',result.stdout)
+        self.assertNotIn(str(target/'platform-service-expectations.json'),result.stdout)
+        self.assertNotIn('must-not-echo',result.stdout+result.stderr)
+        self.assertIn('business startup continues',result.stderr)
+
+    def test_failed_compose_render_preserves_the_prior_intent_and_does_not_echo_source(self):
+        inventory.service_expectations(self.directory, [self.group()])
+        before = self.path.read_bytes()
+        compose = self.directory/'platform.yml'; compose.write_text('services: {}')
+        for output in [b'private-invalid-config', b'x'*(4*1024*1024+1), b'{"services":{"meta-worker":{"deploy":{"replicas":true}}}}']:
+            with mock.patch.object(inventory.subprocess, 'run', return_value=mock.Mock(stdout=output)), self.assertRaises(ValueError):
+                inventory.publish_platform_service_expectations(self.directory, [str(compose)])
+            self.assertEqual(self.path.read_bytes(), before)
+        with mock.patch.object(inventory.subprocess, 'run', side_effect=subprocess.TimeoutExpired('private-source', 15)), self.assertRaises(inventory.InventoryError) as caught:
+            inventory.publish_platform_service_expectations(self.directory, [str(compose)])
+        self.assertNotIn('private-source', str(caught.exception))
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_native_selected_plan_does_not_require_metrics_or_probe_processes(self):
+        import shlex
+        body = 'ROOT_DIR='+shlex.quote(str(ROOT))+'\nsource "$ROOT_DIR/scripts/dev/ports.sh"\nsource "$ROOT_DIR/scripts/dev/worker-units.sh"\n'
+        body += 'START_META_BACKEND=true\nSTART_META_WORKER=true\nSTART_TRANSFER_BOUNDED_WORKER=true\nSTART_TRANSFER_CONTINUOUS_WORKER=true\naddp_dev_publish_service_expectations\n'
+        env = {k:v for k,v in os.environ.items() if not k.startswith('START_')}
+        env.update(ADDP_DEPLOYMENT_DISCOVERY_DIR=str(self.directory), ADDP_DEV_META_WORKER_REPLICAS='2',
+                   ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS='1', ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS='2',
+                   TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID='', ADDP_OBSERVABILITY_METRICS_ENABLED='false')
+        result = subprocess.run(['bash', '-eu', '-c', body], env=env, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({(x['module_name'], x['runtime_name']): x['expected_replicas'] for x in json.loads(self.path.read_text())['groups']},
+                         {('meta', ''):1, ('meta','scan'):2, ('transfer','sync'):1, ('transfer','continuous_sync'):2})
+
+    def stop_fixture(self, kind):
+        import shutil
+        root = self.directory/('stop-'+kind)
+        for folder in ('scripts/dev', 'scripts/utils', 'scripts/prod'):
+            (root/folder).mkdir(parents=True)
+        for name in ('lifecycle-lock.sh', 'ports.sh'):
+            shutil.copy2(ROOT/'scripts/dev'/name, root/'scripts/dev'/name)
+        shutil.copy2(ROOT/'scripts'/kind/'stop.sh', root/'scripts'/kind/'stop.sh')
+        shutil.copy2(ROOT/'scripts/utils/deployment-inventory.py', root/'scripts/utils/deployment-inventory.py')
+        (root/'scripts/utils/colors.sh').write_text('RED= GREEN= YELLOW= NC=\n')
+        target = root/'private-intent'
+        (root/'.env').write_text('ADDP_DEPLOYMENT_DISCOVERY_DIR='+str(target)+'\n')
+        command = [sys.executable, str(root/'scripts/utils/deployment-inventory.py'), 'service-expectations',
+                   '--directory', str(target), '--state', 'running', '--units', 'meta-worker-1', 'transfer-bounded-worker-1']
+        subprocess.run(command, check=True, capture_output=True, timeout=5)
+        fake = root/'tools'; fake.mkdir()
+        for name in ('docker', 'launchctl', 'lsof'):
+            path = fake/name
+            path.write_text('#!/bin/sh\nprintf "%s\\n" "'+name+' $*" >> "$STOP_EVENTS"\nexit 0\n')
+            path.chmod(0o755)
+        env = dict(os.environ, PATH=str(fake)+os.pathsep+os.environ['PATH'], STOP_EVENTS=str(root/'events'))
+        for key in ('ADDP_LIFECYCLE_LOCK_HELD','ADDP_LIFECYCLE_OWNER_PID','ADDP_LIFECYCLE_LOCK_ROOT'):
+            env.pop(key, None)
+        return root, target/'service-expectations.json', env
+
+    def test_standard_dev_and_prod_stop_refuse_all_actions_when_intent_cannot_be_published(self):
+        for kind in ('dev', 'prod'):
+            root, path, env = self.stop_fixture(kind)
+            path.write_text('{"untrusted":"do-not-echo"}')
+            before = path.read_bytes()
+            (root/'.dev-pids').mkdir()
+            pid = root/'.dev-pids/meta.pid'; pid.write_text('999999991')
+            result = subprocess.run(['bash', str(root/'scripts'/kind/'stop.sh')], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=8)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('尚未停止服务', result.stderr)
+            self.assertNotIn('do-not-echo', result.stdout+result.stderr)
+            self.assertFalse((root/'events').exists(), 'stop action preceded planned-stop publication')
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(pid.read_text(), '999999991')
+            self.assertFalse((root/'.dev-state/lifecycle.lock').exists())
+
+    def test_standard_stop_publishes_selected_scope_before_the_first_stop_action(self):
+        root, path, env = self.stop_fixture('dev')
+        import shlex
+        check = 'import json,os; data=json.load(open(os.environ["CHECK_INTENT"])); assert [x["desired_state"] for x in data["groups"]]==["planned_stopped","running"]; open(os.environ["STOP_EVENTS"],"a").write("checked-lsof\\n")'
+        (root/'tools/lsof').write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' -c '+shlex.quote(check)+'\n')
+        env['CHECK_INTENT'] = str(path)
+        result = subprocess.run(['bash', str(root/'scripts/dev/stop.sh'), '-meta'], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([x['desired_state'] for x in json.loads(path.read_text())['groups']], ['planned_stopped','running'])
+        self.assertIn('checked-lsof', (root/'events').read_text())
+        root, path, env = self.stop_fixture('prod')
+        docker = root/'tools/docker'
+        docker.write_text('#!/bin/sh\npython3 - "$CHECK_INTENT" <<\'CHECK\'\nimport json,sys\nassert all(x["desired_state"]=="planned_stopped" for x in json.load(open(sys.argv[1]))["groups"])\nCHECK\n[ "$?" = 0 ] || exit 77\nprintf "%s\\n" "$*" >> "$STOP_EVENTS"\n')
+        env['CHECK_INTENT'] = str(path)
+        result = subprocess.run(['bash', str(root/'scripts/prod/stop.sh')], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len((root/'events').read_text().splitlines()), 2)
+        self.assertTrue(all(x['desired_state']=='planned_stopped' for x in json.loads(path.read_text())['groups']))
+
+
 
 class ComposeConfigDiagnosticTest(unittest.TestCase):
     def process(self, code=0):

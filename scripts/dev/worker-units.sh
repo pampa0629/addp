@@ -62,3 +62,28 @@ addp_check_worker_inventory() {
     seen="$seen$pid "
   done
 }
+
+# Selected launch plan only; no listener/PID/metrics discovery is used as intent.
+addp_dev_publish_service_expectations() (
+  local name variable preferred flag module family unit units spec
+  local selected=()
+  while read -r name variable preferred; do
+    case "$variable" in
+      *_BACKEND_PORT)
+        flag="START_${variable%_PORT}"
+        if [ "${!flag:-false}" = true ]; then
+          module=$(addp_dev_process_module "$name") || return 1
+          selected+=("$module-backend")
+        fi ;;
+    esac
+  done < <(addp_dev_port_specs)
+  for spec in 'meta-worker:START_META_WORKER' 'quality-worker:START_QUALITY_WORKER' \
+              'transfer-bounded-worker:START_TRANSFER_BOUNDED_WORKER' 'transfer-continuous-worker:START_TRANSFER_CONTINUOUS_WORKER'; do
+    family="${spec%:*}"; flag="${spec#*:}"
+    [ "${!flag:-false}" = true ] || continue
+    units=$(addp_worker_units "$family") || return 1
+    while IFS= read -r unit; do selected+=("$unit"); done <<< "$units"
+  done
+  [ "${#selected[@]}" -gt 0 ] || return 0
+  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" service-expectations --state running --units "${selected[@]}"
+)

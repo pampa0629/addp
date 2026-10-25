@@ -1,4 +1,4 @@
-"""One read-only Docker source for deployment discovery."""
+"""Deployment-owned discovery and intent publication; no application control."""
 import argparse
 from datetime import datetime, timezone
 import ipaddress
@@ -315,7 +315,7 @@ def write_document(directory, name, value):
             temporary.unlink(missing_ok=True)
 
 
-def service_expectations(directory, groups, *, stop_modules=None, stop_all=False):
+def service_expectations(directory, groups, *, stop_modules=None, stop_all=False, replace_running=False):
     """Persist deployment intent, never infer it from surviving processes."""
     directory = Path(directory)
     private_directory(directory)
@@ -347,7 +347,7 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
                 if (stop_all or row['module_name'] in stop_modules) and row['desired_state'] != 'planned_stopped':
                     row.update(desired_state='planned_stopped', changed_at=now)
         else:
-            if not isinstance(groups, list) or not groups or len(groups) > 1000:
+            if not isinstance(groups, list) or (not groups and not replace_running) or len(groups) > 1000:
                 raise InventoryError('服务启动范围无效')
             seen = set()
             for group in groups:
@@ -363,6 +363,12 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
                 if old and all(old[k] == row[k] for k in group) and old['desired_state'] == 'running':
                     row = old
                 current[key] = row
+        if replace_running:
+            if stop_modules is not None or stop_all:
+                raise InventoryError('服务部署声明范围无效')
+            for key, row in current.items():
+                if key not in seen and row['desired_state'] != 'planned_stopped':
+                    row.update(desired_state='planned_stopped', changed_at=now)
         rows = [current[k] for k in sorted(current)]
         if previous and rows == previous['groups']:
             return previous
@@ -373,6 +379,98 @@ def service_expectations(directory, groups, *, stop_modules=None, stop_all=False
             raise InventoryError('服务部署意图超过预算')
         write_document(directory, 'service-expectations.json', document)
         return document
+
+
+# Formal launch names, shared by native launch units and Compose declarations.
+SERVICE_WORKER_GROUPS = {
+    'meta-worker': ('meta', 'scan'),
+    'quality-worker': ('quality', 'quality-bounded'),
+    'transfer-bounded-worker': ('transfer', 'sync'),
+    'transfer-continuous-worker': ('transfer', 'continuous_sync'),
+}
+
+
+def service_group_for_launch(service, replicas):
+    if service in SERVICE_WORKER_GROUPS:
+        module, purpose = SERVICE_WORKER_GROUPS[service]
+        role = 'worker'
+    elif isinstance(service, str) and service.endswith('-backend') and service_intent_name(service[:-8]):
+        module, purpose, role = service[:-8], '', 'backend'
+    else:
+        return None
+    if type(replicas) is not int or not 0 <= replicas <= 1000:
+        raise InventoryError('服务声明副本数无效')
+    if replicas == 0:
+        return None
+    return {'module_name': module, 'role': role, 'runtime_name': purpose, 'expected_replicas': replicas}
+
+
+def service_groups_from_units(units):
+    if not units or len(units) > 1000 or len(set(units)) != len(units):
+        raise InventoryError('服务启动单元无效')
+    counts = {}
+    for unit in units:
+        if unit in SERVICE_WORKER_GROUPS:
+            raise InventoryError('Worker必须使用正式编号启动单元')
+        match = re.fullmatch(r'(.+)-([12])', unit)
+        service = match[1] if match and match[1] in SERVICE_WORKER_GROUPS else unit
+        if service_group_for_launch(service, 1) is None:
+            raise InventoryError('服务启动单元不在声明范围')
+        counts[service] = counts.get(service, 0) + 1
+    return [service_group_for_launch(name, count) for name, count in sorted(counts.items())]
+
+
+def service_groups_from_compose(document, profiles):
+    if not isinstance(document, dict) or not isinstance(document.get('services'), dict) or len(document['services']) > 1000:
+        raise InventoryError('平台Compose服务声明无效')
+    groups = []
+    for name, service in document['services'].items():
+        if not isinstance(service, dict):
+            raise InventoryError('平台Compose服务声明无效')
+        selected = service.get('profiles', [])
+        if not isinstance(selected, list) or not all(isinstance(x, str) and x for x in selected):
+            raise InventoryError('平台Compose Profile无效')
+        if selected and '*' not in profiles and not set(selected).intersection(profiles):
+            continue
+        deploy = service.get('deploy', {})
+        if not isinstance(deploy, dict):
+            raise InventoryError('平台Compose副本声明无效')
+        replicas = service.get('scale', deploy.get('replicas', 1))
+        if 'scale' in service and 'replicas' in deploy and (type(service['scale']) is not int or type(deploy['replicas']) is not int or service['scale'] != deploy['replicas']):
+            raise InventoryError('平台Compose副本声明冲突')
+        group = service_group_for_launch(name, replicas)
+        if group:
+            groups.append(group)
+    return groups
+
+
+def publish_platform_service_expectations(directory, compose_files):
+    files = [Path(name) for name in compose_files]
+    if not files or len(files) > 16 or any(p.is_symlink() or not p.is_file() or p.stat().st_size > DISCOVERY_LIMIT*4 for p in files):
+        raise InventoryError('平台Compose来源文件无效')
+    command = ['docker', 'compose']
+    for path in files:
+        command.extend(['-f', str(path)])
+    # Render declarations only. Never inspect live container Env, SQL or Secrets;
+    # the private rendered configuration is not logged or persisted.
+    try:
+        result = subprocess.run(command + ['config', '--format', 'json'], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, timeout=15, check=True)
+    except (OSError, subprocess.SubprocessError):
+        raise InventoryError('平台Compose声明不可读') from None
+    if len(result.stdout) > 4*1024*1024:
+        raise InventoryError('平台Compose声明超过预算')
+    document = json.loads(result.stdout, object_pairs_hook=unique_service_intent_object)
+    profiles = {x.strip() for x in os.environ.get('COMPOSE_PROFILES', '').split(',') if x.strip()}
+    groups = service_groups_from_compose(document, profiles)
+    directory = Path(directory)
+    private_directory(directory)
+    overlay = {'services': {'system-backend': {
+        'environment': {'ADDP_DEPLOYMENT_DISCOVERY_DIR': '/etc/addp/deployment-discovery'},
+        'volumes': [{'type': 'bind', 'source': str(directory), 'target': '/etc/addp/deployment-discovery',
+                     'read_only': True, 'bind': {'create_host_path': False}}]}}}
+    write_document(directory, 'platform-service-expectations.json', overlay)
+    return service_expectations(directory, groups, replace_running=True)
 
 
 def unique_service_intent_object(pairs):
@@ -707,7 +805,7 @@ def watch(directory, token):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='只读发现当前工作区部署，不访问业务数据或修改容器')
+    parser = argparse.ArgumentParser(description='发布当前工作区部署发现与运行预期，不访问业务数据或修改容器')
     commands = parser.add_subparsers(dest='command', required=True)
     refresh = commands.add_parser('refresh', help='部署生命周期自动发布无凭据发现快照')
     refresh.add_argument('--scope', required=True, choices=sorted(SCOPES))
@@ -716,6 +814,9 @@ def main():
     intents.add_argument('--state', required=True, choices=('running', 'planned_stopped'))
     intents.add_argument('--modules', nargs='+')
     intents.add_argument('--all', action='store_true')
+    source = intents.add_mutually_exclusive_group()
+    source.add_argument('--units', nargs='+')
+    source.add_argument('--compose-file', action='append')
     intents.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
     for name in ('start', 'stop', 'watch'):
         command = commands.add_parser(name, help='部署发现观测进程的标准生命周期')
@@ -728,12 +829,18 @@ def main():
             if args.state == 'running':
                 if args.modules or args.all:
                     raise InventoryError('服务启动声明不接受停止范围')
+                if args.units:
+                    service_expectations(args.directory, service_groups_from_units(args.units))
+                    return 0
+                if args.compose_file:
+                    publish_platform_service_expectations(args.directory, args.compose_file)
+                    return 0
                 raw = sys.stdin.buffer.read(DISCOVERY_LIMIT + 1)
                 if len(raw) > DISCOVERY_LIMIT:
                     raise InventoryError('服务启动声明超过预算')
                 service_expectations(args.directory, json.loads(raw, object_pairs_hook=unique_service_intent_object))
             else:
-                if bool(args.modules) == args.all:
+                if args.units or args.compose_file or bool(args.modules) == args.all:
                     raise InventoryError('服务停止声明必须选择唯一范围')
                 service_expectations(args.directory, [], stop_modules=args.modules, stop_all=args.all)
             return 0
@@ -749,11 +856,14 @@ def main():
                 stop_observer(args.directory)
             return 0
     except InventoryError as error:
-        print('部署来源读取失败：' + str(error), file=sys.stderr)
+        prefix = '服务部署意图发布失败：' if args.command == 'service-expectations' else '部署来源读取失败：'
+        print(prefix + str(error), file=sys.stderr)
         return 1
     except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
         # Raw Docker/JSON errors may embed untrusted source content. Never echo it.
-        print('部署来源读取失败：请检查本地 Docker Context、工作区来源及实际端口。', file=sys.stderr)
+        message = ('服务部署意图发布失败：请检查受管目录、声明配置及写入权限。' if args.command == 'service-expectations'
+                   else '部署来源读取失败：请检查本地 Docker Context、工作区来源及实际端口。')
+        print(message, file=sys.stderr)
         return 1
     return 0
 

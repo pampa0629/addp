@@ -397,6 +397,7 @@ for name in ('restart.sh', 'stop.sh', 'ports.sh', 'lifecycle-lock.sh', 'node-dep
     shutil.copy2(repository / 'scripts/dev' / name, dev / name)
 (root / 'scripts/utils').mkdir()
 (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
+shutil.copy2(repository / 'scripts/utils/deployment-inventory.py', root / 'scripts/utils/deployment-inventory.py')
 (root / 'scripts/infra').mkdir()
 (root / 'scripts/infra/ports.sh').write_text('addp_infra_ready() { return 0; }\naddp_infra_read_actual_ports() { :; }\n')
 (root / '.dev-pids').mkdir()
@@ -797,6 +798,7 @@ for mode in ('pid', 'listeners', 'launchd', 'launchd-failure', 'scoped-launchd',
     (root / 'scripts/dev').mkdir(parents=True)
     (root / 'scripts/utils').mkdir()
     (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
+    shutil.copy2(repository / 'scripts/utils/deployment-inventory.py', root / 'scripts/utils/deployment-inventory.py')
     for name in ('stop.sh', 'ports.sh', 'lifecycle-lock.sh'):
         shutil.copy2(repository / 'scripts/dev' / name, root / 'scripts/dev' / name)
     (root / '.dev-pids').mkdir()

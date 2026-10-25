@@ -1493,3 +1493,20 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 日志位于 `/tmp/addp-service-expectations-{publication-final,common-go,system-go-final,monitor-go,postgres-final,lifecycle,swagger,registration,selection}.log`。CI／Hosted未查询、派发或运行，继续由专门会话回传；没有设置定时任务、重启个人服务或修改个人数据库／IAM。
 
 剩余：标准启停Hook尚未接通；停止时计划停用发布失败的处理待用户选择。首次登记预热／触发及恢复窗口、失联规则权限、Monitor评估／事件／通知与真实页面均未实现或未验收，不把基础声明或零在线计数记为服务失联自动告警已完成。原清单第15、49行仍部分实现。
+
+
+## 2026-10-25 标准启停接通服务组预期与停止前发布屏障
+
+用户明确确认：计划停用发布成功后才允许停止；发布失败立即报错，保留服务运行。本批在上一节协议基座上接通开发与生产入口。开发从当前已解析的后端选择与正式编号Worker单元发布，Meta双副本、Transfer两用途、Quality用途保持独立；Security Worker不在新增范围。生产仅渲染当前Compose声明，使用Profile和规范化scale／deploy.replicas，不读取存活容器推断预期；零副本、未选Profile及完整计划不再选择的已有组置为计划停用，局部开发启动不改变其他组。渲染凭据不输出或持久化到声明及覆盖文件。
+
+开发／生产停止在首个launchd、进程、容器或缓存清理动作前写入计划停用；根.env与原启动入口使用同一目录配置，失败不提供旁路参数。生产沿既有工作区生命周期锁串行，System只读目录挂载由服务声明生成器唯一拥有，移除进程指标生成器中的重复路径；指标未选中也能发布预期。启动发布失败报告可选观测错误，核心业务仍继续，不能把旧声明当作新启动成功证据。文件发布只表达意图，不证明实际启停成功或告警恢复。
+
+本地实际验证：
+
+- `python3 -m unittest scripts/test/metrics-deployment-config_test.py`：84项通过，含原74项及10项新增。覆盖标准开发／生产停止失败时无停止命令、PID记录保留、锁释放；局部停止只改所选模块；首次listener／Compose down前核对已发布计划停用；真实Docker Compose CLI渲染Profile及副本数（没有启动容器）；生产标准启动阶段仅成功发布后引入只读覆盖文件，失败不复用旧覆盖；指标关闭仍发布；非法来源／超量／渲染失败不回显秘密、不覆盖旧意图；原SDK生成器不再依赖或拥有发现挂载。
+- `make test-dev-lifecycle`：最终退出0，161项聚合、99项运行日志生命周期、61项回归、端口／所有权／全量及局部生命周期、共享Schema／projectionstore与相关Worker命令编译通过。初轮唯一失败是Raster受控停止夹具未复制新增发布器依赖；仅补齐测试依赖后重验通过，没有放宽停止屏障或修改Raster产品。
+- `python3 scripts/ci/check-t2-ci-registration.py --repository "$PWD"`：22／12／9／2门禁登记通过。既有Metrics输入增加开发／生产停止及共享生命周期锁；根Make原生命周期入口增加生产停止脚本语法检查，新增测试由现有配置测试聚合自动发现，不新增门禁路线。`changed-gate.py --dry-run`只计发现，不计其他Owner测试通过。
+
+本轮没有Go产品或HTTP契约变更，沿用上一节System真实PG T2与Swagger证据，不重复充当本批运行验收。没有运行个人标准启停、操作个人数据库／IAM、触发CI或Hosted，也未设置定时任务。全量平台T0前轮已在无关Security MySQL Online v27登记一致性处失败，本批没有重跑或接管；本批上述相关独立门禁取得通过终态。
+
+日志为 `/tmp/addp-service-intent-hooks-{config-final,lifecycle-final,registration-final,selection}.log`。尚未验证个人实际启停后完整的部署发布→System→Monitor正式身份链路或真实生产部署；当前仍没有服务组失联规则、连续窗口、事件与通知闭环。首次登记前的处理、触发／恢复时长及规则权限尚待明确；清单第15／49行保持部分实现。

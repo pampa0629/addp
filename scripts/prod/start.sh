@@ -43,15 +43,20 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
+PROJECT_ROOT=$(pwd)
+ROOT_DIR="$PROJECT_ROOT"
+source scripts/dev/lifecycle-lock.sh
+addp_acquire_lifecycle_lock prod-start "$@"
+
 # 初始化 .env（若不存在则从 .env.example 自动生成随机密钥）
 bash scripts/prod/setup-env.sh
 
 # 第一步：启动基础设施层
 echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
-PROJECT_ROOT=$(pwd)
 source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$PROJECT_ROOT/.env"
 infra_result=0
+export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-$PROJECT_ROOT/.dev-state/deployment-discovery}"
 if ! bash scripts/infra/up.sh; then
   source scripts/infra/ports.sh
   addp_infra_ready core || exit 1
@@ -62,7 +67,6 @@ bash scripts/prod/wait-infra.sh
 if addp_metrics_enabled; then
   if addp_metrics_platform_preflight; then
     PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-platform.yml)
-    export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-$PROJECT_ROOT/.dev-state/deployment-discovery}"
     if python3 scripts/prod/generate-process-metrics-platform.py; then
       PLATFORM_COMPOSE_FILES+=(-f "$ADDP_METRICS_DEPLOYMENT_DIR/platform-process-metrics.json")
     else
@@ -93,6 +97,18 @@ fi
 # Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
 export LOKI_URL=''
 if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi
+
+# Publish desired services from the same Compose files, independently of metrics.
+intent_compose_args=()
+for ((intent_index=1; intent_index<${#PLATFORM_COMPOSE_FILES[@]}; intent_index+=2)); do
+  intent_compose_args+=(--compose-file "${PLATFORM_COMPOSE_FILES[$intent_index]}")
+done
+if python3 scripts/utils/deployment-inventory.py service-expectations --state running "${intent_compose_args[@]}"; then
+  PLATFORM_COMPOSE_FILES+=(-f "$ADDP_DEPLOYMENT_DISCOVERY_DIR/platform-service-expectations.json")
+else
+  infra_result=1
+  echo 'Service expectations unavailable; business startup continues' >&2
+fi
 
 # 第二步：System 先就绪，再启动应用全量服务。
 echo -e "${YELLOW}[2/4] 等待 System Backend 就绪...${NC}"

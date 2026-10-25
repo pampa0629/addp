@@ -33,6 +33,16 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
+ROOT_DIR="$PROJECT_ROOT"
+source scripts/dev/lifecycle-lock.sh
+addp_acquire_lifecycle_lock prod-stop "$@"
+(
+    set -a
+    source .env || exit 1
+    set +a
+    python3 scripts/utils/deployment-inventory.py service-expectations --state planned_stopped --all
+) || { echo '无法发布计划停用，尚未停止服务；请修复部署意图目录后重试' >&2; exit 1; }
+
 echo -e "${YELLOW}Stopping ADDP services...${NC}"
 docker compose -f docker-compose.runtimes.yml --env-file .env down
 docker compose -f docker-compose.yml --env-file .env down
