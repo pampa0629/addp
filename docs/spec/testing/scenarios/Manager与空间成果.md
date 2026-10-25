@@ -376,3 +376,12 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 实际Node24.11.1下完整 `make test-raster-online-runner` 退出0，27组Python子门禁及隔离身份夹具Go T1通过，壁钟1058.90秒，输入无漂移；共享计数不累加为唯一测试数，不计全量IAM／数据库集成。固定准备候选 `a437da2bdfcb277c61ed6a1c5234b18c12e4f9a3`，日志SHA-256 `2b606775546f2a666114f2f7901de906c51fbde23d2d4bf4801772177be1f490`。其后仅本套件错误描述／测试命名及Worker独立性登记收紧，由上述最终Native／独立入口复核，原套件断言保持；PythonCI登记另通过42项与10项及11模块检查。新脚本的变更→engines选择、Native recipe、独立根入口和手工Hosted Job已同次登记。
 
 以上为本地准备及Native证据。实际Hosted尚未运行，仍由专门CI会话协调并回传原始归档终审；Linux全量及其余Hosted继续等待回传，不自行触发、轮询或定时。未计平台身份／扫描／血缘／Monitor与真实部署清理通过，也不计UI或容量；数值极限仍单列Native。
+
+
+## raster-flow-accumulation-area-d8-persistence
+
+用户已批准独立手工D8汇流面积持久化验收：复用Hosted隔离生命周期、NFS、同源默认入口产品Runtime及普通用户原12权限，独立600秒业务预算。八条COG保存链为米制／国际英尺／美制测量英尺方向接area、同一米制方向的默认count／显式count对照、DEM→流向→area、填洼接上述链及全无效area。519×515矩形网格、显式第二数据波段，覆盖跨512块、多出口、孔洞、合法零、部分透明、孤立开放终点及边界非零方向。
+
+非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；严格核原网格／CRS、Float64／NaN、COG及最近邻金字塔、artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎、当前执行实际注册输入血缘／Monitor、源与先前成果不变。失败零发布／零新增扫描和派生血缘，全部退出清理和零残留为必需断言。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
+
+标准业务入口`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；本地准备门禁`make test-raster-flow-accumulation-area-d8-online-runner`；仅手工Hosted，不参加夜间自动运行，不改原套件、产品逻辑、权限或跨模块实现，不计UI或容量。夹具、标准入口和独立手工CI登记已实现；最终本地Native专项184项（含新增夹具52项、5217项筛除）／18.65秒，独立脚本门禁63项／17.992秒与完整Online登记通过；Node24.11.1下共享栅格脚本总入口实跑通过，具体候选版本与证据见后续专题。实际Hosted未运行，由专门CI会话协调；Linux全量和其余Hosted继续等回传，不计平台扫描／血缘／Monitor、UI或容量通过。数值极限继续单列Native。

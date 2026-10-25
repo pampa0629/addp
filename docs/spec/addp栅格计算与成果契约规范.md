@@ -303,3 +303,12 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 ### D8 汇流面积扩展
 
 现有`raster_flow_accumulation_d8`按已确认范围扩展`measure=count/area`，默认count不计自身，area计入自身、统一投影网格平方米（m2），共用完整D8图校验与计数核心。矩形像元及已知线性单位换算、开放终点累入、无效覆盖保留和数值失败规则见[算子契约](workflow/栅格算子契约.md)。不新增算子、权限或跨模块逻辑；已实现并通过本地标准Native全量5264项／21 warnings／1388.75秒，0失败／跳过／筛除且输入无漂移，完整证据与版本边界见[后续专题](../next/栅格算子体系后续专题.md#d8-汇流面积扩展)。Linux继续等CI会话回传；本轮没有新增或运行area独立Hosted，本地异步COG不计平台扫描／血缘、UI或容量，既有count固定证据不作为新模式验收。
+
+
+### D8 汇流面积独立 Hosted 验收
+
+用户已批准独立手工D8汇流面积持久化验收：复用Hosted隔离生命周期、NFS、同源默认入口产品Runtime及普通用户原12权限，独立600秒业务预算。八条COG保存链为米制／国际英尺／美制测量英尺方向接area、同一米制方向的默认count／显式count对照、DEM→流向→area、填洼接上述链及全无效area。519×515矩形网格、显式第二数据波段，覆盖跨512块、多出口、孔洞、合法零、部分透明、孤立开放终点及边界非零方向。
+
+非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；严格核原网格／CRS、Float64／NaN、COG及最近邻金字塔、artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎、当前执行实际注册输入血缘／Monitor、源与先前成果不变。失败零发布／零新增扫描和派生血缘，全部退出清理和零残留为必需断言。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
+
+标准业务入口`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；本地准备门禁`make test-raster-flow-accumulation-area-d8-online-runner`；仅手工Hosted，不参加夜间自动运行，不改原套件、产品逻辑、权限或跨模块实现，不计UI或容量。夹具、标准入口和独立手工CI登记已实现；最终本地Native专项184项（含新增夹具52项、5217项筛除）／18.65秒，独立脚本门禁63项／17.992秒与完整Online登记通过；Node24.11.1下共享栅格脚本总入口实跑通过，具体候选版本与证据见后续专题。实际Hosted未运行，由专门CI会话协调；Linux全量和其余Hosted继续等回传，不计平台扫描／血缘／Monitor、UI或容量通过。数值极限继续单列Native。
