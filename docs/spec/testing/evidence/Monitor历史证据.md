@@ -1242,6 +1242,14 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 原始失败 `/tmp/addp-ci-20261025-013034/job-121040604338.log`；本机 `/tmp/addp-discovery-exit-{baseline,diagnostics-red,diagnostics-final,dev-final}.log`、`/tmp/addp-discovery-infra-baseline.log`及`/tmp/addp-discovery-exit-selection.txt`。本批不宣称原CI退出故障已修复，Linux实测与新诊断尚待专门CI会话回传；没有轮询、手工派发或重跑CI／Hosted，也没有操作个人服务、keepalive、数据库或数据卷，不设置定时任务。已只读核对功能清单第28／30／34行的主机管理内容，本次诊断不等于新增主机注册、远程初始化或批量运维，不据此升级功能完成程度。
 
+### 持续部署发现固定 05b Linux 门禁通过：原间歇失败仍未闭环（2026-10-25）
+
+专门CI会话回传后，只读独立核对落地原始日志、Job及实际步骤终态。[Platform Run40151852077／Job121044843183](https://github.com/pampa0629/addp/actions/runs/40151852077/job/121044843183) 为push／attempt1、固定源码 `05b232920cd1801fcbb409a392aa6386f73efe26`；实际 `Run platform consistency gate` 从01:48:44至02:11:09 UTC完成success，Job亦success，后续平台／Swagger检查实际走完，非仅摘要成功。原失败路径的Infra运行日志／Trace／PostgreSQL metrics生命周期标准聚合61项于01:51:17记录OK（19.245秒）；后续部署发现38项及容器证明5项也实际OK。不将其他同数测试组或初始MinIO缓存用例误记为该组，不把同Job其他既有跳过项算作运行验收通过。
+
+本轮只证明退出诊断增强版本在该Linux标准门禁通过，没有重现994原轮的 `stop_discovery_observer` 失败，也没有取得失败时的新退出诊断；**原间歇故障根因仍未证实，不能认定已修复或注销**。保留原失败日志、归属检查、信号次数、观察循环及未确认退出不删记录的边界，不为采样反复触发或扩大预算；后续已有正常push若复发，继续由专门CI会话取回有界诊断再定位。不据此提升主机注册、远程运维、主机名称筛选Safari／Hosted或生产完成程度。
+
+证据目录 `/tmp/addp-ci-20261025-023003/`：原始 `job-121044843183.log` SHA-256 `323e6228ec32acda74e8ea701ee4a611e1ec6473f929e39a391d4f33ba981e1e`与协调审计一致，`jobs-40151852077.json`确认准确head_sha及实际步骤success；协调审计为 `Observer05b-actual-Linux-Platform-diagnostic-audit.json`，本会话新收据 `Observer05b-owner-independent-audit.json`。本轮仅补证据文档并执行 `git diff --check`；没有轮询、派发或重跑CI／Hosted、操作个人服务或设置定时任务。
+
 ### 执行概览只读维护真实进程验收（2026-10-25）
 
 本批仅补第一期只读候选评估的真实 System 维护首轮，人工 Hosted Linux `execution-retention-readonly`，独占 System／Gateway／Infra；不启用 180 天概览物理删除，不改变任何 Owner 专业结果期限、业务实现或现有读取授权。System-owned helper 通过正式 Tenant Service 建立两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`；实际 AuthContext 校验后，由受限 Common 历史 helper 准备合成旧记录，标准生命周期停止／启动的仅是本轮独占 System。维护使用产品既有首轮与周期，不直接调用评估函数代替真实进程，不增加测试 API 或产品调度参数。
