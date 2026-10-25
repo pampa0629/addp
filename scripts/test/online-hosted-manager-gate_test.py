@@ -38,6 +38,15 @@ class HostedManagerGateTest(unittest.TestCase):
               [ "${ADDP_TEST_NFS_FIXTURE_FAIL:-0}" != 1 ] || exit 1
             fi
         """)
+        self.host._write_repository_script("business/scripts/online-metric-postgres-fixture.sh", '''
+            #!/usr/bin/env bash
+            echo "kml-pg-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = start ]; then
+              printf '{}\\n' > "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"
+              [ "${ADDP_TEST_KML_FIXTURE_FAIL:-0}" != 1 ] || exit 1
+            fi
+            [ "$1" != stop ] || [ "${ADDP_TEST_KML_CLEANUP_FAIL:-0}" != 1 ] || exit 1
+        ''')
         self.host._write_repository_script("scripts/infra/up.sh", '''
             #!/usr/bin/env bash
             set -euo pipefail
@@ -129,8 +138,12 @@ class HostedManagerGateTest(unittest.TestCase):
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
             fi
-            [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
-            [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
+            if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
+              [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
+            else
+              [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
+              [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
+            fi
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         """)
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
@@ -155,6 +168,24 @@ class HostedManagerGateTest(unittest.TestCase):
         for fragment in ('manager-case:native-raster-media', 'make:test-online ONLINE_SUITE=manager-internal-artifact-lineage',
                          'application-stop', 'source-fixture:stop', 'nfs-fixture:stop', 'infra-down'):
             self.assertIn(fragment, trace)
+
+    def test_kml_case_runs_transfer_without_model_services_and_cleans_after_failure(self):
+        for failure in ('', 'ADDP_TEST_SUITE_FAIL', 'ADDP_TEST_KML_FIXTURE_FAIL', 'ADDP_TEST_KML_CLEANUP_FAIL'):
+            with self.subTest(failure=failure):
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='kml-export', **({failure:'1'} if failure else {}))
+                self.assertEqual(result.returncode == 0, not failure, result.stdout + result.stderr)
+                trace = self.host.trace.read_text()
+                for fragment in ('kml-pg-fixture:start', 'kml-pg-fixture:stop', 'infra-down'):
+                    self.assertIn(fragment, trace)
+                self.assertNotIn('start:-pointcloud-workflow', trace)
+                self.assertNotIn('start:-document-workflow', trace)
+                self.assertNotIn('model3d-runtime', trace)
+                if failure != 'ADDP_TEST_KML_FIXTURE_FAIL':
+                    self.assertIn('start:-transfer', trace)
+                    self.assertIn('--wait-protection-owners manager,transfer', trace)
+                    self.assertIn('manager-case:kml-export', trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.host.trace.unlink()
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",

@@ -377,16 +377,16 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- kml-export'))
             or any(fragment not in job.group('body') for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(fragment not in hosted for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|kml-export)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
-    if hosted.index('full|native-raster-media)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index('full|native-raster-media|kml-export)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -399,9 +399,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "scripts/test/manager-internal-artifact-lineage-online.py",
         "scripts/test/manager-img-online.py",
         "scripts/test/manager-img-online_test.py",
+        "scripts/test/manager-kml-export-online.py",
+        "scripts/test/manager-kml-export-online_test.py",
         "console/frontend/playwright.online.config.js",
         "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js",
         "console/frontend/e2e/online/manager-img.spec.js",
+        "console/frontend/e2e/online/manager-kml-export.spec.js",
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"manager-internal-artifact-lineage requires {relative}")
@@ -416,6 +419,16 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
+    kml_owner = (repository / 'scripts/test/manager-kml-export-online.py').read_text(encoding='utf-8')
+    kml_browser = (repository / 'console/frontend/e2e/online/manager-kml-export.spec.js').read_text(encoding='utf-8')
+    if ("if case == 'kml-export':" not in manager_owner
+            or 'manager-kml-export-online' not in manager_owner
+            or not img_runner or 'scripts/test/manager-kml-export-online_test.py' not in img_runner.group('body')
+            or 'console/frontend/e2e/online/manager-kml-export.spec.js' not in img_runner.group('body')
+            or any(fragment not in hosted for fragment in ('online-metric-postgres-fixture.sh start', 'online-metric-postgres-fixture.sh stop', '-security -meta -manager -monitor -transfer', '--wait-protection-owners manager,transfer'))
+            or any(fragment not in kml_owner for fragment in ('initialize_exact_record_read_grants', 'validate_kml', 'source_snapshot', 'manager-kml-export-browser.json', 'source_unchanged=True'))
+            or any(fragment not in kml_browser for fragment in ("name: 'KML'", "waitForEvent('download'", 'actual_button_download: true', 'monitor_verified: true'))):
+        raise RegistrationError('Manager KML export requires real button, physical oracle, identity and isolated cleanup regressions')
     if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner
             or "for source_format in ('img', 'jpeg2000')" not in manager_owner
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')

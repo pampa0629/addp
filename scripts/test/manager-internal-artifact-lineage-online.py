@@ -304,7 +304,7 @@ def non_negative_int(value: object, field: str) -> int:
     return parsed
 
 
-def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
+def validate_user_identity(client: GatewayClient, tenant_id: int, required_permissions=REQUIRED_PERMISSIONS) -> dict[str, object]:
     context = _object(
         client.request("GET", "/api/v1/system/auth/context", (200,)).payload,
         "AuthContext",
@@ -333,10 +333,10 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     forbidden = roles & FORBIDDEN_ADMIN_ROLES
     if forbidden:
         raise SuiteError("Online Manager lineage token must not use administrator roles: " + ", ".join(sorted(forbidden)))
-    missing = REQUIRED_PERMISSIONS - permissions
+    missing = required_permissions - permissions
     if missing:
         raise SuiteError("Online Manager lineage token is missing required permissions: " + ", ".join(sorted(missing)))
-    unexpected = permissions - REQUIRED_PERMISSIONS
+    unexpected = permissions - required_permissions
     if unexpected:
         raise SuiteError("Online Manager lineage token has unexpected permissions: " + ", ".join(sorted(unexpected)))
     return {
@@ -344,7 +344,7 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
         "principal_type": "user",
         "tenant_id": str(tenant_id),
         "roles": sorted(roles),
-        "permissions_verified": sorted(REQUIRED_PERMISSIONS),
+        "permissions_verified": sorted(required_permissions),
     }
 
 
@@ -2343,8 +2343,8 @@ def required_environment() -> dict[str, str]:
 
 def manager_case(environment):
     case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
-    if case not in ("full", "native-raster-media"):
-        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full or native-raster-media")
+    if case not in ("full", "native-raster-media", "kml-export"):
+        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media or kml-export")
     return case
 
 
@@ -2411,6 +2411,12 @@ def run_full_case(repository, environment, client):
 def main() -> int:
     try:
         case = manager_case(os.environ)
+        if case == 'kml-export':
+            import importlib
+            report = importlib.import_module('scripts.test.manager-kml-export-online').run(
+                Path(__file__).resolve().parents[2], dict(os.environ), sys.modules[__name__])
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0
         environment = required_environment()
         repository = Path(__file__).resolve().parents[2]
         client = GatewayClient(environment["GATEWAY_URL"], environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 30)

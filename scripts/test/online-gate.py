@@ -14,7 +14,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterator, Mapping
 from urllib.parse import urlsplit
@@ -714,6 +714,9 @@ def run_online(
     if suite is None:
         available = ", ".join(sorted(suites)) or "none"
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
+
+    if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') == 'kml-export':
+        suite = replace(suite, services=(*suite.services, ('transfer', 'TRANSFER_URL')))
 
     timeout = parse_positive_timeout(
         environment.get("ADDP_ONLINE_TEST_TIMEOUT_SECONDS", "900")

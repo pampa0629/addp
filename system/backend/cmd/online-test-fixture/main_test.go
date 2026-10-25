@@ -750,6 +750,27 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 	}
 }
 
+func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "kml-export")
+	actual, err := suitePermissions("manager-internal-artifact-lineage")
+	want := []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+	if err != nil || !slices.Equal(actual, want) {
+		t.Fatalf("KML export consumer permissions: %v %v", actual, err)
+	}
+	if got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage"); !slices.Equal(got, sourceInitializerPermissions) || len(got) != 4 {
+		t.Fatalf("KML source initialization expanded: %v", got)
+	}
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "full")
+	actual, err = suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 7 {
+		t.Fatal("KML changed the full case identity")
+	}
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "unknown")
+	if _, err := suitePermissions("manager-internal-artifact-lineage"); err == nil {
+		t.Fatal("unknown Manager case received an identity")
+	}
+}
+
 func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 	permissions, err := suitePermissions("transfer-relational-sql-etl")
 	if err != nil || len(permissions) != 23 || !needsEngineProvisioner("transfer-relational-sql-etl") {

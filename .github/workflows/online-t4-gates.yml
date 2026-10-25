@@ -92,6 +92,7 @@ on:
         options:
           - full
           - native-raster-media
+          - kml-export
       graph_engine:
         description: Native engine for graph-protection
         required: true

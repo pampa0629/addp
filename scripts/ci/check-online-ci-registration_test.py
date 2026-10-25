@@ -1959,7 +1959,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             + job, encoding="utf-8")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
-        for name in ("online-manager-nfs-fixture.sh", "online-content-boundary-fixture.py"):
+        for name in ("online-manager-nfs-fixture.sh", "online-content-boundary-fixture.py", "online-metric-postgres-fixture.sh"):
             source = SCRIPT.parents[2] / "business/scripts" / name
             (fixture.parent / name).write_text(source.read_text(), encoding="utf-8")
         fixture.write_text(
@@ -1998,14 +1998,22 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         img_browser = browser.with_name('manager-img.spec.js')
         for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py')):
             target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
+        kml_owner = owner.with_name('manager-kml-export-online.py')
+        kml_browser = browser.with_name('manager-kml-export.spec.js')
+        for target in (kml_owner, kml_owner.with_name('manager-kml-export-online_test.py'), kml_browser):
+            target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
+        owner.write_text(owner.read_text() + "\nif case == 'kml-export':\nmanager-kml-export-online\n")
         owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
         owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v1\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
         make = self.repository / 'Makefile'
         make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
+        make.write_text(make.read_text() + '\t@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js\n\t@python3 -m unittest scripts/test/manager-kml-export-online_test.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|kml-export)', 'acceptance case'),
+            (kml_owner, 'source_unchanged=True', 'KML export'),
+            (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),
             (owner, 'def run_full_case(', 'acceptance case'),
             (owner, 'addp.manager-native-raster-media/v1', 'acceptance case'),

@@ -75,6 +75,7 @@ const formatDisplayNames = {
   csv: 'CSV',
   tsv: 'TSV',
   geojson: 'GeoJSON',
+  kml: 'KML',
   json: 'JSON',
   jsonl: 'JSONL',
   mongodb_extended_jsonl: 'MongoDB Extended JSON Lines',

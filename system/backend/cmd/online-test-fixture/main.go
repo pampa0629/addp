@@ -94,6 +94,9 @@ var sourceInitializerPermissions = []string{
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
+		if suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" {
+			return append([]string{}, sourceInitializerPermissions...)
+		}
 		return append(append([]string{}, sourceInitializerPermissions...),
 			"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
 	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow":
@@ -190,6 +193,11 @@ var managerArtifactPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
 }
 
+var managerKMLExportPermissions = []string{
+	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
+	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+}
+
 var catalogConsumerPermissions = []string{
 	"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"manager.data_item.read", "manager.content.read",
@@ -277,6 +285,13 @@ func suitePermissions(suite string) ([]string, error) {
 	case "orchestrator-execution":
 		return orchestratorPermissions, nil
 	case "manager-internal-artifact-lineage":
+		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "kml-export":
+			return managerKMLExportPermissions, nil
+		case "", "full", "native-raster-media":
+		default:
+			return nil, errors.New("unsupported Manager Online acceptance case")
+		}
 		return managerArtifactPermissions, nil
 	case "compose-public-origin", "workflow-runtime-health-recovery":
 		return nil, nil

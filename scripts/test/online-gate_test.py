@@ -41,6 +41,17 @@ class OnlineGateTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_kml_case_probes_transfer_before_owner_and_keeps_other_cases_unchanged(self):
+        for case in ('full', 'native-raster-media', 'kml-export'):
+            with self.subTest(case=case), patch.object(ONLINE_GATE, 'run_stage', side_effect=[({}, 1), ({}, 1)]) as stage:
+                env = dict(self.environment, ADDP_ONLINE_MANAGER_CASE=case, TRANSFER_URL='http://127.0.0.1:8083',
+                           ADDP_ONLINE_TEST_RUN_ID='kml-profile-' + case)
+                suite = {'manager-internal-artifact-lineage': ONLINE_GATE.Suite(('owner',), (('system', 'SYSTEM_URL'),))}
+                report = ONLINE_GATE.run_online('manager-internal-artifact-lineage', self.repository, env, suite)
+                command = stage.call_args_list[0].args[1]
+                self.assertEqual('transfer=http://127.0.0.1:8083' in command, case == 'kml-export')
+                self.assertEqual('transfer' in report['service_addresses'], case == 'kml-export')
+
     @patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0))
     @patch.object(
         ONLINE_GATE,
