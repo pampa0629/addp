@@ -101,7 +101,7 @@ curl http://localhost:8084/health/ready
 
 - 编排列表支持按任务引用 `module + task_type + task_id` 筛选，三者必须同时提供；匹配编排任一步骤的完整任务身份。筛选保存在 URL，并随编辑/执行历史的返回保留；无匹配展示空状态，非法筛选显示错误，不降级为全部编排。共享 `buildOrchestrationListRoute` 为跨模块入口的唯一构造器。
 
-- 前端门禁 `make test-orchestrator-frontend` 包含确定性测试、`test:e2e:routes` 编辑器与关联编排路由浏览器回归及构建；Platform CI 的 Orchestrator 矩阵安装 Chromium 后执行同一入口。已有视觉截图用例仍由完整 `npm run test:e2e` 执行。
+- 前端门禁 `make test-orchestrator-frontend` 包含确定性测试、`test:e2e:routes` 编辑器与关联编排路由浏览器回归及构建；Platform CI 的 Orchestrator 矩阵安装 Chromium 后执行同一入口。响应式弹窗行为回归已与像素截图组分离：6 类面板（名称描述、调度、嵌套自定义时间、JSON、清空取消、已有执行详情）在 standalone 与同源 Console iframe harness、620×560 与 1280×800 下检查边界、滚动、焦点和取消不变性。行为组使用 read/update 受控夹具，拒绝写请求并进入上述标准门禁；这不替代真实后端或 Hosted 验收。现有 `responsive orchestration dialog snapshots` 像素组仍由完整 `npm run test:e2e` 显式执行，不因行为组纳入门禁自动更新截图基线。
 
 Model 可在页内通过共享关联流程对话框消费现有 list/get/execute API；完整流程执行仍由 Orchestrator 拥有。执行确认统一为共享 OrchestrationExecuteButton，不保留模块内重复确认实现。
 

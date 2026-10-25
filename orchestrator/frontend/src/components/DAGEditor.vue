@@ -179,7 +179,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -196,7 +196,7 @@ import {
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
-import { openMonitorExecution, buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer } from '@addp/common-frontend'
+import { openMonitorExecution, buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer, focusElement } from '@addp/common-frontend'
 import {
   createDAGKeyboardHandler,
   createDAGDirectEdgeBehavior,
@@ -831,11 +831,23 @@ async function handleClear() {
   if (!graph.value?.getNodes().length) return
   try {
     await ElMessageBox.confirm(
-      t('orchestrator.dagEditor.clearConfirm'),
+      h('span', {
+        onVnodeMounted({ el }) {
+          // MessageBox otherwise focuses its destructive confirm button. Redirect
+          // its initial container focus to cancel without replacing the focus trap.
+          const box = el.closest('.el-message-box')
+          box.addEventListener('focus', () => {
+            // Let Element Plus finish its initial-focus check before redirecting.
+            queueMicrotask(() => focusElement(box.querySelector('.orchestration-clear-cancel')))
+          }, { once: true })
+        }
+      }, t('orchestrator.dagEditor.clearConfirm')),
       t('orchestrator.dagEditor.clearBtn'),
       {
         type: 'warning',
         customClass: 'addp-message-box',
+        autofocus: false,
+        cancelButtonClass: 'orchestration-clear-cancel',
         confirmButtonText: t('orchestrator.dagEditor.clearConfirmAction'),
         cancelButtonText: t('orchestrator.dagEditor.clearConfirmCancel'),
         confirmButtonClass: 'el-button--danger'

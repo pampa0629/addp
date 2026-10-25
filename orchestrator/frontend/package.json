@@ -8,7 +8,7 @@
     "test": "node --test tests/*.test.js",
     "test:e2e": "node ../../scripts/test/frontend-browser-gate.mjs",
     "preview": "vite preview",
-    "test:e2e:routes": "node ../../scripts/test/frontend-browser-gate.mjs --grep-invert 'responsive orchestration dialogs'"
+    "test:e2e:routes": "node ../../scripts/test/frontend-browser-gate.mjs --grep-invert 'responsive orchestration dialog snapshots'"
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",

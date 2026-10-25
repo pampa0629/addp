@@ -63,8 +63,9 @@
       class="addp-dialog"
       :title="t('orchestrator.executionList.detailDialogTitle')"
       width="min(800px, calc(100vw - 24px))"
+      @opened="focusDetailClose"
     >
-      <div v-if="currentExecution" class="execution-detail">
+      <div v-if="currentExecution" ref="detailContentRef" class="execution-detail">
         <div class="detail-actions">
           <el-button size="small" type="primary" @click="openExecutionInMonitor(currentExecution.execution_id)">
             {{ t('orchestrator.executionList.viewMonitorTreeBtn') }}
@@ -127,7 +128,7 @@ import { ElMessage } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
 import { executionFailureMessage } from '../utils/executionPresentation'
 import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
-import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor } from '@common-ui'
+import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor, focusElement } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -144,6 +145,11 @@ const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+
+const detailContentRef = ref(null)
+function focusDetailClose() {
+  focusElement(detailContentRef.value?.closest('.el-dialog')?.querySelector('.el-dialog__headerbtn'), { preserveDialogFocus: true })
+}
 
 const detailVisible = ref(false)
 const currentExecution = ref(null)

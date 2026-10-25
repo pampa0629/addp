@@ -8,7 +8,7 @@ const TARGET_NODE_ID = 'target-step'
 const TASK_LIBRARY_ORCHESTRATION_ID = 'task-library-e2e'
 const EXECUTION_ID = 31
 
-test.describe('responsive orchestration dialogs', () => {
+test.describe('responsive orchestration dialog snapshots', () => {
   test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
 
   test('keeps editor dialogs visible and visually stable in a narrow window', async ({ page }) => {
@@ -75,6 +75,165 @@ test.describe('responsive orchestration dialogs', () => {
     await expect(detailSurface).toHaveScreenshot('orchestration-execution-detail-narrow.png', { animations: 'disabled' })
   })
 })
+
+// These behavior checks run on every platform; pixel baselines remain opt-in.
+for (const embedded of [false, true]) {
+  for (const viewport of [{ width: 620, height: 560 }, { width: 1280, height: 800 }]) {
+    test.describe(`responsive dialog behavior (${embedded ? 'iframe' : 'standalone'}, ${viewport.width}x${viewport.height})`, () => {
+      test.use({ viewport, colorScheme: 'dark' })
+
+      test('editor dialogs fit, scroll and cancel without changing the definition', async ({ page }) => {
+        const fixture = createLayoutFixture()
+        fixture.description = Array.from({ length: 60 }, (_, i) => `只读合成说明 ${i}`).join('\n')
+        const backend = await installMockBackend(page, fixture, { readOnlyDialogs: true })
+        const errors = []
+        page.on('pageerror', error => errors.push(error.message))
+        const editor = await openDialogFixture(page, embedded, `/orchestrations/${ORCHESTRATION_ID}/edit`)
+        await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+        const before = await readDialogDefinition(page, editor)
+
+        const metadataTrigger = editor.getByRole('button', { name: '编辑名称与描述', exact: true })
+        await metadataTrigger.click()
+        const metadata = editor.getByRole('dialog', { name: '保存编排信息', exact: true })
+        await assertDialogBehavior(page, metadata, metadata.locator('input').first())
+        await metadata.locator('input').first().fill('未提交的临时名称')
+        await metadata.getByRole('button', { name: '取消', exact: true }).click()
+        await expect(metadata).toBeHidden()
+        await expect(metadataTrigger).toBeFocused()
+
+        const scheduleTrigger = editor.getByRole('button', { name: '调度', exact: true })
+        await scheduleTrigger.click()
+        const schedule = editor.getByRole('dialog', { name: '设置定时调度', exact: true })
+        await assertDialogBehavior(page, schedule, schedule.getByRole('switch'))
+        await page.keyboard.press('Space')
+        await expect(schedule.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+        const customTrigger = schedule.getByRole('button', { name: '自定义时间', exact: true })
+        await customTrigger.click()
+        const custom = editor.locator('.el-dialog.addp-dialog:visible').last()
+        await expect(editor.locator('.el-dialog.addp-dialog:visible')).toHaveCount(2)
+        await assertDialogBehavior(page, custom)
+        await page.keyboard.press('Escape')
+        await expect(editor.locator('.el-dialog.addp-dialog:visible')).toHaveCount(1)
+        await expect(customTrigger).toBeFocused()
+        await page.keyboard.press('Escape')
+        await expect(schedule).toBeHidden()
+        await expect(scheduleTrigger).toBeFocused()
+
+        const jsonTrigger = editor.getByRole('button', { name: '查看 JSON', exact: true })
+        await jsonTrigger.click()
+        const json = editor.getByRole('dialog', { name: '编排 JSON 配置', exact: true })
+        await assertDialogBehavior(page, json, json.getByRole('button', { name: '关闭', exact: true }))
+        await scrollDialogToEnd(page, json, json.locator('.json-content'))
+        expect(JSON.parse(await json.locator('.json-content').innerText())).toEqual(before)
+        await page.keyboard.press('Escape')
+        await expect(json).toBeHidden()
+        await expect(jsonTrigger).toBeFocused()
+
+        const clearTrigger = editor.getByRole('button', { name: '清空', exact: true })
+        await clearTrigger.click()
+        const clear = editor.getByRole('dialog', { name: '清空', exact: true })
+        await assertDialogBehavior(page, clear, clear.getByRole('button', { name: '取消', exact: true }))
+        await expect(clear.getByRole('button', { name: '清空', exact: true })).toHaveClass(/el-button--danger/)
+        await page.keyboard.press('Escape')
+        await expect(clear).toBeHidden()
+        await expect(clearTrigger).toBeFocused()
+        expect(await readDialogDefinition(page, editor)).toEqual(before)
+        await expect(editor.locator('.unsaved-status')).toHaveCount(0)
+        expect(backend.getForbiddenWrites()).toEqual([])
+        expect(errors).toEqual([])
+      })
+
+      test('existing execution details scroll to the last step and close safely', async ({ page }) => {
+        const execution = createExecutionFixture()
+        execution.metadata.step_results = Object.fromEntries(Array.from({ length: 35 }, (_, i) => [`synthetic-step-${i}`, { status: 'success' }]))
+        const backend = await installMockBackend(page, createLayoutFixture(), { readOnlyDialogs: true, executions: [execution] })
+        const errors = []
+        page.on('pageerror', error => errors.push(error.message))
+        const editor = await openDialogFixture(page, embedded, `/orchestrations/${ORCHESTRATION_ID}/executions`)
+        const trigger = editor.getByRole('button', { name: '详情', exact: true })
+        await trigger.click()
+        const dialog = editor.getByRole('dialog', { name: '执行详情', exact: true })
+        await assertDialogBehavior(page, dialog, dialog.locator('.el-dialog__headerbtn'))
+        await scrollDialogToEnd(page, dialog, dialog.locator('.el-dialog__body'))
+        await expect(dialog.getByText('synthetic-step-34 - success', { exact: true })).toBeInViewport()
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        await expect(trigger).toBeFocused()
+        expect(backend.getForbiddenWrites()).toEqual([])
+        expect(errors).toEqual([])
+      })
+    })
+  }
+}
+
+async function openDialogFixture(page, embedded, path) {
+  if (!embedded) { await page.goto(path); return page }
+  const shared = new URL('../../../common-frontend/basic/src/', import.meta.url).pathname
+  await page.route('**/responsive-dialog-harness', route => route.fulfill({ contentType: 'text/html', body: `
+    <style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0}</style>
+    <script type="module">
+      import { createIframeAuthCoordinator } from '/@fs${shared}auth/authSession.js'
+      import { registerConsoleBridgeHandler } from '/@fs${shared}utils/consoleBridge.js'
+      import { CONSOLE_NAVIGATION_CHANNEL } from '/@fs${shared}utils/taskOwnerUrl.js'
+      createIframeAuthCoordinator({ allowedOrigins:[location.origin], getToken:()=> 'dialog-fixture',
+        getExpiresAt:()=> Date.now()+300000, refreshToken:async()=> 'dialog-fixture', logout:async()=>{} })
+      const iframe = document.createElement('iframe')
+      registerConsoleBridgeHandler(CONSOLE_NAVIGATION_CHANNEL, (payload, message, event) => {
+        if (event.source !== iframe.contentWindow || event.origin !== location.origin || !payload.synchronized) throw new Error('Unexpected module navigation')
+        history[payload.history === 'push' ? 'pushState' : 'replaceState']({}, '', payload.route)
+        return { cancelled: false }
+      })
+      iframe.src = ${JSON.stringify(path)}
+      document.body.append(iframe)
+    </script>` }))
+  await page.goto('/responsive-dialog-harness')
+  return page.frameLocator('iframe')
+}
+
+async function assertDialogBehavior(page, dialog, initialFocus) {
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => dialog.evaluate(element => {
+    const nodes = [element, ...element.querySelectorAll('*')]
+    return nodes.every(node => node.getAnimations().every(animation => animation.playState === 'finished')) &&
+      element.getAnimations().every(animation => animation.playState === 'finished')
+  })).toBe(true)
+  await expect.poll(() => dialog.evaluate(element => {
+    const surface = element.matches('.el-dialog, .el-message-box') ? element : element.querySelector('.el-dialog, .el-message-box')
+    const box = surface.getBoundingClientRect()
+    const view = element.ownerDocument.defaultView
+    return box.left >= 12 && box.top >= 0 && box.right <= view.innerWidth - 12 + 1 && box.bottom <= view.innerHeight + 1
+  })).toBe(true)
+  // Check actual footer controls, not just the dialog's computed overflow style.
+  for (const button of await dialog.locator('.el-dialog__footer button, .el-message-box__btns button').all()) {
+    await expect(button).toBeInViewport({ ratio: 1 })
+    expect(await button.evaluate(el => el.scrollWidth <= el.clientWidth + 2)).toBe(true)
+  }
+  if (initialFocus) await expect(initialFocus).toBeFocused()
+  expect(await dialog.evaluate(el => el.contains(el.ownerDocument.activeElement))).toBe(true)
+  // A round trip through the focus trap must stay in the topmost dialog.
+  await page.keyboard.press('Tab')
+  expect(await dialog.evaluate(el => el.contains(el.ownerDocument.activeElement))).toBe(true)
+  await page.keyboard.press('Shift+Tab')
+  expect(await dialog.evaluate(el => el.contains(el.ownerDocument.activeElement))).toBe(true)
+}
+
+async function scrollDialogToEnd(page, dialog, scroller) {
+  await expect.poll(() => scroller.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  await scroller.hover()
+  await page.mouse.wheel(0, 10000)
+  await expect.poll(() => scroller.evaluate(el => Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop) < 2)).toBe(true)
+  await expect(dialog.locator('.el-dialog__header')).toBeInViewport({ ratio: 1 })
+  for (const button of await dialog.locator('.el-dialog__footer button').all()) await expect(button).toBeInViewport({ ratio: 1 })
+}
+
+async function readDialogDefinition(page, editor) {
+  await editor.getByRole('button', { name: '查看 JSON', exact: true }).click()
+  const dialog = editor.getByRole('dialog', { name: '编排 JSON 配置', exact: true })
+  const definition = JSON.parse(await dialog.locator('.json-content').innerText())
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  return definition
+}
 
 test('confirms orchestration execution and locks duplicate submissions', async ({ page }) => {
   const orchestration = createLayoutFixture()
@@ -811,6 +970,7 @@ function createExecutionFixture() {
 }
 
 async function installMockBackend(page, initialOrchestration, taskLibrary = {}) {
+  const forbiddenWrites = []
   let persistedPayload = null
   let executeRequestCount = 0
   let orchestration = initialOrchestration
@@ -838,11 +998,15 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     const request = route.request()
     const path = new URL(request.url()).pathname
     const detailPath = `/api/v1/orchestrator/orchestrations/${orchestration.id}`
+    if (taskLibrary.readOnlyDialogs && path.startsWith('/api/v1/orchestrator/') && request.method() !== 'GET') {
+      forbiddenWrites.push(`${request.method()} ${path}`)
+      return route.fulfill({ status: 403, json: { error: 'Dialog fixture forbids writes' } })
+    }
 
     if (path === '/api/v1/system/refresh') {
       return fulfillJSON(route, { access_token: 'dag-e2e-token', expires_in: 3600 })
     }
-    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: ['orchestrator.workflow.read', 'orchestrator.workflow.create', 'orchestrator.workflow.update', 'orchestrator.workflow.execute'] }] } })
+    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: taskLibrary.readOnlyDialogs ? ['orchestrator.workflow.read', 'orchestrator.workflow.update'] : ['orchestrator.workflow.read', 'orchestrator.workflow.create', 'orchestrator.workflow.update', 'orchestrator.workflow.execute'] }] } })
     if (path === '/api/v1/system/users/me') {
       return fulfillJSON(route, { id: 1, username: 'dag-e2e' })
     }
@@ -894,6 +1058,7 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
   })
 
   return {
+    getForbiddenWrites: () => forbiddenWrites,
     getPersistedPayload: () => persistedPayload,
     getExecuteRequestCount: () => executeRequestCount,
     getTaskDetailRequestIDs: () => [...taskDetailRequestIDs],
