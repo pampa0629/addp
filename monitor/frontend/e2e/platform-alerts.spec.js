@@ -315,6 +315,42 @@ test('resource rule form rejects missing recovery values before writing', async 
 
 
 for (const locale of ['zh-cn', 'en']) {
+ test(`all alert filters show their selected labels after switching and reload ${locale}`, async ({ page }) => {
+  const state = await fixture(page, { locale, path: '/platform-alerts?status=all' })
+  const fields = locale === 'en' ? [
+    ['Category', 'All categories', 'Log pipeline', 'category', 'log_pipeline'],
+    ['Status', 'All statuses', 'Active', 'status', 'active'],
+    ['Severity', 'All severities', 'Critical', 'severity', 'critical']
+  ] : [
+    ['告警类别', '全部类别', '日志链路', 'category', 'log_pipeline'],
+    ['状态', '全部状态', '未恢复', 'status', 'active'],
+    ['严重级别', '全部级别', '严重', 'severity', 'critical']
+  ]
+  for (const [label, all] of fields) {
+    await expect(page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) })).toContainText(all)
+  }
+  for (const [label, all, selected, key, value] of fields) {
+    const select = page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) })
+    await select.click()
+    await page.getByRole('option', { name: selected, exact: true }).click()
+    await expect(select).toContainText(selected)
+    await expect.poll(() => state.requests.filter(r => r.path.endsWith('/alerts')).at(-1)?.query[key]).toBe(value)
+    await select.click()
+    await page.getByRole('option', { name: all, exact: true }).click()
+    await expect(select).toContainText(all)
+    await expect.poll(() => state.requests.filter(r => r.path.endsWith('/alerts')).at(-1)?.query[key]).toBeUndefined()
+  }
+  await page.locator('.platform-alerts').getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  for (const [label, all] of fields) {
+    await expect(page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) })).toContainText(all)
+  }
+  await page.reload()
+  for (const [label, all] of fields) {
+    await expect(page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) })).toContainText(all)
+  }
+  expect(new URL(page.url()).searchParams.get('status')).toBe('all')
+  expect(state.requests.filter(r => r.method !== 'GET')).toHaveLength(0)
+ })
  test(`severity filters reset pages and survive refresh and browser return ${locale}`, async ({ page }) => {
   const entries = Array.from({ length: 27 }, (_, i) => ({ id: i + 1, version: 1, category: 'log_pipeline', subject_kind: 'log_observer', subject_id: `severity-host-${i}`, signal: 'collector_dropped', severity: i < 25 ? 'critical' : 'warning', status: 'open', opened_at: '2026-10-24T00:00:00Z' }))
   const state = await fixture(page, { locale, entries, path: '/platform-alerts?severity=critical&page=2' })

@@ -13,13 +13,13 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="state.tab === 'incidents' && canRead">
       <div class="alert-toolbar">
-        <el-select :model-value="state.category" @update:model-value="value => change({ category: value, page: 1 })" :aria-label="t('monitor.platformAlerts.category')">
+        <el-select :model-value="state.category" :empty-values="[null, undefined]" @update:model-value="value => change({ category: value, page: 1 })" :aria-label="t('monitor.platformAlerts.category')">
           <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality','process_resource']" :key="category" :label="categoryLabel(category)" :value="category" />
         </el-select>
-        <el-select :model-value="state.status" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
+        <el-select :model-value="state.status" :empty-values="[null, undefined]" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
           <el-option :label="t('monitor.platformAlerts.active')" value="active" /><el-option :label="t('monitor.platformAlerts.allStatuses')" value="" /><el-option v-for="status in ['open','acknowledged','resolved']" :key="status" :label="t(`monitor.platformAlerts.statuses.${status}`)" :value="status" />
         </el-select>
-        <el-select :model-value="state.severity" @update:model-value="value => change({ severity: value, page: 1 })" :aria-label="t('monitor.platformAlerts.severity')">
+        <el-select :model-value="state.severity" :empty-values="[null, undefined]" @update:model-value="value => change({ severity: value, page: 1 })" :aria-label="t('monitor.platformAlerts.severity')">
           <el-option :label="t('monitor.platformAlerts.allSeverities')" value="" /><el-option v-for="severity in ['critical','warning']" :key="severity" :label="t(`monitor.platformAlerts.severities.${severity}`)" :value="severity" />
         </el-select>
         <el-input v-model="draftSearch" @change="value => change({ search: value, page: 1 })" :aria-label="t('monitor.platformAlerts.alertName')" :placeholder="t('monitor.platformAlerts.searchName')" maxlength="100" clearable />

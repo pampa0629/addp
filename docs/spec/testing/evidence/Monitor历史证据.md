@@ -1409,3 +1409,16 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 可访问性文本实际读取等级、状态、时间及分页；已查看的截图证明真实表格、末页6行与24页分页可见，但原生横向滚动报`noWindowsAvailable`，最终截图保存另报ScreenCaptureKit `-3811`，没有生成最终截图文件，也不计右侧列视觉验收通过。只读记录`/tmp/addp-alert-priority-safari-report.json` SHA-256 `1c718df0e17dd06b7cf75d8f7e7a8f3e4b6189bbb8ef3e157d4edf9af0580ddd`，包含五页边界、刷新／重载比较及运行身份；原始各次AX状态`/tmp/addp-alert-priority-safari-states.txt` SHA-256 `2d1704161fc8e709ce614d2bfbe454fb36e8dea2e29e9c147c27c9481fadf16b`。保存后用独立Python校验报告的86行计数、各页总数／倒序标记、三组边界及恢复比较均成功，`git diff --check`通过；本次仅追加文档，没有修改产品代码，无需重跑未变的Go／PostgreSQL门禁。
 
 本轮仅增加个人Safari既有数据集的普通组分页、筛选与恢复证据，严重未恢复置顶／确认抑制及同时间ID顺序仍分别引用此前真实SQL的合成数据回归，不能混作本轮Safari通过。清单第49行／B48“实时告警联动”与第51行／B50“告警信息管理”仍部分实现，正式隔离身份T4／Hosted、真实严重事件、容量及生产T5未新增验收。没有创建、修改、确认、抑制、删除告警／规则或发送通知，没有修改个人库／IAM、操作CI／Hosted或设置定时任务。后续优先补真实严重未恢复与普通组交界的页面证据，继续等专门会话回传，不为补证据主动触发异常或修改个人告警。
+
+
+### 告警筛选“全部”选项的可读标签修正（2026-10-25）
+
+对应实际Excel第51行／B50“告警信息管理”。前轮Safari已观察到类别、状态、级别在已选“全部”时都显示“请选择”；读取锁定的Element Plus 2.8.8实现确认默认空值包含空字符串，页面恰用空字符串表示不限。先在正式规范7.1明确“全部”为有效选项，再沿共享主机／离线原因选择控件已有方式，仅为本页三个ElSelect显式指定空值为null／undefined。复用现有中英文词条，不增加组件、依赖、查询枚举、参数、权限或后台状态；默认未恢复、`status=all`地址恢复、原服务端排序及事件生命周期均保持。原实现被直接替换，没有占位文字兜底或第二套状态。
+
+新增中英文真实组件浏览器用例在旧产品源码下均失败：期望“全部类别／All categories”实际为“请选择／Select”，日志`/tmp/addp-alert-filter-labels-red.log`及标准runner失败产物保留，退出自有运行目录已清理。修正后同一入口`npm run test:e2e -- e2e/platform-alerts.spec.js --grep 'all alert filters show'`两项通过；逐一切换类别、状态、级别的具体项与全部，核对所选标签、原查询参数增加／省略、刷新及重载恢复，并断言只有GET请求。该HTTP夹具只证明前端映射，不作为后端筛选或正式身份验收。
+
+显式使用已核验Node24.19.0后，`make test-monitor-frontend`退出0：119项单测、438项受控浏览器T3（16.3分钟，无失败／跳过）及Vite构建通过；构建保留既有大chunk警告，不修改阈值来隐藏。`make test-frontend-ci-registration`22项回归通过，21个前端登记完整，现有Platform CI的Monitor矩阵与30分钟期限自动覆盖新增用例，无需改Make或workflow。`changed-gate.py --dry-run`退出0只计自动发现，包含其他会话共享WIP，不计所有选中门禁已运行。验证期间记录的产品／规范／测试及前端配置五项输入在结束时摘要均保持一致；`git diff --check`通过。后端未改，本轮不重跑Go／PostgreSQL门禁或Swagger生成。
+
+个人Safari实际Console iframe已热加载本批工作区源码，中文三个框分别显示“全部类别／全部状态／全部级别”，整页重载后同一`status=all`地址与登录、标签均保持；未操作英文个人偏好，英文显示及两种语言下的筛选项切换由上述独立受控T3覆盖。真实截图为`/tmp/addp-alert-filter-labels-safari.jpg`（工具返回JPEG，3024×1898），前后AX状态同前缀`-safari-state.txt`／`-safari-reloaded.txt`，均已独立读取核对。本轮没有修改真实告警或规则、发送通知、重启个人服务、操作个人数据库／IAM、查询或调度CI／Hosted，也未设置定时任务；不扩大前节严重未恢复置顶、确认抑制、同时间ID与正式隔离身份的证据范围。
+
+最终日志同前缀`-{green,frontend,registration,selection}.log`；输入、日志和Safari产物摘要收据`/tmp/addp-alert-filter-labels-receipt.json` SHA-256 `e78a28c32d56c98269fef8845f6d1c79cd7ccaec9f67d4da537d5df694d3507f`。清单第51行仍部分实现，本次只补筛选可读性；拓扑／影响范围、根因、严重未恢复真实页面、容量与正式身份／Hosted缺口不变。后续服务失联自动告警的判定粒度及预期运行事实已向用户提问，未实现或默认采用任何新口径。
