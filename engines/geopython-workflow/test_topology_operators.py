@@ -759,7 +759,7 @@ def test_split_line_intersections_async_discovery_workflow_only_and_required_ide
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "split_line_intersections")
         assert op["display_name"] == "交点打断" and op["category_path"] == ["矢量处理", "几何处理"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
-        assert [(p["name"], p["required"]) for p in op["parameters"]] == [("input_gdf", True), ("id_field", True)]
+        assert [(p["name"], p["required"]) for p in op["parameters"]] == [("input_gdf", True), ("id_field", True), ("scope", False)]
         assert client.post("/api/operators/split_line_intersections/invoke", json={"params": {}}).status_code == 403
         response = client.post("/api/workflow", json={"workflow_def": {"tasks": tasks}, "runtime": {"tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}})
         assert response.status_code == 202
@@ -3224,3 +3224,186 @@ def test_line_self_intersection_workflow_native_point_save_reload_and_discovery(
         assert [(p['name'],p['param_type'],p['required']) for p in op['parameters']]==[('input_gdf','input',True),('id_field','param',True)]
         assert [(p['name'],p['type'],p['is_default']) for p in op['output_ports']]==[('result','geodataframe',True)]
         assert client.post('/api/operators/check_line_self_intersection/invoke',json={'params':{}}).status_code==403
+
+
+def split_all_intersections(frame, id_field='route_key'):
+    return get_operator('split_line_intersections')(frame, id_field, scope='all')
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_split_line_all_internal_crossing_keeps_attributes_direction_and_source(reverse):
+    vertices=[(0,0),(2,2),(0,2),(2,0)]
+    expected=[[(0,0),(1,1)],[(1,1),(2,2),(0,2),(1,1)],[(1,1),(2,0)]]
+    if reverse:
+        vertices.reverse();expected=[list(reversed(piece)) for piece in reversed(expected)]
+    frame=line_overlap_frame([LineString(vertices)],pd.Series([2**60+1],dtype='Int64'))
+    frame['grade']=pd.Series([None],dtype='Int64');frame['label']=pd.Series(['甲'],dtype='string');frame.index=[9]
+    before=frame.copy(deep=True);result=split_all_intersections(frame)
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.source_id.tolist()==[2**60+1]*3 and result.part_no.tolist()==[1]*3 and result.segment_no.tolist()==[1,2,3]
+    assert result.source_id.dtype==frame.route_key.dtype
+    assert result.part_no.dtype==result.segment_no.dtype=='int64'
+    attributes=frame.iloc[[0,0,0]].reset_index(drop=True).drop(columns='boundary')
+    pd.testing.assert_frame_equal(result[attributes.columns],attributes)
+    assert result.geometry.name=='boundary' and result.crs==frame.crs and result.index.equals(pd.RangeIndex(3))
+    assert_geodataframe_equal(frame,before)
+    with pytest.raises(ValueError,match='internal'):split_at_intersections(frame)
+
+
+def test_split_line_all_internal_and_cross_feature_meetings_use_same_path():
+    frame=line_overlap_frame([LineString([(0,0),(4,4),(0,4),(4,0)]),LineString([(1,-1),(1,5)])],['自交','穿越'])
+    result=split_all_intersections(frame)
+    expected=[[(0,0),(1,1)],[(1,1),(2,2)],[(2,2),(4,4),(1,4)],[(1,4),(0,4),(1,3)],
+              [(1,3),(2,2)],[(2,2),(4,0)],[(1,-1),(1,1)],[(1,1),(1,3)],[(1,3),(1,4)],[(1,4),(1,5)]]
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.source_id.tolist()==['自交']*6+['穿越']*4
+    assert result.segment_no.tolist()==list(range(1,7))+list(range(1,5))
+
+
+@pytest.mark.parametrize('shapes,expected,parts,numbers', [
+    ([MultiLineString([[(0,0),(4,0)],[(2,0),(2,2)]])],
+     [[(0,0),(2,0)],[(2,0),(4,0)],[(2,0),(2,2)]],[1,1,2],[1,2,1]),
+    ([MultiLineString([[(0,0),(1,0)],[(1,0),(2,1)]])],
+     [[(0,0),(1,0)],[(1,0),(2,1)]],[1,2],[1,1]),
+    ([MultiLineString([[(4,0),(0,0)],[(1,-1),(1,1)]])],
+     [[(4,0),(1,0)],[(1,0),(0,0)],[(1,-1),(1,0)],[(1,0),(1,1)]],[1,1,2,2],[1,2,1,2]),
+])
+def test_split_line_all_same_source_multipart_contacts(shapes,expected,parts,numbers):
+    frame=line_overlap_frame(shapes,['多部件']);before=frame.copy(deep=True);result=split_all_intersections(frame)
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.source_id.tolist()==['多部件']*len(expected)
+    assert result.part_no.tolist()==parts and result.segment_no.tolist()==numbers
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('reverse', [False,True])
+def test_split_line_all_repeated_visits_same_xy_are_distinct_path_occurrences(reverse):
+    vertices=[(0,0),(1,0),(1,1),(0,1),(0,0),(-1,0),(-1,-1),(0,-1),(0,0),(1,-1)]
+    expected=[vertices[:5],vertices[4:9],vertices[8:]]
+    if reverse:
+        vertices.reverse();expected=[list(reversed(piece)) for piece in reversed(expected)]
+    result=split_all_intersections(line_overlap_frame([LineString(vertices)]))
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.segment_no.tolist()==[1,2,3]
+    rebuilt=list(result.geometry.iloc[0].coords)
+    for shape in result.geometry.iloc[1:]:rebuilt.extend(list(shape.coords)[1:])
+    assert rebuilt==vertices
+
+
+def test_split_line_all_cut_vertices_keep_every_original_repeated_coordinate():
+    point=(1,1);vertices=[(0,0),point,point,(2,2),(0,2),point,point,(2,0),(2,0)]
+    result=split_all_intersections(line_overlap_frame([LineString(vertices)]))
+    assert [list(g.coords) for g in result.geometry]==[[(0,0),point],[point,point,(2,2),(0,2),point],[point,point,(2,0),(2,0)]]
+    rebuilt=list(result.geometry.iloc[0].coords)
+    for shape in result.geometry.iloc[1:]:rebuilt.extend(list(shape.coords)[1:])
+    assert rebuilt==vertices
+
+
+@pytest.mark.parametrize('reverse',[False,True])
+def test_split_line_all_self_crossed_closed_path_retains_original_seam(reverse):
+    vertices=[(0,0),(2,2),(0,2),(2,0),(0,0)]
+    expected=[[(0,0),(1,1)],[(1,1),(2,2),(0,2),(1,1)],[(1,1),(2,0),(0,0)]]
+    if reverse:
+        vertices.reverse();expected=[list(reversed(piece)) for piece in reversed(expected)]
+    result=split_all_intersections(line_overlap_frame([LineString(vertices)]))
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.geometry.iloc[0].coords[0]==result.geometry.iloc[-1].coords[-1]==vertices[0]
+
+
+@pytest.mark.parametrize('vertices', [[(0,0),(1,0),(1,0),(1,1)],[(0,0),(1,0),(1,1),(0,0)],
+    [(0,0),(0,0),(1,0),(1,1),(0,0),(0,0)]])
+def test_split_line_all_normal_adjacent_and_closed_seam_do_not_create_cuts(vertices):
+    frame=line_overlap_frame([LineString(vertices)])
+    assert_geodataframe_equal(split_all_intersections(frame),split_at_intersections(frame))
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+@pytest.mark.parametrize('reverse',[False,True])
+def test_split_line_all_tiny_internal_multipart_cuts_use_original_position(crs,reverse):
+    tiny=2**-40;main=[(-2**50,0),(0,0),(1,0)]
+    expected=[[(-2**50,0),(0,0),(tiny,0)],[(tiny,0),(2*tiny,0)],[(2*tiny,0),(1,0)]]
+    if reverse:main.reverse();expected=[list(reversed(piece)) for piece in reversed(expected)]
+    frame=line_overlap_frame([MultiLineString([main,[(tiny,-1),(tiny,1)],[(2*tiny,-1),(2*tiny,1)]])],crs=crs)
+    result=split_all_intersections(frame)
+    assert [list(g.coords) for g in result.geometry[:3]]==expected
+    assert result.part_no.tolist()==[1,1,1,2,2,3,3] and result.segment_no.tolist()==[1,2,3,1,2,1,2]
+    assert result.crs==frame.crs
+
+
+def test_split_line_all_nonbinary_crossing_reuses_identical_cut_on_each_occurrence():
+    result=split_all_intersections(line_overlap_frame([LineString([(0,0),(7,3),(1,2),(5,0)])]))
+    assert len(result)==3
+    point=result.geometry.iloc[0].coords[-1]
+    assert point==result.geometry.iloc[1].coords[0]==result.geometry.iloc[1].coords[-1]==result.geometry.iloc[2].coords[0]
+
+
+@pytest.mark.parametrize('shapes', [
+    [LineString([(0,0),(2,0),(1,0)])],
+    [LineString([(0,0),(2,0),(2,1),(0,1),(0,0),(1,0)])],
+    [MultiLineString([[(0,0),(2,0)],[(1,0),(3,0)]])],
+    [LineString([(0,0),(2,0)]),LineString([(2,0),(0,0)])],
+    [LineString([(0,0),(1,0)]),LineString([(2**-40,0),(2**-39,0)])],
+])
+def test_split_line_all_any_positive_overlap_rejects_entire_batch_without_source_changes(shapes):
+    frame=line_overlap_frame(shapes);before=frame.copy(deep=True)
+    with pytest.raises(ValueError,match='overlap'):split_all_intersections(frame)
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('scope',[None,True,False,0,[],{},'', 'ALL','all ','within'])
+def test_split_line_all_scope_is_explicit_and_strict(scope):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    with pytest.raises(ValueError,match='scope'):get_operator('split_line_intersections')(frame,'route_key',scope=scope)
+
+
+@pytest.mark.parametrize('empty',[False,True])
+def test_split_line_all_workflow_real_save_reload_and_overlap_no_publication(tmp_path,empty):
+    from osgeo import ogr
+    frame=line_overlap_frame([LineString([(0,0),(2,2),(0,2),(2,0)])],['甲'])
+    frame['note']=pd.Series([None],dtype='string');frame['grade']=pd.Series([7],dtype='int64')
+    if empty:frame=frame.iloc[:0]
+    frame.to_file(tmp_path/'source.gpkg',layer='paths',driver='GPKG');original=(tmp_path/'source.gpkg').read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'split','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key','scope':'all'},'depends_on':['load']},
+        {'id':'save','operator':'save','params':{'input_df':{'$ref':'split'},'connection_info':connection,'path':'pieces.gpkg','mode':'fail'},'depends_on':['split']}]
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='success',execution
+    ds=ogr.Open(str(tmp_path/'pieces.gpkg'));layer=ds.GetLayer(0)
+    assert layer.GetFeatureCount()==(0 if empty else 3) and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert [f.GetName() for f in layer.schema]==['source_name','route_key','note','grade','source_id','part_no','segment_no']
+    for name in ['grade','part_no','segment_no']:assert layer.schema[layer.GetLayerDefn().GetFieldIndex(name)].GetType()==ogr.OFTInteger64
+    expected=[[(0,0),(1,1)],[(1,1),(2,2),(0,2),(1,1)],[(1,1),(2,0)]]
+    for index,feature in enumerate(layer):
+        shape=feature.GetGeometryRef();assert shape.GetGeometryName()=='LINESTRING' and shape.GetCoordinateDimension()==2 and not shape.IsMeasured()
+        assert shape.GetPoints()==expected[index] and feature.GetField('source_id')==feature.GetField('route_key')=='甲'
+        assert feature.GetField('note') is None and feature.GetField('grade')==7
+        assert feature.GetField('part_no')==1 and feature.GetField('segment_no')==index+1
+    ds=layer=None;assert (tmp_path/'source.gpkg').read_bytes()==original
+    bad=line_overlap_frame([LineString([(0,0),(2,0),(1,0)])]);bad.to_file(tmp_path/'bad.gpkg',driver='GPKG')
+    before=(tmp_path/'bad.gpkg').read_bytes();tasks[0]['params']['path']='bad.gpkg';tasks[2]['params']['path']='rejected.gpkg'
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='failed' and 'overlap' in execution['error']
+    assert not (tmp_path/'rejected.gpkg').exists() and (tmp_path/'bad.gpkg').read_bytes()==before
+
+
+def test_split_line_all_metadata_and_async_workflow_use_explicit_scope(tmp_path,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame=line_overlap_frame([LineString([(0,0),(2,2),(0,2),(2,0)])],['甲']);frame.to_file(tmp_path/'source.gpkg',driver='GPKG')
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':'source.gpkg'},'depends_on':[]},
+           {'id':'split','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key','scope':'all'},'depends_on':['load']}]
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        listed=[o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='split_line_intersections'];assert len(listed)==1
+        scope=next(p for p in listed[0]['parameters'] if p['name']=='scope')
+        assert scope['enum']==['between','all'] and scope['default']=='between' and scope['required'] is False
+        assert listed[0]['execution_modes']==['workflow'] and listed[0]['effects']==['read']
+        assert client.post('/api/operators/split_line_intersections/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in ('success','failed'):break
+            time.sleep(.01)
+        assert state['status']=='success',state
+        assert len(json.loads(state['result'])['features'])==3

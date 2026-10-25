@@ -594,8 +594,10 @@ def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     return result
 
 
-def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
-    """Split original paths at cross-feature point meetings, preserving provenance."""
+def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: str = "between") -> gpd.GeoDataFrame:
+    """Split exact point meetings at each original path occurrence, preserving provenance."""
+    if not isinstance(scope, str) or scope not in {"between", "all"}:
+        raise ValueError("scope must be 'between' or 'all'")
     geometry = _finite_xy_geometry(input_gdf)
     _require_projected_xy_crs(geometry.crs)
     ids = _source_identifiers(input_gdf, id_field)
@@ -637,9 +639,12 @@ def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.
                     (ordinal_a == 0 and ordinal_b == count_a - 1 and vertices_a[0] == vertices_a[-1])
                 )
                 shared = set(vertices_a[edge_a:edge_a + 2]) & set(vertices_b[edge_b:edge_b + 2])
-                if not adjacent or not points.issubset(shared):
+                if adjacent and points.issubset(shared):
+                    continue
+                if scope == "between":
                     raise ValueError("internal point intersection is not supported; resolve it explicitly before splitting")
-                continue
+            # Each original edge occurrence owns its cuts. An XY visited more
+            # than once must split at every visit, without merging its paths.
             cuts_a.setdefault(edge_a, set()).update(points)
             cuts_b.setdefault(edge_b, set()).update(points)
 
@@ -955,18 +960,20 @@ GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
 
 SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
     name="split_line_intersections", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
-    description="交点打断", brief_description="按不同要素的精确点交会切分线，保留来源、属性和原路径顺序",
+    description="交点打断", brief_description="按显式范围切分跨要素或全部精确点交会，保留来源、属性和原路径顺序",
     execution_modes=["workflow"], effects=["read"],
     overview="十字交叉切分双方，T形切分被接入的线，端点接触不生成零长度段。"
-             "内部自交、自叠及跨要素正长度重合整批拒绝，不去重或自动修复。",
+             "scope=between处理跨要素点交会，scope=all同时处理要素内部点交会。"
+             "任何正长度重合均整批拒绝，不去重或自动修复。",
     params=[
         OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待切分的单个线图层", notes="有效有限二维线，已知投影 CRS；拒绝缺失及空几何，允许空批"),
         OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何唯一非空标量列；不推断主键或使用索引"),
+        OperatorParam(name="scope", type="param", data_type="str", required=False, default="between", enum=["between", "all"], description="点交会作用范围", notes="between：仅跨要素，内部点交会拒绝；all：要素内部及跨要素全部点交会。两者均拒绝正长度重合"),
     ],
     output_ports=[OutputPort(name="result", type="geodataframe", description="每行一个LineString，保留原列并追加source_id/part_no/segment_no", is_default=True)],
     use_cases=["将真实十字或T形交会切分为可独立加工的线段", "保留原属性和来源生成线网片段"],
-    notes=["部件号和片段号从1开始，片段号在部件内递增；保留方向、顶点和闭环原始接缝", "source_id/part_no/segment_no与源列冲突时失败，不覆盖或自动改名", "内部自交包括不同部件的点接触，正常相邻折点和闭环首尾除外", "无容差、精度网格、吸附、延伸或业务质量判定；源不变，保存另接save", "索引、交点和成果驻内存，不承诺固定内存或容量"],
-    workflow_example={"id": "split_crossings", "operator": "split_line_intersections", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+    notes=["部件号和片段号从1开始，片段号在部件内递增；保留方向、顶点和闭环原始接缝", "source_id/part_no/segment_no与源列冲突时失败，不覆盖或自动改名", "all按原路径每次经过分别切分；正常相邻折点和闭环首尾不额外制造切口", "正长度重合包括相邻折返、源内重复走线、同源多部件及跨源重合，均整批拒绝", "无容差、精度网格、吸附、延伸或业务质量判定；源不变，保存另接save", "索引、交点和成果驻内存，不承诺固定内存或容量"],
+    workflow_example={"id": "split_crossings", "operator": "split_line_intersections", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id", "scope": "all"}, "depends_on": ["load"]},
 )
 
 CHECK_LINE_SELF_OVERLAP_METADATA = OperatorMetadata(

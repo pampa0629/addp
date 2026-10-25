@@ -82,7 +82,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 
 ## 交点打断
 
-`split_line_intersections` 在不同线要素的精确点交会处切分路径，每片保留原属性和来源，并标记部件及片段编号；内部自交及正长度重合整批拒绝。原始方向、闭环接缝、字段冲突及保存规则见[交点打断契约](../../../docs/spec/workflow/矢量算子契约.md#交点打断契约)。
+`split_line_intersections` 以`scope=between`处理跨要素点交会；显式`scope=all`统一处理要素内部及跨要素的全部精确点交会，共用原始段切分主路径。每片保留原属性、来源、原方向和部件／片段编号，同一XY的多次经过分别切分，任何正长度重合均整批拒绝。闭环接缝、重复坐标、范围拒绝及保存规则见[交点打断契约](../../../docs/spec/workflow/矢量算子契约.md#交点打断契约)。
 
 ## 线内自交
 
