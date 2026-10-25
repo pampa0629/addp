@@ -217,7 +217,7 @@ func (s *MetadataService) StreamStorageContent(ctx context.Context, target *Stor
 	return read.stream(ctx, target.StorageRef, rangeHeader)
 }
 
-func (s *MetadataService) streamStorageContent(ctx context.Context, resource *models.Engine, storageRef, rangeHeader string, check func() error) (io.ReadCloser, int64, string, string, error) {
+func (s *MetadataService) streamStorageContent(ctx context.Context, resource *models.Engine, storageRef, rangeHeader string, maxBytes int64, check func() error) (io.ReadCloser, int64, string, string, error) {
 	pl, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
@@ -242,6 +242,10 @@ func (s *MetadataService) streamStorageContent(ctx context.Context, resource *mo
 	meta, err := streamEngineCatalogFacts(ctx, factsProvider, connInfo, itemPath, displayPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat storage content: %w", err)
+	}
+
+	if maxBytes > 0 && (meta.Size < 0 || meta.Size > maxBytes) {
+		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
 	}
 
 	contentType := objectcontent.InferContentType(displayPath, meta.ContentType)

@@ -115,10 +115,10 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if primaryCount != 1 {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
-	if (format == "ifc" || format == "stl") && len(refs) != 1 {
+	if (format == "ifc" || format == "stl" || format == "glb") && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	if format == "stl" && commonjson.Section(item.Attributes, "format_info.stl")["composition_complete"] != true {
+	if (format == "stl" || format == "glb") && commonjson.Section(item.Attributes, "format_info."+format)["composition_complete"] != true {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
 	if format == "obj" {

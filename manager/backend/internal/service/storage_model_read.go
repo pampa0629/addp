@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"reflect"
@@ -10,6 +11,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/glb"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 )
@@ -125,5 +128,35 @@ func (r *storageRead) stream(ctx context.Context, storageRef, rangeHeader string
 	if err != nil {
 		return nil, 0, "", "", err
 	}
-	return r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, func() error { return r.check(ctx, storageRef) })
+	check := func() error { return r.check(ctx, storageRef) }
+	if r.expected == nil || r.expected.FileComposition.Format != "glb" {
+		return r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, 0, check)
+	}
+	// GLB may change at the same source path after basic observation. Validate
+	// exactly the bytes that will be returned, before exposing even a Range.
+	reader, size, _, contentType, err := r.service.streamStorageContent(ctx, resource, storageRef, "", glb.MaxCompositionBytes, check)
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(reader, glb.MaxCompositionBytes+1))
+	closeErr := reader.Close()
+	if readErr != nil || closeErr != nil || int64(len(raw)) != size || int64(len(raw)) > glb.MaxCompositionBytes {
+		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+	}
+	provider, err := format.GetModel3DCompositionProvider(format.FormatGLB)
+	if err != nil {
+		return nil, 0, "", "", commonClient.ErrManagerPreviewReadUnavailable
+	}
+	refs, err := provider.ReadModel3DComposition(ctx, bytes.NewReader(raw), int64(len(raw)))
+	if err != nil || refs == nil || len(refs) != 0 {
+		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+	}
+	if err := check(); err != nil {
+		return nil, 0, "", "", err
+	}
+	options, length, contentRange, err := parseStorageRange(rangeHeader, int64(len(raw)))
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+	return io.NopCloser(bytes.NewReader(raw[options.Offset : options.Offset+length])), length, contentRange, contentType, nil
 }

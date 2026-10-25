@@ -143,7 +143,7 @@ func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 }
 
 func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "glb"} {
 		for _, kind := range []string{"ftp", "nfs", "minio", "s3"} {
 			for _, term := range []string{"file", "object"} {
 				target := plugin.FileItemPath(33, "models/model."+format)
@@ -159,7 +159,7 @@ func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
 					t.Fatalf("wrong admission %s/%s/%s", kind, term, format)
 				}
 				scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
-				if scope.Validate() != nil {
+				if (scope.Validate() == nil) != (format != "glb") {
 					t.Fatalf("wrong scope shape %s/%s", term, format)
 				}
 			}
@@ -190,6 +190,41 @@ func TestSTLModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.
 		scope.FileComposition.Refs = append(scope.FileComposition.Refs, authorizationfacts.FileCompositionRef{Target: extra, Role: "texture", Required: true})
 		if scope.Validate() == nil {
 			t.Fatal("STL acquired external dependencies")
+		}
+	}
+}
+
+func TestGLBReadCompositionCannotAcquireConversionScope(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		target := plugin.FileItemPath(33, "models/model.glb")
+		if kind == "minio" {
+			target = plugin.ObjectItemPath(33, "models", "model.glb")
+		}
+		composition, err := authorizationfacts.NewFileCompositionBoundary("glb", []authorizationfacts.FileCompositionRef{{Target: target, Role: "model", Required: true, Primary: true}})
+		if err != nil || !ManagerModel3DSourceComposition(kind, composition) || ManagerModel3DConversionFormat("glb") {
+			t.Fatal("GLB read admission", err)
+		}
+		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		if scope.Validate() == nil {
+			t.Fatal("direct GLB acquired conversion scope")
+		}
+		var config map[string]any
+		if json.Unmarshal(model3DTestRaw(t, `{}`), &config) != nil {
+			t.Fatal("fixture")
+		}
+		config["source_composition"] = composition
+		raw, _ := json.Marshal(config)
+		if got, err := NewManagerModel3DReadScope(raw, "10", "7", "5", composition); err == nil || got != nil {
+			t.Fatal("GLB frozen conversion wrapper accepted")
+		}
+		composition.Refs[0].Role = "texture"
+		if ManagerModel3DSourceComposition(kind, composition) {
+			t.Fatal("GLB primary is not the model")
+		}
+		composition.Refs[0].Role = "model"
+		composition.Refs = append(composition.Refs, authorizationfacts.FileCompositionRef{Target: target, Role: "texture", Required: true})
+		if ManagerModel3DSourceComposition(kind, composition) {
+			t.Fatal("GLB acquired a second constituent")
 		}
 	}
 }

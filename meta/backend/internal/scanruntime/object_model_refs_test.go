@@ -457,3 +457,37 @@ func TestMinIOBasicOBJMatchesOnlyDeclaredNestedImagesInObservedBucket(t *testing
 		}
 	}
 }
+
+func TestMinIOBasicGLBCompositionAtBucketRootAndPrefix(t *testing.T) {
+	doc := []byte(`{"asset":{"version":"2.0"}}`)
+	for len(doc)%4 != 0 {
+		doc = append(doc, ' ')
+	}
+	valid := []byte{'g', 'l', 'T', 'F'}
+	valid = binary.LittleEndian.AppendUint32(valid, 2)
+	valid = binary.LittleEndian.AppendUint32(valid, uint32(20+len(doc)))
+	valid = binary.LittleEndian.AppendUint32(valid, uint32(len(doc)))
+	valid = binary.LittleEndian.AppendUint32(valid, 0x4e4f534a)
+	valid = append(valid, doc...)
+	for _, prefix := range []string{"", "models/", "models/models/"} {
+		for _, complete := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/complete=%v", prefix, complete), func(t *testing.T) {
+				raw := append([]byte{}, valid...)
+				if !complete {
+					raw[0] = 'X'
+				}
+				primary := prefix + " 原名 %.GLB"
+				reader := &objectModelStructureSpy{primary: plugin.ObjectItemPath(9, "addp", primary), data: raw}
+				resources := []scanresource.StorageResource{objectResourceForTest(9, "addp", primary, int64(len(raw)), ""), objectResourceForTest(9, "addp", prefix+"unrelated.PNG", 10, "")}
+				claims, items, warnings := scanflow.DetectObjectCatalogCompositeItems(t.Context(), reader, reader, nil, 9, resources, false)
+				if len(warnings) != 0 || len(items) != 1 || reader.ranges == 0 || reader.contentCalls != 0 {
+					t.Fatalf("GLB composition absent: %+v %+v", items, warnings)
+				}
+				plan, ok := scanresource.PlanObjectCompositeItem(9, items[0], "object")
+				if !ok || plan.FullName != "addp/"+primary || commonJSON.Section(plan.Attributes, "format_info.glb")["composition_complete"] != complete || len(plan.DataItem.RefList) != 1 || !claims[primary] || claims[prefix+"unrelated.PNG"] {
+					t.Fatalf("GLB object root lost strict primary %+v", plan)
+				}
+			})
+		}
+	}
+}

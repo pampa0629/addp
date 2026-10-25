@@ -226,7 +226,7 @@ func EnrichSingleModel3DItem(
 		delete(info.FormatInfo, "texture_refs")
 		delete(info.FormatInfo, "scan_complete")
 	}
-	if formatType == format.FormatOBJ || formatType == format.FormatSTL {
+	if formatType == format.FormatOBJ || formatType == format.FormatSTL || formatType == format.FormatGLB {
 		// Geometry summaries never publish or replace basic composition facts.
 		delete(info.FormatInfo, "composition_complete")
 		if formatType == format.FormatOBJ {

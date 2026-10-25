@@ -94,10 +94,10 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	if err != nil {
 		return nil, reject
 	}
-	if (source.Format == "ifc" || source.Format == "stl") && len(composition.Refs) != 1 {
+	if (source.Format == "ifc" || source.Format == "stl" || source.Format == "glb") && len(composition.Refs) != 1 {
 		return nil, reject
 	}
-	if source.Format == "stl" && commonJSON.Section(item.Attributes, "format_info.stl")["composition_complete"] != true {
+	if (source.Format == "stl" || source.Format == "glb") && commonJSON.Section(item.Attributes, "format_info."+source.Format)["composition_complete"] != true {
 		return nil, reject
 	}
 	candidate := &model3DGLBSourceCandidate{composition: composition}

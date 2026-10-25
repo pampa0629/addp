@@ -26,7 +26,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -53,7 +53,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						{Target: primary, Role: "model", Required: true, Primary: true},
 						{Target: targetFor(texture), Role: "texture", Required: true},
 					}
-					if format == "stl" {
+					if format == "stl" || format == "glb" {
 						refs = refs[:1]
 					}
 					if format == "obj" {
@@ -164,7 +164,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				var stored authorizationfacts.FileCompositionBoundary
 				expectedRefs := 2
-				if format == "stl" {
+				if format == "stl" || format == "glb" {
 					expectedRefs = 1
 				}
 				if format == "obj" {
@@ -174,7 +174,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
-				exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
+				if format != "glb" {
+					exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
+				}
 				// A primary-only row cannot become a full composition Grant.
 				bare, err := prepareIndependentGrant(input)
 				if err != nil {
@@ -184,7 +186,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if err := repo.insertSourceGrant(ctx, bare); !errors.Is(err, commonapi.ErrBadRequest) {
 					t.Fatal("primary-only upgrade accepted", err)
 				}
-				if format == "stl" {
+				if format == "stl" || format == "glb" {
 					current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
 					if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrConflict) {
 						t.Fatal("incomplete STL facts did not fail closed", err)

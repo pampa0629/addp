@@ -460,6 +460,9 @@ NFS、FTP 与 MinIO 的 IFC／3DS／DAE／OBJ 组成事实由 Meta 基础扫描�
 
 STL 在 FTP／NFS／MinIO 的 basic 识别复用格式层 `Model3DCompositionProvider`，以 `format_info.stl.composition_complete` 独立保存严格结构观察的结果，完整时只保留唯一必需主 `model` ref，明确没有外部依赖。读取／语法／预算失败原子保存不完整；deep 几何 `scan_complete` 不得补造或覆盖该字段，授权事实 GET 不重读源端。字段为本轮实施契约，实际插件、消费接线与验收分层认定。
 
+FTP／NFS／MinIO 的自包含 GLB basic 与 STL 共用严格组成 Provider 接线：成功提交唯一主 `model` ref 和独立 `format_info.glb.composition_complete`；失败保存不完整，deep 不补造组成。无原生 Range 能力时不以摘要读取兜底。GLB 原始读取资格不产生转换任务准入。
+
+
 **单体模型的精确文件组成。** 经确认的模型 `single` 仍以主模型文件作为 DataItem 身份；其主文件和 Meta 完整确认的本地贴图 refs 可以共同构成一个明确批准的读取边界，不将贴图伪建为独立 DataItem，也不把 `single` 改为目录授权。3DS 必须以格式解析的 `texture_refs` 与持久化 refs 精确交叉核对，保留相对路径、大小写、角色及必需性；缺失、重复矛盾、未完成的组成或越界引用不能投影为 complete。IFC 本轮使用单主文件边界。RelatedRefs 仅提供组成事实，System 仍须独立核验该完整边界的 Grant、Deny 及执行授权，原有仅主文件的批准不自动扩大到贴图。增加／移除组成、改变引用目标或组成约束后，旧批准不覆盖新摘要，须重新批准；同路径模型内容或贴图像素的正常更新不改变组成边界。大小、内容哈希及版本事实仅用于来源与 I/O 完整性检查，不进入授权边界摘要。目录中的未引用文件不属于该组成。共享文件表示、实施范围及验证结果在相应代码与验收记录落实前，不计为文件授权已接通。
 
 文件组成使用同一协议的 `boundary.file_composition={format,refs}`，与 `native_target` 互斥；每个 ref 仅含精确类型化 `target`、`role`、`required` 和 `primary`。唯一 primary 为必需主文件，所有目标同 Engine、同文件目录模型，并处于主文件父范围内；父目录本身不成为可读取目标。当前精确组成投影范围为 FTP/NFS 的 `file + model_3d + single` 及 MinIO 的 `object + model_3d + single`，格式准入为 IFC、3DS、DAE、OBJ、STL；STL 的真实运行验收独立记录，其他引擎、格式及 multi／whole 不因新增表示而自动支持。IFC 的单主文件事实不表示关联文档或外部贴图已纳入转换；首期 FTP 快显使用固定工具的几何与基础颜色 profile，只批准主文件，不获取外部纹理或资料。3DS 的贴图声明完整、匹配清单与父目录归属必须来自已提交事实；GET 不访问源端补齐，不将统一 descriptor 的清洗／去重结果作为完整性证明。

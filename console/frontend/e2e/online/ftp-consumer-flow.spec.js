@@ -16,6 +16,50 @@ const permissions = ['system.engine_catalog.read', 'meta.catalog.read', 'meta.sc
 const managerPageResponse = response => response.request().method() === 'GET' &&
   new URL(response.url()).pathname === '/api/v1/manager/engines'
 
+async function downloadModelSource(page, frame, model) {
+    const bundled = model.composition.length > 1
+    const expectedName = model.full_name.split('/').at(-1) + (bundled ? '.zip' : '')
+    const [source, download] = await Promise.all([
+      page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === '/api/v1/manager/downloads/file' &&
+          url.searchParams.get('locator') === model.locator
+      }),
+      page.waitForEvent('download'),
+      frame.getByRole('button', { name: /^(下载|Download)$/i }).click({ timeout: 30_000 })
+    ])
+    expect(source.status()).toBe(200)
+    expect(await source.finished()).toBeNull()
+    const headers = await source.request().allHeaders()
+    expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
+    expect(Object.hasOwn(headers, 'cookie')).toBe(false)
+    expect([...new URL(source.url()).searchParams.keys()]).toEqual(['locator'])
+    expect(await download.failure()).toBeNull()
+    expect(download.suggestedFilename()).toBe(expectedName)
+    // The persisted download is the evidence. Chromium's response observer can
+    // expose an empty attachment body even when the page saved the full file.
+    // The runner independently compares these saved bytes to every seed member.
+    const original = readFileSync(await download.path())
+    const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
+    const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
+      sha256: createHash('sha256').update(original).digest('hex'),
+      content_type: source.headers()['content-type'] || '',
+      content_disposition: source.headers()['content-disposition'] || '',
+      browser_download: { clicked: true, current_user: true, no_cookie: true,
+        suggested_filename: download.suggestedFilename(), saved_file_read: true } }
+    // Preserve the actual saved logical object before checking it. The runner
+    // verifies every bundle member against the confirmed composition and seed.
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-source.json`), JSON.stringify(sourceDownload, null, 2))
+    if (bundled) {
+      expect(sourceDownload.content_type).toBe('application/zip')
+    } else {
+      expect(original.length).toBe(model.size)
+      expect(sourceDownload.sha256).toBe(model.sha256)
+    }
+    return sourceDownload
+}
+
 async function generateModel(page, expectedIdentity, model) {
   const route = `/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`
   const sourceEngine = new URL(model.locator).pathname.split('/')[1]
@@ -178,46 +222,7 @@ async function generateModel(page, expectedIdentity, model) {
     const current = await json(await api.get(capabilityPath), 'FTP model cached capability')
     expect(current.model_3d.result_id).toBe(result.result_id)
     expect(current.model_3d.last_execution_id).toBe(started.execution_id)
-    const bundled = model.composition.length > 1
-    const expectedName = model.full_name.split('/').at(-1) + (bundled ? '.zip' : '')
-    const [source, download] = await Promise.all([
-      page.waitForResponse(response => {
-        const url = new URL(response.url())
-        return response.request().method() === 'GET' && url.pathname === '/api/v1/manager/downloads/file' &&
-          url.searchParams.get('locator') === model.locator
-      }),
-      page.waitForEvent('download'),
-      frame.getByRole('button', { name: /^(下载|Download)$/i }).click({ timeout: 30_000 })
-    ])
-    expect(source.status()).toBe(200)
-    expect(await source.finished()).toBeNull()
-    const headers = await source.request().allHeaders()
-    expect(/^Bearer addp_at_/.test(headers.authorization || '')).toBe(true)
-    expect(Object.hasOwn(headers, 'cookie')).toBe(false)
-    expect([...new URL(source.url()).searchParams.keys()]).toEqual(['locator'])
-    expect(await download.failure()).toBeNull()
-    expect(download.suggestedFilename()).toBe(expectedName)
-    // The persisted download is the evidence. Chromium's response observer can
-    // expose an empty attachment body even when the page saved the full file.
-    // The runner independently compares these saved bytes to every seed member.
-    const original = readFileSync(await download.path())
-    const sourceArtifact = `ftp-${model.format}-source.${bundled ? 'zip' : model.format}`
-    const sourceDownload = { artifact: sourceArtifact, status: source.status(), size: original.length,
-      sha256: createHash('sha256').update(original).digest('hex'),
-      content_type: source.headers()['content-type'] || '',
-      content_disposition: source.headers()['content-disposition'] || '',
-      browser_download: { clicked: true, current_user: true, no_cookie: true,
-        suggested_filename: download.suggestedFilename(), saved_file_read: true } }
-    // Preserve the actual saved logical object before checking it. The runner
-    // verifies every bundle member against the confirmed composition and seed.
-    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), sourceArtifact), original)
-    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-source.json`), JSON.stringify(sourceDownload, null, 2))
-    if (bundled) {
-      expect(sourceDownload.content_type).toBe('application/zip')
-    } else {
-      expect(original.length).toBe(model.size)
-      expect(sourceDownload.sha256).toBe(model.sha256)
-    }
+    const sourceDownload = await downloadModelSource(page, frame, model)
     return { format: model.format, item_id: model.item_id, task_id: started.task_id,
       execution_id: started.execution_id, result_id: result.result_id,
       size: actualPageBytes.length, sha256: checksum,
@@ -228,6 +233,46 @@ async function generateModel(page, expectedIdentity, model) {
     page.off('response', observeContent)
     await api?.dispose()
   }
+}
+
+async function directGLB(page, expectedIdentity, model) {
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  const received=[], creations=[]
+  const observe=response=>{
+    const url=new URL(response.url())
+    if ((url.pathname==='/api/v1/manager/storage-stream' && url.searchParams.get('locator')===model.locator) ||
+      (url.pathname.startsWith('/api/v1/manager/storage-assets/') && decodeURIComponent(url.pathname).endsWith(`/items/${model.item_id}/${model.full_name}`))) received.push(response)
+  }
+  const requested=request=>{
+    if(request.method()==='POST' && /\/(quick-view\/actions|(?:task-provider\/)?tasks\/model_3d_glb_generation)/.test(new URL(request.url()).pathname)) creations.push(request)
+  }
+  page.on('response',observe);page.on('request',requested)
+  let api
+  try {
+    api=await browserAPIFromNavigation(page,required('GATEWAY_URL'),expectedIdentity,
+      ()=>page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`),managerPageResponse)
+    await expect.poll(()=>received.length,{timeout:60_000}).toBeGreaterThan(0)
+    const response=received[0];expect(response.status()).toBe(200);expect(await response.finished()).toBeNull()
+    const headers=await response.request().allHeaders()
+    expect(/^Bearer addp_at_/.test(headers.authorization||'')).toBe(true)
+    expect(Object.hasOwn(headers,'cookie')).toBe(false);expect(new URL(response.url()).searchParams.has('ticket')).toBe(false)
+    const bytes=await response.body()
+    expect(bytes.length).toBe(model.size);expect(createHash('sha256').update(bytes).digest('hex')).toBe(model.sha256)
+    const viewer=frame.locator('.model-preview');await expect(viewer.locator('canvas')).toBeVisible()
+    await expect(viewer.locator('.three-status')).toHaveCount(0)
+    await expect.poll(async()=>{const pixels=await modelPixels(page,viewer.locator('canvas'));return pixels.neutralSolid/pixels.total}).toBeGreaterThan(0.01)
+    await expect(frame.getByRole('button',{name:/生成 GLB 快显|Generate GLB Quick View/})).toHaveCount(0)
+    writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'),'ftp-glb-direct.glb'),bytes)
+    await viewer.screenshot({path:resolve(required('ADDP_ONLINE_ARTIFACT_DIR'),'ftp-glb-direct.png')})
+    const ranged=await api.get(`/api/v1/manager/storage-stream?${new URLSearchParams({locator:model.locator,storage_ref:model.full_name})}`,{headers:{Range:'bytes=4-7'}})
+    expect(ranged.status()).toBe(206);const slice=await ranged.body();expect(slice.equals(bytes.subarray(4,8))).toBe(true)
+    const sourceDownload=await downloadModelSource(page,frame,model)
+    expect(creations).toHaveLength(0)
+    return {format:'glb',item_id:model.item_id,size:bytes.length,sha256:model.sha256,rendered:true,
+      user_bearer:true,cookie_sent:false,ticket_sent:false,generation_requests:0,
+      range:{status:206,size:slice.length,sha256:createHash('sha256').update(slice).digest('hex'),content_range:ranged.headers()['content-range']},
+      source_download:sourceDownload}
+  }finally{page.off('response',observe);page.off('request',requested);await api?.dispose()}
 }
 
 async function withdrawnModel(page, expectedIdentity, model, published, latest) {
@@ -366,12 +411,13 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
       expect(createHash('sha256').update(binary).digest('hex')).toBe(sample.sha256)
       downloads.push(Object.fromEntries(['format', 'item_id', 'size', 'sha256'].map(key => [key, sample[key]])))
     }
+    const direct = await directGLB(page, expectedIdentity, expected.direct_glb)
     const models = []
     expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
-      principal_id: auth.principalID, meta_ui_scan: true, previews: 3, downloads, models
+      principal_id: auth.principalID, meta_ui_scan: true, previews: 3, downloads, models, direct_glb: direct
     }))
   } finally {
     await api.dispose()

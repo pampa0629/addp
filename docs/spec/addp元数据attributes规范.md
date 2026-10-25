@@ -248,6 +248,9 @@ OBJ 在 FTP、NFS、MinIO 的 basic 组成识别只读取完整、有界的主 O
 
 STL 的 basic 严格结构观察仅写 `format_info.stl.composition_complete`，不借用 deep 的 `scan_complete`、不写 `texture_refs`；成功时精确 refs 只有一个 primary `model`，明确无外部引用。binary 按已观察长度校验 84 字节头及 `84+50*n`，ASCII 在 64 MiB／单行 1 MiB 内完整校验块语法；失败移除旧完整事实并保存 false。deep 只增强几何统计，必须保留基础组成状态。零面片识别不代表可成功转换，格式读取不产生许可。完整边界见[内置 STL 规范](builtin-formats/三维模型与场景.md#stl)。
 
+GLB 的 basic 严格组成观察独立保存为 `format_info.glb.composition_complete`。完整时仅有唯一必需 primary `model` ref；结构、预算或读取失败覆盖旧完整事实并保存 false。deep 的 `scan_complete` 和几何摘要不得提升或覆盖该基础事实。组成 Provider 仅验证首期自包含 GLB 2.0 边界（64 MiB 文件、16 MiB JSON、BIN 内嵌资源与 PNG/JPEG，无 URI 或扩展），不证明完整 glTF 语义、图片解码或场景渲染；详见三维格式规范。授权事实查询仅投影已提交观察，不重读源端。
+
+
 DAE 的 FTP/NFS 基础组成解析复用 `Model3DCompositionProvider`：以 range 按已观察长度完整读取不超过 64 MiB 的主 XML，最多 200 条图片声明，每条不超过 4096 UTF-8 字节，嵌套不超过 64 层；失败原子保存 `scan_complete=false`，不得留下旧完整声明。成功只写 `texture_refs/scan_complete`，不写网格统计；deep 只增强统计并保留既有基础组成，单项刷新不临时列举依赖。图片 URI 必须为目录内 PNG/JPEG，相对 URI 合法解码一次；全部声明与精确 refs 交叉核对后才可投影完整授权边界。
 
 DAE / 3DS 保持 `layout=single`。基础识别所需的有界模型结构读取必须将完整的原生贴图声明保存到 `format_info.<format>.texture_refs`，以 `scan_complete=true` 区分已完整读取与未知状态；明确的空数组表示已读取且没有贴图声明，缺字段、解析失败或预算未完成不得当作空数组。缺失、越界或无法精确匹配的声明仍保留在原生声明中，只有实际匹配成功的文件进入 `item.refs`。单体模型的 `item.refs` 保留主模型及精确认领的相关文件、角色和必需性，`storage.physical_path` 始终指向主模型；这些组成事实不依赖 deep scan，也不代表内容读取许可。基础识别不借此写入 deep 的网格或顶点统计。

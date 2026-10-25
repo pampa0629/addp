@@ -32,3 +32,13 @@ func TestOBJBasicFailureReplacesCompositionWithoutErasingDeepGeometryStatus(t *t
 		t.Fatalf("stale or lost facts: %+v", native)
 	}
 }
+
+func TestGLBBasicFailureReplacesPriorCompleteWhilePreservingDeepFacts(t *testing.T) {
+	previous := models.JSONMap{"item": map[string]any{"format": "glb"}, "format_info": map[string]any{"glb": map[string]any{"composition_complete": true, "scan_complete": true, "mesh_count": int64(2)}}}
+	observed := models.JSONMap{"item": map[string]any{"format": "glb"}, "format_info": map[string]any{"glb": map[string]any{"composition_complete": false}}}
+	MergeBasicModelCompositionSnapshot(previous, observed)
+	native := commonJSON.Section(previous, "format_info.glb")
+	if native["composition_complete"] != false || native["mesh_count"] != int64(2) {
+		t.Fatal("basic lost independent observation", native)
+	}
+}

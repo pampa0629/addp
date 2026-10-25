@@ -123,10 +123,10 @@ func TestManagerModel3DResultReadRejectsTicketsDelegatesAndMalformedExpectedSour
 }
 
 func TestManagerModel3DExpectedObjectSource(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "glb"} {
 		t.Run(format, func(t *testing.T) {
 			refs := []authorizationfacts.FileCompositionRef{{Target: plugin.ObjectItemPath(33, "models", "scene/model."+format), Role: "model", Required: true, Primary: true}}
-			if format != "ifc" && format != "stl" {
+			if format != "ifc" && format != "stl" && format != "glb" {
 				refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(33, "models", "scene/ Original.PNG "), Role: "texture", Required: true})
 			}
 			composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)

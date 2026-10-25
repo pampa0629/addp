@@ -3,6 +3,7 @@
 from importlib import import_module
 from contextlib import contextmanager
 from email.message import Message
+from email.utils import collapse_rfc2231_value
 import base64
 import copy
 import hashlib
@@ -1002,6 +1003,58 @@ def verify_raw_model_reads(client, report, status):
     return observations
 
 
+def verify_direct_glb_reads(client, report, status):
+    return verify_raw_model_reads(client, {**report, 'models':[report['direct_glb']]}, status)
+
+
+def external_glb_bytes(original):
+    length, = struct.unpack_from('<I', original, 12)
+    doc = json.loads(original[20:20+length])
+    doc['buffers'][0]['uri'] = 'https://external.invalid/unapproved.bin'
+    raw = json.dumps(doc, separators=(',', ':')).encode()
+    raw += b' ' * (-len(raw) % 4)
+    chunks = struct.pack('<I4s', len(raw), b'JSON') + raw + original[20+length:]
+    return struct.pack('<4sII', b'glTF', 2, 12+len(chunks)) + chunks
+
+
+@contextmanager
+def changed_glb_fixture(model):
+    relative = next(relative for kind,relative,_ in SEED.MODEL_SAMPLE_FILES if kind=='glb')
+    original = (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+    require(model['full_name']==model_scope(relative) and hashlib.sha256(original).hexdigest()==model['sha256'],
+            'GLB mutation requires the fixed owned physical source')
+    changed = external_glb_bytes(original)
+    if model_source_type()=='minio':
+        fixture = import_module('scripts.test.online-file-model-minio-fixture')
+        read = lambda: fixture.read(relative)
+        write = lambda raw: fixture.put(relative, raw)
+    else:
+        root = owned_ftp_fixture() / 'data'
+        parts = Path(relative).parts
+        require(all(not root.joinpath(*parts[:i]).is_symlink() for i in range(len(parts)+1)),
+                'GLB mutation cannot traverse links')
+        target = root / relative
+        read = target.read_bytes
+        write = lambda raw: replace_fixture_file(target, raw)
+    require(read()==original, 'GLB source differs before owned mutation')
+    try:
+        write(changed)
+        yield
+    finally:
+        require(read() in (original,changed), 'GLB cleanup refuses an unrelated content change')
+        write(original)
+        require(read()==original, 'GLB source restoration differs')
+
+
+def verify_changed_glb_reads(client, report):
+    # Deliberately retain the committed complete basic facts and existing Grant.
+    # No rescan may hide whether final delivery validates the actual new bytes.
+    with changed_glb_fixture(report['direct_glb']):
+        denied = verify_direct_glb_reads(client, report, 403)
+    restored = verify_direct_glb_reads(client, report, 200)
+    return {'no_rescan':True, 'external_uri_denied':denied, 'restored':restored}
+
+
 def scan_scope(client, engine_id, directories, depth, timeout):
     require(depth in {'basic', 'deep'} and directories and all(isinstance(value, str) and
             all(part and part not in {'.', '..'} for part in value.split('/')) for value in directories),
@@ -1069,7 +1122,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
     return result
 
 
-def prepare_models(items, engine_id, samples):
+def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj', 'stl')):
     expected = {key:(model_scope(relative), source) for key,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
@@ -1084,7 +1137,7 @@ def prepare_models(items, engine_id, samples):
                 'FTP model manifest differs from the fixed physical fixture')
         by_format[sample['format']] = sample
     result = []
-    for kind in ('ifc', '3ds', 'dae', 'obj', 'stl'):
+    for kind in kinds:
         sample = by_format[kind]
         matches = [item for item in items if item.get('full_name') == sample['full_name']]
         require(len(matches) == 1, 'FTP model scan must retain one exact primary DataItem')
@@ -1112,7 +1165,7 @@ def prepare_models(items, engine_id, samples):
             require(native.get('texture_refs') == ['texture.png'],
                     'FTP texture model must retain its exact texture declaration')
             expected_refs.append({'path': by_format['dae_png' if kind == 'dae' else 'png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
-        if kind == 'stl':
+        if kind in {'stl', 'glb'}:
             require(native.get('composition_complete') is True and not native.get('texture_refs'),
                     'STL requires basic complete single-primary composition without external references')
         if kind == 'obj':
@@ -1187,7 +1240,8 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout, source_ty
     return {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'), 'engine_id': engine_id,
             'tenant_id': tenant_id, 'principal_id': str(context['principal']['id']),
             'source_engine_type': source_type, 'scan_execution_id': execution_id, 'model_scan_execution_id': model_scan, 'samples': result,
-            'models': prepare_models(items, engine_id, model_samples)}
+            'models': prepare_models(items, engine_id, model_samples),
+            'direct_glb': prepare_models(items, engine_id, model_samples, ('glb',))[0]}
 
 
 def validate_source_download(observed, source, artifact_dir):
@@ -1204,7 +1258,7 @@ def validate_source_download(observed, source, artifact_dir):
             'FTP logical source download identity, headers or bounded size differs')
     disposition = Message()
     disposition['Content-Disposition'] = observed['content_disposition']
-    require(disposition.get_content_disposition() == 'attachment' and disposition.get_filename() == filename,
+    require(disposition.get_content_disposition() == 'attachment' and collapse_rfc2231_value(disposition.get_param('filename', header='content-disposition')) == filename,
             'FTP logical source attachment filename differs')
     require(observed['browser_download'] == {
                 'clicked': True, 'current_user': True, 'no_cookie': True,
@@ -1411,8 +1465,21 @@ def validate_stl_glb(raw):
 def validate_browser_report(actual, expected, artifact_dir):
     proof = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
     proof.update(meta_ui_scan=True, previews=3, downloads=[{key: sample[key] for key in ('format', 'item_id', 'size', 'sha256')} for sample in expected['samples']])
-    require({key: value for key, value in actual.items() if key != 'models'} == proof,
+    require({key: value for key, value in actual.items() if key not in {'models','direct_glb'}} == proof,
             'FTP browser identity, scan, preview or physical download proof differs')
+    direct, source = actual.get('direct_glb'), expected['direct_glb']
+    required = {'format','item_id','size','sha256','rendered','user_bearer','cookie_sent','ticket_sent','generation_requests','range','source_download'}
+    require(isinstance(direct,dict) and set(direct)==required and direct['format']=='glb' and direct['item_id']==source['item_id'] and
+            direct['size']==source['size'] and direct['sha256']==source['sha256'] and direct['rendered'] is True and
+            direct['user_bearer'] is True and direct['cookie_sent'] is False and direct['ticket_sent'] is False and
+            type(direct['generation_requests']) is int and direct['generation_requests']==0,
+            'GLB direct preview must prove exact bytes, current identity and zero conversions')
+    original = (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+    require((artifact_dir/'ftp-glb-direct.glb').read_bytes()==original and (artifact_dir/'ftp-glb-direct.png').is_file(),
+            'GLB direct page bytes or rendered screenshot absent')
+    require(direct['range']=={'status':206,'size':4,'sha256':hashlib.sha256(original[4:8]).hexdigest(),
+                              'content_range':f'bytes 4-7/{len(original)}'}, 'GLB Range differs from the validated physical bytes')
+    validate_source_download(direct['source_download'], source, artifact_dir)
     models = actual.get('models')
     require(isinstance(models, list) and len(models) == len(expected['models']),
             'FTP browser must generate and reopen every declared model format')
@@ -1495,10 +1562,13 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
                                    SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), min(timeout, 30))
     authorization = ModelSourceAuthorization(issuer, client, report)
     report['raw_source_reads'] = {'before_grant': verify_raw_model_reads(client, report, 403)}
+    report['direct_glb_reads'] = {'before_grant': verify_direct_glb_reads(client, report, 403)}
     save_completed_phase(report, 'raw_sources_denied_before_grant')
     try:
-        report['source_authorizations'] = [authorization.grant(model) for model in report['models']]
+        report['source_authorizations'] = [authorization.grant(model) for model in [*report['models'], report['direct_glb']]]
         report['raw_source_reads']['after_grant'] = verify_raw_model_reads(client, report, 200)
+        report['direct_glb_reads']['after_grant'] = verify_direct_glb_reads(client, report, 200)
+        report['direct_glb_reads']['changed_source'] = verify_changed_glb_reads(client, report)
         report['browser'] = run_browser(report)
         save_completed_phase(report, 'browser_generation_cache_and_source_downloads')
         report['physical_model_storage'] = verify_owned_model_storage(client, report)
@@ -1524,6 +1594,7 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
     finally:
         authorization.cleanup()
     report['raw_source_reads']['after_revocation'] = verify_raw_model_reads(client, report, 403)
+    report['direct_glb_reads']['after_revocation'] = verify_direct_glb_reads(client, report, 403)
     report['revoked_cached_content'] = verify_cached_results(client, report, {model['format']: 403 for model in report['models']})
     report['denied_generations'].extend(verify_denied_generation(client, report, model['format'], 'source_withdrawn')
                                         for model in report['models'])

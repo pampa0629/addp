@@ -26,6 +26,7 @@ func (f storageModelCheck) CheckManagerModel3DRead(ctx context.Context, token st
 type storageModelIO struct {
 	*downloadTestFilePlugin
 	stats, opens int
+	reportedSize *int64
 }
 
 func (p *storageModelIO) DescribeEngineCatalogFacts(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, options plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
@@ -33,7 +34,11 @@ func (p *storageModelIO) DescribeEngineCatalogFacts(ctx context.Context, info pl
 	if info["identity"] != "same-version" {
 		return nil, errors.New("connection changed after source decision")
 	}
-	return p.downloadTestFilePlugin.DescribeEngineCatalogFacts(ctx, info, path, options)
+	facts, err := p.downloadTestFilePlugin.DescribeEngineCatalogFacts(ctx, info, path, options)
+	if facts != nil && facts.Storage != nil && p.reportedSize != nil {
+		facts.Storage.SizeBytes = p.reportedSize
+	}
+	return facts, err
 }
 func (p *storageModelIO) OpenContent(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, options plugin.ReadOptions) (io.ReadCloser, error) {
 	p.opens++
@@ -43,11 +48,14 @@ func (p *storageModelIO) OpenContent(ctx context.Context, info plugin.Connection
 	return p.downloadTestFilePlugin.OpenContent(ctx, info, path, options)
 }
 
-func storageModelFixture(t *testing.T, object bool) (*MetadataService, *StorageDataItem, *storageModelIO, *uint, *models.DownloadPlan) {
+func storageModelFixture(t *testing.T, object bool, requestedKind ...string) (*MetadataService, *StorageDataItem, *storageModelIO, *uint, *models.DownloadPlan) {
 	t.Helper()
 	kind, engineType, name := "file", "nfs", "models/ exact %.ifc"
 	if object {
 		kind, engineType, name = "object", "minio", "bucket/"+name
+	}
+	if len(requestedKind) > 0 {
+		engineType = requestedKind[0]
 	}
 	previous, previousErr := plugin.Get(engineType)
 	p := &storageModelIO{downloadTestFilePlugin: newDownloadTestFilePlugin(engineType, map[string]string{name: "original IFC bytes"})}

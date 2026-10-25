@@ -115,6 +115,9 @@ System 核对已封存且未撤销、未过期的 user 来源授权，排除 Not
 
 OBJ 扩展沿用上述三来源、普通 User 与同一执行授权契约，不新增服务、Permission 或目录授权。Meta 在 basic 阶段完整读取主 OBJ 和其明确声明的同目录 MTL，匹配主目录内的精确 PNG/JPEG；主文件、MTL 和贴图均作为同一 DataItem 的必需组成，不给材质或图片单独签发 Grant。`format_info.obj.composition_complete/material_libraries` 表达实际完整组成，与 deep 几何摘要的 `scan_complete` 分离；缺失／空图片、嵌套 MTL、链接或超限时原子标记不完整，不认领部分依赖。原生路径规则与预算见[attributes 规范](addp元数据attributes规范.md)。
 
+自包含 GLB 的 FTP／NFS／MinIO 原始读取沿用上述当前 User、Engine 版本和精确组成裁决：basic 仅在严格 GLB 2.0 组成观察成功后提交唯一必需主 `model` ref 与 `format_info.glb.composition_complete=true`。批准范围只包含该主项，不包含目录。GLB 不进入模型转换任务或执行授权；直接预览与原文件下载共同读取同一份最多 64 MiB、通过格式层自包含复核的字节，JSON 上限 16 MiB。外部 URI、data URI、扩展、超限及不完整内容拒绝；读取后交付前再核现行源权限，Range 仅切分已验证字节，不能绕过完整验证。格式组成不证明场景可渲染。
+
+
 Manager 对 OBJ 与全部 MTL 分别从同一已授权流中缓冲、重核声明并暂存同一份字节；闭包变化时不打开新发现图片，不上传或调用转换。新边界须重新批准，旧成果仍按自身来源范围及当前规则读取，不能借新 Grant 放行旧边界。NFS／MinIO 的 OBJ 不再直传宿主路径或整个对象前缀；旧产物缺少正式来源范围时拒绝并要求显式重新生成，不补造授权。双 MTL 与子目录同名贴图的格式探针、模块门禁与实际三来源 Hosted 验收分别留证，不能互相替代。
 
 MinIO DAE 已按同一精确组成契约通过固定静态样例的本机验收及独立 Hosted 三来源验收，范围见[验收证据索引](testing/验收证据索引.md)；不外推任意模型，授权页面后续共享前端修复的 T3／本机证据与固定 Hosted 源码分开记录。MinIO 保留 `service → bucket → prefix → object` 的真实目录类型，组成绑定主对象与 Meta 基础扫描确认的精确依赖对象，不把对象伪装成 file。IFC 仅含主对象；3DS／DAE 通过同一格式 Provider 读取主对象结构声明，既不列举授权范围外的前缀，也不读取贴图内容来发现组成。桶根模型、完整 refs 采集与前缀采集沿用同一规则；不完整、变化或无法精确表示的组成拒绝授权。System 准入 MinIO IFC／3DS／DAE 主对象，桶与前缀不能作为模型批准目标。

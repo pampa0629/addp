@@ -64,6 +64,7 @@ def write_samples(directory):
 
 
 MODEL_SAMPLE_FILES = (
+    ('glb', 'models/glb/ 原名 %.GLB', 'addp_online_model_fixture.glb'),
     ('stl', 'models/stl/model.stl', 'addp_online_model_fixture.stl'),
     ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
     ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),

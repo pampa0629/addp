@@ -39,8 +39,8 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
-	if format == "stl" {
-		item.Attributes["format_info"] = map[string]any{"stl": map[string]any{"composition_complete": true}}
+	if format == "stl" || format == "glb" {
+		item.Attributes["format_info"] = map[string]any{format: map[string]any{"composition_complete": true}}
 	}
 	item.Fingerprint = commonModels.GenerateItemFingerprint(engineID, item.FullName)
 	if err := db.Create(&item).Error; err != nil {
@@ -55,7 +55,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
@@ -99,8 +99,8 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			if strings.Contains(string(raw), "physical_path") || strings.Contains(string(raw), "texture_refs") {
 				t.Fatal("private attributes escaped fact projection")
 			}
-			if format == "stl" {
-				native := item.Attributes["format_info"].(map[string]any)["stl"].(map[string]any)
+			if format == "stl" || format == "glb" {
+				native := item.Attributes["format_info"].(map[string]any)[format].(map[string]any)
 				native["composition_complete"] = false
 				native["scan_complete"] = true
 				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
@@ -117,7 +117,7 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			}
 			if format == "ifc" {
 				delete(item.Attributes["item"].(map[string]any), "refs")
-			} else if format != "stl" {
+			} else if format != "stl" && format != "glb" {
 				refs := item.Attributes["item"].(map[string]any)["refs"].([]any)
 				refs[0], refs[1] = refs[1], refs[0]
 			}

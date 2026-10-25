@@ -86,5 +86,5 @@ func validateModel3DGLBClaim(ctx context.Context, item *commonExecution.TaskExec
 }
 
 func managedModel3DFileSource(engineType, format string) bool {
-	return commonExecution.ManagerModel3DSourceFormat(engineType, format)
+	return commonExecution.ManagerModel3DSourceEngineType(engineType) && commonExecution.ManagerModel3DConversionFormat(format)
 }

@@ -26,7 +26,7 @@ GLB = import_module('scripts.test.manager-internal-artifact-lineage-online_test'
 
 def source_download_proof(source, artifacts, entries=None):
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    files = {'model.stl': 'addp_online_model_fixture.stl', 'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
+    files = {'model.stl': 'addp_online_model_fixture.stl', ' 原名 %.GLB': 'addp_online_model_fixture.glb', 'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
              'texture.png': 'addp_online_exchange_texture.png'}
     bundled = len(source['composition']) > 1
     if bundled:
@@ -55,6 +55,44 @@ def source_download_proof(source, artifacts, entries=None):
     (artifacts / f"ftp-{source['format']}-source.json").write_text(json.dumps(proof))
     return proof
 
+
+class DirectGLBSourceTests(unittest.TestCase):
+    def test_changed_glb_is_valid_container_with_unapproved_uri_not_corrupt_magic(self):
+        original=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+        changed=M.external_glb_bytes(original)
+        self.assertEqual(struct.unpack_from('<4sII',changed), (b'glTF',2,len(changed)))
+        size,=struct.unpack_from('<I',changed,12)
+        doc=json.loads(changed[20:20+size])
+        self.assertEqual(doc['buffers'][0]['uri'],'https://external.invalid/unapproved.bin')
+        self.assertNotEqual(changed,original)
+
+    def test_changed_glb_checks_all_three_exits_and_restores_even_after_failure(self):
+        client=FakeClient()
+        source=M.prepare_models(client.items,17,client.model_samples,('glb',))[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);M.SEED.write_model_samples(root/'data')
+            target=root/'data'/source['full_name'];original=target.read_bytes()
+            with patch.object(M,'owned_ftp_fixture',return_value=root):
+                with self.assertRaisesRegex(RuntimeError,'read failure'):
+                    with M.changed_glb_fixture(source):
+                        self.assertEqual(target.read_bytes(),M.external_glb_bytes(original))
+                        raise RuntimeError('read failure')
+            self.assertEqual(target.read_bytes(),original)
+
+    def test_minio_changed_glb_uses_owned_exact_object_and_restores_on_failure(self):
+        fixture=import_module('scripts.test.online-file-model-minio-fixture')
+        relative=next(path for kind,path,_ in M.SEED.MODEL_SAMPLE_FILES if kind=='glb')
+        original=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+        source={'format':'glb','full_name':'model-source/'+relative,'sha256':hashlib.sha256(original).hexdigest()}
+        store={relative:original}
+        def read(key):self.assertEqual(key,relative);return store[key]
+        def put(key,value):self.assertEqual(key,relative);store[key]=value
+        with patch.dict(os.environ,ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE='minio'),patch.object(fixture,'read',side_effect=read),patch.object(fixture,'put',side_effect=put):
+            with self.assertRaisesRegex(RuntimeError,'content denied'):
+                with M.changed_glb_fixture(source):
+                    self.assertEqual(store[relative],M.external_glb_bytes(original))
+                    raise RuntimeError('content denied')
+        self.assertEqual(store,{relative:original})
 
 class SourceDownloadButtonProofTests(unittest.TestCase):
     def test_rejects_api_only_or_false_button_proof(self):
@@ -154,7 +192,7 @@ class FakeClient:
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl'}):
+        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl','glb'}):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
@@ -164,9 +202,9 @@ class FakeClient:
                 refs.append({'path': f'models/{kind}/texture.png', 'role': 'texture', 'required': True})
                 attributes['item']['refs'] = refs
                 attributes['format_info'] = {kind: {'scan_complete': True, 'texture_refs': ['texture.png']}}
-            if kind == 'stl':
+            if kind in {'stl','glb'}:
                 attributes['item']['refs'] = refs
-                attributes['format_info'] = {'stl': {'composition_complete': True}}
+                attributes['format_info'] = {kind: {'composition_complete': True}}
             if kind == 'obj':
                 refs.extend({'path':'models/obj/'+name,'role':role,'required':True} for name,role in [
                     ('paint blue.mtl','material_library'),('paint red.mtl','material_library_2'),
@@ -886,9 +924,18 @@ class FTPConsumerTest(unittest.TestCase):
         expected['models'] = M.prepare_models(client.items, 17, client.model_samples)
         proof = {key: expected[key] for key in ('run_id', 'engine_id', 'tenant_id', 'principal_id')}
         proof.update(meta_ui_scan=True, previews=3, downloads=copy.deepcopy(expected['samples']))
+        expected['direct_glb'] = M.prepare_models(client.items,17,client.model_samples,('glb',))[0]
         proof['models'] = []
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
+            source=expected['direct_glb']
+            raw=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+            (artifacts/'ftp-glb-direct.glb').write_bytes(raw)
+            (artifacts/'ftp-glb-direct.png').write_bytes(b'unit placeholder; browser owns real PNG')
+            proof['direct_glb']={'format':'glb','item_id':source['item_id'],'size':source['size'],'sha256':source['sha256'],
+                'rendered':True,'user_bearer':True,'cookie_sent':False,'ticket_sent':False,'generation_requests':0,
+                'range':{'status':206,'size':4,'sha256':hashlib.sha256(raw[4:8]).hexdigest(),'content_range':f'bytes 4-7/{len(raw)}'},
+                'source_download':source_download_proof(source,artifacts)}
             for source in expected['models']:
                 raw = multi_material_obj_glb() if source['format']=='obj' else stl_glb() if source['format']=='stl' else GLB.fixture_glb(source['format'])
                 (artifacts / f"ftp-{source['format']}.glb").write_bytes(raw)
@@ -903,7 +950,7 @@ class FTPConsumerTest(unittest.TestCase):
                     (artifacts / 'ftp-stl-basic-source.stl').write_bytes((Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.stl').read_bytes())
                     (artifacts / 'ftp-stl-basic.png').write_bytes(b'unit proof placeholder; real browser owns PNG')
             M.validate_browser_report(proof, expected, artifacts)
-            for key, value in (('principal_id', 'another'), ('meta_ui_scan', False), ('downloads', []), ('previews', 2), ('models', [])):
+            for key, value in (('principal_id', 'another'), ('meta_ui_scan', False), ('downloads', []), ('previews', 2), ('models', []), ('direct_glb', {})):
                 changed = {**proof, key: value}
                 with self.assertRaises(M.SuiteError):
                     M.validate_browser_report(changed, expected, artifacts)

@@ -113,10 +113,10 @@ class FTPAdmissionTests(unittest.TestCase):
             finally:
                 os.umask(previous)
             self.assertEqual({x['full_name'] for x in report}, {
-                'models/stl/model.stl', 'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png',
+                'models/glb/ 原名 %.GLB', 'models/stl/model.stl', 'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png',
                 'models/obj/model.obj', 'models/obj/paint red.mtl', 'models/obj/paint blue.mtl',
                 'models/obj/red/color.png', 'models/obj/blue/color.png'})
-            source_by_kind = {'stl': 'addp_online_model_fixture.stl', 'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
+            source_by_kind = {'glb':'addp_online_model_fixture.glb', 'stl': 'addp_online_model_fixture.stl', 'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
                               'png': 'addp_online_exchange_texture.png', 'dae': 'addp_online_model_fixture.dae', 'dae_png': 'addp_online_exchange_texture.png',
                               'obj': 'addp_online_multi_material.obj', 'obj_mtl_red': 'addp_online_multi_material_red.mtl',
                               'obj_mtl_blue': 'addp_online_multi_material_blue.mtl', 'obj_png_red': 'addp_online_obj_red.png',

@@ -18,7 +18,7 @@ func ManagerModel3DSourceEngineType(engineType string) bool {
 	return engineType == "ftp" || engineType == "nfs" || engineType == "minio"
 }
 
-// ManagerModel3DSourceFormat is the single admission rule for conversion routes.
+// ManagerModel3DSourceFormat admits exact-composition reads. Conversion has a narrower boundary.
 func ManagerModel3DSourceFormat(engineType, format string) bool {
 	return ManagerModel3DSourceEngineType(engineType) && ManagerModel3DFileFormat(format)
 }
@@ -26,13 +26,21 @@ func ManagerModel3DSourceFormat(engineType, format string) bool {
 // ManagerModel3DFileFormat is the shared exact-composition format admission.
 // Identity, basic completeness and the native file/object shape remain mandatory.
 func ManagerModel3DFileFormat(format string) bool {
-	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl"
+	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl" || format == "glb"
+}
+
+// ManagerModel3DConversionFormat excludes directly previewed GLB from execution authorization.
+func ManagerModel3DConversionFormat(format string) bool {
+	return ManagerModel3DFileFormat(format) && format != "glb"
 }
 
 // ManagerModel3DSourceComposition also proves the native catalog shape. Engine
 // identity alone must never let a file scope authorize an object or vice versa.
 func ManagerModel3DSourceComposition(engineType string, composition *authorizationfacts.FileCompositionBoundary) bool {
-	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) || ((composition.Format == "ifc" || composition.Format == "stl") && len(composition.Refs) != 1) {
+	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) || ((composition.Format == "ifc" || composition.Format == "stl" || composition.Format == "glb") && len(composition.Refs) != 1) {
+		return false
+	}
+	if composition.Format == "glb" && composition.Refs[0].Role != "model" {
 		return false
 	}
 	primary, err := composition.PrimaryTarget()
@@ -92,7 +100,7 @@ func NewManagerModel3DReadScope(raw json.RawMessage, taskID, taskVersion, engine
 func (s *ManagerModel3DReadScope) Validate() error {
 	if s == nil || !authorizationfacts.ValidItemFingerprint(s.ConfigDigest) || !positiveModel3DVersion(s.OwnerTaskID) ||
 		!positiveModel3DVersion(s.OwnerTaskVersion) || !positiveModel3DVersion(s.EngineVersion) ||
-		!ManagerModel3DFileFormat(s.FileComposition.Format) {
+		!ManagerModel3DConversionFormat(s.FileComposition.Format) {
 		return errManagerModel3DScope
 	}
 	primary, err := s.FileComposition.PrimaryTarget()

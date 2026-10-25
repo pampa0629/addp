@@ -37,7 +37,8 @@ class MinIOModelFixtureTest(unittest.TestCase):
                  patch.object(M,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(M,'read',side_effect=lambda key:store[key]), \
                  patch.object(M.urllib.request,'urlopen',return_value=Response()):
                 M.start()
-            self.assertEqual(len(store),14)
+            self.assertEqual(len(store),15)
+            self.assertEqual(store["models/glb/ 原名 %.GLB"], (Path(__file__).resolve().parents[2]/"business/fixtures/manager/addp_online_model_fixture.glb").read_bytes())
             self.assertIn('models/dae/model.dae',store)
             self.assertIn('models/dae/texture.png',store)
             descriptor=root/'ftp-minio-engine.json'
